@@ -267,12 +267,12 @@ class _GridMixin:
             Colormap for the `active_mask` plot.
         alpha : float, default=0.7
             Transparency for the `active_mask` plot.
-        draw_connectivity_graph : bool, default=True
+        show_connectivity : bool, default=True
             If True, draw the connectivity graph nodes and edges.
         node_size : float, default=20
-            Size of nodes if `draw_connectivity_graph` is True.
+            Size of nodes if `show_connectivity` is True.
         node_color : str, default="blue"
-            Color of nodes if `draw_connectivity_graph` is True.
+            Color of nodes if `show_connectivity` is True.
         **kwargs : Any
             Additional keyword arguments passed to `ax.pcolormesh` or
             NetworkX drawing functions.

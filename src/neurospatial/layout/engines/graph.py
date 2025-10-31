@@ -326,7 +326,9 @@ class GraphLayout(_KDTreeMixin):
             self._build_params_used["edge_spacing"],
         )
 
-    def linear_point_to_bin_ind(self, data_points):
+    def linear_point_to_bin_ind(
+        self, data_points: NDArray[np.float64]
+    ) -> NDArray[np.int_]:
         """
         Map 1D linearized positions to active 1D bin indices.
 

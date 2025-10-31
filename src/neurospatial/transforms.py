@@ -38,6 +38,26 @@ class Affine2D(SpatialTransform):
     2-D affine transform expressed as a 3 × 3 homogeneous matrix *A* such that
 
         [x', y', 1]^T  =  A @ [x, y, 1]^T
+
+    Attributes
+    ----------
+    A : NDArray[np.float64], shape (3, 3)
+        Homogeneous transformation matrix representing the affine transformation.
+        The matrix encodes rotation, scaling, translation, and shear operations.
+        The bottom row is always [0, 0, 1].
+
+    Examples
+    --------
+    Create a transform that translates then scales:
+
+    >>> import numpy as np
+    >>> from neurospatial.transforms import Affine2D
+    >>> transform = Affine2D.identity().translate(10, 20).scale(2.0)
+    >>> points = np.array([[0, 0], [1, 1]])
+    >>> transformed = transform(points)
+    >>> transformed
+    array([[20., 40.],
+           [22., 42.]])
     """
 
     A: NDArray[np.float64]  # shape (3, 3)

@@ -559,11 +559,11 @@ def flat_to_multi_index(
 
 
 def multi_index_to_flat(
-    *nd_idx_per_dim: int | np.ndarray,
+    *nd_idx_per_dim: int | NDArray[np.int_],
     grid_shape: tuple[int, ...],
-    active_mask: np.ndarray,
+    active_mask: NDArray[np.bool_],
     source_flat_lookup: dict[int, int],
-) -> int | np.ndarray:
+) -> int | NDArray[np.int_]:
     """
     Convert N-D grid index(es) to active-bin flat index(es) (0..N-1).
 
@@ -685,9 +685,9 @@ def multi_index_to_flat(
 def find_boundary_nodes(
     graph: nx.Graph,
     grid_shape: tuple[int, ...] | None = None,
-    active_mask: np.ndarray = None,
+    active_mask: NDArray[np.bool_] | None = None,
     layout_kind: str | None = None,
-) -> np.ndarray:
+) -> NDArray[np.int_]:
     """
     Identify boundary nodes in a connectivity graph G.
 
@@ -833,10 +833,10 @@ def find_boundary_nodes(
 
 def map_active_data_to_grid(
     grid_shape: tuple[int, ...],
-    active_mask: np.ndarray,
-    active_bin_data: np.ndarray,
+    active_mask: NDArray[np.bool_],
+    active_bin_data: NDArray[np.float64],
     fill_value: float = np.nan,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """
     Map a 1D array of data corresponding to active bins onto a full N-D grid.
 

@@ -239,7 +239,7 @@ class HexagonalLayout:
             ax.set_aspect("equal", adjustable="box")
         return ax
 
-    def point_to_bin_index(self, points):
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
         """
         Map 2D points to active hexagonal bin indices.
 

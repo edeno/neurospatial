@@ -25,6 +25,7 @@ from typing import Any
 
 import networkx as nx
 import numpy as np
+from numpy.typing import NDArray
 
 from neurospatial.layout.helpers.utils import get_centers
 
@@ -414,10 +415,10 @@ def _project_1d_to_2d(
 
 
 def _find_bin_for_linear_position(
-    linear_positions: float | np.ndarray,
-    bin_edges: np.ndarray,
-    active_mask: np.ndarray = None,
-) -> int | np.ndarray:
+    linear_positions: float | NDArray[np.float64],
+    bin_edges: NDArray[np.float64],
+    active_mask: NDArray[np.bool_] | None = None,
+) -> int | NDArray[np.int_]:
     """
     Find the 1D bin index for each given linear position.
 

@@ -31,9 +31,43 @@ class CompositeEnvironment:
     """
     A composite environment that merges multiple child Environment instances into one.
 
-    It automatically infers “bridge” edges between every pair of sub-environments by finding
+    It automatically infers "bridge" edges between every pair of sub-environments by finding
     mutually nearest neighbor bin-centers (MNN). It then presents the same interface as
     the base `Environment` class.
+
+    Attributes
+    ----------
+    environments : List[Environment]
+        List of constituent Environment instances that make up the composite.
+    name : str
+        Name for the composite environment.
+    layout : None
+        Not applicable for composite environments (set to None).
+    bin_centers : NDArray[np.float64]
+        Combined bin centers from all sub-environments, shape (n_total_bins, n_dims).
+    connectivity : nx.Graph
+        Combined connectivity graph with bridge edges between sub-environments.
+    bridges : List[Tuple[int, int, Dict[str, Any]]]
+        List of bridge edges connecting different sub-environments.
+        Each tuple is (source_bin, target_bin, edge_attributes).
+    dimension_ranges : Sequence[Tuple[float, float]]
+        Combined dimension ranges across all sub-environments.
+    grid_edges : Tuple[NDArray[np.float64], ...] | None
+        Not applicable for composite environments (set to None).
+    grid_shape : Tuple[int, ...] | None
+        Not applicable for composite environments (set to None).
+    active_mask : NDArray[np.bool_] | None
+        Not applicable for composite environments (set to None).
+    regions : Regions
+        Manages symbolic spatial regions defined within this composite environment.
+    is_1d : bool
+        True if all sub-environments are 1D, False otherwise.
+    _environment_bin_ranges : Dict[str, Tuple[int, int]]
+        Mapping of sub-environment names to their bin index ranges in the composite.
+    _layout_type_used : str
+        Always "Composite" for composite environments.
+    _layout_params_used : Dict[str, Any]
+        Parameters used to construct the composite.
     """
 
     is_1d: bool

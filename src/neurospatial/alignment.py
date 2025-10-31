@@ -173,11 +173,11 @@ def map_probabilities_to_nearest_target_bin(
     source_scale_factor : float
         Multiply every source bin-center by this scalar before querying.
     source_rotation_matrix : Optional[NDArray[np.float64]]
-        If not None, must be a length-n_dims array; we add it to every source bin-center
-        (after scaling) before querying.
+        If not None, must be a 2x2 rotation matrix (shape (2, 2)) for 2D environments.
+        Applied to source bin centers after scaling but before translation.
     source_translation_vector : Optional[NDArray[np.float64]]
-        If not None, must be a length-n_dims array; we apply it to every source bin-center
-        (after scaling) before querying.
+        If not None, must be a 1D array of length n_dims. Applied to source bin centers
+        after scaling and rotation.
 
     Returns
     -------
