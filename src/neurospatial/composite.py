@@ -266,12 +266,26 @@ class CompositeEnvironment:
 
     @property
     def n_dims(self) -> int:
-        """Number of spatial dimensions (same as each sub-environment)."""
+        """Number of spatial dimensions (same as each sub-environment).
+
+        Returns
+        -------
+        int
+            Number of spatial dimensions.
+
+        """
         return self._n_dims
 
     @property
     def n_bins(self) -> int:
-        """Total number of active bins in the composite environment."""
+        """Total number of active bins in the composite environment.
+
+        Returns
+        -------
+        int
+            Total number of bins across all sub-environments.
+
+        """
         return self._total_bins
 
     @property
@@ -285,10 +299,24 @@ class CompositeEnvironment:
         return self._layout_params_used
 
     def bin_at(self, points_nd: np.ndarray) -> np.ndarray:
-        """Map each point in `points_nd` (shape (M, n_dims)) to a composite bin index.
-        - Calls each subenv.bin_at(points_nd) → array of shape (M,) (sub-bin indices or -1).
-        - Wherever a subenv value ≥ 0, set composite index = sub_idx + start_idx (first match wins).
-        - Returns an integer array of shape (M,), with -1 for points outside all sub-environments.
+        """Map points to composite bin indices.
+
+        Parameters
+        ----------
+        points_nd : np.ndarray, shape (M, n_dims)
+            Array of M points in n_dims-dimensional space.
+
+        Returns
+        -------
+        np.ndarray, shape (M,)
+            Composite bin indices for each point. Returns -1 for points
+            outside all sub-environments.
+
+        Notes
+        -----
+        Calls each subenv.bin_at(points_nd) and uses the first match.
+        Composite index = sub_idx + start_idx for the matching sub-environment.
+
         """
         if points_nd.ndim != 2 or points_nd.shape[1] != self.n_dims:
             raise ValueError(
@@ -310,14 +338,35 @@ class CompositeEnvironment:
         return out
 
     def contains(self, points_nd: np.ndarray) -> np.ndarray:
-        """Return a boolean array of shape (M,), True if each point in `points_nd` lies in any bin.
-        Equivalent to self.bin_at(points_nd) != -1.
+        """Check if points are contained in any bin of the composite environment.
+
+        Parameters
+        ----------
+        points_nd : np.ndarray, shape (M, n_dims)
+            Array of M points in n_dims-dimensional space.
+
+        Returns
+        -------
+        np.ndarray, shape (M,)
+            Boolean array where True indicates point is within any bin.
+            Equivalent to self.bin_at(points_nd) != -1.
+
         """
         return self.bin_at(points_nd) != -1
 
     def neighbors(self, bin_index: int) -> list[int]:
-        """Return a list of composite bin indices that are neighbors of `bin_index`
-        in the merged connectivity graph.
+        """Get neighboring bins in the merged connectivity graph.
+
+        Parameters
+        ----------
+        bin_index : int
+            Composite bin index to query.
+
+        Returns
+        -------
+        list[int]
+            List of composite bin indices that are neighbors of bin_index.
+
         """
         if not (0 <= bin_index < self._total_bins):
             raise KeyError(
@@ -331,10 +380,28 @@ class CompositeEnvironment:
         point2: np.ndarray | list[float] | tuple[float, ...],
         edge_weight: str = "distance",
     ) -> float:
-        """Compute the shortest-path distance (weighted by `edge_weight`) between two points:
-        1) Map each point to a bin index via bin_at (if a list/tuple is given, convert to a single-row array).
-        2) If either bin = -1, return np.inf.
-        3) Otherwise, return nx.shortest_path_length(self.connectivity, source=bin1, target=bin2, weight=edge_weight).
+        """Compute shortest-path distance between two points.
+
+        Parameters
+        ----------
+        point1 : np.ndarray or list or tuple
+            First point coordinates (length n_dims).
+        point2 : np.ndarray or list or tuple
+            Second point coordinates (length n_dims).
+        edge_weight : str, default="distance"
+            Edge attribute to use as weight for path computation.
+
+        Returns
+        -------
+        float
+            Shortest path distance between the two points. Returns np.inf
+            if either point is outside all sub-environments.
+
+        Notes
+        -----
+        Maps each point to a bin index via bin_at, then computes the
+        shortest path length in the connectivity graph.
+
         """
 
         def _to_array(pt):
@@ -364,15 +431,32 @@ class CompositeEnvironment:
         )
 
     def bin_center_of(self, bin_indices: int | np.ndarray) -> np.ndarray:
-        """Return the N-D coordinate(s) of the specified composite bin index or indices.
-        Accepts either a single int or a 1-D numpy array of ints.
+        """Get bin center coordinates for specified bin indices.
+
+        Parameters
+        ----------
+        bin_indices : int or np.ndarray
+            Single composite bin index or 1-D array of bin indices.
+
+        Returns
+        -------
+        np.ndarray
+            N-D coordinate(s) of the specified bin(s). Shape (n_dims,) for
+            a single index, or (M, n_dims) for M indices.
+
         """
         return np.asarray(self.bin_centers)[bin_indices]
 
     def bin_attributes(self) -> pd.DataFrame:
-        """Return a concatenated DataFrame of per-bin attributes:
-        - Each sub-environment's bin_attributes() is copied.
-        - A new column 'composite_bin_id' = (child_bin_id + start_idx) is added.
+        """Get concatenated DataFrame of per-bin attributes from all sub-environments.
+
+        Returns
+        -------
+        pd.DataFrame
+            Concatenated bin attributes with columns 'child_active_bin_id'
+            and 'composite_bin_id' added to track mapping from sub-environment
+            bins to composite bins.
+
         """
         dfs = []
         for block in self._subenvs_info:
@@ -386,9 +470,15 @@ class CompositeEnvironment:
         return composite_df
 
     def edge_attributes(self) -> pd.DataFrame:
-        """Return a concatenated DataFrame of per-edge attributes:
-        - Each sub-environment's edge_attributes() is copied with 'u_idx' and 'v_idx' shifted by start_idx.
-        - MNN-inferred “bridge edges” are appended as additional rows with columns 'u_idx','v_idx','distance','weight'.
+        """Get concatenated DataFrame of per-edge attributes from all sub-environments.
+
+        Returns
+        -------
+        pd.DataFrame
+            Concatenated edge attributes with 'u_idx' and 'v_idx' shifted
+            to composite bin indices. Includes MNN-inferred bridge edges
+            connecting sub-environments.
+
         """
         dfs = []
         for block in self._subenvs_info:

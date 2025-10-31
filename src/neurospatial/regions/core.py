@@ -95,7 +95,14 @@ class Region:
     # Serialisation helpers (JSON-friendly)
     # -----------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serialisable representation."""
+        """Export Region to a JSON-serializable dictionary.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation of the Region.
+
+        """
         geom = self.data.tolist() if self.kind == "point" else mapping(self.data)  # type: ignore[union-attr,attr-defined]
 
         return {
@@ -173,8 +180,31 @@ class Regions(MutableMapping[str, Region]):
         polygon: Polygon | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> Region:
-        """Create & insert a new Region. Exactly one of *point* or *polygon*
-        must be supplied. Returns the newly created Region.
+        """Create and insert a new Region.
+
+        Parameters
+        ----------
+        name : str
+            Unique name for the region.
+        point : PointCoords or None, optional
+            Point coordinates or Shapely Point object. Mutually exclusive with polygon.
+        polygon : Polygon or None, optional
+            Shapely Polygon object. Mutually exclusive with point.
+        metadata : Mapping[str, Any] or None, optional
+            Optional metadata dictionary to attach to the region.
+
+        Returns
+        -------
+        Region
+            The newly created Region instance.
+
+        Raises
+        ------
+        ValueError
+            If both or neither of point/polygon are specified.
+        KeyError
+            If name already exists in the collection.
+
         """
         if (point is None) == (polygon is None):
             raise ValueError("Specify **one** of 'point' or 'polygon'.")
@@ -195,16 +225,42 @@ class Regions(MutableMapping[str, Region]):
         return region
 
     def remove(self, name: str) -> None:
-        """Delete region *name*; no error if it is absent."""
+        """Delete a region by name.
+
+        Parameters
+        ----------
+        name : str
+            Name of region to remove. No error if absent.
+
+        """
         self._store.pop(name, None)
 
     def list_names(self) -> list[str]:
-        """Return region names in insertion order."""
+        """Get list of region names in insertion order.
+
+        Returns
+        -------
+        list[str]
+            Region names in the order they were added.
+
+        """
         return list(self._store)
 
     # ----------- lightweight geometry helper -------------------------
     def area(self, name: str) -> float:
-        """Return area for a polygon region; 0.0 for points."""
+        """Compute area of a region.
+
+        Parameters
+        ----------
+        name : str
+            Name of region to query.
+
+        Returns
+        -------
+        float
+            Area of the polygon region, or 0.0 for point regions.
+
+        """
         region = self[name]
         if region.kind == "polygon":
             return region.data.area  # type: ignore[attr-defined]
@@ -213,8 +269,10 @@ class Regions(MutableMapping[str, Region]):
     def region_center(self, region_name: str) -> NDArray[np.float64] | None:
         """Calculate the center of a specified named region.
 
-        - For 'point' regions, returns the point itself.
-        - For 'polygon' regions, returns the centroid of the polygon.
+        Parameters
+        ----------
+        region_name : str
+            Name of region to query.
 
         Returns
         -------
@@ -246,9 +304,24 @@ class Regions(MutableMapping[str, Region]):
         new_name: str,
         **meta: Any,
     ) -> Region:
-        """Create *and return* a buffered polygon region.
+        """Create a buffered region around a point or existing region.
 
-        *source* may be an existing region name or a raw 2-D point array.
+        Parameters
+        ----------
+        source : str or NDArray[np.float64]
+            Region name or point coordinates to buffer around.
+        distance : float
+            Buffer distance in spatial units.
+        new_name : str
+            Name for the new buffered region.
+        **meta : Any
+            Additional metadata for the new region.
+
+        Returns
+        -------
+        Region
+            The newly created buffered region.
+
         """
         # derive geometry in cm space
         if isinstance(source, str):
@@ -301,7 +374,19 @@ class Regions(MutableMapping[str, Region]):
 
     @classmethod
     def from_json(cls, path: str | Path) -> Regions:
-        """Load collection saved by :meth:`to_json`."""
+        """Load Regions from JSON file.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to JSON file containing regions data.
+
+        Returns
+        -------
+        Regions
+            Loaded Regions collection.
+
+        """
         blob = json.loads(Path(path).read_text())
         if blob.get("format") != cls._FMT:
             warnings.warn(f"Unexpected format tag {blob.get('format')!r}")

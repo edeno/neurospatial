@@ -267,8 +267,13 @@ def flip_y(frame_height_px: float) -> Affine2D:
 
     Parameters
     ----------
-    frame_height_px
-        Height of the video frame in **pixels**.
+    frame_height_px : float
+        Height of the video frame in pixels.
+
+    Returns
+    -------
+    Affine2D
+        Transformation that flips y-axis around frame center.
 
     """
     return Affine2D(
@@ -286,11 +291,26 @@ def flip_y_data(
     """Flip y-axis of coordinates so that the origin moves from
     image-space top-left to Cartesian bottom-left.
 
+    Parameters
+    ----------
+    data : NDArray[np.float64] or tuple or list
+        Input coordinates in pixel space, shape (..., 2).
+    frame_size_px : tuple[float, float]
+        Size of the video frame in pixels (width, height).
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Flipped coordinates, shape (..., 2).
+
+    Notes
+    -----
     Equivalent to::
 
         Affine2D([[1, 0, 0], [0, -1, H], [0, 0, 1]])(data)
 
     but without the user having to build the transform.
+
     """
     transform = flip_y(frame_height_px=frame_size_px[1])
     return transform(np.asanyarray(data, dtype=float))
@@ -331,9 +351,26 @@ def convert_to_pixels(
     frame_size_px: tuple[float, float],
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
-    """Centimeter  →  pixel coordinates with y-flip (inverse of `convert_to_cm`).
+    """Convert centimeter coordinates to pixel coordinates with y-flip.
 
-    Internally constructs ``flip_y(H) @ scale_2d(1/cm_per_px)``.
+    Parameters
+    ----------
+    data_cm : NDArray[np.float64] or tuple or list
+        Input coordinates in centimeter space, shape (..., 2).
+    frame_size_px : tuple[float, float]
+        Size of the video frame in pixels (width, height).
+    cm_per_px : float, default=1.0
+        Conversion factor from pixels to centimeters.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Converted coordinates in pixel space, shape (..., 2).
+
+    Notes
+    -----
+    Inverse of `convert_to_cm`. Internally constructs ``flip_y(H) @ scale_2d(1/cm_per_px)``.
+
     """
     T = flip_y(frame_height_px=frame_size_px[1]) @ scale_2d(1.0 / cm_per_px)
     return T(np.asanyarray(data_cm, dtype=float))

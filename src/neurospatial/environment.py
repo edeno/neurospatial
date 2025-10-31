@@ -1483,6 +1483,11 @@ class Environment:
     def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
         """Get a boolean mask over active bins indicating membership in a region.
 
+        Parameters
+        ----------
+        region_name : str
+            Name of region to query.
+
         Returns
         -------
         NDArray[np.bool_]
