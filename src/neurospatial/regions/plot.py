@@ -11,7 +11,8 @@ you call :func:`plot_regions`.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -30,7 +31,7 @@ from .core import Region, Regions
 def plot_regions(
     regions: Regions,
     *,
-    ax: Optional[matplotlib.axes.Axes] = None,
+    ax: matplotlib.axes.Axes | None = None,
     region_names: Sequence[str] | None = None,
     default_kwargs: Mapping[str, Any] | None = None,
     world_to_pixel: SpatialTransform | None = None,
@@ -57,9 +58,7 @@ def plot_regions(
     **per_region_kwargs
         Per-region overrides::
 
-            plot_regions(ax, regs,
-                         Stem={'alpha':.1},
-                         Reward={'edgecolor':'red'})
+            plot_regions(ax, regs, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
 
     Notes
     -----

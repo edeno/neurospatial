@@ -10,17 +10,17 @@ from .factories import create_layout, get_layout_parameters, list_available_layo
 from .helpers.utils import get_centers, get_n_bins
 
 __all__ = [
-    "LayoutEngine",
-    "RegularGridLayout",
-    "HexagonalLayout",
     "GraphLayout",
-    "ShapelyPolygonLayout",
-    "MaskedGridLayout",
+    "HexagonalLayout",
     "ImageMaskLayout",
+    "LayoutEngine",
+    "MaskedGridLayout",
+    "RegularGridLayout",
+    "ShapelyPolygonLayout",
     "TriangularMeshLayout",
-    "list_available_layouts",
-    "get_layout_parameters",
     "create_layout",
     "get_centers",
+    "get_layout_parameters",
     "get_n_bins",
+    "list_available_layouts",
 ]

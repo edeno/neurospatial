@@ -32,12 +32,12 @@ from .plot import plot_regions
 __all__ = [
     "Region",
     "Regions",
-    "regions_from_json",
-    "regions_to_json",
-    "load_labelme_json",
     "load_cvat_xml",
+    "load_labelme_json",
     "mask_to_region",
     "plot_regions",
     "points_in_any_region",
     "regions_containing_points",
+    "regions_from_json",
+    "regions_to_json",
 ]

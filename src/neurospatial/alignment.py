@@ -3,7 +3,7 @@ Alignment and Probability Mapping Between Spatial Environments.
 
 This module provides functionalities to align and map data, particularly
 probability distributions, between different spatial `Environment` instances
-defined in the `non_local_detector.environment` package.
+defined in the `neurospatial` package.
 
 Core capabilities include:
 
@@ -38,13 +38,11 @@ that correspond to the active bins of these environments.
 """
 
 import warnings
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import KDTree
 
-from non_local_detector.environment.environment import Environment
+from neurospatial.environment import Environment
 
 
 def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
@@ -147,8 +145,8 @@ def map_probabilities_to_nearest_target_bin(
     n_neighbors: int = 1,
     eps: float = 1e-8,
     source_scale_factor: float = 1.0,
-    source_rotation_matrix: Optional[NDArray[np.float64]] = None,
-    source_translation_vector: Optional[NDArray[np.float64]] = None,
+    source_rotation_matrix: NDArray[np.float64] | None = None,
+    source_translation_vector: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """
     Map probabilities on source_env onto target_env, with optional scaling/translation
@@ -195,7 +193,6 @@ def map_probabilities_to_nearest_target_bin(
     ValueError
         If `source_probabilities` has incorrect shape, or if dims mismatch.
     """
-    import warnings
 
     import numpy as np
     from scipy.spatial import cKDTree

@@ -1,0 +1,143 @@
+[project]
+name = "neurospatial"
+version = "0.1.0"
+description = "Discretize continuous N-dimensional spatial environments into bins/nodes with connectivity graphs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+    "networkx>=3.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.2.0",
+    "shapely>=2.0.0",
+    "track-linearization>=2.4.0",
+]
+authors = [{ name = "Eric Denovellis", email = "eric.denovellis@ucsf.edu" }]
+keywords = [
+    "neuroscience",
+    "spatial",
+    "navigation",
+    "place-fields",
+    "discretization",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/edeno/neurospatial"
+Repository = "https://github.com/edeno/neurospatial"
+Issues = "https://github.com/edeno/neurospatial/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.3",
+    "pre-commit>=4.3.0",
+    "ipython>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --strict-markers"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+fix = true
+show-fixes = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade (modernize syntax)
+    "B",   # flake8-bugbear (find bugs)
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "PTH", # flake8-use-pathlib
+    "RUF", # Ruff-specific rules
+]
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "B008",   # Function calls in argument defaults (common in dataclasses)
+    "B028",   # No explicit stacklevel in warnings (can add if needed)
+    "N802",   # Function name should be lowercase (allows test_* patterns)
+    "N803",   # Argument name should be lowercase (scientific notation ok)
+    "N806",   # Variable in function should be lowercase (allows common patterns)
+    "RUF002", # Ambiguous unicode in docstrings (allow × and math symbols)
+    "RUF003", # Ambiguous unicode in comments (allow × and math symbols)
+    "TC001",  # Move first-party imports to TYPE_CHECKING (too aggressive)
+    "TC002",  # Move third-party imports to TYPE_CHECKING (too aggressive)
+    "TC003",  # Move stdlib imports to TYPE_CHECKING (too aggressive)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # Allow assert in tests
+    "PLR2004", # Allow magic values in tests
+    "N802",    # Allow non-lowercase function names in tests
+]
+"__init__.py" = [
+    "F401", # Allow unused imports (re-exports)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["neurospatial"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = false
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "**/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

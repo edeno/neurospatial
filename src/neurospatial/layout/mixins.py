@@ -1,5 +1,5 @@
 import warnings
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
-from non_local_detector.environment.layout.helpers.regular_grid import (
+from neurospatial.layout.helpers.regular_grid import (
     _points_to_regular_grid_bin_ind,
 )
 
@@ -39,13 +39,13 @@ class _KDTreeMixin:
         Maps KDTree node index to original source_index.
     """
 
-    _kdtree: Optional[KDTree] = None
-    _kdtree_nodes_to_bin_indices_map: Optional[NDArray[np.int_]] = None
+    _kdtree: KDTree | None = None
+    _kdtree_nodes_to_bin_indices_map: NDArray[np.int_] | None = None
 
     def _build_kdtree(
         self,
         points_for_tree: NDArray[np.float64],
-        mask_for_points_in_tree: Optional[NDArray[np.bool_]] = None,
+        mask_for_points_in_tree: NDArray[np.bool_] | None = None,
     ) -> None:
         """
         Builds the KD-tree from `points_for_tree`.
@@ -116,9 +116,7 @@ class _KDTreeMixin:
             try:
                 self._kdtree = KDTree(final_points_for_kdtree_construction)
                 self._kdtree_nodes_to_bin_indices_map = source_indices_of_kdtree_nodes
-            except (
-                Exception
-            ) as e:  # Catch potential errors from KDTree (e.g. QhullError for certain inputs)
+            except Exception as e:  # Catch potential errors from KDTree (e.g. QhullError for certain inputs)
                 warnings.warn(
                     f"KDTree construction failed: {e}. point_to_bin_index may not work.",
                     RuntimeWarning,
@@ -203,12 +201,12 @@ class _GridMixin:
     `connectivity`.
     """
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
-    bin_centers: Optional[NDArray[np.float64]] = None
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
+    bin_centers: NDArray[np.float64] | None = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
     _layout_type_tag: str = "_Grid_Layout"
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
@@ -245,7 +243,7 @@ class _GridMixin:
 
     def plot(
         self,
-        ax: Optional[matplotlib.axes.Axes] = None,
+        ax: matplotlib.axes.Axes | None = None,
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,

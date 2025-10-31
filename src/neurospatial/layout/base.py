@@ -1,4 +1,5 @@
-from typing import Any, Dict, Optional, Protocol, Sequence, Tuple, runtime_checkable
+from collections.abc import Sequence
+from typing import Any, Protocol, runtime_checkable
 
 import matplotlib
 import networkx as nx
@@ -68,16 +69,16 @@ class LayoutEngine(Protocol):
     # --- Required Data Attributes ---
     bin_centers: NDArray[np.float64]
     connectivity: nx.Graph
-    dimension_ranges: Sequence[Tuple[float, float]]
+    dimension_ranges: Sequence[tuple[float, float]]
 
     # Attributes primarily for GRID-BASED Layouts
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     # Internal Attributes for Introspection/Serialization
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     # --- Required Methods ---
     def build(self, **kwargs) -> None:
@@ -143,7 +144,7 @@ class LayoutEngine(Protocol):
         ...
 
     def plot(
-        self, ax: Optional[matplotlib.axes.Axes] = None, **kwargs
+        self, ax: matplotlib.axes.Axes | None = None, **kwargs
     ) -> matplotlib.axes.Axes:
         """
         Plot the layout's geometry.

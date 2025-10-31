@@ -12,7 +12,8 @@ This class exposes the same public interface as the base `Environment` class:
 since CompositeEnvironment wraps pre-fitted sub-environments.)
 """
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -22,8 +23,8 @@ import pandas as pd
 from numpy.typing import NDArray
 from sklearn.neighbors import KDTree
 
-from non_local_detector.environment.environment import Environment
-from non_local_detector.environment.regions import Region, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Region, Regions
 
 
 class CompositeEnvironment:
@@ -36,19 +37,19 @@ class CompositeEnvironment:
     """
 
     is_1d: bool
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]]
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]]
-    grid_shape: Optional[Tuple[int, ...]]
-    active_mask: Optional[NDArray[np.bool_]]
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    grid_edges: tuple[NDArray[np.float64], ...] | None
+    grid_shape: tuple[int, ...] | None
+    active_mask: NDArray[np.bool_] | None
     regions: Regions
     _layout_type_used: str
-    _layout_params_used: Dict[str, Any]
+    _layout_params_used: dict[str, Any]
 
     def __init__(
         self,
-        subenvs: List[Environment],
+        subenvs: list[Environment],
         auto_bridge: bool = True,
-        max_mnn_distance: Optional[float] = None,
+        max_mnn_distance: float | None = None,
     ):
         """
         Build a CompositeEnvironment from a list of pre-fitted Environment instances.
@@ -107,7 +108,7 @@ class CompositeEnvironment:
                 self.connectivity.add_edge(u + base, v + base, **data)
 
         # Infer MNN-based bridges if requested
-        self._bridge_list: List[Tuple[Tuple[int, int], Tuple[int, int], float]] = []
+        self._bridge_list: list[tuple[tuple[int, int], tuple[int, int], float]] = []
         if auto_bridge:
             self._infer_mnn_bridges(max_mnn_distance)
 
@@ -180,7 +181,7 @@ class CompositeEnvironment:
         self.connectivity.add_edge(u, v, distance=w, weight=1 / w if w > 0 else np.inf)
         self._bridge_list.append(((i_env, i_bin), (j_env, j_bin), w))
 
-    def _infer_mnn_bridges(self, max_distance: Optional[float] = None):
+    def _infer_mnn_bridges(self, max_distance: float | None = None):
         """
         Infer “bridge edges” between every pair of sub-environments using a Mutual Nearest Neighbor (MNN) approach:
 
@@ -243,7 +244,7 @@ class CompositeEnvironment:
         return self._layout_type_used
 
     @property
-    def layout_parameters(self) -> Dict[str, Any]:
+    def layout_parameters(self) -> dict[str, Any]:
         """Returns parameters used to construct the CompositeEnvironment."""
         return self._layout_params_used
 
@@ -280,7 +281,7 @@ class CompositeEnvironment:
         """
         return self.bin_at(points_nd) != -1
 
-    def neighbors(self, bin_index: int) -> List[int]:
+    def neighbors(self, bin_index: int) -> list[int]:
         """
         Return a list of composite bin indices that are neighbors of `bin_index`
         in the merged connectivity graph.
@@ -293,8 +294,8 @@ class CompositeEnvironment:
 
     def distance_between(
         self,
-        point1: Union[np.ndarray, List[float], Tuple[float, ...]],
-        point2: Union[np.ndarray, List[float], Tuple[float, ...]],
+        point1: np.ndarray | list[float] | tuple[float, ...],
+        point2: np.ndarray | list[float] | tuple[float, ...],
         edge_weight: str = "distance",
     ) -> float:
         """
@@ -327,7 +328,7 @@ class CompositeEnvironment:
             )
         )
 
-    def bin_center_of(self, bin_indices: Union[int, np.ndarray]) -> np.ndarray:
+    def bin_center_of(self, bin_indices: int | np.ndarray) -> np.ndarray:
         """
         Return the N-D coordinate(s) of the specified composite bin index or indices.
         Accepts either a single int or a 1-D numpy array of ints.
@@ -389,11 +390,9 @@ class CompositeEnvironment:
 
     def plot(
         self,
-        ax: Optional[matplotlib.axes.Axes] = None,
-        sub_env_plot_kwargs: Optional[
-            Union[Dict[str, Any], List[Optional[Dict[str, Any]]]]
-        ] = None,
-        bridge_edge_kwargs: Optional[Dict[str, Any]] = None,
+        ax: matplotlib.axes.Axes | None = None,
+        sub_env_plot_kwargs: dict[str, Any] | list[dict[str, Any] | None] | None = None,
+        bridge_edge_kwargs: dict[str, Any] | None = None,
         show_sub_env_labels: bool = False,
         **kwargs,
     ) -> matplotlib.axes.Axes:
@@ -433,7 +432,7 @@ class CompositeEnvironment:
             if self.n_dims == 3:
                 fig_kwargs.setdefault("projection", "3d")
 
-            is_3d = fig_kwargs.get("projection", None) == "3d"
+            is_3d = fig_kwargs.get("projection") == "3d"
             if is_3d:
                 fig = plt.figure(figsize=fig_kwargs.get("figsize"))
                 ax = fig.add_subplot(111, projection="3d")
@@ -469,7 +468,7 @@ class CompositeEnvironment:
                         color="blue",
                         ha="center",
                         va="center",
-                        bbox=dict(facecolor="white", alpha=0.5, pad=0.1),
+                        bbox={"facecolor": "white", "alpha": 0.5, "pad": 0.1},
                     )
                 elif self.n_dims == 3:
                     ax.text(
@@ -516,7 +515,12 @@ class CompositeEnvironment:
             if self.n_dims == 2:
                 ax.plot([pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], **_bridge_kwargs)
             elif self.n_dims == 3:
-                ax.plot([pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], [pos_u[2], pos_v[2]], **_bridge_kwargs)  # type: ignore
+                ax.plot(
+                    [pos_u[0], pos_v[0]],
+                    [pos_u[1], pos_v[1]],
+                    [pos_u[2], pos_v[2]],
+                    **_bridge_kwargs,
+                )  # type: ignore
             # Add other dimensionalities if needed
 
         ax.set_title("Composite Environment")

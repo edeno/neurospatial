@@ -1,14 +1,14 @@
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.regular_grid import (
+from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
-from non_local_detector.environment.layout.mixins import _GridMixin
+from neurospatial.layout.mixins import _GridMixin
 
 
 class ImageMaskLayout(_GridMixin):
@@ -21,15 +21,15 @@ class ImageMaskLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     def __init__(self):
         """Initialize an ImageMaskLayout engine."""
@@ -46,7 +46,7 @@ class ImageMaskLayout(_GridMixin):
         self,
         *,
         image_mask: NDArray[np.bool_],  # Defines candidate pixels
-        bin_size: Union[float, Tuple[float, float]] = 1.0,  # one pixel
+        bin_size: float | tuple[float, float] = 1.0,  # one pixel
         connect_diagonal_neighbors: bool = True,
     ) -> None:
         """

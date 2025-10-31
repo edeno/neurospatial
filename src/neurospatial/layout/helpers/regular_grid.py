@@ -3,7 +3,7 @@ Utility functions for creating and managing regular N-dimensional grid layouts.
 
 This module provides a collection of helper functions used primarily by
 `RegularGridLayout` and other grid-based layout engines within the
-`non_local_detector.environment` package. These functions handle tasks such as:
+`neurospatial` package. These functions handle tasks such as:
 
 - Defining the structure (bin edges, bin centers, shape) of a regular N-D grid
   based on data samples or specified dimension ranges (`_create_regular_grid`).
@@ -25,20 +25,21 @@ from __future__ import annotations
 import itertools
 import math
 import warnings
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import ndimage
 
-from non_local_detector.environment.layout.helpers.utils import get_centers, get_n_bins
+from neurospatial.layout.helpers.utils import get_centers, get_n_bins
 
 
 def _create_regular_grid_connectivity_graph(
     full_grid_bin_centers: NDArray[np.float64],
     active_mask_nd: NDArray[np.bool_],
-    grid_shape: Tuple[int, ...],
+    grid_shape: tuple[int, ...],
     connect_diagonal: bool = False,
 ) -> nx.Graph:
     """
@@ -101,7 +102,7 @@ def _create_regular_grid_connectivity_graph(
         return connectivity_graph  # Return an empty graph
 
     # Map: original_full_grid_flat_index -> new_active_bin_node_id (0 to n_active_bins-1)
-    original_flat_to_new_node_id_map: Dict[int, int] = {
+    original_flat_to_new_node_id_map: dict[int, int] = {
         original_idx: new_idx
         for new_idx, original_idx in enumerate(active_original_flat_indices)
     }
@@ -174,7 +175,7 @@ def _create_regular_grid_connectivity_graph(
                     pos_v = np.asarray(connectivity_graph.nodes[v_new]["pos"])
                     distance = float(np.linalg.norm(pos_u - pos_v))
                     displacement_vector = pos_v - pos_u
-                    edge_attrs: Dict[str, Any] = {
+                    edge_attrs: dict[str, Any] = {
                         "distance": distance,
                         "vector": tuple(displacement_vector.tolist()),
                     }
@@ -199,7 +200,7 @@ def _create_regular_grid_connectivity_graph(
 
 def _infer_active_bins_from_regular_grid(
     data_samples: NDArray[np.float64],
-    edges: Tuple[NDArray[np.float64], ...],
+    edges: tuple[NDArray[np.float64], ...],
     close_gaps: bool = False,
     fill_holes: bool = False,
     dilate: bool = False,
@@ -296,14 +297,14 @@ def _infer_active_bins_from_regular_grid(
 
 
 def _create_regular_grid(
-    data_samples: Optional[NDArray[np.float64]] = None,
-    bin_size: Union[float, Sequence[float]] = 2.0,
-    dimension_range: Optional[Sequence[Tuple[float, float]]] = None,
+    data_samples: NDArray[np.float64] | None = None,
+    bin_size: float | Sequence[float] = 2.0,
+    dimension_range: Sequence[tuple[float, float]] | None = None,
     add_boundary_bins: bool = False,
-) -> Tuple[
-    Tuple[NDArray[np.float64], ...],  # edges_tuple
+) -> tuple[
+    tuple[NDArray[np.float64], ...],  # edges_tuple
     NDArray[np.float64],  # bin_centers
-    Tuple[int, ...],  # centers_shape
+    tuple[int, ...],  # centers_shape
 ]:
     """
     Define bin edges and centers for a regular N-D Cartesian grid.
@@ -373,7 +374,7 @@ def _create_regular_grid(
                 f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims})."
             )
         ranges = []
-        for (lo, hi), size in zip(dimension_range, bin_sizes):
+        for (lo, hi), size in zip(dimension_range, bin_sizes, strict=False):
             lo_f, hi_f = float(min(lo, hi)), float(max(lo, hi))
             # If user gave a zero-span range (lo == hi), expand by 0.5 * bin_size
             if np.isclose(lo_f, hi_f):
@@ -406,12 +407,9 @@ def _create_regular_grid(
 
     # 6) Optionally add boundary bins by extending each edge array
     final_edges = []
-    for edges_dim, size in zip(core_edges, bin_sizes):
+    for edges_dim, size in zip(core_edges, bin_sizes, strict=False):
         diff = np.diff(edges_dim)
-        if diff.size == 0:
-            step = size
-        else:
-            step = diff[0]
+        step = size if diff.size == 0 else diff[0]
         if add_boundary_bins:
             extended = np.concatenate(
                 ([edges_dim[0] - step], edges_dim, [edges_dim[-1] + step])
@@ -435,8 +433,8 @@ def _create_regular_grid(
 
 def _points_to_regular_grid_bin_ind(
     points: NDArray[np.float64],
-    grid_edges: Tuple[NDArray[np.float64], ...],
-    grid_shape: Tuple[int, ...],
+    grid_edges: tuple[NDArray[np.float64], ...],
+    grid_shape: tuple[int, ...],
     active_mask: NDArray[np.bool_] = None,
 ) -> NDArray[np.int_]:
     """
@@ -537,20 +535,18 @@ def _points_to_regular_grid_bin_ind(
         # Create mapping from original_full_grid_flat_index to active_bin_id (0 to N-1)
         # This should only be created once if possible, e.g., stored on the layout object
         active_original_flat_indices = np.flatnonzero(active_mask)
-        original_flat_to_active_id_map: Dict[int, int] = {
+        original_flat_to_active_id_map: dict[int, int] = {
             original_idx: new_idx
             for new_idx, original_idx in enumerate(active_original_flat_indices)
         }
 
         for i, orig_flat_idx in enumerate(original_bin_flat_idx_for_valid_points):
-            if orig_flat_idx != -1:  # If it was a valid original flat index
-                # Check if this original flat index corresponds to an active bin
-                if active_mask.ravel()[orig_flat_idx]:
-                    final_mapped_indices_for_valid_points[i] = (
-                        original_flat_to_active_id_map[orig_flat_idx]
-                    )
-                # else it remains -1 (was in grid, but not in active_mask)
-            # else it remains -1 (was out of grid bounds)
+            # If it was a valid original flat index and corresponds to an active bin
+            if orig_flat_idx != -1 and active_mask.ravel()[orig_flat_idx]:
+                final_mapped_indices_for_valid_points[i] = (
+                    original_flat_to_active_id_map[orig_flat_idx]
+                )
+                # else it remains -1 (was in grid, but not in active_mask or out of grid bounds)
     else:
         # No active_mask, so original_bin_flat_idx_for_valid_points are the final indices
         # (where -1 means out of bounds)

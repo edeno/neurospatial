@@ -22,7 +22,8 @@ These utilities are primarily used by the `HexagonalLayout` engine.
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -30,17 +31,17 @@ from numpy.typing import NDArray
 
 
 def _create_hex_grid(
-    data_samples: Optional[NDArray[np.float64]],
-    dimension_range: Optional[Sequence[Tuple[float, float]]] = None,
+    data_samples: NDArray[np.float64] | None,
+    dimension_range: Sequence[tuple[float, float]] | None = None,
     hexagon_width: float = 1.0,
-) -> Tuple[
+) -> tuple[
     NDArray[np.float64],  # bin_centers
-    Tuple[int, int],  # centers_shape
+    tuple[int, int],  # centers_shape
     float,  # hex_radius
     float,  # hex_orientation
     float,  # min_x
     float,  # min_y
-    Sequence[Tuple[float, float]],  # effective_dimension_range
+    Sequence[tuple[float, float]],  # effective_dimension_range
 ]:
     """
     Generate a 2D hexagonal grid (pointy-top) that covers either:
@@ -157,7 +158,7 @@ def _cartesian_to_fractional_cube(
     points_x: NDArray[np.float64],
     points_y: NDArray[np.float64],
     hex_radius: float,
-) -> Tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """
     Convert Cartesian (x, y) coordinates to fractional axial coordinates of a hex grid.
 
@@ -214,7 +215,7 @@ def _round_fractional_cube_to_integer_axial(
     q_frac: NDArray[np.float64],
     r_frac: NDArray[np.float64],
     s_frac: NDArray[np.float64],
-) -> Tuple[NDArray[np.int_], NDArray[np.int_]]:
+) -> tuple[NDArray[np.int_], NDArray[np.int_]]:
     """
     Round fractional cube coordinates to integer axial coordinates (q, r).
 
@@ -334,7 +335,7 @@ def _points_to_hex_bin_ind(
     grid_offset_x: float,
     grid_offset_y: float,
     hex_radius: float,
-    centers_shape: Tuple[int, int],
+    centers_shape: tuple[int, int],
 ) -> NDArray[np.int_]:
     """
     Assign 2D Cartesian data points to hexagon bin indices in a predefined grid.
@@ -406,7 +407,7 @@ def _points_to_hex_bin_ind(
 
 def _infer_active_bins_from_hex_grid(
     data_samples: NDArray[np.float64],
-    centers_shape: Tuple[int, int],
+    centers_shape: tuple[int, int],
     hex_radius: float,
     min_x: float,
     min_y: float,
@@ -464,7 +465,7 @@ def _infer_active_bins_from_hex_grid(
     return bin_ind.astype(int)
 
 
-def _get_hex_grid_neighbor_deltas(is_odd_row: bool) -> List[Tuple[int, int]]:
+def _get_hex_grid_neighbor_deltas(is_odd_row: bool) -> list[tuple[int, int]]:
     """
     Return (delta_col, delta_row) coordinate deltas for hexagon neighbors.
 
@@ -496,7 +497,7 @@ def _get_hex_grid_neighbor_deltas(is_odd_row: bool) -> List[Tuple[int, int]]:
 def _create_hex_connectivity_graph(
     active_original_flat_indices: NDArray[np.int_],
     full_grid_bin_centers: NDArray[np.float64],
-    centers_shape: Tuple[int, int],
+    centers_shape: tuple[int, int],
 ):
     """
     Create a connectivity graph for active bins in a hexagonal grid.
@@ -535,7 +536,7 @@ def _create_hex_connectivity_graph(
         return connectivity_graph  # Return an empty graph
 
     # Map: original_full_grid_flat_index -> new_active_bin_node_id (0 to n_active_bins-1)
-    original_flat_to_new_node_id_map: Dict[int, int] = {
+    original_flat_to_new_node_id_map: dict[int, int] = {
         original_idx: new_idx
         for new_idx, original_idx in enumerate(active_original_flat_indices)
     }
@@ -594,7 +595,7 @@ def _create_hex_connectivity_graph(
                     )
                     distance = float(np.linalg.norm(pos_u - pos_v))
                     displacement_vector = pos_v - pos_u
-                    edge_attrs: Dict[str, Any] = {
+                    edge_attrs: dict[str, Any] = {
                         "distance": distance,
                         "vector": tuple(displacement_vector.tolist()),
                         "angle_2d": math.atan2(

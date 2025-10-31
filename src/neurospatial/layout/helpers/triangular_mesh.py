@@ -14,14 +14,12 @@ Conforms to the LayoutEngine protocol:
                    plot(ax, ...), bin_sizes()
 """
 
-from typing import Dict, List, Optional, Tuple
-
 import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay, QhullError
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 
 
 # --------------------------------------------------------------------------
@@ -100,7 +98,7 @@ def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
 
 def _filter_active_simplices_by_centroid(
     triangulation: Delaunay, boundary_polygon: Polygon
-) -> Tuple[NDArray[np.int_], NDArray[np.float64]]:
+) -> tuple[NDArray[np.int_], NDArray[np.float64]]:
     """
     Filter Delaunay simplices by requiring:
       1) The triangle's centroid lies inside or on the boundary (using `covers`).
@@ -124,7 +122,7 @@ def _filter_active_simplices_by_centroid(
 def _build_mesh_connectivity_graph(
     active_original_simplex_indices: NDArray[np.int_],
     all_centroids: NDArray[np.float64],
-    original_simplex_to_active_idx_map: Dict[int, int],
+    original_simplex_to_active_idx_map: dict[int, int],
     delaunay_obj: Delaunay,
 ) -> nx.Graph:
     """
@@ -174,7 +172,6 @@ def _build_mesh_connectivity_graph(
                 neighbor_original_idx_v != -1
                 and neighbor_original_idx_v in original_simplex_to_active_idx_map
             ):
-
                 active_idx_v = original_simplex_to_active_idx_map[
                     neighbor_original_idx_v
                 ]
@@ -202,7 +199,7 @@ def _build_mesh_connectivity_graph(
 
 def _compute_mesh_dimension_ranges(
     bin_centers_array: NDArray[np.float64],
-) -> Optional[List[Tuple[float, float]]]:
+) -> list[tuple[float, float]] | None:
     """Compute [(min_x, max_x), (min_y, max_y)] from active bin_centers."""
     if bin_centers_array.shape[0] == 0:
         return None

@@ -12,7 +12,7 @@ import warnings
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -87,7 +87,7 @@ class Region:
     # -----------------------------------------------------------------
     # Convenience
     # -----------------------------------------------------------------
-    def __str__(self) -> str:  # noqa: D401 – readable str(region)
+    def __str__(self) -> str:
         return self.name
 
     # -----------------------------------------------------------------
@@ -95,10 +95,7 @@ class Region:
     # -----------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
-        if self.kind == "point":
-            geom = self.data.tolist()  # type: ignore[union-attr]
-        else:  # polygon
-            geom = mapping(self.data)  # type: ignore[attr-defined]
+        geom = self.data.tolist() if self.kind == "point" else mapping(self.data)  # type: ignore[union-attr,attr-defined]
 
         return {
             "name": self.name,
@@ -108,7 +105,7 @@ class Region:
         }
 
     @classmethod
-    def from_dict(cls, payload: Mapping[str, Any]) -> "Region":
+    def from_dict(cls, payload: Mapping[str, Any]) -> Region:
         kind: Kind = payload["kind"]  # type: ignore[assignment]
         if kind == "point":
             data = np.asarray(payload["geom"], dtype=float)
@@ -163,7 +160,7 @@ class Regions(MutableMapping[str, Region]):
     def __len__(self) -> int:
         return len(self._store)
 
-    def __repr__(self) -> str:  # noqa: D401
+    def __repr__(self) -> str:
         inside = ", ".join(f"{n}({r.kind})" for n, r in self._store.items())
         return f"{self.__class__.__name__}({inside})"
 
@@ -214,7 +211,7 @@ class Regions(MutableMapping[str, Region]):
             return region.data.area  # type: ignore[attr-defined]
         return 0.0
 
-    def region_center(self, region_name: str) -> Optional[NDArray[np.float64]]:
+    def region_center(self, region_name: str) -> NDArray[np.float64] | None:
         """
         Calculate the center of a specified named region.
 
@@ -305,7 +302,7 @@ class Regions(MutableMapping[str, Region]):
         output_path.write_text(json.dumps(payload, indent=indent))
 
     @classmethod
-    def from_json(cls, path: str | Path) -> "Regions":
+    def from_json(cls, path: str | Path) -> Regions:
         """Load collection saved by :meth:`to_json`."""
         blob = json.loads(Path(path).read_text())
         if blob.get("format") != cls._FMT:

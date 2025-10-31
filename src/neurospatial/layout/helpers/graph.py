@@ -18,23 +18,25 @@ such as an animal's track in an experiment. These functions handle:
 These utilities are primarily used by the `GraphLayout` engine.
 """
 
+import itertools
 import math
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
 
-from non_local_detector.environment.layout.helpers.utils import get_centers
+from neurospatial.layout.helpers.utils import get_centers
 
-Edge = Tuple[Any, Any]
+Edge = tuple[Any, Any]
 
 
 def _get_graph_bins(
     graph: nx.Graph,
-    edge_order: List[Tuple[object, object]],
-    edge_spacing: Union[float, Sequence[float]],
+    edge_order: list[tuple[object, object]],
+    edge_spacing: float | Sequence[float],
     bin_size: float,
-) -> Tuple[np.ndarray, Tuple[np.ndarray, ...], np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray]:
     """
     Discretize each edge of a linearized graph into fixed-length bins, optionally
     inserting inactive “gap” bins between segments.
@@ -104,24 +106,21 @@ def _get_graph_bins(
 
     # 5) Map each (u, v) or (v, u) in graph.edges() to an integer ID
     #    Normalize edges so (u,v) and (v,u) map to the same ID:
-    edge_id_map: Dict[frozenset, int] = {
+    edge_id_map: dict[frozenset, int] = {
         frozenset(edge): idx for idx, edge in enumerate(graph.edges())
     }
 
-    bin_edges: List[float] = []
-    active_mask_list: List[bool] = []
-    edge_id_list: List[int] = []
+    bin_edges: list[float] = []
+    active_mask_list: list[bool] = []
+    edge_id_list: list[int] = []
     cursor = 0.0
 
     for idx, (u, v) in enumerate(edge_order):
         pos_u = np.asarray(node_positions[u], dtype=float)
         pos_v = np.asarray(node_positions[v], dtype=float)
         segment_length = float(np.linalg.norm(pos_v - pos_u))
-        if segment_length <= 0.0:
-            # If the two nodes coincide, create exactly one bin of zero length
-            n_bins = 1
-        else:
-            n_bins = int(np.ceil(segment_length / bin_size))
+        # If the two nodes coincide, create exactly one bin of zero length
+        n_bins = 1 if segment_length <= 0.0 else int(np.ceil(segment_length / bin_size))
         # Create (n_bins + 1) edges from cursor to cursor + segment_length
         edges_segment = np.linspace(
             cursor, cursor + segment_length, n_bins + 1, dtype=float
@@ -159,7 +158,7 @@ def _create_graph_layout_connectivity_graph(
     bin_centers_nd: np.ndarray,
     linear_bin_centers: np.ndarray,
     original_edge_ids: np.ndarray,
-    edge_order: List[Tuple[object, object]],
+    edge_order: list[tuple[object, object]],
 ) -> nx.Graph:
     """Create a connectivity graph from binned graph segments.
 
@@ -217,6 +216,7 @@ def _create_graph_layout_connectivity_graph(
             linear_bin_centers,
             original_edge_ids,
             bin_ind,
+            strict=False,
         )
     ):
         nodes_to_add.append(
@@ -243,9 +243,7 @@ def _create_graph_layout_connectivity_graph(
     for original_edge_id in unsorted_unique_edge_ids:
         edge_active_bin_ind = np.where(np.isin(original_edge_ids, original_edge_id))[0]
 
-        for bin_ind1, bin_ind2 in zip(
-            edge_active_bin_ind[:-1], edge_active_bin_ind[1:]
-        ):
+        for bin_ind1, bin_ind2 in itertools.pairwise(edge_active_bin_ind):
             displacement_vector = bin_centers_nd[bin_ind1] - bin_centers_nd[bin_ind2]
             dist = float(np.linalg.norm(displacement_vector))
 
@@ -306,8 +304,8 @@ def _create_graph_layout_connectivity_graph(
 def _project_1d_to_2d(
     linear_position: np.ndarray,
     graph: nx.Graph,
-    edge_order: List[Edge],
-    edge_spacing: Union[float, List[float]] = 0.0,
+    edge_order: list[Edge],
+    edge_spacing: float | list[float] = 0.0,
 ) -> np.ndarray:
     """
     Map 1D linear positions back to N-D coordinates on the track graph.
@@ -369,7 +367,7 @@ def _project_1d_to_2d(
     else:
         gaps = np.asarray(edge_spacing, dtype=float)
         if gaps.size != max(0, n_edges - 1):
-            raise ValueError("edge_spacing length must be len(edge_order)‑1")
+            raise ValueError("edge_spacing length must be len(edge_order)-1")
 
     # cumulative start position of each edge
     cumulative_edge_start_position = np.concatenate(
@@ -416,10 +414,10 @@ def _project_1d_to_2d(
 
 
 def _find_bin_for_linear_position(
-    linear_positions: Union[float, np.ndarray],
+    linear_positions: float | np.ndarray,
     bin_edges: np.ndarray,
     active_mask: np.ndarray = None,
-) -> Union[int, np.ndarray]:
+) -> int | np.ndarray:
     """
     Find the 1D bin index for each given linear position.
 

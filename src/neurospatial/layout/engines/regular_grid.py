@@ -1,19 +1,19 @@
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.regular_grid import (
+from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
     _infer_active_bins_from_regular_grid,
 )
-from non_local_detector.environment.layout.helpers.utils import (
+from neurospatial.layout.helpers.utils import (
     _infer_dimension_ranges_from_samples,
 )
-from non_local_detector.environment.layout.mixins import _GridMixin
+from neurospatial.layout.mixins import _GridMixin
 
 
 class RegularGridLayout(_GridMixin):
@@ -27,14 +27,14 @@ class RegularGridLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     def __init__(self):
         """Initialize a RegularGridLayout engine."""
@@ -51,9 +51,9 @@ class RegularGridLayout(_GridMixin):
     def build(
         self,
         *,
-        bin_size: Union[float, Sequence[float]],
-        dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None,
-        data_samples: Optional[NDArray[np.float64]] = None,
+        bin_size: float | Sequence[float],
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
+        data_samples: NDArray[np.float64] | None = None,
         add_boundary_bins: bool = False,
         infer_active_bins: bool = True,
         dilate: bool = True,

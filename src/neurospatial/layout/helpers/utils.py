@@ -1,5 +1,5 @@
 """
-General utility functions for the non_local_detector.environment package.
+General utility functions for the neurospatial package.
 
 This module provides helper functions used across various components of the
 environment definition and processing, such as calculating bin properties,
@@ -9,8 +9,10 @@ computing distances.
 
 from __future__ import annotations
 
+import contextlib
 import warnings
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -42,8 +44,8 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
 
 def get_n_bins(
     data_samples: NDArray[np.float64],
-    bin_size: Union[float, Sequence[float]],
-    dimension_range: Optional[Sequence[Tuple[float, float]]] = None,
+    bin_size: float | Sequence[float],
+    dimension_range: Sequence[tuple[float, float]] | None = None,
 ) -> NDArray[np.int_]:
     """
     Calculate the number of bins needed for each dimension of a dataset.
@@ -105,7 +107,7 @@ def _infer_active_elements_from_samples(
     candidate_element_centers: NDArray[np.float64],
     data_samples: NDArray[np.float64],
     bin_count_threshold: int = 0,
-) -> Tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.int_]]:
+) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.int_]]:
     """
     Infer active elements from candidates based on data sample occupancy.
 
@@ -254,8 +256,8 @@ def _infer_active_elements_from_samples(
 
 def _infer_dimension_ranges_from_samples(
     data_samples: NDArray[np.float64],
-    buffer_around_data: Union[float, Sequence[float]] = 0.0,
-) -> Sequence[Tuple[float, float]]:
+    buffer_around_data: float | Sequence[float] = 0.0,
+) -> Sequence[tuple[float, float]]:
     """
     Infer min/max range for each dimension from data samples, with a buffer.
 
@@ -335,7 +337,7 @@ def _infer_dimension_ranges_from_samples(
 def _generic_graph_plot(
     graph: nx.Graph,
     name: str,
-    ax: Optional[matplotlib.axes.Axes] = None,
+    ax: matplotlib.axes.Axes | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
     """
@@ -443,22 +445,19 @@ def _generic_graph_plot(
         ax.set_zlabel("Dim 2")
         # Attempt to set aspect ratio for 3D plots if possible
         # This is often tricky and depends on Matplotlib version and backend
-        try:
+        with contextlib.suppress(AttributeError):
             ax.set_box_aspect([1, 1, 1])  # For newer matplotlib
-        except AttributeError:
-            try:
-                ax.pbaspect = [1, 1, 1]  # Older attribute
-            except AttributeError:
-                pass  # Fallback, may not be perfectly equal aspect
+        with contextlib.suppress(AttributeError):
+            ax.pbaspect = [1, 1, 1]  # Older attribute
 
     return ax
 
 
 def flat_to_multi_index(
-    flat_indices: Union[int, np.ndarray],
-    grid_shape: Tuple[int, ...],
+    flat_indices: int | np.ndarray,
+    grid_shape: tuple[int, ...],
     graph: nx.Graph,
-) -> Union[Tuple[int, ...], Tuple[np.ndarray, ...]]:
+) -> tuple[int, ...] | tuple[np.ndarray, ...]:
     """
     Convert active-bin flat index(es) (0..N-1) to N-D grid index(es).
 
@@ -491,7 +490,7 @@ def flat_to_multi_index(
     # Ensure we have a NumPy array for iteration
     is_scalar = np.isscalar(flat_indices)
     flat_arr = np.atleast_1d(np.asarray(flat_indices, dtype=int))
-    node_data_lookup: Dict[int, Dict[str, Any]] = dict(graph.nodes(data=True))
+    node_data_lookup: dict[int, dict[str, Any]] = dict(graph.nodes(data=True))
 
     n_dims = len(grid_shape)
     # Prepare a list to collect tuples of length n_dims
@@ -560,11 +559,11 @@ def flat_to_multi_index(
 
 
 def multi_index_to_flat(
-    *nd_idx_per_dim: Union[int, np.ndarray],
-    grid_shape: Tuple[int, ...],
+    *nd_idx_per_dim: int | np.ndarray,
+    grid_shape: tuple[int, ...],
     active_mask: np.ndarray,
-    source_flat_lookup: Dict[int, int],
-) -> Union[int, np.ndarray]:
+    source_flat_lookup: dict[int, int],
+) -> int | np.ndarray:
     """
     Convert N-D grid index(es) to active-bin flat index(es) (0..N-1).
 
@@ -629,7 +628,7 @@ def multi_index_to_flat(
     try:
         common_shape = np.broadcast(*nd_arrays).shape
     except ValueError:
-        raise ValueError("N-D index arrays could not be broadcast together.")
+        raise ValueError("N-D index arrays could not be broadcast together.") from None
 
     # Initialize output with -1
     flat_output = np.full(common_shape, -1, dtype=int)
@@ -642,7 +641,7 @@ def multi_index_to_flat(
     if not np.any(in_bounds):
         # No in-bounds points; return either scalar -1 or the array of -1s
         if common_shape == (1,) and all(np.isscalar(idx) for idx in nd_idx_per_dim):
-            return int(-1)
+            return -1
         return flat_output
 
     # Extract the valid in-bounds indices for each dimension
@@ -658,7 +657,7 @@ def multi_index_to_flat(
     if not np.any(active_mask_vals):
         # None of the in-bounds indices are active
         if common_shape == (1,) and all(np.isscalar(idx) for idx in nd_idx_per_dim):
-            return int(-1)
+            return -1
         return flat_output
 
     # Keep only those indices that are both in-bounds & active
@@ -685,9 +684,9 @@ def multi_index_to_flat(
 
 def find_boundary_nodes(
     graph: nx.Graph,
-    grid_shape: Tuple[int, ...] = None,
+    grid_shape: tuple[int, ...] | None = None,
     active_mask: np.ndarray = None,
-    layout_kind: str = None,
+    layout_kind: str | None = None,
 ) -> np.ndarray:
     """
     Identify boundary nodes in a connectivity graph G.
@@ -812,30 +811,28 @@ def find_boundary_nodes(
 
         # If the above found nothing, and it's not a specific grid case where that's expected,
         # a simple fallback for general graphs: degree < max_degree
+        # This ensures that if all nodes have the same degree (e.g. a k-regular graph like a circle)
+        # it doesn't mark all as boundary unless median was already low.
+        # Only mark as boundary if degree is strictly less than the absolute max.
+        # This is a very general fallback.
         if (
             not boundary_bin_indices
             and not is_nd_grid_layout_with_mask  # Avoid if it was an ND-grid that correctly found no boundaries
             and max_degree_val > 0
+            and median_degree != max_degree_val  # not all nodes have same degree
         ):
-            # This ensures that if all nodes have the same degree (e.g. a k-regular graph like a circle)
-            # it doesn't mark all as boundary unless median was already low.
-            # Only mark as boundary if degree is strictly less than the absolute max.
-            # This is a very general fallback.
-            if median_degree == max_degree_val:  # e.g. all nodes have same degree
-                pass  # Don't mark any as boundary unless threshold_degree was already < max_degree_val
-            else:
-                for node_id, degree in degrees.items():
-                    if (
-                        degree < max_degree_val
-                    ):  # Stricter than degree < median_degree for some cases
-                        if node_id not in boundary_bin_indices:  # Avoid re-adding
-                            boundary_bin_indices.append(node_id)
+            for node_id, degree in degrees.items():
+                # Stricter than degree < median_degree for some cases
+                if (
+                    degree < max_degree_val and node_id not in boundary_bin_indices
+                ):  # Avoid re-adding
+                    boundary_bin_indices.append(node_id)
 
-    return np.array(sorted(list(set(boundary_bin_indices))), dtype=int)
+    return np.array(sorted(set(boundary_bin_indices)), dtype=int)
 
 
 def map_active_data_to_grid(
-    grid_shape: Tuple[int, ...],
+    grid_shape: tuple[int, ...],
     active_mask: np.ndarray,
     active_bin_data: np.ndarray,
     fill_value: float = np.nan,

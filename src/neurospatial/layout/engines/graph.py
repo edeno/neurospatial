@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib
 import matplotlib.axes
@@ -9,14 +10,13 @@ from numpy.typing import NDArray
 from track_linearization import get_linearized_position as _get_linearized_position
 from track_linearization import plot_graph_as_1D
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.graph import (
+from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
     _find_bin_for_linear_position,
     _get_graph_bins,
     _project_1d_to_2d,
 )
-from non_local_detector.environment.layout.mixins import _KDTreeMixin
+from neurospatial.layout.mixins import _KDTreeMixin
 
 
 class GraphLayout(_KDTreeMixin):
@@ -31,18 +31,18 @@ class GraphLayout(_KDTreeMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     # Layout Specific
-    linear_bin_centers_: Optional[NDArray[np.float64]] = None
+    linear_bin_centers_: NDArray[np.float64] | None = None
 
     def __init__(self):
         """Initialize a GraphLayout engine."""
@@ -60,8 +60,8 @@ class GraphLayout(_KDTreeMixin):
         self,
         *,
         graph_definition: nx.Graph,  # Original user-provided graph
-        edge_order: List[Tuple[Any, Any]],
-        edge_spacing: Union[float, Sequence[float]],
+        edge_order: list[tuple[Any, Any]],
+        edge_spacing: float | Sequence[float],
         bin_size: float,  # Linearized bin size
     ) -> None:
         """
@@ -117,7 +117,7 @@ class GraphLayout(_KDTreeMixin):
             edge_order,
             edge_spacing,
         )
-        self.grid_shape = (len(self.grid_edges[0]),)
+        self.grid_shape = (len(self.grid_edges[0]) - 1,)
         self.connectivity = _create_graph_layout_connectivity_graph(
             graph=graph_definition,
             bin_centers_nd=self.bin_centers,
@@ -126,9 +126,12 @@ class GraphLayout(_KDTreeMixin):
             edge_order=edge_order,
         )
         self.dimension_ranges = (
-            np.min(self.bin_centers[:, 0]),
-            np.max(self.bin_centers[:, 0]),
-        ), (np.min(self.bin_centers[:, 1]), np.max(self.bin_centers[:, 1]))
+            (
+                np.min(self.bin_centers[:, 0]),
+                np.max(self.bin_centers[:, 0]),
+            ),
+            (np.min(self.bin_centers[:, 1]), np.max(self.bin_centers[:, 1])),
+        )
 
         # --- Build KDTree ---
         self._build_kdtree(points_for_tree=self.bin_centers)
@@ -139,7 +142,7 @@ class GraphLayout(_KDTreeMixin):
         return True
 
     def plot(
-        self, ax: Optional[matplotlib.axes.Axes] = None, **kwargs
+        self, ax: matplotlib.axes.Axes | None = None, **kwargs
     ) -> matplotlib.axes.Axes:
         """
         Plot the N-D embedding of the graph-based layout.
@@ -235,7 +238,7 @@ class GraphLayout(_KDTreeMixin):
         return ax
 
     def plot_linear_layout(
-        self, ax: Optional[matplotlib.axes.Axes] = None, **kwargs
+        self, ax: matplotlib.axes.Axes | None = None, **kwargs
     ) -> matplotlib.axes.Axes:
         """
         Plot the 1D linearized representation of the graph layout.

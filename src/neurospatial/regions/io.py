@@ -12,19 +12,19 @@ from __future__ import annotations
 import json
 import warnings
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 import shapely.geometry as shp
 from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from .core import Region, Regions
 
 if TYPE_CHECKING:
-    from shapely.geometry import Polygon
-
     from ..transforms import SpatialTransform
 
 # --------------------------------------------------------------------------
@@ -33,9 +33,7 @@ if TYPE_CHECKING:
 _SCHEMA_TAG = "Regions-v1"
 
 
-def regions_to_json(
-    regions: Regions, path: Union[str, Path], *, indent: int = 2
-) -> None:
+def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> None:
     """Write a list-of-dicts file that any language can read.
 
     Parameters
@@ -58,7 +56,7 @@ def regions_to_json(
     output_path.write_text(json.dumps(payload, indent=indent))
 
 
-def regions_from_json(path: Union[str, Path]) -> Regions:
+def regions_from_json(path: str | Path) -> Regions:
     """Load the schema written by :func:`regions_to_json`.
 
     Parameters
@@ -83,9 +81,9 @@ def regions_from_json(path: Union[str, Path]) -> Regions:
 # 2.  LabelMe / CVAT / VIA-style polygon JSON/XML  → Regions
 # --------------------------------------------------------------------------
 def load_labelme_json(
-    json_path: Union[str, Path],
+    json_path: str | Path,
     *,
-    pixel_to_world: Optional[SpatialTransform] = None,
+    pixel_to_world: SpatialTransform | None = None,
     label_key: str = "label",
     points_key: str = "points",
 ) -> Regions:
@@ -218,7 +216,7 @@ def _rle_to_mask(rle: str, height: int, width: int) -> np.ndarray:
     try:
         rle_values = list(map(int, rle.split(",")))
     except ValueError:
-        raise ValueError(f"RLE string contains non-integer values: {rle}")
+        raise ValueError(f"RLE string contains non-integer values: {rle}") from None
 
     if len(rle_values) % 2 != 0:
         raise ValueError(f"RLE string has an odd number of values: {rle}")
@@ -226,7 +224,7 @@ def _rle_to_mask(rle: str, height: int, width: int) -> np.ndarray:
     mask = np.zeros(height * width, dtype=np.uint8)
 
     # Unpack RLE values into the mask
-    for start, length in zip(rle_values[::2], rle_values[1::2]):
+    for start, length in zip(rle_values[::2], rle_values[1::2], strict=False):
         mask[start : start + length] = 1  # Set the corresponding region to 1
 
     return mask.reshape((height, width))  # Reshape to image dimensions
@@ -260,8 +258,8 @@ def _mask_to_polygon(mask: NDArray[np.uint8]) -> Polygon:
 
 def _parse_cvat_points(
     points_str: str,
-    shape_label: Optional[str] = None,
-    shape_index: Optional[int] = None,
+    shape_label: str | None = None,
+    shape_index: int | None = None,
 ) -> NDArray[np.float64]:
     """Parse a CVAT-style points string into a NumPy array.
 
@@ -294,7 +292,7 @@ def _parse_cvat_points(
     point_pairs = points_str.strip().split(";")
     for i, pt_pair_str in enumerate(point_pairs):
         if not pt_pair_str.strip():  # Handle empty pair (e.g., "x,y;;x,y")
-            warning_msg = f"Empty point pair found in points string"
+            warning_msg = "Empty point pair found in points string"
             if shape_label and shape_index is not None:
                 warning_msg += f" for shape '{shape_label}' (index {shape_index})"
             warning_msg += f" at pair index {i}."
@@ -311,17 +309,17 @@ def _parse_cvat_points(
             raise ValueError(
                 f"Malformed point string{context}: "
                 f"Could not parse '{pt_pair_str}' into two float coordinates. Full string: '{points_str}'"
-            )
+            ) from None
     return np.array(parsed_points, dtype=float)
 
 
 def _create_cvat_region(
     name: str,
-    shape_data: Union[Polygon, NDArray[np.float64]],  # Polygon or Point data
+    shape_data: Polygon | NDArray[np.float64],  # Polygon or Point data
     kind: str,
     xml_path: Path,
-    color: Optional[str],
-    additional_metadata: Optional[Mapping[str, Any]] = None,
+    color: str | None,
+    additional_metadata: Mapping[str, Any] | None = None,
 ) -> Region:
     """Helper function to create a Region object for CVAT shapes."""
     metadata = {
@@ -336,7 +334,7 @@ def _create_cvat_region(
 
 
 def load_cvat_xml(
-    xml_path: Union[str, Path], *, pixel_to_world: Optional[SpatialTransform] = None
+    xml_path: str | Path, *, pixel_to_world: SpatialTransform | None = None
 ) -> Regions:
     """
     Parse a *.xml* file produced by CVAT.
@@ -394,8 +392,8 @@ def load_cvat_xml(
                 label_colors[name_elem.text.strip()] = color_elem.text.strip()
 
     def get_processed_label_and_color(
-        raw_label_xml: Optional[str],
-    ) -> tuple[str, Optional[str]]:
+        raw_label_xml: str | None,
+    ) -> tuple[str, str | None]:
         """Processes raw label from XML and gets its color."""
         processed_label = (
             raw_label_xml.strip()
@@ -413,7 +411,7 @@ def load_cvat_xml(
 
         # --- Pass 1 for current image: Collect shape data and count label occurrences ---
         # Stores tuples of (processed_label, geometric_data, kind_str, color_str)
-        collected_shapes_data: list[tuple[str, Any, str, Optional[str]]] = []
+        collected_shapes_data: list[tuple[str, Any, str, str | None]] = []
         label_total_counts: dict[str, int] = {}
 
         # Polygons
@@ -663,7 +661,7 @@ def mask_to_region(
     mask_img: NDArray[np.bool_],
     *,
     region_name: str,
-    pixel_to_world: Optional[SpatialTransform] = None,
+    pixel_to_world: SpatialTransform | None = None,
     approx_tol_px: float = 1.0,
 ) -> Region:
     """

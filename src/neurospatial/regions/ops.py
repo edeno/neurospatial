@@ -40,18 +40,18 @@ Examples
 ...     transform=transform,
 ...     include_boundary=True,
 ...     region_names=["regionA", "regionB"],
-...     return_dataframe=True
+...     return_dataframe=True,
 ... )
 """
 
 import warnings
-from typing import List, Optional, Sequence, Union
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 import shapely
 from numpy.typing import NDArray
-from shapely import Polygon, points
+from shapely import points
 from shapely.geometry import Polygon
 
 from ..transforms import SpatialTransform
@@ -59,8 +59,8 @@ from .core import Region, Regions
 
 
 def _prepare_points(
-    pts: Union[Sequence[Sequence[float]], NDArray[np.float64]],
-    transform: Optional[SpatialTransform] = None,
+    pts: Sequence[Sequence[float]] | NDArray[np.float64],
+    transform: SpatialTransform | None = None,
 ) -> NDArray[np.float64]:
     """
     Convert input points to a NumPy array and optionally transform them.
@@ -183,10 +183,10 @@ def _get_points_in_single_region_mask(
 
 
 def points_in_any_region(
-    pts: Union[Sequence[Sequence[float]], NDArray[np.float64]],
+    pts: Sequence[Sequence[float]] | NDArray[np.float64],
     regions: Regions,
     *,
-    transform: Optional[SpatialTransform] = None,
+    transform: SpatialTransform | None = None,
     point_tolerance: float = 1e-8,
 ) -> NDArray[np.bool_]:
     """
@@ -233,14 +233,14 @@ def points_in_any_region(
 
 
 def regions_containing_points(
-    pts: Union[Sequence[Sequence[float]], NDArray[np.float64]],
+    pts: Sequence[Sequence[float]] | NDArray[np.float64],
     regions: Regions,
     *,
-    transform: Optional[SpatialTransform] = None,
-    region_names: Optional[Sequence[str]] = None,
+    transform: SpatialTransform | None = None,
+    region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
     point_tolerance: float = 1e-8,
-) -> Union[List[List[Region]], pd.DataFrame]:
+) -> list[list[Region]] | pd.DataFrame:
     """
     For each point, identify all Regions that contain it.
 
@@ -295,7 +295,7 @@ def regions_containing_points(
             return []
 
     # Filter regions by name if requested
-    selected_regions: List[Region]
+    selected_regions: list[Region]
     if region_names is not None:
         # Maintain order of region_names if possible, and ensure uniqueness
         name_set = set(region_names)
@@ -326,7 +326,7 @@ def regions_containing_points(
         return df
     else:
         # Build list of lists of Region objects
-        output: List[List[Region]] = [[] for _ in range(n_points)]
+        output: list[list[Region]] = [[] for _ in range(n_points)]
         for region in selected_regions:
             point_mask = _get_points_in_single_region_mask(
                 transformed_pts, region, point_tolerance

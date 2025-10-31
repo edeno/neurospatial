@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pickle
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property, wraps
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
+from typing import Any
 
 import matplotlib.axes
 import networkx as nx
@@ -12,16 +14,12 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.engines.graph import GraphLayout
-from non_local_detector.environment.layout.engines.regular_grid import RegularGridLayout
-from non_local_detector.environment.layout.factories import create_layout
-from non_local_detector.environment.layout.helpers.utils import find_boundary_nodes
-from non_local_detector.environment.regions import Regions
-
-if TYPE_CHECKING:
-    # For type hinting shapely without a hard dependency
-    import shapely.geometry as _shp_type  # Renamed to avoid conflict
+from neurospatial.layout.base import LayoutEngine
+from neurospatial.layout.engines.graph import GraphLayout
+from neurospatial.layout.engines.regular_grid import RegularGridLayout
+from neurospatial.layout.factories import create_layout
+from neurospatial.layout.helpers.utils import find_boundary_nodes
+from neurospatial.regions import Regions
 
 try:
     import shapely.geometry as _shp
@@ -30,9 +28,11 @@ try:
 except ModuleNotFoundError:
     _HAS_SHAPELY = False
 
-    class _shp:  # type: ignore[misc]
+    class _Shp:  # type: ignore[misc]
         class Polygon:
-            pass  # noqa N801
+            pass
+
+    _shp = _Shp  # type: ignore[misc]
 
 
 PolygonType = type[_shp.Polygon]  # type: ignore[misc]
@@ -51,7 +51,7 @@ def check_fitted(method):
     """
 
     @wraps(method)
-    def _inner(self: "Environment", *args, **kwargs):
+    def _inner(self: Environment, *args, **kwargs):
         if not getattr(self, "_is_fitted", False):
             raise RuntimeError(
                 f"{self.__class__.__name__}.{method.__name__}() "
@@ -134,12 +134,12 @@ class Environment:
     # --- Attributes populated from the layout instance ---
     bin_centers: NDArray[np.float64] = field(init=False)
     connectivity: nx.Graph = field(init=False)
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = field(init=False)
+    dimension_ranges: Sequence[tuple[float, float]] | None = field(init=False)
 
     # Grid-specific context (populated if layout is grid-based)
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = field(init=False)
-    grid_shape: Optional[Tuple[int, ...]] = field(init=False)
-    active_mask: Optional[NDArray[np.bool_]] = field(init=False)
+    grid_edges: tuple[NDArray[np.float64], ...] | None = field(init=False)
+    grid_shape: tuple[int, ...] | None = field(init=False)
+    active_mask: NDArray[np.bool_] | None = field(init=False)
 
     # Region Management
     regions: Regions = field(init=False, repr=False)
@@ -149,11 +149,11 @@ class Environment:
     _is_fitted: bool = field(init=False, default=False)
 
     # For introspection and serialization
-    _layout_type_used: Optional[str] = field(init=False, default=None)
-    _layout_params_used: Dict[str, Any] = field(init=False, default_factory=dict)
+    _layout_type_used: str | None = field(init=False, default=None)
+    _layout_params_used: dict[str, Any] = field(init=False, default_factory=dict)
 
     # Cache the mapping from source flat indices to active node IDs
-    _source_flat_to_active_node_id_map: Optional[Dict[int, int]] = field(
+    _source_flat_to_active_node_id_map: dict[int, int] | None = field(
         init=False, default=None, repr=False
     )
 
@@ -161,9 +161,9 @@ class Environment:
         self,
         name: str = "",
         layout: LayoutEngine = RegularGridLayout,
-        layout_type_used: Optional[str] = None,
-        layout_params_used: Optional[Dict[str, Any]] = None,
-        regions: Optional[Regions] = None,
+        layout_type_used: str | None = None,
+        layout_params_used: dict[str, Any] | None = None,
+        regions: Regions | None = None,
     ):
         """
         Initialize the Environment.
@@ -227,7 +227,7 @@ class Environment:
     def __eq__(self, other: str) -> bool:
         return self.name == other
 
-    def __repr__(self: "Environment") -> str:
+    def __repr__(self: Environment) -> str:
         """
         Generate an unambiguous string representation of the Environment.
 
@@ -301,7 +301,7 @@ class Environment:
 
     @cached_property
     @check_fitted
-    def _source_flat_to_active_node_id_map(self) -> Dict[int, int]:
+    def _source_flat_to_active_node_id_map(self) -> dict[int, int]:
         """
         Get or create the mapping from original full grid flat indices
         to active bin IDs (0 to n_active_bins - 1).
@@ -334,7 +334,7 @@ class Environment:
         data_samples: NDArray[np.float64],
         name: str = "",
         layout_kind: str = "RegularGrid",
-        bin_size: Optional[Union[float, Sequence[float]]] = 2.0,
+        bin_size: float | Sequence[float] | None = 2.0,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
         dilate: bool = False,
@@ -402,7 +402,7 @@ class Environment:
             )
 
         # Build the dict of layout parameters
-        layout_params: Dict[str, Any] = {
+        layout_params: dict[str, Any] = {
             "data_samples": data_samples,
             "infer_active_bins": infer_active_bins,
             "bin_count_threshold": bin_count_threshold,
@@ -438,8 +438,8 @@ class Environment:
     def from_graph(
         cls,
         graph: nx.Graph,
-        edge_order: List[Tuple[Any, Any]],
-        edge_spacing: Union[float, Sequence[float]],
+        edge_order: list[tuple[Any, Any]],
+        edge_spacing: float | Sequence[float],
         bin_size: float,
         name: str = "",
     ) -> Environment:
@@ -485,7 +485,7 @@ class Environment:
     def from_polygon(
         cls,
         polygon: PolygonType,
-        bin_size: Optional[Union[float, Sequence[float]]] = 2.0,
+        bin_size: float | Sequence[float] | None = 2.0,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -534,7 +534,7 @@ class Environment:
     def from_mask(
         cls,
         active_mask: NDArray[np.bool_],
-        grid_edges: Tuple[NDArray[np.float64], ...],
+        grid_edges: tuple[NDArray[np.float64], ...],
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -581,7 +581,7 @@ class Environment:
     def from_image(
         cls,
         image_mask: NDArray[np.bool_],
-        bin_size: Union[float, Tuple[float, float]] = 1.0,
+        bin_size: float | tuple[float, float] = 1.0,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
@@ -624,9 +624,9 @@ class Environment:
     def from_layout(
         cls,
         kind: str,
-        layout_params: Dict[str, Any],
+        layout_params: dict[str, Any],
         name: str = "",
-        regions: Optional[Regions] = None,
+        regions: Regions | None = None,
     ) -> Environment:
         """
         Create an Environment with a specified layout type and its build parameters.
@@ -690,7 +690,7 @@ class Environment:
 
     @property
     @check_fitted
-    def layout_parameters(self) -> Dict[str, Any]:
+    def layout_parameters(self) -> dict[str, Any]:
         """
         Return the parameters used to build the layout engine.
 
@@ -795,7 +795,7 @@ class Environment:
 
     @check_fitted
     def bin_center_of(
-        self, bin_indices: Union[int, Sequence[int], NDArray[np.int_]]
+        self, bin_indices: int | Sequence[int] | NDArray[np.int_]
     ) -> NDArray[np.float64]:
         """
         Given one or more active-bin indices, return their N-D center coordinates.
@@ -821,7 +821,7 @@ class Environment:
         return self.bin_centers[np.asarray(bin_indices, dtype=int)]
 
     @check_fitted
-    def neighbors(self, bin_index: int) -> List[int]:
+    def neighbors(self, bin_index: int) -> list[int]:
         """
         Find indices of neighboring active bins for a given active bin index.
 
@@ -893,8 +893,8 @@ class Environment:
     @cached_property
     @check_fitted
     def linearization_properties(
-        self: "Environment",
-    ) -> Optional[Dict[str, Any]]:
+        self: Environment,
+    ) -> dict[str, Any] | None:
         """
         If the environment uses a GraphLayout, returns properties needed
         for linearization using the `track_linearization` library.
@@ -1041,7 +1041,7 @@ class Environment:
     @check_fitted
     def shortest_path(
         self, source_active_bin_idx: int, target_active_bin_idx: int
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Find the shortest path between two active bins.
 
@@ -1165,10 +1165,10 @@ class Environment:
     @check_fitted
     def plot(
         self,
-        ax: Optional[matplotlib.axes.Axes] = None,
+        ax: matplotlib.axes.Axes | None = None,
         show_regions: bool = False,
-        layout_plot_kwargs: Optional[Dict[str, Any]] = None,
-        regions_plot_kwargs: Optional[Dict[str, Any]] = None,
+        layout_plot_kwargs: dict[str, Any] | None = None,
+        regions_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes:
         """
@@ -1212,7 +1212,7 @@ class Environment:
         ax = self.layout.plot(ax=ax, **l_kwargs)
 
         if show_regions and hasattr(self, "regions") and self.regions is not None:
-            from non_local_detector.environment.regions.plot import plot_regions
+            from neurospatial.regions.plot import plot_regions
 
             r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
             plot_regions(self.regions, ax=ax, **r_kwargs)
@@ -1233,8 +1233,8 @@ class Environment:
 
     def plot_1D(
         self,
-        ax: Optional[matplotlib.axes.Axes] = None,
-        layout_plot_kwargs: Optional[Dict[str, Any]] = None,
+        ax: matplotlib.axes.Axes | None = None,
+        layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         """
@@ -1298,7 +1298,7 @@ class Environment:
             The name of the file to save the environment to.
             Defaults to "environment.pkl".
         """
-        with open(filename, "wb") as fh:
+        with Path(filename).open("wb") as fh:
             pickle.dump(self, fh, protocol=pickle.HIGHEST_PROTOCOL)
         print(f"Environment saved to {filename}")
 
@@ -1322,7 +1322,7 @@ class Environment:
         TypeError
             If the loaded object is not an instance of the Environment class.
         """
-        with open(filename, "rb") as fh:
+        with Path(filename).open("rb") as fh:
             environment = pickle.load(fh)
         if not isinstance(environment, cls):
             raise TypeError(f"Loaded object is not type {cls.__name__}")

@@ -1,4 +1,5 @@
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -8,12 +9,11 @@ import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.regular_grid import (
+from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
 )
-from non_local_detector.environment.layout.mixins import _GridMixin
+from neurospatial.layout.mixins import _GridMixin
 
 
 class ShapelyPolygonLayout(_GridMixin):
@@ -27,18 +27,18 @@ class ShapelyPolygonLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     # Layout Specific
-    _polygon_definition: Optional[Polygon] = None
+    _polygon_definition: Polygon | None = None
 
     def __init__(self):
         """Initialize a ShapelyPolygonLayout engine."""
@@ -56,7 +56,7 @@ class ShapelyPolygonLayout(_GridMixin):
         self,
         *,
         polygon: Polygon,
-        bin_size: Union[float, Sequence[float]],
+        bin_size: float | Sequence[float],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
         """
@@ -128,7 +128,7 @@ class ShapelyPolygonLayout(_GridMixin):
 
     def plot(
         self,
-        ax: Optional[matplotlib.axes.Axes] = None,
+        ax: matplotlib.axes.Axes | None = None,
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,

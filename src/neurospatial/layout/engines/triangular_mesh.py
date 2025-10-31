@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -13,7 +14,7 @@ from numpy.typing import NDArray
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
-from non_local_detector.environment.layout.helpers.triangular_mesh import (
+from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
     _compute_mesh_dimension_ranges,
     _filter_active_simplices_by_centroid,
@@ -31,24 +32,22 @@ class TriangularMeshLayout:
     """
 
     _layout_type_tag: str = "TriangularMesh"
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     bin_centers: NDArray[np.float64]
     connectivity: nx.Graph
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]]
-    grid_edges: Tuple[()]  # Explicitly empty tuple for non-grid
-    grid_shape: Optional[Tuple[int, ...]]
-    active_mask: Optional[NDArray[np.bool_]]
-
-    is_1d: bool = False  # This is a 2D layout
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    grid_edges: tuple[()]  # Explicitly empty tuple for non-grid
+    grid_shape: tuple[int, ...] | None
+    active_mask: NDArray[np.bool_] | None
 
     # Internal state
-    _full_delaunay_tri: Optional[Delaunay]
-    _original_simplex_to_active_idx_map: Optional[Dict[int, int]]
-    _active_original_simplex_indices: Optional[
-        NDArray[np.int_]
-    ]  # Store original indices of active ones
-    _boundary_polygon_stored: Optional[Polygon]  # Store the actual polygon object
+    _full_delaunay_tri: Delaunay | None
+    _original_simplex_to_active_idx_map: dict[int, int] | None
+    _active_original_simplex_indices: (
+        NDArray[np.int_] | None
+    )  # Store original indices of active ones
+    _boundary_polygon_stored: Polygon | None  # Store the actual polygon object
 
     def __init__(self):
         self.bin_centers = np.empty((0, 2), dtype=float)
@@ -228,15 +227,15 @@ class TriangularMeshLayout:
 
     def plot(
         self,
-        ax: Optional[plt.Axes] = None,
+        ax: plt.Axes | None = None,
         show_triangles: bool = True,
         show_centroids: bool = True,
         show_connectivity: bool = True,
         show_boundary: bool = True,
-        triangle_kwargs: Optional[Dict[str, Any]] = None,
-        centroid_kwargs: Optional[Dict[str, Any]] = None,
-        connectivity_kwargs: Optional[Dict[str, Any]] = None,
-        boundary_kwargs: Optional[Dict[str, Any]] = None,
+        triangle_kwargs: dict[str, Any] | None = None,
+        centroid_kwargs: dict[str, Any] | None = None,
+        connectivity_kwargs: dict[str, Any] | None = None,
+        boundary_kwargs: dict[str, Any] | None = None,
     ) -> plt.Axes:
         """
         Plot the triangular mesh layout.
@@ -321,7 +320,7 @@ class TriangularMeshLayout:
 
         # Plot active triangles
         if show_triangles:
-            patches: List[MplPolygon] = []
+            patches: list[MplPolygon] = []
             mesh_points = self._full_delaunay_tri.points
             active_simplices_vertices = mesh_points[
                 self._full_delaunay_tri.simplices[self._active_original_simplex_indices]

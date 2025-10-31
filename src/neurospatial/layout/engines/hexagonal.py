@@ -1,5 +1,6 @@
 import warnings
-from typing import Any, Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import matplotlib
 import matplotlib.axes
@@ -9,14 +10,13 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.hexagonal import (
+from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
     _create_hex_grid,
     _infer_active_bins_from_hex_grid,
     _points_to_hex_bin_ind,
 )
-from non_local_detector.environment.layout.helpers.utils import _generic_graph_plot
+from neurospatial.layout.helpers.utils import _generic_graph_plot
 
 
 class HexagonalLayout:
@@ -29,19 +29,19 @@ class HexagonalLayout:
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = ()
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = ()
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
+    _build_params_used: dict[str, Any]
 
     # Layout Specific
-    hexagon_width: Optional[float] = None
-    _source_flat_to_active_id_map: Optional[Dict[int, int]] = None
+    hexagon_width: float | None = None
+    _source_flat_to_active_id_map: dict[int, int] | None = None
 
     def __init__(self):
         """Initialize a HexagonalLayout engine."""
@@ -64,10 +64,8 @@ class HexagonalLayout:
         self,
         *,
         hexagon_width: float,
-        dimension_ranges: Optional[
-            Tuple[Tuple[float, float], Tuple[float, float]]
-        ] = None,
-        data_samples: Optional[NDArray[np.float64]] = None,
+        dimension_ranges: tuple[tuple[float, float], tuple[float, float]] | None = None,
+        data_samples: NDArray[np.float64] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
     ) -> None:
@@ -151,7 +149,7 @@ class HexagonalLayout:
         return False
 
     def plot(
-        self, ax: Optional[matplotlib.axes.Axes] = None, **kwargs
+        self, ax: matplotlib.axes.Axes | None = None, **kwargs
     ) -> matplotlib.axes.Axes:
         """
         Plot the hexagonal layout.
@@ -186,7 +184,6 @@ class HexagonalLayout:
             and self.bin_centers is not None
             and self.bin_centers.shape[0] > 0
         ):
-
             hex_kws = kwargs.get(
                 "hexagon_kwargs",
                 {

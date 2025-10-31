@@ -1,20 +1,20 @@
 import inspect
-from typing import Any, Dict, List, Type
+from typing import Any
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.engines.graph import GraphLayout
-from non_local_detector.environment.layout.engines.hexagonal import HexagonalLayout
-from non_local_detector.environment.layout.engines.image_mask import ImageMaskLayout
-from non_local_detector.environment.layout.engines.masked_grid import MaskedGridLayout
-from non_local_detector.environment.layout.engines.regular_grid import RegularGridLayout
-from non_local_detector.environment.layout.engines.shapely_polygon import (
+from neurospatial.layout.base import LayoutEngine
+from neurospatial.layout.engines.graph import GraphLayout
+from neurospatial.layout.engines.hexagonal import HexagonalLayout
+from neurospatial.layout.engines.image_mask import ImageMaskLayout
+from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+from neurospatial.layout.engines.regular_grid import RegularGridLayout
+from neurospatial.layout.engines.shapely_polygon import (
     ShapelyPolygonLayout,
 )
-from non_local_detector.environment.layout.engines.triangular_mesh import (
+from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
-_LAYOUT_MAP: Dict[str, Type[LayoutEngine]] = {
+_LAYOUT_MAP: dict[str, type[LayoutEngine]] = {
     "RegularGrid": RegularGridLayout,
     "MaskedGrid": MaskedGridLayout,
     "ImageMask": ImageMaskLayout,
@@ -43,7 +43,7 @@ def _normalize_name(name: str) -> str:
     return "".join(filter(str.isalnum, name)).lower()
 
 
-def list_available_layouts() -> List[str]:
+def list_available_layouts() -> list[str]:
     """
     List user-friendly type strings for all available layout engines.
 
@@ -53,9 +53,9 @@ def list_available_layouts() -> List[str]:
         A sorted list of unique string identifiers for available
         `LayoutEngine` types (e.g., "RegularGrid", "Hexagonal").
     """
-    unique_options: List[str] = []
+    unique_options: list[str] = []
     processed_normalized_options: set[str] = set()
-    for opt in _LAYOUT_MAP.keys():
+    for opt in _LAYOUT_MAP:
         norm_opt = _normalize_name(opt)
         if norm_opt not in processed_normalized_options:
             unique_options.append(opt)
@@ -63,7 +63,7 @@ def list_available_layouts() -> List[str]:
     return sorted(unique_options)
 
 
-def get_layout_parameters(layout_type: str) -> Dict[str, Dict[str, Any]]:
+def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
     """
     Retrieve expected build parameters for a specified layout engine type.
 
@@ -105,7 +105,7 @@ def get_layout_parameters(layout_type: str) -> Dict[str, Dict[str, Any]]:
         )
     engine_class = _LAYOUT_MAP[found_key]
     sig = inspect.signature(engine_class.build)
-    params_info: Dict[str, Dict[str, Any]] = {}
+    params_info: dict[str, dict[str, Any]] = {}
     for name, param in sig.parameters.items():
         if name == "self":
             continue

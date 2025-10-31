@@ -1,15 +1,15 @@
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from non_local_detector.environment.layout.base import LayoutEngine
-from non_local_detector.environment.layout.helpers.regular_grid import (
+from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
-from non_local_detector.environment.layout.helpers.utils import get_centers
-from non_local_detector.environment.layout.mixins import _GridMixin
+from neurospatial.layout.helpers.utils import get_centers
+from neurospatial.layout.mixins import _GridMixin
 
 
 class MaskedGridLayout(_GridMixin):
@@ -23,16 +23,16 @@ class MaskedGridLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: Optional[nx.Graph] = None
-    dimension_ranges: Optional[Sequence[Tuple[float, float]]] = None
+    connectivity: nx.Graph | None = None
+    dimension_ranges: Sequence[tuple[float, float]] | None = None
 
-    grid_edges: Optional[Tuple[NDArray[np.float64], ...]] = None
-    grid_shape: Optional[Tuple[int, ...]] = None
-    active_mask: Optional[NDArray[np.bool_]] = None
+    grid_edges: tuple[NDArray[np.float64], ...] | None = None
+    grid_shape: tuple[int, ...] | None = None
+    active_mask: NDArray[np.bool_] | None = None
 
     _layout_type_tag: str
-    _build_params_used: Dict[str, Any]
-    bin_size_: Optional[NDArray[np.float64]] = None
+    _build_params_used: dict[str, Any]
+    bin_size_: NDArray[np.float64] | None = None
 
     def __init__(self):
         """Initialize a MaskedGridLayout engine."""
@@ -50,7 +50,7 @@ class MaskedGridLayout(_GridMixin):
         self,
         *,
         active_mask: NDArray[np.bool_],  # User's N-D definition mask
-        grid_edges: Tuple[NDArray[np.float64], ...],
+        grid_edges: tuple[NDArray[np.float64], ...],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
         """

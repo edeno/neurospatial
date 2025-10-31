@@ -16,7 +16,7 @@ the x-axis unless you chain additional transforms.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Union, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -51,16 +51,16 @@ class Affine2D(SpatialTransform):
         return out.reshape(pts.shape)
 
     # ---- helpers -----------------------------------------------------
-    def inverse(self) -> "Affine2D":
+    def inverse(self) -> Affine2D:
         """Return the inverse transform."""
         return Affine2D(np.linalg.inv(self.A))
 
-    def compose(self, other: "Affine2D") -> "Affine2D":
+    def compose(self, other: Affine2D) -> Affine2D:
         """Return ``self ∘ other`` (apply *other* first, then *self*)."""
         return Affine2D(self.A @ other.A)
 
     # Pythonic shorthand:  t3 = t1 @ t2
-    def __matmul__(self, other: "Affine2D") -> "Affine2D":  # noqa: D401
+    def __matmul__(self, other: Affine2D) -> Affine2D:
         return self.compose(other)
 
 
@@ -70,7 +70,7 @@ def identity() -> Affine2D:
 
 
 # Factory helpers for the most common ops ---------------------------------
-def scale_2d(sx: float = 1.0, sy: Optional[float] = None) -> Affine2D:
+def scale_2d(sx: float = 1.0, sy: float | None = None) -> Affine2D:
     """Uniform or anisotropic scaling."""
     sy = sx if sy is None else sy
     return Affine2D(np.array([[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]]))
@@ -100,7 +100,7 @@ def flip_y(frame_height_px: float) -> Affine2D:
 # Quick NumPy helpers that *internally* build and apply Affine2D
 # ---------------------------------------------------------------------
 def flip_y_data(
-    data: Union[NDArray[np.float64], tuple, list],
+    data: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
 ) -> NDArray[np.float64]:
     """
@@ -109,9 +109,7 @@ def flip_y_data(
 
     Equivalent to::
 
-        Affine2D([[1, 0, 0],
-                  [0,-1,H],
-                  [0, 0,1]])(data)
+        Affine2D([[1, 0, 0], [0, -1, H], [0, 0, 1]])(data)
 
     but without the user having to build the transform.
     """
@@ -120,7 +118,7 @@ def flip_y_data(
 
 
 def convert_to_cm(
-    data_px: Union[NDArray[np.float64], tuple, list],
+    data_px: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
@@ -150,7 +148,7 @@ def convert_to_cm(
 
 
 def convert_to_pixels(
-    data_cm: Union[NDArray[np.float64], tuple, list],
+    data_cm: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
