@@ -1,5 +1,4 @@
-"""
-Utility functions for graph-based (linearized track) layouts. 📐
+"""Utility functions for graph-based (linearized track) layouts. 📐
 
 This module provides helper functions specifically for environments where the
 spatial layout is defined by a graph structure that is subsequently linearized,
@@ -38,8 +37,7 @@ def _get_graph_bins(
     edge_spacing: float | Sequence[float],
     bin_size: float,
 ) -> tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray]:
-    """
-    Discretize each edge of a linearized graph into fixed-length bins, optionally
+    """Discretize each edge of a linearized graph into fixed-length bins, optionally
     inserting inactive “gap” bins between segments.
 
     Parameters
@@ -71,6 +69,7 @@ def _get_graph_bins(
         - If `bin_size` is not positive.
         - If `edge_spacing` is a sequence but length != len(edge_order) - 1.
         - If any node in `edge_order` is missing from `graph`.
+
     """
     # 1) Validate bin_size
     if bin_size <= 0:
@@ -124,7 +123,10 @@ def _get_graph_bins(
         n_bins = 1 if segment_length <= 0.0 else int(np.ceil(segment_length / bin_size))
         # Create (n_bins + 1) edges from cursor to cursor + segment_length
         edges_segment = np.linspace(
-            cursor, cursor + segment_length, n_bins + 1, dtype=float
+            cursor,
+            cursor + segment_length,
+            n_bins + 1,
+            dtype=float,
         )
         bin_edges.extend(edges_segment[:-1])  # all but last; last becomes next cursor
         # Record edge IDs for each _active_ bin
@@ -201,6 +203,7 @@ def _create_graph_layout_connectivity_graph(
         - 'vector': tuple, Displacement vector in N-D.
         - 'angle_2d': float, (For 2D) angle of the displacement vector.
         - 'edge_id': int, Unique ID for this edge within the connectivity graph.
+
     """
     # Create a new graph
     connectivity_graph = nx.Graph()
@@ -218,7 +221,7 @@ def _create_graph_layout_connectivity_graph(
             original_edge_ids,
             bin_ind,
             strict=False,
-        )
+        ),
     ):
         nodes_to_add.append(
             (
@@ -227,12 +230,13 @@ def _create_graph_layout_connectivity_graph(
                     "pos": tuple(center_2D),
                     "source_grid_flat_index": b_ind,
                     "original_grid_nd_index": np.unravel_index(
-                        b_ind, linear_bin_centers.shape
+                        b_ind,
+                        linear_bin_centers.shape,
                     ),
                     "pos_1D": center_1D,
                     "source_edge_id": original_edge_id,
                 },
-            )
+            ),
         )
     connectivity_graph.add_nodes_from(nodes_to_add)
 
@@ -256,14 +260,15 @@ def _create_graph_layout_connectivity_graph(
                         "distance": dist,
                         "vector": tuple(displacement_vector.tolist()),
                         "angle_2d": math.atan2(
-                            displacement_vector[1], displacement_vector[0]
+                            displacement_vector[1],
+                            displacement_vector[0],
                         ),
                     },
-                )
+                ),
             )
 
         bin_edge_order.append(
-            (int(edge_active_bin_ind[0]), int(edge_active_bin_ind[-1]))
+            (int(edge_active_bin_ind[0]), int(edge_active_bin_ind[-1])),
         )
     connectivity_graph.add_edges_from(edges_to_add)
     bin_edge_order = np.asarray(bin_edge_order)
@@ -286,10 +291,11 @@ def _create_graph_layout_connectivity_graph(
                             "distance": float(np.linalg.norm(displacement_vector)),
                             "vector": tuple(displacement_vector.tolist()),
                             "angle_2d": math.atan2(
-                                displacement_vector[1], displacement_vector[0]
+                                displacement_vector[1],
+                                displacement_vector[0],
                             ),
                         },
-                    )
+                    ),
                 )
     connectivity_graph.add_edges_from(bins_to_connect)
 
@@ -308,8 +314,7 @@ def _project_1d_to_2d(
     edge_order: list[Edge],
     edge_spacing: float | list[float] = 0.0,
 ) -> np.ndarray:
-    """
-    Map 1D linear positions back to N-D coordinates on the track graph.
+    """Map 1D linear positions back to N-D coordinates on the track graph.
 
     Projects points from a 1D linearized representation of the track (defined
     by `graph`, `edge_order`, and `edge_spacing`) back to their original
@@ -341,6 +346,7 @@ def _project_1d_to_2d(
     ValueError
         If `linear_position` is not 1D.
         If `edge_spacing` (if a list) has an incorrect length.
+
     """
     linear_position = np.asarray(linear_position, dtype=float)
     if linear_position.ndim == 0:
@@ -360,7 +366,8 @@ def _project_1d_to_2d(
 
     # --- edge lengths & spacing ------------------------------------------------
     edge_lengths = np.array(
-        [graph.edges[e]["distance"] for e in edge_order], dtype=float
+        [graph.edges[e]["distance"] for e in edge_order],
+        dtype=float,
     )
 
     if isinstance(edge_spacing, (int, float)):
@@ -372,7 +379,7 @@ def _project_1d_to_2d(
 
     # cumulative start position of each edge
     cumulative_edge_start_position = np.concatenate(
-        [[0.0], np.cumsum(edge_lengths[:-1] + gaps)]
+        [[0.0], np.cumsum(edge_lengths[:-1] + gaps)],
     )  # shape (n_edges,)
 
     edge_ind = (
@@ -389,23 +396,26 @@ def _project_1d_to_2d(
         linear_position - cumulative_edge_start_position[edge_ind]
     ) / edge_lengths[edge_ind]
     normalized_edge_position = np.clip(
-        normalized_edge_position, 0.0, 1.0
+        normalized_edge_position,
+        0.0,
+        1.0,
     )  # project extremes onto endpoints
 
     # gather endpoint coordinates
     node_position_2D = nx.get_node_attributes(graph, "pos")
     start_node_position_2D = np.array(
-        [node_position_2D[edge_order[int(i)][0]] for i in edge_ind]
+        [node_position_2D[edge_order[int(i)][0]] for i in edge_ind],
     )
     end_node_position_2D = np.array(
-        [node_position_2D[edge_order[int(i)][1]] for i in edge_ind]
+        [node_position_2D[edge_order[int(i)][1]] for i in edge_ind],
     )
 
     # Linear interpolation between endpoints
     position_2D = (
         1.0 - normalized_edge_position[:, None]
     ) * start_node_position_2D + normalized_edge_position[
-        :, None
+        :,
+        None,
     ] * end_node_position_2D
 
     # propagate NaNs from the input
@@ -419,8 +429,7 @@ def _find_bin_for_linear_position(
     bin_edges: NDArray[np.float64],
     active_mask: NDArray[np.bool_] | None = None,
 ) -> int | NDArray[np.int_]:
-    """
-    Find the 1D bin index for each given linear position.
+    """Find the 1D bin index for each given linear position.
 
     Assigns each position in `linear_positions` to a bin defined by
     `bin_edges_1d`. If `active_mask_1d` is provided, positions falling into
@@ -457,6 +466,7 @@ def _find_bin_for_linear_position(
         If `active_mask_1d` (if provided) length doesn't match the number of bins.
         If, after processing, a position maps to an index marked as invalid by
         `active_mask_1d` (indicating an issue with gap handling logic or input).
+
     """
     was_scalar = np.isscalar(linear_positions)
     linear_positions = np.atleast_1d(np.asarray(linear_positions, dtype=float))
@@ -467,7 +477,7 @@ def _find_bin_for_linear_position(
 
     if active_mask is not None and len(active_mask) != n_bins:
         raise ValueError(
-            f"active_mask length ({len(active_mask)}) must match number of bins ({n_bins})."
+            f"active_mask length ({len(active_mask)}) must match number of bins ({n_bins}).",
         )
 
     bin_ind = np.digitize(linear_positions, bin_edges, right=False) - 1

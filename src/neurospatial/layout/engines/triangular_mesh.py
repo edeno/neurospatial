@@ -25,8 +25,7 @@ from neurospatial.layout.helpers.triangular_mesh import (
 
 
 class TriangularMeshLayout:
-    """
-    A LayoutEngine that builds a triangular mesh over interior points
+    """A LayoutEngine that builds a triangular mesh over interior points
     (auto-generated) clipped to a boundary polygon. Each triangle whose centroid
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
@@ -64,8 +63,7 @@ class TriangularMeshLayout:
         self._boundary_polygon_stored = None
 
     def build(self, boundary_polygon: Polygon, point_spacing: float) -> None:
-        """
-        Build the triangular mesh layout.
+        """Build the triangular mesh layout.
 
         Parameters
         ----------
@@ -75,6 +73,7 @@ class TriangularMeshLayout:
         point_spacing : float
             Desired spacing (in same units as polygon) between generated sample points
             used for triangulation.
+
         """
         if not isinstance(boundary_polygon, Polygon):
             raise TypeError("boundary_polygon must be a Shapely Polygon.")
@@ -83,7 +82,7 @@ class TriangularMeshLayout:
         if boundary_polygon.geom_type == "MultiPolygon":
             raise ValueError(
                 "MultiPolygon boundaries are not directly supported. "
-                "Please provide a single Polygon component."
+                "Please provide a single Polygon component.",
             )
         if point_spacing <= 0:
             raise ValueError(f"point_spacing must be positive, got {point_spacing}.")
@@ -106,13 +105,14 @@ class TriangularMeshLayout:
 
         # 1. Generate sample points for triangulation
         sample_points = _generate_interior_points_for_mesh(
-            boundary_polygon, point_spacing
+            boundary_polygon,
+            point_spacing,
         )
         if sample_points.shape[0] < 3:  # Delaunay needs at least N+1 points in N-D
             raise ValueError(
                 f"Not enough interior sample points ({sample_points.shape[0]}) generated "
                 "to form any triangle. Try decreasing point_spacing or ensuring "
-                "the polygon is large enough relative to the spacing."
+                "the polygon is large enough relative to the spacing.",
             )
         exterior_coords = _sample_polygon_boundary(boundary_polygon, point_spacing)
         # 4) Stack the interior grid points with the boundary vertices.
@@ -126,14 +126,15 @@ class TriangularMeshLayout:
 
         # 3. Filter active simplices (triangles)
         active_original_indices, all_centroids = _filter_active_simplices_by_centroid(
-            self._full_delaunay_tri, boundary_polygon
+            self._full_delaunay_tri,
+            boundary_polygon,
         )
         n_total_delaunay_triangles = self._full_delaunay_tri.simplices.shape[0]
 
         if active_original_indices.size == 0:
             raise ValueError(
                 "No triangles found with centroids inside the boundary polygon. "
-                "Check boundary_polygon shape, point_spacing, or point generation strategy."
+                "Check boundary_polygon shape, point_spacing, or point generation strategy.",
             )
 
         self._active_original_simplex_indices = active_original_indices
@@ -166,8 +167,7 @@ class TriangularMeshLayout:
         # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Map each 2D point to an active triangle index, or -1 if outside.
+        """Map each 2D point to an active triangle index, or -1 if outside.
 
         Uses Delaunay.find_simplex() → original-simplex index → active-triangle index via
         a fast lookup array. Then enforces that the point itself must lie inside (or on)
@@ -177,6 +177,7 @@ class TriangularMeshLayout:
         -------
         NDArray[np.int_]
             Each entry is in [0..n_active-1] or -1 if outside.
+
         """
         if (
             self._full_delaunay_tri is None
@@ -211,7 +212,9 @@ class TriangularMeshLayout:
                 xcoords = pts2d[valid_mask, 0]
                 ycoords = pts2d[valid_mask, 1]
                 on_or_inside = shapely.vectorized.contains(
-                    self._boundary_polygon_stored, xcoords, ycoords
+                    self._boundary_polygon_stored,
+                    xcoords,
+                    ycoords,
                 )
                 idxs = np.flatnonzero(valid_mask)
                 for local_i, keep in enumerate(on_or_inside):
@@ -237,8 +240,7 @@ class TriangularMeshLayout:
         connectivity_kwargs: dict[str, Any] | None = None,
         boundary_kwargs: dict[str, Any] | None = None,
     ) -> plt.Axes:
-        """
-        Plot the triangular mesh layout.
+        """Plot the triangular mesh layout.
 
         Parameters
         ----------
@@ -265,6 +267,7 @@ class TriangularMeshLayout:
         -------
         matplotlib.axes.Axes
             The axes on which the layout was plotted.
+
         """
         if (
             self._full_delaunay_tri is None
@@ -335,7 +338,9 @@ class TriangularMeshLayout:
         # Plot centroids (which are self.bin_centers)
         if show_centroids and self.bin_centers.shape[0] > 0:
             ax.scatter(
-                self.bin_centers[:, 0], self.bin_centers[:, 1], **_centroid_kwargs
+                self.bin_centers[:, 0],
+                self.bin_centers[:, 1],
+                **_centroid_kwargs,
             )
 
         # Plot connectivity edges
@@ -344,7 +349,9 @@ class TriangularMeshLayout:
                 pos_u = self.connectivity.nodes[u]["pos"]
                 pos_v = self.connectivity.nodes[v]["pos"]
                 ax.plot(
-                    [pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], **_connectivity_kwargs
+                    [pos_u[0], pos_v[0]],
+                    [pos_u[1], pos_v[1]],
+                    **_connectivity_kwargs,
                 )
 
         ax.set_aspect("equal", adjustable="box")
@@ -360,8 +367,7 @@ class TriangularMeshLayout:
         return ax
 
     def bin_sizes(self) -> NDArray[np.float64]:
-        """
-        Return the N-dimensional volume of each active N-simplex (bin).
+        """Return the N-dimensional volume of each active N-simplex (bin).
 
         For 2D, this is area. For 3D, this is volume, and so on.
         The volume of an N-simplex with vertices v0, v1, ..., vn is calculated as:
@@ -380,6 +386,7 @@ class TriangularMeshLayout:
             `_active_original_simplex_indices` is None).
         ValueError
             If the dimensionality is less than 1.
+
         """
         if (
             self._full_delaunay_tri is None

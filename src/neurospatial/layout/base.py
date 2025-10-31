@@ -9,8 +9,7 @@ from numpy.typing import NDArray
 
 @runtime_checkable
 class LayoutEngine(Protocol):
-    """
-    Protocol defining the interface for all spatial layout engines.
+    """Protocol defining the interface for all spatial layout engines.
 
     A LayoutEngine is responsible for discretizing a continuous N-dimensional
     space into a set of bins or elements and constructing a graph representation
@@ -82,8 +81,7 @@ class LayoutEngine(Protocol):
 
     # --- Required Methods ---
     def build(self, **kwargs) -> None:
-        """
-        Construct the layout's geometry, bins, and connectivity graph.
+        """Construct the layout's geometry, bins, and connectivity graph.
 
         This method is responsible for populating all the attributes defined
         in the `LayoutEngine` protocol (e.g., `bin_centers`,
@@ -94,8 +92,7 @@ class LayoutEngine(Protocol):
         ...
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Map continuous N-D points to discrete active bin indices.
+        """Map continuous N-D points to discrete active bin indices.
 
         The returned indices range from `0` to `n_active_bins - 1`.
         A value of -1 indicates that the corresponding point did not map
@@ -111,25 +108,25 @@ class LayoutEngine(Protocol):
         NDArray[np.int_], shape (n_points,)
             An array of active bin indices corresponding to the input points.
             -1 for points outside the layout's active bins.
+
         """
         ...
 
     @property  # pragma: no cover
     def is_1d(self) -> bool:
-        """
-        Indicate if the layout structure is primarily 1-dimensional.
+        """Indicate if the layout structure is primarily 1-dimensional.
 
         Returns
         -------
         bool
             True if the layout represents a 1D structure (e.g., a linearized
             track), False otherwise.
+
         """
         ...
 
     def bin_sizes(self) -> NDArray[np.float64]:
-        """
-        Return the area (2D) or volume (3D+) of each active bin.
+        """Return the area (2D) or volume (3D+) of each active bin.
 
         For 1D layouts, this typically returns the length of each bin.
         The measures should correspond to the dimensionality of the space
@@ -140,14 +137,16 @@ class LayoutEngine(Protocol):
         NDArray[np.float64], shape (n_active_bins,)
             An array where each element is the area/volume/length of the
             corresponding active bin.
+
         """
         ...
 
     def plot(
-        self, ax: matplotlib.axes.Axes | None = None, **kwargs
+        self,
+        ax: matplotlib.axes.Axes | None = None,
+        **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the layout's geometry.
+        """Plot the layout's geometry.
 
         Parameters
         ----------
@@ -162,5 +161,6 @@ class LayoutEngine(Protocol):
         -------
         matplotlib.axes.Axes
             The axes on which the layout is plotted.
+
         """
         ...

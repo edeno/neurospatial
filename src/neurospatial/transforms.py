@@ -1,5 +1,4 @@
-"""
-transforms.py - minimal 2-D coordinate transforms
+"""transforms.py - minimal 2-D coordinate transforms
 =================================================
 
 Two complementary APIs
@@ -34,8 +33,7 @@ class SpatialTransform(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Affine2D(SpatialTransform):
-    """
-    2-D affine transform expressed as a 3 × 3 homogeneous matrix *A* such that
+    """2-D affine transform expressed as a 3 × 3 homogeneous matrix *A* such that
 
         [x', y', 1]^T  =  A @ [x, y, 1]^T
 
@@ -58,6 +56,7 @@ class Affine2D(SpatialTransform):
     >>> transformed
     array([[20., 40.],
            [22., 42.]])
+
     """
 
     A: NDArray[np.float64]  # shape (3, 3)
@@ -102,17 +101,17 @@ def translate(tx: float = 0.0, ty: float = 0.0) -> Affine2D:
 
 
 def flip_y(frame_height_px: float) -> Affine2D:
-    """
-    Flip the *y*-axis of pixel coordinates so that origin moves
+    """Flip the *y*-axis of pixel coordinates so that origin moves
     from top-left to bottom-left.
 
     Parameters
     ----------
     frame_height_px
         Height of the video frame in **pixels**.
+
     """
     return Affine2D(
-        np.array([[1.0, 0.0, 0.0], [0.0, -1.0, frame_height_px], [0.0, 0.0, 1.0]])
+        np.array([[1.0, 0.0, 0.0], [0.0, -1.0, frame_height_px], [0.0, 0.0, 1.0]]),
     )
 
 
@@ -123,8 +122,7 @@ def flip_y_data(
     data: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
 ) -> NDArray[np.float64]:
-    """
-    Flip y-axis of coordinates so that the origin moves from
+    """Flip y-axis of coordinates so that the origin moves from
     image-space top-left to Cartesian bottom-left.
 
     Equivalent to::
@@ -172,8 +170,7 @@ def convert_to_pixels(
     frame_size_px: tuple[float, float],
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
-    """
-    Centimeter  →  pixel coordinates with y-flip (inverse of `convert_to_cm`).
+    """Centimeter  →  pixel coordinates with y-flip (inverse of `convert_to_cm`).
 
     Internally constructs ``flip_y(H) @ scale_2d(1/cm_per_px)``.
     """

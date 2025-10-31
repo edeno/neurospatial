@@ -1,5 +1,4 @@
-"""
-regions
+"""regions
 =======
 
 Immutable *continuous* ROI objects plus optional helpers.

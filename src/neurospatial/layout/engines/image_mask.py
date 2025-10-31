@@ -12,8 +12,7 @@ from neurospatial.layout.mixins import _GridMixin
 
 
 class ImageMaskLayout(_GridMixin):
-    """
-    2D layout derived from a boolean image mask.
+    """2D layout derived from a boolean image mask.
 
     Each `True` pixel in the input `image_mask` corresponds to an active bin
     in the environment. The spatial scale of these pixel-bins is determined
@@ -49,8 +48,7 @@ class ImageMaskLayout(_GridMixin):
         bin_size: float | tuple[float, float] = 1.0,  # one pixel
         connect_diagonal_neighbors: bool = True,
     ) -> None:
-        """
-        Build the layout from a 2D image mask.
+        """Build the layout from a 2D image mask.
 
         Parameters
         ----------
@@ -70,8 +68,8 @@ class ImageMaskLayout(_GridMixin):
         ValueError
             If `image_mask` is not 2D, not boolean, or `bin_size` is invalid,
             or if `image_mask` contains no True values or non-finite values.
-        """
 
+        """
         if not isinstance(image_mask, np.ndarray):
             raise TypeError("image_mask must be a numpy array.")
         if image_mask.ndim != 2:
@@ -99,7 +97,7 @@ class ImageMaskLayout(_GridMixin):
             bin_size_y = float(bin_size[1])  # height of pixel
         else:
             raise ValueError(
-                "bin_size for ImageMaskLayout must be a float or a 2-element sequence (width, height)."
+                "bin_size for ImageMaskLayout must be a float or a 2-element sequence (width, height).",
             )
 
         if bin_size_x <= 0 or bin_size_y <= 0:
@@ -118,7 +116,9 @@ class ImageMaskLayout(_GridMixin):
         y_centers = (np.arange(n_rows) + 0.5) * bin_size_y
         x_centers = (np.arange(n_cols) + 0.5) * bin_size_x
         xv, yv = np.meshgrid(
-            x_centers, y_centers, indexing="xy"
+            x_centers,
+            y_centers,
+            indexing="xy",
         )  # x is cols, y is rows
         full_grid_bin_centers = np.stack(
             (

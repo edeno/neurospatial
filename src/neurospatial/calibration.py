@@ -5,10 +5,10 @@ from .transforms import Affine2D
 
 
 def simple_scale(
-    px_per_cm: float, offset_px: tuple[float, float] = (0.0, 0.0)
+    px_per_cm: float,
+    offset_px: tuple[float, float] = (0.0, 0.0),
 ) -> Affine2D:
-    """
-    Create a simple Affine2D transform that converts pixel units to centimeters.
+    """Create a simple Affine2D transform that converts pixel units to centimeters.
 
     This returns an Affine2D matrix which, when applied to [x_px, y_px, 1]^T,
     yields coordinates in centimeters.
@@ -33,6 +33,7 @@ def simple_scale(
     ------
     ValueError
         If `px_per_cm` is zero.
+
     """
     if px_per_cm == 0:
         raise ValueError("px_per_cm must be nonzero to avoid division by zero.")
@@ -45,7 +46,7 @@ def simple_scale(
         ox, oy = float(offset_px[0]), float(offset_px[1])
     except (TypeError, IndexError):
         raise ValueError(
-            "offset_px must be a tuple of two numeric values (x, y)."
+            "offset_px must be a tuple of two numeric values (x, y).",
         ) from None
 
     # Build a 3×3 affine matrix: scale then translate

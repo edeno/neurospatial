@@ -17,8 +17,7 @@ from neurospatial.layout.mixins import _GridMixin
 
 
 class RegularGridLayout(_GridMixin):
-    """
-    Axis-aligned rectangular N-D grid layout.
+    """Axis-aligned rectangular N-D grid layout.
 
     Discretizes space into a uniform N-dimensional grid. Can infer the
     active portion of this grid based on provided data samples using occupancy
@@ -62,8 +61,7 @@ class RegularGridLayout(_GridMixin):
         bin_count_threshold: int = 0,
         connect_diagonal_neighbors: bool = True,
     ) -> None:
-        """
-        Build the regular N-D grid layout.
+        """Build the regular N-D grid layout.
 
         Parameters
         ----------
@@ -91,6 +89,7 @@ class RegularGridLayout(_GridMixin):
             considered initially occupied.
         connect_diagonal_neighbors : bool, default=True
             If True, connects diagonal neighbors in the connectivity graph.
+
         """
         self._build_params_used = locals().copy()  # Store all passed params
         del self._build_params_used["self"]  # Remove self from the dictionary
@@ -102,7 +101,7 @@ class RegularGridLayout(_GridMixin):
             # Infer ranges from data_samples
             if data_samples is None:
                 raise ValueError(
-                    "dimension_ranges must be provided if data_samples is None."
+                    "dimension_ranges must be provided if data_samples is None.",
                 )
 
             buffer_for_inference = (
@@ -143,7 +142,7 @@ class RegularGridLayout(_GridMixin):
 
         if not np.any(self.active_mask):
             raise ValueError(
-                "No active bins found. Check your data_samples and bin_size."
+                "No active bins found. Check your data_samples and bin_size.",
             )
 
         self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]

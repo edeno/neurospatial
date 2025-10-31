@@ -1,5 +1,4 @@
-"""
-CompositeEnvironment: merges multiple Environment instances into a single unified Environment-like API.
+"""CompositeEnvironment: merges multiple Environment instances into a single unified Environment-like API.
 Bridge edges between sub-environments are inferred automatically via mutual-nearest-neighbor (MNN).
 
 This class exposes the same public interface as the base `Environment` class:
@@ -28,8 +27,7 @@ from neurospatial.regions import Region, Regions
 
 
 class CompositeEnvironment:
-    """
-    A composite environment that merges multiple child Environment instances into one.
+    """A composite environment that merges multiple child Environment instances into one.
 
     It automatically infers "bridge" edges between every pair of sub-environments by finding
     mutually nearest neighbor bin-centers (MNN). It then presents the same interface as
@@ -68,6 +66,7 @@ class CompositeEnvironment:
         Always "Composite" for composite environments.
     _layout_params_used : Dict[str, Any]
         Parameters used to construct the composite.
+
     """
 
     is_1d: bool
@@ -85,8 +84,7 @@ class CompositeEnvironment:
         auto_bridge: bool = True,
         max_mnn_distance: float | None = None,
     ):
-        """
-        Build a CompositeEnvironment from a list of pre-fitted Environment instances.
+        """Build a CompositeEnvironment from a list of pre-fitted Environment instances.
 
         Parameters
         ----------
@@ -98,6 +96,7 @@ class CompositeEnvironment:
         max_mnn_distance : Optional[float]
             If provided, any automatically inferred bridge whose Euclidean distance exceeds
             this threshold is discarded. If None, no distance filtering is applied.
+
         """
         if len(subenvs) == 0:
             raise ValueError("At least one sub-environment is required.")
@@ -113,7 +112,7 @@ class CompositeEnvironment:
             if e.n_dims != self._n_dims:
                 raise ValueError(
                     "All sub-environments must share the same n_dims. "
-                    f"Env 0 has {self._n_dims}, Env {i} has {e.n_dims}."
+                    f"Env 0 has {self._n_dims}, Env {i} has {e.n_dims}.",
                 )
 
         # Build index offsets for each sub-environment
@@ -122,7 +121,7 @@ class CompositeEnvironment:
         for e in subenvs:
             n_bins = e.bin_centers.shape[0]
             self._subenvs_info.append(
-                {"env": e, "start_idx": offset, "end_idx": offset + n_bins - 1}
+                {"env": e, "start_idx": offset, "end_idx": offset + n_bins - 1},
             )
             offset += n_bins
         self._total_bins = offset
@@ -193,10 +192,14 @@ class CompositeEnvironment:
         )
 
     def _add_bridge_edge(
-        self, i_env: int, i_bin: int, j_env: int, j_bin: int, w: float
+        self,
+        i_env: int,
+        i_bin: int,
+        j_env: int,
+        j_bin: int,
+        w: float,
     ):
-        """
-        Add a bridge edge between bin i_bin of sub-environment i_env and bin j_bin of sub-environment j_env,
+        """Add a bridge edge between bin i_bin of sub-environment i_env and bin j_bin of sub-environment j_env,
         with weight w. Raises ValueError if indices are out-of-range.
         """
         n_sub = len(self._subenvs_info)
@@ -216,8 +219,7 @@ class CompositeEnvironment:
         self._bridge_list.append(((i_env, i_bin), (j_env, j_bin), w))
 
     def _infer_mnn_bridges(self, max_distance: float | None = None):
-        """
-        Infer “bridge edges” between every pair of sub-environments using a Mutual Nearest Neighbor (MNN) approach:
+        """Infer “bridge edges” between every pair of sub-environments using a Mutual Nearest Neighbor (MNN) approach:
 
         1. For each pair (i, j) with i < j:
            a) Build KDTree_i on env_i.bin_centers
@@ -283,15 +285,14 @@ class CompositeEnvironment:
         return self._layout_params_used
 
     def bin_at(self, points_nd: np.ndarray) -> np.ndarray:
-        """
-        Map each point in `points_nd` (shape (M, n_dims)) to a composite bin index.
+        """Map each point in `points_nd` (shape (M, n_dims)) to a composite bin index.
         - Calls each subenv.bin_at(points_nd) → array of shape (M,) (sub-bin indices or -1).
         - Wherever a subenv value ≥ 0, set composite index = sub_idx + start_idx (first match wins).
         - Returns an integer array of shape (M,), with -1 for points outside all sub-environments.
         """
         if points_nd.ndim != 2 or points_nd.shape[1] != self.n_dims:
             raise ValueError(
-                f"Expected points_nd of shape (M, {self.n_dims}), got {points_nd.shape}"
+                f"Expected points_nd of shape (M, {self.n_dims}), got {points_nd.shape}",
             )
 
         M = points_nd.shape[0]
@@ -309,20 +310,18 @@ class CompositeEnvironment:
         return out
 
     def contains(self, points_nd: np.ndarray) -> np.ndarray:
-        """
-        Return a boolean array of shape (M,), True if each point in `points_nd` lies in any bin.
+        """Return a boolean array of shape (M,), True if each point in `points_nd` lies in any bin.
         Equivalent to self.bin_at(points_nd) != -1.
         """
         return self.bin_at(points_nd) != -1
 
     def neighbors(self, bin_index: int) -> list[int]:
-        """
-        Return a list of composite bin indices that are neighbors of `bin_index`
+        """Return a list of composite bin indices that are neighbors of `bin_index`
         in the merged connectivity graph.
         """
         if not (0 <= bin_index < self._total_bins):
             raise KeyError(
-                f"Bin index {bin_index} is out of range [0..{self._total_bins - 1}]"
+                f"Bin index {bin_index} is out of range [0..{self._total_bins - 1}]",
             )
         return list(self.connectivity.neighbors(bin_index))
 
@@ -332,8 +331,7 @@ class CompositeEnvironment:
         point2: np.ndarray | list[float] | tuple[float, ...],
         edge_weight: str = "distance",
     ) -> float:
-        """
-        Compute the shortest-path distance (weighted by `edge_weight`) between two points:
+        """Compute the shortest-path distance (weighted by `edge_weight`) between two points:
         1) Map each point to a bin index via bin_at (if a list/tuple is given, convert to a single-row array).
         2) If either bin = -1, return np.inf.
         3) Otherwise, return nx.shortest_path_length(self.connectivity, source=bin1, target=bin2, weight=edge_weight).
@@ -345,7 +343,7 @@ class CompositeEnvironment:
                 arr = arr.reshape(1, self.n_dims)
             if arr.ndim != 2 or arr.shape[1] != self.n_dims:
                 raise ValueError(
-                    f"Expected a point of length {self.n_dims} or shape (1, {self.n_dims}), got {arr.shape}"
+                    f"Expected a point of length {self.n_dims} or shape (1, {self.n_dims}), got {arr.shape}",
                 )
             return arr
 
@@ -358,20 +356,21 @@ class CompositeEnvironment:
             return float(np.inf)
         return float(
             nx.shortest_path_length(
-                self.connectivity, source=bin1, target=bin2, weight=edge_weight
-            )
+                self.connectivity,
+                source=bin1,
+                target=bin2,
+                weight=edge_weight,
+            ),
         )
 
     def bin_center_of(self, bin_indices: int | np.ndarray) -> np.ndarray:
-        """
-        Return the N-D coordinate(s) of the specified composite bin index or indices.
+        """Return the N-D coordinate(s) of the specified composite bin index or indices.
         Accepts either a single int or a 1-D numpy array of ints.
         """
         return np.asarray(self.bin_centers)[bin_indices]
 
     def bin_attributes(self) -> pd.DataFrame:
-        """
-        Return a concatenated DataFrame of per-bin attributes:
+        """Return a concatenated DataFrame of per-bin attributes:
         - Each sub-environment's bin_attributes() is copied.
         - A new column 'composite_bin_id' = (child_bin_id + start_idx) is added.
         """
@@ -387,8 +386,7 @@ class CompositeEnvironment:
         return composite_df
 
     def edge_attributes(self) -> pd.DataFrame:
-        """
-        Return a concatenated DataFrame of per-edge attributes:
+        """Return a concatenated DataFrame of per-edge attributes:
         - Each sub-environment's edge_attributes() is copied with 'u_idx' and 'v_idx' shifted by start_idx.
         - MNN-inferred “bridge edges” are appended as additional rows with columns 'u_idx','v_idx','distance','weight'.
         """
@@ -414,7 +412,7 @@ class CompositeEnvironment:
                         "composite_target_bin": v,
                         "distance": w,
                         "weight": 1 / w,
-                    }
+                    },
                 )
             bridge_df = pd.DataFrame(bridge_rows)
             dfs.append(bridge_df)
@@ -430,8 +428,7 @@ class CompositeEnvironment:
         show_sub_env_labels: bool = False,
         **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the composite environment.
+        """Plot the composite environment.
 
         This method plots each sub-environment and then overlays the bridge edges.
 
@@ -458,6 +455,7 @@ class CompositeEnvironment:
         -------
         matplotlib.axes.Axes
             The axes on which the composite environment was plotted.
+
         """
         if ax is None:
             fig_kwargs = {"figsize": (10, 10)}  # Default figsize
@@ -472,7 +470,7 @@ class CompositeEnvironment:
                 ax = fig.add_subplot(111, projection="3d")
             else:
                 fig, ax = plt.subplots(
-                    **{k: v for k, v in fig_kwargs.items() if k != "projection"}
+                    **{k: v for k, v in fig_kwargs.items() if k != "projection"},
                 )
 
         # Plot each sub-environment

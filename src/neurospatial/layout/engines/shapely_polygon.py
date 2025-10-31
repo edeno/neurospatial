@@ -17,8 +17,7 @@ from neurospatial.layout.mixins import _GridMixin
 
 
 class ShapelyPolygonLayout(_GridMixin):
-    """
-    2D grid layout masked by a Shapely Polygon.
+    """2D grid layout masked by a Shapely Polygon.
 
     Creates a regular grid based on the polygon's bounds and specified
     `bin_size`. Only grid cells whose centers are contained within the
@@ -59,8 +58,7 @@ class ShapelyPolygonLayout(_GridMixin):
         bin_size: float | Sequence[float],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
-        """
-        Build the Shapely Polygon masked grid layout.
+        """Build the Shapely Polygon masked grid layout.
 
         Parameters
         ----------
@@ -82,8 +80,8 @@ class ShapelyPolygonLayout(_GridMixin):
             SHAPELY_AVAILABLE check at class definition).
         TypeError
             If `polygon` is not a Shapely Polygon.
-        """
 
+        """
         if not isinstance(polygon, Polygon):
             raise TypeError("polygon must be a Shapely Polygon object.")
 
@@ -137,8 +135,7 @@ class ShapelyPolygonLayout(_GridMixin):
         node_color: str = "blue",
         **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the ShapelyPolygon layout.
+        """Plot the ShapelyPolygon layout.
 
         Displays the active grid cells and overlays the defining polygon.
         Inherits base grid plotting from `_GridMixin.plot` and adds
@@ -159,6 +156,7 @@ class ShapelyPolygonLayout(_GridMixin):
         -------
         matplotlib.axes.Axes
             The axes on which the layout is plotted.
+
         """
         if (
             self.bin_centers is None
@@ -208,7 +206,8 @@ class ShapelyPolygonLayout(_GridMixin):
 
             # Plot polygon
             poly_patch_kwargs = kwargs.get(
-                "polygon_kwargs", {"alpha": 0.3, "fc": "gray", "ec": "black"}
+                "polygon_kwargs",
+                {"alpha": 0.3, "fc": "gray", "ec": "black"},
             )
             if hasattr(self.polygon_definition_, "geoms"):  # MultiPolygon
                 for geom in self.polygon_definition_.geoms:
@@ -220,7 +219,6 @@ class ShapelyPolygonLayout(_GridMixin):
                 ax.fill(x, y, **poly_patch_kwargs)
 
             return ax
-        else:
-            raise NotImplementedError(
-                "Plotting for non-2D grid layouts is not implemented yet."
-            )
+        raise NotImplementedError(
+            "Plotting for non-2D grid layouts is not implemented yet.",
+        )

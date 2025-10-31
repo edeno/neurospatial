@@ -26,8 +26,7 @@ _LAYOUT_MAP: dict[str, type[LayoutEngine]] = {
 
 
 def _normalize_name(name: str) -> str:
-    """
-    Normalize a layout name by removing non-alphanumeric characters and
+    """Normalize a layout name by removing non-alphanumeric characters and
     converting to lowercase.
 
     Parameters
@@ -39,19 +38,20 @@ def _normalize_name(name: str) -> str:
     -------
     str
         The normalized name.
+
     """
     return "".join(filter(str.isalnum, name)).lower()
 
 
 def list_available_layouts() -> list[str]:
-    """
-    List user-friendly type strings for all available layout engines.
+    """List user-friendly type strings for all available layout engines.
 
     Returns
     -------
     List[str]
         A sorted list of unique string identifiers for available
         `LayoutEngine` types (e.g., "RegularGrid", "Hexagonal").
+
     """
     unique_options: list[str] = []
     processed_normalized_options: set[str] = set()
@@ -64,8 +64,7 @@ def list_available_layouts() -> list[str]:
 
 
 def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
-    """
-    Retrieve expected build parameters for a specified layout engine type.
+    """Retrieve expected build parameters for a specified layout engine type.
 
     Inspects the `build` method signature of the specified `LayoutEngine`
     class to determine its required and optional parameters.
@@ -89,6 +88,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
     ------
     ValueError
         If `layout_type` is unknown.
+
     """
     normalized_kind_query = _normalize_name(layout_type)
     found_key = next(
@@ -101,7 +101,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
     )
     if not found_key:
         raise ValueError(
-            f"Unknown engine kind '{layout_type}'. Available: {list_available_layouts()}"
+            f"Unknown engine kind '{layout_type}'. Available: {list_available_layouts()}",
         )
     engine_class = _LAYOUT_MAP[found_key]
     sig = inspect.signature(engine_class.build)
@@ -124,8 +124,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
 
 
 def create_layout(kind: str, **kwargs) -> LayoutEngine:
-    """
-    Factory for creating and building a spatial-layout engine.
+    """Factory for creating and building a spatial-layout engine.
 
     Parameters
     ----------
@@ -145,6 +144,7 @@ def create_layout(kind: str, **kwargs) -> LayoutEngine:
     ValueError
         - If `kind` is not one of the available layouts.
         - If any unexpected keyword arguments are passed to `build`.
+
     """
     # 1) Normalize user input and find matching key
     norm_query = "".join(ch for ch in kind if ch.isalnum()).lower()

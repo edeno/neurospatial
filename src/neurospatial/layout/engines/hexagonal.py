@@ -20,8 +20,7 @@ from neurospatial.layout.helpers.utils import _generic_graph_plot
 
 
 class HexagonalLayout:
-    """
-    2D layout that tiles a rectangular area with a hexagonal lattice.
+    """2D layout that tiles a rectangular area with a hexagonal lattice.
 
     Bin centers are the centers of the hexagons. Hexagons are connected to their
     immediate neighbors. Active hexagons can be inferred from data sample
@@ -69,8 +68,7 @@ class HexagonalLayout:
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
     ) -> None:
-        """
-        Build the hexagonal grid layout.
+        """Build the hexagonal grid layout.
 
         Parameters
         ----------
@@ -96,6 +94,7 @@ class HexagonalLayout:
         ValueError
             If `dimension_ranges` and `data_samples` are both None, or if
             `hexagon_width` is not positive.
+
         """
         self._build_params_used = locals().copy()  # Store all passed params
         del self._build_params_used["self"]  # Remove self from the dictionary
@@ -149,10 +148,11 @@ class HexagonalLayout:
         return False
 
     def plot(
-        self, ax: matplotlib.axes.Axes | None = None, **kwargs
+        self,
+        ax: matplotlib.axes.Axes | None = None,
+        **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the hexagonal layout.
+        """Plot the hexagonal layout.
 
         Displays active hexagons and their connectivity graph.
 
@@ -170,6 +170,7 @@ class HexagonalLayout:
         -------
         matplotlib.axes.Axes
             The axes on which the layout is plotted.
+
         """
         ax = _generic_graph_plot(
             ax=ax,
@@ -228,20 +229,19 @@ class HexagonalLayout:
                 (
                     self.dimension_ranges[0][0] - padding,
                     self.dimension_ranges[0][1] + padding,
-                )
+                ),
             )
             ax.set_ylim(
                 (
                     self.dimension_ranges[1][0] - padding,
                     self.dimension_ranges[1][1] + padding,
-                )
+                ),
             )
             ax.set_aspect("equal", adjustable="box")
         return ax
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Map 2D points to active hexagonal bin indices.
+        """Map 2D points to active hexagonal bin indices.
 
         Uses specialized logic to determine which hexagon each point falls into,
         then maps this to an active bin index.
@@ -255,6 +255,7 @@ class HexagonalLayout:
         -------
         NDArray[np.int_], shape (n_points,)
             Active bin indices (0 to N-1). -1 for points not in an active hexagon.
+
         """
         if (
             self.grid_offset_x_ is None
@@ -287,8 +288,7 @@ class HexagonalLayout:
         )
 
     def bin_sizes(self) -> NDArray[np.float64]:
-        """
-        Calculate the area of each hexagonal bin.
+        """Calculate the area of each hexagonal bin.
 
         All active hexagons are assumed to have the same area.
 
@@ -301,6 +301,7 @@ class HexagonalLayout:
         ------
         RuntimeError
             If `hex_radius_` or `bin_centers` is not populated.
+
         """
         if self.hex_radius_ is None or self.bin_centers is None:  # pragma: no cover
             raise RuntimeError("Layout not built; hex_radius_ or bin_centers missing.")

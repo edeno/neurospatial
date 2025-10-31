@@ -3,8 +3,7 @@ import numpy as np
 
 
 def euclidean_distance_matrix(centers: np.ndarray) -> np.ndarray:
-    """
-    Given an (N, n_dims) array of centers, return the (NxN) pairwise
+    """Given an (N, n_dims) array of centers, return the (NxN) pairwise
     Euclidean distance matrix.
     """
     from scipy.spatial.distance import pdist, squareform
@@ -17,10 +16,11 @@ def euclidean_distance_matrix(centers: np.ndarray) -> np.ndarray:
 
 
 def geodesic_distance_matrix(
-    G: nx.Graph, n_states: int, weight: str = "distance"
+    G: nx.Graph,
+    n_states: int,
+    weight: str = "distance",
 ) -> np.ndarray:
-    """
-    Return an (n_states x n_states) matrix of shortest-path lengths
+    """Return an (n_states x n_states) matrix of shortest-path lengths
     on graph G, using edge attribute "distance" as weight.
     """
     if G.number_of_nodes() == 0:
@@ -34,16 +34,21 @@ def geodesic_distance_matrix(
 
 
 def geodesic_distance_between_points(
-    G: nx.Graph, bin_from: int, bin_to: int, default: float = np.inf
+    G: nx.Graph,
+    bin_from: int,
+    bin_to: int,
+    default: float = np.inf,
 ) -> float:
-    """
-    Return the shortest‐path length between two states (bin_from, bin_to)
+    """Return the shortest‐path length between two states (bin_from, bin_to)
     on G, using weight="distance".  If either index is invalid or no path,
     returns `default`.
     """
     try:
         return nx.shortest_path_length(
-            G, source=bin_from, target=bin_to, weight="distance"
+            G,
+            source=bin_from,
+            target=bin_to,
+            weight="distance",
         )
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return default

@@ -17,8 +17,7 @@ from neurospatial.layout.helpers.regular_grid import (
 # KD-tree mixin (for point_to_bin_index)
 # ---------------------------------------------------------------------------
 class _KDTreeMixin:
-    """
-    Mixin providing point-to-bin mapping and neighbor finding using a KD-tree.
+    """Mixin providing point-to-bin mapping and neighbor finding using a KD-tree.
 
     This mixin uses a KD-tree built on bin centers for nearest-neighbor
     searches (`point_to_bin_index`) and a NetworkX graph for connectivity
@@ -31,12 +30,13 @@ class _KDTreeMixin:
     The `_build_kdtree` method must be called by the inheriting layout's
     `build` method after `bin_centers` is finalized.
 
-    Attributes:
+    Attributes
     ----------
     _kdtree : Optional[KDTree]
         KDTree for fast nearest-neighbor search.
     _kdtree_nodes_to_bin_indices_map : Optional[NDArray[np.int_]], shape (n_active_bins,)
         Maps KDTree node index to original source_index.
+
     """
 
     _kdtree: KDTree | None = None
@@ -47,8 +47,7 @@ class _KDTreeMixin:
         points_for_tree: NDArray[np.float64],
         mask_for_points_in_tree: NDArray[np.bool_] | None = None,
     ) -> None:
-        """
-        Builds the KD-tree from `points_for_tree`.
+        """Builds the KD-tree from `points_for_tree`.
 
         If `mask_for_points_in_tree` is provided, it's used to select a subset
         of `points_for_tree` to include in the KD-tree. The
@@ -75,10 +74,11 @@ class _KDTreeMixin:
         ------
         ValueError
             If `mask_for_points_in_tree` has an incompatible shape.
+
         """
         if points_for_tree.ndim != 2:
             raise ValueError(
-                "points_for_tree must be a 2D array with shape (n_points, n_dims)."
+                "points_for_tree must be a 2D array with shape (n_points, n_dims).",
             )
         if points_for_tree.shape[0] == 0:
             self._kdtree = None
@@ -97,19 +97,20 @@ class _KDTreeMixin:
             ):
                 raise ValueError(
                     "mask_for_points_in_tree must be 1D and match the "
-                    "number of rows in points_for_tree."
+                    "number of rows in points_for_tree.",
                 )
             final_points_for_kdtree_construction = points_for_tree[
                 mask_for_points_in_tree
             ]
             source_indices_of_kdtree_nodes = np.flatnonzero(
-                mask_for_points_in_tree
+                mask_for_points_in_tree,
             ).astype(np.int32)
         else:
             # No mask provided, use all points from points_for_tree
             final_points_for_kdtree_construction = points_for_tree
             source_indices_of_kdtree_nodes = np.arange(
-                points_for_tree.shape[0], dtype=np.int32
+                points_for_tree.shape[0],
+                dtype=np.int32,
             )
 
         if final_points_for_kdtree_construction.shape[0] > 0:
@@ -128,8 +129,7 @@ class _KDTreeMixin:
             self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Map N-D points to active bin indices using nearest-neighbor search.
+        """Map N-D points to active bin indices using nearest-neighbor search.
 
         Finds the nearest active bin center in `self.bin_centers` (on which
         the KD-tree was built) to each query point.
@@ -144,6 +144,7 @@ class _KDTreeMixin:
         NDArray[np.int_], shape (n_query_points,)
             Array of active bin indices (0 to `n_active_bins - 1`).
             Returns -1 for all points if the KD-tree is not built or is empty.
+
         """
         query_points = np.atleast_2d(points)
         n_query_points = query_points.shape[0]
@@ -175,7 +176,9 @@ class _KDTreeMixin:
         # Clip indices to be within the valid range of the KD-tree's internal point list
         # This handles cases where KDTree might return an out-of-bounds index if empty or single point.
         kdtree_internal_indices = np.clip(
-            kdtree_internal_indices, 0, max_valid_kdtree_idx
+            kdtree_internal_indices,
+            0,
+            max_valid_kdtree_idx,
         )
 
         # Map these internal KD-tree indices back to the original bin indices
@@ -189,8 +192,7 @@ class _KDTreeMixin:
 
 
 class _GridMixin:
-    """
-    Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
+    """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
     N-dimensional grid, such as `point_to_bin_index` using grid definitions,
@@ -210,8 +212,7 @@ class _GridMixin:
     _layout_type_tag: str = "_Grid_Layout"
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Map N-D points to active bin indices based on grid structure.
+        """Map N-D points to active bin indices based on grid structure.
 
         Uses the grid's `grid_edges`, `grid_shape`, and `active_mask`
         to determine the corresponding active bin for each point.
@@ -230,6 +231,7 @@ class _GridMixin:
         ------
         RuntimeError
             If grid attributes (`grid_edges`, `grid_shape`) are not set.
+
         """
         if self.grid_edges is None or self.grid_shape is None:
             raise RuntimeError("Grid layout not built; edges or shape missing.")
@@ -251,8 +253,7 @@ class _GridMixin:
         node_size: float = 20,
         node_color: str = "blue",
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the grid-based layout.
+        """Plot the grid-based layout.
 
         For 2D grids, displays the `active_mask` using `pcolormesh` and
         optionally overlays the `connectivity`.
@@ -288,6 +289,7 @@ class _GridMixin:
             If layout attributes are not built.
         NotImplementedError
             If attempting to plot a non-2D grid layout with this method.
+
         """
         if (
             self.bin_centers is None
@@ -336,15 +338,13 @@ class _GridMixin:
                     ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
 
             return ax
-        else:
-            raise NotImplementedError(
-                "Plotting for non-2D grid layouts is not implemented yet."
-            )
+        raise NotImplementedError(
+            "Plotting for non-2D grid layouts is not implemented yet.",
+        )
 
     @property
     def is_1d(self) -> bool:
-        """
-        Indicate if the grid layout is 1-dimensional.
+        """Indicate if the grid layout is 1-dimensional.
 
         Standard grid layouts (RegularGrid, etc.) are generally N-D (N>=1).
         This mixin's default assumes not strictly 1D in the sense of a
@@ -354,12 +354,12 @@ class _GridMixin:
         -------
         bool
             False, as this mixin is for general N-D grids.
+
         """
         return False
 
     def bin_sizes(self) -> NDArray[np.float64]:
-        """
-        Calculate area/volume for each active bin, assuming a uniform grid.
+        """Calculate area/volume for each active bin, assuming a uniform grid.
 
         Computes the product of bin side lengths for each dimension from
         `grid_edges`. Assumes all bins in the grid have the same dimensions.
@@ -373,6 +373,7 @@ class _GridMixin:
         ------
         RuntimeError
             If `grid_edges` or `bin_centers` is not populated.
+
         """
         if self.grid_edges is None or self.bin_centers is None:  # pragma: no cover
             raise RuntimeError("Layout not built; grid_edges or bin_centers missing.")
@@ -380,12 +381,12 @@ class _GridMixin:
             len(e) > 1 for e in self.grid_edges
         ):  # pragma: no cover
             raise ValueError(
-                "grid_edges are not properly defined for area/volume calculation."
+                "grid_edges are not properly defined for area/volume calculation.",
             )
 
         # Assume uniform bin sizes from the first diff of each dimension's edges
         bin_dimension_sizes = np.array(
-            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges]
+            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges],
         )
         single_bin_measure = np.prod(bin_dimension_sizes)
 

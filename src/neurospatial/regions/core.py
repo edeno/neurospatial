@@ -1,5 +1,4 @@
-"""
-regions/core.py
+"""regions/core.py
 ===============
 
 Pure data layer for *continuous* regions of interest (ROIs).
@@ -34,8 +33,7 @@ Kind = Literal["point", "polygon"]
 
 @dataclass(frozen=True, slots=True)
 class Region:
-    """
-    Immutable description of a spatial ROI.
+    """Immutable description of a spatial ROI.
 
     Parameters
     ----------
@@ -48,6 +46,7 @@ class Region:
         • polygon → :class:`shapely.geometry.Polygon` (always 2-D)
     metadata
         Optional, JSON-serialisable attributes (colour, label, …).
+
     """
 
     name: str
@@ -68,7 +67,9 @@ class Region:
         if self.kind == "point":
             if isinstance(self.data, Point):
                 object.__setattr__(
-                    self, "data", np.array(self.data.coords[0], dtype=float)
+                    self,
+                    "data",
+                    np.array(self.data.coords[0], dtype=float),
                 )
             arr = np.asarray(self.data, dtype=float)
             if arr.ndim != 1:
@@ -127,8 +128,7 @@ class Region:
 
 
 class Regions(MutableMapping[str, Region]):
-    """
-    A small `dict`-like container mapping *name → Region*.
+    """A small `dict`-like container mapping *name → Region*.
 
     Provides the usual mapping API plus a few helpers
     (`add`, `remove`, `list_names`, `buffer`, …).
@@ -173,8 +173,7 @@ class Regions(MutableMapping[str, Region]):
         polygon: Polygon | None = None,
         metadata: Mapping[str, Any] | None = None,
     ) -> Region:
-        """
-        Create & insert a new Region. Exactly one of *point* or *polygon*
+        """Create & insert a new Region. Exactly one of *point* or *polygon*
         must be supplied. Returns the newly created Region.
         """
         if (point is None) == (polygon is None):
@@ -212,8 +211,7 @@ class Regions(MutableMapping[str, Region]):
         return 0.0
 
     def region_center(self, region_name: str) -> NDArray[np.float64] | None:
-        """
-        Calculate the center of a specified named region.
+        """Calculate the center of a specified named region.
 
         - For 'point' regions, returns the point itself.
         - For 'polygon' regions, returns the centroid of the polygon.
@@ -228,6 +226,7 @@ class Regions(MutableMapping[str, Region]):
         ------
         KeyError
             If `region_name` is not present in this collection.
+
         """
         if region_name not in self._store:
             raise KeyError(f"Region '{region_name}' not found in this collection.")
@@ -236,7 +235,7 @@ class Regions(MutableMapping[str, Region]):
 
         if region.kind == "point":
             return np.asarray(region.data, dtype=float)
-        elif region.kind == "polygon":
+        if region.kind == "polygon":
             return np.array(region.data.centroid.coords[0], dtype=float)  # type: ignore
         return None  # pragma: no cover
 
@@ -247,8 +246,7 @@ class Regions(MutableMapping[str, Region]):
         new_name: str,
         **meta: Any,
     ) -> Region:
-        """
-        Create *and return* a buffered polygon region.
+        """Create *and return* a buffered polygon region.
 
         *source* may be an existing region name or a raw 2-D point array.
         """
@@ -274,8 +272,7 @@ class Regions(MutableMapping[str, Region]):
         return self.add(new_name, polygon=poly, metadata=meta)
 
     def to_dataframe(self) -> DataFrame:
-        """
-        Convert this collection to a Pandas DataFrame.
+        """Convert this collection to a Pandas DataFrame.
         Requires Pandas to be installed.
 
         Returns
@@ -283,6 +280,7 @@ class Regions(MutableMapping[str, Region]):
         pd.DataFrame
             DataFrame with columns ['name', 'kind', 'data', 'metadata'].
             The 'data' column contains the coordinates for points or polygons.
+
         """
         from .io import regions_to_dataframe
 

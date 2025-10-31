@@ -1,5 +1,4 @@
-"""
-TriangularMeshLayout: a LayoutEngine that discretizes a 2D corridor region via a Delaunay triangulation.
+"""TriangularMeshLayout: a LayoutEngine that discretizes a 2D corridor region via a Delaunay triangulation.
 Instead of requiring the user to supply sample points, this layout generates a uniform grid of interior points
 (spaced by `point_spacing`) clipped to the provided boundary polygon. Each triangle whose centroid lies
 inside the polygon is kept as an active bin. Connectivity is inferred by shared faces.
@@ -26,10 +25,10 @@ from shapely.geometry import Polygon
 # Module-level Private Helper Functions
 # --------------------------------------------------------------------------
 def _generate_interior_points_for_mesh(
-    boundary_polygon: Polygon, point_spacing: float
+    boundary_polygon: Polygon,
+    point_spacing: float,
 ) -> NDArray[np.float64]:
-    """
-    Generate a uniform grid of points spaced by `point_spacing` that lie inside `boundary_polygon`.
+    """Generate a uniform grid of points spaced by `point_spacing` that lie inside `boundary_polygon`.
 
     Parameters
     ----------
@@ -42,6 +41,7 @@ def _generate_interior_points_for_mesh(
     -------
     NDArray[np.float64]
         Array of shape (M, 2) representing the interior sample points.
+
     """
     minx, miny, maxx, maxy = boundary_polygon.bounds
     xs = np.arange(minx + point_spacing / 2, maxx, point_spacing)
@@ -61,8 +61,7 @@ def _generate_interior_points_for_mesh(
 
 
 def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
-    """
-    Attempt a Delaunay triangulation on `sample_points`.
+    """Attempt a Delaunay triangulation on `sample_points`.
 
     Parameters
     ----------
@@ -78,31 +77,32 @@ def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
     ------
     ValueError
         If triangulation fails (e.g., points are colinear or insufficient).
+
     """
     if sample_points.shape[0] < 3:
         raise ValueError(
-            f"Triangulation requires at least 3 points, got {sample_points.shape[0]}."
+            f"Triangulation requires at least 3 points, got {sample_points.shape[0]}.",
         )
     try:
         return Delaunay(sample_points)
     except QhullError as e:
         raise ValueError(
             "Delaunay triangulation failed. Points may be colinear, "
-            "insufficient, or have other geometric issues."
+            "insufficient, or have other geometric issues.",
         ) from e
     except TypeError as e:  # Can happen if points array is not float/double
         raise ValueError(
-            f"Delaunay triangulation failed due to input type: {e}. Ensure points are float."
+            f"Delaunay triangulation failed due to input type: {e}. Ensure points are float.",
         ) from e
 
 
 def _filter_active_simplices_by_centroid(
-    triangulation: Delaunay, boundary_polygon: Polygon
+    triangulation: Delaunay,
+    boundary_polygon: Polygon,
 ) -> tuple[NDArray[np.int_], NDArray[np.float64]]:
-    """
-    Filter Delaunay simplices by requiring:
-      1) The triangle's centroid lies inside or on the boundary (using `covers`).
-      2) All three vertices lie inside or on the boundary.
+    """Filter Delaunay simplices by requiring:
+    1) The triangle's centroid lies inside or on the boundary (using `covers`).
+    2) All three vertices lie inside or on the boundary.
     """
     simplices = triangulation.simplices  # shape (M, 3)
     points = triangulation.points  # shape (N, 2)
@@ -125,8 +125,7 @@ def _build_mesh_connectivity_graph(
     original_simplex_to_active_idx_map: dict[int, int],
     delaunay_obj: Delaunay,
 ) -> nx.Graph:
-    """
-    Build a NetworkX graph for active simplices (triangles).
+    """Build a NetworkX graph for active simplices (triangles).
 
     Nodes correspond to active triangles. Edges connect adjacent active triangles.
 
@@ -145,6 +144,7 @@ def _build_mesh_connectivity_graph(
     -------
     nx.Graph
         The connectivity graph of active triangles.
+
     """
     n_active_triangles = len(active_original_simplex_indices)
     graph = nx.Graph()
@@ -163,7 +163,7 @@ def _build_mesh_connectivity_graph(
     delaunay_neighbors = delaunay_obj.neighbors  # shape (n_total_simplices, 3)
 
     for active_idx_u, original_simplex_idx_u in enumerate(
-        active_original_simplex_indices
+        active_original_simplex_indices,
     ):
         for neighbor_original_idx_v in delaunay_neighbors[original_simplex_idx_u]:
             # If neighbor is -1, it's a boundary of the convex hull
@@ -184,7 +184,7 @@ def _build_mesh_connectivity_graph(
                     distance = float(np.linalg.norm(pos_u - pos_v))
                     displacement_vector = pos_v - pos_u
                     angle = float(
-                        np.arctan2(displacement_vector[1], displacement_vector[0])
+                        np.arctan2(displacement_vector[1], displacement_vector[0]),
                     )
 
                     graph.add_edge(
@@ -212,8 +212,7 @@ def _compute_mesh_dimension_ranges(
 
 
 def _sample_polygon_boundary(poly: Polygon, point_spacing: float) -> np.ndarray:
-    """
-    Given a Shapely Polygon, return an (M,2)-array of points sampled along
+    """Given a Shapely Polygon, return an (M,2)-array of points sampled along
     the exterior boundary (including the vertices) at approximately 'point_spacing' intervals.
     """
     coords = np.array(poly.exterior.coords)  # shape = (N_vertices+1, 2)

@@ -20,8 +20,7 @@ from neurospatial.layout.mixins import _KDTreeMixin
 
 
 class GraphLayout(_KDTreeMixin):
-    """
-    Layout defined by a user-provided graph, typically for 1D tracks.
+    """Layout defined by a user-provided graph, typically for 1D tracks.
 
     The graph's nodes (with 'pos' attributes) and a specified edge order
     are used to create a linearized representation of the space, which is
@@ -64,8 +63,7 @@ class GraphLayout(_KDTreeMixin):
         edge_spacing: float | Sequence[float],
         bin_size: float,  # Linearized bin size
     ) -> None:
-        """
-        Build the graph-based (linearized track) layout.
+        """Build the graph-based (linearized track) layout.
 
         Parameters
         ----------
@@ -90,6 +88,7 @@ class GraphLayout(_KDTreeMixin):
             If `graph_definition` is not a NetworkX graph.
         ValueError
             If `edge_order` is empty or `bin_size` is not positive.
+
         """
         self._build_params_used = locals().copy()  # Store all passed params
         del self._build_params_used["self"]  # Remove self from the dictionary
@@ -142,10 +141,11 @@ class GraphLayout(_KDTreeMixin):
         return True
 
     def plot(
-        self, ax: matplotlib.axes.Axes | None = None, **kwargs
+        self,
+        ax: matplotlib.axes.Axes | None = None,
+        **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the N-D embedding of the graph-based layout.
+        """Plot the N-D embedding of the graph-based layout.
 
         Displays the original graph used for definition, the N-D positions of
         the binned track segments (active bin centers), and their connectivity.
@@ -168,13 +168,15 @@ class GraphLayout(_KDTreeMixin):
         -------
         matplotlib.axes.Axes
             The axes on which the layout is plotted.
+
         """
         if ax is None:
             _, ax = plt.subplots(figsize=(7, 7))
 
         # Draw the original graph nodes
         original_node_pos = nx.get_node_attributes(
-            self._build_params_used["graph_definition"], "pos"
+            self._build_params_used["graph_definition"],
+            "pos",
         )
         nx.draw_networkx_nodes(
             self._build_params_used["graph_definition"],
@@ -189,10 +191,14 @@ class GraphLayout(_KDTreeMixin):
                 (
                     original_node_pos[node_id1],
                     original_node_pos[node_id2],
-                )
+                ),
             )
             ax.plot(
-                pos[:, 0], pos[:, 1], color="gray", zorder=-1, label="original edges"
+                pos[:, 0],
+                pos[:, 1],
+                color="gray",
+                zorder=-1,
+                label="original edges",
             )
 
         for node_id, pos in original_node_pos.items():
@@ -238,10 +244,11 @@ class GraphLayout(_KDTreeMixin):
         return ax
 
     def plot_linear_layout(
-        self, ax: matplotlib.axes.Axes | None = None, **kwargs
+        self,
+        ax: matplotlib.axes.Axes | None = None,
+        **kwargs,
     ) -> matplotlib.axes.Axes:
-        """
-        Plot the 1D linearized representation of the graph layout.
+        """Plot the 1D linearized representation of the graph layout.
 
         Uses `track_linearization.plot_graph_as_1D` to display the track
         segments and nodes in their 1D linearized positions. Overlays the
@@ -260,6 +267,7 @@ class GraphLayout(_KDTreeMixin):
         -------
         matplotlib.axes.Axes
             The axes on which the 1D layout is plotted.
+
         """
         if ax is None:
             _, ax = plt.subplots(figsize=kwargs.get("figsize", (10, 3)))
@@ -280,8 +288,7 @@ class GraphLayout(_KDTreeMixin):
         return ax
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Convert N-D points to 1D linearized coordinates along the track.
+        """Convert N-D points to 1D linearized coordinates along the track.
 
         Uses `track_linearization.get_linearized_position`.
 
@@ -295,6 +302,7 @@ class GraphLayout(_KDTreeMixin):
         NDArray[np.float64], shape (n_points,)
             1D linearized coordinates. NaNs may be returned for points
             far from the track.
+
         """
         return _get_linearized_position(
             data_points,
@@ -304,10 +312,10 @@ class GraphLayout(_KDTreeMixin):
         ).linear_position.to_numpy()
 
     def linear_to_nd(
-        self, linear_coordinates: NDArray[np.float64]
+        self,
+        linear_coordinates: NDArray[np.float64],
     ) -> NDArray[np.float64]:
-        """
-        Map 1D linearized coordinates back to N-D coordinates on the track graph.
+        """Map 1D linearized coordinates back to N-D coordinates on the track graph.
 
         Parameters
         ----------
@@ -318,6 +326,7 @@ class GraphLayout(_KDTreeMixin):
         -------
         NDArray[np.float64], shape (n_points, n_dims)
             N-D coordinates corresponding to the input linear positions.
+
         """
         return _project_1d_to_2d(
             linear_coordinates,
@@ -327,10 +336,10 @@ class GraphLayout(_KDTreeMixin):
         )
 
     def linear_point_to_bin_ind(
-        self, data_points: NDArray[np.float64]
+        self,
+        data_points: NDArray[np.float64],
     ) -> NDArray[np.int_]:
-        """
-        Map 1D linearized positions to active 1D bin indices.
+        """Map 1D linearized positions to active 1D bin indices.
 
         Parameters
         ----------
@@ -344,14 +353,16 @@ class GraphLayout(_KDTreeMixin):
             Returns -1 for positions outside active bins or in gaps.
             Note: These are indices relative to the set of *active* 1D bins,
             not indices into the full `linear_bin_centers_all` array.
+
         """
         return _find_bin_for_linear_position(
-            data_points, bin_edges=self.grid_edges[0], active_mask=self.active_mask
+            data_points,
+            bin_edges=self.grid_edges[0],
+            active_mask=self.active_mask,
         )
 
     def bin_sizes(self) -> NDArray[np.float64]:
-        """
-        Return the length of each active 1D bin along the linearized track.
+        """Return the length of each active 1D bin along the linearized track.
 
         Returns
         -------
@@ -362,12 +373,13 @@ class GraphLayout(_KDTreeMixin):
         ------
         RuntimeError
             If `grid_edges` or `active_mask` is not populated.
+
         """
         if self.grid_edges is None or self.active_mask is None:  # pragma: no cover
             raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
         if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
             raise ValueError(
-                "grid_edges (1D) are not properly defined for length calculation."
+                "grid_edges (1D) are not properly defined for length calculation.",
             )
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])

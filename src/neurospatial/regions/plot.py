@@ -1,5 +1,4 @@
-"""
-regions/plot.py
+"""regions/plot.py
 ===============
 
 Lightweight helpers for visualising continuous ROIs that live in a
@@ -38,8 +37,7 @@ def plot_regions(
     add_legend: bool = True,
     **per_region_kwargs: Mapping[str, Any],
 ) -> None:
-    """
-    Draw a subset (or all) regions onto *ax*.
+    """Draw a subset (or all) regions onto *ax*.
 
     Parameters
     ----------
@@ -65,8 +63,8 @@ def plot_regions(
     * Points → `ax.scatter`
     * Polygons → `matplotlib.patches.PathPatch`
     * Legend labels default to the region name.
-    """
 
+    """
     try:
         import shapely.geometry as _shp
     except ModuleNotFoundError:  # polygon plotting will warn later if needed

@@ -1,5 +1,4 @@
-"""
-General utility functions for the neurospatial package.
+"""General utility functions for the neurospatial package.
 
 This module provides helper functions used across various components of the
 environment definition and processing, such as calculating bin properties,
@@ -25,8 +24,7 @@ from scipy.spatial import KDTree
 
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Calculate the center of each bin given its edges.
+    """Calculate the center of each bin given its edges.
 
     Parameters
     ----------
@@ -38,6 +36,7 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
     -------
     NDArray[np.float64], shape (n_edges - 1,)
         A 1D array containing the center coordinate of each bin.
+
     """
     return bin_edges[:-1] + np.diff(bin_edges) / 2
 
@@ -47,8 +46,7 @@ def get_n_bins(
     bin_size: float | Sequence[float],
     dimension_range: Sequence[tuple[float, float]] | None = None,
 ) -> NDArray[np.int_]:
-    """
-    Calculate the number of bins needed for each dimension of a dataset.
+    """Calculate the number of bins needed for each dimension of a dataset.
 
     The number of bins is determined based on the extent of the data (or a
     specified `dimension_range`) and the desired `bin_size`.
@@ -80,6 +78,7 @@ def get_n_bins(
         does not match the number of dimensions.
         If `dimension_range` (if provided) does not have two values (min, max)
         per dimension.
+
     """
     if dimension_range is not None:
         # Ensure dimension_range is numpy array for consistent processing
@@ -108,8 +107,7 @@ def _infer_active_elements_from_samples(
     data_samples: NDArray[np.float64],
     bin_count_threshold: int = 0,
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.int_]]:
-    """
-    Infer active elements from candidates based on data sample occupancy.
+    """Infer active elements from candidates based on data sample occupancy.
 
     This function maps `data_samples` to the nearest `candidate_element_centers`
     using a KD-tree. Candidates are marked "active" if their occupancy count
@@ -143,6 +141,7 @@ def _infer_active_elements_from_samples(
     ValueError
         If `candidate_element_centers` or `data_samples` have incompatible
         dimensions, or if `bin_count_threshold` is negative.
+
     """
     if bin_count_threshold < 0:
         raise ValueError("bin_count_threshold must be non-negative.")
@@ -158,14 +157,14 @@ def _infer_active_elements_from_samples(
         )
         return (
             np.array([], dtype=bool),
-            np.empty((0, n_dims_candidates if n_dims_candidates > 0 else 0)),
+            np.empty((0, max(0, n_dims_candidates))),
             np.array([], dtype=np.int_),
         )
 
     if n_dims_candidates != n_dims_samples:
         raise ValueError(
             f"Dimensionality mismatch: candidate_element_centers have {n_dims_candidates} dims, "
-            f"while data_samples have {n_dims_samples} dims."
+            f"while data_samples have {n_dims_samples} dims.",
         )
 
     # Filter out NaN data_samples
@@ -244,7 +243,7 @@ def _infer_active_elements_from_samples(
 
     final_active_centers = candidate_element_centers[inferred_1d_mask_on_candidates]
     source_indices_of_active_centers = np.flatnonzero(
-        inferred_1d_mask_on_candidates
+        inferred_1d_mask_on_candidates,
     ).astype(np.int_)
 
     return (
@@ -258,8 +257,7 @@ def _infer_dimension_ranges_from_samples(
     data_samples: NDArray[np.float64],
     buffer_around_data: float | Sequence[float] = 0.0,
 ) -> Sequence[tuple[float, float]]:
-    """
-    Infer min/max range for each dimension from data samples, with a buffer.
+    """Infer min/max range for each dimension from data samples, with a buffer.
 
     Parameters
     ----------
@@ -283,10 +281,11 @@ def _infer_dimension_ranges_from_samples(
         or if `buffer_around_data` dimensionality mismatches `data_samples`.
     TypeError
         If `buffer_around_data` is not a float or sequence of floats.
+
     """
     if data_samples.ndim != 2:
         raise ValueError(
-            f"data_samples must be a 2D array, shape is {data_samples.shape}"
+            f"data_samples must be a 2D array, shape is {data_samples.shape}",
         )
     n_dimensions = data_samples.shape[1]
 
@@ -304,7 +303,7 @@ def _infer_dimension_ranges_from_samples(
     else:
         raise ValueError(
             f"buffer_around_data sequence length ({len(buffer_around_data)}) "
-            f"must match number of dimensions ({n_dimensions})."
+            f"must match number of dimensions ({n_dimensions}).",
         )
 
     inferred_ranges = []
@@ -340,8 +339,7 @@ def _generic_graph_plot(
     ax: matplotlib.axes.Axes | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
-    """
-    Provide a generic plotting function for a NetworkX graph with 2D/3D positions.
+    """Provide a generic plotting function for a NetworkX graph with 2D/3D positions.
 
     Nodes are expected to have a 'pos' attribute containing their coordinates.
     The plot can be 2D or 3D based on the dimensionality of these positions.
@@ -371,8 +369,8 @@ def _generic_graph_plot(
     ------
     ValueError
         If `graph` is empty or None, or if a 3D plot is attempted on a 2D `ax`.
-    """
 
+    """
     if graph is None or graph.number_of_nodes() == 0:
         raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
 
@@ -402,7 +400,7 @@ def _generic_graph_plot(
 
     if is_3d:
         edge_xyz = np.array(
-            [(node_positions[u], node_positions[v]) for u, v in graph.edges()]
+            [(node_positions[u], node_positions[v]) for u, v in graph.edges()],
         )
         if edge_xyz.size > 0:
             segments_3d = []
@@ -412,7 +410,8 @@ def _generic_graph_plot(
             # Extract common MPL LineCollection kwargs, provide defaults
             edge_color = edge_kwargs_final.pop("edge_color", "gray")
             linewidths = edge_kwargs_final.pop(
-                "linewidths", edge_kwargs_final.pop("linewidth", 1)
+                "linewidths",
+                edge_kwargs_final.pop("linewidth", 1),
             )
             alpha = edge_kwargs_final.pop("alpha", 0.5)
 
@@ -458,8 +457,7 @@ def flat_to_multi_index(
     grid_shape: tuple[int, ...],
     graph: nx.Graph,
 ) -> tuple[int, ...] | tuple[np.ndarray, ...]:
-    """
-    Convert active-bin flat index(es) (0..N-1) to N-D grid index(es).
+    """Convert active-bin flat index(es) (0..N-1) to N-D grid index(es).
 
     Parameters
     ----------
@@ -486,6 +484,7 @@ def flat_to_multi_index(
     ------
     ValueError
         If none of the active_flat_idx values are valid node IDs, or if `grid_shape` is invalid.
+
     """
     # Ensure we have a NumPy array for iteration
     is_scalar = np.isscalar(flat_indices)
@@ -564,8 +563,7 @@ def multi_index_to_flat(
     active_mask: NDArray[np.bool_],
     source_flat_lookup: dict[int, int],
 ) -> int | NDArray[np.int_]:
-    """
-    Convert N-D grid index(es) to active-bin flat index(es) (0..N-1).
+    """Convert N-D grid index(es) to active-bin flat index(es) (0..N-1).
 
     Parameters
     ----------
@@ -597,6 +595,7 @@ def multi_index_to_flat(
     ------
     ValueError
         If the number of input arrays does not match len(grid_shape), or if input arrays cannot broadcast.
+
     """
     # Handle the case of a single iterable argument, e.g. ([r1,r2],[c1,c2]) or ((r1,c1),(r2,c2))
     if len(nd_idx_per_dim) == 1 and isinstance(nd_idx_per_dim[0], (list, tuple)):
@@ -616,7 +615,7 @@ def multi_index_to_flat(
     # Now expect len(nd_idx_per_dim) == len(grid_shape)
     if len(nd_idx_per_dim) != len(grid_shape):
         raise ValueError(
-            f"Expected {len(grid_shape)} index arrays, got {len(nd_idx_per_dim)}."
+            f"Expected {len(grid_shape)} index arrays, got {len(nd_idx_per_dim)}.",
         )
 
     # Convert each to a NumPy array of dtype int
@@ -668,7 +667,8 @@ def multi_index_to_flat(
 
     # Map full-grid flat indices to active-bin IDs using source_flat_lookup
     active_ids = np.array(
-        [source_flat_lookup.get(int(ff), -1) for ff in full_flat_inds], dtype=int
+        [source_flat_lookup.get(int(ff), -1) for ff in full_flat_inds],
+        dtype=int,
     )
 
     # Place these active IDs back into the correct positions of the output array
@@ -682,16 +682,205 @@ def multi_index_to_flat(
     return flat_output
 
 
+def _is_grid_boundary_node(
+    node_id: int,
+    graph: nx.Graph,
+    grid_shape: tuple[int, ...],
+    active_mask: NDArray[np.bool_],
+) -> bool:
+    """Check if a node is on the boundary using grid topology.
+
+    A node is boundary if any orthogonal neighbor is out-of-bounds
+    or inactive.
+
+    Parameters
+    ----------
+    node_id : int
+        Node ID to check.
+    graph : nx.Graph
+        Connectivity graph with node attributes.
+    grid_shape : tuple[int, ...]
+        Shape of the grid.
+    active_mask : NDArray[np.bool_]
+        Boolean mask indicating active bins.
+
+    Returns
+    -------
+    bool
+        True if node is on boundary, False otherwise.
+
+    """
+    node_data = graph.nodes[node_id]
+    original_nd_idx = node_data.get("original_grid_nd_index")
+
+    if original_nd_idx is None:
+        warnings.warn(
+            f"Node {node_id} missing 'original_grid_nd_index'. "
+            "Cannot use N-D grid boundary logic.",
+            UserWarning,
+        )
+        return False
+
+    n_dims = len(grid_shape)
+    for dim_idx in range(n_dims):
+        for offset_val in [-1, 1]:
+            neighbor_nd_idx_list = list(original_nd_idx)
+            neighbor_nd_idx_list[dim_idx] += offset_val
+            neighbor_nd_idx = tuple(neighbor_nd_idx_list)
+
+            # Check if neighbor is out of bounds
+            if not (0 <= neighbor_nd_idx[dim_idx] < grid_shape[dim_idx]):
+                return True
+
+            # Check if neighbor is inactive
+            if not active_mask[neighbor_nd_idx]:
+                return True
+
+    return False
+
+
+def _find_grid_boundary_nodes(
+    graph: nx.Graph,
+    grid_shape: tuple[int, ...],
+    active_mask: NDArray[np.bool_],
+) -> list[int]:
+    """Find boundary nodes using N-D grid topology.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        Connectivity graph.
+    grid_shape : tuple[int, ...]
+        Shape of the grid.
+    active_mask : NDArray[np.bool_]
+        Boolean mask of active bins.
+
+    Returns
+    -------
+    list[int]
+        List of boundary node IDs.
+
+    """
+    boundary_nodes = []
+    for node_id in graph.nodes():
+        if _is_grid_boundary_node(node_id, graph, grid_shape, active_mask):
+            boundary_nodes.append(node_id)
+    return boundary_nodes
+
+
+def _compute_degree_threshold(
+    layout_kind: str | None,
+    median_degree: float,
+    max_degree: float,
+    grid_shape: tuple[int, ...] | None,
+) -> float:
+    """Compute degree threshold for boundary detection.
+
+    Parameters
+    ----------
+    layout_kind : str or None
+        Type of layout (e.g., "Hexagonal", "Graph").
+    median_degree : float
+        Median degree of all nodes.
+    max_degree : float
+        Maximum degree of all nodes.
+    grid_shape : tuple[int, ...] or None
+        Shape of grid if applicable.
+
+    Returns
+    -------
+    float
+        Degree threshold below which nodes are considered boundary.
+
+    """
+    if layout_kind == "Hexagonal" and median_degree > 5:
+        return 5.5  # Hexagonal grids: bins with < 6 neighbors
+
+    if layout_kind == "Graph":
+        return 1.5 if max_degree >= 2 else max_degree
+
+    # 1D grids use the same logic as Graph layouts
+    if grid_shape is not None and len(grid_shape) == 1:
+        return 1.5 if max_degree >= 2 else max_degree
+
+    # N-D grid fallback
+    if (
+        grid_shape is not None
+        and len(grid_shape) > 1
+        and median_degree > (2 * len(grid_shape) - 1)
+    ):
+        return 2 * len(grid_shape) - 0.5
+
+    # General fallback
+    return median_degree
+
+
+def _find_degree_based_boundary_nodes(
+    graph: nx.Graph,
+    layout_kind: str | None,
+    grid_shape: tuple[int, ...] | None,
+) -> list[int]:
+    """Find boundary nodes using degree-based heuristics.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        Connectivity graph.
+    layout_kind : str or None
+        Type of layout for layout-specific thresholds.
+    grid_shape : tuple[int, ...] or None
+        Shape of grid if applicable.
+
+    Returns
+    -------
+    list[int]
+        List of boundary node IDs.
+
+    """
+    degrees = dict(graph.degree())
+    if not degrees:
+        return []
+
+    all_degree_values = list(degrees.values())
+    median_degree = np.median(all_degree_values)
+    max_degree = np.max(all_degree_values)
+
+    # Compute threshold based on layout type
+    threshold = _compute_degree_threshold(
+        layout_kind,
+        median_degree,
+        max_degree,
+        grid_shape,
+    )
+
+    # Find nodes below threshold
+    boundary_nodes = [
+        node_id for node_id, degree in degrees.items() if degree < threshold
+    ]
+
+    # Fallback: if no boundaries found and degrees vary, mark nodes < max_degree
+    if (
+        not boundary_nodes
+        and max_degree > 0
+        and median_degree != max_degree
+        and grid_shape is None  # Only for non-grid layouts
+    ):
+        boundary_nodes = [
+            node_id for node_id, degree in degrees.items() if degree < max_degree
+        ]
+
+    return boundary_nodes
+
+
 def find_boundary_nodes(
     graph: nx.Graph,
     grid_shape: tuple[int, ...] | None = None,
     active_mask: NDArray[np.bool_] | None = None,
     layout_kind: str | None = None,
 ) -> NDArray[np.int_]:
-    """
-    Identify boundary nodes in a connectivity graph G.
+    """Identify boundary nodes in a connectivity graph G.
 
-    A node is considered “boundary” if:
+    A node is considered "boundary" if:
       1) For an N>1 grid layout (grid_shape and active_mask provided, and
          connectivity_threshold_factor is None), it lies on the edge of the
          active region (i.e., at least one of its N-D neighbors is either
@@ -733,102 +922,26 @@ def find_boundary_nodes(
     ------
     ValueError
         If G is empty or invalid parameters are provided.
+
     """
     if graph.number_of_nodes() == 0:
         return np.array([], dtype=int)
 
-    boundary_bin_indices = []
-
-    # Grid-specific logic for N-D grids (N > 1)
-    is_nd_grid_layout_with_mask = (
+    # Determine if we can use grid-based boundary detection
+    use_grid_method = (
         active_mask is not None and grid_shape is not None and len(grid_shape) > 1
     )
 
-    if is_nd_grid_layout_with_mask:
-        n_dims = len(grid_shape)
-
-        for active_node_id in graph.nodes():
-            node_data = graph.nodes[active_node_id]
-            original_nd_idx = node_data.get("original_grid_nd_index")
-            if original_nd_idx is None:
-                warnings.warn(
-                    f"Node {active_node_id} missing 'original_grid_nd_index'. "
-                    "Cannot use N-D grid boundary logic. Consider degree-based method.",
-                    UserWarning,
-                )
-                # Potentially fall back to degree-based for this node or skip
-                continue  # Skip this node for grid logic
-
-            is_boundary = False
-            for dim_idx in range(n_dims):
-                for offset_val in [-1, 1]:
-                    neighbor_nd_idx_list = list(original_nd_idx)
-                    neighbor_nd_idx_list[dim_idx] += offset_val
-                    neighbor_nd_idx = tuple(neighbor_nd_idx_list)
-
-                    if not (0 <= neighbor_nd_idx[dim_idx] < grid_shape[dim_idx]):
-                        is_boundary = True
-                        break
-                    if not active_mask[neighbor_nd_idx]:
-                        is_boundary = True
-                        break
-                if is_boundary:
-                    break
-            if is_boundary:
-                boundary_bin_indices.append(active_node_id)
+    if use_grid_method:
+        boundary_nodes = _find_grid_boundary_nodes(graph, grid_shape, active_mask)
     else:
-        # Degree-based heuristic for:
-        # - Non-grid layouts
-        # - 1D grid layouts (where len(grid_shape) == 1)
-        # - N-D grid layouts if connectivity_threshold_factor is provided
-        # - N-D grid layouts if 'original_grid_nd_index' is missing for nodes
+        boundary_nodes = _find_degree_based_boundary_nodes(
+            graph,
+            layout_kind,
+            grid_shape,
+        )
 
-        degrees = dict(graph.degree())
-        if not degrees:
-            return np.array([], dtype=int)
-
-        all_degree_values = list(degrees.values())
-        median_degree = np.median(all_degree_values)
-        max_degree_val = np.max(all_degree_values) if all_degree_values else 0
-
-        if layout_kind == "Hexagonal" and median_degree > 5:
-            threshold_degree = 5.5  # Bins with < 6 neighbors
-        elif layout_kind == "Graph":
-            # Threshold just below typical internal degree.
-            threshold_degree = (
-                1.5 if max_degree_val >= 2 else max_degree_val
-            )  # Catches degree 1
-        elif is_nd_grid_layout_with_mask and median_degree > (
-            2 * len(grid_shape) - 1
-        ):  # For N>1 grids when falling back
-            threshold_degree = 2 * len(grid_shape) - 0.5
-        else:  # General fallback if no specific layout recognized or no factor
-            threshold_degree = median_degree  # Bins with degree < median are boundary
-
-        for node_id, degree in degrees.items():
-            if degree < threshold_degree:
-                boundary_bin_indices.append(node_id)
-
-        # If the above found nothing, and it's not a specific grid case where that's expected,
-        # a simple fallback for general graphs: degree < max_degree
-        # This ensures that if all nodes have the same degree (e.g. a k-regular graph like a circle)
-        # it doesn't mark all as boundary unless median was already low.
-        # Only mark as boundary if degree is strictly less than the absolute max.
-        # This is a very general fallback.
-        if (
-            not boundary_bin_indices
-            and not is_nd_grid_layout_with_mask  # Avoid if it was an ND-grid that correctly found no boundaries
-            and max_degree_val > 0
-            and median_degree != max_degree_val  # not all nodes have same degree
-        ):
-            for node_id, degree in degrees.items():
-                # Stricter than degree < median_degree for some cases
-                if (
-                    degree < max_degree_val and node_id not in boundary_bin_indices
-                ):  # Avoid re-adding
-                    boundary_bin_indices.append(node_id)
-
-    return np.array(sorted(set(boundary_bin_indices)), dtype=int)
+    return np.array(sorted(set(boundary_nodes)), dtype=int)
 
 
 def map_active_data_to_grid(
@@ -837,8 +950,7 @@ def map_active_data_to_grid(
     active_bin_data: NDArray[np.float64],
     fill_value: float = np.nan,
 ) -> NDArray[np.float64]:
-    """
-    Map a 1D array of data corresponding to active bins onto a full N-D grid.
+    """Map a 1D array of data corresponding to active bins onto a full N-D grid.
 
     This is useful for visualizing data (e.g., place fields, posterior
     probabilities) on grid-based layouts using functions like `pcolormesh`.
@@ -864,11 +976,12 @@ def map_active_data_to_grid(
         If the environment is not grid-based (missing `grid_shape` or
         `active_mask`), or if `active_bin_data` has an incorrect shape
         or incompatible data type.
+
     """
     if grid_shape is None or active_mask is None:
         raise ValueError(
             "This method is applicable only to grid-based environments "
-            "that have 'grid_shape' and 'active_mask' attributes."
+            "that have 'grid_shape' and 'active_mask' attributes.",
         )
     if not isinstance(active_bin_data, np.ndarray) or active_bin_data.ndim != 1:
         raise ValueError("active_bin_data must be a 1D NumPy array.")
@@ -877,7 +990,7 @@ def map_active_data_to_grid(
     if active_bin_data.shape[0] != n_bins:
         raise ValueError(
             f"Length of active_bin_data ({active_bin_data.shape[0]}) "
-            f"must match the number of active bins ({n_bins})."
+            f"must match the number of active bins ({n_bins}).",
         )
 
     # Create an array for the full grid, filled with the fill_value

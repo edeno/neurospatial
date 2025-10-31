@@ -1,5 +1,4 @@
-"""
-Utility functions for creating and managing regular N-dimensional grid layouts.
+"""Utility functions for creating and managing regular N-dimensional grid layouts.
 
 This module provides a collection of helper functions used primarily by
 `RegularGridLayout` and other grid-based layout engines within the
@@ -42,8 +41,7 @@ def _create_regular_grid_connectivity_graph(
     grid_shape: tuple[int, ...],
     connect_diagonal: bool = False,
 ) -> nx.Graph:
-    """
-    Create a graph connecting centers of active bins in an N-D grid.
+    """Create a graph connecting centers of active bins in an N-D grid.
 
     Nodes in the returned graph are indexed from `0` to `n_active_bins - 1`.
     Each node stores attributes:
@@ -79,16 +77,17 @@ def _create_regular_grid_connectivity_graph(
     ValueError
         If input shapes (`full_grid_bin_centers`, `active_mask_nd`,
         `grid_shape`) are inconsistent.
+
     """
     if full_grid_bin_centers.shape[0] != np.prod(grid_shape):
         raise ValueError(
             f"Mismatch: full_grid_bin_centers length ({full_grid_bin_centers.shape[0]}) "
-            f"and product of grid_shape ({np.prod(grid_shape)})."
+            f"and product of grid_shape ({np.prod(grid_shape)}).",
         )
     if active_mask_nd.shape != grid_shape:
         raise ValueError(
             f"Shape of active_mask_nd {active_mask_nd.shape} "
-            f"does not match grid_shape {grid_shape}."
+            f"does not match grid_shape {grid_shape}.",
         )
 
     n_dims = active_mask_nd.ndim
@@ -145,13 +144,14 @@ def _create_regular_grid_connectivity_graph(
     for current_original_nd_idx_arr in active_original_nd_indices_list:
         # current_original_nd_idx_arr is like np.array([r, c, z])
         current_original_flat_idx = np.ravel_multi_index(
-            current_original_nd_idx_arr, grid_shape
+            current_original_nd_idx_arr,
+            grid_shape,
         )
         u_new = original_flat_to_new_node_id_map[current_original_flat_idx]
 
         for offset_tuple in neighbor_offsets:
             neighbor_original_nd_idx_arr = current_original_nd_idx_arr + np.array(
-                offset_tuple
+                offset_tuple,
             )
             neighbor_original_nd_idx_tuple = tuple(neighbor_original_nd_idx_arr)
 
@@ -165,7 +165,8 @@ def _create_regular_grid_connectivity_graph(
             # Check if this neighbor is also active
             if active_mask_nd[neighbor_original_nd_idx_tuple]:
                 neighbor_original_flat_idx = np.ravel_multi_index(
-                    neighbor_original_nd_idx_tuple, grid_shape
+                    neighbor_original_nd_idx_tuple,
+                    grid_shape,
                 )
                 v_new = original_flat_to_new_node_id_map[neighbor_original_flat_idx]
 
@@ -181,7 +182,8 @@ def _create_regular_grid_connectivity_graph(
                     }
                     if n_dims == 2:
                         edge_attrs["angle_2d"] = math.atan2(
-                            displacement_vector[1], displacement_vector[0]
+                            displacement_vector[1],
+                            displacement_vector[0],
                         )
 
                     edges_to_add_with_attrs.append((u_new, v_new, edge_attrs))
@@ -207,8 +209,7 @@ def _infer_active_bins_from_regular_grid(
     bin_count_threshold: int = 0,
     boundary_exists: bool = False,
 ) -> NDArray[np.bool_]:
-    """
-    Infer active bins in a regular grid based on data sample density.
+    """Infer active bins in a regular grid based on data sample density.
 
     This function first counts data samples in each grid bin defined by `edges`.
     Bins with counts above `bin_count_threshold` are initially marked active.
@@ -243,6 +244,7 @@ def _infer_active_bins_from_regular_grid(
     active_mask : NDArray[np.bool_], shape (n_bins_dim0, n_bins_dim1, ...)
         N-dimensional boolean mask indicating which bins in the grid are
         considered active or part of the track interior.
+
     """
     pos_clean = data_samples[~np.any(np.isnan(data_samples), axis=1)]
 
@@ -306,8 +308,7 @@ def _create_regular_grid(
     NDArray[np.float64],  # bin_centers
     tuple[int, ...],  # centers_shape
 ]:
-    """
-    Define bin edges and centers for a regular N-D Cartesian grid.
+    """Define bin edges and centers for a regular N-D Cartesian grid.
 
     Parameters
     ----------
@@ -338,6 +339,7 @@ def _create_regular_grid(
         - If `data_samples` is provided but not a 2D array.
         - If `dimension_range` length ≠ inferred `n_dims`.
         - If `bin_size` sequence length ≠ `n_dims`, or any `bin_size` ≤ 0.
+
     """
     # 1) Determine dimensionality
     if data_samples is None and dimension_range is None:
@@ -351,7 +353,7 @@ def _create_regular_grid(
         samples = samples[~np.isnan(samples).any(axis=1)]
         if samples.size == 0 and dimension_range is None:
             raise ValueError(
-                "`data_samples` has no valid points and no `dimension_range` given."
+                "`data_samples` has no valid points and no `dimension_range` given.",
             )
     else:
         samples = None
@@ -371,7 +373,7 @@ def _create_regular_grid(
     if dimension_range is not None:
         if len(dimension_range) != n_dims:
             raise ValueError(
-                f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims})."
+                f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims}).",
             )
         ranges = []
         for (lo, hi), size in zip(dimension_range, bin_sizes, strict=False):
@@ -412,7 +414,7 @@ def _create_regular_grid(
         step = size if diff.size == 0 else diff[0]
         if add_boundary_bins:
             extended = np.concatenate(
-                ([edges_dim[0] - step], edges_dim, [edges_dim[-1] + step])
+                ([edges_dim[0] - step], edges_dim, [edges_dim[-1] + step]),
             )
         else:
             extended = edges_dim
@@ -437,8 +439,7 @@ def _points_to_regular_grid_bin_ind(
     grid_shape: tuple[int, ...],
     active_mask: NDArray[np.bool_] = None,
 ) -> NDArray[np.int_]:
-    """
-    Map N-D points to their corresponding bin indices in a regular grid.
+    """Map N-D points to their corresponding bin indices in a regular grid.
 
     If `active_mask` is provided, maps to indices relative to active bins
     (0 to `n_active_bins - 1`). Otherwise, maps to flat indices of the
@@ -467,6 +468,7 @@ def _points_to_regular_grid_bin_ind(
         - If `active_mask` is None: Flat indices of the full grid. Points
           outside grid boundaries get -1 or out-of-range indices (depending
           on `np.digitize` behavior for edge cases, typically -1 due to clipping).
+
     """
     points_atleast_2d = np.atleast_2d(points)
     valid_input_mask = ~np.any(np.isnan(points_atleast_2d), axis=1)
@@ -510,7 +512,9 @@ def _points_to_regular_grid_bin_ind(
 
     # Initialize flat indices for valid_points to -1
     original_bin_flat_idx_for_valid_points = np.full(
-        valid_points.shape[0], -1, dtype=np.int_
+        valid_points.shape[0],
+        -1,
+        dtype=np.int_,
     )
 
     if np.any(point_is_within_grid_bounds):
@@ -528,7 +532,9 @@ def _points_to_regular_grid_bin_ind(
     # This mapping depends on whether an active_mask is used for final indexing.
 
     final_mapped_indices_for_valid_points = np.full(
-        valid_points.shape[0], -1, dtype=np.int_
+        valid_points.shape[0],
+        -1,
+        dtype=np.int_,
     )
 
     if active_mask is not None:

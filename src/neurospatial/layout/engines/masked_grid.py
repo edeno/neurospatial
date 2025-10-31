@@ -13,8 +13,7 @@ from neurospatial.layout.mixins import _GridMixin
 
 
 class MaskedGridLayout(_GridMixin):
-    """
-    Layout from a pre-defined N-D boolean mask and explicit grid edges.
+    """Layout from a pre-defined N-D boolean mask and explicit grid edges.
 
     Allows for precise specification of active bins in an N-dimensional grid
     by providing the complete grid structure (`grid_edges`) and a mask
@@ -53,8 +52,7 @@ class MaskedGridLayout(_GridMixin):
         grid_edges: tuple[NDArray[np.float64], ...],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
-        """
-        Build the layout from a mask and grid edges.
+        """Build the layout from a mask and grid edges.
 
         Parameters
         ----------
@@ -73,6 +71,7 @@ class MaskedGridLayout(_GridMixin):
         ValueError
             If `active_mask` shape does not match `grid_edges` definition,
             or if `grid_edges` are invalid.
+
         """
         self._build_params_used = locals().copy()  # Store all passed params
         del self._build_params_used["self"]  # Remove self from the dictionary
@@ -84,18 +83,20 @@ class MaskedGridLayout(_GridMixin):
         if self.active_mask.shape != self.grid_shape:
             raise ValueError(
                 f"active_mask shape {self.active_mask.shape} must match "
-                f"the shape implied by grid_edges {self.grid_shape}."
+                f"the shape implied by grid_edges {self.grid_shape}.",
             )
 
         # Create full_grid_bin_centers as (N_total_bins, N_dims) array
         centers_per_dim = [get_centers(edge_dim) for edge_dim in self.grid_edges]
         mesh_centers_list = np.meshgrid(*centers_per_dim, indexing="ij", sparse=False)
         full_grid_bin_centers = np.stack(
-            [c.ravel() for c in mesh_centers_list], axis=-1
+            [c.ravel() for c in mesh_centers_list],
+            axis=-1,
         )
 
         self.bin_size_ = np.array(
-            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges], dtype=np.float64
+            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges],
+            dtype=np.float64,
         )
 
         self.dimension_ranges = tuple(
