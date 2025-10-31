@@ -63,12 +63,20 @@ def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
     NDArray[np.float64]
         The 2x2 rotation matrix.
 
-    Example
-    -------
+    Examples
+    --------
     >>> rotation_matrix = get_2d_rotation_matrix(90)
     >>> print(rotation_matrix)
-    >> [[ 0. -1.]
-        [ 1.  0.]]
+    [[ 0. -1.]
+     [ 1.  0.]]
+
+    Rotate a point 90 degrees counter-clockwise:
+
+    >>> import numpy as np
+    >>> point = np.array([[1, 0]])
+    >>> rotated = point @ rotation_matrix.T
+    >>> print(rotated)
+    [[0. 1.]]
 
     """
     angle_radians = np.deg2rad(angle_degrees)
@@ -110,6 +118,29 @@ def apply_similarity_transform(
     ------
     ValueError
         If dimensionality mismatches occur or rotation matrix is not square.
+
+    Examples
+    --------
+    Apply a combined rotation, scale, and translation:
+
+    >>> import numpy as np
+    >>> from neurospatial.alignment import (
+    ...     apply_similarity_transform,
+    ...     get_2d_rotation_matrix,
+    ... )
+    >>> # Define points
+    >>> points = np.array([[1, 0], [0, 1], [1, 1]])
+    >>> # Rotate 90 degrees
+    >>> rotation = get_2d_rotation_matrix(90)
+    >>> # Scale by 2
+    >>> scale = 2.0
+    >>> # Translate by (10, 20)
+    >>> translation = np.array([10, 20])
+    >>> transformed = apply_similarity_transform(points, rotation, scale, translation)
+    >>> print(transformed)
+    [[10. 22.]
+     [ 8. 20.]
+     [ 8. 22.]]
 
     """
     n_dims = points.shape[1]
@@ -430,6 +461,40 @@ def map_probabilities_to_nearest_target_bin(
         If either `source_env` or `target_env` is not fitted.
     ValueError
         If `source_probabilities` has incorrect shape, or if dims mismatch.
+
+    Examples
+    --------
+    Map probabilities between two environments with different bin sizes:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.alignment import map_probabilities_to_nearest_target_bin
+    >>> # Create two environments with different bin sizes
+    >>> data = np.random.rand(1000, 2) * 100
+    >>> source_env = Environment.from_samples(data, bin_size=5.0)
+    >>> target_env = Environment.from_samples(data, bin_size=10.0)
+    >>> # Create probability distribution for source
+    >>> source_probs = np.ones(source_env.n_bins) / source_env.n_bins
+    >>> # Map to target environment
+    >>> target_probs = map_probabilities_to_nearest_target_bin(
+    ...     source_env, target_env, source_probs
+    ... )
+    >>> target_probs.shape[0] == target_env.n_bins
+    True
+    >>> np.allclose(target_probs.sum(), 1.0)
+    True
+
+    Map with rotation and scaling:
+
+    >>> from neurospatial.alignment import get_2d_rotation_matrix
+    >>> rotation = get_2d_rotation_matrix(45)  # 45 degree rotation
+    >>> target_probs = map_probabilities_to_nearest_target_bin(
+    ...     source_env,
+    ...     target_env,
+    ...     source_probs,
+    ...     source_rotation_matrix=rotation,
+    ...     source_scale_factor=0.9,
+    ... )
 
     """
     from scipy.spatial import cKDTree

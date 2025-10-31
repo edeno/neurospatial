@@ -381,6 +381,41 @@ class Environment:
         NotImplementedError
             If `layout_kind` is neither "RegularGrid" nor "Hexagonal".
 
+        Examples
+        --------
+        Create a simple 2D environment from position data:
+
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Simulate animal position data in a 100x100 arena
+        >>> positions = np.random.rand(1000, 2) * 100
+        >>> # Create environment with 5cm bins
+        >>> env = Environment.from_samples(
+        ...     data_samples=positions, bin_size=5.0, name="arena"
+        ... )
+        >>> env.n_dims
+        2
+        >>> env.n_bins > 0
+        True
+
+        Create environment with morphological operations to clean up the active region:
+
+        >>> env = Environment.from_samples(
+        ...     data_samples=positions,
+        ...     bin_size=5.0,
+        ...     bin_count_threshold=10,  # Require 10 samples per bin
+        ...     dilate=True,  # Expand active region
+        ...     fill_holes=True,  # Fill interior holes
+        ... )
+
+        Create a hexagonal grid environment:
+
+        >>> env = Environment.from_samples(
+        ...     data_samples=positions,
+        ...     layout_kind="Hexagonal",
+        ...     bin_size=5.0,
+        ... )
+
         """
         # Convert and validate data_samples array
         data_samples = np.asarray(data_samples, dtype=float)
@@ -513,6 +548,30 @@ class Environment:
         RuntimeError
             If the 'shapely' package is not installed.
 
+        Examples
+        --------
+        Create an environment from a rectangular polygon:
+
+        >>> from shapely.geometry import Polygon
+        >>> from neurospatial import Environment
+        >>> # Create a simple rectangular arena
+        >>> polygon = Polygon([(0, 0), (100, 0), (100, 50), (0, 50)])
+        >>> env = Environment.from_polygon(
+        ...     polygon=polygon, bin_size=5.0, name="rectangular_arena"
+        ... )
+        >>> env.n_dims
+        2
+
+        Create an environment from a circular arena:
+
+        >>> from shapely.geometry import Point
+        >>> center = Point(50, 50)
+        >>> circular_polygon = center.buffer(25)  # Circle with radius 25
+        >>> env = Environment.from_polygon(
+        ...     polygon=circular_polygon,
+        ...     bin_size=2.0,
+        ... )
+
         """
         layout_params = {
             "polygon": polygon,
@@ -558,6 +617,26 @@ class Environment:
         Environment
             A new Environment instance with a `MaskedGridLayout`.
 
+        Examples
+        --------
+        Create an environment from a custom mask:
+
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create a simple 2D mask (10x10 grid with center region active)
+        >>> mask = np.zeros((10, 10), dtype=bool)
+        >>> mask[3:7, 3:7] = True  # Center 4x4 region is active
+        >>> # Define grid edges
+        >>> grid_edges = (
+        ...     np.linspace(0, 100, 11),  # x edges
+        ...     np.linspace(0, 100, 11),  # y edges
+        ... )
+        >>> env = Environment.from_mask(
+        ...     active_mask=mask, grid_edges=grid_edges, name="center_region"
+        ... )
+        >>> env.n_bins
+        16
+
         """
         layout_params = {
             "active_mask": active_mask,
@@ -602,6 +681,25 @@ class Environment:
         -------
         Environment
             A new Environment instance with an `ImageMaskLayout`.
+
+        Examples
+        --------
+        Create an environment from a binary image mask:
+
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create a simple binary image (e.g., from thresholding)
+        >>> image_height, image_width = 480, 640
+        >>> mask = np.zeros((image_height, image_width), dtype=bool)
+        >>> # Mark a rectangular region as active
+        >>> mask[100:400, 150:500] = True
+        >>> env = Environment.from_image(
+        ...     image_mask=mask,
+        ...     bin_size=10.0,  # 10x10 spatial units per bin
+        ...     name="arena_from_image",
+        ... )
+        >>> env.n_dims
+        2
 
         """
         layout_params = {
