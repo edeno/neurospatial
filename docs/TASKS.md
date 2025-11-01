@@ -46,11 +46,11 @@
 
 ### Terminology & Concepts
 
-- [ ] **Add "active bins" definition** (`src/neurospatial/environment.py`)
-  - [ ] Add Terminology section to Environment class docstring
-  - [ ] Define "active bins" with examples
-  - [ ] Explain scientific motivation
-  - [ ] Cross-reference `infer_active_bins` parameter
+- [x] **Add "active bins" definition** (`src/neurospatial/environment.py`)
+  - [x] Add Terminology section to Environment class docstring
+  - [x] Define "active bins" with examples
+  - [x] Explain scientific motivation
+  - [x] Cross-reference `infer_active_bins` parameter
 
 - [ ] **Add bin_size units clarification** (all factory methods)
   - [ ] Update `from_samples()` docstring

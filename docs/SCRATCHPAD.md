@@ -353,3 +353,75 @@ This error message pattern (WHAT/WHY/HOW with diagnostics) should be applied to 
 **Related Tasks:**
 
 Next error message to improve: `@check_fitted` decorator error (TASKS.md line 116)
+
+## 2025-11-01: Add "Active Bins" Terminology to Environment Docstring
+
+### Task Completed
+
+- ✅ Added Terminology section to Environment class docstring
+- ✅ Defined "active bins" with clear explanation
+- ✅ Explained scientific motivation (3 key reasons)
+- ✅ Provided concrete examples (plus maze, circular arena)
+- ✅ Cross-referenced `infer_active_bins` and related parameters
+- ✅ Code review approved with no required changes
+
+### Implementation Details
+
+**Location:** `src/neurospatial/environment.py` (lines 89-114)
+
+**Added Terminology Section Including:**
+
+1. **Definition**: Clear explanation that active bins are spatial bins containing data or meeting criteria
+2. **Scientific Motivation**: Three bullet points explaining why active bins matter:
+   - Meaningful analysis (place fields only in visited locations)
+   - Computational efficiency (excludes empty regions)
+   - Statistical validity (prevents analysis of insufficient data)
+3. **Examples**: Two concrete scenarios:
+   - Plus maze: only maze arms are active, surrounding room excluded
+   - Open field with circular boundary: only bins inside circle are active
+4. **Parameter Cross-References**: References to `infer_active_bins`, `bin_count_threshold`, `dilate`, `fill_holes`, `close_gaps`
+
+**Design Decisions:**
+
+1. **Placement**: Added Terminology section before Attributes section, following NumPy docstring conventions
+2. **Formatting**: Used bold subsection header (`**Active Bins**`) with 4-space indentation
+3. **Scope**: Focused on one key term to avoid overwhelming readers
+4. **Audience**: Written to be accessible to both neuroscience domain experts and general users
+
+**Code Review Feedback:**
+
+Code-reviewer approved with rating: **APPROVE ✓**
+
+Key strengths identified:
+- Perfect NumPy format compliance
+- Clear structure with logical flow
+- Excellent scientific context
+- Concrete, domain-relevant examples
+- Comprehensive cross-references
+- Appropriate scope and readability
+
+No required changes. Suggestions were optional enhancements only.
+
+**Testing:**
+
+- All existing tests pass (32 passed, 1 skipped)
+- Docstring renders correctly in Python's help system
+- No regressions introduced
+
+### Files Modified
+
+- `src/neurospatial/environment.py` (lines 89-114) - Added Terminology section
+- `docs/TASKS.md` (marked task complete)
+
+### Notes for Next Task
+
+Next unchecked task in TASKS.md: **Add bin_size units clarification** (all factory methods)
+
+This will require updating docstrings for:
+- `from_samples()`
+- `from_polygon()`
+- `from_mask()`
+- `from_image()`
+- `from_graph()`
+
+Need to clarify that bin_size units match the coordinate system units and add warnings about Hexagonal vs RegularGrid interpretation differences.

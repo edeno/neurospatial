@@ -86,6 +86,33 @@ class Environment:
     `Environment.from_graph(...)`). These factories handle the underlying
     `LayoutEngine` setup.
 
+    Terminology
+    -----------
+    **Active Bins**
+        In neuroscience experiments, an animal typically explores only a subset
+        of the physical environment. "Active bins" are spatial bins that contain
+        data (e.g., position samples) or meet specified criteria (e.g., minimum
+        sample count). Only active bins are included in the environment's
+        `bin_centers` and `connectivity` graph.
+
+        This filtering is scientifically important because:
+
+        - **Meaningful analysis**: Neural activity (e.g., place fields) can only
+          be computed in locations the animal actually visited
+        - **Computational efficiency**: Excludes empty regions, reducing memory
+          and computation costs
+        - **Statistical validity**: Prevents analysis of bins with insufficient
+          data
+
+        For example, in a plus maze experiment, only the maze arms are active;
+        the surrounding room is excluded. In an open field with a circular
+        boundary, only bins inside the circle are active.
+
+        The `infer_active_bins` parameter in `Environment.from_samples()` controls
+        whether bins are automatically filtered based on data presence. Additional
+        parameters (`bin_count_threshold`, `dilate`, `fill_holes`, `close_gaps`)
+        provide fine-grained control over which bins are considered active.
+
     Attributes
     ----------
     name : str
