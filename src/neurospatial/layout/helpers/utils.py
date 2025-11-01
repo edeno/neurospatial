@@ -93,7 +93,7 @@ def get_n_bins(
     # Ensure bin_size is positive
     bin_size_arr = np.asarray(bin_size, dtype=float)
     if np.any(bin_size_arr <= 0.0):
-        raise ValueError("bin_size must be positive.")
+        raise ValueError(f"bin_size must be positive (got {bin_size}).")
 
     # Calculate number of bins, ensuring at least 1 bin even if extent is 0
     n_bins = np.ceil(extent / bin_size_arr).astype(np.int32)
@@ -145,7 +145,9 @@ def _infer_active_elements_from_samples(
 
     """
     if bin_count_threshold < 0:
-        raise ValueError("bin_count_threshold must be non-negative.")
+        raise ValueError(
+            f"bin_count_threshold must be non-negative (got {bin_count_threshold})."
+        )
 
     n_candidates, n_dims_candidates = candidate_element_centers.shape
     _, n_dims_samples = data_samples.shape

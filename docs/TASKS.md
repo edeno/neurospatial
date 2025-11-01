@@ -98,17 +98,17 @@
 
 ### Error Message Standardization
 
-- [ ] **Standardize error messages to show actual values**
-  - [ ] `layout/helpers/utils.py:96` - bin_size validation
-  - [ ] `layout/helpers/utils.py:148` - bin_count_threshold validation
-  - [ ] `calibration.py:48-50` - offset_px validation
-  - [ ] `layout/helpers/regular_grid.py` - parameter validations
-  - [ ] `layout/helpers/hexagonal.py` - parameter validations
-  - [ ] `layout/helpers/graph.py` - parameter validations
-  - [ ] `layout/mixins.py` - state validation errors
-  - [ ] Apply pattern: `f"{param} must be {constraint} (got {actual_value})"`
-  - [ ] Include type information where helpful
-  - [ ] Truncate long values (> 100 chars)
+- [x] **Standardize error messages to show actual values**
+  - [x] `layout/helpers/utils.py:96` - bin_size validation
+  - [x] `layout/helpers/utils.py:148` - bin_count_threshold validation
+  - [x] `calibration.py:48-50` - offset_px validation
+  - [x] `layout/helpers/regular_grid.py` - parameter validations
+  - [x] `layout/helpers/hexagonal.py` - parameter validations
+  - [x] `layout/helpers/graph.py` - parameter validations
+  - [x] `layout/mixins.py` - state validation errors (already had good messages)
+  - [x] Apply pattern: `f"{param} must be {constraint} (got {actual_value})"`
+  - [x] Include type information where helpful
+  - [x] Truncate long values (NumPy handles automatically)
 
 - [ ] **Enhance @check_fitted error with examples** (`src/neurospatial/environment.py:64-68`)
   - [ ] Add example of correct usage

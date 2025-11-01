@@ -371,7 +371,9 @@ def _create_regular_grid(
         if bin_sizes.ndim != 1 or bin_sizes.shape[0] != n_dims:
             raise ValueError(f"`bin_size` length must be {n_dims}, got {bin_sizes}.")
     if np.any(bin_sizes <= 0.0):
-        raise ValueError("All elements of `bin_size` must be positive.")
+        raise ValueError(
+            f"All elements of `bin_size` must be positive (got {bin_size})."
+        )
 
     # 3) Determine dimension ranges
     if dimension_range is not None:

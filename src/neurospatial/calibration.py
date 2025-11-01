@@ -44,10 +44,10 @@ def simple_scale(
     # Ensure offset_px has exactly two values
     try:
         ox, oy = float(offset_px[0]), float(offset_px[1])
-    except (TypeError, IndexError):
+    except (TypeError, IndexError, ValueError) as e:
         raise ValueError(
-            "offset_px must be a tuple of two numeric values (x, y).",
-        ) from None
+            f"offset_px must be a tuple of two numeric values (x, y), got {type(offset_px).__name__} with value {offset_px}.",
+        ) from e
 
     # Build a 3×3 affine matrix: scale then translate
     tx = -ox * sx

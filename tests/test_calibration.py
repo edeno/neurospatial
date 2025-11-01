@@ -99,7 +99,9 @@ class TestSimpleScale:
 
     def test_invalid_offset_type(self):
         """Test that invalid offset type raises ValueError."""
-        with pytest.raises(ValueError, match="could not convert string to float"):
+        with pytest.raises(
+            ValueError, match="offset_px must be a tuple of two numeric values"
+        ):
             simple_scale(10.0, offset_px="invalid")  # type: ignore
 
     def test_invalid_offset_length(self):

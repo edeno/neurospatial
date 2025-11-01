@@ -78,7 +78,7 @@ def _get_graph_bins(
     """
     # 1) Validate bin_size
     if bin_size <= 0:
-        raise ValueError("`bin_size` must be a positive float.")
+        raise ValueError(f"`bin_size` must be a positive float (got {bin_size}).")
 
     # 2) Validate edge_order contents
     missing_nodes = {
@@ -94,7 +94,9 @@ def _get_graph_bins(
     else:
         gaps = np.asarray(edge_spacing, dtype=float)
         if gaps.ndim != 1 or gaps.shape[0] != max(0, n_edges - 1):
-            raise ValueError(f"`edge_spacing` length must be {max(0, n_edges - 1)}.")
+            raise ValueError(
+                f"`edge_spacing` length must be {max(0, n_edges - 1)} (got {gaps.shape[0]})."
+            )
     # If there are zero edges, we return empty structures
     if n_edges == 0:
         return (

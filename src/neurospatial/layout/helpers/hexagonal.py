@@ -84,7 +84,9 @@ def _create_hex_grid(
     """
     # 1) Validate hexagon_width
     if hexagon_width <= 0:
-        raise ValueError("`hexagon_width` must be a positive float.")
+        raise ValueError(
+            f"`hexagon_width` must be a positive float (got {hexagon_width})."
+        )
 
     hex_orientation = 0.0  # point-up
 
@@ -101,7 +103,9 @@ def _create_hex_grid(
     # 3) Determine bounding box
     if dimension_range is not None:
         if len(dimension_range) != 2:
-            raise ValueError("`dimension_range` must be ((min_x,max_x),(min_y,max_y)).")
+            raise ValueError(
+                f"`dimension_range` must be ((min_x,max_x),(min_y,max_y)), got length {len(dimension_range)}."
+            )
         (ux0, ux1), (uy0, uy1) = dimension_range
         min_x, max_x = sorted((float(ux0), float(ux1)))
         min_y, max_y = sorted((float(uy0), float(uy1)))
