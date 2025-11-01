@@ -425,3 +425,110 @@ This will require updating docstrings for:
 - `from_graph()`
 
 Need to clarify that bin_size units match the coordinate system units and add warnings about Hexagonal vs RegularGrid interpretation differences.
+
+## 2025-11-01: Add bin_size Units Clarification to All Factory Methods
+
+### Task Completed
+
+- ✅ Updated `from_samples()` docstring with units clarification
+- ✅ Updated `from_graph()` docstring with units clarification
+- ✅ Updated `from_polygon()` docstring with units clarification
+- ✅ Updated `from_image()` docstring with units clarification
+- ✅ Updated `from_mask()` docstring with grid_edges units clarification
+- ✅ Added unit comments to all examples
+- ✅ Verified hexagonal interpretation warning already present
+- ✅ Code review approved with minor suggestions
+- ✅ All tests pass (32 passed, 1 skipped)
+
+### Implementation Details
+
+**Changes to Factory Methods:**
+
+1. **`from_samples()`** (lines 381-385, 417-446)
+   - Added: "Size of each bin in the same units as `data_samples` coordinates"
+   - Clarified hexagon width as "flat-to-flat distance across hexagon"
+   - Added example: "If your data is in centimeters, bin_size=5.0 creates 5cm bins"
+   - Updated all examples with unit comments (# cm, # 5cm bins, # 5cm hexagon width)
+
+2. **`from_graph()`** (lines 521-529)
+   - Added: "in the same units as the graph node coordinates" to both edge_spacing and bin_size
+   - Added example: "if node positions are in centimeters, bin_size=2.0 creates 2cm bins along the track"
+
+3. **`from_polygon()`** (lines 565-568, 589-607)
+   - Added: "in the same units as the polygon coordinates"
+   - Clarified per-dimension behavior: "If a sequence, specifies bin size per dimension"
+   - Updated examples with unit comments (# cm, # 5cm bins, # 2cm bins)
+
+4. **`from_image()`** (lines 704-708, 724-735)
+   - Added: "The spatial size of each pixel in physical units (e.g., cm, meters)"
+   - Added practical example: "if your camera captures images where each pixel represents 0.5cm, use bin_size=0.5"
+   - Updated example from unrealistic bin_size=10.0 to realistic bin_size=0.5
+
+5. **`from_mask()`** (lines 640-644, 660-672)
+   - Added: "in physical units (e.g., cm, meters)" to grid_edges description
+   - Added: "The edges define the boundaries of bins along each dimension. For example, edges [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30]"
+   - Updated examples with unit comments (# x edges in cm, # y edges in cm)
+
+**Design Decisions:**
+
+1. **Consistent Phrasing**: Used "in the same units as X coordinates" pattern across all methods
+2. **Concrete Examples**: Every example includes helpful unit comments showing practical usage
+3. **Image-specific Context**: Emphasized pixel-to-physical-unit mapping for `from_image()`
+4. **grid_edges Explanation**: Clarified that edges define bin boundaries, not bin centers
+
+**Code Review Feedback:**
+
+Code-reviewer approved with rating: **APPROVE WITH MINOR SUGGESTIONS**
+
+Strengths identified:
+- Consistent phrasing across all methods
+- Practical examples with unit comments
+- Technical accuracy (hexagon width = flat-to-flat)
+- NumPy docstring format maintained
+- Completeness - all factory methods covered
+- Smart coverage of edge cases (image pixels, grid edges)
+
+Minor suggestions (optional, not blocking):
+- Could add Examples section to `from_graph()` for consistency
+- Could add "Units" subsection to Notes for centralized discussion
+- Could clarify relationship between `bin_size` parameter and `bin_sizes` property
+
+**Testing:**
+
+- All existing tests pass (32 passed, 1 skipped)
+- No regressions introduced
+- Docstrings verified to render correctly
+
+### Files Modified
+
+- `src/neurospatial/environment.py`:
+  - Lines 381-385: `from_samples()` bin_size parameter
+  - Lines 417-446: `from_samples()` examples
+  - Lines 521-529: `from_graph()` edge_spacing and bin_size parameters
+  - Lines 565-568: `from_polygon()` bin_size parameter
+  - Lines 589-607: `from_polygon()` examples
+  - Lines 704-708: `from_image()` bin_size parameter
+  - Lines 724-735: `from_image()` examples
+  - Lines 640-644: `from_mask()` grid_edges parameter
+  - Lines 660-672: `from_mask()` examples
+- `docs/TASKS.md` (marked task complete)
+
+### Notes for Future Work
+
+**Optional Enhancements** (from code review, low priority):
+- Add Examples section to `from_graph()` showing units in practice
+- Consider adding "Units and Coordinate Systems" subsection to Notes
+- Consider clarifying relationship between nominal `bin_size` and actual `bin_sizes` property
+
+**Pattern Established:**
+This establishes a consistent pattern for documenting spatial parameters across the API. Future methods with spatial parameters should follow this same pattern:
+1. State units relationship explicitly in parameter description
+2. Provide concrete example showing what the units mean
+3. Add unit comments to code examples
+
+**Impact:**
+This change significantly improves discoverability and reduces a major source of user confusion. New users can now clearly understand that all spatial parameters use consistent units throughout the API.
+
+### Next Task
+
+Next unchecked task in TASKS.md (Milestone 2): **Add Factory Method Selection Guide** to Environment class docstring.

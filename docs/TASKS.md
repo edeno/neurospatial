@@ -52,14 +52,14 @@
   - [x] Explain scientific motivation
   - [x] Cross-reference `infer_active_bins` parameter
 
-- [ ] **Add bin_size units clarification** (all factory methods)
-  - [ ] Update `from_samples()` docstring
-  - [ ] Update `from_polygon()` docstring
-  - [ ] Update `from_mask()` docstring
-  - [ ] Update `from_image()` docstring
-  - [ ] Update `from_graph()` docstring
-  - [ ] Add warning about Hexagonal vs RegularGrid interpretation
-  - [ ] Update examples to show units in comments
+- [x] **Add bin_size units clarification** (all factory methods)
+  - [x] Update `from_samples()` docstring
+  - [x] Update `from_polygon()` docstring
+  - [x] Update `from_mask()` docstring (grid_edges)
+  - [x] Update `from_image()` docstring
+  - [x] Update `from_graph()` docstring
+  - [x] Add warning about Hexagonal vs RegularGrid interpretation (already present)
+  - [x] Update examples to show units in comments
 
 ---
 

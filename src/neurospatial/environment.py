@@ -379,7 +379,10 @@ class Environment:
             Either "RegularGrid" or "Hexagonal" (case-insensitive). Determines
             bin shape. For "Hexagonal", `bin_size` is interpreted as `hexagon_width`.
         bin_size : float or sequence of floats, default 2.0
-            For RegularGrid: length of each square bin side. For Hexagonal: hexagon width.
+            Size of each bin in the same units as `data_samples` coordinates.
+            For RegularGrid: length of each square bin side (or per-dimension if sequence).
+            For Hexagonal: hexagon width (flat-to-flat distance across hexagon).
+            If your data is in centimeters, bin_size=5.0 creates 5cm bins.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are “active.”
         bin_count_threshold : int, default 0
@@ -413,11 +416,13 @@ class Environment:
 
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Simulate animal position data in a 100x100 arena
-        >>> positions = np.random.rand(1000, 2) * 100
-        >>> # Create environment with 5cm bins
+        >>> # Simulate animal position data in a 100x100 cm arena
+        >>> positions = np.random.rand(1000, 2) * 100  # cm
+        >>> # Create environment with 5cm x 5cm bins
         >>> env = Environment.from_samples(
-        ...     data_samples=positions, bin_size=5.0, name="arena"
+        ...     data_samples=positions,
+        ...     bin_size=5.0,
+        ...     name="arena",  # bin_size in cm
         ... )
         >>> env.n_dims
         2
@@ -428,7 +433,7 @@ class Environment:
 
         >>> env = Environment.from_samples(
         ...     data_samples=positions,
-        ...     bin_size=5.0,
+        ...     bin_size=5.0,  # 5cm bins
         ...     bin_count_threshold=10,  # Require 10 samples per bin
         ...     dilate=True,  # Expand active region
         ...     fill_holes=True,  # Fill interior holes
@@ -439,7 +444,7 @@ class Environment:
         >>> env = Environment.from_samples(
         ...     data_samples=positions,
         ...     layout_kind="Hexagonal",
-        ...     bin_size=5.0,
+        ...     bin_size=5.0,  # 5cm hexagon width
         ... )
 
         """
@@ -517,10 +522,13 @@ class Environment:
             defines the 1D bin ordering.
         edge_spacing : Union[float, Sequence[float]]
             The spacing to insert between consecutive edges in `edge_order`
-            during linearization. If a float, applies to all gaps. If a
-            sequence, specifies spacing for each gap.
+            during linearization, in the same units as the graph node coordinates.
+            If a float, applies to all gaps. If a sequence, specifies spacing for
+            each gap.
         bin_size : float
-            The length of each bin along the linearized track.
+            The length of each bin along the linearized track, in the same units
+            as the graph node coordinates. For example, if node positions are in
+            centimeters, bin_size=2.0 creates 2cm bins along the track.
         name : str, optional
             A name for the created environment. Defaults to "".
 
@@ -557,7 +565,9 @@ class Environment:
         polygon : shapely.geometry.Polygon
             The Shapely Polygon object that defines the boundary of the active area.
         bin_size : Optional[Union[float, Sequence[float]]], optional
-            The side length(s) of the grid cells. Defaults to 2.0.
+            The side length(s) of the grid cells, in the same units as the polygon
+            coordinates. If a float, creates square bins. If a sequence, specifies
+            bin size per dimension. Defaults to 2.0.
         name : str, optional
             A name for the created environment. Defaults to "".
         connect_diagonal_neighbors : bool, optional
@@ -580,10 +590,12 @@ class Environment:
 
         >>> from shapely.geometry import Polygon
         >>> from neurospatial import Environment
-        >>> # Create a simple rectangular arena
-        >>> polygon = Polygon([(0, 0), (100, 0), (100, 50), (0, 50)])
+        >>> # Create a simple rectangular arena (100cm x 50cm)
+        >>> polygon = Polygon([(0, 0), (100, 0), (100, 50), (0, 50)])  # cm
         >>> env = Environment.from_polygon(
-        ...     polygon=polygon, bin_size=5.0, name="rectangular_arena"
+        ...     polygon=polygon,
+        ...     bin_size=5.0,
+        ...     name="rectangular_arena",  # 5cm bins
         ... )
         >>> env.n_dims
         2
@@ -591,11 +603,11 @@ class Environment:
         Create an environment from a circular arena:
 
         >>> from shapely.geometry import Point
-        >>> center = Point(50, 50)
-        >>> circular_polygon = center.buffer(25)  # Circle with radius 25
+        >>> center = Point(50, 50)  # cm
+        >>> circular_polygon = center.buffer(25)  # Circle with radius 25cm
         >>> env = Environment.from_polygon(
         ...     polygon=circular_polygon,
-        ...     bin_size=2.0,
+        ...     bin_size=2.0,  # 2cm bins
         ... )
 
         """
@@ -631,7 +643,9 @@ class Environment:
             by `grid_edges` (i.e., `tuple(len(e)-1 for e in grid_edges)`).
         grid_edges : Tuple[NDArray[np.float64], ...]
             A tuple where each element is a 1D NumPy array of bin edge positions
-            for that dimension, defining the underlying full grid.
+            for that dimension, in physical units (e.g., cm, meters). The edges
+            define the boundaries of bins along each dimension. For example, edges
+            [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30].
         name : str, optional
             A name for the created environment. Defaults to "".
         connect_diagonal_neighbors : bool, optional
@@ -652,10 +666,10 @@ class Environment:
         >>> # Create a simple 2D mask (10x10 grid with center region active)
         >>> mask = np.zeros((10, 10), dtype=bool)
         >>> mask[3:7, 3:7] = True  # Center 4x4 region is active
-        >>> # Define grid edges
+        >>> # Define grid edges (creates 10cm x 10cm bins)
         >>> grid_edges = (
-        ...     np.linspace(0, 100, 11),  # x edges
-        ...     np.linspace(0, 100, 11),  # y edges
+        ...     np.linspace(0, 100, 11),  # x edges in cm
+        ...     np.linspace(0, 100, 11),  # y edges in cm
         ... )
         >>> env = Environment.from_mask(
         ...     active_mask=mask, grid_edges=grid_edges, name="center_region"
@@ -694,9 +708,10 @@ class Environment:
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where `True` pixels define active bins.
         bin_size : Union[float, Tuple[float, float]], optional
-            The spatial size of each pixel. If a float, pixels are square.
-            If a tuple `(width, height)`, specifies pixel dimensions.
-            Defaults to 1.0 (each pixel is 1x1 spatial unit).
+            The spatial size of each pixel in physical units (e.g., cm, meters).
+            If a float, pixels are square. If a tuple `(width, height)`, specifies
+            pixel dimensions. Defaults to 1.0. For example, if your camera captures
+            images where each pixel represents 0.5cm, use bin_size=0.5.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active pixel-bins.
             Defaults to True.
@@ -714,14 +729,14 @@ class Environment:
 
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create a simple binary image (e.g., from thresholding)
+        >>> # Create a simple binary image (e.g., from thresholding camera frame)
         >>> image_height, image_width = 480, 640
         >>> mask = np.zeros((image_height, image_width), dtype=bool)
         >>> # Mark a rectangular region as active
         >>> mask[100:400, 150:500] = True
         >>> env = Environment.from_image(
         ...     image_mask=mask,
-        ...     bin_size=10.0,  # 10x10 spatial units per bin
+        ...     bin_size=0.5,  # Each pixel = 0.5cm
         ...     name="arena_from_image",
         ... )
         >>> env.n_dims
