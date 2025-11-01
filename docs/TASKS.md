@@ -27,11 +27,13 @@
 
 ### Critical Bug Fixes
 
-- [ ] **Fix Regions.update() documentation bug** (`src/neurospatial/regions/core.py`)
-  - [ ] Implement `update()` method with full docstring
-  - [ ] Update `__setitem__` error message to reference correct methods
-  - [ ] Add tests for `update()` behavior
-  - [ ] Add tests for error conditions (KeyError when region doesn't exist)
+- [x] **Fix Regions.update() documentation bug** (`src/neurospatial/regions/core.py`)
+  - [x] Implement `update_region()` method with full docstring
+  - [x] Update `__setitem__` error message to reference correct methods
+  - [x] Add tests for `update_region()` behavior
+  - [x] Add tests for error conditions (KeyError when region doesn't exist)
+  - [x] Fix metadata preservation when not explicitly provided
+  - [x] Rename method to avoid MutableMapping.update() conflict
 
 ### Error Message Improvements
 

@@ -188,3 +188,114 @@ def test_regions_to_json_and_from_json(tmp_path):
     loaded = Regions.from_json(path)
     assert "pt" in loaded
     assert loaded["pt"].metadata["foo"] == "bar"
+
+
+# --- Tests for Regions.update_region() method ---
+
+
+def test_regions_update_region_point():
+    """Test updating an existing point region."""
+    regs = Regions()
+    regs.add("pt", point=[1.0, 2.0])
+    assert np.allclose(regs["pt"].data, [1.0, 2.0])
+
+    # Update the point to new coordinates
+    updated = regs.update_region("pt", point=[3.0, 4.0])
+    assert np.allclose(regs["pt"].data, [3.0, 4.0])
+    assert updated.name == "pt"
+    assert updated.kind == "point"
+    assert updated is regs["pt"]  # Returned region is the stored one
+
+
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_regions_update_region_polygon():
+    """Test updating an existing polygon region."""
+    regs = Regions()
+    poly1 = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    regs.add("poly", polygon=poly1)
+    assert regs["poly"].data.equals(poly1)
+
+    # Update to a different polygon
+    poly2 = shp.Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])
+    updated = regs.update_region("poly", polygon=poly2)
+    assert regs["poly"].data.equals(poly2)
+    assert updated.name == "poly"
+    assert updated.kind == "polygon"
+
+
+def test_regions_update_region_with_metadata():
+    """Test updating a region while changing metadata."""
+    regs = Regions()
+    regs.add("pt", point=[1.0, 2.0], metadata={"color": "red"})
+    assert regs["pt"].metadata["color"] == "red"
+
+    # Update with new metadata
+    updated = regs.update_region(
+        "pt", point=[3.0, 4.0], metadata={"color": "blue", "size": 5}
+    )
+    assert regs["pt"].metadata["color"] == "blue"
+    assert regs["pt"].metadata["size"] == 5
+    assert updated is regs["pt"]
+
+
+def test_regions_update_region_preserves_metadata():
+    """Test that metadata is preserved when not explicitly updated."""
+    regs = Regions()
+    regs.add("pt", point=[1.0, 2.0], metadata={"color": "red", "size": 10})
+    assert regs["pt"].metadata["color"] == "red"
+    assert regs["pt"].metadata["size"] == 10
+
+    # Update only the point coordinates, not metadata
+    updated = regs.update_region("pt", point=[3.0, 4.0])
+
+    # Metadata should be preserved
+    assert regs["pt"].metadata["color"] == "red"
+    assert regs["pt"].metadata["size"] == 10
+    assert updated.metadata["color"] == "red"
+    assert updated.metadata["size"] == 10
+
+
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_regions_update_region_change_kind():
+    """Test updating a region to a different kind (point -> polygon)."""
+    regs = Regions()
+    regs.add("region1", point=[1.0, 2.0])
+    assert regs["region1"].kind == "point"
+
+    # Change from point to polygon
+    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    updated = regs.update_region("region1", polygon=poly)
+    assert regs["region1"].kind == "polygon"
+    assert updated.kind == "polygon"
+
+
+def test_regions_update_region_nonexistent():
+    """Test that updating a nonexistent region raises KeyError."""
+    regs = Regions()
+    with pytest.raises(KeyError, match="Region 'nonexistent' does not exist"):
+        regs.update_region("nonexistent", point=[1.0, 2.0])
+
+
+def test_regions_update_region_neither_point_nor_polygon():
+    """Test that update requires exactly one of point or polygon."""
+    regs = Regions()
+    regs.add("pt", point=[1.0, 2.0])
+
+    # Neither point nor polygon specified
+    with pytest.raises(
+        ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
+    ):
+        regs.update_region("pt")
+
+
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_regions_update_region_both_point_and_polygon():
+    """Test that update rejects both point and polygon."""
+    regs = Regions()
+    regs.add("pt", point=[1.0, 2.0])
+
+    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    with pytest.raises(
+        ValueError, match="Specify \\*\\*one\\*\\* of 'point' or 'polygon'"
+    ):
+        regs.update_region("pt", point=[3.0, 4.0], polygon=poly)

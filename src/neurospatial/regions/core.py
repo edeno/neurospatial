@@ -177,7 +177,9 @@ class Regions(MutableMapping[str, Region]):
 
     def __setitem__(self, key: str, value: Region) -> None:
         if key in self._store:
-            raise KeyError(f"Region {key!r} already exists — use update() instead.")
+            raise KeyError(
+                f"Region {key!r} already exists — use update_region() instead."
+            )
         if key != value.name:
             raise ValueError("Key must match Region.name")
         self._store[key] = value
@@ -245,6 +247,84 @@ class Regions(MutableMapping[str, Region]):
             region = Region(name, "polygon", polygon, metadata or {})
 
         self[name] = region
+        return region
+
+    def update_region(
+        self,
+        name: str,
+        *,
+        point: PointCoords | None = None,
+        polygon: Polygon | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Region:
+        """Update an existing Region.
+
+        This method replaces an existing region with a new one. The region can
+        change its type (point vs polygon) and/or data and/or metadata.
+        Metadata is preserved from the existing region if not explicitly provided.
+
+        Parameters
+        ----------
+        name : str
+            Name of the region to update.
+        point : PointCoords or None, optional
+            Point coordinates or Shapely Point object. Mutually exclusive with polygon.
+        polygon : Polygon or None, optional
+            Shapely Polygon object. Mutually exclusive with point.
+        metadata : Mapping[str, Any] or None, optional
+            Optional metadata dictionary to attach to the region. If None, preserves
+            the existing region's metadata.
+
+        Returns
+        -------
+        Region
+            The newly created Region instance that replaced the old one.
+
+        Raises
+        ------
+        ValueError
+            If both or neither of point/polygon are specified.
+        KeyError
+            If name does not exist in the collection.
+
+        Examples
+        --------
+        >>> from neurospatial.regions import Regions
+        >>> regs = Regions()
+        >>> regs.add("center", point=[0.0, 0.0], metadata={"color": "red"})
+        >>> # Update coordinates while preserving metadata
+        >>> regs.update_region("center", point=[1.0, 1.0])
+        >>> regs["center"].data
+        array([1., 1.])
+        >>> regs["center"].metadata["color"]
+        'red'
+
+        """
+        if (point is None) == (polygon is None):
+            raise ValueError("Specify **one** of 'point' or 'polygon'.")
+        if name not in self:
+            raise KeyError(
+                f"Region {name!r} does not exist. Use add() to create new regions."
+            )
+
+        # Preserve existing metadata if not explicitly provided
+        old_region = self._store[name]
+        effective_metadata = metadata if metadata is not None else old_region.metadata
+
+        # Remove the old region and add the new one
+        del self._store[name]
+
+        if point is not None:
+            # Accept either a coordinate array or a Shapely Point
+            coords = np.asarray(
+                point.coords[0] if isinstance(point, Point) else point, dtype=float
+            )
+            region = Region(name, "point", coords, effective_metadata)
+        else:
+            region = Region(name, "polygon", polygon, effective_metadata)
+
+        # Use direct store access to bypass __setitem__ duplicate check
+        self._store[name] = region
         return region
 
     def remove(self, name: str) -> None:

@@ -139,3 +139,76 @@ RewardZone1 area: 78.41, center: [10. 10.]
 ```
 
 All examples work correctly with the actual API.
+
+## 2025-11-01: Regions.update_region() Implementation
+
+### Task Completed
+
+- ✅ Implemented `update_region()` method for Regions class
+- ✅ Added comprehensive tests (8 test cases)
+- ✅ Applied code review and fixed critical issues
+- ✅ Fixed documentation bug where `__setitem__` referenced non-existent method
+
+### Implementation Details
+
+**Method Implemented:**
+
+- `Regions.update_region(name, *, point=None, polygon=None, metadata=None)` - Updates existing regions
+
+**Key Design Decisions:**
+
+1. **Method Naming**: Originally named `update()` but renamed to `update_region()` to avoid conflict with `MutableMapping.update()`. This prevents type checking errors and maintains the Liskov Substitution Principle.
+
+2. **Metadata Preservation**: When `metadata=None`, the method preserves the existing region's metadata rather than replacing it with an empty dict. This follows the principle of least surprise.
+
+3. **Immutable Semantics**: Creates a new Region object rather than modifying the existing one, consistent with Region's immutable design.
+
+**API Fixes Applied:**
+
+1. **Error Message**: Updated `__setitem__` error message from "use update()" to "use update_region()"
+2. **Metadata Handling**: Fixed bug where metadata was lost when not explicitly provided
+3. **Return Value**: Method returns the newly created Region that's also stored in the collection
+
+**Code Review Feedback Addressed:**
+
+- ✅ Renamed method to avoid MutableMapping.update() conflict
+- ✅ Fixed metadata preservation logic
+- ✅ Added test for metadata preservation behavior
+- ✅ Added `assert updated is regs[name]` to verify return value
+- ✅ Enhanced docstring with better examples showing metadata preservation
+
+**Tests Added (8 total):**
+
+1. `test_regions_update_region_point` - Basic point update
+2. `test_regions_update_region_polygon` - Basic polygon update
+3. `test_regions_update_region_with_metadata` - Explicit metadata update
+4. `test_regions_update_region_preserves_metadata` - Metadata preservation (NEW)
+5. `test_regions_update_region_change_kind` - Change from point to polygon
+6. `test_regions_update_region_nonexistent` - Error when region doesn't exist
+7. `test_regions_update_region_neither_point_nor_polygon` - Error validation
+8. `test_regions_update_region_both_point_and_polygon` - Error validation
+
+All tests pass.
+
+### Files Modified
+
+- `src/neurospatial/regions/core.py`:
+  - Line 180: Updated `__setitem__` error message
+  - Lines 250-324: Added `update_region()` method with full NumPy docstring
+- `tests/regions/test_core.py`:
+  - Lines 193-295: Added 8 comprehensive tests for `update_region()`
+
+### Notes for Future
+
+**Not Implemented (Considered but Deferred):**
+
+- Extracting region creation to `_create_region()` helper (reduces duplication but adds complexity)
+- Partial update support (update only metadata without geometry) - violates current API design where geometry is required
+- These can be revisited if needed in future iterations
+
+**What Works Well:**
+
+- Clean separation between `add()` (create) and `update_region()` (replace)
+- Immutable Region design prevents accidental mutations
+- Metadata preservation makes the API intuitive
+- Comprehensive test coverage ensures correctness
