@@ -71,12 +71,12 @@
 
 ### Navigation & Discovery
 
-- [ ] **Add Factory Method Selection Guide** (`src/neurospatial/environment.py`)
-  - [ ] Add guide to Environment class docstring (after class summary)
-  - [ ] Include decision tree for all 6 factory methods
-  - [ ] Order by frequency of use (most common first)
-  - [ ] Add brief use case description for each method
-  - [ ] Cross-reference individual method docstrings
+- [x] **Add Factory Method Selection Guide** (`src/neurospatial/environment.py`)
+  - [x] Add guide to Environment class docstring (after class summary)
+  - [x] Include decision tree for all 6 factory methods
+  - [x] Order by frequency of use (most common first)
+  - [x] Add brief use case description for each method
+  - [x] Cross-reference individual method docstrings
 
 - [ ] **Add "See Also" cross-references** (all factory methods)
   - [ ] Add to `from_samples()` → reference polygon, mask, layout

@@ -113,6 +113,55 @@ class Environment:
         parameters (`bin_count_threshold`, `dilate`, `fill_holes`, `close_gaps`)
         provide fine-grained control over which bins are considered active.
 
+    Choosing a Factory Method
+    --------------------------
+    The `Environment` class provides six factory methods for creating environments.
+    Choose based on your data format and use case:
+
+    **Most Common (ordered by frequency of use)**
+
+    1. **from_samples** - Discretize position data into bins
+       Use when you have a collection of position samples (e.g., animal tracking
+       data) and want to automatically infer the spatial extent and active bins.
+       Supports automatic filtering, morphological operations (dilate, fill_holes,
+       close_gaps), and flexible bin size specification.
+       See `from_samples()`.
+
+    2. **from_polygon** - Create grid masked by a polygon boundary
+       Use when your environment has a well-defined geometric boundary (e.g.,
+       circular arena, irregular enclosure) specified as a Shapely polygon. The
+       grid is automatically clipped to the polygon interior.
+       See `from_polygon()`.
+
+    3. **from_graph** - Create 1D linearized track environment
+       Use when analyzing data on tracks or mazes where 2D position should be
+       projected onto a 1D linearized representation. Supports automatic
+       linearization and conversion between 2D and 1D coordinates.
+       See `from_graph()`.
+
+    **Specialized Use Cases**
+
+    4. **from_mask** - Create environment from pre-computed mask
+       Use when you have already determined which bins should be active (e.g.,
+       from external analysis) as an N-D boolean array. Requires explicit
+       specification of grid edges.
+       See `from_mask()`.
+
+    5. **from_image** - Create environment from binary image
+       Use when your environment boundary is defined by a binary image (e.g.,
+       segmentation mask, overhead camera view). Each white pixel becomes a
+       potential bin.
+       See `from_image()`.
+
+    **Advanced**
+
+    6. **from_layout** - Create environment from custom LayoutEngine
+       Use when you need full control over the layout engine (e.g., HexagonalLayout,
+       TriangularMeshLayout, custom tessellations) or are implementing advanced
+       spatial discretization schemes. The factory method `create_layout()` provides
+       access to all available layout engines.
+       See `from_layout()` and `neurospatial.layout.factories.create_layout()`.
+
     Attributes
     ----------
     name : str
