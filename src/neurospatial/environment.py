@@ -15,8 +15,6 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial.layout.base import LayoutEngine
-from neurospatial.layout.engines.graph import GraphLayout
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 from neurospatial.layout.factories import create_layout
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 from neurospatial.regions import Regions
@@ -28,14 +26,14 @@ try:
 except ModuleNotFoundError:
     _HAS_SHAPELY = False
 
-    class _Shp:  # type: ignore[misc]
+    class _Shp:
         class Polygon:
             pass
 
-    _shp = _Shp  # type: ignore[misc]
+    _shp = _Shp
 
 
-PolygonType = type[_shp.Polygon]  # type: ignore[misc]
+PolygonType = type[_shp.Polygon]
 
 
 # --- Decorator ---
@@ -161,17 +159,10 @@ class Environment:
     _layout_type_used: str | None = field(init=False, default=None)
     _layout_params_used: dict[str, Any] = field(init=False, default_factory=dict)
 
-    # Cache the mapping from source flat indices to active node IDs
-    _source_flat_to_active_node_id_map: dict[int, int] | None = field(
-        init=False,
-        default=None,
-        repr=False,
-    )
-
     def __init__(
         self,
         name: str = "",
-        layout: LayoutEngine = RegularGridLayout,
+        layout: LayoutEngine | None = None,
         layout_type_used: str | None = None,
         layout_params_used: dict[str, Any] | None = None,
         regions: Regions | None = None,
@@ -198,6 +189,9 @@ class Environment:
             `layout._build_params_used`. Defaults to None.
 
         """
+        if layout is None:
+            raise ValueError("layout parameter is required")
+
         self.name = name
         self.layout = layout
 
@@ -234,8 +228,10 @@ class Environment:
             # Initialize with an empty Regions instance if not provided
             self.regions = Regions()
 
-    def __eq__(self, other: str) -> bool:
-        return self.name == other
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self.name == other
+        return NotImplemented
 
     def __repr__(self: Environment) -> str:
         """Generate an unambiguous string representation of the Environment.
@@ -784,7 +780,7 @@ class Environment:
             is not available.
 
         """
-        return self.bin_centers.shape[1]
+        return int(self.bin_centers.shape[1])
 
     @property
     @check_fitted
@@ -819,7 +815,9 @@ class Environment:
             The layout type (e.g., "RegularGrid", "Hexagonal").
 
         """
-        return self._layout_type_used
+        return (
+            self._layout_type_used if self._layout_type_used is not None else "Unknown"
+        )
 
     @property
     @check_fitted
@@ -839,7 +837,7 @@ class Environment:
             If called before the environment is fitted.
 
         """
-        return self.bin_centers.shape[0]
+        return int(self.bin_centers.shape[0])
 
     @check_fitted
     def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
@@ -889,7 +887,7 @@ class Environment:
             If called before the environment is fitted.
 
         """
-        return self.bin_at(points_nd) != -1
+        return np.asarray(self.bin_at(points_nd) != -1, dtype=np.bool_)
 
     @check_fitted
     def bin_center_of(
@@ -917,7 +915,9 @@ class Environment:
             If any bin index is out of range.
 
         """
-        return self.bin_centers[np.asarray(bin_indices, dtype=int)]
+        return np.asarray(
+            self.bin_centers[np.asarray(bin_indices, dtype=int)], dtype=np.float64
+        )
 
     @check_fitted
     def neighbors(self, bin_index: int) -> list[int]:
@@ -1008,12 +1008,14 @@ class Environment:
             Returns `None` otherwise.
 
         """
-        if isinstance(self.layout, GraphLayout):
+        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
+        if hasattr(self.layout, "to_linear") and hasattr(self.layout, "linear_to_nd"):
             return {
                 "track_graph": self._layout_params_used.get("graph_definition"),
                 "edge_order": self._layout_params_used.get("edge_order"),
                 "edge_spacing": self._layout_params_used.get("edge_spacing"),
             }
+        return None
 
     @cached_property
     @check_fitted
@@ -1130,11 +1132,13 @@ class Environment:
             return np.inf
 
         try:
-            return nx.shortest_path_length(
-                self.connectivity,
-                source=source_bin,
-                target=target_bin,
-                weight=edge_weight,
+            return float(
+                nx.shortest_path_length(
+                    self.connectivity,
+                    source=source_bin,
+                    target=target_bin,
+                    weight=edge_weight,
+                )
             )
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return np.inf
@@ -1188,7 +1192,7 @@ class Environment:
                 target=target_active_bin_idx,
                 weight="distance",
             )
-            return path
+            return list(path)
         except nx.NetworkXNoPath:
             warnings.warn(
                 f"No path found between active bin {source_active_bin_idx} "
@@ -1229,9 +1233,11 @@ class Environment:
             If called before the environment is fitted.
 
         """
-        if not self.is_1d or not isinstance(self.layout, GraphLayout):
+        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
+        if not self.is_1d or not hasattr(self.layout, "to_linear"):
             raise TypeError("Linearized coordinate only for GraphLayout environments.")
-        return self.layout.to_linear(points_nd)
+        result = self.layout.to_linear(points_nd)
+        return np.asarray(result, dtype=np.float64)
 
     @check_fitted
     def linear_to_nd(
@@ -1262,9 +1268,11 @@ class Environment:
             If called before the environment is fitted.
 
         """
-        if not self.is_1d or not isinstance(self.layout, GraphLayout):
+        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
+        if not self.is_1d or not hasattr(self.layout, "linear_to_nd"):
             raise TypeError("Mapping linear to N-D only for GraphLayout environments.")
-        return self.layout.linear_to_nd(linear_coordinates)
+        result = self.layout.linear_to_nd(linear_coordinates)
+        return np.asarray(result, dtype=np.float64)
 
     @check_fitted
     def plot(
@@ -1376,7 +1384,7 @@ class Environment:
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
         if self.layout.is_1d:
             if hasattr(self.layout, "plot_linear_layout"):
-                ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)  # type: ignore
+                ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)
             else:
                 warnings.warn(
                     f"Layout '{self._layout_type_used}' is 1D but does not "
@@ -1465,7 +1473,7 @@ class Environment:
                     f"does not match environment dimension {self.n_dims}.",
                 )
             bin_idx = self.bin_at(point_nd)
-            return bin_idx[bin_idx != -1]
+            return np.asarray(bin_idx[bin_idx != -1], dtype=np.int_)
 
         if region.kind == "polygon":
             if not _HAS_SHAPELY:  # pragma: no cover

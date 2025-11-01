@@ -14,7 +14,9 @@ from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
-_LAYOUT_MAP: dict[str, type[LayoutEngine]] = {
+# Note: We use Any here because LayoutEngine is a Protocol, and type[Protocol]
+# causes mypy errors when used with concrete class types
+_LAYOUT_MAP: dict[str, Any] = {
     "RegularGrid": RegularGridLayout,
     "MaskedGrid": MaskedGridLayout,
     "ImageMask": ImageMaskLayout,
@@ -162,7 +164,7 @@ def create_layout(kind: str, **kwargs) -> LayoutEngine:
 
     # 2) Instantiate the class
     engine_cls = _LAYOUT_MAP[found_key]
-    engine = engine_cls()
+    engine: LayoutEngine = engine_cls()
 
     # 3) Validate `kwargs` against `build(...)` signature
     sig = inspect.signature(engine.build)
@@ -173,4 +175,5 @@ def create_layout(kind: str, **kwargs) -> LayoutEngine:
 
     # 4) Call `build(...)` with validated params
     engine.build(**{k: kwargs[k] for k in allowed if k in kwargs})
+    # At this point, engine is a LayoutEngine (Protocol check happens at runtime)
     return engine

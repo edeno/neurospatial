@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -242,7 +243,7 @@ class TriangularMeshLayout:
 
     def plot(
         self,
-        ax: plt.Axes | None = None,
+        ax: matplotlib.axes.Axes | None = None,
         show_triangles: bool = True,
         show_centroids: bool = True,
         show_connectivity: bool = True,
@@ -251,7 +252,7 @@ class TriangularMeshLayout:
         centroid_kwargs: dict[str, Any] | None = None,
         connectivity_kwargs: dict[str, Any] | None = None,
         boundary_kwargs: dict[str, Any] | None = None,
-    ) -> plt.Axes:
+    ) -> matplotlib.axes.Axes:
         """Plot the triangular mesh layout.
 
         Parameters
@@ -328,10 +329,12 @@ class TriangularMeshLayout:
         # Plot boundary polygon
         if show_boundary and self._boundary_polygon_stored:
             xb, yb = self._boundary_polygon_stored.exterior.xy
-            ax.plot(xb, yb, label="Boundary", **_boundary_kwargs)
+            # Use cast to work around matplotlib stub limitations
+            plot_func = cast("Any", ax.plot)
+            plot_func(xb, yb, label="Boundary", **_boundary_kwargs)
             for interior in self._boundary_polygon_stored.interiors:
                 xbi, ybi = interior.xy
-                ax.plot(xbi, ybi, **_boundary_kwargs)
+                plot_func(xbi, ybi, **_boundary_kwargs)
 
         # Plot active triangles
         if show_triangles:
@@ -344,12 +347,16 @@ class TriangularMeshLayout:
             for vertices in active_simplices_vertices:  # Iterate over (n_active, 3, 2)
                 patches.append(MplPolygon(vertices, closed=True))
 
-            pc = PatchCollection(patches, **_triangle_kwargs)
+            # Use cast to work around matplotlib stub limitations
+            pc_constructor = cast("Any", PatchCollection)
+            pc = pc_constructor(patches, **_triangle_kwargs)
             ax.add_collection(pc)
 
         # Plot centroids (which are self.bin_centers)
         if show_centroids and self.bin_centers.shape[0] > 0:
-            ax.scatter(
+            # Use cast to work around matplotlib stub limitations
+            scatter_func = cast("Any", ax.scatter)
+            scatter_func(
                 self.bin_centers[:, 0],
                 self.bin_centers[:, 1],
                 **_centroid_kwargs,
@@ -357,10 +364,12 @@ class TriangularMeshLayout:
 
         # Plot connectivity edges
         if show_connectivity:
+            # Use cast to work around matplotlib stub limitations
+            plot_func2 = cast("Any", ax.plot)
             for u, v in self.connectivity.edges():
                 pos_u = self.connectivity.nodes[u]["pos"]
                 pos_v = self.connectivity.nodes[v]["pos"]
-                ax.plot(
+                plot_func2(
                     [pos_u[0], pos_v[0]],
                     [pos_u[1], pos_v[1]],
                     **_connectivity_kwargs,
@@ -430,7 +439,7 @@ class TriangularMeshLayout:
             v0 = nsimplex_vertices[:, 0, :]  # First vertex of each simplex
             v1 = nsimplex_vertices[:, 1, :]  # Second vertex of each simplex
             lengths = np.abs(v1 - v0).squeeze(axis=-1)
-            return lengths
+            return np.asarray(lengths, dtype=np.float64)
 
         # Select one vertex from each simplex as the origin (v0)
         # v0 will have shape (num_active_simplices, n_dim)
@@ -451,4 +460,4 @@ class TriangularMeshLayout:
         n_factorial = float(math.factorial(n_dim))
         volumes = np.abs(determinants) / n_factorial
 
-        return volumes
+        return np.asarray(volumes, dtype=np.float64)

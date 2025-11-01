@@ -288,10 +288,10 @@ def _infer_active_bins_from_regular_grid(
                 active_mask[-1] = False
         elif active_mask.ndim > 1 and active_mask.size > 0:
             for axis_n in range(active_mask.ndim):
-                slicer_first = [slice(None)] * active_mask.ndim
+                slicer_first: list[slice | int] = [slice(None)] * active_mask.ndim
                 slicer_first[axis_n] = 0
                 active_mask[tuple(slicer_first)] = False
-                slicer_last = [slice(None)] * active_mask.ndim
+                slicer_last: list[slice | int] = [slice(None)] * active_mask.ndim
                 slicer_last[axis_n] = -1
                 active_mask[tuple(slicer_last)] = False
 
@@ -357,6 +357,10 @@ def _create_regular_grid(
             )
     else:
         samples = None
+        if dimension_range is None:
+            raise ValueError(
+                "dimension_range must be provided when data_samples is None"
+            )
         n_dims = len(dimension_range)
 
     # 2) Normalize & validate bin_size
@@ -385,6 +389,8 @@ def _create_regular_grid(
             ranges.append((lo_f, hi_f))
     else:
         # Infer from `samples`
+        if samples is None:
+            raise ValueError("Cannot infer ranges without samples")
         ranges = []
         for dim in range(n_dims):
             dim_vals = samples[:, dim]
@@ -397,7 +403,9 @@ def _create_regular_grid(
 
     # 4) Compute number of bins in each dimension
     data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
-    n_bins = get_n_bins(data_for_bins, bin_sizes, ranges)  # ensures at least 1
+    # Convert bin_sizes to list to match get_n_bins signature
+    bin_sizes_list: list[float] = bin_sizes.tolist()
+    n_bins = get_n_bins(data_for_bins, bin_sizes_list, ranges)  # ensures at least 1
 
     # 5) Generate core edges via np.histogramdd
     #    Use a dummy point at the center if `samples` is None
@@ -437,7 +445,7 @@ def _points_to_regular_grid_bin_ind(
     points: NDArray[np.float64],
     grid_edges: tuple[NDArray[np.float64], ...],
     grid_shape: tuple[int, ...],
-    active_mask: NDArray[np.bool_] = None,
+    active_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.int_]:
     """Map N-D points to their corresponding bin indices in a regular grid.
 

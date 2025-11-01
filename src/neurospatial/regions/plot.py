@@ -10,6 +10,7 @@ you call :func:`plot_regions`.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -86,7 +87,7 @@ def plot_regions(
 
     for name in region_names:
         if name not in regions:
-            plt.warning(f"plot_regions: '{name}' not in collection; skipping.")
+            warnings.warn(f"plot_regions: '{name}' not in collection; skipping.")
             continue
 
         reg: Region = regions[name]
@@ -118,10 +119,16 @@ def plot_regions(
 
         elif reg.kind == "polygon":
             if _shp is None:
-                plt.warning(f"Can't draw polygon '{name}': shapely not installed.")
+                warnings.warn(f"Can't draw polygon '{name}': shapely not installed.")
                 continue
 
+            # Narrow type to Polygon
+            from shapely.geometry import Polygon
+
             poly = reg.data  # already shapely.Polygon
+            if not isinstance(poly, Polygon):
+                warnings.warn(f"Region '{name}' data is not a Polygon; skipping.")
+                continue
 
             # exterior + (optional) holes  → Path
             def _ring_to_path(r):
@@ -142,7 +149,8 @@ def plot_regions(
             )
             ax.add_patch(patch)
         else:
-            plt.warning(f"Unknown region kind '{reg.kind}' for '{name}'; skipping.")
+            # This shouldn't happen with Literal['point', 'polygon'] type
+            raise ValueError(f"Unknown region kind '{reg.kind}' for '{name}'.")
 
     # add a legend if *any* labels were produced
     handles, labels = ax.get_legend_handles_labels()

@@ -232,18 +232,19 @@ class HexagonalLayout:
 
             ax.set_title(f"{self._layout_type_tag} Layout")
             padding = 1.1 * self.hex_radius_
-            ax.set_xlim(
-                (
-                    self.dimension_ranges[0][0] - padding,
-                    self.dimension_ranges[0][1] + padding,
-                ),
-            )
-            ax.set_ylim(
-                (
-                    self.dimension_ranges[1][0] - padding,
-                    self.dimension_ranges[1][1] + padding,
-                ),
-            )
+            if self.dimension_ranges is not None:
+                ax.set_xlim(
+                    (
+                        self.dimension_ranges[0][0] - padding,
+                        self.dimension_ranges[0][1] + padding,
+                    ),
+                )
+                ax.set_ylim(
+                    (
+                        self.dimension_ranges[1][0] - padding,
+                        self.dimension_ranges[1][1] + padding,
+                    ),
+                )
             ax.set_aspect("equal", adjustable="box")
         return ax
 
@@ -279,12 +280,16 @@ class HexagonalLayout:
             )
             return np.full(points.shape[0], -1, dtype=np.int_)
 
+        # grid_shape is guaranteed to be tuple[int, int] for hexagonal layouts
+        assert self.grid_shape is not None and len(self.grid_shape) == 2
+        centers_shape_2d: tuple[int, int] = (self.grid_shape[0], self.grid_shape[1])
+
         original_flat_indices = _points_to_hex_bin_ind(
             points=points,
             grid_offset_x=self.grid_offset_x_,
             grid_offset_y=self.grid_offset_y_,
             hex_radius=self.hex_radius_,
-            centers_shape=self.grid_shape,
+            centers_shape=centers_shape_2d,
         )
         return np.array(
             [

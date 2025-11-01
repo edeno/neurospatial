@@ -229,25 +229,27 @@ class GraphLayout(_KDTreeMixin):
         )
 
         # Draw connectivity graph edges
-        for node_id1, node_id2 in self.connectivity.edges:
-            pos = np.stack((bin_centers[node_id1], bin_centers[node_id2]))
-            ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
+        if self.connectivity is not None:
+            for node_id1, node_id2 in self.connectivity.edges:
+                pos = np.stack((bin_centers[node_id1], bin_centers[node_id2]))
+                ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
 
-        grid_line_2d = _project_1d_to_2d(
-            self.grid_edges[0],
-            self._build_params_used["graph_definition"],
-            self._build_params_used["edge_order"],
-            self._build_params_used["edge_spacing"],
-        )
-        for grid_line in grid_line_2d:
-            ax.plot(
-                grid_line[0],
-                grid_line[1],
-                color="gray",
-                marker="+",
-                alpha=0.8,
-                label="bin edges",
+        if self.grid_edges is not None:
+            grid_line_2d = _project_1d_to_2d(
+                self.grid_edges[0],
+                self._build_params_used["graph_definition"],
+                self._build_params_used["edge_order"],
+                self._build_params_used["edge_spacing"],
             )
+            for grid_line in grid_line_2d:
+                ax.plot(
+                    grid_line[0],
+                    grid_line[1],
+                    color="gray",
+                    marker="+",
+                    alpha=0.8,
+                    label="bin edges",
+                )
         return ax
 
     def plot_linear_layout(
@@ -286,8 +288,9 @@ class GraphLayout(_KDTreeMixin):
             ax=ax,
             **kwargs,
         )
-        for grid_line in self.grid_edges[0]:
-            ax.axvline(grid_line, color="gray", linestyle="--", alpha=0.5)
+        if self.grid_edges is not None:
+            for grid_line in self.grid_edges[0]:
+                ax.axvline(grid_line, color="gray", linestyle="--", alpha=0.5)
         ax.set_title(f"{self._layout_type_tag} Layout")
         ax.set_xlabel("Linearized Position")
         ax.set_ylabel("Bin Index")
@@ -311,12 +314,13 @@ class GraphLayout(_KDTreeMixin):
             far from the track.
 
         """
-        return _get_linearized_position(
+        result = _get_linearized_position(
             data_points,
             self._build_params_used["graph_definition"],
             self._build_params_used["edge_order"],
             self._build_params_used["edge_spacing"],
         ).linear_position.to_numpy()
+        return np.asarray(result, dtype=np.float64)
 
     def linear_to_nd(
         self,
@@ -362,11 +366,17 @@ class GraphLayout(_KDTreeMixin):
             not indices into the full `linear_bin_centers_all` array.
 
         """
-        return _find_bin_for_linear_position(
+        if self.grid_edges is None:
+            raise RuntimeError("grid_edges not available")
+        result = _find_bin_for_linear_position(
             data_points,
             bin_edges=self.grid_edges[0],
             active_mask=self.active_mask,
         )
+        # Ensure we return NDArray, not int
+        if isinstance(result, int):
+            return np.array([result], dtype=np.int_)
+        return result
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Return the length of each active 1D bin along the linearized track.

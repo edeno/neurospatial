@@ -130,10 +130,9 @@ class ShapelyPolygonLayout(_GridMixin):
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,
-        draw_connectivity_graph: bool = True,
+        show_connectivity: bool = True,
         node_size: float = 20,
         node_color: str = "blue",
-        **kwargs,
     ) -> matplotlib.axes.Axes:
         """Plot the ShapelyPolygon layout.
 
@@ -191,7 +190,7 @@ class ShapelyPolygonLayout(_GridMixin):
                 ax.set_xlim(self.dimension_ranges[0])
                 ax.set_ylim(self.dimension_ranges[1])
 
-            if draw_connectivity_graph:
+            if show_connectivity:
                 node_position = nx.get_node_attributes(self.connectivity, "pos")
                 nx.draw_networkx_nodes(
                     self.connectivity,
@@ -205,10 +204,11 @@ class ShapelyPolygonLayout(_GridMixin):
                     ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
 
             # Plot polygon
-            poly_patch_kwargs = kwargs.get(
-                "polygon_kwargs",
-                {"alpha": 0.3, "fc": "gray", "ec": "black"},
-            )
+            poly_patch_kwargs = {
+                "alpha": 0.3,
+                "fc": "gray",
+                "ec": "black",
+            }
             if hasattr(self.polygon_definition_, "geoms"):  # MultiPolygon
                 for geom in self.polygon_definition_.geoms:
                     if hasattr(geom, "exterior"):

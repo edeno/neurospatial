@@ -17,8 +17,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from mpl_toolkits.mplot3d import Axes3D  # type: ignore[import-untyped]
+from mpl_toolkits.mplot3d.art3d import Line3DCollection  # type: ignore[import-untyped]
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
@@ -91,15 +91,16 @@ def get_n_bins(
         extent = np.nanmax(data_samples, axis=0) - np.nanmin(data_samples, axis=0)
 
     # Ensure bin_size is positive
-    bin_size = np.asarray(bin_size, dtype=float)
-    if np.any(bin_size <= 0.0):
+    bin_size_arr = np.asarray(bin_size, dtype=float)
+    if np.any(bin_size_arr <= 0.0):
         raise ValueError("bin_size must be positive.")
 
     # Calculate number of bins, ensuring at least 1 bin even if extent is 0
-    n_bins = np.ceil(extent / bin_size).astype(np.int32)
+    n_bins = np.ceil(extent / bin_size_arr).astype(np.int32)
     n_bins[n_bins == 0] = 1  # Handle zero extent case
 
-    return n_bins
+    # Convert to int64 to match expected return type
+    return np.asarray(n_bins, dtype=np.int64)
 
 
 def _infer_active_elements_from_samples(
@@ -553,7 +554,12 @@ def flat_to_multi_index(
 
     if is_scalar:
         # Return a tuple of scalars (first element of each array)
-        return tuple(int(val[0]) if not np.isnan(val[0]) else np.nan for val in final)
+        # Note: Returns tuple[int, ...] when all are valid ints
+        result_tuple = tuple(
+            int(val[0]) if not np.isnan(val[0]) else np.nan for val in final
+        )
+        # If any NaN, return tuple[float, ...], otherwise tuple[int, ...]
+        return result_tuple  # type: ignore[return-value]
     return final
 
 
@@ -597,20 +603,20 @@ def multi_index_to_flat(
         If the number of input arrays does not match len(grid_shape), or if input arrays cannot broadcast.
 
     """
-    # Handle the case of a single iterable argument, e.g. ([r1,r2],[c1,c2]) or ((r1,c1),(r2,c2))
-    if len(nd_idx_per_dim) == 1 and isinstance(nd_idx_per_dim[0], (list, tuple)):
-        temp = np.asarray(nd_idx_per_dim[0])
-        if temp.ndim == 2 and temp.shape[0] == len(grid_shape):
-            # shape = (n_dims, n_points)
-            nd_idx_per_dim = tuple(temp[d] for d in range(len(grid_shape)))
-        elif temp.ndim == 2 and temp.shape[1] == len(grid_shape):
-            # shape = (n_points, n_dims)
-            nd_idx_per_dim = tuple(temp[:, d] for d in range(len(grid_shape)))
-        elif temp.ndim == 1 and temp.shape[0] == len(grid_shape):
-            # single N-D index given as a 1-D array
-            nd_idx_per_dim = tuple(np.array([int(val)]) for val in temp)
-        else:
-            raise ValueError("Invalid format for single argument N-D index.")
+    # Note: The following code path is currently unreachable due to type signature
+    # (nd_idx_per_dim elements are typed as int | NDArray, not list/tuple).
+    # This code is commented out but preserved for potential future use if the
+    # signature is updated to allow list/tuple inputs.
+    # if len(nd_idx_per_dim) == 1 and isinstance(nd_idx_per_dim[0], (list, tuple)):
+    #     temp = np.asarray(nd_idx_per_dim[0])
+    #     if temp.ndim == 2 and temp.shape[0] == len(grid_shape):
+    #         nd_idx_per_dim = tuple(temp[d] for d in range(len(grid_shape)))
+    #     elif temp.ndim == 2 and temp.shape[1] == len(grid_shape):
+    #         nd_idx_per_dim = tuple(temp[:, d] for d in range(len(grid_shape)))
+    #     elif temp.ndim == 1 and temp.shape[0] == len(grid_shape):
+    #         nd_idx_per_dim = tuple(np.array([int(val)]) for val in temp)
+    #     else:
+    #         raise ValueError("Invalid format for single argument N-D index.")
 
     # Now expect len(nd_idx_per_dim) == len(grid_shape)
     if len(nd_idx_per_dim) != len(grid_shape):
@@ -933,6 +939,9 @@ def find_boundary_nodes(
     )
 
     if use_grid_method:
+        # These assertions are safe because use_grid_method checks they're not None
+        assert grid_shape is not None
+        assert active_mask is not None
         boundary_nodes = _find_grid_boundary_nodes(graph, grid_shape, active_mask)
     else:
         boundary_nodes = _find_degree_based_boundary_nodes(

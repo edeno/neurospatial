@@ -138,11 +138,10 @@ class TestPlotRegionsFiltering:
         regions = Regions([Region(name="box", data=poly, kind="polygon")])
 
         fig, ax = plt.subplots()
-        # Note: There's a bug in plot_regions - plt.warning doesn't exist
-        # This causes an AttributeError when a nonexistent region is requested
-        with pytest.raises(
-            AttributeError,
-            match=r"module 'matplotlib\.pyplot' has no attribute 'warning'",
+        # Test that nonexistent region names generate a warning but don't crash
+        with pytest.warns(
+            UserWarning,
+            match=r"'nonexistent' not in collection; skipping",
         ):
             plot_regions(
                 regions, ax=ax, region_names=["box", "nonexistent"], add_legend=False

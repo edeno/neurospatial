@@ -244,7 +244,7 @@ def _mask_to_polygon(mask: NDArray[np.uint8]) -> Polygon:
         A Shapely Polygon representing the mask.
 
     """
-    import cv2  # type: ignore
+    import cv2
 
     contours, _ = cv2.findContours(
         mask.astype(np.uint8),
@@ -325,6 +325,12 @@ def _create_cvat_region(
     additional_metadata: Mapping[str, Any] | None = None,
 ) -> Region:
     """Helper function to create a Region object for CVAT shapes."""
+    from neurospatial.regions.core import Kind
+
+    if kind not in ("point", "polygon"):
+        raise ValueError(f"Invalid kind: {kind!r}")
+    kind_typed: Kind = kind  # type: ignore[assignment]
+
     metadata = {
         "source_xml": xml_path.name,
         "color": color,
@@ -333,7 +339,7 @@ def _create_cvat_region(
     if additional_metadata:
         metadata.update(additional_metadata)
 
-    return Region(name=name, kind=kind, data=shape_data, metadata=metadata)
+    return Region(name=name, kind=kind_typed, data=shape_data, metadata=metadata)
 
 
 def _get_label_colors(root: ET.Element) -> dict[str, str]:
@@ -521,10 +527,18 @@ def _process_cvat_box(
     processed_label, color = _get_processed_label_and_color(raw_label, label_colors)
 
     try:
-        xtl = float(box_elem.get("xtl"))
-        ytl = float(box_elem.get("ytl"))
-        xbr = float(box_elem.get("xbr"))
-        ybr = float(box_elem.get("ybr"))
+        xtl_str = box_elem.get("xtl")
+        ytl_str = box_elem.get("ytl")
+        xbr_str = box_elem.get("xbr")
+        ybr_str = box_elem.get("ybr")
+
+        if xtl_str is None or ytl_str is None or xbr_str is None or ybr_str is None:
+            raise ValueError("Missing box coordinates")
+
+        xtl = float(xtl_str)
+        ytl = float(ytl_str)
+        xbr = float(xbr_str)
+        ybr = float(ybr_str)
         pts_px = np.array([[xtl, ytl], [xbr, ytl], [xbr, ybr], [xtl, ybr]])
         pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
         geom = shp.Polygon(pts_transformed)
@@ -866,14 +880,16 @@ def mask_to_region(
 
     """
     try:
-        import cv2  # type: ignore
+        import cv2
     except ImportError as exc:
         raise RuntimeError("mask_to_region() needs opencv-python and shapely") from exc
 
     if mask_img.dtype != np.uint8:
         mask_img = mask_img.astype("uint8")
 
-    cnts, _ = cv2.findContours(mask_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    cnts, _ = cv2.findContours(
+        mask_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    )
     if not cnts:
         raise ValueError("No contours found in mask")
 
@@ -881,7 +897,7 @@ def mask_to_region(
     cnt = max(cnts, key=cv2.contourArea)[:, 0, :]  # (N,2) pixels
     cnt = cv2.approxPolyDP(cnt, approx_tol_px, True)[:, 0, :]
 
-    pts_cm = pixel_to_world(cnt) if pixel_to_world else cnt
+    pts_cm = pixel_to_world(cnt.astype(np.float64)) if pixel_to_world else cnt
     poly = shp.Polygon(pts_cm)
 
     return Region(
@@ -912,7 +928,11 @@ def regions_to_dataframe(regions: Regions) -> pd.DataFrame:
     records: list[Mapping[str, Any]] = []
     for reg in regions.values():
         rec = reg.to_dict()
-        rec["area"] = reg.data.area if reg.kind == "polygon" else 0.0
+        if reg.kind == "polygon":
+            assert isinstance(reg.data, Polygon)
+            rec["area"] = float(reg.data.area)
+        else:
+            rec["area"] = 0.0
         records.append(rec)
 
     return pd.DataFrame.from_records(records)

@@ -171,7 +171,7 @@ class _KDTreeMixin:
         # (i.e., final_points_for_kdtree_construction in _build_kdtree).
         # We need to ensure these indices are valid for accessing _kdtree_nodes_to_bin_indices_map.
         # The size of _kdtree.data is len(final_points_for_kdtree_construction).
-        max_valid_kdtree_idx = self._kdtree.data.shape[0] - 1  # type: ignore
+        max_valid_kdtree_idx = int(self._kdtree.data.shape[0] - 1)
 
         # Clip indices to be within the valid range of the KD-tree's internal point list
         # This handles cases where KDTree might return an out-of-bounds index if empty or single point.
@@ -188,7 +188,7 @@ class _KDTreeMixin:
             kdtree_internal_indices
         ]
 
-        return final_bin_indices.astype(np.int32)
+        return np.asarray(final_bin_indices, dtype=np.int32)
 
 
 class _GridMixin:

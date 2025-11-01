@@ -135,7 +135,7 @@ def _get_graph_bins(
         )
         bin_edges.extend(edges_segment[:-1])  # all but last; last becomes next cursor
         # Record edge IDs for each _active_ bin
-        mapped_id = edge_id_map.get(frozenset((u, v)))
+        mapped_id = edge_id_map.get(frozenset((u, v)), -1)
         edge_id_list.extend([mapped_id] * n_bins)
         active_mask_list.extend([True] * n_bins)
 
@@ -152,13 +152,13 @@ def _get_graph_bins(
     bin_edges.append(cursor)
 
     # 6) Convert to arrays and dedupe
-    bin_edges = np.array(bin_edges, dtype=float)
-    bin_centers_1d = get_centers(bin_edges)
+    bin_edges_arr: NDArray[np.float64] = np.array(bin_edges, dtype=np.float64)
+    bin_centers_1d = get_centers(bin_edges_arr)
 
-    active_mask_1d = np.asarray(active_mask_list, dtype=bool)
-    edge_ids_for_active_bins = np.array(edge_id_list, dtype=int)
+    active_mask_1d = np.asarray(active_mask_list, dtype=np.bool_)
+    edge_ids_for_active_bins = np.array(edge_id_list, dtype=np.int_)
 
-    return bin_centers_1d, (bin_edges,), active_mask_1d, edge_ids_for_active_bins
+    return bin_centers_1d, (bin_edges_arr,), active_mask_1d, edge_ids_for_active_bins
 
 
 def _create_graph_layout_connectivity_graph(
@@ -276,13 +276,13 @@ def _create_graph_layout_connectivity_graph(
             (int(edge_active_bin_ind[0]), int(edge_active_bin_ind[-1])),
         )
     connectivity_graph.add_edges_from(edges_to_add)
-    bin_edge_order = np.asarray(bin_edge_order)
+    bin_edge_order_arr: NDArray[np.int_] = np.asarray(bin_edge_order, dtype=np.int_)
 
     # --- 3. Add Inter-Segment Edges (connecting end/start bins of adjacent original edges) ---
     edge_order_array = np.asarray(edge_order)
     bins_to_connect = []
     for node_id in graph.nodes:
-        connections = bin_edge_order[edge_order_array == node_id]
+        connections = bin_edge_order_arr[edge_order_array == node_id]
         if len(connections) > 1:
             for i in range(len(connections) - 1):
                 displacement_vector = (
@@ -317,7 +317,7 @@ def _project_1d_to_2d(
     linear_position: NDArray[np.float64],
     graph: nx.Graph,
     edge_order: list[Edge],
-    edge_spacing: float | list[float] = 0.0,
+    edge_spacing: float | Sequence[float] = 0.0,
 ) -> NDArray[np.float64]:
     """Map 1D linear positions back to N-D coordinates on the track graph.
 
@@ -426,7 +426,7 @@ def _project_1d_to_2d(
     # propagate NaNs from the input
     position_2D[nan_mask] = np.nan
 
-    return position_2D
+    return np.asarray(position_2D, dtype=np.float64)
 
 
 def _find_bin_for_linear_position(

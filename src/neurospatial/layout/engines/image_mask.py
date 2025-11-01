@@ -76,8 +76,14 @@ class ImageMaskLayout(_GridMixin):
             raise ValueError("image_mask must be a 2D array.")
         if not np.issubdtype(image_mask.dtype, np.bool_):
             raise ValueError("image_mask must be a boolean array.")
-        if bin_size <= 0:
-            raise ValueError("bin_size must be positive.")
+
+        # Validate bin_size
+        if isinstance(bin_size, tuple):
+            if any(s <= 0 for s in bin_size):
+                raise ValueError("bin_size must be positive.")
+        else:
+            if bin_size <= 0:
+                raise ValueError("bin_size must be positive.")
         if not np.any(image_mask):
             raise ValueError("image_mask must contain at least one True value.")
         if not np.all(np.isfinite(image_mask)):

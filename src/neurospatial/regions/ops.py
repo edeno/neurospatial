@@ -157,9 +157,10 @@ def _get_points_in_single_region_mask(
                 )
 
         px, py = region.data[0], region.data[1]
-        return (np.abs(xs - px) <= point_tolerance) & (
+        result = (np.abs(xs - px) <= point_tolerance) & (
             np.abs(ys - py) <= point_tolerance
         )
+        return np.asarray(result, dtype=bool)
     if region.kind == "polygon":
         # Region.data for "polygon" is shapely.geometry.Polygon
         if not isinstance(region.data, Polygon):
@@ -172,13 +173,13 @@ def _get_points_in_single_region_mask(
         )  # Vectorized creation of Point objects
 
         if include_boundary:
-            return shapely.covers(region.data, point_geometries)
-        return shapely.contains(region.data, point_geometries)
+            result = shapely.covers(region.data, point_geometries)
+            return np.asarray(result, dtype=bool)
+        result = shapely.contains(region.data, point_geometries)
+        return np.asarray(result, dtype=bool)
+
     # Should not be reached if Region.kind is properly constrained by Literal type
-    warnings.warn(
-        f"Region '{region.name}' has unknown kind '{region.kind}'. Skipping.",
-    )
-    return np.zeros(transformed_pts.shape[0], dtype=bool)
+    raise ValueError(f"Region '{region.name}' has unknown kind '{region.kind}'.")
 
 
 def points_in_any_region(

@@ -12,7 +12,7 @@ since CompositeEnvironment wraps pre-fitted sub-environments.)
 """
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -77,6 +77,7 @@ class CompositeEnvironment:
     regions: Regions
     _layout_type_used: str
     _layout_params_used: dict[str, Any]
+    _n_dims: int
 
     def __init__(
         self,
@@ -352,7 +353,7 @@ class CompositeEnvironment:
             Equivalent to self.bin_at(points_nd) != -1.
 
         """
-        return self.bin_at(points_nd) != -1
+        return np.asarray(self.bin_at(points_nd) != -1, dtype=np.bool_)
 
     def neighbors(self, bin_index: int) -> list[int]:
         """Get neighboring bins in the merged connectivity graph.
@@ -548,15 +549,16 @@ class CompositeEnvironment:
 
         """
         if ax is None:
-            fig_kwargs = {"figsize": (10, 10)}  # Default figsize
+            fig_kwargs: dict[str, Any] = {"figsize": (10, 10)}  # Default figsize
             fig_kwargs.update(kwargs)
             # Determine if plot should be 3D based on n_dims
             if self.n_dims == 3:
-                fig_kwargs.setdefault("projection", "3d")
+                fig_kwargs["projection"] = "3d"
 
             is_3d = fig_kwargs.get("projection") == "3d"
             if is_3d:
-                fig = plt.figure(figsize=fig_kwargs.get("figsize"))
+                figsize_val = fig_kwargs.get("figsize", (10, 10))
+                fig = plt.figure(figsize=figsize_val)
                 ax = fig.add_subplot(111, projection="3d")
             else:
                 fig, ax = plt.subplots(
@@ -566,10 +568,10 @@ class CompositeEnvironment:
         # Plot each sub-environment
         for i, block_info in enumerate(self._subenvs_info):
             env_i = block_info["env"]
-            current_env_kwargs = {}
+            current_env_kwargs: dict[str, Any] = {}
             if isinstance(sub_env_plot_kwargs, list):
                 if i < len(sub_env_plot_kwargs) and sub_env_plot_kwargs[i] is not None:
-                    current_env_kwargs = sub_env_plot_kwargs[i]
+                    current_env_kwargs = sub_env_plot_kwargs[i]  # type: ignore[assignment]
             elif isinstance(sub_env_plot_kwargs, dict):
                 current_env_kwargs = sub_env_plot_kwargs
 
@@ -593,12 +595,16 @@ class CompositeEnvironment:
                         bbox={"facecolor": "white", "alpha": 0.5, "pad": 0.1},
                     )
                 elif self.n_dims == 3:
-                    ax.text(
+                    # matplotlib 3D text() signature differs from 2D stubs
+                    from typing import Any as _Any
+
+                    text_func = cast("_Any", ax.text)
+                    text_func(
                         mean_pos[0],
                         mean_pos[1],
                         mean_pos[2],
                         label_text,
-                        color="blue",  # type: ignore
+                        color="blue",
                         ha="center",
                         va="center",
                     )
@@ -634,15 +640,20 @@ class CompositeEnvironment:
             pos_u = self.bin_centers[u_composite]
             pos_v = self.bin_centers[v_composite]
 
+            # matplotlib plot() stubs don't properly handle **kwargs
+            from typing import Any as _Any
+
+            plot_func = cast("_Any", ax.plot)
+
             if self.n_dims == 2:
-                ax.plot([pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], **_bridge_kwargs)
+                plot_func([pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], **_bridge_kwargs)
             elif self.n_dims == 3:
-                ax.plot(
+                plot_func(
                     [pos_u[0], pos_v[0]],
                     [pos_u[1], pos_v[1]],
                     [pos_u[2], pos_v[2]],
                     **_bridge_kwargs,
-                )  # type: ignore
+                )
             # Add other dimensionalities if needed
 
         ax.set_title("Composite Environment")

@@ -169,7 +169,7 @@ def apply_similarity_transform(
     scaled_points = scale_factor * rotated_points
     # 3. Translate
     transformed_points = scaled_points + translation_vector
-    return transformed_points
+    return np.asarray(transformed_points, dtype=np.float64)
 
 
 def _validate_probability_mapping_inputs(
@@ -296,7 +296,7 @@ def _transform_source_bin_centers(
             )
         transformed += vec
 
-    return transformed
+    return np.asarray(transformed, dtype=np.float64)
 
 
 def _map_nearest_neighbor(

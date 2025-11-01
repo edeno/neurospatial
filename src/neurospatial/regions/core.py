@@ -11,7 +11,7 @@ import warnings
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------
 # Public type aliases
 # ---------------------------------------------------------------------
-PointCoords = NDArray[np.float64] | Iterable[float] | Point
+PointCoords: TypeAlias = NDArray[np.float64] | Iterable[float] | Point
 Kind = Literal["point", "polygon"]
 
 # ---------------------------------------------------------------------
@@ -103,7 +103,14 @@ class Region:
             Dictionary representation of the Region.
 
         """
-        geom = self.data.tolist() if self.kind == "point" else mapping(self.data)  # type: ignore[union-attr,attr-defined]
+        if self.kind == "point":
+            geom = (
+                self.data.tolist()
+                if isinstance(self.data, np.ndarray)
+                else list(self.data.coords[0])
+            )
+        else:
+            geom = mapping(self.data)
 
         return {
             "name": self.name,
@@ -127,13 +134,15 @@ class Region:
             Reconstructed Region instance.
 
         """
-        kind: Kind = payload["kind"]  # type: ignore[assignment]
+        kind_str = payload["kind"]
+        if kind_str not in ("point", "polygon"):
+            raise ValueError(f"Unknown kind {kind_str!r}")
+        kind: Kind = kind_str
+
         if kind == "point":
             data = np.asarray(payload["geom"], dtype=float)
-        elif kind == "polygon":
-            data = shape(payload["geom"])  # type: ignore[attr-defined]
-        else:
-            raise ValueError(f"Unknown kind {kind!r}")
+        else:  # kind == "polygon"
+            data = shape(payload["geom"])
         return cls(
             name=payload["name"],
             kind=kind,
@@ -226,10 +235,9 @@ class Regions(MutableMapping[str, Region]):
 
         if point is not None:
             # Accept either a coordinate array or a Shapely Point
-            if isinstance(point, Point):
-                coords = np.asarray(point.coords[0], dtype=float)
-            else:
-                coords = np.asarray(point, dtype=float)
+            coords = np.asarray(
+                point.coords[0] if isinstance(point, Point) else point, dtype=float
+            )
             region = Region(name, "point", coords, metadata or {})
         else:
             region = Region(name, "polygon", polygon, metadata or {})
@@ -276,7 +284,8 @@ class Regions(MutableMapping[str, Region]):
         """
         region = self[name]
         if region.kind == "polygon":
-            return region.data.area  # type: ignore[attr-defined]
+            assert isinstance(region.data, Polygon)
+            return float(region.data.area)
         return 0.0
 
     def region_center(self, region_name: str) -> NDArray[np.float64] | None:
@@ -306,9 +315,9 @@ class Regions(MutableMapping[str, Region]):
 
         if region.kind == "point":
             return np.asarray(region.data, dtype=float)
-        if region.kind == "polygon":
-            return np.array(region.data.centroid.coords[0], dtype=float)  # type: ignore
-        return None  # pragma: no cover
+        else:  # region.kind == "polygon"
+            assert isinstance(region.data, Polygon)
+            return np.array(region.data.centroid.coords[0], dtype=float)
 
     def buffer(
         self,
@@ -340,19 +349,21 @@ class Regions(MutableMapping[str, Region]):
         if isinstance(source, str):
             src = self[source]
             if src.kind == "polygon":
+                assert isinstance(src.data, Polygon)
                 geom = src.data
             elif src.kind == "point" and src.n_dims == 2:
-                geom = Point(src.data)  # type: ignore[attr-defined]
+                assert isinstance(src.data, np.ndarray)
+                geom = Point(src.data)
             else:
                 raise ValueError("Can only buffer 2-D point or polygon regions.")
         else:  # raw coords
             arr = np.asarray(source, dtype=float)
             if arr.shape != (2,):
                 raise ValueError("Raw source must be shape (2,) for buffering.")
-            geom = Point(arr)  # type: ignore[attr-defined]
+            geom = Point(arr)
 
         poly = geom.buffer(distance)
-        if not isinstance(poly, Polygon):  # type: ignore[attr-defined]
+        if not isinstance(poly, Polygon):
             raise ValueError("Buffer produced non-polygon geometry.")
 
         return self.add(new_name, polygon=poly, metadata=meta)
