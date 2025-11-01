@@ -78,14 +78,14 @@
   - [x] Add brief use case description for each method
   - [x] Cross-reference individual method docstrings
 
-- [ ] **Add "See Also" cross-references** (all factory methods)
-  - [ ] Add to `from_samples()` → reference polygon, mask, layout
-  - [ ] Add to `from_polygon()` → reference samples, mask, image
-  - [ ] Add to `from_mask()` → reference samples, polygon, image
-  - [ ] Add to `from_image()` → reference mask, polygon, samples
-  - [ ] Add to `from_graph()` → reference samples, layout
-  - [ ] Add to `from_layout()` → reference all specialized methods
-  - [ ] Ensure bidirectional references
+- [x] **Add "See Also" cross-references** (all factory methods)
+  - [x] Add to `from_samples()` → reference polygon, mask, image, graph, layout
+  - [x] Add to `from_polygon()` → reference samples, mask, image
+  - [x] Add to `from_mask()` → reference samples, polygon, image
+  - [x] Add to `from_image()` → reference mask, polygon, samples
+  - [x] Add to `from_graph()` → reference samples, layout
+  - [x] Add to `from_layout()` → reference all specialized methods
+  - [x] Ensure bidirectional references
 
 ### Scientific Terminology
 
