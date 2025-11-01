@@ -1,0 +1,382 @@
+# neurospatial Package UX Refactoring Tasks
+
+**Based on**: UX Review (2025-11-01) and Implementation Plan
+**Goal**: Refactor neurospatial package from NEEDS_POLISH to USER_READY
+**Total Estimated Effort**: 5-6 days
+
+---
+
+## Milestone 1: Critical Fixes - Make Library Discoverable 🔴
+
+**Goal**: Fix blocking issues preventing new user adoption
+**Duration**: 1-2 days
+**Success Metric**: New user can install and create first Environment in < 10 minutes
+
+### Documentation
+
+- [x] **Write comprehensive README.md**
+  - [x] Project overview (what, who, why - 2-3 paragraphs)
+  - [x] Key features (bulleted list)
+  - [x] Installation instructions (pip and development setup)
+  - [x] Quickstart example (copy-pasteable code)
+  - [x] Core concepts section (bins, active bins, connectivity, layout engines)
+  - [x] Common use cases with links
+  - [x] Documentation links section
+  - [x] Citation information
+  - [x] Verify all examples run without modification
+
+### Critical Bug Fixes
+
+- [ ] **Fix Regions.update() documentation bug** (`src/neurospatial/regions/core.py`)
+  - [ ] Implement `update()` method with full docstring
+  - [ ] Update `__setitem__` error message to reference correct methods
+  - [ ] Add tests for `update()` behavior
+  - [ ] Add tests for error conditions (KeyError when region doesn't exist)
+
+### Error Message Improvements
+
+- [ ] **Improve "No active bins found" error** (`src/neurospatial/layout/engines/regular_grid.py:144-146`)
+  - [ ] Add diagnostic information (data range, bin_size, thresholds)
+  - [ ] Explain WHAT went wrong (no bins after filtering)
+  - [ ] Explain WHY (3 common causes)
+  - [ ] Explain HOW to fix (specific suggestions)
+  - [ ] Add test that triggers error and validates message content
+
+### Terminology & Concepts
+
+- [ ] **Add "active bins" definition** (`src/neurospatial/environment.py`)
+  - [ ] Add Terminology section to Environment class docstring
+  - [ ] Define "active bins" with examples
+  - [ ] Explain scientific motivation
+  - [ ] Cross-reference `infer_active_bins` parameter
+
+- [ ] **Add bin_size units clarification** (all factory methods)
+  - [ ] Update `from_samples()` docstring
+  - [ ] Update `from_polygon()` docstring
+  - [ ] Update `from_mask()` docstring
+  - [ ] Update `from_image()` docstring
+  - [ ] Update `from_graph()` docstring
+  - [ ] Add warning about Hexagonal vs RegularGrid interpretation
+  - [ ] Update examples to show units in comments
+
+---
+
+## Milestone 2: Clarity & Discoverability 🟠
+
+**Goal**: Reduce confusion and improve method/feature discovery
+**Duration**: 2-3 days
+**Success Metric**: 80% reduction in "which method should I use?" questions
+
+### Navigation & Discovery
+
+- [ ] **Add Factory Method Selection Guide** (`src/neurospatial/environment.py`)
+  - [ ] Add guide to Environment class docstring (after class summary)
+  - [ ] Include decision tree for all 6 factory methods
+  - [ ] Order by frequency of use (most common first)
+  - [ ] Add brief use case description for each method
+  - [ ] Cross-reference individual method docstrings
+
+- [ ] **Add "See Also" cross-references** (all factory methods)
+  - [ ] Add to `from_samples()` → reference polygon, mask, layout
+  - [ ] Add to `from_polygon()` → reference samples, mask, image
+  - [ ] Add to `from_mask()` → reference samples, polygon, image
+  - [ ] Add to `from_image()` → reference mask, polygon, samples
+  - [ ] Add to `from_graph()` → reference samples, layout
+  - [ ] Add to `from_layout()` → reference all specialized methods
+  - [ ] Ensure bidirectional references
+
+### Scientific Terminology
+
+- [ ] **Define scientific terms for non-experts**
+  - [ ] "Place fields" in `src/neurospatial/alignment.py:27`
+  - [ ] "Geodesic distance" in `src/neurospatial/environment.py:1104`
+  - [ ] "Linearization" in `src/neurospatial/environment.py:1212`
+  - [ ] Add brief parenthetical definitions
+  - [ ] Link to detailed explanations where appropriate
+
+### Error Message Standardization
+
+- [ ] **Standardize error messages to show actual values**
+  - [ ] `layout/helpers/utils.py:96` - bin_size validation
+  - [ ] `layout/helpers/utils.py:148` - bin_count_threshold validation
+  - [ ] `calibration.py:48-50` - offset_px validation
+  - [ ] `layout/helpers/regular_grid.py` - parameter validations
+  - [ ] `layout/helpers/hexagonal.py` - parameter validations
+  - [ ] `layout/helpers/graph.py` - parameter validations
+  - [ ] `layout/mixins.py` - state validation errors
+  - [ ] Apply pattern: `f"{param} must be {constraint} (got {actual_value})"`
+  - [ ] Include type information where helpful
+  - [ ] Truncate long values (> 100 chars)
+
+- [ ] **Enhance @check_fitted error with examples** (`src/neurospatial/environment.py:64-68`)
+  - [ ] Add example of correct usage
+  - [ ] Add example of incorrect usage to avoid
+  - [ ] Keep error message concise but informative
+
+- [ ] **Improve CompositeEnvironment dimension mismatch error** (`src/neurospatial/composite.py:114-117`)
+  - [ ] Add "To fix" guidance section
+  - [ ] Explain common cause (mixed 2D/3D environments)
+  - [ ] Suggest checking data_samples dimensionality
+
+### API Consistency
+
+- [ ] **Audit and standardize bin_size defaults**
+  - [ ] Review all factory methods for consistency
+  - [ ] Decide: Option A (all required) vs Option B (all have defaults)
+  - [ ] Update method signatures if changing defaults
+  - [ ] Update all docstrings to reflect decision
+  - [ ] Update all examples to include explicit bin_size
+  - [ ] Update all tests for any breaking changes
+  - [ ] Document breaking changes if applicable
+
+---
+
+## Milestone 3: Polish & User Experience 🟡
+
+**Goal**: Professional finish and convenience features
+**Duration**: 1-2 days
+**Success Metric**: Zero "how do I debug this?" questions on common errors
+
+### Proactive Guidance
+
+- [ ] **Add "Common Pitfalls" sections**
+  - [ ] Add to `from_samples()` docstring
+    - [ ] bin_size too large pitfall
+    - [ ] bin_count_threshold too high pitfall
+    - [ ] Mismatched units pitfall
+    - [ ] Missing morphological operations pitfall
+  - [ ] Add to `CompositeEnvironment.__init__()` docstring
+    - [ ] Dimension mismatch pitfall
+    - [ ] No bridge edges pitfall
+    - [ ] Overlapping bins pitfall
+
+### Enhanced Error Handling
+
+- [ ] **Improve type validation for sequences**
+  - [ ] Add try-except for bin_size conversion in `layout/helpers/utils.py`
+  - [ ] Add try-except for dimension_ranges in `layout/helpers/regular_grid.py`
+  - [ ] Add try-except for data_samples in `environment.py`
+  - [ ] Provide helpful error messages for type errors
+  - [ ] Validate NaN/Inf separately with specific errors
+  - [ ] Preserve original exception with `from e`
+  - [ ] Add tests for invalid inputs (strings, mixed types, NaN)
+
+### Convenience Features
+
+- [ ] **Add custom __repr__ for Environment** (`src/neurospatial/environment.py`)
+  - [ ] Implement concise single-line representation
+  - [ ] Show: name, n_dims, n_bins, layout type
+  - [ ] Handle edge cases (empty name, etc.)
+  - [ ] Add docstring with examples
+  - [ ] Add tests for various configurations
+
+- [ ] **Add .info() method for diagnostics** (`src/neurospatial/environment.py`)
+  - [ ] Implement multi-line detailed summary
+  - [ ] Show: name, dimensions, bins, layout, extent, bin sizes, linearization, regions
+  - [ ] Format output for readability
+  - [ ] Handle edge cases (no regions, variable bin sizes, etc.)
+  - [ ] Add docstring with examples
+  - [ ] Add tests for various configurations
+
+### Validation Warnings (Optional)
+
+- [ ] **Add validation warnings for unusual parameters** (`from_samples()`)
+  - [ ] Warn if bin_size > 20% of data range
+  - [ ] Warn if bin_count_threshold > n_samples / 10
+  - [ ] Warn about sparse data with no morphological operations
+  - [ ] Use `stacklevel=2` to point to user code
+  - [ ] Make warnings informative, not alarming
+  - [ ] Add tests to verify warnings issued correctly
+  - [ ] Consider adding `suppress_warnings` parameter
+
+### Visual Documentation (Lower Priority)
+
+- [ ] **Create morphological operations visual guide**
+  - [ ] Create Jupyter notebook in `docs/examples/`
+  - [ ] Setup example data with holes and gaps
+  - [ ] Create figures for each operation (original, dilate, fill_holes, close_gaps, combined)
+  - [ ] Add explanatory text for each operation
+  - [ ] Link notebook from `from_samples()` docstring
+  - [ ] Test that notebook runs without errors
+
+---
+
+## Milestone 4: Testing & Quality Assurance ✅
+
+**Goal**: Ensure all improvements work correctly and don't break existing functionality
+**Duration**: Concurrent with implementation
+**Success Metric**: All tests pass, >95% coverage of new code
+
+### Unit Tests
+
+- [ ] **Test new functionality**
+  - [ ] Regions.update() method tests
+  - [ ] Error message content validation tests
+  - [ ] __repr__ output format tests
+  - [ ] .info() output format tests
+  - [ ] Type validation error tests
+  - [ ] Warning emission tests
+
+- [ ] **Test documentation**
+  - [ ] Run doctests: `uv run pytest --doctest-modules`
+  - [ ] Verify all examples are syntactically correct
+  - [ ] Verify examples produce expected output
+  - [ ] Check docstring rendering with `help()`
+
+### Integration Tests
+
+- [ ] **Create UX integration test suite** (`tests/test_ux_improvements.py`)
+  - [ ] Test first-run experience (README workflow)
+  - [ ] Test error messages follow WHAT/WHY/HOW pattern
+  - [ ] Test factory method discovery (selection guide exists)
+  - [ ] Test that scientific terms are defined
+  - [ ] Test cross-references work
+
+### Manual QA
+
+- [ ] **Sprint 1 QA Checklist**
+  - [ ] Install in fresh environment and follow README
+  - [ ] Time first Environment creation (should be < 10 minutes)
+  - [ ] Verify README example runs without modification
+  - [ ] Trigger "no active bins" error and verify message helpful
+  - [ ] Try to update a region and verify it works
+
+- [ ] **Sprint 2 QA Checklist**
+  - [ ] Read factory method guide, verify clarity
+  - [ ] Check that scientific terms are defined at first use
+  - [ ] Trigger 5 different errors, verify all show actual values
+  - [ ] Use `help(Environment.from_samples)`, verify "See Also" section
+
+- [ ] **Sprint 3 QA Checklist**
+  - [ ] Read Common Pitfalls, verify actionable
+  - [ ] Create environment and check __repr__ output
+  - [ ] Call env.info() and verify readable
+  - [ ] Provide invalid bin_size and verify error clear
+
+### Regression Testing
+
+- [ ] **Ensure no breaking changes**
+  - [ ] Run full test suite: `uv run pytest`
+  - [ ] Run with coverage: `uv run pytest --cov=src/neurospatial`
+  - [ ] Check coverage report for gaps
+  - [ ] Run type checking: `uv run mypy src/neurospatial`
+  - [ ] Run linting: `uv run ruff check .`
+  - [ ] Run formatting: `uv run ruff format . --check`
+
+---
+
+## Milestone 5: Documentation & Release Prep 📚
+
+**Goal**: Prepare for public release with complete documentation
+**Duration**: 1 day
+**Success Metric**: Documentation is comprehensive and error-free
+
+### Documentation Review
+
+- [ ] **Verify documentation completeness**
+  - [ ] All public methods have docstrings
+  - [ ] All parameters documented
+  - [ ] All return types documented
+  - [ ] All exceptions documented
+  - [ ] Examples provided for key methods
+
+- [ ] **Check rendering**
+  - [ ] README renders correctly on GitHub
+  - [ ] Docstrings render correctly in `help()`
+  - [ ] Code blocks are properly formatted
+  - [ ] Links are valid
+  - [ ] No Markdown syntax errors
+
+### Change Documentation
+
+- [ ] **Update CHANGELOG.md** (or create if doesn't exist)
+  - [ ] Document all UX improvements
+  - [ ] List breaking changes (if bin_size defaults removed)
+  - [ ] List new features (update(), info(), __repr__)
+  - [ ] List bug fixes (documentation bugs, error messages)
+  - [ ] List documentation improvements
+
+- [ ] **Update CLAUDE.md if needed**
+  - [ ] Document new patterns to follow
+  - [ ] Update common gotchas if applicable
+  - [ ] Add new terminology to glossary
+
+### Release Preparation
+
+- [ ] **Version bump**
+  - [ ] Decide on version number (suggest v0.2.0 for breaking changes)
+  - [ ] Update version in `pyproject.toml`
+  - [ ] Update version references in documentation
+
+- [ ] **Create release notes**
+  - [ ] Highlight key UX improvements
+  - [ ] Provide migration guide for breaking changes
+  - [ ] Thank contributors
+  - [ ] Link to detailed CHANGELOG
+
+---
+
+## Success Metrics & Validation
+
+### Quantitative Targets
+
+- [ ] **Time to first successful Environment creation**: < 10 minutes (Sprint 1), < 5 minutes (Sprint 2), < 3 minutes (Sprint 3)
+- [ ] **Error messages with diagnostic info**: > 60% (Sprint 1), > 80% (Sprint 2), > 90% (Sprint 3)
+- [ ] **Methods with "See Also" sections**: 100% of factory methods
+- [ ] **Scientific terms defined**: 100%
+- [ ] **Test coverage**: > 95% of new code
+- [ ] **All doctests passing**: 100%
+
+### Qualitative Targets
+
+- [ ] **User feedback**: "How easy was it to get started?" → "Very easy"
+- [ ] **Error helpfulness**: "When you encountered errors, were they helpful?" → "Yes, I knew what to fix"
+- [ ] **Method discovery**: "Could you find the right method to use?" → "Yes, the guide was clear"
+- [ ] **Understanding**: "Did you understand what the library does?" → "Yes, README explained it well"
+
+---
+
+## Optional Enhancements (Future Work)
+
+These items are not critical for USER_READY status but would further improve the library:
+
+- [ ] Interactive tutorial (Jupyter notebook walkthrough)
+- [ ] Examples gallery with real neuroscience data
+- [ ] Video walkthrough / screencast
+- [ ] API reference documentation (Sphinx)
+- [ ] Contribution guide for custom layout engines
+- [ ] Performance benchmarks documentation
+- [ ] Migration guides from similar libraries
+- [ ] Integration examples with common neuroscience packages (NWB, etc.)
+
+---
+
+## Notes
+
+**Priority**: Complete milestones in order (1 → 2 → 3 → 4 → 5)
+
+**Flexibility**: Milestones 2-3 can be split across multiple PRs if needed
+
+**Testing**: Add tests concurrent with implementation (don't defer to Milestone 4)
+
+**Review**: Get code review after each milestone before proceeding
+
+**Documentation**: Keep TASKS.md updated as work progresses (check off completed items)
+
+**Git Strategy**:
+- Create feature branch: `feature/ux-improvements`
+- Commit frequently with clear messages
+- Consider separate PRs per milestone for easier review
+- Squash commits before merging to main
+
+**Risk Management**:
+- If time-constrained, prioritize Milestone 1 (Critical Fixes)
+- Milestones 2-3 can be deferred but significantly improve UX
+- Milestone 4 (Testing) is mandatory for quality
+- Milestone 5 (Documentation) is mandatory for release
+
+---
+
+**Last Updated**: 2025-11-01
+**Status**: Planning phase - ready to begin implementation
+**Next Action**: Begin Milestone 1, Task 1 (Write README.md)
