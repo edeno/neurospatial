@@ -298,17 +298,17 @@ class CompositeEnvironment:
         """Returns parameters used to construct the CompositeEnvironment."""
         return self._layout_params_used
 
-    def bin_at(self, points_nd: np.ndarray) -> np.ndarray:
+    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
         """Map points to composite bin indices.
 
         Parameters
         ----------
-        points_nd : np.ndarray, shape (M, n_dims)
+        points_nd : NDArray[np.float64], shape (M, n_dims)
             Array of M points in n_dims-dimensional space.
 
         Returns
         -------
-        np.ndarray, shape (M,)
+        NDArray[np.int_], shape (M,)
             Composite bin indices for each point. Returns -1 for points
             outside all sub-environments.
 
@@ -337,17 +337,17 @@ class CompositeEnvironment:
 
         return out
 
-    def contains(self, points_nd: np.ndarray) -> np.ndarray:
+    def contains(self, points_nd: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if points are contained in any bin of the composite environment.
 
         Parameters
         ----------
-        points_nd : np.ndarray, shape (M, n_dims)
+        points_nd : NDArray[np.float64], shape (M, n_dims)
             Array of M points in n_dims-dimensional space.
 
         Returns
         -------
-        np.ndarray, shape (M,)
+        NDArray[np.bool_], shape (M,)
             Boolean array where True indicates point is within any bin.
             Equivalent to self.bin_at(points_nd) != -1.
 
@@ -430,17 +430,17 @@ class CompositeEnvironment:
             ),
         )
 
-    def bin_center_of(self, bin_indices: int | np.ndarray) -> np.ndarray:
+    def bin_center_of(self, bin_indices: int | NDArray[np.int_]) -> NDArray[np.float64]:
         """Get bin center coordinates for specified bin indices.
 
         Parameters
         ----------
-        bin_indices : int or np.ndarray
+        bin_indices : int or NDArray[np.int_]
             Single composite bin index or 1-D array of bin indices.
 
         Returns
         -------
-        np.ndarray
+        NDArray[np.float64]
             N-D coordinate(s) of the specified bin(s). Shape (n_dims,) for
             a single index, or (M, n_dims) for M indices.
 

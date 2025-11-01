@@ -88,7 +88,7 @@ class Affine2D(SpatialTransform):
         pts_h = np.c_[pts.reshape(-1, 2), np.ones((pts.size // 2, 1))]
         out = pts_h @ self.A.T
         out = out[:, :2] / out[:, 2:3]
-        return out.reshape(pts.shape)
+        return np.asarray(out.reshape(pts.shape), dtype=np.float64)
 
     # ---- helpers -----------------------------------------------------
     def inverse(self) -> Affine2D:
@@ -113,7 +113,7 @@ class Affine2D(SpatialTransform):
         array([[0., 0.]])
 
         """
-        return Affine2D(np.linalg.inv(self.A))
+        return Affine2D(np.asarray(np.linalg.inv(self.A), dtype=np.float64))
 
     def compose(self, other: Affine2D) -> Affine2D:
         """Compose this transformation with another.

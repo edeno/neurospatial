@@ -36,16 +36,21 @@ def _get_graph_bins(
     edge_order: list[tuple[object, object]],
     edge_spacing: float | Sequence[float],
     bin_size: float,
-) -> tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray]:
+) -> tuple[
+    NDArray[np.float64],
+    tuple[NDArray[np.float64], ...],
+    NDArray[np.bool_],
+    NDArray[np.int_],
+]:
     """Discretize each edge of a linearized graph into fixed-length bins, optionally
-    inserting inactive “gap” bins between segments.
+    inserting inactive "gap" bins between segments.
 
     Parameters
     ----------
     graph : networkx.Graph
         Must have `pos` attributes on each node: {node: (x, y, …)}.
     edge_order : list of (u, v) tuples
-        Ordered edges defining the linear track. Each tuple’s nodes must exist in `graph`.
+        Ordered edges defining the linear track. Each tuple's nodes must exist in `graph`.
     edge_spacing : float or sequence of floats
         If float: uniform gap length inserted between every consecutive edge.
         If sequence: length must be len(edge_order) - 1, specifying each gap individually.
@@ -54,13 +59,13 @@ def _get_graph_bins(
 
     Returns
     -------
-    bin_centers_1d : ndarray, shape (n_total_bins,)
+    bin_centers_1d : NDArray[np.float64], shape (n_total_bins,)
         1D coordinates of the center of every bin (including gaps).
-    bin_edges_1d_tuple : tuple of one ndarray, shape (n_total_bins + 1,)
+    bin_edges_1d_tuple : tuple of one NDArray[np.float64], shape (n_total_bins + 1,)
         Unique sorted 1D edge coordinates (matches np.histogramdd format).
-    active_mask_1d : ndarray of bool, shape (n_total_bins,)
+    active_mask_1d : NDArray[np.bool_], shape (n_total_bins,)
         True for bins that lie on an actual graph edge, False for gap bins.
-    edge_ids_for_active_bins : ndarray of int, shape (n_active_bins,)
+    edge_ids_for_active_bins : NDArray[np.int_], shape (n_active_bins,)
         Original edge index (0..len(graph.edges)-1) for each active bin.
 
     Raises
@@ -158,9 +163,9 @@ def _get_graph_bins(
 
 def _create_graph_layout_connectivity_graph(
     graph: nx.Graph,
-    bin_centers_nd: np.ndarray,
-    linear_bin_centers: np.ndarray,
-    original_edge_ids: np.ndarray,
+    bin_centers_nd: NDArray[np.float64],
+    linear_bin_centers: NDArray[np.float64],
+    original_edge_ids: NDArray[np.int_],
     edge_order: list[tuple[object, object]],
 ) -> nx.Graph:
     """Create a connectivity graph from binned graph segments.
@@ -174,13 +179,13 @@ def _create_graph_layout_connectivity_graph(
     ----------
     graph : networkx.Graph
         The original graph from which bins were derived.
-    bin_centers_nd : np.ndarray, shape (n_active_bins, 2)
+    bin_centers_nd : NDArray[np.float64], shape (n_active_bins, 2)
         n-D coordinates of the centers of active bins.
-    linear_bin_centers : np.ndarray, shape (n_total_bins,)
+    linear_bin_centers : NDArray[np.float64], shape (n_total_bins,)
         1D coordinates of all bin centers (active and inactive).
-    original_edge_ids : np.ndarray, shape (n_active_bins,)
+    original_edge_ids : NDArray[np.int_], shape (n_active_bins,)
         Integer IDs of the original graph edge for each active bin.
-    active_mask : np.ndarray, shape (n_total_bins,), dtype=bool
+    active_mask : NDArray[np.bool_], shape (n_total_bins,), dtype=bool
         Mask indicating which bins in `linear_bin_centers` are active.
     edge_order : list of tuples
         The ordered sequence of edges from the original graph that defines
@@ -309,11 +314,11 @@ def _create_graph_layout_connectivity_graph(
 
 
 def _project_1d_to_2d(
-    linear_position: np.ndarray,
+    linear_position: NDArray[np.float64],
     graph: nx.Graph,
     edge_order: list[Edge],
     edge_spacing: float | list[float] = 0.0,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Map 1D linear positions back to N-D coordinates on the track graph.
 
     Projects points from a 1D linearized representation of the track (defined
@@ -322,7 +327,7 @@ def _project_1d_to_2d(
 
     Parameters
     ----------
-    linear_position : np.ndarray, shape (n_points,)
+    linear_position : NDArray[np.float64], shape (n_points,)
         1D positions along the linearized track.
     graph : networkx.Graph
         The original graph. Nodes must have a 'pos' attribute (N-D coordinates)
@@ -335,7 +340,7 @@ def _project_1d_to_2d(
 
     Returns
     -------
-    coords_nd : np.ndarray, shape (n_points, n_dims)
+    coords_nd : NDArray[np.float64], shape (n_points, n_dims)
         N-dimensional coordinates corresponding to each input `linear_position`.
         Positions falling into gaps or beyond track ends are typically
         projected onto the nearest valid track segment endpoint.
@@ -441,12 +446,12 @@ def _find_bin_for_linear_position(
 
     Parameters
     ----------
-    linear_positions : float | np.ndarray, shape (n_points,)
+    linear_positions : float | NDArray[np.float64], shape (n_points,)
         Linear position(s) to map to bin indices.
-    bin_edges_1d : np.ndarray, shape (n_total_bins + 1,)
+    bin_edges_1d : NDArray[np.float64], shape (n_total_bins + 1,)
         1D array of sorted bin edge coordinates for the entire linearized track
         (including gaps).
-    active_mask_1d : Optional[np.ndarray], shape (n_total_bins,), dtype=bool, optional
+    active_mask_1d : NDArray[np.bool_] | None, shape (n_total_bins,), optional
         Boolean mask indicating which bins in the `bin_edges_1d` definition
         are active (on an edge segment) vs. inactive (in a gap). If provided,
         the function ensures returned indices correspond to active bins or
@@ -454,7 +459,7 @@ def _find_bin_for_linear_position(
 
     Returns
     -------
-    bin_indices : int | np.ndarray, shape (n_points,)
+    bin_indices : int | NDArray[np.int_], shape (n_points,)
         0-based bin index (relative to the full set of bins defined by
         `bin_edges_1d`) for each input linear position.
         Returns -1 if a position falls outside the range of `bin_edges_1d`.

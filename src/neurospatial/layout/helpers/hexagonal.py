@@ -375,7 +375,9 @@ def _points_to_hex_bin_ind(
     output_indices: NDArray[np.int_] = np.full(n_points, -1, dtype=np.int_)
 
     # Identify valid (non-NaN) points
-    valid_mask: NDArray[np.bool_] = ~np.isnan(points).any(axis=1)
+    valid_mask: NDArray[np.bool_] = np.asarray(
+        ~np.isnan(points).any(axis=1), dtype=np.bool_
+    )
     if not np.any(valid_mask):
         return output_indices  # All points are NaN or empty after all
 

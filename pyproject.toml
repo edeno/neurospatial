@@ -51,6 +51,7 @@ dev = [
     "ruff>=0.14.3",
     "pre-commit>=4.3.0",
     "ipython>=8.0.0",
+    "mypy>=1.18.2",
 ]
 opencv = [
     "opencv-python>=4.11.0.86",
@@ -144,3 +145,56 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+
+[tool.mypy]
+# General mypy configuration for scientific Python package
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Allow untyped defs in science code (too strict otherwise)
+disallow_any_generics = false  # Allow generic types without parameters (common in numpy)
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_reexport = true
+strict_equality = true
+warn_unreachable = true
+pretty = true
+show_error_codes = true
+show_error_context = true
+show_column_numbers = true
+
+# Scientific computing: Allow untyped calls to libraries
+# Many scientific libraries have incomplete type stubs
+allow_untyped_calls = true
+allow_incomplete_defs = true
+check_untyped_defs = false
+
+# Note: numpy.typing.mypy_plugin is deprecated in NumPy 2.3+
+# NumPy now has built-in type stubs that work without plugins
+
+# Ignore missing imports for libraries without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "sklearn.*",
+    "cv2.*",
+    "shapely.*",
+    "matplotlib.*",
+    "networkx.*",
+    "pandas.*",
+    "track_linearization.*",
+]
+ignore_missing_imports = true
+
+# Stricter checking for our own code
+[[tool.mypy.overrides]]
+module = "neurospatial.*"
+warn_return_any = true
+warn_unused_ignores = true
+
+# Test files can be less strict
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+allow_untyped_calls = true
+allow_incomplete_defs = true

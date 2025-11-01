@@ -57,7 +57,7 @@ def _generate_interior_points_for_mesh(
         return np.empty((0, 2), dtype=np.float64)
 
     mask_pts = shapely.covers(boundary_polygon, shapely.points(candidates))
-    return candidates[mask_pts]
+    return np.asarray(candidates[mask_pts], dtype=np.float64)
 
 
 def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
@@ -211,12 +211,14 @@ def _compute_mesh_dimension_ranges(
     ]
 
 
-def _sample_polygon_boundary(poly: Polygon, point_spacing: float) -> np.ndarray:
+def _sample_polygon_boundary(
+    poly: Polygon, point_spacing: float
+) -> NDArray[np.float64]:
     """Given a Shapely Polygon, return an (M,2)-array of points sampled along
     the exterior boundary (including the vertices) at approximately 'point_spacing' intervals.
     """
     coords = np.array(poly.exterior.coords)  # shape = (N_vertices+1, 2)
-    boundary_pts = []
+    boundary_pts: list[list[float]] = []
     for i in range(len(coords) - 1):
         x0, y0 = coords[i]
         x1, y1 = coords[i + 1]
@@ -230,8 +232,8 @@ def _sample_polygon_boundary(poly: Polygon, point_spacing: float) -> np.ndarray:
         for t in np.linspace(0.0, 1.0, n_segs + 1):
             px = x0 + t * (x1 - x0)
             py = y0 + t * (y1 - y0)
-            boundary_pts.append([px, py])
+            boundary_pts.append([float(px), float(py)])
 
     # Deduplicate (because consecutive edges share endpoints):
-    boundary_pts = np.unique(np.array(boundary_pts), axis=0)
-    return boundary_pts  # shape = (M, 2)
+    boundary_pts_array = np.unique(np.array(boundary_pts), axis=0)
+    return np.asarray(boundary_pts_array, dtype=np.float64)  # shape = (M, 2)

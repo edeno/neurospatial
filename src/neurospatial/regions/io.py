@@ -189,7 +189,7 @@ def load_labelme_json(
     return Regions(regions_list)
 
 
-def _rle_to_mask(rle: str, height: int, width: int) -> np.ndarray:
+def _rle_to_mask(rle: str, height: int, width: int) -> NDArray[np.uint8]:
     """Convert a Run-Length Encoded string to a binary mask.
 
     Parameters
