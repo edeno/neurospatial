@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
@@ -45,6 +46,7 @@ class MaskedGridLayout(_GridMixin):
         self.active_mask = None
         self.bin_size_ = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -73,9 +75,6 @@ class MaskedGridLayout(_GridMixin):
             or if `grid_edges` are invalid.
 
         """
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
-
         self.active_mask = active_mask
         self.grid_edges = grid_edges
         self.grid_shape = tuple(len(edge) - 1 for edge in grid_edges)

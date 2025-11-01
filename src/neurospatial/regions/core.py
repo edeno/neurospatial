@@ -163,6 +163,8 @@ class Regions(MutableMapping[str, Region]):
     (`add`, `remove`, `list_names`, `buffer`, …).
     """
 
+    __slots__ = ("_store",)
+
     # -------------- Mapping interface --------------------------------
     def __init__(self, items: Iterable[Region] | None = None) -> None:
         self._store: dict[str, Region] = {}

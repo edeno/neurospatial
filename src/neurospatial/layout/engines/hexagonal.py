@@ -10,6 +10,7 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_connectivity_graph,
     _create_hex_grid,
@@ -59,6 +60,7 @@ class HexagonalLayout:
         self.grid_offset_y_ = None
         self._source_flat_to_active_id_map = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -96,9 +98,6 @@ class HexagonalLayout:
             `hexagon_width` is not positive.
 
         """
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
-
         self.hexagon_width = hexagon_width
         (
             full_grid_bin_centers,

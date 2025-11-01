@@ -1,10 +1,65 @@
+import inspect
 from collections.abc import Sequence
+from functools import wraps
 from typing import Any, Protocol, runtime_checkable
 
 import matplotlib
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+
+def capture_build_params(build_method):
+    """Decorator to capture build parameters for layout engines.
+
+    This decorator automatically captures all parameters passed to a layout
+    engine's `build()` method and stores them in `self._build_params_used`.
+    This eliminates the need for manual `locals().copy()` bookkeeping.
+
+    Parameters
+    ----------
+    build_method : callable
+        The build method to decorate.
+
+    Returns
+    -------
+    callable
+        Wrapped build method that captures parameters.
+
+    Examples
+    --------
+    >>> class MyLayout:
+    ...     @capture_build_params
+    ...     def build(self, *, bin_size: float, dimension_ranges=None):
+    ...         # Clean implementation without manual parameter capture
+    ...         pass
+
+    Notes
+    -----
+    This decorator uses `inspect.signature()` to bind arguments and capture
+    all parameters (including defaults) that were passed to the method.
+    The `self` parameter is automatically excluded from the captured parameters.
+
+    """
+    sig = inspect.signature(build_method)
+
+    @wraps(build_method)
+    def wrapper(self, *args, **kwargs):
+        # Bind all arguments to the signature
+        bound = sig.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+
+        # Convert to dict and remove 'self'
+        params = dict(bound.arguments)
+        params.pop("self", None)
+
+        # Store captured parameters
+        self._build_params_used = params
+
+        # Call the original method
+        return build_method(self, *args, **kwargs)
+
+    return wrapper
 
 
 @runtime_checkable

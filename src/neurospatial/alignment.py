@@ -39,7 +39,8 @@ that correspond to the active bins of these environments.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -48,6 +49,90 @@ from neurospatial.environment import Environment
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
+
+
+@dataclass(frozen=True)
+class ProbabilityMappingParams:
+    """Validated parameters for probability mapping between environments.
+
+    This dataclass encapsulates and validates all parameters required for
+    mapping probabilities from a source environment to a target environment.
+    Validation occurs automatically in __post_init__.
+
+    Parameters
+    ----------
+    source_env : Environment
+        Source environment (must be fitted).
+    target_env : Environment
+        Target environment (must be fitted).
+    source_probs : NDArray[np.float64]
+        Source probability array, shape (n_source_bins,).
+    mode : Literal["nearest", "inverse-distance-weighted"]
+        Mapping mode.
+    n_neighbors : int
+        Number of neighbors for inverse-distance-weighted mode.
+
+    Raises
+    ------
+    ValueError
+        If any validation check fails.
+
+    """
+
+    source_env: Environment
+    target_env: Environment
+    source_probs: NDArray[np.float64]
+    mode: Literal["nearest", "inverse-distance-weighted"] = "nearest"
+    n_neighbors: int = 1
+
+    def __post_init__(self) -> None:
+        """Validate all parameters."""
+        # Check fitted state
+        if not getattr(self.source_env, "_is_fitted", False):
+            raise ValueError("source_env must be fitted before mapping probabilities.")
+        if not getattr(self.target_env, "_is_fitted", False):
+            raise ValueError("target_env must be fitted before mapping probabilities.")
+
+        # Check dimension compatibility
+        if self.source_env.n_dims != self.target_env.n_dims:
+            raise ValueError(
+                f"Source and target environments must have the same number of dimensions: "
+                f"{self.source_env.n_dims} != {self.target_env.n_dims}."
+            )
+
+        # Validate probability array
+        n_src = self.source_env.n_bins
+        if self.source_probs.ndim != 1 or self.source_probs.shape[0] != n_src:
+            raise ValueError(f"source_probs must be a 1D array of length {n_src}.")
+
+        if np.any(self.source_probs < 0):
+            raise ValueError("source_probs must be nonnegative.")
+
+        # Validate mode
+        if self.mode not in ("nearest", "inverse-distance-weighted"):
+            raise ValueError(
+                f"Unrecognized mode '{self.mode}'. "
+                "Supported: 'nearest' or 'inverse-distance-weighted'."
+            )
+
+        # Validate n_neighbors for IDW mode
+        if self.mode == "inverse-distance-weighted" and (
+            not isinstance(self.n_neighbors, int) or self.n_neighbors < 1
+        ):
+            raise ValueError(
+                f"In 'inverse-distance-weighted' mode, n_neighbors must be "
+                f"an integer >= 1 (got n_neighbors={self.n_neighbors})."
+            )
+
+    @property
+    def n_source_bins(self) -> int:
+        """Number of bins in source environment."""
+        return int(self.source_env.n_bins)
+
+    @property
+    def n_target_bins(self) -> int:
+        """Number of bins in target environment."""
+        return int(self.target_env.n_bins)
 
 
 def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
@@ -170,78 +255,6 @@ def apply_similarity_transform(
     # 3. Translate
     transformed_points = scaled_points + translation_vector
     return np.asarray(transformed_points, dtype=np.float64)
-
-
-def _validate_probability_mapping_inputs(
-    source_env: Environment,
-    target_env: Environment,
-    source_probs: NDArray[np.float64],
-    mode: str,
-    n_neighbors: int,
-) -> tuple[int, int]:
-    """Validate inputs for probability mapping between environments.
-
-    Parameters
-    ----------
-    source_env : Environment
-        Source environment.
-    target_env : Environment
-        Target environment.
-    source_probs : NDArray[np.float64]
-        Source probability array.
-    mode : str
-        Mapping mode.
-    n_neighbors : int
-        Number of neighbors for IDW mode.
-
-    Returns
-    -------
-    tuple[int, int]
-        Number of source and target bins.
-
-    Raises
-    ------
-    ValueError
-        If any validation check fails.
-
-    """
-    if not getattr(source_env, "_is_fitted", False) or not getattr(
-        target_env,
-        "_is_fitted",
-        False,
-    ):
-        raise ValueError(
-            "Both source_env and target_env must be fitted before mapping probabilities.",
-        )
-
-    n_src = source_env.n_bins
-    n_tgt = target_env.n_bins
-
-    if source_env.n_dims != target_env.n_dims:
-        raise ValueError(
-            f"Source and target environments must have the same number of dimensions: "
-            f"{source_env.n_dims} != {target_env.n_dims}.",
-        )
-
-    if source_probs.ndim != 1 or source_probs.shape[0] != n_src:
-        raise ValueError(f"source_probs must be a 1D array of length {n_src}.")
-
-    if np.any(source_probs < 0):
-        raise ValueError("source_probs must be nonnegative.")
-
-    if mode not in ("nearest", "inverse-distance-weighted"):
-        raise ValueError(
-            f"Unrecognized mode '{mode}'. Supported: 'nearest' or 'inverse-distance-weighted'.",
-        )
-
-    if mode == "inverse-distance-weighted" and (
-        n_neighbors < 1 or not isinstance(n_neighbors, int)
-    ):
-        raise ValueError(
-            f"In 'inverse-distance-weighted' mode, n_neighbors must be an integer ≥ 1 (got n_neighbors={n_neighbors}).",
-        )
-
-    return n_src, n_tgt
 
 
 def _transform_source_bin_centers(
@@ -411,7 +424,7 @@ def map_probabilities_to_nearest_target_bin(
     target_env: Environment,
     source_probs: NDArray[np.float64],
     *,
-    mode: str = "nearest",
+    mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
     n_neighbors: int = 1,
     eps: float = 1e-8,
     source_scale_factor: float = 1.0,
@@ -499,14 +512,16 @@ def map_probabilities_to_nearest_target_bin(
     """
     from scipy.spatial import cKDTree
 
-    # Validate inputs
-    n_src, n_tgt = _validate_probability_mapping_inputs(
-        source_env,
-        target_env,
-        source_probs,
-        mode,
-        n_neighbors,
+    # Validate inputs using dataclass
+    params = ProbabilityMappingParams(
+        source_env=source_env,
+        target_env=target_env,
+        source_probs=source_probs,
+        mode=mode,
+        n_neighbors=n_neighbors,
     )
+    n_src = params.n_source_bins
+    n_tgt = params.n_target_bins
 
     # Handle empty environments
     if n_src == 0 or n_tgt == 0:

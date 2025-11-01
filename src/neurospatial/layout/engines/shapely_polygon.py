@@ -9,6 +9,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
@@ -51,6 +52,7 @@ class ShapelyPolygonLayout(_GridMixin):
         self.active_mask = None
         self.polygon_definition_ = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -84,9 +86,6 @@ class ShapelyPolygonLayout(_GridMixin):
         """
         if not isinstance(polygon, Polygon):
             raise TypeError("polygon must be a Shapely Polygon object.")
-
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
 
         self.polygon_definition_ = polygon
         minx, miny, maxx, maxy = polygon.bounds

@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
@@ -41,6 +42,7 @@ class ImageMaskLayout(_GridMixin):
         self.grid_shape = None
         self.active_mask = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -88,9 +90,6 @@ class ImageMaskLayout(_GridMixin):
             raise ValueError("image_mask must contain at least one True value.")
         if not np.all(np.isfinite(image_mask)):
             raise ValueError("image_mask must not contain NaN or Inf values.")
-
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
 
         # Determine bin_sizes for x and y (units per pixel)
         bin_size_x: float

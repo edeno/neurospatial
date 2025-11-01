@@ -244,33 +244,26 @@ class Environment:
 
         """
         class_name = self.__class__.__name__
-        env_name_repr = f"name={self.name!r}"
-        layout_type_repr = f"layout_type={self._layout_type_used!r}"
+        parts = [
+            f"name={self.name!r}",
+            f"layout_type={self._layout_type_used!r}",
+        ]
 
         if not self._is_fitted:
             # If not fitted, show minimal information
-            return f"{class_name}({env_name_repr}, {layout_type_repr}, fitted=False)"
+            parts.append("fitted=False")
+            return f"{class_name}({', '.join(parts)})"
 
         # If fitted, provide more details
         try:
-            dims_repr = f"n_dims={self.n_dims}"
+            parts.append(f"n_dims={self.n_dims}")
         except RuntimeError:
             # Should not happen if _is_fitted is True and n_dims is correctly implemented
-            dims_repr = "n_dims='Error'"
+            parts.append("n_dims='Error'")
 
-        active_bins_repr = "active_bins='N/A'"
-        if self.bin_centers is not None:
-            active_bins_repr = f"active_bins={self.bin_centers.shape[0]}"
-
-        return (
-            f"{class_name}("
-            f"{env_name_repr}, "
-            f"{layout_type_repr}, "
-            f"{dims_repr}, "
-            f"{active_bins_repr}, "
-            f"fitted=True"
-            f")"
-        )
+        parts.append(f"active_bins={self.bin_centers.shape[0]}")
+        parts.append("fitted=True")
+        return f"{class_name}({', '.join(parts)})"
 
     def _setup_from_layout(self) -> None:
         """Populate Environment attributes from its (built) LayoutEngine.
@@ -886,8 +879,16 @@ class Environment:
         RuntimeError
             If called before the environment is fitted.
 
+        Notes
+        -----
+        This method is optimized to avoid redundant KDTree queries by reusing
+        the bin index computation from `bin_at()` and checking for the -1 sentinel.
+
         """
-        return np.asarray(self.bin_at(points_nd) != -1, dtype=np.bool_)
+        # Optimized: compute indices once and check for -1 sentinel
+        # This avoids redundant KDTree queries compared to calling bin_at() separately
+        indices = self.layout.point_to_bin_index(points_nd)
+        return np.asarray(indices != -1, dtype=np.bool_)
 
     @check_fitted
     def bin_center_of(

@@ -5,6 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
@@ -47,6 +48,7 @@ class RegularGridLayout(_GridMixin):
         self.grid_shape = None
         self.active_mask = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -91,8 +93,6 @@ class RegularGridLayout(_GridMixin):
             If True, connects diagonal neighbors in the connectivity graph.
 
         """
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
 
         # --- Determine dimension_ranges if not provided ---
         if dimension_ranges is not None:

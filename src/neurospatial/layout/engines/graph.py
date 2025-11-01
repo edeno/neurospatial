@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from track_linearization import get_linearized_position as _get_linearized_position
 from track_linearization import plot_graph_as_1D
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
     _find_bin_for_linear_position,
@@ -55,6 +56,7 @@ class GraphLayout(_KDTreeMixin):
         self.active_mask = None
         self.linear_bin_centers_ = None
 
+    @capture_build_params
     def build(
         self,
         *,
@@ -90,9 +92,6 @@ class GraphLayout(_KDTreeMixin):
             If `edge_order` is empty or `bin_size` is not positive.
 
         """
-        self._build_params_used = locals().copy()  # Store all passed params
-        del self._build_params_used["self"]  # Remove self from the dictionary
-
         if not isinstance(graph_definition, nx.Graph):
             raise TypeError("graph_definition must be a NetworkX graph.")
         if not edge_order:  # Empty edge_order means no path to linearize
