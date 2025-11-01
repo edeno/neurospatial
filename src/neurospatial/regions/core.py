@@ -114,6 +114,19 @@ class Region:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> Region:
+        """Create Region from dictionary representation.
+
+        Parameters
+        ----------
+        payload : Mapping[str, Any]
+            Dictionary containing region data with keys: 'name', 'kind', 'geom', 'metadata'.
+
+        Returns
+        -------
+        Region
+            Reconstructed Region instance.
+
+        """
         kind: Kind = payload["kind"]  # type: ignore[assignment]
         if kind == "point":
             data = np.asarray(payload["geom"], dtype=float)
@@ -363,7 +376,16 @@ class Regions(MutableMapping[str, Region]):
     _FMT = "Regions-v1"
 
     def to_json(self, path: str | Path, *, indent: int = 2) -> None:
-        """Write collection to disk in a simple, version-tagged schema."""
+        """Write collection to disk in a simple, version-tagged schema.
+
+        Parameters
+        ----------
+        path : str or Path
+            Output file path for JSON data.
+        indent : int, default=2
+            Indentation level for pretty-printed JSON.
+
+        """
         payload = {
             "format": self._FMT,
             "regions": [r.to_dict() for r in self._store.values()],

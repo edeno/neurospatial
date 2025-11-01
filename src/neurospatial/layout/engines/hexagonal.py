@@ -144,7 +144,14 @@ class HexagonalLayout:
 
     @property
     def is_1d(self) -> bool:
-        """Hexagonal layouts are 2-dimensional."""
+        """Hexagonal layouts are 2-dimensional.
+
+        Returns
+        -------
+        bool
+            Always False, indicating a 2D layout.
+
+        """
         return False
 
     def plot(

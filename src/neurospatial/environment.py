@@ -42,6 +42,16 @@ PolygonType = type[_shp.Polygon]  # type: ignore[misc]
 def check_fitted(method):
     """Decorator to ensure that an Environment method is called only after fitting.
 
+    Parameters
+    ----------
+    method : callable
+        Method to decorate.
+
+    Returns
+    -------
+    callable
+        Wrapped method that checks fitted status before execution.
+
     Raises
     ------
     RuntimeError

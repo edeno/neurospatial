@@ -137,7 +137,14 @@ class GraphLayout(_KDTreeMixin):
 
     @property
     def is_1d(self) -> bool:
-        """Graph layouts are treated as 1-dimensional due to linearization."""
+        """Graph layouts are treated as 1-dimensional due to linearization.
+
+        Returns
+        -------
+        bool
+            Always True, indicating a 1D linearized layout.
+
+        """
         return True
 
     def plot(

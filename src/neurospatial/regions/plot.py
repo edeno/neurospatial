@@ -58,6 +58,11 @@ def plot_regions(
 
             plot_regions(ax, regs, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
 
+    Returns
+    -------
+    None
+        Modifies the provided axes in place.
+
     Notes
     -----
     * Points → `ax.scatter`

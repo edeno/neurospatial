@@ -173,6 +173,11 @@ class TriangularMeshLayout:
         a fast lookup array. Then enforces that the point itself must lie inside (or on)
         the boundary polygon.
 
+        Parameters
+        ----------
+        points : NDArray[np.float64], shape (n_points, 2)
+            2D points to map to triangle indices.
+
         Returns
         -------
         NDArray[np.int_]
@@ -225,7 +230,14 @@ class TriangularMeshLayout:
 
     @property
     def is_1d(self) -> bool:
-        """Always False, as this is a 2D mesh layout."""
+        """Always False, as this is a 2D mesh layout.
+
+        Returns
+        -------
+        bool
+            Always False, indicating a 2D layout.
+
+        """
         return False
 
     def plot(
