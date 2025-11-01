@@ -141,9 +141,76 @@ class RegularGridLayout(_GridMixin):
             self.active_mask = np.ones(self.grid_shape, dtype=bool)
 
         if not np.any(self.active_mask):
-            raise ValueError(
-                "No active bins found. Check your data_samples and bin_size.",
+            # Build comprehensive error message with diagnostics
+            error_lines = ["No active bins found after filtering."]
+            error_lines.append("")  # Blank line
+
+            # Add diagnostic information
+            error_lines.append("Diagnostics:")
+
+            # Show data range
+            if data_samples is not None:
+                data_clean = data_samples[~np.any(np.isnan(data_samples), axis=1)]
+                if len(data_clean) > 0:
+                    # Convert to Python native types for cleaner display
+                    data_min = data_clean.min(axis=0).tolist()
+                    data_max = data_clean.max(axis=0).tolist()
+                    data_range = (
+                        data_clean.max(axis=0) - data_clean.min(axis=0)
+                    ).tolist()
+                    error_lines.append(
+                        f"  Data range: {list(zip(data_min, data_max, strict=True))}"
+                    )
+                    error_lines.append(f"  Data extent: {data_range}")
+                    error_lines.append(f"  Number of samples: {len(data_clean)}")
+                else:
+                    # All data is NaN - inform user clearly
+                    error_lines.append("  Data samples: All NaN (no valid data)")
+                    error_lines.append(
+                        f"  Number of samples (including NaN): {len(data_samples)}"
+                    )
+
+            # Show grid information
+            if isinstance(bin_size, (float, int, np.number)):
+                bin_size_str = f"{bin_size}"
+            else:
+                bin_size_str = f"{list(bin_size)}"
+            error_lines.append(f"  bin_size: {bin_size_str}")
+            error_lines.append(f"  Grid shape: {self.grid_shape}")
+            error_lines.append(f"  Total bins in grid: {np.prod(self.grid_shape)}")
+
+            # Show filtering parameters
+            error_lines.append(f"  bin_count_threshold: {bin_count_threshold}")
+            error_lines.append(
+                f"  Morphological operations: dilate={dilate}, fill_holes={fill_holes}, close_gaps={close_gaps}"
             )
+            error_lines.append("")  # Blank line
+
+            # Explain WHY this happened (common causes)
+            error_lines.append("Common causes:")
+            error_lines.append("  1. bin_size is too large relative to your data range")
+            error_lines.append(
+                "  2. bin_count_threshold is too high (no bins have enough samples)"
+            )
+            error_lines.append(
+                "  3. Data is too sparse and morphological operations are disabled"
+            )
+            error_lines.append("")  # Blank line
+
+            # Explain HOW to fix (specific suggestions)
+            error_lines.append("Suggestions to fix:")
+            error_lines.append("  1. Reduce bin_size to create more bins")
+            error_lines.append(
+                "  2. Reduce bin_count_threshold (try 0 for initial testing)"
+            )
+            error_lines.append(
+                "  3. Enable morphological operations (dilate=True, fill_holes=True, close_gaps=True)"
+            )
+            error_lines.append(
+                "  4. Check that data_samples covers the expected spatial range"
+            )
+
+            raise ValueError("\n".join(error_lines))
 
         self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
         self.connectivity = _create_regular_grid_connectivity_graph(

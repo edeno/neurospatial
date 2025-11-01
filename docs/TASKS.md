@@ -37,12 +37,12 @@
 
 ### Error Message Improvements
 
-- [ ] **Improve "No active bins found" error** (`src/neurospatial/layout/engines/regular_grid.py:144-146`)
-  - [ ] Add diagnostic information (data range, bin_size, thresholds)
-  - [ ] Explain WHAT went wrong (no bins after filtering)
-  - [ ] Explain WHY (3 common causes)
-  - [ ] Explain HOW to fix (specific suggestions)
-  - [ ] Add test that triggers error and validates message content
+- [x] **Improve "No active bins found" error** (`src/neurospatial/layout/engines/regular_grid.py:143-196`)
+  - [x] Add diagnostic information (data range, bin_size, thresholds)
+  - [x] Explain WHAT went wrong (no bins after filtering)
+  - [x] Explain WHY (3 common causes)
+  - [x] Explain HOW to fix (specific suggestions)
+  - [x] Add test that triggers error and validates message content
 
 ### Terminology & Concepts
 
