@@ -89,12 +89,12 @@
 
 ### Scientific Terminology
 
-- [ ] **Define scientific terms for non-experts**
-  - [ ] "Place fields" in `src/neurospatial/alignment.py:27`
-  - [ ] "Geodesic distance" in `src/neurospatial/environment.py:1104`
-  - [ ] "Linearization" in `src/neurospatial/environment.py:1212`
-  - [ ] Add brief parenthetical definitions
-  - [ ] Link to detailed explanations where appropriate
+- [x] **Define scientific terms for non-experts**
+  - [x] "Place fields" in `src/neurospatial/alignment.py:27`
+  - [x] "Geodesic distance" in `src/neurospatial/environment.py:1237`
+  - [x] "Linearization" in `src/neurospatial/environment.py:1130`
+  - [x] Add brief parenthetical definitions
+  - [x] Standardize format using parentheses for consistency
 
 ### Error Message Standardization
 

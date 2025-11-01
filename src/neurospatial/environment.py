@@ -1127,7 +1127,8 @@ class Environment:
         self: Environment,
     ) -> dict[str, Any] | None:
         """If the environment uses a GraphLayout, returns properties needed
-        for linearization using the `track_linearization` library.
+        for linearization (converting a 2D/3D track to a 1D line) using the
+        `track_linearization` library.
 
         These properties are typically passed to `track_linearization.get_linearized_position`.
 
@@ -1234,8 +1235,9 @@ class Environment:
         """Calculate the geodesic distance between two points in the environment.
 
         Points are first mapped to their nearest active bins using `self.bin_at()`.
-        The geodesic distance is then the shortest path length in the
-        `connectivity` graph between these bins, using the specified `edge_weight`.
+        The geodesic distance (distance along the shortest path through the space)
+        is then the shortest path length in the `connectivity` graph between these
+        bins, using the specified `edge_weight`.
 
         Parameters
         ----------

@@ -24,9 +24,9 @@ Core capabilities include:
         experimental setups of the same underlying space.
 
 This module is designed to assist in scenarios such as:
-    * Comparing probability distributions (e.g., place fields, occupancy maps)
-        from experiments where the recording environment might have undergone
-        slight shifts, rotations, or scaling.
+    * Comparing probability distributions (e.g., place fields (spatial firing
+        patterns of neurons), occupancy maps) from experiments where the recording
+        environment might have undergone slight shifts, rotations, or scaling.
     * Mapping data from one type of spatial discretization (e.g., a fine grid)
         to another (e.g., a coarser grid or a different layout type), while
         attempting to preserve the spatial correspondence of the data.
