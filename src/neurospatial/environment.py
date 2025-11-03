@@ -315,36 +315,187 @@ class Environment:
         return NotImplemented
 
     def __repr__(self: Environment) -> str:
-        """Generate an unambiguous string representation of the Environment.
+        """Generate an informative single-line string representation.
+
+        Returns a concise, single-line representation showing the environment's
+        name, dimensionality, number of bins, and layout type. This method
+        follows Python repr best practices by being informative rather than
+        reconstructive for complex objects.
 
         Returns
         -------
         str
-            A string representation of the Environment object, including its
-            name, layout type, and key geometric properties if fitted.
+            Single-line string representation of the Environment.
+
+        See Also
+        --------
+        _repr_html_ : Rich HTML representation for Jupyter notebooks.
+
+        Notes
+        -----
+        This representation is designed for interactive use and debugging, not
+        for reconstruction. For serialization, use the `save()` method instead.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> data = np.random.rand(100, 2) * 10
+        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
+        >>> repr(env)  # doctest: +SKIP
+        "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        class_name = self.__class__.__name__
-        parts = [
-            f"name={self.name!r}",
-            f"layout_type={self._layout_type_used!r}",
-        ]
-
+        # Handle unfitted environments
         if not self._is_fitted:
-            # If not fitted, show minimal information
-            parts.append("fitted=False")
-            return f"{class_name}({', '.join(parts)})"
+            name_str = f"'{self.name}'" if self.name else "None"
+            return f"Environment(name={name_str}, not fitted)"
 
-        # If fitted, provide more details
+        # Fitted environments: show name, dims, bins, layout
+        # Truncate very long names
+        name = self.name if self.name else ""
+        if len(name) > 40:
+            name = name[:37] + "..."
+        name_str = f"'{name}'" if name else "None"
+
+        # Get dimensionality
         try:
-            parts.append(f"n_dims={self.n_dims}")
-        except RuntimeError:
-            # Should not happen if _is_fitted is True and n_dims is correctly implemented
-            parts.append("n_dims='Error'")
+            dims_str = f"{self.n_dims}D"
+        except (RuntimeError, AttributeError):
+            dims_str = "?D"
 
-        parts.append(f"active_bins={self.bin_centers.shape[0]}")
-        parts.append("fitted=True")
-        return f"{class_name}({', '.join(parts)})"
+        # Get bin count
+        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
+
+        # Get layout type (remove 'Layout' suffix for brevity if present)
+        layout_type = self._layout_type_used
+        if layout_type.endswith("Layout"):
+            layout_type = layout_type[:-6]  # Remove 'Layout' suffix
+
+        return f"Environment(name={name_str}, {dims_str}, {n_bins} bins, {layout_type})"
+
+    def _repr_html_(self) -> str:
+        """Generate rich HTML representation for Jupyter notebooks.
+
+        This method is automatically called by Jupyter/IPython to display
+        Environment objects in a formatted table. It provides more detailed
+        information than `__repr__()`, including spatial extent, bin sizes,
+        and region counts.
+
+        Returns
+        -------
+        str
+            HTML string with table representation of the Environment.
+
+        See Also
+        --------
+        __repr__ : Plain text representation.
+
+        Notes
+        -----
+        The HTML output includes:
+
+        - Environment name and layout type
+        - Dimensionality and number of bins
+        - Spatial extent (min/max coordinates per dimension)
+        - Number of regions (if any)
+        - Linearization status (for 1D environments)
+
+        This method follows IPython rich display conventions. Special characters
+        in names are HTML-escaped for safety using the standard library's
+        `html.escape()` function.
+
+        Examples
+        --------
+        In a Jupyter notebook, simply evaluate an Environment object:
+
+        >>> import numpy as np
+        >>> data = np.random.rand(100, 2) * 10
+        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
+        >>> env  # In Jupyter, displays rich HTML table automatically  # doctest: +SKIP
+
+        This will display a formatted table with environment details.
+
+        """
+        import html
+
+        # Escape HTML special characters in name
+        name = html.escape(str(self.name) if self.name else "None")
+
+        # Build HTML table
+        html_parts = []
+        html_parts.append('<div style="margin: 10px;">')
+        html_parts.append(
+            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
+            'font-family: monospace; font-size: 12px;">'
+        )
+
+        # Header row
+        html_parts.append(
+            '<tr style="background-color: #f0f0f0; border-bottom: 2px solid #999;">'
+        )
+        html_parts.append(
+            '<th colspan="2" style="padding: 8px; text-align: left; '
+            'font-weight: bold; font-size: 14px;">'
+        )
+        html_parts.append(f"Environment: {name}")
+        html_parts.append("</th></tr>")
+
+        # Helper function to add rows
+        def add_row(label: str, value: str, highlight: bool = False) -> None:
+            bg_color = "#fffacd" if highlight else "#fff"
+            html_parts.append(f'<tr style="background-color: {bg_color};">')
+            html_parts.append(
+                f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
+                f'font-weight: bold; color: #555;">{label}</td>'
+            )
+            html_parts.append(
+                f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
+                f'color: #000;">{value}</td>'
+            )
+            html_parts.append("</tr>")
+
+        # Check if fitted
+        if not self._is_fitted:
+            add_row("Status", "Not fitted", highlight=True)
+            add_row("Layout Type", self._layout_type_used)
+            html_parts.append("</table></div>")
+            return "".join(html_parts)
+
+        # Fitted environment - show full details
+        add_row("Layout Type", self._layout_type_used)
+
+        # Dimensions and bins
+        try:
+            n_dims = self.n_dims
+            add_row("Dimensions", str(n_dims))
+        except (RuntimeError, AttributeError):
+            add_row("Dimensions", "Unknown")
+            n_dims = None
+
+        n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
+        add_row("Number of Bins", str(n_bins))
+
+        # Spatial extent
+        if hasattr(self, "dimension_ranges") and self.dimension_ranges:
+            extent_parts = []
+            for dim_idx, (min_val, max_val) in enumerate(self.dimension_ranges):
+                extent_parts.append(f"dim{dim_idx}: [{min_val:.2f}, {max_val:.2f}]")
+            extent_str = "<br>".join(extent_parts)
+            add_row("Spatial Extent", extent_str)
+
+        # Regions
+        n_regions = len(self.regions) if hasattr(self, "regions") else 0
+        if n_regions > 0:
+            add_row("Regions", f"{n_regions} defined")
+        else:
+            add_row("Regions", "None")
+
+        # 1D-specific info
+        if n_dims == 1 and hasattr(self, "is_1d") and self.is_1d:
+            add_row("Linearization", "Available (1D environment)")
+
+        html_parts.append("</table></div>")
+        return "".join(html_parts)
 
     def _setup_from_layout(self) -> None:
         """Populate Environment attributes from its (built) LayoutEngine.

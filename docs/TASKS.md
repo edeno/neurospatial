@@ -165,12 +165,13 @@
 
 ### Convenience Features
 
-- [ ] **Add custom __repr__ for Environment** (`src/neurospatial/environment.py`)
-  - [ ] Implement concise single-line representation
-  - [ ] Show: name, n_dims, n_bins, layout type
-  - [ ] Handle edge cases (empty name, etc.)
-  - [ ] Add docstring with examples
-  - [ ] Add tests for various configurations
+- [x] **Add custom __repr__ for Environment** (`src/neurospatial/environment.py`)
+  - [x] Implement concise single-line representation
+  - [x] Show: name, n_dims, n_bins, layout type
+  - [x] Handle edge cases (empty name, etc.)
+  - [x] Add docstring with examples
+  - [x] Add tests for various configurations
+  - [x] Add _repr_html_() for rich Jupyter notebook display
 
 - [ ] **Add .info() method for diagnostics** (`src/neurospatial/environment.py`)
   - [ ] Implement multi-line detailed summary
