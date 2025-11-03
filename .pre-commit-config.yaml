@@ -7,6 +7,7 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']
+        exclude: '^examples/.*\.ipynb$'
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
