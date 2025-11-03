@@ -1,0 +1,116 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -A1 "${{ github.ref_name }}" | tail -1)
+
+          # If no previous tag, use initial commit
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          # Generate changelog
+          echo "## What's Changed" > CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+
+          # Get commits between tags, group by type
+          echo "### Features" >> CHANGELOG.txt
+          git log $PREVIOUS_TAG..${{ github.ref_name }} --pretty=format:"- %s (%h)" --grep="^feat" >> CHANGELOG.txt || echo "No new features" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+
+          echo "### Bug Fixes" >> CHANGELOG.txt
+          git log $PREVIOUS_TAG..${{ github.ref_name }} --pretty=format:"- %s (%h)" --grep="^fix" >> CHANGELOG.txt || echo "No bug fixes" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+
+          echo "### Documentation" >> CHANGELOG.txt
+          git log $PREVIOUS_TAG..${{ github.ref_name }} --pretty=format:"- %s (%h)" --grep="^docs" >> CHANGELOG.txt || echo "No documentation changes" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+
+          echo "### Other Changes" >> CHANGELOG.txt
+          git log $PREVIOUS_TAG..${{ github.ref_name }} --pretty=format:"- %s (%h)" --grep="^chore\|^test\|^refactor" >> CHANGELOG.txt || echo "No other changes" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+          echo "" >> CHANGELOG.txt
+
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${{ github.ref_name }}" >> CHANGELOG.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release v${{ steps.get_version.outputs.VERSION }}
+          body_path: CHANGELOG.txt
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update CHANGELOG.md
+        run: |
+          # Prepend the new changes to CHANGELOG.md
+          if [ -f CHANGELOG.md ]; then
+            # Add new release to existing changelog
+            echo "# Changelog" > CHANGELOG.new.md
+            echo "" >> CHANGELOG.new.md
+            echo "## [v${{ steps.get_version.outputs.VERSION }}] - $(date +%Y-%m-%d)" >> CHANGELOG.new.md
+            echo "" >> CHANGELOG.new.md
+            cat CHANGELOG.txt >> CHANGELOG.new.md
+            echo "" >> CHANGELOG.new.md
+            tail -n +2 CHANGELOG.md >> CHANGELOG.new.md
+            mv CHANGELOG.new.md CHANGELOG.md
+          else
+            # Create new changelog
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)," >> CHANGELOG.md
+            echo "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "## [v${{ steps.get_version.outputs.VERSION }}] - $(date +%Y-%m-%d)" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            cat CHANGELOG.txt >> CHANGELOG.md
+          fi
+
+      - name: Commit updated CHANGELOG.md
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add CHANGELOG.md
+          git commit -m "docs: update CHANGELOG.md for v${{ steps.get_version.outputs.VERSION }}" || echo "No changes to commit"
+          git push origin HEAD:main || echo "Failed to push changelog update"
