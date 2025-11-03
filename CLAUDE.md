@@ -340,7 +340,9 @@ class Environment:
 1. **Always use `uv run`** - Don't run Python commands directly
 2. **Check `_is_fitted`** - Many Environment methods require fitted state
 3. **Graph metadata is mandatory** - All nodes/edges must have required attributes
-4. **Regions are immutable** - Don't try to modify Region objects in place
+4. **Regions are immutable** - Don't try to modify Region objects in place; use `update_region()` to replace existing regions
 5. **Check `is_1d`** - Only GraphLayout supports linearization methods
 6. **Protocol, not inheritance** - Layout engines implement protocol, don't inherit from base class
 7. **NumPy docstrings** - Use NumPy docstring format for all documentation, not Google or reStructuredText style
+8. **bin_size is required** - As of v0.2.0, bin_size has no default value in factory methods; always specify explicitly
+9. **Error messages show diagnostics** - Validation errors include actual invalid values to aid debugging
