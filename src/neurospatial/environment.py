@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import pickle
 import warnings
 from collections.abc import Sequence
@@ -18,6 +19,8 @@ from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import create_layout
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 from neurospatial.regions import Regions
+
+logger = logging.getLogger(__name__)
 
 try:
     import shapely.geometry as _shp
@@ -367,7 +370,7 @@ class Environment:
         n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
 
         # Get layout type (remove 'Layout' suffix for brevity if present)
-        layout_type = self._layout_type_used
+        layout_type = self._layout_type_used or "Unknown"
         if layout_type.endswith("Layout"):
             layout_type = layout_type[:-6]  # Remove 'Layout' suffix
 
@@ -457,12 +460,12 @@ class Environment:
         # Check if fitted
         if not self._is_fitted:
             add_row("Status", "Not fitted", highlight=True)
-            add_row("Layout Type", self._layout_type_used)
+            add_row("Layout Type", self._layout_type_used or "Unknown")
             html_parts.append("</table></div>")
             return "".join(html_parts)
 
         # Fitted environment - show full details
-        add_row("Layout Type", self._layout_type_used)
+        add_row("Layout Type", self._layout_type_used or "Unknown")
 
         # Dimensions and bins
         try:
@@ -575,14 +578,18 @@ class Environment:
         lines.append("")
 
         # Spatial extent
-        lines.append("Spatial Extent:")
-        for dim_idx, (dim_min, dim_max) in enumerate(self.dimension_ranges):
-            dim_range = dim_max - dim_min
-            lines.append(
-                f"  Dimension {dim_idx}: [{dim_min:.2f}, {dim_max:.2f}] "
-                f"(range: {dim_range:.2f})"
-            )
-        lines.append("")
+        if self.dimension_ranges is not None:
+            lines.append("Spatial Extent:")
+            for dim_idx, (dim_min, dim_max) in enumerate(self.dimension_ranges):
+                dim_range = dim_max - dim_min
+                lines.append(
+                    f"  Dimension {dim_idx}: [{dim_min:.2f}, {dim_max:.2f}] "
+                    f"(range: {dim_range:.2f})"
+                )
+            lines.append("")
+        else:
+            lines.append("Spatial Extent: Not available")
+            lines.append("")
 
         # Bin sizes
         lines.append("Bin Sizes:")
@@ -1891,10 +1898,20 @@ class Environment:
             The name of the file to save the environment to.
             Defaults to "environment.pkl".
 
+        Warnings
+        --------
+        This method uses pickle for serialization. Pickle files can execute
+        arbitrary code during deserialization. Only share pickle files with
+        trusted users and only load files from trusted sources.
+
+        See Also
+        --------
+        load : Load an Environment from a pickle file.
+
         """
         with Path(filename).open("wb") as fh:
             pickle.dump(self, fh, protocol=pickle.HIGHEST_PROTOCOL)
-        print(f"Environment saved to {filename}")
+        logger.info("Environment saved to %s", filename)
 
     @classmethod
     def load(cls, filename: str) -> Environment:
@@ -1914,6 +1931,17 @@ class Environment:
         ------
         TypeError
             If the loaded object is not an instance of the Environment class.
+
+        Warnings
+        --------
+        This method uses pickle for deserialization. **Only load files from
+        trusted sources**, as pickle can execute arbitrary code during
+        deserialization. Do not load pickle files from untrusted or
+        unknown sources.
+
+        See Also
+        --------
+        save : Save an Environment to a pickle file.
 
         """
         with Path(filename).open("rb") as fh:
