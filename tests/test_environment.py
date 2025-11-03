@@ -348,11 +348,12 @@ def data_for_morpho_ops() -> NDArray[np.float64]:
 
 @pytest.fixture
 def env_hexagonal() -> Environment:
-    """A simple hexagonal environment."""
+    """A simple hexagonal environment with enough bins for neighbor tests."""
+    # Generate more data points to ensure we have at least 7 active bins
+    np.random.seed(42)
+    data = np.random.rand(100, 2) * 5  # 100 points in a 5x5 area
     return Environment.from_samples(
-        data_samples=np.array(
-            [[0, 0], [1, 1], [0, 1], [1, 0], [0.5, 0.5]]
-        ),  # Some points to define an area
+        data_samples=data,
         layout_kind="Hexagonal",
         bin_size=1.0,
         name="HexTestEnv",
@@ -571,17 +572,16 @@ class TestHexagonalLayout:
         if len(neighbors) > 0:
             assert len(set(neighbors)) == len(neighbors)  # Unique neighbors
             center_node = env_hexagonal.bin_centers[some_bin_idx]
+            assert hasattr(env_hexagonal.layout, "hexagon_width")
+            hexagon_width = env_hexagonal.layout.hexagon_width
+
+            # For pointy-top hexagonal grids, the distance between adjacent
+            # hex centers equals hexagon_width
             for neighbor_idx in neighbors:
                 center_neighbor = env_hexagonal.bin_centers[neighbor_idx]
                 dist = np.linalg.norm(center_node - center_neighbor)
-                # Distance between centers of adjacent pointy-top hexagons is hexagon_width (if side by side)
-                # or side_length (if vertex to vertex on same row), side_length = width/sqrt(3) * 2 /2 = width/sqrt(3)
-                # For pointy-top, horizontal distance between centers = width
-                # Vertical distance between rows = width * sqrt(3)/2
-                # Neighbor distance should be side length = radius
-                assert hasattr(env_hexagonal.layout, "hexagon_width")
-                side_length = env_hexagonal.layout.hexagon_width / np.sqrt(3)
-                assert pytest.approx(dist, rel=0.1) == side_length  # Approx
+                # Allow some tolerance for the distance check
+                assert dist == pytest.approx(hexagon_width, rel=0.1)
 
 
 class TestShapelyPolygonLayoutDetailed:

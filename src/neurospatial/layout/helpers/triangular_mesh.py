@@ -162,6 +162,7 @@ def _build_mesh_connectivity_graph(
     # Add edges between adjacent active triangles
     delaunay_neighbors = delaunay_obj.neighbors  # shape (n_total_simplices, 3)
 
+    edge_id = 0
     for active_idx_u, original_simplex_idx_u in enumerate(
         active_original_simplex_indices,
     ):
@@ -193,7 +194,9 @@ def _build_mesh_connectivity_graph(
                         distance=distance,
                         vector=tuple(displacement_vector.tolist()),
                         angle_2d=angle,
+                        edge_id=edge_id,
                     )
+                    edge_id += 1
     return graph
 
 
