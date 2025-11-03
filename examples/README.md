@@ -232,10 +232,10 @@ Found a typo or have a suggestion for improving these tutorials? Contributions a
 If you use neurospatial in your research, please cite:
 
 ```bibtex
-@software{neurospatial2024,
+@software{neurospatial2025,
   author = {Denovellis, Eric},
   title = {neurospatial: Spatial environment discretization for neuroscience},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/edeno/neurospatial},
   version = {0.1.0}
 }
