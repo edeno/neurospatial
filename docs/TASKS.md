@@ -110,10 +110,10 @@
   - [x] Include type information where helpful
   - [x] Truncate long values (NumPy handles automatically)
 
-- [ ] **Enhance @check_fitted error with examples** (`src/neurospatial/environment.py:64-68`)
-  - [ ] Add example of correct usage
-  - [ ] Add example of incorrect usage to avoid
-  - [ ] Keep error message concise but informative
+- [x] **Enhance @check_fitted error with examples** (`src/neurospatial/environment.py:64-73`)
+  - [x] Add example of correct usage (Environment.from_samples)
+  - [x] Add example of incorrect usage to avoid (Environment())
+  - [x] Keep error message concise but informative
 
 - [ ] **Improve CompositeEnvironment dimension mismatch error** (`src/neurospatial/composite.py:114-117`)
   - [ ] Add "To fix" guidance section

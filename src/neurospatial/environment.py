@@ -64,7 +64,12 @@ def check_fitted(method):
             raise RuntimeError(
                 f"{self.__class__.__name__}.{method.__name__}() "
                 "requires the environment to be fully initialized. "
-                "Ensure it was created with a factory method.",
+                "Ensure it was created with a factory method.\n\n"
+                "Example (correct usage):\n"
+                "    env = Environment.from_samples(data, bin_size=2.0)\n"
+                "    result = env.bin_at(points)\n\n"
+                "Avoid:\n"
+                "    env = Environment()  # This will not work!",
             )
         return method(self, *args, **kwargs)
 
