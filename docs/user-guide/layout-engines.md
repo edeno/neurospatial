@@ -238,4 +238,4 @@ env = Environment.from_image(image_path, bin_size=2.5, dimension_ranges=[(0,100)
 
 - [Environments Guide](environments.md): Using different factory methods
 - [Examples](../examples/02_layout_engines.ipynb): Visual comparisons
-- [API Reference](../api/neurospatial/layout/)
+- [API Reference](../api/neurospatial/layout/index.md)

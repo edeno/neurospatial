@@ -39,7 +39,7 @@ Each page covers a specific feature area with:
 **Common Tasks:**
 
 - [Creating different environment types](environments.md#factory-methods)
-- [Choosing the right layout engine](layout-engines.md#choosing-a-layout-engine)
+- [Choosing the right layout engine](layout-engines.md#quick-decision-guide)
 - [Defining regions](regions.md)
 - [Combining multiple environments](composite-environments.md)
 - [Aligning spatial maps](alignment.md)

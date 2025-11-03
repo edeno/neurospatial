@@ -353,7 +353,7 @@ class GraphLayout(_KDTreeMixin):
 
         Parameters
         ----------
-        linear_positions : NDArray[np.float64], shape (n_points,)
+        data_points : NDArray[np.float64], shape (n_points,)
             1D linearized positions.
 
         Returns

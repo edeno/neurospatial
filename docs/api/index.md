@@ -62,7 +62,7 @@ Detailed documentation for each layout engine:
 
 - [RegularGridLayout](neurospatial/layout/engines/regular_grid.md)
 - [HexagonalLayout](neurospatial/layout/engines/hexagonal.md)
-- [GraphLayout](neurospatial/layout/engines/graph_layout.md)
+- [GraphLayout](neurospatial/layout/engines/graph.md)
 - [MaskedGridLayout](neurospatial/layout/engines/masked_grid.md)
 - [ShapelyPolygonLayout](neurospatial/layout/engines/shapely_polygon.md)
 - [TriangularMeshLayout](neurospatial/layout/engines/triangular_mesh.md)

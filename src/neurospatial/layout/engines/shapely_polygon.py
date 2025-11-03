@@ -145,10 +145,16 @@ class ShapelyPolygonLayout(_GridMixin):
             Axes to plot on. If None, new figure and axes are created.
         figsize : Tuple[float, float], default=(7, 7)
             Size of the figure if `ax` is None.
-        **kwargs : Any
-            Additional keyword arguments passed to `_GridMixin.plot()`
-            (e.g., `cmap`, `alpha` for the grid) and for polygon plotting
-            (e.g., `polygon_kwargs` which is a dict for `ax.fill`).
+        cmap : str, default="bone_r"
+            Colormap for the grid visualization.
+        alpha : float, default=0.7
+            Transparency level for the grid.
+        show_connectivity : bool, default=True
+            Whether to show connections between bins.
+        node_size : float, default=20
+            Size of nodes in the connectivity graph.
+        node_color : str, default="blue"
+            Color of nodes in the connectivity graph.
 
         Returns
         -------

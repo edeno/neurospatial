@@ -24,15 +24,20 @@ def simple_scale(
     Returns
     -------
     Affine2D
-        An affine transformation representing:
-            [ x_cm ]   [ 1/px_per_cm      0       -offset_px[0]/px_per_cm ] [ x_px ]
-            [ y_cm ] = [      0       1/px_per_cm  -offset_px[1]/px_per_cm ] [ y_px ]
-            [   1  ]   [      0            0            1                  ] [  1   ]
+        An affine transformation that converts pixel coordinates to centimeters.
 
     Raises
     ------
     ValueError
         If `px_per_cm` is zero.
+
+    Notes
+    -----
+    The returned transformation represents the following matrix operation::
+
+        [x_cm]   [1/px_per_cm      0       -offset_px[0]/px_per_cm]   [x_px]
+        [y_cm] = [     0       1/px_per_cm  -offset_px[1]/px_per_cm] * [y_px]
+        [ 1  ]   [     0            0                  1            ]   [ 1  ]
 
     """
     if px_per_cm == 0:
