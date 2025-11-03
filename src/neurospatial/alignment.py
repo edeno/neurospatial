@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
 from neurospatial.environment import Environment
 
 if TYPE_CHECKING:
@@ -426,7 +427,7 @@ def map_probabilities_to_nearest_target_bin(
     *,
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
     n_neighbors: int = 1,
-    eps: float = 1e-8,
+    eps: float = IDW_MIN_DISTANCE,
     source_scale_factor: float = 1.0,
     source_rotation_matrix: NDArray[np.float64] | None = None,
     source_translation_vector: NDArray[np.float64] | None = None,
@@ -450,7 +451,7 @@ def map_probabilities_to_nearest_target_bin(
     n_neighbors : int
         Number of neighbors to use when mode="inverse-distance-weighted"
         (ignored if mode="nearest").
-    eps : float
+    eps : float, default=IDW_MIN_DISTANCE
         Small constant to avoid division by zero in IDW weights.
     source_scale_factor : float
         Multiply every source bin-center by this scalar before querying.
@@ -541,7 +542,7 @@ def map_probabilities_to_nearest_target_bin(
 
     # Build KDTree on target bin centers
     try:
-        tree = cKDTree(target_env.bin_centers, leafsize=16)
+        tree = cKDTree(target_env.bin_centers, leafsize=KDTREE_LEAF_SIZE)
     except Exception as e:
         warnings.warn(
             f"KDTree construction on target_env failed: {e}. Returning zeros.",

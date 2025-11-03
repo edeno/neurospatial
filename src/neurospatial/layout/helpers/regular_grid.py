@@ -454,12 +454,8 @@ def _create_regular_grid(
     n_bins = get_n_bins(data_for_bins, bin_sizes_list, ranges)  # ensures at least 1
 
     # 5) Generate core edges via np.histogramdd
-    #    Use a dummy point at the center if `samples` is None
-    if samples is None:
-        dummy = np.array([[(lo + hi) / 2.0 for lo, hi in ranges]])  # type: ignore[unreachable]
-        _, core_edges = np.histogramdd(dummy, bins=n_bins, range=ranges)
-    else:
-        _, core_edges = np.histogramdd(samples, bins=n_bins, range=ranges)
+    #    Use data_for_bins which is either samples or a dummy point at the center
+    _, core_edges = np.histogramdd(data_for_bins, bins=n_bins, range=ranges)
 
     # 6) Optionally add boundary bins by extending each edge array
     final_edges = []

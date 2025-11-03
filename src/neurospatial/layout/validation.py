@@ -1,15 +1,23 @@
-"""Graph validation utilities for neurospatial layout engines.
+"""Graph and environment validation utilities for neurospatial.
 
-This module provides validation functions to ensure connectivity graphs have
-the required structure and metadata attributes as documented in CLAUDE.md.
+This module provides validation functions to ensure connectivity graphs and
+environments have the required structure and metadata attributes as documented
+in CLAUDE.md.
 
 All layout engines must produce graphs with mandatory node and edge attributes.
 This validator enforces those requirements and provides clear error messages
 when violations are detected.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import networkx as nx
 import numpy as np
+
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
 
 # Required attributes per CLAUDE.md
 REQUIRED_NODE_ATTRS = {"pos", "source_grid_flat_index", "original_grid_nd_index"}
@@ -265,3 +273,144 @@ def validate_connectivity_graph(
                     f"Edge ({u}, {v}) 'edge_id' must be int, "
                     f"got {type(edge_id).__name__}."
                 )
+
+
+def validate_environment(env: Environment, *, strict: bool = True) -> None:
+    """Validate that an Environment satisfies all structural invariants.
+
+    This function provides a single entry point for validating Environment
+    objects. It checks:
+    - Required node/edge attributes on connectivity graph
+    - Bin geometry consistency (bin_centers matches graph nodes)
+    - Connectivity structure (no duplicate edges, consistent node IDs)
+    - Unit presence (if strict=True, warns about missing units/frame)
+
+    Downstream packages can use this to verify invariants before processing.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment instance to validate.
+    strict : bool, default=True
+        If True, performs additional checks like warning about missing units.
+        If False, only validates critical structural requirements.
+
+    Raises
+    ------
+    GraphValidationError
+        If connectivity graph is invalid (missing attributes, wrong dimensions).
+    ValueError
+        If bin_centers and connectivity graph are inconsistent.
+    RuntimeError
+        If environment is not fitted (was not created with factory method).
+
+    Examples
+    --------
+    >>> from neurospatial import Environment
+    >>> from neurospatial.layout.validation import validate_environment
+    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> validate_environment(env)  # Passes if environment is valid
+
+    >>> # Catch validation errors
+    >>> try:
+    ...     validate_environment(potentially_invalid_env)
+    ... except (GraphValidationError, ValueError) as e:
+    ...     print(f"Environment is invalid: {e}")
+
+    See Also
+    --------
+    validate_connectivity_graph : Lower-level graph validation
+    Environment._setup_from_layout : Calls validation during creation
+
+    Notes
+    -----
+    This validator is fail-fast with standardized error messages. It is
+    designed to catch layout engine bugs and data corruption early.
+
+    Downstream packages that rely on neurospatial environments should call
+    this at their entry points to ensure invariants hold, avoiding the need
+    for duplicate defensive checks.
+
+    """
+    import warnings
+
+    # Check fitted status
+    if not getattr(env, "_is_fitted", False):
+        raise RuntimeError(
+            f"Environment '{env.name}' is not fitted. "
+            f"Environments must be created with factory methods "
+            f"(e.g., Environment.from_samples()) before validation."
+        )
+
+    # Validate connectivity graph
+    n_dims = env.n_dims
+    validate_connectivity_graph(
+        env.connectivity, n_dims=n_dims, check_node_attrs=True, check_edge_attrs=True
+    )
+
+    # Validate bin_centers consistency with graph
+    n_bins_from_centers = env.bin_centers.shape[0]
+    n_nodes_from_graph = len(env.connectivity.nodes)
+
+    if n_bins_from_centers != n_nodes_from_graph:
+        raise ValueError(
+            f"bin_centers and connectivity graph are inconsistent.\n"
+            f"  bin_centers has {n_bins_from_centers} rows\n"
+            f"  connectivity graph has {n_nodes_from_graph} nodes\n"
+            f"These must match. This indicates a layout engine bug."
+        )
+
+    # Validate node IDs are sequential from 0 to n_bins-1
+    node_ids = sorted(env.connectivity.nodes)
+    expected_ids = list(range(n_bins_from_centers))
+    if node_ids != expected_ids:
+        raise ValueError(
+            f"connectivity graph node IDs are not sequential.\n"
+            f"  Expected: [0, 1, ..., {n_bins_from_centers - 1}]\n"
+            f"  Got: {node_ids[:10]}{'...' if len(node_ids) > 10 else ''}\n"
+            f"This indicates a layout engine bug."
+        )
+
+    # Validate bin_centers has correct shape
+    if env.bin_centers.ndim != 2:
+        raise ValueError(
+            f"bin_centers must be 2D array (n_bins, n_dims), "
+            f"got shape {env.bin_centers.shape}"
+        )
+
+    if env.bin_centers.shape[1] != n_dims:
+        raise ValueError(
+            f"bin_centers has {env.bin_centers.shape[1]} columns, "
+            f"expected {n_dims} dimensions"
+        )
+
+    # Check for duplicate edges (undirected graph should have only one edge per pair)
+    edges_set = set()
+    for u, v in env.connectivity.edges:
+        edge_tuple = tuple(sorted([u, v]))
+        if edge_tuple in edges_set:
+            raise ValueError(
+                f"Duplicate edge found: {edge_tuple}. "
+                f"This indicates a layout engine bug."
+            )
+        edges_set.add(edge_tuple)
+
+    # Strict mode checks
+    if strict:
+        # Warn about missing units
+        if not hasattr(env, "units") or env.units is None:
+            warnings.warn(
+                f"Environment '{env.name}' has no units specified. "
+                f"Consider setting env.units (e.g., 'cm', 'px', 'm') "
+                f"to prevent unit confusion in downstream analysis.",
+                stacklevel=2,
+            )
+
+        # Warn about missing coordinate frame
+        if not hasattr(env, "frame") or env.frame is None:
+            warnings.warn(
+                f"Environment '{env.name}' has no coordinate frame specified. "
+                f"Consider setting env.frame (e.g., 'world', 'camera_1') "
+                f"to prevent confusion when aligning multiple sessions.",
+                stacklevel=2,
+            )

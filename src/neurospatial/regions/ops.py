@@ -58,6 +58,7 @@ from numpy.typing import NDArray
 from shapely import points
 from shapely.geometry import Polygon
 
+from .._constants import POINT_TOLERANCE
 from ..transforms import SpatialTransform
 from .core import Region, Regions
 
@@ -191,7 +192,7 @@ def points_in_any_region(
     regions: Regions,
     *,
     transform: SpatialTransform | None = None,
-    point_tolerance: float = 1e-8,
+    point_tolerance: float = POINT_TOLERANCE,
 ) -> NDArray[np.bool_]:
     """Determine whether each point lies inside any of the provided Regions.
 
@@ -206,7 +207,7 @@ def points_in_any_region(
     transform : Optional[SpatialTransform], default=None
         If provided, a callable that maps input coordinates to
         the Regions' coordinate space.
-    point_tolerance : float, default=1e-8
+    point_tolerance : float, default=POINT_TOLERANCE
         Tolerance for comparing query points to point Regions.
 
     Returns
@@ -245,7 +246,7 @@ def regions_containing_points(
     transform: SpatialTransform | None = None,
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
-    point_tolerance: float = 1e-8,
+    point_tolerance: float = POINT_TOLERANCE,
 ) -> list[list[Region]] | pd.DataFrame:
     """For each point, identify all Regions that contain it.
 
@@ -268,7 +269,7 @@ def regions_containing_points(
         where each column is the region name and each value is True/False.
         If False, return a list of lists: each sublist contains Region objects
         that contain the corresponding point.
-    point_tolerance : float, default=1e-8
+    point_tolerance : float, default=POINT_TOLERANCE
         Tolerance for comparing query points to point Regions.
 
     Returns

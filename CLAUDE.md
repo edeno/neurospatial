@@ -44,6 +44,31 @@ uv run pytest --doctest-modules src/neurospatial/
 # Create environment from data
 env = Environment.from_samples(data, bin_size=2.0)  # bin_size is required
 
+# Add units and coordinate frame (v0.1.0+)
+env.units = "cm"
+env.frame = "session1"
+
+# Save and load environments (v0.1.0+)
+env.to_file("my_environment")  # Creates .json + .npz files
+loaded_env = Environment.from_file("my_environment")
+
+# Map points to bins with KDTree caching (v0.1.0+)
+from neurospatial import map_points_to_bins
+bin_indices = map_points_to_bins(points, env, tie_break="lowest_index")
+
+# Estimate transform from corresponding points (v0.1.0+)
+from neurospatial import estimate_transform, apply_transform_to_environment
+T = estimate_transform(src_landmarks, dst_landmarks, kind="rigid")
+aligned_env = apply_transform_to_environment(env, T)
+
+# Compute distance fields (v0.1.0+)
+from neurospatial import distance_field
+distances = distance_field(env.connectivity, sources=[goal_bin_id])
+
+# Validate environment (v0.1.0+)
+from neurospatial import validate_environment
+validate_environment(env, strict=True)  # Warns if units/frame missing
+
 # Update a region (don't modify in place)
 env.regions.update_region("goal", point=new_point)
 
@@ -136,13 +161,29 @@ Standard import patterns for this package:
 from neurospatial import Environment
 from neurospatial.regions import Region, Regions
 
+# v0.1.0+ Public API functions
+from neurospatial import (
+    validate_environment,          # Validate environment structure
+    map_points_to_bins,            # Batch point-to-bin mapping with KDTree
+    estimate_transform,             # Estimate transform from point pairs
+    apply_transform_to_environment, # Transform entire environment
+    distance_field,                # Multi-source geodesic distances
+    pairwise_distances,            # Distances between node subsets
+)
+
+# Serialization (v0.1.0+)
+from neurospatial.io import to_file, from_file, to_dict, from_dict
+
+# Spatial utilities (v0.1.0+)
+from neurospatial.spatial import clear_kdtree_cache
+
 # Layout engines and factories
 from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 # Utility functions
 from neurospatial.alignment import get_2d_rotation_matrix, map_probabilities_to_nearest_target_bin
-from neurospatial.transforms import Affine2D
+from neurospatial.transforms import Affine2D, translate, rotate, scale
 ```
 
 ## Important Patterns & Constraints

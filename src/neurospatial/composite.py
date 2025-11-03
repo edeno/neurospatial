@@ -23,6 +23,8 @@ import pandas as pd
 from numpy.typing import NDArray
 from sklearn.neighbors import KDTree
 
+from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
+from neurospatial._logging import log_composite_build
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
@@ -103,6 +105,14 @@ class CompositeEnvironment:
             If True, use KDTree-based bin_at() for O(M log N) performance. If False,
             use sequential query through each sub-environment (original O(N×M) behavior).
 
+        Raises
+        ------
+        TypeError
+            If subenvs is not a list or tuple, or if any element is not an Environment instance.
+        ValueError
+            If subenvs is empty, if any environment is not fitted, or if environments
+            have different dimensionalities.
+
         Common Pitfalls
         ---------------
         1. **Dimension mismatch**: All sub-environments must have the same number of
@@ -125,8 +135,29 @@ class CompositeEnvironment:
            verify that bin locations are spatially separated.
 
         """
+        # Validate container type
+        if not isinstance(subenvs, (list, tuple)):
+            raise TypeError(
+                f"subenvs must be a list or tuple of Environment instances, "
+                f"got {type(subenvs).__name__}. "
+                f"Did you pass a single Environment instead of a list? "
+                f"Use [env] to wrap it in a list."
+            )
+
+        # Validate not empty
         if len(subenvs) == 0:
-            raise ValueError("At least one sub-environment is required.")
+            raise ValueError(
+                "At least one sub-environment is required. Received empty list."
+            )
+
+        # Validate each element is Environment instance
+        for i, env in enumerate(subenvs):
+            if not isinstance(env, Environment):
+                raise TypeError(
+                    f"subenvs[{i}] must be an Environment instance, "
+                    f"got {type(env).__name__}. "
+                    f"All elements of subenvs must be Environment objects."
+                )
 
         self._use_kdtree_query = use_kdtree_query
 
@@ -188,7 +219,9 @@ class CompositeEnvironment:
         # Build KDTree for optimized bin_at() if requested
         self._kdtree: KDTree | None = None
         if self._use_kdtree_query and self.bin_centers.shape[0] > 0:
-            self._kdtree = KDTree(self.bin_centers, leaf_size=40)
+            self._kdtree = KDTree(
+                self.bin_centers, leaf_size=KDTREE_COMPOSITE_LEAF_SIZE
+            )
 
         # Properties to match Environment interface
         self.is_1d = False
@@ -234,6 +267,14 @@ class CompositeEnvironment:
         }
         self._is_fitted = (
             True  # Composite environment is considered 'fitted' upon construction
+        )
+
+        # Log composite environment creation
+        n_bridges = len(self.bridges) if hasattr(self, "bridges") else 0
+        log_composite_build(
+            n_subenvs=len(subenvs),
+            total_bins=self._total_bins,
+            n_bridges=n_bridges,
         )
 
     def _add_bridge_edge(

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._logging import log_environment_created, log_graph_validation
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import create_layout
 from neurospatial.layout.helpers.utils import find_boundary_nodes
@@ -239,9 +240,16 @@ class Environment:
     # Region Management
     regions: Regions = field(init=False, repr=False)
 
+    # Units and coordinate frames
+    units: str | None = field(init=False, default=None)
+    frame: str | None = field(init=False, default=None)
+
     # Internal state
     _is_1d_env: bool = field(init=False)
     _is_fitted: bool = field(init=False, default=False)
+
+    # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
+    _kdtree_cache: Any = field(init=False, default=None, repr=False)
 
     # For introspection and serialization
     _layout_type_used: str | None = field(init=False, default=None)
@@ -680,6 +688,9 @@ class Environment:
         # Note: Calculate n_dims directly here since self.n_dims has @check_fitted
         n_dims = self.bin_centers.shape[1] if self.bin_centers is not None else 0
         try:
+            n_nodes = len(self.connectivity.nodes)
+            n_edges = len(self.connectivity.edges)
+            log_graph_validation(n_nodes=n_nodes, n_edges=n_edges, n_dims=n_dims)
             validate_connectivity_graph(
                 self.connectivity,
                 n_dims=n_dims,
@@ -710,6 +721,15 @@ class Environment:
             self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
 
         self._is_fitted = True
+
+        # Log environment creation
+        n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
+        log_environment_created(
+            env_type=self.layout._layout_type_tag,
+            n_bins=n_bins,
+            n_dims=n_dims,
+            env_name=self.name,
+        )
 
     @cached_property
     @check_fitted
@@ -1978,6 +1998,109 @@ class Environment:
         if not isinstance(environment, cls):
             raise TypeError(f"Loaded object is not type {cls.__name__}")
         return environment
+
+    def to_file(self, path: str | Path) -> None:
+        """Save Environment to versioned JSON + npz files.
+
+        This method provides stable, reproducible serialization that is safer
+        than pickle and compatible across Python versions. Creates two files:
+        `{path}.json` (metadata) and `{path}.npz` (arrays).
+
+        Parameters
+        ----------
+        path : str or Path
+            Base path for output files (without extension).
+            Will create `{path}.json` and `{path}.npz`.
+
+        Examples
+        --------
+        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> env.to_file("my_environment")
+
+        See Also
+        --------
+        from_file : Load environment from saved files
+        save : Legacy pickle-based serialization
+
+        Notes
+        -----
+        This format is safer than pickle (no arbitrary code execution) and
+        more portable across Python versions and platforms.
+
+        """
+        from neurospatial.io import to_file as _to_file
+
+        _to_file(self, path)
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> Environment:
+        """Load Environment from versioned JSON + npz files.
+
+        Parameters
+        ----------
+        path : str or Path
+            Base path to load from (without extension).
+            Will read `{path}.json` and `{path}.npz`.
+
+        Returns
+        -------
+        Environment
+            Reconstructed Environment instance.
+
+        Examples
+        --------
+        >>> env = Environment.from_file("my_environment")
+
+        See Also
+        --------
+        to_file : Save environment to files
+        load : Legacy pickle-based deserialization
+
+        """
+        from neurospatial.io import from_file as _from_file
+
+        return _from_file(path)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert Environment to dictionary for in-memory handoff.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary representation with all arrays as lists.
+
+        See Also
+        --------
+        from_dict : Reconstruct from dictionary
+        to_file : Save to disk with efficient binary format
+
+        """
+        from neurospatial.io import to_dict as _to_dict
+
+        return _to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Environment:
+        """Reconstruct Environment from dictionary representation.
+
+        Parameters
+        ----------
+        data : dict[str, Any]
+            Dictionary from `to_dict()`.
+
+        Returns
+        -------
+        Environment
+            Reconstructed instance.
+
+        See Also
+        --------
+        to_dict : Convert to dictionary
+
+        """
+        from neurospatial.io import from_dict as _from_dict
+
+        return _from_dict(data)
 
     @check_fitted
     def bins_in_region(self, region_name: str) -> NDArray[np.int_]:
