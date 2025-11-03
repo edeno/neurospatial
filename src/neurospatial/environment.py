@@ -409,9 +409,9 @@ class Environment:
     def from_samples(
         cls,
         data_samples: NDArray[np.float64],
+        bin_size: float | Sequence[float],
         name: str = "",
         layout_kind: str = "RegularGrid",
-        bin_size: float | Sequence[float] | None = 2.0,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
         dilate: bool = False,
@@ -426,17 +426,17 @@ class Environment:
         Parameters
         ----------
         data_samples : array, shape (n_samples, n_dims)
-            Coordinates of sample points used to infer which bins are “active.”
+            Coordinates of sample points used to infer which bins are "active."
+        bin_size : float or sequence of floats
+            Size of each bin in the same units as `data_samples` coordinates.
+            For RegularGrid: length of each square bin side (or per-dimension if sequence).
+            For Hexagonal: hexagon width (flat-to-flat distance across hexagon).
+            If your data is in centimeters, bin_size=5.0 creates 5cm bins.
         name : str, default ""
             Optional name for the resulting Environment.
         layout_kind : str, default "RegularGrid"
             Either "RegularGrid" or "Hexagonal" (case-insensitive). Determines
             bin shape. For "Hexagonal", `bin_size` is interpreted as `hexagon_width`.
-        bin_size : float or sequence of floats, default 2.0
-            Size of each bin in the same units as `data_samples` coordinates.
-            For RegularGrid: length of each square bin side (or per-dimension if sequence).
-            For Hexagonal: hexagon width (flat-to-flat distance across hexagon).
-            If your data is in centimeters, bin_size=5.0 creates 5cm bins.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are “active.”
         bin_count_threshold : int, default 0
@@ -617,7 +617,7 @@ class Environment:
     def from_polygon(
         cls,
         polygon: PolygonType,
-        bin_size: float | Sequence[float] | None = 2.0,
+        bin_size: float | Sequence[float],
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -631,10 +631,10 @@ class Environment:
         ----------
         polygon : shapely.geometry.Polygon
             The Shapely Polygon object that defines the boundary of the active area.
-        bin_size : Optional[Union[float, Sequence[float]]], optional
+        bin_size : float or sequence of floats
             The side length(s) of the grid cells, in the same units as the polygon
             coordinates. If a float, creates square bins. If a sequence, specifies
-            bin size per dimension. Defaults to 2.0.
+            bin size per dimension.
         name : str, optional
             A name for the created environment. Defaults to "".
         connect_diagonal_neighbors : bool, optional
@@ -773,7 +773,7 @@ class Environment:
     def from_image(
         cls,
         image_mask: NDArray[np.bool_],
-        bin_size: float | tuple[float, float] = 1.0,
+        bin_size: float | tuple[float, float],
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
@@ -786,11 +786,11 @@ class Environment:
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where `True` pixels define active bins.
-        bin_size : Union[float, Tuple[float, float]], optional
+        bin_size : float or tuple of (float, float)
             The spatial size of each pixel in physical units (e.g., cm, meters).
             If a float, pixels are square. If a tuple `(width, height)`, specifies
-            pixel dimensions. Defaults to 1.0. For example, if your camera captures
-            images where each pixel represents 0.5cm, use bin_size=0.5.
+            pixel dimensions. For example, if your camera captures images where
+            each pixel represents 0.5cm, use bin_size=0.5.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active pixel-bins.
             Defaults to True.

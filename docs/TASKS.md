@@ -122,14 +122,14 @@
 
 ### API Consistency
 
-- [ ] **Audit and standardize bin_size defaults**
-  - [ ] Review all factory methods for consistency
-  - [ ] Decide: Option A (all required) vs Option B (all have defaults)
-  - [ ] Update method signatures if changing defaults
-  - [ ] Update all docstrings to reflect decision
-  - [ ] Update all examples to include explicit bin_size
-  - [ ] Update all tests for any breaking changes
-  - [ ] Document breaking changes if applicable
+- [x] **Audit and standardize bin_size defaults**
+  - [x] Review all factory methods for consistency
+  - [x] Decide: Option A (all required) vs Option B (all have defaults)
+  - [x] Update method signatures if changing defaults
+  - [x] Update all docstrings to reflect decision
+  - [x] Update all examples to include explicit bin_size
+  - [x] Update all tests for any breaking changes
+  - [x] Document breaking changes if applicable
 
 ---
 

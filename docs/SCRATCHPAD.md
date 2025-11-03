@@ -1443,3 +1443,176 @@ This task successfully applied the WHAT/WHY/HOW error message pattern establishe
 
 **Next unchecked task in TASKS.md (Milestone 2):**
 **Audit and standardize bin_size defaults** (lines 125-133)
+
+## 2025-11-03: Audit and Standardize bin_size Defaults
+
+### Task Completed
+
+- ✅ Audited all factory methods for bin_size parameter consistency
+- ✅ Removed all defaults - made bin_size required everywhere
+- ✅ Updated all method signatures to remove defaults
+- ✅ Updated all docstrings to reflect bin_size is required
+- ✅ Added 14 comprehensive tests (all passing)
+- ✅ Fixed docstring parameter ordering in from_samples()
+- ✅ All 444 tests pass (430 existing + 14 new)
+
+### Implementation Details
+
+**Decision:** Option A - Make all bin_size parameters required (remove defaults)
+
+**Rationale:**
+
+- bin_size is a critical scientific parameter that affects analysis results
+- No universal "good" default exists - depends on data scale and research question
+- Forcing explicit specification ensures researchers think about spatial resolution
+- Prevents silent bugs from arbitrary defaults
+- Since there are no prior users, no migration guide needed
+
+**Current State Analysis:**
+
+Before changes:
+
+| Factory Method | bin_size Default | Status |
+|----------------|------------------|--------|
+| `from_samples()` | 2.0 | Had default |
+| `from_polygon()` | 2.0 | Had default |
+| `from_image()` | 1.0 | Had default |
+| `from_graph()` | (none) | Already required |
+| `from_mask()` | N/A | Uses grid_edges |
+| `from_layout()` | N/A | Uses layout_params |
+
+After changes:
+
+- All methods with bin_size now require it explicitly
+- Consistent API across all factory methods
+- Type annotations updated (removed `| None` and default values)
+
+**Changes Made:**
+
+1. **`from_samples()` (line 412)**:
+   - Changed: `bin_size: float | Sequence[float] | None = 2.0`
+   - To: `bin_size: float | Sequence[float]`
+   - Moved bin_size to 2nd positional parameter (after data_samples)
+   - Removed "default 2.0" from docstring
+   - Reordered docstring parameters to match signature (per code review)
+
+2. **`from_polygon()` (line 620)**:
+   - Changed: `bin_size: float | Sequence[float] | None = 2.0`
+   - To: `bin_size: float | Sequence[float]`
+   - Removed "Optional" and "Defaults to 2.0" from docstring
+
+3. **`from_image()` (line 776)**:
+   - Changed: `bin_size: float | tuple[float, float] = 1.0`
+   - To: `bin_size: float | tuple[float, float]`
+   - Removed "optional" and "Defaults to 1.0" from docstring
+
+4. **Examples**: All examples in docstrings already had explicit bin_size (no changes needed)
+
+**Key Design Decisions:**
+
+1. **Parameter Ordering**: Made bin_size the 2nd positional parameter in `from_samples()` (after data_samples)
+   - Encourages users to think about bin_size early
+   - Allows positional calling: `Environment.from_samples(data, 2.0)`
+   - Maintains backward compatibility for keyword usage
+
+2. **Type Annotations**: Different types for different methods (intentional):
+   - `from_samples()`, `from_polygon()`: `float | Sequence[float]` (N-dimensional)
+   - `from_image()`: `float | tuple[float, float]` (2D-only, more restrictive)
+   - This is correct and reflects the different capabilities of each method
+
+3. **Docstring Format**: Followed NumPy docstring conventions
+   - Parameters documented in same order as signature
+   - Removed "optional" and "default" language
+   - Kept descriptive text clear and helpful
+
+**Code Review Results:**
+
+**Rating:** APPROVE with minor fixes applied
+
+**Issues Addressed:**
+
+- ✅ Fixed docstring parameter ordering in `from_samples()` (Medium priority issue)
+- All other aspects approved without changes
+
+**Quality Checks:**
+
+- API consistency: ✅ All bin_size parameters now consistent
+- Docstring accuracy: ✅ All docstrings updated correctly
+- Type annotations: ✅ Correct and intentionally different per method
+- Test quality: ✅ 14 comprehensive tests covering all aspects
+- No regressions: ✅ All 444 tests pass
+
+**Tests Added (14 total):**
+
+Created `tests/test_bin_size_required.py`:
+
+1. `test_from_samples_requires_bin_size` - TypeError when missing
+2. `test_from_samples_accepts_explicit_bin_size` - Works with explicit value
+3. `test_from_polygon_requires_bin_size` - TypeError when missing
+4. `test_from_polygon_accepts_explicit_bin_size` - Works with explicit value
+5. `test_from_image_requires_bin_size` - TypeError when missing
+6. `test_from_image_accepts_explicit_bin_size` - Works with explicit value
+7. `test_from_graph_requires_bin_size` - Verifies already required
+8. `test_from_samples_signature_has_no_default` - Signature inspection
+9. `test_from_polygon_signature_has_no_default` - Signature inspection
+10. `test_from_image_signature_has_no_default` - Signature inspection
+11. `test_from_graph_signature_has_no_default` - Signature inspection
+12. `test_from_samples_docstring_shows_required` - Docstring consistency
+13. `test_from_polygon_docstring_shows_required` - Docstring consistency
+14. `test_from_image_docstring_shows_required` - Docstring consistency
+
+All tests pass.
+
+### Files Modified
+
+- `src/neurospatial/environment.py`:
+  - Line 412: `from_samples()` signature - removed default
+  - Lines 428-439: Reordered docstring parameters to match signature
+  - Line 620: `from_polygon()` signature - removed default
+  - Lines 634-637: Updated docstring to remove "optional" and default mention
+  - Line 776: `from_image()` signature - removed default
+  - Lines 789-793: Updated docstring to remove "optional" and default mention
+
+### Files Created
+
+- `tests/test_bin_size_required.py` (237 lines, 14 tests)
+
+### Quality Metrics
+
+- **Test coverage**: 100% of bin_size parameter paths covered
+- **All tests pass**: 444 tests (430 existing + 14 new)
+- **Code review**: APPROVE with minor fixes applied
+- **Pattern consistency**: 100% - all bin_size parameters now required
+- **Regressions**: 0 (no existing tests broken)
+- **Breaking changes**: Yes (intentional, no prior users affected)
+
+### Impact Assessment
+
+**User Experience Improvements:**
+
+1. **Scientific rigor**: Forces conscious decision about spatial scale
+2. **Prevents silent bugs**: No mystery about why bins are sized a certain way
+3. **Self-documenting code**: Reading code shows what spatial scale was used
+4. **Clearer errors**: Users immediately know they need to specify bin_size
+
+**API Improvements:**
+
+1. **Consistency**: All factory methods now have consistent requirements
+2. **Predictability**: No surprises about which parameters have defaults
+3. **Type safety**: Type annotations accurately reflect required parameters
+
+### Future Considerations
+
+**Successful Pattern Established:**
+
+This establishes a principle for the neurospatial API: **critical scientific parameters should be required, not have arbitrary defaults**. Future API additions should follow this principle.
+
+**Breaking Change Documentation:**
+
+Since there are no prior users, no migration guide was created. If the library is released publicly, this change should be noted in release notes as a design decision, not a breaking change from a previous version.
+
+**Optional Future Enhancements** (from code review, low priority):
+
+1. Add tests for positional vs. keyword argument calling
+2. Document this as an API design principle in CLAUDE.md
+3. Consider similar treatment for other critical scientific parameters
