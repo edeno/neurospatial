@@ -254,9 +254,13 @@ print(f"RewardZone1 area: {area:.2f}, center: {center}")
 
 ## Documentation
 
-- **[API Reference](docs/)**: Detailed documentation of all classes and methods (coming soon)
-- **[Examples](examples/)**: Jupyter notebooks with real-world use cases (coming soon)
-- **[CLAUDE.md](CLAUDE.md)**: Implementation guide for contributors
+- **[Documentation Home](https://edeno.github.io/neurospatial/)**: Complete documentation site
+- **[Getting Started](https://edeno.github.io/neurospatial/getting-started/installation/)**: Installation and quickstart guide
+- **[User Guide](https://edeno.github.io/neurospatial/user-guide/)**: Detailed feature documentation
+- **[API Reference](https://edeno.github.io/neurospatial/api/)**: Auto-generated API documentation
+- **[Examples](https://edeno.github.io/neurospatial/examples/)**: Jupyter notebooks with real-world use cases
+- **[Contributing](https://edeno.github.io/neurospatial/contributing/)**: Guidelines for contributors
+- **[CLAUDE.md](CLAUDE.md)**: Development guide for Claude Code users
 - **[GitHub Issues](https://github.com/edeno/neurospatial/issues)**: Bug reports and feature requests
 
 ## Project Structure
@@ -310,10 +314,10 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 If you use neurospatial in your research, please cite:
 
 ```bibtex
-@software{neurospatial2024,
+@software{neurospatial2025,
   author = {Denovellis, Eric},
   title = {neurospatial: Spatial environment discretization for neuroscience},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/edeno/neurospatial},
   version = {0.1.0}
 }

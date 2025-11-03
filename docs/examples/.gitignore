@@ -1,0 +1,2 @@
+# Ignore copied notebooks - they're synced from ../examples/
+*.ipynb
