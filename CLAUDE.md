@@ -2,6 +2,71 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Last Updated**: 2025-11-03 (v0.1.0)
+
+## Table of Contents
+
+- [Quick Reference](#quick-reference)
+- [Project Overview](#project-overview)
+- [Package Management with uv](#package-management-with-uv)
+- [Core Architecture](#core-architecture)
+- [Import Patterns](#import-patterns)
+- [Important Patterns & Constraints](#important-patterns--constraints)
+- [Development Commands](#development-commands)
+- [Key Implementation Notes](#key-implementation-notes)
+- [Testing Structure](#testing-structure)
+- [Documentation Style](#documentation-style)
+- [Common Gotchas](#common-gotchas)
+- [Troubleshooting](#troubleshooting)
+
+## Quick Reference
+
+**Most Common Commands**:
+```bash
+# Run all tests (from project root)
+uv run pytest
+
+# Run specific test
+uv run pytest tests/test_environment.py::test_function_name -v
+
+# Run with coverage
+uv run pytest --cov=src/neurospatial
+
+# Lint and format
+uv run ruff check . && uv run ruff format .
+
+# Run doctests
+uv run pytest --doctest-modules src/neurospatial/
+```
+
+**Most Common Patterns**:
+```python
+# Create environment from data
+env = Environment.from_samples(data, bin_size=2.0)  # bin_size is required
+
+# Update a region (don't modify in place)
+env.regions.update_region("goal", point=new_point)
+
+# Check if 1D before using linearization
+if env.is_1d:
+    linear_pos = env.to_linear(nd_position)
+
+# Always use factory methods, not bare Environment()
+env = Environment.from_samples(...)  # ✓ Correct
+env = Environment()  # ✗ Wrong - won't be fitted
+```
+
+**Commit Message Format**:
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat(scope): description` - New features
+- `fix(scope): description` - Bug fixes
+- `docs(scope): description` - Documentation changes
+- `test(scope): description` - Test additions/fixes
+- `chore(scope): description` - Maintenance tasks
+
+Examples: `feat(M3): add .info() method`, `fix: correct version reference`
+
 ## Project Overview
 
 **neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs. It provides tools for spatial analysis, particularly for neuroscience applications involving place fields, position tracking, and spatial navigation.
@@ -125,7 +190,7 @@ Check `env.is_1d` before calling linearization methods.
 
 ## Development Commands
 
-**IMPORTANT: All commands below MUST be prefixed with `uv run` to ensure they execute in the correct virtual environment.**
+**IMPORTANT: All commands below MUST be prefixed with `uv run` to ensure they execute in the correct virtual environment. Run all commands from the project root directory.**
 
 ### Environment Setup
 ```bash
@@ -138,13 +203,13 @@ uv add package-name
 # Add a development dependency
 uv add --dev package-name
 
-# Install the package in editable mode
+# Install the package in editable mode (usually not needed with uv)
 uv pip install -e .
 ```
 
 ### Testing
 ```bash
-# Run all tests
+# Run all tests (most common - use this for verification)
 uv run pytest
 
 # Run specific test module
@@ -153,23 +218,29 @@ uv run pytest tests/test_environment.py
 # Run tests for a specific layout engine
 uv run pytest tests/layout/test_regular_grid_utils.py
 
-# Run with verbose output
+# Run with verbose output (helpful for debugging)
 uv run pytest -v
 
-# Run with coverage
+# Run with coverage report
 uv run pytest --cov=src/neurospatial
 
-# Run a specific test
+# Run a specific test function
 uv run pytest tests/test_environment.py::test_function_name -v
+
+# Run doctests (validate docstring examples)
+uv run pytest --doctest-modules src/neurospatial/
+
+# Run tests matching a pattern
+uv run pytest -k "test_bin_size"
 ```
 
 ### Running the Package
 ```bash
-# Run main entry point
-uv run python main.py
-
-# Run any Python script
+# Run any Python script (from project root)
 uv run python path/to/script.py
+
+# Import in interactive session
+uv run python -c "from neurospatial import Environment; print(Environment)"
 ```
 
 ### Python REPL
@@ -177,20 +248,23 @@ uv run python path/to/script.py
 # Start interactive Python session with package available
 uv run python
 
-# Or use IPython if installed
+# Or use IPython if installed (recommended for exploration)
 uv run ipython
 ```
 
 ### Code Quality
 ```bash
-# Run ruff linter
+# Run ruff linter (check for issues)
 uv run ruff check .
 
-# Run ruff formatter
+# Run ruff formatter (auto-format code)
 uv run ruff format .
 
-# Run both check and format
+# Run both check and format (common workflow)
 uv run ruff check . && uv run ruff format .
+
+# Check specific file
+uv run ruff check src/neurospatial/environment.py
 ```
 
 ## Key Implementation Notes
@@ -337,12 +411,272 @@ class Environment:
 
 ## Common Gotchas
 
-1. **Always use `uv run`** - Don't run Python commands directly
-2. **Check `_is_fitted`** - Many Environment methods require fitted state
-3. **Graph metadata is mandatory** - All nodes/edges must have required attributes
-4. **Regions are immutable** - Don't try to modify Region objects in place; use `update_region()` to replace existing regions
-5. **Check `is_1d`** - Only GraphLayout supports linearization methods
-6. **Protocol, not inheritance** - Layout engines implement protocol, don't inherit from base class
-7. **NumPy docstrings** - Use NumPy docstring format for all documentation, not Google or reStructuredText style
-8. **bin_size is required** - The bin_size parameter has no default value in factory methods; always specify explicitly
-9. **Error messages show diagnostics** - Validation errors include actual invalid values to aid debugging
+### 1. Always use `uv run`
+**Problem**: Running Python commands directly uses the wrong environment.
+
+❌ Wrong:
+```bash
+python script.py
+pytest
+pip install package
+```
+
+✅ Right:
+```bash
+uv run python script.py
+uv run pytest
+uv add package
+```
+
+### 2. Check `_is_fitted` state
+**Problem**: Calling spatial query methods on unfitted Environment raises error.
+
+❌ Wrong:
+```python
+env = Environment()  # Not fitted!
+env.bin_at([10.0, 5.0])  # RuntimeError
+```
+
+✅ Right:
+```python
+env = Environment.from_samples(data, bin_size=2.0)  # Factory methods fit automatically
+env.bin_at([10.0, 5.0])  # Works
+```
+
+### 3. Graph metadata is mandatory
+**Problem**: Missing node/edge attributes cause failures in spatial queries.
+
+**Required node attributes**: `'pos'`, `'source_grid_flat_index'`, `'original_grid_nd_index'`
+**Required edge attributes**: `'distance'`, `'vector'`, `'edge_id'`, `'angle_2d'` (optional)
+
+All layout engines must populate these. If creating custom graphs, ensure all attributes present.
+
+### 4. Regions are immutable
+**Problem**: Trying to modify Region objects in place fails.
+
+❌ Wrong:
+```python
+env.regions['goal'].point = new_point  # AttributeError - immutable
+env.regions['goal'] = new_region  # KeyError - can't overwrite
+```
+
+✅ Right:
+```python
+env.regions.update_region('goal', point=new_point)  # Creates new Region
+env.regions.add('new_goal', point=point)  # Add new region
+del env.regions['old_goal']  # Delete existing
+```
+
+### 5. Check `is_1d` before linearization
+**Problem**: Calling `to_linear()` on N-D environments fails.
+
+❌ Wrong:
+```python
+env = Environment.from_samples(data, bin_size=2.0)  # Creates 2D grid
+linear_pos = env.to_linear(position)  # AttributeError
+```
+
+✅ Right:
+```python
+if env.is_1d:
+    linear_pos = env.to_linear(position)
+else:
+    # Use N-D spatial queries instead
+    bin_idx = env.bin_at(position)
+```
+
+### 6. Protocol, not inheritance
+**Problem**: Layout engines don't inherit from a base class.
+
+❌ Wrong:
+```python
+class MyLayout(LayoutEngine):  # LayoutEngine is a Protocol, not a class
+    pass
+```
+
+✅ Right:
+```python
+class MyLayout:
+    """Implements LayoutEngine protocol."""
+    def build(self, ...): ...
+    def point_to_bin_index(self, ...): ...
+    # Implement all required methods and attributes
+```
+
+### 7. NumPy docstrings required
+**Problem**: Using Google or reStructuredText style docstrings inconsistent with codebase.
+
+❌ Wrong:
+```python
+def foo(x, y):
+    """Does foo.
+
+    Args:
+        x: First parameter
+        y: Second parameter
+    """
+```
+
+✅ Right:
+```python
+def foo(x, y):
+    """Does foo.
+
+    Parameters
+    ----------
+    x : type
+        First parameter
+    y : type
+        Second parameter
+    """
+```
+
+### 8. bin_size is required
+**Problem**: Forgetting bin_size parameter causes TypeError.
+
+❌ Wrong:
+```python
+env = Environment.from_samples(data)  # TypeError: missing required argument
+```
+
+✅ Right:
+```python
+env = Environment.from_samples(data, bin_size=2.0)  # Explicit is better
+```
+
+**Tip**: Choose bin_size based on your data's spatial scale and units (cm, meters, pixels, etc.)
+
+### 9. Error messages show diagnostics
+**What this means**: When validation fails, error messages include the actual invalid values to help debugging. Use these diagnostics to understand what went wrong.
+
+Example:
+```
+ValueError: bin_size must be positive (got -2.0)
+ValueError: No active bins found. Data range: [0.0, 100.0], bin_size: 200.0
+```
+
+The diagnostic values help identify the problem immediately.
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'neurospatial'`
+
+**Cause**: Dependencies not installed or wrong Python environment.
+
+**Solution**:
+```bash
+# Sync dependencies (run from project root)
+uv sync
+
+# Verify environment
+uv run python -c "import neurospatial; print(neurospatial.__file__)"
+```
+
+### Tests fail with import errors
+
+**Cause**: Running pytest without `uv run` prefix.
+
+**Solution**:
+```bash
+# Wrong
+pytest
+
+# Right
+uv run pytest
+```
+
+### `RuntimeError: Environment must be fitted before calling this method`
+
+**Cause**: Calling spatial query methods on unfitted Environment.
+
+**Solution**: Use factory methods, not bare `Environment()`:
+```python
+# Wrong
+env = Environment()
+env.bin_at([10, 5])
+
+# Right
+env = Environment.from_samples(data, bin_size=2.0)
+env.bin_at([10, 5])
+```
+
+### `KeyError` when trying to update a region
+
+**Cause**: Using assignment instead of `update_region()` method.
+
+**Solution**:
+```python
+# Wrong
+env.regions['goal'] = new_region  # KeyError
+
+# Right
+env.regions.update_region('goal', point=new_point)
+```
+
+### `AttributeError: 'Environment' object has no attribute 'to_linear'`
+
+**Cause**: Calling `to_linear()` on N-D environment. Only 1D (GraphLayout) environments support linearization.
+
+**Solution**: Check `is_1d` first:
+```python
+if env.is_1d:
+    linear_pos = env.to_linear(position)
+else:
+    bin_idx = env.bin_at(position)  # Use this for N-D
+```
+
+### `ValueError: No active bins found`
+
+**Cause**: bin_size too large, threshold too high, or data too sparse.
+
+**Solution**: Read the detailed error message - it provides diagnostics:
+- Data range and extent
+- Grid shape and bin_size used
+- Suggested fixes (reduce bin_size, lower threshold, enable morphological operations)
+
+Example fix:
+```python
+# If bin_size is too large
+env = Environment.from_samples(data, bin_size=1.0)  # Reduce from 10.0
+
+# If threshold is too high
+env = Environment.from_samples(data, bin_size=2.0, bin_count_threshold=1)
+
+# If data is sparse
+env = Environment.from_samples(data, bin_size=2.0, dilate=True, fill_holes=True)
+```
+
+### Pre-commit hooks fail on commit
+
+**Cause**: Linting or formatting issues in code.
+
+**Solution**: Let hooks auto-fix, then commit again:
+```bash
+git commit -m "message"
+# Hooks run and fix files
+git add .  # Stage the fixes
+git commit -m "message"  # Commit again
+```
+
+Or manually run checks before committing:
+```bash
+uv run ruff check . && uv run ruff format .
+git add .
+git commit -m "message"
+```
+
+### Slow test execution
+
+**Cause**: Running tests without parallelization.
+
+**Solution**: Install pytest-xdist and use parallel execution:
+```bash
+uv add --dev pytest-xdist
+uv run pytest -n auto  # Use all CPU cores
+```
+
+### Type errors despite correct code
+
+**Cause**: May be using outdated type stubs or IDE not recognizing runtime checks.
+
+**Note**: This project doesn't require type checking (mypy). If you encounter type errors, they may be IDE warnings that can be ignored if tests pass.
