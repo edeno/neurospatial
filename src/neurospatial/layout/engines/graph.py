@@ -208,7 +208,7 @@ class GraphLayout(_KDTreeMixin):
             )
 
         for node_id, pos in original_node_pos.items():
-            plt.text(
+            ax.text(
                 pos[0],
                 pos[1],
                 str(node_id),

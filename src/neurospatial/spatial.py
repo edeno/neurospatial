@@ -83,9 +83,12 @@ def map_points_to_bins(
     This function builds and caches a KD-tree on the environment's bin_centers
     on first call. Subsequent calls reuse the cached tree for O(log N) performance.
 
-    The cache is stored as a private attribute on the Environment object. If
-    bin_centers are modified after creation (not recommended), the cache will
-    become stale.
+    The cache is stored as a private attribute on the Environment object.
+
+    **IMPORTANT**: Environment objects are designed to be immutable after creation.
+    Modifying bin_centers or other spatial attributes after creation will cause
+    the cache to become stale and produce incorrect results. If you need a modified
+    environment, create a new Environment instance instead.
 
     See Also
     --------

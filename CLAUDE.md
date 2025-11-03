@@ -22,6 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Reference
 
 **Most Common Commands**:
+
 ```bash
 # Run all tests (from project root)
 uv run pytest
@@ -40,6 +41,7 @@ uv run pytest --doctest-modules src/neurospatial/
 ```
 
 **Most Common Patterns**:
+
 ```python
 # Create environment from data
 env = Environment.from_samples(data, bin_size=2.0)  # bin_size is required
@@ -84,6 +86,7 @@ env = Environment()  # ✗ Wrong - won't be fitted
 **Commit Message Format**:
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/):
+
 - `feat(scope): description` - New features
 - `fix(scope): description` - Bug fixes
 - `docs(scope): description` - Documentation changes
@@ -193,11 +196,13 @@ from neurospatial.transforms import Affine2D, translate, rotate, scale
 The connectivity graph (`nx.Graph`) has **mandatory node and edge attributes**:
 
 **Node attributes** (enforced by layout engines):
+
 - `'pos'`: Tuple[float, ...] - N-D coordinates
 - `'source_grid_flat_index'`: int - Flat index in original grid
 - `'original_grid_nd_index'`: Tuple[int, ...] - N-D grid index
 
 **Edge attributes** (enforced by layout engines):
+
 - `'distance'`: float - Euclidean distance between bin centers
 - `'vector'`: Tuple[float, ...] - Displacement vector
 - `'edge_id'`: int - Unique edge ID
@@ -206,6 +211,7 @@ The connectivity graph (`nx.Graph`) has **mandatory node and edge attributes**:
 ### Protocol-Based Design
 
 Layout engines implement the `LayoutEngine` Protocol ([layout/base.py:10-166](src/neurospatial/layout/base.py#L10-L166)), not inheritance. When creating new engines:
+
 - Implement required attributes: `bin_centers`, `connectivity`, `dimension_ranges`, `is_1d`, `_layout_type_tag`, `_build_params_used`
 - Implement required methods: `build()`, `point_to_bin_index()`, `bin_sizes()`, `plot()`
 - Optionally provide grid-specific attributes: `grid_edges`, `grid_shape`, `active_mask`
@@ -217,6 +223,7 @@ Layout engines implement the `LayoutEngine` Protocol ([layout/base.py:10-166](sr
 ### Regions are Immutable
 
 `Region` objects are immutable dataclasses - create new instances rather than modifying existing ones. The `Regions` container uses dict-like semantics:
+
 - Use `regions.add()` to create and insert
 - Use `del regions[name]` or `regions.remove(name)` to delete
 - Trying to set an existing key raises `KeyError` - use explicit update patterns
@@ -224,6 +231,7 @@ Layout engines implement the `LayoutEngine` Protocol ([layout/base.py:10-166](sr
 ### 1D vs N-D Environments
 
 Environments can be 1D (linearized tracks) or N-D (grids):
+
 - 1D: `GraphLayout` with `is_1d=True`, provides `to_linear()` and `linear_to_nd()` methods
 - N-D: Grid-based layouts with spatial queries in original coordinate space
 
@@ -234,6 +242,7 @@ Check `env.is_1d` before calling linearization methods.
 **IMPORTANT: All commands below MUST be prefixed with `uv run` to ensure they execute in the correct virtual environment. Run all commands from the project root directory.**
 
 ### Environment Setup
+
 ```bash
 # Initialize/sync the virtual environment (uv handles this automatically)
 uv sync
@@ -249,6 +258,7 @@ uv pip install -e .
 ```
 
 ### Testing
+
 ```bash
 # Run all tests (most common - use this for verification)
 uv run pytest
@@ -276,6 +286,7 @@ uv run pytest -k "test_bin_size"
 ```
 
 ### Running the Package
+
 ```bash
 # Run any Python script (from project root)
 uv run python path/to/script.py
@@ -285,6 +296,7 @@ uv run python -c "from neurospatial import Environment; print(Environment)"
 ```
 
 ### Python REPL
+
 ```bash
 # Start interactive Python session with package available
 uv run python
@@ -294,6 +306,7 @@ uv run ipython
 ```
 
 ### Code Quality
+
 ```bash
 # Run ruff linter (check for issues)
 uv run ruff check .
@@ -322,6 +335,7 @@ uv run ruff check src/neurospatial/environment.py
 ### Dependencies
 
 Core dependencies:
+
 - `numpy` - Array operations and numerical computing
 - `pandas` - Data structures and analysis
 - `matplotlib` - Plotting and visualization
@@ -332,6 +346,7 @@ Core dependencies:
 - `track-linearization` - 1D track linearization for GraphLayout
 
 Development dependencies:
+
 - `pytest` - Testing framework
 - `pytest-cov` - Test coverage reporting
 - `ruff` - Fast Python linter and formatter
@@ -340,6 +355,7 @@ Development dependencies:
 ## Testing Structure
 
 Tests mirror source structure:
+
 - `tests/test_environment.py` - Core `Environment` class tests
 - `tests/test_composite.py` - `CompositeEnvironment` tests
 - `tests/test_alignment.py` - Alignment/transformation tests
@@ -415,6 +431,7 @@ def function_name(param1, param2):
 #### Common Patterns in This Codebase
 
 **Class docstrings**:
+
 ```python
 class Environment:
     """
@@ -453,9 +470,11 @@ class Environment:
 ## Common Gotchas
 
 ### 1. Always use `uv run`
+
 **Problem**: Running Python commands directly uses the wrong environment.
 
 ❌ Wrong:
+
 ```bash
 python script.py
 pytest
@@ -463,6 +482,7 @@ pip install package
 ```
 
 ✅ Right:
+
 ```bash
 uv run python script.py
 uv run pytest
@@ -470,21 +490,25 @@ uv add package
 ```
 
 ### 2. Check `_is_fitted` state
+
 **Problem**: Calling spatial query methods on unfitted Environment raises error.
 
 ❌ Wrong:
+
 ```python
 env = Environment()  # Not fitted!
 env.bin_at([10.0, 5.0])  # RuntimeError
 ```
 
 ✅ Right:
+
 ```python
 env = Environment.from_samples(data, bin_size=2.0)  # Factory methods fit automatically
 env.bin_at([10.0, 5.0])  # Works
 ```
 
 ### 3. Graph metadata is mandatory
+
 **Problem**: Missing node/edge attributes cause failures in spatial queries.
 
 **Required node attributes**: `'pos'`, `'source_grid_flat_index'`, `'original_grid_nd_index'`
@@ -493,15 +517,18 @@ env.bin_at([10.0, 5.0])  # Works
 All layout engines must populate these. If creating custom graphs, ensure all attributes present.
 
 ### 4. Regions are immutable
+
 **Problem**: Trying to modify Region objects in place fails.
 
 ❌ Wrong:
+
 ```python
 env.regions['goal'].point = new_point  # AttributeError - immutable
 env.regions['goal'] = new_region  # KeyError - can't overwrite
 ```
 
 ✅ Right:
+
 ```python
 env.regions.update_region('goal', point=new_point)  # Creates new Region
 env.regions.add('new_goal', point=point)  # Add new region
@@ -509,15 +536,18 @@ del env.regions['old_goal']  # Delete existing
 ```
 
 ### 5. Check `is_1d` before linearization
+
 **Problem**: Calling `to_linear()` on N-D environments fails.
 
 ❌ Wrong:
+
 ```python
 env = Environment.from_samples(data, bin_size=2.0)  # Creates 2D grid
 linear_pos = env.to_linear(position)  # AttributeError
 ```
 
 ✅ Right:
+
 ```python
 if env.is_1d:
     linear_pos = env.to_linear(position)
@@ -527,15 +557,18 @@ else:
 ```
 
 ### 6. Protocol, not inheritance
+
 **Problem**: Layout engines don't inherit from a base class.
 
 ❌ Wrong:
+
 ```python
 class MyLayout(LayoutEngine):  # LayoutEngine is a Protocol, not a class
     pass
 ```
 
 ✅ Right:
+
 ```python
 class MyLayout:
     """Implements LayoutEngine protocol."""
@@ -545,9 +578,11 @@ class MyLayout:
 ```
 
 ### 7. NumPy docstrings required
+
 **Problem**: Using Google or reStructuredText style docstrings inconsistent with codebase.
 
 ❌ Wrong:
+
 ```python
 def foo(x, y):
     """Does foo.
@@ -559,6 +594,7 @@ def foo(x, y):
 ```
 
 ✅ Right:
+
 ```python
 def foo(x, y):
     """Does foo.
@@ -573,14 +609,17 @@ def foo(x, y):
 ```
 
 ### 8. bin_size is required
+
 **Problem**: Forgetting bin_size parameter causes TypeError.
 
 ❌ Wrong:
+
 ```python
 env = Environment.from_samples(data)  # TypeError: missing required argument
 ```
 
 ✅ Right:
+
 ```python
 env = Environment.from_samples(data, bin_size=2.0)  # Explicit is better
 ```
@@ -588,9 +627,11 @@ env = Environment.from_samples(data, bin_size=2.0)  # Explicit is better
 **Tip**: Choose bin_size based on your data's spatial scale and units (cm, meters, pixels, etc.)
 
 ### 9. Error messages show diagnostics
+
 **What this means**: When validation fails, error messages include the actual invalid values to help debugging. Use these diagnostics to understand what went wrong.
 
 Example:
+
 ```
 ValueError: bin_size must be positive (got -2.0)
 ValueError: No active bins found. Data range: [0.0, 100.0], bin_size: 200.0
@@ -605,6 +646,7 @@ The diagnostic values help identify the problem immediately.
 **Cause**: Dependencies not installed or wrong Python environment.
 
 **Solution**:
+
 ```bash
 # Sync dependencies (run from project root)
 uv sync
@@ -618,6 +660,7 @@ uv run python -c "import neurospatial; print(neurospatial.__file__)"
 **Cause**: Running pytest without `uv run` prefix.
 
 **Solution**:
+
 ```bash
 # Wrong
 pytest
@@ -631,6 +674,7 @@ uv run pytest
 **Cause**: Calling spatial query methods on unfitted Environment.
 
 **Solution**: Use factory methods, not bare `Environment()`:
+
 ```python
 # Wrong
 env = Environment()
@@ -646,6 +690,7 @@ env.bin_at([10, 5])
 **Cause**: Using assignment instead of `update_region()` method.
 
 **Solution**:
+
 ```python
 # Wrong
 env.regions['goal'] = new_region  # KeyError
@@ -659,6 +704,7 @@ env.regions.update_region('goal', point=new_point)
 **Cause**: Calling `to_linear()` on N-D environment. Only 1D (GraphLayout) environments support linearization.
 
 **Solution**: Check `is_1d` first:
+
 ```python
 if env.is_1d:
     linear_pos = env.to_linear(position)
@@ -671,11 +717,13 @@ else:
 **Cause**: bin_size too large, threshold too high, or data too sparse.
 
 **Solution**: Read the detailed error message - it provides diagnostics:
+
 - Data range and extent
 - Grid shape and bin_size used
 - Suggested fixes (reduce bin_size, lower threshold, enable morphological operations)
 
 Example fix:
+
 ```python
 # If bin_size is too large
 env = Environment.from_samples(data, bin_size=1.0)  # Reduce from 10.0
@@ -692,6 +740,7 @@ env = Environment.from_samples(data, bin_size=2.0, dilate=True, fill_holes=True)
 **Cause**: Linting or formatting issues in code.
 
 **Solution**: Let hooks auto-fix, then commit again:
+
 ```bash
 git commit -m "message"
 # Hooks run and fix files
@@ -700,6 +749,7 @@ git commit -m "message"  # Commit again
 ```
 
 Or manually run checks before committing:
+
 ```bash
 uv run ruff check . && uv run ruff format .
 git add .
@@ -711,6 +761,7 @@ git commit -m "message"
 **Cause**: Running tests without parallelization.
 
 **Solution**: Install pytest-xdist and use parallel execution:
+
 ```bash
 uv add --dev pytest-xdist
 uv run pytest -n auto  # Use all CPU cores

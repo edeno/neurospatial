@@ -253,7 +253,7 @@ def _infer_active_bins_from_regular_grid(
         grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
         warnings.warn(
             "infer_active_bins is True, but no data_samples provided. "
-            "Defaulting to all bins active.",
+            "Returning all bins inactive (no data to infer from).",
             UserWarning,
         )
         return np.zeros(grid_shape, dtype=bool)

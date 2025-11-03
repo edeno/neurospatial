@@ -125,6 +125,9 @@ class ImageMaskLayout(_GridMixin):
             y_centers,
             indexing="xy",
         )  # x is cols, y is rows
+        # COORDINATE CONVENTION: Stack as (y, x) to match grid_edges ordering (y_edges, x_edges)
+        # but dimension_ranges is (x_range, y_range). This maintains consistency with
+        # the grid structure where grid_edges defines the actual grid layout.
         full_grid_bin_centers = np.stack(
             (
                 yv.ravel(),

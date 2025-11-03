@@ -120,7 +120,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
             "default": (
                 param.default if param.default is not inspect.Parameter.empty else None
             ),
-            "kind": param.kind.description,
+            "kind": param.kind.name,  # Use .name for Python 3.10+ compatibility
         }
     return params_info
 

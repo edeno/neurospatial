@@ -267,16 +267,16 @@ def regions_containing_points(
     return_dataframe : bool, default=True
         If True, return a pandas DataFrame of shape (n_points, n_selected_regions),
         where each column is the region name and each value is True/False.
-        If False, return a list of lists: each sublist contains Region objects
+        If False, return a list of lists: each sublist contains region names (str)
         that contain the corresponding point.
     point_tolerance : float, default=POINT_TOLERANCE
         Tolerance for comparing query points to point Regions.
 
     Returns
     -------
-    Union[List[List[Region]], pd.DataFrame], length n_points
+    Union[List[List[str]], pd.DataFrame], length n_points
         - If `return_dataframe` is False: A list of length n_points. Each element is
-          a list of :class:`Region` objects that contain the corresponding point.
+          a list of region names (str) that contain the corresponding point.
         - If `return_dataframe` is True: A pandas DataFrame with index
           range(n_points) and columns equal to selected region names.
           Entry (i, col) is True if pts[i] is inside that region.
