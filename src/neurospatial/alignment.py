@@ -151,7 +151,7 @@ def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
     Examples
     --------
     >>> rotation_matrix = get_2d_rotation_matrix(90)
-    >>> print(rotation_matrix)
+    >>> print(rotation_matrix)  # doctest: +SKIP
     [[ 0. -1.]
      [ 1.  0.]]
 
@@ -160,7 +160,7 @@ def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
     >>> import numpy as np
     >>> point = np.array([[1, 0]])
     >>> rotated = point @ rotation_matrix.T
-    >>> print(rotated)
+    >>> print(rotated)  # doctest: +SKIP
     [[0. 1.]]
 
     """

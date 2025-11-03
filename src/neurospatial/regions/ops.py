@@ -23,24 +23,28 @@ the Regions' coordinate space via a SpatialTransform with a `.forward()` method.
 
 Examples
 --------
->>> from pathlib import Path
->>> import numpy as np
->>> from .io import load_labelme_json
->>> from ..transforms import SpatialTransform
->>> from ops import points_in_any_region, regions_containing_points
->>>
->>> transform = SpatialTransform(...)  # pixel→world transform
->>> rois = load_labelme_json(Path("annotations.json"), transform=transform)
->>> pts_pixel = np.random.rand(1000, 2) * 512
->>> mask = points_in_any_region(pts_pixel, rois, transform=transform)
->>> matches = regions_containing_points(
-...     pts_pixel,
-...     rois,
-...     transform=transform,
-...     include_boundary=True,
-...     region_names=["regionA", "regionB"],
-...     return_dataframe=True,
-... )
+Example usage (conceptual):
+
+.. code-block:: python
+
+    from pathlib import Path
+    import numpy as np
+    from neurospatial.regions.io import load_labelme_json
+    from neurospatial.transforms import SpatialTransform
+    from neurospatial.regions.ops import points_in_any_region, regions_containing_points
+
+    transform = SpatialTransform(...)  # pixel→world transform
+    rois = load_labelme_json(Path("annotations.json"), transform=transform)
+    pts_pixel = np.random.rand(1000, 2) * 512
+    mask = points_in_any_region(pts_pixel, rois, transform=transform)
+    matches = regions_containing_points(
+        pts_pixel,
+        rois,
+        transform=transform,
+        include_boundary=True,
+        region_names=["regionA", "regionB"],
+        return_dataframe=True,
+    )
 
 """
 

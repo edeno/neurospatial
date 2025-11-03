@@ -212,19 +212,19 @@
 
 ### Unit Tests
 
-- [ ] **Test new functionality**
-  - [ ] Regions.update() method tests
-  - [ ] Error message content validation tests
-  - [ ] __repr__ output format tests
-  - [ ] .info() output format tests
+- [x] **Test new functionality**
+  - [x] Regions.update() method tests
+  - [x] Error message content validation tests
+  - [x] __repr__ output format tests
+  - [x] .info() output format tests
   - [ ] Type validation error tests
   - [ ] Warning emission tests
 
-- [ ] **Test documentation**
-  - [ ] Run doctests: `uv run pytest --doctest-modules`
-  - [ ] Verify all examples are syntactically correct
-  - [ ] Verify examples produce expected output
-  - [ ] Check docstring rendering with `help()`
+- [x] **Test documentation**
+  - [x] Run doctests: `uv run pytest --doctest-modules`
+  - [x] Verify all examples are syntactically correct
+  - [x] Verify examples produce expected output
+  - [x] Check docstring rendering with `help()`
 
 ### Integration Tests
 

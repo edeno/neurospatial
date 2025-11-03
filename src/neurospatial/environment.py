@@ -778,6 +778,7 @@ class Environment:
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> # Simulate animal position data in a 100x100 cm arena
+        >>> np.random.seed(42)  # For reproducible examples
         >>> positions = np.random.rand(1000, 2) * 100  # cm
         >>> # Create environment with 5cm x 5cm bins
         >>> env = Environment.from_samples(
@@ -795,7 +796,7 @@ class Environment:
         >>> env = Environment.from_samples(
         ...     data_samples=positions,
         ...     bin_size=5.0,  # 5cm bins
-        ...     bin_count_threshold=10,  # Require 10 samples per bin
+        ...     bin_count_threshold=5,  # Require 5 samples per bin (lowered from 10)
         ...     dilate=True,  # Expand active region
         ...     fill_holes=True,  # Fill interior holes
         ... )

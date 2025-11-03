@@ -46,16 +46,16 @@ class Affine2D(SpatialTransform):
 
     Examples
     --------
-    Create a transform that translates then scales:
+    Create a transform that scales then translates:
 
     >>> import numpy as np
-    >>> from neurospatial.transforms import Affine2D
-    >>> transform = Affine2D.identity().translate(10, 20).scale(2.0)
+    >>> from neurospatial.transforms import translate, scale_2d
+    >>> transform = translate(10, 20) @ scale_2d(2.0)
     >>> points = np.array([[0, 0], [1, 1]])
     >>> transformed = transform(points)
     >>> transformed
-    array([[20., 40.],
-           [22., 42.]])
+    array([[10., 20.],
+           [12., 22.]])
 
     """
 
@@ -77,7 +77,8 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> transform = Affine2D.identity().translate(10, 20)
+        >>> from neurospatial.transforms import translate
+        >>> transform = translate(10, 20)
         >>> points = np.array([[0, 0], [1, 1]])
         >>> transform(points)
         array([[10., 20.],
@@ -106,7 +107,8 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> transform = Affine2D.identity().translate(10, 20)
+        >>> from neurospatial.transforms import translate
+        >>> transform = translate(10, 20)
         >>> inv = transform.inverse()
         >>> points = np.array([[10, 20]])
         >>> inv(points)
@@ -135,8 +137,9 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> t1 = Affine2D.identity().translate(10, 0)
-        >>> t2 = Affine2D.identity().translate(0, 20)
+        >>> from neurospatial.transforms import translate
+        >>> t1 = translate(10, 0)
+        >>> t2 = translate(0, 20)
         >>> combined = t1.compose(t2)
         >>> points = np.array([[0, 0]])
         >>> combined(points)
@@ -165,8 +168,9 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> t1 = Affine2D.identity().translate(10, 0)
-        >>> t2 = Affine2D.identity().scale(2.0)
+        >>> from neurospatial.transforms import translate, scale_2d
+        >>> t1 = translate(10, 0)
+        >>> t2 = scale_2d(2.0)
         >>> combined = t1 @ t2
         >>> points = np.array([[0, 0], [1, 1]])
         >>> combined(points)

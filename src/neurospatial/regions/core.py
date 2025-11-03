@@ -291,9 +291,9 @@ class Regions(MutableMapping[str, Region]):
         --------
         >>> from neurospatial.regions import Regions
         >>> regs = Regions()
-        >>> regs.add("center", point=[0.0, 0.0], metadata={"color": "red"})
+        >>> _ = regs.add("center", point=[0.0, 0.0], metadata={"color": "red"})
         >>> # Update coordinates while preserving metadata
-        >>> regs.update_region("center", point=[1.0, 1.0])
+        >>> _ = regs.update_region("center", point=[1.0, 1.0])
         >>> regs["center"].data
         array([1., 1.])
         >>> regs["center"].metadata["color"]
