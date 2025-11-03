@@ -221,7 +221,7 @@ def _create_graph_layout_connectivity_graph(
     bin_ind = np.arange(len(linear_bin_centers))
 
     # Add active bin centers to the graph
-    for node_id, (center_2D, center_1D, original_edge_id, b_ind) in enumerate(
+    for node_id, (center_2d, center_1d, original_edge_id, b_ind) in enumerate(
         zip(
             bin_centers_nd,
             linear_bin_centers,
@@ -234,13 +234,13 @@ def _create_graph_layout_connectivity_graph(
             (
                 int(node_id),
                 {
-                    "pos": tuple(center_2D),
+                    "pos": tuple(center_2d),
                     "source_grid_flat_index": b_ind,
                     "original_grid_nd_index": np.unravel_index(
                         b_ind,
                         linear_bin_centers.shape,
                     ),
-                    "pos_1D": center_1D,
+                    "pos_1D": center_1d,
                     "source_edge_id": original_edge_id,
                 },
             ),
@@ -409,26 +409,26 @@ def _project_1d_to_2d(
     )  # project extremes onto endpoints
 
     # gather endpoint coordinates
-    node_position_2D = nx.get_node_attributes(graph, "pos")
-    start_node_position_2D = np.array(
-        [node_position_2D[edge_order[int(i)][0]] for i in edge_ind],
+    node_position_2d = nx.get_node_attributes(graph, "pos")
+    start_node_position_2d = np.array(
+        [node_position_2d[edge_order[int(i)][0]] for i in edge_ind],
     )
-    end_node_position_2D = np.array(
-        [node_position_2D[edge_order[int(i)][1]] for i in edge_ind],
+    end_node_position_2d = np.array(
+        [node_position_2d[edge_order[int(i)][1]] for i in edge_ind],
     )
 
     # Linear interpolation between endpoints
-    position_2D = (
+    position_2d = (
         1.0 - normalized_edge_position[:, None]
-    ) * start_node_position_2D + normalized_edge_position[
+    ) * start_node_position_2d + normalized_edge_position[
         :,
         None,
-    ] * end_node_position_2D
+    ] * end_node_position_2d
 
     # propagate NaNs from the input
-    position_2D[nan_mask] = np.nan
+    position_2d[nan_mask] = np.nan
 
-    return np.asarray(position_2D, dtype=np.float64)
+    return np.asarray(position_2d, dtype=np.float64)
 
 
 def _find_bin_for_linear_position(

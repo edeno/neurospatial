@@ -250,7 +250,7 @@ def _infer_active_bins_from_regular_grid(
 
     if pos_clean.shape[0] == 0:
         # Handle case with no valid data_sampless
-        grid_shape = tuple(len(e) - 1 for e in edges)
+        grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
         warnings.warn(
             "infer_active_bins is True, but no data_samples provided. "
             "Defaulting to all bins active.",

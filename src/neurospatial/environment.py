@@ -1832,7 +1832,7 @@ class Environment:
 
         return ax
 
-    def plot_1D(
+    def plot_1d(
         self,
         ax: matplotlib.axes.Axes | None = None,
         layout_plot_kwargs: dict[str, Any] | None = None,

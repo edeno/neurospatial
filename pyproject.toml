@@ -110,9 +110,6 @@ ignore = [
     "E501",   # Line too long (handled by formatter)
     "B008",   # Function calls in argument defaults (common in dataclasses)
     "B028",   # No explicit stacklevel in warnings (can add if needed)
-    "N802",   # Function name should be lowercase (allows test_* patterns)
-    "N803",   # Argument name should be lowercase (scientific notation ok)
-    "N806",   # Variable in function should be lowercase (allows common patterns)
     "RUF002", # Ambiguous unicode in docstrings (allow × and math symbols)
     "RUF003", # Ambiguous unicode in comments (allow × and math symbols)
     "TC001",  # Move first-party imports to TYPE_CHECKING (too aggressive)
@@ -121,11 +118,34 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Test files: Allow mathematical notation and test-specific patterns
 "tests/**/*.py" = [
     "S101",    # Allow assert in tests
     "PLR2004", # Allow magic values in tests
     "N802",    # Allow non-lowercase function names in tests
+    "N803",    # Allow uppercase argument names (G, R, etc.) for mathematical objects
+    "N806",    # Allow uppercase variables (G, R, A, T, etc.) for mathematical notation
 ]
+
+# Source files with intentional mathematical notation
+"src/neurospatial/distance.py" = [
+    "N803",  # Allow G (graph) as argument name - standard NetworkX convention
+    "N806",  # Allow G (graph), L (Laplacian) as variables - standard math notation
+]
+"src/neurospatial/transforms.py" = [
+    "N806",  # Allow T (transformation matrix) - standard linear algebra notation
+]
+"src/neurospatial/calibration.py" = [
+    "N806",  # Allow A (affine matrix) - standard linear algebra notation
+]
+"src/neurospatial/composite.py" = [
+    "N806",  # Allow M (adjacency matrix) - standard graph theory notation
+]
+"src/neurospatial/environment.py" = [
+    "N806",  # Allow G (graph) - standard NetworkX convention
+]
+
+# Package init files: Allow unused imports (re-exports)
 "__init__.py" = [
     "F401", # Allow unused imports (re-exports)
 ]

@@ -151,16 +151,16 @@ class CompositeEnvironment:
         # Build index offsets for each sub-environment
         self._subenvs_info = []
         offset = 0
-        for e in subenvs:
-            n_bins = e.bin_centers.shape[0]
+        for env in subenvs:
+            n_bins = env.bin_centers.shape[0]
             self._subenvs_info.append(
-                {"env": e, "start_idx": offset, "end_idx": offset + n_bins - 1},
+                {"env": env, "start_idx": offset, "end_idx": offset + n_bins - 1},
             )
             offset += n_bins
         self._total_bins = offset
 
         # Stack all bin_centers into one array of shape (N_total, n_dims)
-        self.bin_centers = np.vstack([e.bin_centers for e in subenvs])
+        self.bin_centers = np.vstack([env.bin_centers for env in subenvs])
 
         # Build the composite connectivity graph (nodes only for now)
         self.connectivity = nx.Graph()
@@ -218,7 +218,7 @@ class CompositeEnvironment:
             "num_sub_environments": len(subenvs),
             "auto_bridge": auto_bridge,
             "max_mnn_distance": max_mnn_distance,
-            "sub_environment_types": [s.layout_type for s in subenvs],
+            "sub_environment_types": [sub_env.layout_type for sub_env in subenvs],
         }
         self._is_fitted = (
             True  # Composite environment is considered 'fitted' upon construction
@@ -246,9 +246,14 @@ class CompositeEnvironment:
         if not (0 <= i_bin <= max_i) or not (0 <= j_bin <= max_j):
             raise ValueError(f"Bin index out-of-range for bridge: {i_bin}/{j_bin}")
 
-        u = block_i["start_idx"] + i_bin
-        v = block_j["start_idx"] + j_bin
-        self.connectivity.add_edge(u, v, distance=w, weight=1 / w if w > 0 else np.inf)
+        source_composite_bin = block_i["start_idx"] + i_bin
+        target_composite_bin = block_j["start_idx"] + j_bin
+        self.connectivity.add_edge(
+            source_composite_bin,
+            target_composite_bin,
+            distance=w,
+            weight=1 / w if w > 0 else np.inf,
+        )
         self._bridge_list.append(((i_env, i_bin), (j_env, j_bin), w))
 
     def _infer_mnn_bridges(self, max_distance: float | None = None):
@@ -292,10 +297,14 @@ class CompositeEnvironment:
 
                 for i_idx, j_idx in enumerate(idx_ij):
                     if idx_ji[j_idx] == i_idx:
-                        d = dist_ij[i_idx]
-                        if (max_distance is not None) and (d > max_distance):
+                        bridge_distance = dist_ij[i_idx]
+                        if (max_distance is not None) and (
+                            bridge_distance > max_distance
+                        ):
                             continue
-                        self._add_bridge_edge(i, i_idx, j, j_idx, float(d))
+                        self._add_bridge_edge(
+                            i, i_idx, j, j_idx, float(bridge_distance)
+                        )
 
     @property
     def n_dims(self) -> int:
@@ -527,12 +536,12 @@ class CompositeEnvironment:
             for (i_env, i_bin), (j_env, j_bin), w in self._bridge_list:
                 block_i = self._subenvs_info[i_env]
                 block_j = self._subenvs_info[j_env]
-                u = block_i["start_idx"] + i_bin
-                v = block_j["start_idx"] + j_bin
+                source_composite_bin = block_i["start_idx"] + i_bin
+                target_composite_bin = block_j["start_idx"] + j_bin
                 bridge_rows.append(
                     {
-                        "composite_source_bin": u,
-                        "composite_target_bin": v,
+                        "composite_source_bin": source_composite_bin,
+                        "composite_target_bin": target_composite_bin,
                         "distance": w,
                         "weight": 1 / w,
                     },

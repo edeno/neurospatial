@@ -157,7 +157,7 @@ class TestEnvironmentFromGraph:
         plt.close(fig)
 
         fig, ax = plt.subplots()
-        graph_env.plot_1D(ax=ax)
+        graph_env.plot_1d(ax=ax)
         plt.close(fig)
 
     def test_graph_attributes_dataframe(self, graph_env: Environment):
