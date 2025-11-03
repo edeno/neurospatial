@@ -173,13 +173,13 @@
   - [x] Add tests for various configurations
   - [x] Add _repr_html_() for rich Jupyter notebook display
 
-- [ ] **Add .info() method for diagnostics** (`src/neurospatial/environment.py`)
-  - [ ] Implement multi-line detailed summary
-  - [ ] Show: name, dimensions, bins, layout, extent, bin sizes, linearization, regions
-  - [ ] Format output for readability
-  - [ ] Handle edge cases (no regions, variable bin sizes, etc.)
-  - [ ] Add docstring with examples
-  - [ ] Add tests for various configurations
+- [x] **Add .info() method for diagnostics** (`src/neurospatial/environment.py`)
+  - [x] Implement multi-line detailed summary
+  - [x] Show: name, dimensions, bins, layout, extent, bin sizes, linearization, regions
+  - [x] Format output for readability
+  - [x] Handle edge cases (no regions, variable bin sizes, etc.)
+  - [x] Add docstring with examples
+  - [x] Add tests for various configurations
 
 ### Validation Warnings (Optional)
 

@@ -497,6 +497,154 @@ class Environment:
         html_parts.append("</table></div>")
         return "".join(html_parts)
 
+    @check_fitted
+    def info(self) -> str:
+        """Return a detailed multi-line diagnostic summary of the environment.
+
+        This method provides comprehensive diagnostic information about the
+        environment, including geometric properties, layout configuration, and
+        spatial characteristics. The output is formatted for readability with
+        clear labels and organized sections.
+
+        Returns
+        -------
+        str
+            Multi-line formatted string containing detailed environment information.
+
+        See Also
+        --------
+        __repr__ : Single-line concise representation for quick inspection.
+        _repr_html_ : Rich HTML representation for Jupyter notebooks.
+
+        Notes
+        -----
+        This method is particularly useful for:
+
+        - Debugging spatial binning issues
+        - Verifying environment configuration
+        - Understanding the structure of complex environments
+        - Documenting environment parameters for reproducibility
+
+        The output includes all critical diagnostic information:
+
+        - Environment name and layout type
+        - Spatial dimensionality and bin count
+        - Physical extent in each dimension
+        - Bin size statistics (uniform or variable)
+        - Region of interest count
+        - Linearization status (for 1D environments)
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> data = np.random.rand(500, 2) * 100  # 2D data in cm
+        >>> env = Environment.from_samples(data, bin_size=5.0, name="OpenField")
+        >>> print(env.info())  # doctest: +SKIP
+        Environment Information
+        =======================
+        Name: OpenField
+        Layout Type: RegularGridLayout
+        Dimensions: 2
+        Number of Bins: 400
+        <BLANKLINE>
+        Spatial Extent:
+          Dimension 0: [-2.50, 102.50] (range: 105.00)
+          Dimension 1: [-2.50, 102.50] (range: 105.00)
+        <BLANKLINE>
+        Bin Sizes:
+          Dimension 0: 5.00
+          Dimension 1: 5.00
+        <BLANKLINE>
+        Regions: 0
+        """
+        # Build output line by line
+        lines = []
+
+        # Header
+        lines.append("Environment Information")
+        lines.append("=" * 23)
+        lines.append("")
+
+        # Basic information
+        name_display = self.name if self.name else "(unnamed)"
+        lines.append(f"Name: {name_display}")
+        lines.append(f"Layout Type: {self.layout_type}")
+        lines.append(f"Dimensions: {self.n_dims}")
+        lines.append(f"Number of Bins: {self.n_bins}")
+        lines.append("")
+
+        # Spatial extent
+        lines.append("Spatial Extent:")
+        for dim_idx, (dim_min, dim_max) in enumerate(self.dimension_ranges):
+            dim_range = dim_max - dim_min
+            lines.append(
+                f"  Dimension {dim_idx}: [{dim_min:.2f}, {dim_max:.2f}] "
+                f"(range: {dim_range:.2f})"
+            )
+        lines.append("")
+
+        # Bin sizes
+        lines.append("Bin Sizes:")
+        try:
+            bin_sizes_array = self.bin_sizes
+
+            # Check if all bins have the same size (uniform)
+            if np.allclose(bin_sizes_array, bin_sizes_array[0]):
+                # Uniform bin size - for grids, extract per-dimension from grid_edges
+                if self.grid_edges and all(len(e) > 1 for e in self.grid_edges):
+                    for dim_idx, edges in enumerate(self.grid_edges):
+                        dim_sizes = np.diff(edges)
+                        if np.allclose(dim_sizes, dim_sizes[0]):
+                            lines.append(f"  Dimension {dim_idx}: {dim_sizes[0]:.2f}")
+                        else:
+                            lines.append(
+                                f"  Dimension {dim_idx}: variable "
+                                f"(mean: {np.mean(dim_sizes):.2f}, "
+                                f"std: {np.std(dim_sizes):.2f})"
+                            )
+                else:
+                    # Non-grid layout or 1D - show the uniform measure
+                    measure_name = (
+                        "Size"
+                        if self.n_dims == 1
+                        else "Area"
+                        if self.n_dims == 2
+                        else "Volume"
+                    )
+                    lines.append(f"  {measure_name}: {bin_sizes_array[0]:.2f}")
+            else:
+                # Variable bin sizes
+                lines.append(
+                    f"  Variable (mean: {np.mean(bin_sizes_array):.2f}, "
+                    f"std: {np.std(bin_sizes_array):.2f}, "
+                    f"range: [{np.min(bin_sizes_array):.2f}, {np.max(bin_sizes_array):.2f}])"
+                )
+        except (AttributeError, RuntimeError, ValueError):
+            lines.append("  (not available)")
+        lines.append("")
+
+        # Regions
+        n_regions = len(self.regions) if self.regions else 0
+        if n_regions > 0:
+            lines.append(f"Regions: {n_regions} defined")
+            # Show region names if not too many
+            if n_regions <= 5:
+                for region_name in self.regions:
+                    lines.append(f"  - {region_name}")
+            else:
+                lines.append("  (use env.regions to inspect all regions)")
+        else:
+            lines.append("Regions: None")
+        lines.append("")
+
+        # 1D-specific information
+        if hasattr(self, "is_1d") and self.is_1d:
+            lines.append("Linearization: Available (1D environment)")
+            lines.append("")
+
+        return "\n".join(lines)
+
     def _setup_from_layout(self) -> None:
         """Populate Environment attributes from its (built) LayoutEngine.
 
