@@ -344,5 +344,5 @@ class Environment:
 5. **Check `is_1d`** - Only GraphLayout supports linearization methods
 6. **Protocol, not inheritance** - Layout engines implement protocol, don't inherit from base class
 7. **NumPy docstrings** - Use NumPy docstring format for all documentation, not Google or reStructuredText style
-8. **bin_size is required** - As of v0.1.0, bin_size has no default value in factory methods; always specify explicitly
+8. **bin_size is required** - The bin_size parameter has no default value in factory methods; always specify explicitly
 9. **Error messages show diagnostics** - Validation errors include actual invalid values to aid debugging
