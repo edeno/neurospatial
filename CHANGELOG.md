@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.1.0] - 2025-11-03
+
+## What's Changed
+
+### Features
+
+
+### Bug Fixes
+
+
+### Documentation
+
+
+### Other Changes
+
+
+**Full Changelog**: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.1.0
+
+
 All notable changes to the neurospatial project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
