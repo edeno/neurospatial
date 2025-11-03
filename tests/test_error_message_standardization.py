@@ -99,10 +99,10 @@ class TestCalibrationErrorMessages:
 
     def test_offset_px_wrong_type_shows_helpful_message(self):
         """Test that offset_px with wrong type shows helpful message."""
-        bad_offset = "not_a_tuple"  # type: ignore
+        bad_offset = "not_a_tuple"  # pyright: ignore[reportAssignmentType]
 
         with pytest.raises(ValueError) as exc_info:
-            simple_scale(px_per_cm=2.0, offset_px=bad_offset)  # type: ignore
+            simple_scale(px_per_cm=2.0, offset_px=bad_offset)  # pyright: ignore[reportArgumentType]
 
         error_msg = str(exc_info.value)
         # Should explain it needs a tuple of two numeric values

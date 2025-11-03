@@ -11,14 +11,14 @@ from __future__ import annotations
 import contextlib
 import warnings
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import matplotlib
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D  # type: ignore[import-untyped]
-from mpl_toolkits.mplot3d.art3d import Line3DCollection  # type: ignore[import-untyped]
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
@@ -474,7 +474,7 @@ def _generic_graph_plot(
         with contextlib.suppress(AttributeError):
             ax.pbaspect = [1, 1, 1]  # Older attribute
 
-    return ax
+    return cast("matplotlib.axes.Axes", ax)
 
 
 def flat_to_multi_index(

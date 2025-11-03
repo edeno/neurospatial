@@ -456,7 +456,7 @@ def _create_regular_grid(
     # 5) Generate core edges via np.histogramdd
     #    Use a dummy point at the center if `samples` is None
     if samples is None:
-        dummy = np.array([[(lo + hi) / 2.0 for lo, hi in ranges]])
+        dummy = np.array([[(lo + hi) / 2.0 for lo, hi in ranges]])  # type: ignore[unreachable]
         _, core_edges = np.histogramdd(dummy, bins=n_bins, range=ranges)
     else:
         _, core_edges = np.histogramdd(samples, bins=n_bins, range=ranges)

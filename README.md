@@ -43,6 +43,24 @@ pip install -e ".[dev]"
 
 **Note**: This project uses `uv` for package management. If you have `uv` installed, all commands should be prefixed with `uv run` (e.g., `uv run pytest`).
 
+### Tested Dependency Versions
+
+neurospatial v0.1.0 has been tested with the following dependency versions:
+
+| Package | Tested Version |
+|---------|---------------|
+| Python | 3.13.5 |
+| numpy | 2.3.4 |
+| pandas | 2.3.3 |
+| matplotlib | 3.10.7 |
+| networkx | 3.5 |
+| scipy | 1.16.3 |
+| scikit-learn | 1.7.2 |
+| shapely | 2.1.2 |
+| track-linearization | 2.4.0 |
+
+These versions represent the tested configuration. neurospatial likely works with a range of versions for each dependency, but these specific versions have full test coverage.
+
 ## Quickstart
 
 Here's a minimal example showing how to create an environment from spatial data:

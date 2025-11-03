@@ -61,6 +61,14 @@ opencv = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatchling.build.targets.wheel]
+packages = ["src/neurospatial"]
+
+[tool.hatchling.build.targets.sdist]
+include = [
+    "src/neurospatial/py.typed",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
@@ -135,6 +143,7 @@ strict = false
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*", "**/__pycache__/*"]
+branch = true
 
 [tool.coverage.report]
 exclude_lines = [

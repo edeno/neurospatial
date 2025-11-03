@@ -17,3 +17,17 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - numpy
+          - pandas
+          - matplotlib
+          - networkx
+          - scipy
+          - scikit-learn
+          - shapely
+        args: [--ignore-missing-imports, --warn-unused-ignores]

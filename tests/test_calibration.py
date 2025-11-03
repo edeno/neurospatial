@@ -102,12 +102,12 @@ class TestSimpleScale:
         with pytest.raises(
             ValueError, match="offset_px must be a tuple of two numeric values"
         ):
-            simple_scale(10.0, offset_px="invalid")  # type: ignore
+            simple_scale(10.0, offset_px="invalid")  # pyright: ignore[reportArgumentType]
 
     def test_invalid_offset_length(self):
         """Test that offset with wrong number of elements raises ValueError."""
         with pytest.raises(ValueError, match="offset_px must be a tuple"):
-            simple_scale(10.0, offset_px=(1.0,))  # type: ignore
+            simple_scale(10.0, offset_px=(1.0,))  # pyright: ignore[reportArgumentType]
 
     def test_inverse_transform(self):
         """Test that inverse transform works correctly."""

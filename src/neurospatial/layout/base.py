@@ -123,7 +123,7 @@ class LayoutEngine(Protocol):
     # --- Required Data Attributes ---
     bin_centers: NDArray[np.float64]
     connectivity: nx.Graph
-    dimension_ranges: Sequence[tuple[float, float]]
+    dimension_ranges: Sequence[tuple[float, float]] | None
 
     # Attributes primarily for GRID-BASED Layouts
     grid_edges: tuple[NDArray[np.float64], ...] | None = None

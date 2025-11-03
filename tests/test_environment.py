@@ -17,7 +17,6 @@ from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
 from neurospatial.layout.engines.image_mask import ImageMaskLayout
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 from neurospatial.layout.engines.shapely_polygon import (
     ShapelyPolygonLayout,
 )
@@ -186,7 +185,7 @@ class TestEnvironmentFromDataSamplesGrid:
     def test_creation_grid(self, grid_env_from_samples: Environment):
         """Test basic attributes for grid layout."""
         assert grid_env_from_samples.name == "PlusMazeGrid"
-        assert isinstance(grid_env_from_samples.layout, RegularGridLayout)
+        assert grid_env_from_samples.layout._layout_type_tag == "RegularGrid"
         assert grid_env_from_samples._is_fitted
         assert not grid_env_from_samples.is_1d
         assert grid_env_from_samples.n_dims == 2
@@ -225,6 +224,7 @@ class TestEnvironmentFromDataSamplesGrid:
         # For points inside grid_edges but in an inactive bin, it should also be -1.
         # The ValueError in ravel_multi_index typically happens if np.digitize gives out-of-bounds indices.
         # Let's test a point guaranteed to be outside all edges.
+        assert grid_env_from_samples.grid_edges is not None
         min_x_coord = grid_env_from_samples.grid_edges[0][0]
         min_y_coord = grid_env_from_samples.grid_edges[1][0]
         point_far_left_bottom = np.array([[min_x_coord - 10.0, min_y_coord - 10.0]])
@@ -365,7 +365,7 @@ def env_with_disconnected_regions() -> Environment:
     active_mask = np.zeros((10, 10), dtype=bool)
     active_mask[1:3, 1:3] = True  # Region 1
     active_mask[7:9, 7:9] = True  # Region 2
-    grid_edges = (np.arange(11.0), np.arange(11.0))
+    grid_edges = (np.arange(11, dtype=np.float64), np.arange(11, dtype=np.float64))
     return Environment.from_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
@@ -436,9 +436,11 @@ class TestFromDataSamplesDetailed:
         # Dilation should increase the number of active bins or keep it same
         assert dilated_env.bin_centers.shape[0] >= base_env.bin_centers.shape[0]
         if base_env.bin_centers.shape[0] > 0:  # Only if base had active bins
-            assert dilated_env.bin_centers.shape[0] > base_env.bin_centers.shape[
-                0
-            ] or np.array_equal(dilated_env.active_mask, base_env.active_mask)
+            assert dilated_env.bin_centers.shape[0] > base_env.bin_centers.shape[0] or (
+                dilated_env.active_mask is not None
+                and base_env.active_mask is not None
+                and np.array_equal(dilated_env.active_mask, base_env.active_mask)
+            )
 
         # Creating specific scenarios for fill_holes and close_gaps for concise unit tests
         # requires very careful crafting of data_samples and bin_size, which can be complex.
@@ -485,9 +487,13 @@ class TestFromDataSamplesDetailed:
             data_for_morpho_ops, bin_size=1.0, add_boundary_bins=True
         )
 
+        assert env_with_boundary.grid_shape is not None
+        assert env_no_boundary.grid_shape is not None
         assert env_with_boundary.grid_shape[0] > env_no_boundary.grid_shape[0]
         assert env_with_boundary.grid_shape[1] > env_no_boundary.grid_shape[1]
         # Check that boundary bins are indeed outside the range of non-boundary bins
+        assert env_with_boundary.grid_edges is not None
+        assert env_no_boundary.grid_edges is not None
         assert env_with_boundary.grid_edges[0][0] < env_no_boundary.grid_edges[0][0]
         assert env_with_boundary.grid_edges[0][-1] > env_no_boundary.grid_edges[0][-1]
 
@@ -543,6 +549,7 @@ class TestHexagonalLayout:
         # R = s. So R = w / sqrt(3).
         # Area = (3 * np.sqrt(3) / 2.0) * (env_hexagonal.layout.hex_radius_)**2
         # Layout stores hex_radius_
+        assert hasattr(env_hexagonal.layout, "hexagon_width")
         (3 * np.sqrt(3) / 2.0) * (env_hexagonal.layout.hexagon_width / np.sqrt(3)) ** 2
         expected_area_simplified = (
             np.sqrt(3) / 2.0
@@ -572,6 +579,7 @@ class TestHexagonalLayout:
                 # For pointy-top, horizontal distance between centers = width
                 # Vertical distance between rows = width * sqrt(3)/2
                 # Neighbor distance should be side length = radius
+                assert hasattr(env_hexagonal.layout, "hexagon_width")
                 side_length = env_hexagonal.layout.hexagon_width / np.sqrt(3)
                 assert pytest.approx(dist, rel=0.1) == side_length  # Approx
 
@@ -675,6 +683,7 @@ def simple_hex_env(plus_maze_data_samples) -> Environment:
     """Basic hexagonal environment for mask testing."""
     return Environment.from_samples(
         data_samples=plus_maze_data_samples,  # Use existing samples
+        bin_size=2.0,  # Required parameter
         layout_type="Hexagonal",
         hexagon_width=2.0,  # Reasonably large hexes
         name="SimpleHexEnvForMask",
