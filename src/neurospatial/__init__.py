@@ -6,6 +6,7 @@ from neurospatial.alignment import (
 )
 from neurospatial.distance import distance_field, pairwise_distances
 from neurospatial.environment import Environment
+from neurospatial.kernels import compute_diffusion_kernels
 from neurospatial.layout.factories import (
     get_layout_parameters,
     list_available_layouts,
@@ -23,6 +24,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 __all__ = [
     "Environment",
     "apply_transform_to_environment",
+    "compute_diffusion_kernels",
     "distance_field",
     "estimate_transform",
     "get_2d_rotation_matrix",

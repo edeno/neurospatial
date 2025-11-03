@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property, wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import matplotlib.axes
 import networkx as nx
@@ -250,6 +250,11 @@ class Environment:
 
     # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
     _kdtree_cache: Any = field(init=False, default=None, repr=False)
+
+    # Kernel cache for smoothing operations (keyed by (bandwidth, mode))
+    _kernel_cache: dict[tuple[float, str], NDArray] = field(
+        init=False, default_factory=dict, repr=False
+    )
 
     # For introspection and serialization
     _layout_type_used: str | None = field(init=False, default=None)
@@ -1506,6 +1511,102 @@ class Environment:
 
         """
         return self.layout.bin_sizes()
+
+    @check_fitted
+    def compute_kernel(
+        self,
+        bandwidth: float,
+        *,
+        mode: Literal["transition", "density"] = "density",
+        cache: bool = True,
+    ) -> NDArray[np.float64]:
+        """Compute diffusion kernel for smoothing operations.
+
+        Convenience wrapper for kernels.compute_diffusion_kernels() that
+        automatically uses this environment's connectivity graph and bin sizes.
+
+        Parameters
+        ----------
+        bandwidth : float
+            Smoothing bandwidth in physical units (σ in the Gaussian kernel).
+            Controls the scale of diffusion.
+        mode : {'transition', 'density'}, default='density'
+            Normalization mode:
+
+            - 'transition': Each column sums to 1 (discrete probability).
+            - 'density': Each column integrates to 1 over bin volumes
+              (continuous density).
+        cache : bool, default=True
+            If True, cache the computed kernel for reuse. Subsequent calls
+            with the same (bandwidth, mode) will return the cached result.
+
+        Returns
+        -------
+        kernel : NDArray[np.float64], shape (n_bins, n_bins)
+            Diffusion kernel matrix where kernel[:, j] represents the smoothed
+            distribution resulting from a unit mass at bin j.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        ValueError
+            If bandwidth is not positive.
+
+        See Also
+        --------
+        neurospatial.kernels.compute_diffusion_kernels :
+            Lower-level function with more control.
+
+        Notes
+        -----
+        The kernel is computed via matrix exponential of the graph Laplacian:
+
+        .. math::
+            K = \\exp(-t L)
+
+        where :math:`t = \\sigma^2 / 2` and :math:`L` is the graph Laplacian.
+
+        For mode='density', the Laplacian is volume-corrected to properly
+        handle bins of varying sizes.
+
+        Performance warning: Kernel computation has O(n³) complexity where
+        n is the number of bins. For large environments (>1000 bins),
+        computation may be slow. Consider caching or using smaller bandwidths.
+
+        Examples
+        --------
+        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> # Compute kernel for smoothing
+        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
+        >>> # Apply to field
+        >>> smoothed_field = kernel @ field
+        """
+        from neurospatial.kernels import compute_diffusion_kernels
+
+        # Initialize cache if it doesn't exist
+        # (for backward compatibility with environments deserialized from older versions)
+        if not hasattr(self, "_kernel_cache"):
+            self._kernel_cache = {}
+
+        # Check cache first if enabled
+        cache_key = (bandwidth, mode)
+        if cache and cache_key in self._kernel_cache:
+            return self._kernel_cache[cache_key]
+
+        # Compute kernel
+        kernel = compute_diffusion_kernels(
+            graph=self.connectivity,
+            bandwidth_sigma=bandwidth,
+            bin_sizes=self.bin_sizes if mode == "density" else None,
+            mode=mode,
+        )
+
+        # Store in cache if enabled
+        if cache:
+            self._kernel_cache[cache_key] = kernel
+
+        return kernel
 
     @cached_property
     @check_fitted

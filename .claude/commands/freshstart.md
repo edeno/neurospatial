@@ -6,11 +6,9 @@ Your workflow MUST be:
 
     First, read these files IN ORDER:
         CLAUDE.md (implementation guide)
-        docs/SCRATCHPAD.md (notes and current status)
-        docs/TASKS.md (current tasks)
-
-    THEN if you need more detail:
-        docs/UX_IMPLEMENTATION_PLAN.md (overall project plan)
+        SCRATCHPAD.md (notes and current status)
+        TASKS.md (current tasks)
+        ENVIRONMENT_OPS_PLAN.md (overall project plan)
 
     Find the FIRST unchecked [ ] task in TASKS.md
 
