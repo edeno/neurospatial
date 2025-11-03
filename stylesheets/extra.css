@@ -1,0 +1,53 @@
+/* Custom CSS for neurospatial documentation */
+
+/* Improve code block appearance */
+.highlight {
+    border-radius: 0.2rem;
+}
+
+/* Add some spacing to admonitions */
+.admonition {
+    margin: 1.5625em 0;
+}
+
+/* Improve table appearance */
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+table th,
+table td {
+    padding: 0.625em;
+}
+
+/* Code inline styling */
+code {
+    padding: 0.125em 0.25em;
+    border-radius: 0.2rem;
+}
+
+/* Better spacing for navigation items */
+.md-nav__item {
+    padding: 0.2em 0;
+}
+
+/* Adjust font sizes for better readability */
+.md-typeset h1 {
+    font-weight: 600;
+}
+
+.md-typeset h2 {
+    font-weight: 600;
+    margin-top: 2em;
+}
+
+/* Improve API documentation appearance */
+.doc-heading {
+    font-weight: 600;
+}
+
+/* Add some spacing to parameter lists */
+.field-list {
+    margin-top: 1em;
+}
