@@ -374,7 +374,7 @@ class GraphLayout(_KDTreeMixin):
         )
         # Ensure we return NDArray, not int
         if isinstance(result, int):
-            return np.array([result], dtype=np.int_)
+            return np.array([result], dtype=int)
         return result
 
     def bin_sizes(self) -> NDArray[np.float64]:

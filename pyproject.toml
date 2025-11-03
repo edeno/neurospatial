@@ -136,6 +136,11 @@ ignore = [
     "N806",    # Allow uppercase variables (G, R, A, T, etc.) for mathematical notation
 ]
 
+# Example notebooks: Allow imports in cells (converted from .ipynb)
+"examples/*.py" = [
+    "E402",  # Module level import not at top of file (common in notebook cells)
+]
+
 # Source files with intentional mathematical notation
 "src/neurospatial/distance.py" = [
     "N803",  # Allow G (graph) as argument name - standard NetworkX convention

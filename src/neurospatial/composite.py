@@ -5,10 +5,11 @@ This class exposes the same public interface as the base `Environment` class:
   - Properties: n_dims, n_bins, bin_centers, connectivity, is_1d, dimension_ranges,
                 grid_edges, grid_shape, active_mask, regions
   - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
-                bin_attributes, edge_attributes
+                bins_in_region, mask_for_region, shortest_path, info,
+                save, load, bin_attributes, edge_attributes, plot
 
-(Note: serialization methods such as save/load and factory methods like from_layout are not included,
-since CompositeEnvironment wraps pre-fitted sub-environments.)
+(Note: factory methods like from_layout are not included, since CompositeEnvironment
+wraps pre-fitted sub-environments. plot_1d is not applicable for composite environments.)
 """
 
 from collections.abc import Sequence
@@ -84,6 +85,7 @@ class CompositeEnvironment:
         subenvs: list[Environment],
         auto_bridge: bool = True,
         max_mnn_distance: float | None = None,
+        use_kdtree_query: bool = True,
     ):
         """Build a CompositeEnvironment from a list of pre-fitted Environment instances.
 
@@ -92,11 +94,14 @@ class CompositeEnvironment:
         subenvs : List[Environment]
             A list of fitted Environment objects. All must share the same n_dims.
         auto_bridge : bool, default=True
-            If True, automatically infer “bridge edges” between each pair of sub-environments
+            If True, automatically infer "bridge edges" between each pair of sub-environments
             using a mutual nearest-neighbor heuristic on their bin_centers.
         max_mnn_distance : Optional[float]
             If provided, any automatically inferred bridge whose Euclidean distance exceeds
             this threshold is discarded. If None, no distance filtering is applied.
+        use_kdtree_query : bool, default=True
+            If True, use KDTree-based bin_at() for O(M log N) performance. If False,
+            use sequential query through each sub-environment (original O(N×M) behavior).
 
         Common Pitfalls
         ---------------
@@ -122,6 +127,8 @@ class CompositeEnvironment:
         """
         if len(subenvs) == 0:
             raise ValueError("At least one sub-environment is required.")
+
+        self._use_kdtree_query = use_kdtree_query
 
         # Validate that all sub-environments share the same n_dims and are fitted
         self._n_dims = subenvs[0].n_dims
@@ -177,6 +184,11 @@ class CompositeEnvironment:
         self._bridge_list: list[tuple[tuple[int, int], tuple[int, int], float]] = []
         if auto_bridge:
             self._infer_mnn_bridges(max_mnn_distance)
+
+        # Build KDTree for optimized bin_at() if requested
+        self._kdtree: KDTree | None = None
+        if self._use_kdtree_query and self.bin_centers.shape[0] > 0:
+            self._kdtree = KDTree(self.bin_centers, leaf_size=40)
 
         # Properties to match Environment interface
         self.is_1d = False
@@ -356,8 +368,12 @@ class CompositeEnvironment:
 
         Notes
         -----
-        Calls each subenv.bin_at(points_nd) and uses the first match.
-        Composite index = sub_idx + start_idx for the matching sub-environment.
+        If use_kdtree_query=True (default), uses KDTree for O(M log N) performance.
+        Otherwise, sequentially queries each sub-environment for O(N×M) performance.
+
+        The KDTree approach finds nearest bin centers globally, then verifies each
+        point is actually contained by that bin using the sub-environment's contains()
+        method. This is much faster for large numbers of sub-environments.
 
         """
         if points_nd.ndim != 2 or points_nd.shape[1] != self.n_dims:
@@ -366,8 +382,37 @@ class CompositeEnvironment:
             )
 
         M = points_nd.shape[0]
-        out = np.full((M,), -1, dtype=int)
 
+        # Use KDTree-based approach if available
+        # Note: Still respects sub-environment order (earlier in list wins)
+        if self._kdtree is not None:
+            out = np.full((M,), -1, dtype=int)
+
+            # Process each sub-environment in order (maintain first-match semantics)
+            for block in self._subenvs_info:
+                env_i = block["env"]
+                base = block["start_idx"]
+
+                # Only query points that haven't been matched yet
+                unmapped_mask = out == -1
+                if not np.any(unmapped_mask):
+                    break  # All points mapped
+
+                unmapped_points = points_nd[unmapped_mask]
+                sub_idxs = env_i.bin_at(unmapped_points)
+
+                # Update output for matches
+                matched_in_subenv = sub_idxs >= 0
+                if np.any(matched_in_subenv):
+                    # Map back to full array indices
+                    unmapped_indices = np.where(unmapped_mask)[0]
+                    matched_indices = unmapped_indices[matched_in_subenv]
+                    out[matched_indices] = sub_idxs[matched_in_subenv] + base
+
+            return out
+
+        # Fall back to sequential query (original behavior)
+        out = np.full((M,), -1, dtype=int)
         for block in self._subenvs_info:
             env_i = block["env"]
             base = block["start_idx"]
@@ -551,6 +596,369 @@ class CompositeEnvironment:
 
         composite_edges_df = pd.concat(dfs, ignore_index=True)
         return composite_edges_df
+
+    def bins_in_region(self, region_name: str) -> NDArray[np.int_]:
+        """Get composite bin indices that fall within a specified named region.
+
+        Parameters
+        ----------
+        region_name : str
+            Name of a defined region in `self.regions`.
+
+        Returns
+        -------
+        NDArray[np.int_]
+            Array of composite bin indices (0 to n_bins - 1) that fall within
+            the specified region.
+
+        Raises
+        ------
+        KeyError
+            If `region_name` is not found in `self.regions`.
+        ValueError
+            If region type is unsupported or dimensions mismatch.
+
+        Notes
+        -----
+        This method queries the region against all bin centers in the composite
+        environment. For point regions, returns bins containing that point.
+        For polygon regions (requires shapely), returns all bins whose centers
+        fall within the polygon.
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment([env1, env2])
+        >>> comp.regions.add("goal", point=[10.0, 5.0])
+        >>> goal_bins = comp.bins_in_region("goal")
+        >>> print(f"Goal region contains {len(goal_bins)} bins")
+
+        """
+        region = self.regions[region_name]
+
+        if region.kind == "point":
+            # Point region - find bin at that point
+            point_nd = np.asarray(region.data).reshape(1, -1)
+            if point_nd.shape[1] != self.n_dims:
+                raise ValueError(
+                    f"Region point dimension {point_nd.shape[1]} "
+                    f"does not match environment dimension {self.n_dims}.",
+                )
+            bin_idx = self.bin_at(point_nd)
+            return np.asarray(bin_idx[bin_idx != -1], dtype=int)
+
+        if region.kind == "polygon":
+            # Polygon region - check which bin centers are inside
+            try:
+                import shapely
+            except ImportError as e:
+                raise RuntimeError(
+                    "Polygon region queries require 'shapely'. "
+                    "Install it with: pip install shapely"
+                ) from e
+
+            if self.n_dims != 2:
+                raise ValueError(
+                    f"Polygon regions are only supported for 2D environments. "
+                    f"This composite environment has {self.n_dims} dimensions."
+                )
+
+            polygon = region.data
+            x_coords = self.bin_centers[:, 0]
+            y_coords = self.bin_centers[:, 1]
+            contained_mask = shapely.contains_xy(polygon, x_coords, y_coords)
+            return np.where(contained_mask)[0].astype(int)
+
+        raise ValueError(
+            f"Unsupported region kind: '{region.kind}'. "
+            f"Supported kinds: 'point', 'polygon'."
+        )
+
+    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
+        """Get boolean mask for bins in a specified region.
+
+        Parameters
+        ----------
+        region_name : str
+            Name of a defined region in `self.regions`.
+
+        Returns
+        -------
+        NDArray[np.bool_], shape (n_bins,)
+            Boolean mask where True indicates the bin is within the region.
+
+        Raises
+        ------
+        KeyError
+            If `region_name` is not found in `self.regions`.
+        ValueError
+            If region type is unsupported or dimensions mismatch.
+
+        Notes
+        -----
+        This is a convenience method that returns a boolean mask instead of
+        bin indices. Equivalent to:
+            mask = np.zeros(env.n_bins, dtype=bool)
+            mask[env.bins_in_region(region_name)] = True
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment([env1, env2])
+        >>> comp.regions.add("arena", polygon=shapely_polygon)
+        >>> arena_mask = comp.mask_for_region("arena")
+        >>> occupancy_in_arena = occupancy[arena_mask]
+
+        """
+        mask = np.zeros(self.n_bins, dtype=bool)
+        bins = self.bins_in_region(region_name)
+        mask[bins] = True
+        return mask
+
+    def shortest_path(
+        self, source_bin: int, target_bin: int, edge_weight: str = "distance"
+    ) -> list[int]:
+        """Find shortest path between two bin indices in the composite graph.
+
+        Parameters
+        ----------
+        source_bin : int
+            Composite bin index to start from (0 to n_bins - 1).
+        target_bin : int
+            Composite bin index to reach (0 to n_bins - 1).
+        edge_weight : str, default="distance"
+            Edge attribute to use as weight for pathfinding.
+
+        Returns
+        -------
+        list[int]
+            List of composite bin indices forming the shortest path from
+            source_bin to target_bin, including both endpoints. Returns
+            empty list if no path exists.
+
+        Raises
+        ------
+        nx.NodeNotFound
+            If source_bin or target_bin is not in the graph.
+
+        Warnings
+        --------
+        UserWarning
+            If no path exists between the bins (disconnected components).
+
+        Notes
+        -----
+        Uses NetworkX shortest_path with specified edge weights. The path
+        may cross bridge edges connecting different sub-environments.
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment([env1, env2], auto_bridge=True)
+        >>> path = comp.shortest_path(0, 100)  # Path from bin 0 to bin 100
+        >>> print(f"Path length: {len(path)} bins")
+
+        """
+        try:
+            path: list[int] = nx.shortest_path(
+                self.connectivity,
+                source=source_bin,
+                target=target_bin,
+                weight=edge_weight,
+            )
+            return path
+        except nx.NetworkXNoPath:
+            import warnings
+
+            warnings.warn(
+                f"No path found between bin {source_bin} and bin {target_bin}. "
+                f"The bins may be in disconnected components. "
+                f"Returning empty path.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return []
+
+    def info(self, return_string: bool = False) -> str | None:
+        """Print or return diagnostic information about the composite environment.
+
+        Parameters
+        ----------
+        return_string : bool, default=False
+            If True, return the info string instead of printing.
+
+        Returns
+        -------
+        str or None
+            If return_string=True, returns the formatted info string.
+            Otherwise prints to stdout and returns None.
+
+        Notes
+        -----
+        Displays summary information including:
+        - Number of sub-environments
+        - Total bins and dimensions
+        - Number of bridge edges connecting sub-environments
+        - Per-sub-environment statistics (type, bins, regions)
+        - Bridge edge statistics
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment([env1, env2], auto_bridge=True)
+        >>> comp.info()
+        Composite Environment Information
+        ==================================
+        ...
+
+        """
+        lines = []
+        lines.append("Composite Environment Information")
+        lines.append("=" * 50)
+        lines.append(f"Number of sub-environments: {len(self._subenvs_info)}")
+        lines.append(f"Total bins: {self.n_bins}")
+        lines.append(f"Dimensions: {self.n_dims}")
+        lines.append(f"Bridge edges: {len(self._bridge_list)}")
+        lines.append("")
+
+        lines.append("Sub-Environment Details:")
+        lines.append("-" * 50)
+        for i, block in enumerate(self._subenvs_info):
+            env_i = block["env"]
+            lines.append(f"  [{i}] {env_i.name or '(unnamed)'}")
+            lines.append(f"      Type: {env_i.layout_type}")
+            lines.append(
+                f"      Bins: {env_i.n_bins} (composite indices: {block['start_idx']}-{block['end_idx']})"
+            )
+            lines.append(f"      Regions: {len(env_i.regions)}")
+            if len(env_i.regions) > 0:
+                lines.append(f"               {list(env_i.regions.keys())}")
+        lines.append("")
+
+        lines.append("Bridge Statistics:")
+        lines.append("-" * 50)
+        if self._bridge_list:
+            distances = [w for _, _, w in self._bridge_list]
+            lines.append(f"  Count: {len(self._bridge_list)}")
+            lines.append(f"  Min distance: {min(distances):.4f}")
+            lines.append(f"  Max distance: {max(distances):.4f}")
+            lines.append(f"  Mean distance: {np.mean(distances):.4f}")
+        else:
+            lines.append(
+                "  No bridges (auto_bridge=False or no mutual nearest neighbors found)"
+            )
+        lines.append("")
+
+        lines.append("Composite Regions:")
+        lines.append("-" * 50)
+        if len(self.regions) > 0:
+            for name, region in self.regions.items():
+                lines.append(f"  - {name}: {region.kind}")
+        else:
+            lines.append("  (No regions defined)")
+
+        info_str = "\n".join(lines)
+
+        if return_string:
+            return info_str
+        else:
+            print(info_str)
+            return None
+
+    def save(self, filepath: str) -> None:
+        """Save the CompositeEnvironment to a file using pickle.
+
+        Parameters
+        ----------
+        filepath : str
+            Path where the composite environment will be saved.
+
+        Warnings
+        --------
+        This method uses pickle serialization. Only load files from trusted
+        sources, as pickle can execute arbitrary code.
+
+        Notes
+        -----
+        The saved file contains:
+        - All sub-environments with their complete state
+        - Bridge edges and connectivity information
+        - Regions from all sub-environments
+        - Composite metadata
+
+        The file can be loaded with CompositeEnvironment.load().
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment([env1, env2])
+        >>> comp.save("my_composite_env.pkl")
+        >>> loaded = CompositeEnvironment.load("my_composite_env.pkl")
+
+        """
+        import pickle
+        from pathlib import Path
+
+        # Package everything needed to reconstruct the composite
+        save_dict = {
+            "subenvs": [block["env"] for block in self._subenvs_info],
+            "auto_bridge": False,  # Don't re-infer bridges on load
+            "max_mnn_distance": None,
+            "use_kdtree_query": self._use_kdtree_query,
+            "bridge_list": self._bridge_list,
+            "layout_params": self._layout_params_used,
+        }
+
+        Path(filepath).write_bytes(pickle.dumps(save_dict))
+
+    @classmethod
+    def load(cls, filepath: str) -> "CompositeEnvironment":
+        """Load a CompositeEnvironment from a file.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to the saved composite environment file.
+
+        Returns
+        -------
+        CompositeEnvironment
+            Reconstructed composite environment with all sub-environments
+            and bridge edges restored.
+
+        Warnings
+        --------
+        This method uses pickle deserialization. Only load files from trusted
+        sources, as pickle can execute arbitrary code.
+
+        Examples
+        --------
+        >>> comp = CompositeEnvironment.load("my_composite_env.pkl")
+        >>> print(f"Loaded composite with {comp.n_bins} bins")
+
+        """
+        import pickle
+        from pathlib import Path
+
+        save_dict = pickle.loads(Path(filepath).read_bytes())
+
+        # Reconstruct without auto-bridging
+        use_kdtree = save_dict.get(
+            "use_kdtree_query", True
+        )  # Default to True for backwards compatibility
+        comp = cls(
+            subenvs=save_dict["subenvs"],
+            auto_bridge=False,
+            max_mnn_distance=None,
+            use_kdtree_query=use_kdtree,
+        )
+
+        # Restore the saved bridges
+        for (i_env, i_bin), (j_env, j_bin), w in save_dict["bridge_list"]:
+            # Bridge already exists, skip if duplicate
+            source_composite_bin = comp._subenvs_info[i_env]["start_idx"] + i_bin
+            target_composite_bin = comp._subenvs_info[j_env]["start_idx"] + j_bin
+            if not comp.connectivity.has_edge(
+                source_composite_bin, target_composite_bin
+            ):
+                comp._add_bridge_edge(i_env, i_bin, j_env, j_bin, w)
+
+        return comp
 
     def plot(
         self,

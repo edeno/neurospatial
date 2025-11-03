@@ -328,7 +328,7 @@ def _axial_to_offset_bin_indices(
         (grid_col >= 0) & (grid_col < n_hex_x) & (grid_row >= 0) & (grid_row < n_hex_y)
     )
 
-    final_bin_idx: NDArray[np.int_] = np.full_like(bin_idx, -1, dtype=np.int_)
+    final_bin_idx: NDArray[np.int_] = np.full_like(bin_idx, -1, dtype=int)
     final_bin_idx[valid_mask] = bin_idx[valid_mask]
 
     return final_bin_idx
@@ -372,11 +372,11 @@ def _points_to_hex_bin_ind(
     """
     n_points = points.shape[0]
     if n_points == 0:
-        return np.array([], dtype=np.int_)
+        return np.array([], dtype=int)
 
     points = np.atleast_2d(points)
 
-    output_indices: NDArray[np.int_] = np.full(n_points, -1, dtype=np.int_)
+    output_indices: NDArray[np.int_] = np.full(n_points, -1, dtype=int)
 
     # Identify valid (non-NaN) points
     valid_mask: NDArray[np.bool_] = np.asarray(

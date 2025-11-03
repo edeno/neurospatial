@@ -18,6 +18,10 @@ from numpy.typing import NDArray
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import create_layout
 from neurospatial.layout.helpers.utils import find_boundary_nodes
+from neurospatial.layout.validation import (
+    GraphValidationError,
+    validate_connectivity_graph,
+)
 from neurospatial.regions import Regions
 
 logger = logging.getLogger(__name__)
@@ -660,10 +664,35 @@ class Environment:
         information from the layout to the Environment's attributes.
         It also applies fallbacks for certain grid-specific attributes if the
         layout is point-based to ensure consistency.
+
+        Raises
+        ------
+        ValueError
+            If the connectivity graph from the layout engine is invalid
+            (missing required node/edge attributes, wrong dimensions, etc.)
         """
         self.bin_centers = self.layout.bin_centers
         self.connectivity = getattr(self.layout, "connectivity", nx.Graph())
         self.dimension_ranges = self.layout.dimension_ranges
+
+        # Validate connectivity graph has required metadata
+        # This catches layout engine bugs early with clear error messages
+        # Note: Calculate n_dims directly here since self.n_dims has @check_fitted
+        n_dims = self.bin_centers.shape[1] if self.bin_centers is not None else 0
+        try:
+            validate_connectivity_graph(
+                self.connectivity,
+                n_dims=n_dims,
+                check_node_attrs=True,
+                check_edge_attrs=True,
+            )
+        except GraphValidationError as e:
+            raise ValueError(
+                f"Invalid connectivity graph from layout engine "
+                f"'{self.layout._layout_type_tag}': {e}\n\n"
+                f"This is a bug in the layout engine. Please report this issue.\n"
+                f"See CLAUDE.md section 'Graph Metadata Requirements' for details."
+            ) from e
 
         # Grid-specific attributes
         self.grid_edges = getattr(self.layout, "grid_edges", ())
@@ -1983,7 +2012,7 @@ class Environment:
                     f"does not match environment dimension {self.n_dims}.",
                 )
             bin_idx = self.bin_at(point_nd)
-            return np.asarray(bin_idx[bin_idx != -1], dtype=np.int_)
+            return np.asarray(bin_idx[bin_idx != -1], dtype=int)
 
         if region.kind == "polygon":
             if not _HAS_SHAPELY:  # pragma: no cover
@@ -1993,10 +2022,10 @@ class Environment:
                     "Polygon regions are only supported for 2D environments.",
                 )
 
-            from shapely import vectorized
+            import shapely
 
             polygon = region.data
-            contained_mask = vectorized.contains(
+            contained_mask = shapely.contains_xy(
                 polygon,
                 self.bin_centers[:, 0],
                 self.bin_centers[:, 1],

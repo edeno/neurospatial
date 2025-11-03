@@ -529,7 +529,7 @@ def _points_to_regular_grid_bin_ind(
 
     # Initialize output assuming all points are invalid or unmapped
     # Output shape should match original number of points (before NaN filter)
-    output_indices = np.full(points_atleast_2d.shape[0], -1, dtype=np.int_)
+    output_indices = np.full(points_atleast_2d.shape[0], -1, dtype=int)
 
     if not np.any(valid_input_mask):  # No valid points after NaN filter
         return output_indices
@@ -568,7 +568,7 @@ def _points_to_regular_grid_bin_ind(
     original_bin_flat_idx_for_valid_points = np.full(
         valid_points.shape[0],
         -1,
-        dtype=np.int_,
+        dtype=int,
     )
 
     if np.any(point_is_within_grid_bounds):
@@ -588,7 +588,7 @@ def _points_to_regular_grid_bin_ind(
     final_mapped_indices_for_valid_points = np.full(
         valid_points.shape[0],
         -1,
-        dtype=np.int_,
+        dtype=int,
     )
 
     if active_mask is not None:

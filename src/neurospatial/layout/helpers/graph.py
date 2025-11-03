@@ -158,7 +158,7 @@ def _get_graph_bins(
     bin_centers_1d = get_centers(bin_edges_arr)
 
     active_mask_1d = np.asarray(active_mask_list, dtype=np.bool_)
-    edge_ids_for_active_bins = np.array(edge_id_list, dtype=np.int_)
+    edge_ids_for_active_bins = np.array(edge_id_list, dtype=int)
 
     return bin_centers_1d, (bin_edges_arr,), active_mask_1d, edge_ids_for_active_bins
 
@@ -278,7 +278,7 @@ def _create_graph_layout_connectivity_graph(
             (int(edge_active_bin_ind[0]), int(edge_active_bin_ind[-1])),
         )
     connectivity_graph.add_edges_from(edges_to_add)
-    bin_edge_order_arr: NDArray[np.int_] = np.asarray(bin_edge_order, dtype=np.int_)
+    bin_edge_order_arr: NDArray[np.int_] = np.asarray(bin_edge_order, dtype=int)
 
     # --- 3. Add Inter-Segment Edges (connecting end/start bins of adjacent original edges) ---
     edge_order_array = np.asarray(edge_order)

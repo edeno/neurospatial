@@ -183,7 +183,7 @@ def _infer_active_elements_from_samples(
         return (
             np.array([], dtype=bool),
             np.empty((0, max(0, n_dims_candidates))),
-            np.array([], dtype=np.int_),
+            np.array([], dtype=int),
         )
 
     if n_dims_candidates != n_dims_samples:
@@ -205,7 +205,7 @@ def _infer_active_elements_from_samples(
         # All candidates will be considered non-active by occupancy
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
         final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=np.int_)
+        source_indices_of_active_centers = np.array([], dtype=int)
         return (
             inferred_1d_mask_on_candidates,
             final_active_centers,
@@ -226,7 +226,7 @@ def _infer_active_elements_from_samples(
         # Treat as if no elements become active by occupancy
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
         final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=np.int_)
+        source_indices_of_active_centers = np.array([], dtype=int)
         return (
             inferred_1d_mask_on_candidates,
             final_active_centers,
@@ -244,7 +244,7 @@ def _infer_active_elements_from_samples(
         )
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
         final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=np.int_)
+        source_indices_of_active_centers = np.array([], dtype=int)
         return (
             inferred_1d_mask_on_candidates,
             final_active_centers,
@@ -269,7 +269,7 @@ def _infer_active_elements_from_samples(
     final_active_centers = candidate_element_centers[inferred_1d_mask_on_candidates]
     source_indices_of_active_centers = np.flatnonzero(
         inferred_1d_mask_on_candidates,
-    ).astype(np.int_)
+    ).astype(int)
 
     return (
         inferred_1d_mask_on_candidates,

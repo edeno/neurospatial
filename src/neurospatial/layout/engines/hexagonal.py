@@ -277,7 +277,7 @@ class HexagonalLayout:
                 "Cannot map points to bin indices.",
                 RuntimeWarning,
             )
-            return np.full(points.shape[0], -1, dtype=np.int_)
+            return np.full(points.shape[0], -1, dtype=int)
 
         # grid_shape is guaranteed to be tuple[int, int] for hexagonal layouts
         assert self.grid_shape is not None and len(self.grid_shape) == 2

@@ -217,7 +217,7 @@ class TriangularMeshLayout:
             if self._boundary_polygon_stored is not None:
                 xcoords = pts2d[valid_mask, 0]
                 ycoords = pts2d[valid_mask, 1]
-                on_or_inside = shapely.vectorized.contains(
+                on_or_inside = shapely.contains_xy(
                     self._boundary_polygon_stored,
                     xcoords,
                     ycoords,
