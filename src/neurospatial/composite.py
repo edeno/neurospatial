@@ -112,8 +112,19 @@ class CompositeEnvironment:
                 raise ValueError(f"Sub-environment {i} is not fitted.")
             if e.n_dims != self._n_dims:
                 raise ValueError(
-                    "All sub-environments must share the same n_dims. "
-                    f"Env 0 has {self._n_dims}, Env {i} has {e.n_dims}.",
+                    f"All sub-environments must share the same n_dims. "
+                    f"Env 0 has {self._n_dims}, Env {i} has {e.n_dims}.\n"
+                    "\n"
+                    "Common cause:\n"
+                    "  This typically occurs when mixing environments created from data with "
+                    "different dimensionalities (e.g., 2D position tracking data and 3D spatial data).\n"
+                    "\n"
+                    "To fix:\n"
+                    "  1. Check that all data_samples arrays used to create environments have the same "
+                    "number of columns (n_dims)\n"
+                    "  2. Ensure all environments represent the same spatial dimensionality "
+                    "(all 2D or all 3D)\n"
+                    "  3. Verify each environment's n_dims property before creating the composite"
                 )
 
         # Build index offsets for each sub-environment

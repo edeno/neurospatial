@@ -115,10 +115,10 @@
   - [x] Add example of incorrect usage to avoid (Environment())
   - [x] Keep error message concise but informative
 
-- [ ] **Improve CompositeEnvironment dimension mismatch error** (`src/neurospatial/composite.py:114-117`)
-  - [ ] Add "To fix" guidance section
-  - [ ] Explain common cause (mixed 2D/3D environments)
-  - [ ] Suggest checking data_samples dimensionality
+- [x] **Improve CompositeEnvironment dimension mismatch error** (`src/neurospatial/composite.py:114-117`)
+  - [x] Add "To fix" guidance section
+  - [x] Explain common cause (mixed 2D/3D environments)
+  - [x] Suggest checking data_samples dimensionality
 
 ### API Consistency
 
