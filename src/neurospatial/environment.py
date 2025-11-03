@@ -538,12 +538,28 @@ class Environment:
            filling small unvisited areas within explored regions.
 
         """
-        # Convert and validate data_samples array
-        data_samples = np.asarray(data_samples, dtype=float)
+        # Convert and validate data_samples array with helpful error messages
+        try:
+            data_samples = np.asarray(data_samples, dtype=float)
+        except (TypeError, ValueError) as e:
+            actual_type = type(data_samples).__name__
+            raise TypeError(
+                f"data_samples must be a numeric array-like object (e.g., numpy array, "
+                f"list of lists, pandas DataFrame). Got {actual_type}: {data_samples!r}"
+            ) from e
+
         if data_samples.ndim != 2:
             raise ValueError(
                 f"data_samples must be a 2D array of shape (n_points, n_dims), "
                 f"got shape {data_samples.shape}.",
+            )
+
+        # Validate bin_size early to provide helpful error messages
+        if not isinstance(bin_size, (int, float, list, tuple, np.ndarray)):
+            actual_type = type(bin_size).__name__
+            raise TypeError(
+                f"bin_size must be a numeric value or sequence of numeric values. "
+                f"Got {actual_type}: {bin_size!r}"
             )
 
         # Standardize layout_kind to lowercase for comparison

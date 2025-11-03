@@ -90,8 +90,30 @@ def get_n_bins(
         # Ignore NaNs when calculating range from data
         extent = np.nanmax(data_samples, axis=0) - np.nanmin(data_samples, axis=0)
 
+    # Validate and convert bin_size with helpful error messages
+    try:
+        bin_size_arr = np.asarray(bin_size, dtype=float)
+    except (TypeError, ValueError) as e:
+        # Provide helpful error message for type conversion failures
+        actual_type = type(bin_size).__name__
+        raise TypeError(
+            f"bin_size must be a numeric value or sequence of numeric values. "
+            f"Got {actual_type}: {bin_size!r}"
+        ) from e
+
+    # Check for NaN or Inf values separately
+    if np.any(np.isnan(bin_size_arr)):
+        raise ValueError(
+            f"bin_size contains NaN (Not a Number) values (got {bin_size}). "
+            "bin_size must be finite numeric values."
+        )
+    if np.any(np.isinf(bin_size_arr)):
+        raise ValueError(
+            f"bin_size contains infinite values (got {bin_size}). "
+            "bin_size must be finite numeric values."
+        )
+
     # Ensure bin_size is positive
-    bin_size_arr = np.asarray(bin_size, dtype=float)
     if np.any(bin_size_arr <= 0.0):
         raise ValueError(f"bin_size must be positive (got {bin_size}).")
 

@@ -345,7 +345,16 @@ def _create_regular_grid(
     if data_samples is None and dimension_range is None:
         raise ValueError("Either `data_samples` or `dimension_range` must be provided.")
     if data_samples is not None:
-        samples = np.asarray(data_samples, dtype=float)
+        # Validate and convert data_samples with helpful error messages
+        try:
+            samples = np.asarray(data_samples, dtype=float)
+        except (TypeError, ValueError) as e:
+            actual_type = type(data_samples).__name__
+            raise TypeError(
+                f"data_samples must be a numeric array-like object (e.g., numpy array, "
+                f"list of lists, pandas DataFrame). Got {actual_type}: {data_samples!r}"
+            ) from e
+
         if samples.ndim != 2:
             raise ValueError(f"`data_samples` must be 2D, got shape {samples.shape}.")
         n_dims = samples.shape[1]
@@ -365,11 +374,38 @@ def _create_regular_grid(
 
     # 2) Normalize & validate bin_size
     if isinstance(bin_size, (float, int)):
-        bin_sizes = np.full(n_dims, float(bin_size))
+        try:
+            bin_sizes = np.full(n_dims, float(bin_size))
+        except (TypeError, ValueError) as e:
+            actual_type = type(bin_size).__name__
+            raise TypeError(
+                f"bin_size must be a numeric value. Got {actual_type}: {bin_size!r}"
+            ) from e
     else:
-        bin_sizes = np.asarray(bin_size, dtype=float)
+        try:
+            bin_sizes = np.asarray(bin_size, dtype=float)
+        except (TypeError, ValueError) as e:
+            actual_type = type(bin_size).__name__
+            raise TypeError(
+                f"bin_size must be a numeric value or sequence of numeric values. "
+                f"Got {actual_type}: {bin_size!r}"
+            ) from e
+
         if bin_sizes.ndim != 1 or bin_sizes.shape[0] != n_dims:
             raise ValueError(f"`bin_size` length must be {n_dims}, got {bin_sizes}.")
+
+    # Check for NaN or Inf values
+    if np.any(np.isnan(bin_sizes)):
+        raise ValueError(
+            f"bin_size contains NaN (Not a Number) values (got {bin_size}). "
+            "bin_size must be finite numeric values."
+        )
+    if np.any(np.isinf(bin_sizes)):
+        raise ValueError(
+            f"bin_size contains infinite values (got {bin_size}). "
+            "bin_size must be finite numeric values."
+        )
+
     if np.any(bin_sizes <= 0.0):
         raise ValueError(
             f"All elements of `bin_size` must be positive (got {bin_size})."
@@ -382,8 +418,16 @@ def _create_regular_grid(
                 f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims}).",
             )
         ranges = []
-        for (lo, hi), size in zip(dimension_range, bin_sizes, strict=False):
-            lo_f, hi_f = float(min(lo, hi)), float(max(lo, hi))
+        for i, ((lo, hi), size) in enumerate(
+            zip(dimension_range, bin_sizes, strict=False)
+        ):
+            try:
+                lo_f, hi_f = float(min(lo, hi)), float(max(lo, hi))
+            except (TypeError, ValueError) as e:
+                raise TypeError(
+                    f"dimension_range must contain numeric tuples of (min, max). "
+                    f"Error at dimension {i}: got ({lo!r}, {hi!r})"
+                ) from e
             # If user gave a zero-span range (lo == hi), expand by 0.5 * bin_size
             if np.isclose(lo_f, hi_f):
                 lo_f -= 0.5 * size

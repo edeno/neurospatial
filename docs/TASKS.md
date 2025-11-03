@@ -154,14 +154,14 @@
 
 ### Enhanced Error Handling
 
-- [ ] **Improve type validation for sequences**
-  - [ ] Add try-except for bin_size conversion in `layout/helpers/utils.py`
-  - [ ] Add try-except for dimension_ranges in `layout/helpers/regular_grid.py`
-  - [ ] Add try-except for data_samples in `environment.py`
-  - [ ] Provide helpful error messages for type errors
-  - [ ] Validate NaN/Inf separately with specific errors
-  - [ ] Preserve original exception with `from e`
-  - [ ] Add tests for invalid inputs (strings, mixed types, NaN)
+- [x] **Improve type validation for sequences**
+  - [x] Add try-except for bin_size conversion in `layout/helpers/utils.py`
+  - [x] Add try-except for dimension_ranges in `layout/helpers/regular_grid.py`
+  - [x] Add try-except for data_samples in `environment.py`
+  - [x] Provide helpful error messages for type errors
+  - [x] Validate NaN/Inf separately with specific errors
+  - [x] Preserve original exception with `from e`
+  - [x] Add tests for invalid inputs (strings, mixed types, NaN)
 
 ### Convenience Features
 
