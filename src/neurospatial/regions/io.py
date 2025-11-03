@@ -13,7 +13,7 @@ import warnings
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -329,7 +329,8 @@ def _create_cvat_region(
 
     if kind not in ("point", "polygon"):
         raise ValueError(f"Invalid kind: {kind!r}")
-    kind_typed: Kind = kind  # type: ignore[assignment]
+    # After validation, we know kind is either "point" or "polygon"
+    kind_typed = cast("Kind", kind)
 
     metadata = {
         "source_xml": xml_path.name,

@@ -24,7 +24,7 @@ import json
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 import numpy as np
@@ -205,8 +205,8 @@ def to_file(env: Environment, path: str | Path) -> None:
             arrays_to_save[f"grid_edges_{i}"] = edges
 
     # Write npz arrays
-    # Cast is needed because numpy stubs don't properly support **kwargs with NDArray values
-    np.savez_compressed(npz_path, **arrays_to_save)  # type: ignore[arg-type]
+    # numpy.savez_compressed has overly strict type stubs - cast to work around
+    np.savez_compressed(str(npz_path), **cast("Any", arrays_to_save))
 
 
 def from_file(path: str | Path) -> Environment:

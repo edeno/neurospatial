@@ -1060,8 +1060,10 @@ class CompositeEnvironment:
             env_i = block_info["env"]
             current_env_kwargs: dict[str, Any] = {}
             if isinstance(sub_env_plot_kwargs, list):
-                if i < len(sub_env_plot_kwargs) and sub_env_plot_kwargs[i] is not None:
-                    current_env_kwargs = sub_env_plot_kwargs[i]  # type: ignore[assignment]
+                if i < len(sub_env_plot_kwargs):
+                    kwargs_i = sub_env_plot_kwargs[i]
+                    if kwargs_i is not None:
+                        current_env_kwargs = kwargs_i
             elif isinstance(sub_env_plot_kwargs, dict):
                 current_env_kwargs = sub_env_plot_kwargs
 

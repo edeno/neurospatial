@@ -481,7 +481,7 @@ def flat_to_multi_index(
     flat_indices: int | np.ndarray,
     grid_shape: tuple[int, ...],
     graph: nx.Graph,
-) -> tuple[int, ...] | tuple[np.ndarray, ...]:
+) -> tuple[int | float, ...] | tuple[np.ndarray, ...]:
     """Convert active-bin flat index(es) (0..N-1) to N-D grid index(es).
 
     Parameters
@@ -498,9 +498,9 @@ def flat_to_multi_index(
 
     Returns
     -------
-    Union[Tuple[int, ...], Tuple[np.ndarray, ...]]
-        - If `flat_indices` is a single int, return a tuple of N ints: the N-D index.
-          If conversion fails for that index, return a tuple of N `np.nan`s.
+    Union[Tuple[Union[int, float], ...], Tuple[np.ndarray, ...]]
+        - If `flat_indices` is a single int, return a tuple of N ints or floats: the N-D index.
+          If conversion fails for that index, return a tuple of N `np.nan` (float) values.
         - If `flat_indices` is an array of ints, return a tuple of N NumPy arrays,
           each containing that coordinate for each input index. If conversion fails
           for some index, its coordinate elements are `np.nan`.
@@ -578,12 +578,11 @@ def flat_to_multi_index(
 
     if is_scalar:
         # Return a tuple of scalars (first element of each array)
-        # Note: Returns tuple[int, ...] when all are valid ints
+        # Returns tuple[int | float, ...] - int when valid, float (np.nan) when invalid
         result_tuple = tuple(
             int(val[0]) if not np.isnan(val[0]) else np.nan for val in final
         )
-        # If any NaN, return tuple[float, ...], otherwise tuple[int, ...]
-        return result_tuple  # type: ignore[return-value]
+        return result_tuple
     return final
 
 
