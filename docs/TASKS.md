@@ -141,16 +141,16 @@
 
 ### Proactive Guidance
 
-- [ ] **Add "Common Pitfalls" sections**
-  - [ ] Add to `from_samples()` docstring
-    - [ ] bin_size too large pitfall
-    - [ ] bin_count_threshold too high pitfall
-    - [ ] Mismatched units pitfall
-    - [ ] Missing morphological operations pitfall
-  - [ ] Add to `CompositeEnvironment.__init__()` docstring
-    - [ ] Dimension mismatch pitfall
-    - [ ] No bridge edges pitfall
-    - [ ] Overlapping bins pitfall
+- [x] **Add "Common Pitfalls" sections**
+  - [x] Add to `from_samples()` docstring
+    - [x] bin_size too large pitfall
+    - [x] bin_count_threshold too high pitfall
+    - [x] Mismatched units pitfall
+    - [x] Missing morphological operations pitfall
+  - [x] Add to `CompositeEnvironment.__init__()` docstring
+    - [x] Dimension mismatch pitfall
+    - [x] No bridge edges pitfall
+    - [x] Overlapping bins pitfall
 
 ### Enhanced Error Handling
 

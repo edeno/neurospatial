@@ -509,6 +509,34 @@ class Environment:
         ...     bin_size=5.0,  # 5cm hexagon width
         ... )
 
+        Common Pitfalls
+        ---------------
+        1. **bin_size too large**: If bin_size is too large relative to your data
+           range, you may end up with very few bins or no active bins at all.
+           For example, if your data spans 0-100 cm and you use bin_size=200.0,
+           you'll only get 1 bin. Try reducing bin_size to create more spatial
+           resolution (e.g., bin_size=5.0 for 5cm bins).
+
+        2. **bin_count_threshold too high**: Setting bin_count_threshold higher
+           than the number of samples per bin will result in no active bins.
+           If you have sparse data with only a few samples per location, try
+           reducing bin_count_threshold to 0 or 1, or use morphological operations
+           to expand the active region.
+
+        3. **Mismatched units**: Ensure bin_size and data_samples use the same
+           units. If your data is in centimeters, bin_size should also be in
+           centimeters. Mixing units (e.g., data in meters, bin_size in centimeters)
+           will result in incorrect spatial binning. For example, if your data spans
+           0-1 meters (100 cm) and you set bin_size=5.0 thinking it's centimeters,
+           you'll get only 1 bin instead of 20 bins.
+
+        4. **Missing morphological operations with sparse data**: If your data is
+           sparse (animal didn't visit all locations uniformly), the active region
+           may have holes or gaps. Enable dilate=True, fill_holes=True, or
+           close_gaps=True to create a more continuous active region. These
+           operations are particularly useful for connecting isolated bins or
+           filling small unvisited areas within explored regions.
+
         """
         # Convert and validate data_samples array
         data_samples = np.asarray(data_samples, dtype=float)

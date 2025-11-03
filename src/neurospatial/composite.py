@@ -98,6 +98,27 @@ class CompositeEnvironment:
             If provided, any automatically inferred bridge whose Euclidean distance exceeds
             this threshold is discarded. If None, no distance filtering is applied.
 
+        Common Pitfalls
+        ---------------
+        1. **Dimension mismatch**: All sub-environments must have the same number of
+           dimensions (n_dims). Mixing 2D and 3D environments will raise an error.
+           Before creating the composite, verify that all environments have the same
+           n_dims property (e.g., check env1.n_dims == env2.n_dims). This typically
+           occurs when combining data from different recording modalities.
+
+        2. **No bridge edges found**: If auto_bridge=True but the sub-environments
+           are very far apart, no bridge edges may be created, leaving the composite
+           disconnected. Try increasing max_mnn_distance to allow bridges over longer
+           distances, or set auto_bridge=False if you intend to work with disconnected
+           components. Use the bridges property to verify that bridge edges were created.
+
+        3. **Overlapping bins**: If sub-environments have bins at the same or very
+           similar spatial locations, the composite will have duplicate bins at those
+           locations. This can lead to unexpected behavior in spatial queries. Ensure
+           that sub-environments represent distinct, non-overlapping spatial regions
+           (e.g., different arms of a maze, different rooms). Check bin_centers to
+           verify that bin locations are spatially separated.
+
         """
         if len(subenvs) == 0:
             raise ValueError("At least one sub-environment is required.")
