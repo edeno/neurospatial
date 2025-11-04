@@ -250,15 +250,15 @@
 
 ### P3.12: Region Membership
 
-- [ ] Implement `Environment.region_membership()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Vectorized `shapely.covers()` operations
-  - [ ] Support `include_boundary` parameter
-  - [ ] Return (n_bins, n_regions) boolean array
-  - [ ] Optional caching by (env_id, regions_hash)
-- [ ] Tests for `region_membership()`
-  - [ ] Square region aligned to grid
-  - [ ] Boundary inclusion behavior
+- [x] Implement `Environment.region_membership()` in `environment.py` ✅
+  - [x] Add `@check_fitted` decorator ✅
+  - [x] Vectorized `shapely.covers()` operations ✅
+  - [x] Support `include_boundary` parameter ✅
+  - [x] Return (n_bins, n_regions) boolean array ✅
+  - [ ] Optional caching by (env_id, regions_hash) (Deferred - performance is acceptable without caching)
+- [x] Tests for `region_membership()` ✅
+  - [x] Square region aligned to grid ✅
+  - [x] Boundary inclusion behavior ✅
 
 ### P3.13: Distance Utilities
 

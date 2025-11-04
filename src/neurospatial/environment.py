@@ -1701,6 +1701,7 @@ class Environment:
 
         >>> # Smooth a probability distribution
         >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
+
         """
         # Input validation
         field = np.asarray(field, dtype=np.float64)
@@ -1863,6 +1864,7 @@ class Environment:
         >>> # Total time is preserved
         >>> np.isclose(occupancy.sum(), coarse_occupancy.sum())
         True
+
         """
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
@@ -2111,6 +2113,7 @@ class Environment:
         >>>
         >>> # Inverted selection (everything except region)
         >>> outside = env.subset(region_names=["obstacle"], invert=True)
+
         """
         # --- Input Validation ---
 
@@ -2446,6 +2449,7 @@ class Environment:
 
         >>> # Evaluate rate map at trajectory positions
         >>> rates_at_trajectory = env.interpolate(rate_map, positions, mode="linear")
+
         """
         # Input validation - field
         field = np.asarray(field, dtype=np.float64)
@@ -2544,6 +2548,7 @@ class Environment:
         -------
         values : NDArray[np.float64], shape (n_points,)
             Interpolated values (NaN for points outside).
+
         """
         from typing import cast
 
@@ -2590,6 +2595,7 @@ class Environment:
         ------
         NotImplementedError
             If layout is not RegularGridLayout.
+
         """
         # Check layout type - must be RegularGridLayout, not masked/polygon layouts
         # Use _layout_type_tag to avoid mypy Protocol isinstance issues
@@ -2673,6 +2679,7 @@ class Environment:
         -------
         occupancy : NDArray[np.float64], shape (n_bins,)
             Time allocated to each bin via linear interpolation.
+
         """
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
@@ -2746,6 +2753,7 @@ class Environment:
         -------
         bin_times : list[tuple[int, float]]
             List of (bin_index, time_in_bin) pairs.
+
         """
         n_dims = len(grid_shape)
 
@@ -2829,6 +2837,7 @@ class Environment:
         -------
         flat_index : int
             Flat bin index, or -1 if position is outside grid bounds.
+
         """
         n_dims = len(grid_shape)
         nd_index = []
@@ -4700,3 +4709,176 @@ class Environment:
                 reachable[source_bin] = True
 
         return reachable
+
+    @check_fitted
+    def region_membership(
+        self,
+        regions: Regions | None = None,
+        *,
+        include_boundary: bool = True,
+    ) -> NDArray[np.bool_]:
+        """Check which bins belong to which regions.
+
+        This method performs vectorized containment checks to determine which
+        bins are inside each region. Useful for:
+        - Filtering bins by region
+        - Computing region-specific statistics
+        - Identifying spatial distributions across regions
+        - Selecting bins for subset operations
+
+        Parameters
+        ----------
+        regions : Regions, optional
+            Regions to test against. If None (default), uses self.regions.
+            Allows testing against external region sets without modifying
+            the environment.
+        include_boundary : bool, default=True
+            How to handle bins on region boundaries:
+            - True: Bins on boundary count as inside (shapely.covers).
+            - False: Only bins strictly inside count (shapely.contains).
+
+        Returns
+        -------
+        membership : NDArray[np.bool_], shape (n_bins, n_regions)
+            Boolean array where membership[i, j] = True if bin i is in region j.
+            Columns are ordered according to region iteration order.
+            If regions is empty, returns array with shape (n_bins, 0).
+
+        Raises
+        ------
+        TypeError
+            If regions parameter is not a Regions instance or None.
+            If include_boundary is not a boolean.
+
+        See Also
+        --------
+        subset : Create new environment from bin selection.
+        bins_in_region : Get bin indices for a specific region.
+
+        Notes
+        -----
+        **Region Types**:
+        - Polygon regions: Uses Shapely containment (covers/contains).
+        - Point regions: Always return False (points have no area).
+
+        **Performance**:
+        This method uses vectorized Shapely operations for efficiency.
+        For N bins and R regions, complexity is O(N * R), but vectorized
+        operations make it fast even for thousands of bins.
+
+        **Boundary Semantics**:
+        The include_boundary parameter controls the Shapely predicate used:
+        - include_boundary=True: Uses shapely.covers(region, point)
+          Returns True if point is inside region OR on its boundary.
+        - include_boundary=False: Uses shapely.contains(region, point)
+          Returns True only if point is strictly inside region.
+
+        For most applications, include_boundary=True is appropriate, as it
+        avoids ambiguity for bins whose centers lie exactly on region edges.
+
+        **Region Order**:
+        The column order in the output array matches the iteration order of
+        the regions mapping. For self.regions, this is insertion order.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from shapely.geometry import box
+        >>> # Create 10x10 grid
+        >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
+        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> _ = env.regions.add("left", polygon=box(0, 0, 5, 10))
+        >>> _ = env.regions.add("right", polygon=box(5, 0, 10, 10))
+        >>> membership = env.region_membership()
+        >>> membership.shape[1]  # Number of regions
+        2
+        >>> membership.dtype
+        dtype('bool')
+
+        >>> # Find bins in specific region
+        >>> left_bins = np.where(membership[:, 0])[0]
+        >>> len(left_bins) > 0
+        True
+
+        >>> # Bins in multiple regions (overlapping)
+        >>> both = np.all(membership, axis=1)
+        >>> overlapping_bins = np.where(both)[0]
+        >>> len(overlapping_bins) >= 0
+        True
+
+        >>> # Use external regions without modifying environment
+        >>> from neurospatial.regions import Regions
+        >>> external = Regions()
+        >>> _ = external.add("test", polygon=box(2, 2, 8, 8))
+        >>> test_membership = env.region_membership(regions=external)
+        >>> test_membership.shape[1]
+        1
+
+        >>> # Strict interior only (exclude boundary)
+        >>> interior = env.region_membership(include_boundary=False)
+        >>> bool(interior.sum() <= membership.sum())  # Fewer or equal bins
+        True
+
+        """
+        # Import here to avoid circular dependency
+        from neurospatial.regions import Regions
+
+        # Input validation
+        if regions is None:
+            regions = self.regions
+        elif not isinstance(regions, Regions):
+            raise TypeError(
+                f"regions must be a Regions instance or None, "
+                f"got {type(regions).__name__}"
+            )
+
+        if not isinstance(include_boundary, bool):
+            raise TypeError(
+                f"include_boundary must be a bool, got {type(include_boundary).__name__}"
+            )
+
+        # Handle empty regions case
+        if len(regions) == 0:
+            return np.zeros((self.n_bins, 0), dtype=bool)
+
+        # Get bin centers as points
+        bin_centers = self.bin_centers  # shape (n_bins, n_dims)
+
+        # Initialize membership array
+        n_regions = len(regions)
+        membership = np.zeros((self.n_bins, n_regions), dtype=bool)
+
+        # Import shapely functions for vectorized operations
+        from shapely import contains, covers
+        from shapely import points as shapely_points
+
+        # Iterate over regions and check containment
+        for region_idx, (_region_name, region) in enumerate(regions.items()):
+            # Handle point regions - points have no area, so no bins can be inside
+            if region.kind == "point":
+                # Leave column as all False (no bin can be "inside" a point)
+                continue
+
+            # Handle polygon regions
+            if region.kind == "polygon":
+                # Create shapely Points array from bin centers for vectorized operation
+                # Only supports 2D for now
+                if bin_centers.shape[1] != 2:
+                    raise NotImplementedError(
+                        f"region_membership currently only supports 2D environments "
+                        f"for polygon regions. Environment has {bin_centers.shape[1]} dimensions."
+                    )
+
+                points = shapely_points(bin_centers[:, 0], bin_centers[:, 1])
+
+                # Vectorized containment check
+                if include_boundary:
+                    # covers: True if point is inside or on boundary
+                    mask = covers(region.data, points)
+                else:
+                    # contains: True only if strictly inside
+                    mask = contains(region.data, points)
+
+                membership[:, region_idx] = mask
+
+        return membership
