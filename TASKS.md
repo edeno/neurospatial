@@ -93,24 +93,24 @@
   - [x] Normalization: rows sum to 1
   - [x] Lag parameter behavior
 
-### P0.4: Connected Components / Reachability
+### P0.4: Connected Components / Reachability ✅ COMPLETE
 
-- [ ] Implement `Environment.components()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Use `nx.connected_components()`
-  - [ ] Sort by component size
-  - [ ] Handle `largest_only=True`
-- [ ] Implement `Environment.reachable_from()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] BFS for `metric='hops'`
-  - [ ] Dijkstra for `metric='geodesic'`
-  - [ ] Optional radius cutoff
-  - [ ] Return boolean mask
-- [ ] Tests for connectivity
-  - [ ] Graph with isolated island (2 components)
-  - [ ] BFS with radius (hop neighborhoods)
-  - [ ] Geodesic distance constraint
-  - [ ] Edge case: disconnected graph
+- [x] Implement `Environment.components()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Use `nx.connected_components()`
+  - [x] Sort by component size
+  - [x] Handle `largest_only=True`
+- [x] Implement `Environment.reachable_from()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] BFS for `metric='hops'`
+  - [x] Dijkstra for `metric='geodesic'`
+  - [x] Optional radius cutoff
+  - [x] Return boolean mask
+- [x] Tests for connectivity (21 tests passing)
+  - [x] Graph with isolated island (2 components)
+  - [x] BFS with radius (hop neighborhoods)
+  - [x] Geodesic distance constraint
+  - [x] Edge case: disconnected graph
 
 **Deliverable**: P0 operations complete with full test coverage
 

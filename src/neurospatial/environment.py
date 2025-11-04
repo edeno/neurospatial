@@ -3197,3 +3197,217 @@ class Environment:
         if active_bins_for_mask.size > 0:
             mask[active_bins_for_mask] = True
         return mask
+
+    @check_fitted
+    def components(
+        self,
+        *,
+        largest_only: bool = False,
+    ) -> list[NDArray[np.int32]]:
+        """Find connected components of the environment graph.
+
+        A connected component is a maximal subset of bins where every pair
+        of bins is connected by a path through the graph. This is useful for:
+        - Identifying disconnected regions in masked environments
+        - Finding traversable subregions
+        - Detecting isolated islands in the environment
+
+        Parameters
+        ----------
+        largest_only : bool, default=False
+            If True, return only the largest component.
+            If False, return all components sorted by size (largest first).
+
+        Returns
+        -------
+        components : list[NDArray[np.int32]]
+            List of bin index arrays, one per component.
+            Components are sorted by size (largest first).
+            Each array contains the bin indices in that component.
+
+        See Also
+        --------
+        reachable_from : Find bins reachable from a source within a radius.
+
+        Notes
+        -----
+        This method uses NetworkX's connected_components algorithm to identify
+        connected subgraphs in the environment's connectivity graph.
+
+        For environments with a single connected region (e.g., most regular grids),
+        this will return a single component containing all bins.
+
+        Examples
+        --------
+        >>> # Find all components in environment
+        >>> comps = env.components()
+        >>> print(f"Found {len(comps)} components")
+        Found 2 components
+        >>> print(f"Largest component has {len(comps[0])} bins")
+        Largest component has 150 bins
+
+        >>> # Get only the largest component
+        >>> largest = env.components(largest_only=True)[0]
+        >>> print(f"Largest component: {len(largest)} of {env.n_bins} bins")
+        Largest component: 150 of 200 bins
+
+        """
+        # Find connected components using NetworkX
+        component_sets = nx.connected_components(self.connectivity)
+
+        # Convert sets to arrays and sort by size (largest first)
+        components = [
+            np.asarray(sorted(comp), dtype=np.int32) for comp in component_sets
+        ]
+        components.sort(key=len, reverse=True)
+
+        # Return only largest if requested
+        if largest_only:
+            return components[:1]
+
+        return components
+
+    @check_fitted
+    def reachable_from(
+        self,
+        source_bin: int,
+        *,
+        radius: int | float | None = None,
+        metric: Literal["hops", "geodesic"] = "hops",
+    ) -> NDArray[np.bool_]:
+        """Find all bins reachable from source within optional radius.
+
+        This method performs graph traversal to find which bins can be reached
+        from a starting bin, optionally constrained by a maximum distance.
+        Useful for:
+        - Computing neighborhoods and local regions
+        - Identifying reachable areas from a starting position
+        - Building distance-limited queries
+
+        Parameters
+        ----------
+        source_bin : int
+            Starting bin index. Must be in range [0, n_bins).
+        radius : int, float, or None, optional
+            Maximum distance/hops. If None, find all reachable bins in the
+            same connected component.
+            - For metric='hops': radius is maximum number of edges.
+            - For metric='geodesic': radius is maximum graph distance in
+              physical units.
+        metric : {'hops', 'geodesic'}, default='hops'
+            Distance metric to use:
+            - 'hops': Count graph edges (breadth-first search).
+            - 'geodesic': Sum edge distances in physical units (Dijkstra).
+
+        Returns
+        -------
+        reachable : NDArray[np.bool_], shape (n_bins,)
+            Boolean mask where True indicates reachable bins.
+            The source bin is always reachable (reachable[source_bin] = True).
+
+        Raises
+        ------
+        ValueError
+            If source_bin is not in valid range [0, n_bins).
+            If radius is negative.
+            If metric is not 'hops' or 'geodesic'.
+
+        See Also
+        --------
+        components : Find connected components.
+        distance_between : Compute distance between two bins.
+
+        Notes
+        -----
+        **Algorithm details**:
+        - metric='hops': Uses breadth-first search (BFS) to specified depth.
+        - metric='geodesic': Uses Dijkstra's algorithm with distance cutoff.
+
+        **Performance**:
+        - With radius=None: O(V + E) where V=bins, E=edges
+        - With radius: Depends on local graph density, typically much faster
+
+        The geodesic metric uses the 'distance' attribute on graph edges,
+        which represents the Euclidean distance between bin centers.
+
+        Examples
+        --------
+        >>> # All bins within 3 edges of bin 10
+        >>> mask = env.reachable_from(10, radius=3, metric="hops")
+        >>> neighbor_bins = np.where(mask)[0]
+        >>> print(f"Found {len(neighbor_bins)} neighbors within 3 hops")
+        Found 37 neighbors within 3 hops
+
+        >>> # All bins within 50.0 units geodesic distance from goal region
+        >>> goal_bin = env.bins_in_region("goal")[0]
+        >>> mask = env.reachable_from(goal_bin, radius=50.0, metric="geodesic")
+        >>> print(f"Bins within 50 units: {mask.sum()}")
+        Bins within 50 units: 125
+
+        >>> # All bins in same component (no radius limit)
+        >>> mask = env.reachable_from(source_bin=0, radius=None)
+        >>> print(f"Component size: {mask.sum()} bins")
+        Component size: 1000 bins
+
+        """
+        # Input validation
+        if not isinstance(source_bin, (int, np.integer)):
+            raise TypeError(
+                f"source_bin must be an integer, got {type(source_bin).__name__}"
+            )
+
+        if not 0 <= source_bin < self.n_bins:
+            raise ValueError(
+                f"source_bin must be in range [0, n_bins) where n_bins={self.n_bins}. "
+                f"Got source_bin={source_bin}"
+            )
+
+        if radius is not None and radius < 0:
+            raise ValueError(
+                f"radius must be non-negative or None. Got radius={radius}"
+            )
+
+        if metric not in ("hops", "geodesic"):
+            raise ValueError(
+                f"metric must be 'hops' or 'geodesic'. Got metric='{metric}'"
+            )
+
+        # Initialize result mask
+        reachable = np.zeros(self.n_bins, dtype=bool)
+
+        # Case 1: No radius limit - find entire connected component
+        if radius is None:
+            # Use NetworkX to find all nodes in same component
+            for component_nodes in nx.connected_components(self.connectivity):
+                if source_bin in component_nodes:
+                    for node in component_nodes:
+                        reachable[node] = True
+                    break
+            return reachable
+
+        # Case 2: Radius-limited search
+        if metric == "hops":
+            # Breadth-first search to specified depth
+            # Use NetworkX's single_source_shortest_path_length with cutoff
+            distances = nx.single_source_shortest_path_length(
+                self.connectivity, source_bin, cutoff=int(radius)
+            )
+            # Mark all nodes within radius as reachable
+            for node in distances:
+                reachable[node] = True
+
+        else:  # metric == 'geodesic'
+            # Dijkstra's algorithm with distance cutoff
+            # Use NetworkX's single_source_dijkstra_path_length
+            try:
+                distances = nx.single_source_dijkstra_path_length(
+                    self.connectivity, source_bin, cutoff=radius, weight="distance"
+                )
+                # Mark all nodes within radius as reachable
+                for node in distances:
+                    reachable[node] = True
+            except nx.NetworkXError:
+                # If source_bin has no edges, only mark itself as reachable
+                reachable[source_bin] = True
+
+        return reachable
