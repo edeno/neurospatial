@@ -27,14 +27,15 @@ providing type hints for IDEs and type checkers.
 
 from __future__ import annotations
 
+import logging
 import pickle
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from neurospatial._logger import logger
-
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
+
+logger = logging.getLogger(__name__)
 
 
 class EnvironmentSerialization:

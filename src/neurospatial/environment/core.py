@@ -34,6 +34,7 @@ from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.queries import EnvironmentQueries
 from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
+from neurospatial.environment.transforms import EnvironmentTransforms
 from neurospatial.environment.visualization import EnvironmentVisualization
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.validation import (
@@ -53,6 +54,7 @@ class Environment(
     EnvironmentRegions,
     EnvironmentVisualization,
     EnvironmentAnalysis,
+    EnvironmentTransforms,
 ):
     """Represents a discretized N-dimensional space with connectivity.
 

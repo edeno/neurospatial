@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from functools import wraps
 from typing import Any, Protocol, runtime_checkable
 
-import matplotlib
+import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
