@@ -494,7 +494,148 @@ if not normalize:
 ```
 
 ### Next Steps (Current Status)
-- Phase 3, Task P1.7: Rebin (Grid Coarsening)
+- Phase 4, Task P2.11: Linear Occupancy (Grid Enhancement)
+- Ready to begin TDD cycle
+
+---
+
+## Phase 4, P2.10 Complete! (2025-11-04)
+
+### Summary
+- Implemented field math utility functions in `src/neurospatial/field_ops.py`
+- Comprehensive test suite (51 tests, all passing)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+
+**Functions implemented**:
+1. **`normalize_field(field, eps=1e-12)`** - Normalize field to sum to 1
+2. **`clamp(field, lo=0.0, hi=inf)`** - Clamp values to [lo, hi] range
+3. **`combine_fields(fields, weights, mode='mean')`** - Combine multiple fields (mean/max/min)
+4. **`divergence(p, q, kind='kl', eps=1e-12)`** - Divergence between distributions (KL/JS/cosine)
+
+### Key Design Decisions
+
+1. **Scientifically Correct KL Divergence**: Uses masking to handle zero probabilities correctly
+   - Only adds eps to denominator (q), not numerator (p)
+   - Follows convention: 0 * log(0/q) = 0
+   - Avoids biasing divergence by adding artificial probability mass
+
+2. **Comprehensive Input Validation**: All functions validate inputs before processing
+   - Shape checks, finite value checks (NaN/Inf), range validation
+   - Diagnostic error messages with counts and actual values
+   - eps parameter validation (must be positive)
+
+3. **Three Aggregation Modes for `combine_fields`**:
+   - `mode='mean'`: Weighted average (default uniform weights)
+   - `mode='max'`: Element-wise maximum
+   - `mode='min'`: Element-wise minimum
+
+4. **Three Divergence Types**:
+   - `kind='kl'`: Kullback-Leibler (asymmetric, unbounded)
+   - `kind='js'`: Jensen-Shannon (symmetric, bounded [0,1])
+   - `kind='cosine'`: Cosine distance (symmetric, bounded [0,2])
+
+5. **Normalization Warnings**: Divergence functions warn if distributions don't sum to 1
+   - Only for probabilistic divergences (KL/JS), not cosine
+   - Helps catch data preparation errors
+
+### Files Created/Modified
+- NEW: src/neurospatial/field_ops.py (474 lines, 4 functions)
+- NEW: tests/test_field_ops.py (406 lines, 51 tests)
+- MODIFIED: src/neurospatial/__init__.py (exported functions to public API)
+
+### Test Coverage
+
+Test organization (4 test suites + 1 integration):
+1. **TestNormalizeField**: Normalization (9 tests)
+   - Sums to one, preserves shape, preserves proportions
+   - Uniform field, zero field, negative values
+   - eps parameter, NaN/Inf validation
+2. **TestClamp**: Value clamping (8 tests)
+   - Basic clamping, preserves shape, default bounds
+   - No modification in range, lo > hi validation
+   - NaN propagation, Inf handling
+3. **TestCombineFields**: Field combination (12 tests)
+   - Mean/max/min modes, uniform/weighted averaging
+   - Single/multiple fields, shape validation
+   - Weight validation (length, sum to 1)
+4. **TestDivergence**: Divergence measures (19 tests)
+   - Self-divergence = 0 for all kinds
+   - JS symmetry, KL asymmetry
+   - Bounded metrics, non-negativity
+   - Shape/value validation, normalization warnings
+   - Known analytical values
+   - Orthogonal/opposite vectors
+5. **TestFieldOpsIntegration**: Integration (3 tests)
+   - normalize → clamp workflow
+   - combine → normalize workflow
+   - divergence after normalization
+
+### Code Quality Metrics
+- NumPy docstring format: ✅ (Perfect adherence)
+- Type safety: ✅ (Complete type annotations with Literal types)
+- Input validation: ✅ (Comprehensive with diagnostic errors)
+- Test coverage: ✅ (51/51 passing)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Code review: ✅ APPROVED - Production-ready
+
+### Code Review Feedback Addressed
+
+**Quality Issues Fixed**:
+1. ✅ Fixed KL divergence eps handling (only add to denominator, use masking)
+2. ✅ Fixed JS divergence eps handling (same fix)
+3. ✅ Added eps validation (must be positive)
+4. ✅ Improved cosine distance zero vector handling (use eps threshold)
+5. ✅ Fixed LaTeX syntax warnings in docstrings (escaped backslashes)
+6. ✅ Exported functions to public API (__init__.py)
+
+**Approved Aspects**:
+- Outstanding NumPy docstring format with LaTeX math notation
+- Scientific correctness in all divergence calculations
+- Comprehensive input validation with informative errors
+- Excellent test coverage (51 tests across all dimensions)
+- Clean, readable, performant implementation
+- Follows all project standards (CLAUDE.md compliance)
+
+### Mathematical Correctness
+
+**KL Divergence** (Kullback-Leibler):
+- D_KL(p || q) = Σ p_i log(p_i / q_i)
+- Properly handles zero probabilities via masking
+- Non-symmetric, unbounded [0, ∞)
+
+**JS Divergence** (Jensen-Shannon):
+- D_JS(p || q) = 0.5 * D_KL(p || m) + 0.5 * D_KL(q || m), where m = (p+q)/2
+- Symmetric, bounded [0, 1]
+- Square root is a proper metric
+
+**Cosine Distance**:
+- d_cos(p, q) = 1 - (p·q) / (||p|| ||q||)
+- Symmetric, bounded [0, 2]
+- Handles zero/near-zero vectors gracefully
+
+### Performance
+- Pure NumPy vectorized operations throughout
+- No loops in hot paths
+- 51 tests pass in ~0.11s
+- Efficient for typical neuroscience field sizes (100-10k bins)
+
+### Public API
+Functions exported in neurospatial.__init__.py:
+```python
+from neurospatial import (
+    normalize_field,  # Normalize to probability distribution
+    clamp,            # Clamp values to range
+    combine_fields,   # Combine multiple fields
+    divergence,       # Compute KL/JS/cosine divergence
+)
+```
+
+### Next Steps
+- Phase 4, Task P2.11: Linear Occupancy (Grid Enhancement)
 - Ready to begin TDD cycle
 
 ---

@@ -202,23 +202,23 @@
   - [x] Multiple layouts (2 tests)
   - [x] Determinism test
 
-### P2.10: Field Math Utilities
+### P2.10: Field Math Utilities ✅ COMPLETE
 
-- [ ] Create `src/neurospatial/field_ops.py`
-  - [ ] Implement `normalize_field(field, eps=1e-12)`
-  - [ ] Implement `clamp(field, lo=0.0, hi=inf)`
-  - [ ] Implement `combine_fields(fields, weights, mode='mean')`
-  - [ ] Implement `divergence(p, q, kind='kl', eps=1e-12)`
-    - [ ] KL divergence
-    - [ ] JS divergence
-    - [ ] Cosine distance
-  - [ ] All functions: shape validation, NumPy docstrings
-- [ ] Create `tests/test_field_ops.py`
-  - [ ] Test KL/JS identities (self vs self = 0)
-  - [ ] Test JS symmetry
-  - [ ] Test cosine bounds [0, 2]
-  - [ ] Test normalization preserves shape
-  - [ ] Test combine_fields with weights
+- [x] Create `src/neurospatial/field_ops.py`
+  - [x] Implement `normalize_field(field, eps=1e-12)`
+  - [x] Implement `clamp(field, lo=0.0, hi=inf)`
+  - [x] Implement `combine_fields(fields, weights, mode='mean')`
+  - [x] Implement `divergence(p, q, kind='kl', eps=1e-12)`
+    - [x] KL divergence
+    - [x] JS divergence
+    - [x] Cosine distance
+  - [x] All functions: shape validation, NumPy docstrings
+- [x] Create `tests/test_field_ops.py`
+  - [x] Test KL/JS identities (self vs self = 0)
+  - [x] Test JS symmetry
+  - [x] Test cosine bounds [0, 2]
+  - [x] Test normalization preserves shape
+  - [x] Test combine_fields with weights (51 tests passing)
 
 ### P2.11: Linear Occupancy (Grid Enhancement)
 
