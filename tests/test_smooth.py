@@ -226,16 +226,10 @@ class TestSmoothValidation:
         with pytest.raises(ValueError, match=r"mode must be"):
             env.smooth(field, bandwidth=2.0, mode="invalid")
 
-    def test_smooth_requires_fitted_environment(self):
-        """Calling smooth() on unfitted environment should raise RuntimeError."""
-        # Note: As of current implementation, Environment() constructor requires
-        # a layout parameter, so creating an unfitted environment is not possible
-        # via the public API. This test verifies that the @check_fitted decorator
-        # is present and would work if an unfitted environment could be created.
-        #
-        # The decorator is tested indirectly by all other tests (which use
-        # fitted environments created via factory methods).
-        pytest.skip("Cannot create unfitted Environment with current API")
+    # NOTE: No test for @check_fitted decorator on unfitted environments because:
+    # - Cannot create unfitted Environment with current public API (by design)
+    # - The decorator is tested indirectly by all other tests in this suite
+    # - Factory methods always create fitted environments
 
     def test_smooth_2d_field_raises_error(self):
         """Field must be 1-D array. 2-D arrays should raise ValueError."""
