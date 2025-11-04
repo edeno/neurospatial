@@ -1,5 +1,52 @@
 # Changelog
 
+## [v0.2.0] - 2025-11-04
+
+## What's Changed
+
+### Features
+- feat(P3.15): implement deterministic KDTree with distance thresholds (7ef1109)
+- feat(P3.14): implement Environment.copy() method (17a1d0e)
+- feat(P3.13): implement distance utilities (distance_to and rings) (2e07dce)
+- feat(P3.12): implement Environment.region_membership() for vectorized region containment (a02d926)
+- feat(P2.11): implement linear time allocation for occupancy (d1e3690)
+- feat(P2.10): implement field math utility functions (9f8e53b)
+- feat(P2.9): implement Environment.interpolate() for field evaluation at points (160da81)
+- feat(P1.8): implement Environment.subset() for bin selection and cropping (7269e86)
+- feat(P1.7): implement Environment.rebin() for grid coarsening (d841d3d)
+- feat(P1.6): implement Environment.smooth() for field smoothing (dc4ce39)
+- feat(P0.4): implement connected components and reachability methods (7a1d75f)
+- feat(P0.3): implement Environment.transitions() for empirical transition matrices (a9f3beb)
+- feat(P0.2): implement Environment.bin_sequence() for trajectory-to-bin conversion (f0e008b)
+- feat(P0.1): implement Environment.occupancy() for time-in-bin computation (28ccae0)
+- feat(kernels): implement diffusion kernel infrastructure (Phase 1) (ad5f23f)
+- feat(ci): add manual workflow dispatch to publish workflow (703ed86)
+
+### Bug Fixes
+- fix(lint): resolve ruff errors in example notebook (6b69b2e)
+- fix(GraphLayout): support 1D graph layouts (26b8abc)
+- fix(P2.11): combine nested if statements, apply ruff format (5bddcdf)
+- fix(P0.3): add parameter validation for transitions() method (dad0f96)
+
+### Documentation
+- docs: mark all Environment Operations tasks complete (46e65ab)
+- docs: add jupytext pairing and track all example notebooks (a341e36)
+- docs: mark P3.15 (Deterministic KDTree) as complete (eda4f9b)
+- docs: update CHANGELOG.md for v0.1.0 (84e8a46)
+
+### Other Changes
+- chore: remove completed project management files (66666e7)
+- test: fix disconnected graph tests using systematic debugging (8dc6de6)
+- refactor(test): remove untestable unfitted Environment check_fitted test (03b3722)
+- refactor(test): remove untestable 1D graph region_membership test (a20bbbd)
+- test: implement hexagonal layout interpolation test (233f501)
+- chore: mark public API export task complete in TASKS.md (9fbb8eb)
+- chore: sync notebooks with formatting changes from pre-commit (f8b7528)
+- refactor(P0.3): add unified transitions() interface with model-based methods (d27a1e9)
+
+**Full Changelog**: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0
+
+
 All notable changes to the neurospatial project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
