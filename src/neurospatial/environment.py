@@ -1615,6 +1615,149 @@ class Environment:
         return kernel
 
     @check_fitted
+    def smooth(
+        self,
+        field: NDArray[np.float64],
+        bandwidth: float,
+        *,
+        mode: Literal["transition", "density"] = "density",
+    ) -> NDArray[np.float64]:
+        """Apply diffusion kernel smoothing to a field.
+
+        This method smooths bin-valued fields using diffusion kernels computed
+        via the graph Laplacian. It works uniformly across all layout types
+        (grids, graphs, meshes) and respects the connectivity structure.
+
+        Parameters
+        ----------
+        field : NDArray[np.float64], shape (n_bins,)
+            Field values per bin to smooth. Must be a 1-D array with length
+            equal to n_bins.
+        bandwidth : float
+            Smoothing bandwidth in physical units (σ). Controls the scale
+            of spatial smoothing. Must be positive.
+        mode : {'transition', 'density'}, default='density'
+            Smoothing mode that controls normalization:
+
+            - 'transition': Mass-conserving smoothing. Total sum is preserved:
+              smoothed.sum() = field.sum(). Use for count data (occupancy,
+              spike counts).
+            - 'density': Volume-corrected smoothing. Accounts for varying bin
+              sizes. Use for continuous density fields (rate maps,
+              probability distributions).
+
+        Returns
+        -------
+        smoothed : NDArray[np.float64], shape (n_bins,)
+            Smoothed field values.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        ValueError
+            If field has wrong shape, wrong dimensionality, bandwidth is not
+            positive, or mode is invalid.
+
+        See Also
+        --------
+        compute_kernel : Compute the smoothing kernel explicitly.
+        occupancy : Compute occupancy with optional smoothing.
+
+        Notes
+        -----
+        The smoothing operation is:
+
+        .. math::
+            \\text{smoothed} = K \\cdot \\text{field}
+
+        where :math:`K` is the diffusion kernel computed via matrix exponential
+        of the graph Laplacian.
+
+        For mode='transition', mass is conserved:
+
+        .. math::
+            \\sum_i \\text{smoothed}_i = \\sum_i \\text{field}_i
+
+        For mode='density', the kernel accounts for bin volumes, making it
+        appropriate for continuous density fields.
+
+        The kernel is cached automatically, so repeated smoothing operations
+        with the same bandwidth and mode are efficient.
+
+        Edge preservation: Smoothing respects graph connectivity. Mass does
+        not leak between disconnected components.
+
+        Examples
+        --------
+        >>> # Smooth spike counts (mass-conserving)
+        >>> smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
+        >>> # Total spikes preserved
+        >>> assert np.isclose(smoothed_counts.sum(), spike_counts.sum())
+
+        >>> # Smooth a rate map (volume-corrected)
+        >>> smoothed_rates = env.smooth(rate_map, bandwidth=3.0, mode="density")
+
+        >>> # Smooth a probability distribution
+        >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
+        """
+        # Input validation
+        field = np.asarray(field, dtype=np.float64)
+
+        # Check field dimensionality
+        if field.ndim != 1:
+            raise ValueError(
+                f"Field must be 1-D array (got {field.ndim}-D array). "
+                f"Expected shape (n_bins,) = ({self.n_bins},), got shape {field.shape}."
+            )
+
+        # Check field shape matches n_bins
+        if field.shape[0] != self.n_bins:
+            raise ValueError(
+                f"Field shape {field.shape} must match n_bins={self.n_bins}. "
+                f"Expected shape (n_bins,) = ({self.n_bins},), got ({field.shape[0]},)."
+            )
+
+        # Check for NaN/Inf values
+        if np.any(np.isnan(field)):
+            raise ValueError(
+                "Field contains NaN values. "
+                f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
+                "NaN values are not supported in smoothing operations."
+            )
+
+        if np.any(np.isinf(field)):
+            raise ValueError(
+                "Field contains infinite values. "
+                f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
+                "Infinite values are not supported in smoothing operations."
+            )
+
+        # Validate bandwidth
+        if bandwidth <= 0:
+            raise ValueError(
+                f"bandwidth must be positive (got {bandwidth}). "
+                "Bandwidth controls the spatial scale of smoothing."
+            )
+
+        # Validate mode
+        valid_modes = {"transition", "density"}
+        if mode not in valid_modes:
+            raise ValueError(
+                f"mode must be one of {valid_modes} (got '{mode}'). "
+                "Use 'transition' for mass-conserving smoothing or 'density' "
+                "for volume-corrected smoothing."
+            )
+
+        # Compute kernel (uses cache automatically)
+        kernel = self.compute_kernel(bandwidth, mode=mode, cache=True)
+
+        # Apply smoothing
+        smoothed: NDArray[np.float64] = kernel @ field
+
+        return smoothed
+
+    @check_fitted
     def occupancy(
         self,
         times: NDArray[np.float64],

@@ -494,7 +494,100 @@ if not normalize:
 ```
 
 ### Next Steps (Current Status)
-- Phase 3, Task P1.6: Field Smoothing
+- Phase 3, Task P1.7: Rebin (Grid Coarsening)
+- Ready to begin TDD cycle
+
+---
+
+## Phase 3, P1.6 Complete! (2025-11-03)
+
+### Summary
+- Implemented `Environment.smooth()` method for field smoothing via diffusion kernels
+- Comprehensive test suite (23 tests, all passing)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+- **Method**: `Environment.smooth(field, bandwidth, *, mode='density')`
+- **Location**: src/neurospatial/environment.py (lines 1617-1759)
+- **Features**:
+  - Simple wrapper around `compute_kernel()`
+  - Two modes: 'transition' (mass-conserving) and 'density' (volume-corrected)
+  - Automatic kernel caching for performance
+  - Works uniformly across all layout types (grids, graphs, meshes)
+  - Respects graph connectivity (no leakage between disconnected components)
+
+### Key Design Decisions
+
+1. **Default mode='density'**: Volume-corrected smoothing is more appropriate for continuous density fields (rate maps, probability distributions)
+   - Users can override to mode='transition' for count data (occupancy, spike counts)
+
+2. **Comprehensive Input Validation**:
+   - Field dimensionality (must be 1-D)
+   - Field shape (must match n_bins)
+   - NaN/Inf values (explicitly rejected with diagnostic errors)
+   - Bandwidth (must be positive)
+   - Mode (must be 'transition' or 'density')
+
+3. **NaN/Inf Validation Added After Code Review**:
+   - Critical issue identified: silent corruption of data
+   - Added explicit checks following codebase patterns
+   - Provides diagnostic counts in error messages
+
+4. **Edge Preservation**: Smoothing respects graph structure
+   - Mass does not leak between disconnected components
+   - Verified with explicit test
+
+### Files Created/Modified
+- NEW: tests/test_smooth.py (343 lines, 23 tests + 1 skipped)
+- MODIFIED: src/neurospatial/environment.py (added smooth() method, ~143 lines)
+
+### Test Coverage
+Test organization (8 test suites):
+1. **TestSmoothBasic**: Core functionality (4 tests)
+2. **TestSmoothMassConservation**: Physical properties (2 tests)
+3. **TestSmoothEdgePreservation**: Graph connectivity (1 test)
+4. **TestSmoothModes**: Mode parameter (2 tests)
+5. **TestSmoothValidation**: Input validation (9 tests, 1 skipped)
+6. **TestSmoothMultipleLayouts**: Different layout types (2 tests)
+7. **TestSmoothBandwidthEffect**: Parameter sensitivity (2 tests)
+8. **TestSmoothCaching**: Performance optimization (1 test)
+
+### Code Quality Metrics
+- NumPy docstring format: ✅
+- Type safety: ✅ (Complete type annotations with Literal types)
+- Input validation: ✅ (Comprehensive with diagnostic errors, including NaN/Inf)
+- Test coverage: ✅ (23/23 passing, 1 skipped with valid reason)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Code review: ✅ APPROVED after addressing critical NaN/Inf validation
+
+### Code Review Feedback Addressed
+**Critical Issues Fixed**:
+- ✅ Added NaN/Inf validation to prevent silent data corruption
+- ✅ Added 3 tests for NaN/Inf edge cases
+
+**Quality Issues Fixed**:
+- ✅ Fixed test name: test_smooth_1d_field_raises_error → test_smooth_2d_field_raises_error
+- ✅ Improved disconnected components test to verify disconnection first
+
+**Approved Aspects**:
+- Excellent NumPy docstring format with comprehensive examples
+- Robust input validation with clear error messages
+- Comprehensive test coverage (8 test suites, 23 tests)
+- Clean wrapper implementation delegating to compute_kernel()
+- Proper @check_fitted decorator usage
+- Consistent type hints with Literal usage
+- Edge case handling (empty field, constant field, impulse)
+- Automatic kernel caching for performance
+
+### Performance
+- First call with new (bandwidth, mode): Computes kernel (O(n³))
+- Subsequent calls: Fast (matrix-vector multiplication, cached kernel)
+- 23 tests pass in ~0.35s
+
+### Next Steps
+- Phase 3, Task P1.7: Rebin (Grid Coarsening)
 - Ready to begin TDD cycle
 
 ---

@@ -120,18 +120,20 @@
 
 **Goal**: Implement P1 operations (smooth, rebin, subset).
 
-### P1.6: Field Smoothing
+### P1.6: Field Smoothing ✅ COMPLETE
 
-- [ ] Implement `Environment.smooth()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Validate field shape matches `n_bins`
-  - [ ] Call `compute_kernel(bandwidth, mode)`
-  - [ ] Return kernel @ field
-- [ ] Tests for `smooth()`
-  - [ ] Impulse spreading to neighbors
-  - [ ] Mass conservation after smoothing
-  - [ ] Edge preservation (no cross-component leakage)
-  - [ ] Invalid field shape raises ValueError
+- [x] Implement `Environment.smooth()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Validate field shape matches `n_bins`
+  - [x] Validate field for NaN/Inf values
+  - [x] Call `compute_kernel(bandwidth, mode)`
+  - [x] Return kernel @ field
+- [x] Tests for `smooth()`
+  - [x] Impulse spreading to neighbors
+  - [x] Mass conservation after smoothing
+  - [x] Edge preservation (no cross-component leakage)
+  - [x] Invalid field shape raises ValueError
+  - [x] NaN/Inf values raise ValueError (23 tests passing)
 
 ### P1.7: Rebin (Grid Coarsening)
 
