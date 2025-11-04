@@ -50,25 +50,27 @@
 
 ---
 
-## Milestone 2: Extract Decorators (30 minutes)
+## Milestone 2: Extract Decorators (30 minutes) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/decorators.py`
-- [ ] Copy `check_fitted` decorator from environment.py (lines 52-91)
-- [ ] Add module docstring
-- [ ] Verify decorator is plain Python (no dependencies on Environment)
-- [ ] Run decorator tests
+- [x] Create `src/neurospatial/environment/decorators.py`
+- [x] Copy `check_fitted` decorator from environment.py (lines 52-91)
+- [x] Add module docstring
+- [x] Verify decorator is plain Python (no dependencies on Environment)
+- [x] Run decorator tests
 
   ```bash
   uv run pytest tests/test_check_fitted_error.py -v
   ```
 
+  **Result**: 8/8 tests passed
+
 ### Success Criteria
 
-- ✅ `decorators.py` created (~50 lines)
-- ✅ All decorator tests pass
-- ✅ No imports of Environment in decorators.py
+- ✅ `decorators.py` created (78 lines)
+- ✅ All decorator tests pass (8/8)
+- ✅ No imports of Environment in decorators.py (uses TYPE_CHECKING guard)
 
 ---
 
