@@ -979,13 +979,13 @@ plt.show()
 
 # %%
 # Compute transition entropy (measure of movement randomness)
-def compute_transition_entropy(T_normalized):
+def compute_transition_entropy(t_normalized):
     """Shannon entropy of transition probabilities for each bin."""
-    T_dense = T_normalized.toarray()
+    t_dense = t_normalized.toarray()
     entropy = np.zeros(env.n_bins)
 
     for i in range(env.n_bins):
-        row = T_dense[i]
+        row = t_dense[i]
         p = row[row > 0]  # Only non-zero probabilities
         if len(p) > 0:
             entropy[i] = -np.sum(p * np.log2(p))
@@ -1280,7 +1280,7 @@ plt.tight_layout()
 plt.show()
 
 print(f"\nNeuron {best_neuron} activity by distance to north reward:")
-for label, rate in zip(distance_labels, mean_rate_by_distance):
+for label, rate in zip(distance_labels, mean_rate_by_distance, strict=True):
     print(f"  {label}: {rate:.2f} Hz")
 
 # %% [markdown]
