@@ -355,6 +355,100 @@ Test organization (9 test suites):
 - Large datasets (100k+ transitions): 100ms-1s
 - Test with 10k transitions: <50ms
 
+---
+
+## Phase 2, P0.3 Refactored! (2025-11-03)
+
+### Summary
+- Refactored `Environment.transitions()` to support both empirical AND model-based transitions
+- Added unified interface with method dispatch
+- All 35 tests passing (26 original + 9 new model-based)
+
+### Refactoring Details
+
+**Architecture change**: Single `transitions()` method with mode dispatch
+
+```python
+# Empirical (from data) - unchanged API
+T = env.transitions(times=times, positions=positions)
+
+# Model-based (from structure) - NEW!
+T = env.transitions(method='random_walk')
+T = env.transitions(method='diffusion', bandwidth=5.0)
+```
+
+### Implementation
+
+**Three-layer design**:
+1. `_empirical_transitions()` - Helper for data-driven transitions
+2. `_random_walk_transitions()` - Helper for uniform graph diffusion
+3. `_diffusion_transitions()` - Helper for distance-weighted diffusion
+4. `transitions()` - Public method that dispatches based on inputs
+
+**Dispatch logic**:
+- If `method` parameter provided → model-based mode
+- Otherwise → empirical mode (bins OR times/positions required)
+- Validates that modes aren't mixed (clear error messages)
+
+### New Features
+
+**1. Random Walk Transitions** (`method='random_walk'`)
+- Uniform transition to all graph neighbors
+- T[i,j] = 1/degree(i) if j is neighbor of i, else 0
+- Equivalent to normalized adjacency matrix
+- Use case: Null hypothesis for spatial exploration
+
+**2. Diffusion Transitions** (`method='diffusion'`)
+- Distance-weighted transitions via heat kernel
+- Leverages existing `compute_kernel()` infrastructure
+- Bandwidth parameter controls locality (small=local, large=uniform)
+- Use case: Expected transitions under Brownian motion
+
+### Test Coverage
+
+**New test class**: `TestTransitionsModelBased` (9 tests)
+- Basic functionality for both methods
+- Validation (requires bandwidth for diffusion)
+- Error handling (mixed modes, unknown methods)
+- Properties (uniform neighbors, locality, sparse format)
+- Comparison between methods
+
+**Total coverage**: 35 tests, all passing
+- 26 empirical tests (unchanged, still pass)
+- 9 model-based tests (new)
+
+### UX Improvements
+
+**Single entry point**: Users only need `env.transitions()`
+- Type-driven: parameters guide to correct usage
+- Discoverable: IDE shows all options in one place
+- Clear error messages when mixing modes
+
+**Parameter organization**:
+- Empirical parameters: `bins`, `times`, `positions`, `lag`, `allow_teleports`
+- Model parameters: `method`, `bandwidth`
+- Common parameters: `normalize`
+
+**Documentation**: Comprehensive docstring explains both modes with examples
+
+### Files Modified
+- MODIFIED: src/neurospatial/environment.py (+215 lines)
+  - Extracted `_empirical_transitions()` helper
+  - Added `_random_walk_transitions()` helper
+  - Added `_diffusion_transitions()` helper
+  - Refactored `transitions()` with unified dispatch
+- MODIFIED: tests/test_transitions.py (+138 lines, 9 new tests)
+
+### Backward Compatibility
+- ✅ **Fully backward compatible** - all existing tests pass unchanged
+- Empirical mode API unchanged
+- New model-based mode is additive (opt-in via `method` parameter)
+
+### Performance
+- Random walk: O(E) - just normalizes adjacency matrix
+- Diffusion: Same as `compute_kernel()` - leverages existing implementation
+- No performance regression for empirical mode
+
 ### Next Steps (Current Status)
 - Phase 2, Task P0.4: Connected Components / Reachability
 - Ready to begin TDD cycle

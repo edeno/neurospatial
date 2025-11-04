@@ -517,3 +517,143 @@ class TestTransitionsPerformance:
         non_zero_rows = row_sums > 0
         if non_zero_rows.any():
             assert_allclose(row_sums[non_zero_rows], 1.0, rtol=1e-6)
+
+
+class TestTransitionsModelBased:
+    """Tests for model-based transition methods."""
+
+    def test_random_walk_basic(self):
+        """Test basic random walk transition matrix."""
+        # Create simple 1D environment
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        T = env.transitions(method="random_walk")
+
+        assert scipy.sparse.issparse(T)
+        assert T.shape == (env.n_bins, env.n_bins)
+
+        # Check it's row-stochastic
+        row_sums = np.array(T.sum(axis=1)).flatten()
+        assert_allclose(row_sums, 1.0, rtol=1e-6)
+
+    def test_random_walk_uniform_neighbors(self):
+        """Test that random walk gives uniform probability to neighbors."""
+        # Create simple 1D track: 0-1-2-3-4
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        T = env.transitions(method="random_walk", normalize=True)
+
+        # Middle bin (e.g., bin 2) should have equal prob to neighbors
+        # Assuming 1D connectivity: bin 2 connects to bins 1 and 3
+        middle_bin = 2
+        neighbors = list(env.connectivity.neighbors(middle_bin))
+
+        if len(neighbors) > 0:
+            expected_prob = 1.0 / len(neighbors)
+            for neighbor in neighbors:
+                assert_allclose(T[middle_bin, neighbor], expected_prob, rtol=1e-6)
+
+    def test_diffusion_basic(self):
+        """Test basic diffusion transition matrix."""
+        # Create simple environment
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        T = env.transitions(method="diffusion", bandwidth=5.0)
+
+        assert scipy.sparse.issparse(T)
+        assert T.shape == (env.n_bins, env.n_bins)
+
+        # Check it's row-stochastic (from heat kernel)
+        row_sums = np.array(T.sum(axis=1)).flatten()
+        assert_allclose(row_sums, 1.0, rtol=1e-3)  # Slightly looser tolerance
+
+    def test_diffusion_locality(self):
+        """Test that diffusion emphasizes local transitions."""
+        # Create environment
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 21, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        # Small bandwidth = more local
+        T_local = env.transitions(method="diffusion", bandwidth=1.0)
+
+        # Large bandwidth = more uniform
+        T_global = env.transitions(method="diffusion", bandwidth=20.0)
+
+        # For a bin in the middle, local should have higher self-transition
+        middle_bin = env.n_bins // 2
+        if T_local.shape[0] > middle_bin:
+            # Local diffusion should prefer staying nearby
+            assert T_local[middle_bin, middle_bin] > T_global[middle_bin, middle_bin]
+
+    def test_diffusion_requires_bandwidth(self):
+        """Test that diffusion method requires bandwidth parameter."""
+        env = Environment.from_samples(
+            np.array([[0.0], [10.0]]),
+            bin_size=5.0,
+        )
+
+        with pytest.raises(ValueError, match=r"requires 'bandwidth'"):
+            env.transitions(method="diffusion")
+
+    def test_model_with_empirical_inputs_error(self):
+        """Test error when providing both method and empirical inputs."""
+        env = Environment.from_samples(
+            np.array([[0.0], [10.0]]),
+            bin_size=5.0,
+        )
+
+        bins = np.array([0, 1], dtype=np.int32)
+
+        with pytest.raises(ValueError, match=r"Cannot provide both"):
+            env.transitions(bins=bins, method="random_walk")
+
+    def test_unknown_method_error(self):
+        """Test error for unknown method."""
+        env = Environment.from_samples(
+            np.array([[0.0], [10.0]]),
+            bin_size=5.0,
+        )
+
+        with pytest.raises(ValueError, match=r"Unknown method"):
+            env.transitions(method="levy_flight")
+
+    def test_random_walk_vs_diffusion(self):
+        """Test that random walk and diffusion give different results."""
+        # Create environment
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        T_random = env.transitions(method="random_walk")
+        T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+
+        # They should be different (diffusion is distance-weighted)
+        diff = (T_random - T_diffusion).toarray()
+        assert np.abs(diff).max() > 0.01  # At least some difference
+
+    def test_model_based_sparse_format(self):
+        """Test that model-based methods return sparse matrices."""
+        env = Environment.from_samples(
+            np.random.RandomState(42).uniform(0, 20, size=(100, 2)),
+            bin_size=3.0,
+        )
+
+        T_random = env.transitions(method="random_walk")
+        T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+
+        assert scipy.sparse.issparse(T_random)
+        assert scipy.sparse.issparse(T_diffusion)
+        assert T_random.format == "csr"
+        assert T_diffusion.format == "csr"

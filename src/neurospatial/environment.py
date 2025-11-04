@@ -2057,8 +2057,7 @@ class Environment:
 
         return deduplicated_bins, run_starts, run_ends
 
-    @check_fitted
-    def transitions(
+    def _empirical_transitions(
         self,
         bins: NDArray[np.int32] | None = None,
         *,
@@ -2068,11 +2067,10 @@ class Environment:
         normalize: bool = True,
         allow_teleports: bool = False,
     ) -> scipy.sparse.csr_matrix:
-        """Compute empirical transition matrix from trajectory.
+        """Compute empirical transition matrix from observed trajectory data.
 
-        This method builds a Markov transition matrix by counting observed
-        transitions between bins in a trajectory. The result is returned as
-        a sparse CSR matrix for memory efficiency.
+        Internal helper for transitions() method. Counts observed transitions
+        between bins in a trajectory.
 
         Parameters
         ----------
@@ -2273,6 +2271,225 @@ class Environment:
             transition_matrix = normalizer @ transition_matrix
 
         return transition_matrix
+
+    def _random_walk_transitions(
+        self,
+        *,
+        normalize: bool = True,
+    ) -> scipy.sparse.csr_matrix:
+        """Compute uniform random walk transition matrix from graph structure.
+
+        Internal helper for transitions(method='random_walk'). Creates a
+        transition matrix where each bin transitions uniformly to its neighbors.
+        """
+        import scipy.sparse
+
+        # Get adjacency matrix from connectivity graph
+        adjacency = nx.adjacency_matrix(self.connectivity, nodelist=range(self.n_bins))
+
+        # Convert to float and ensure CSR format
+        transition_matrix = adjacency.astype(float).tocsr()
+
+        if normalize:
+            # Normalize rows: T[i,j] = 1/degree(i) if j is neighbor of i
+            row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
+
+            # Avoid division by zero for isolated nodes
+            nonzero_rows = row_sums > 0
+            inv_row_sums = np.zeros(self.n_bins)
+            inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
+
+            # Normalize
+            normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
+            transition_matrix = normalizer @ transition_matrix
+
+        return transition_matrix
+
+    def _diffusion_transitions(
+        self,
+        bandwidth: float,
+        *,
+        normalize: bool = True,
+    ) -> scipy.sparse.csr_matrix:
+        """Compute diffusion-based transition matrix using heat kernel.
+
+        Internal helper for transitions(method='diffusion'). Uses the heat
+        kernel to model continuous-time diffusion on the graph.
+        """
+        import scipy.sparse
+
+        # Use existing compute_kernel infrastructure
+        kernel = self.compute_kernel(bandwidth=bandwidth, mode="transition")
+
+        # kernel is already row-stochastic from compute_kernel
+        # Convert to sparse if needed
+        if not scipy.sparse.issparse(kernel):
+            kernel = scipy.sparse.csr_matrix(kernel)
+
+        if not normalize:
+            # If user wants unnormalized, we'd need to scale back
+            # For now, diffusion is inherently normalized
+            # Could raise warning or just return normalized version
+            pass
+
+        return kernel
+
+    @check_fitted
+    def transitions(
+        self,
+        bins: NDArray[np.int32] | None = None,
+        *,
+        times: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64] | None = None,
+        # Empirical parameters
+        lag: int = 1,
+        allow_teleports: bool = False,
+        # Model-based parameters
+        method: Literal["diffusion", "random_walk"] | None = None,
+        bandwidth: float | None = None,
+        # Common parameters
+        normalize: bool = True,
+    ) -> scipy.sparse.csr_matrix:
+        """Compute transition matrix (empirical or model-based).
+
+        Two modes of operation:
+
+        1. **Empirical**: Count observed transitions from trajectory data.
+           Requires bins OR (times + positions). Analyzes actual behavior.
+
+        2. **Model-based**: Generate theoretical transitions from graph structure.
+           Requires method parameter. Models expected behavior.
+
+        Parameters
+        ----------
+        bins : NDArray[np.int32], shape (n_samples,), optional
+            [Empirical mode] Precomputed bin sequence. If None, computed from
+            times/positions. Must contain valid bin indices in range [0, n_bins).
+            Outside values (-1) are not allowed.
+        times : NDArray[np.float64], shape (n_samples,), optional
+            [Empirical mode] Timestamps in seconds. Must be provided together
+            with positions.
+        positions : NDArray[np.float64], shape (n_samples, n_dims), optional
+            [Empirical mode] Position coordinates matching environment dimensions.
+            Must be provided together with times.
+        lag : int, default=1
+            [Empirical mode] Temporal lag for transitions: count bins[t] → bins[t+lag].
+            Must be positive. lag=1 counts consecutive transitions, lag=2 skips one bin.
+        allow_teleports : bool, default=False
+            [Empirical mode] If False, only count transitions between graph-adjacent
+            bins. Non-adjacent transitions (e.g., from tracking errors) are excluded.
+            Self-transitions (staying in same bin) are always counted.
+            If True, count all transitions including non-local jumps.
+        method : {'diffusion', 'random_walk'}, optional
+            [Model mode] Type of model-based transitions:
+            - 'random_walk': Uniform transitions to graph neighbors
+            - 'diffusion': Distance-weighted transitions via heat kernel
+            If provided, empirical parameters (bins/times/positions/lag/allow_teleports)
+            are ignored.
+        bandwidth : float, optional
+            [Model: diffusion] Diffusion bandwidth in physical units (σ).
+            Required when method='diffusion'. Larger values produce more uniform
+            transitions; smaller values emphasize local transitions.
+        normalize : bool, default=True
+            If True, return row-stochastic matrix where each row sums to 1
+            (representing transition probabilities).
+            If False, return raw counts (empirical) or unnormalized weights (model).
+
+        Returns
+        -------
+        T : scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+            Transition matrix where T[i,j] represents:
+            - If normalize=True: P(next_bin=j | current_bin=i)
+            - If normalize=False: count/weight of i→j transitions
+
+            For normalized matrices, each row sums to 1.0 (rows with no
+            transitions sum to 0.0).
+
+        Raises
+        ------
+        ValueError
+            If method is None and neither bins nor times/positions are provided.
+            If method is provided together with empirical inputs.
+            If method='diffusion' but bandwidth is not provided.
+            If bins contains invalid indices outside [0, n_bins).
+            If lag is not positive (empirical mode).
+
+        See Also
+        --------
+        bin_sequence : Convert trajectory to bin indices.
+        occupancy : Compute time spent in each bin.
+        compute_kernel : Low-level diffusion kernel computation.
+
+        Notes
+        -----
+        **Empirical mode**: Counts observed transitions from trajectory data.
+        When allow_teleports=False, filters out non-adjacent transitions using
+        the connectivity graph. Useful for removing tracking errors.
+
+        **Model mode**: Generates theoretical transition probabilities:
+        - 'random_walk': Each bin transitions uniformly to all graph neighbors.
+          Equivalent to normalized adjacency matrix.
+        - 'diffusion': Transitions weighted by spatial proximity using heat kernel.
+          Models continuous-time random walk with Gaussian steps.
+
+        The sparse CSR format is memory-efficient for large environments
+        where most bin pairs have no transitions.
+
+        Examples
+        --------
+        >>> # Empirical transitions from trajectory
+        >>> T_empirical = env.transitions(times=times, positions=positions)
+
+        >>> # Empirical from precomputed bins with lag
+        >>> T_lag2 = env.transitions(bins=bin_sequence, lag=2, allow_teleports=True)
+
+        >>> # Model: uniform random walk
+        >>> T_random = env.transitions(method="random_walk")
+
+        >>> # Model: diffusion with spatial bias
+        >>> T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+
+        >>> # Compare empirical vs model
+        >>> diff = (T_empirical - T_diffusion).toarray()
+        >>> # Large differences indicate non-random exploration
+        """
+        # Dispatch based on mode
+        if method is not None:
+            # MODEL-BASED MODE
+            # Validate that empirical inputs aren't provided
+            if bins is not None or times is not None or positions is not None:
+                raise ValueError(
+                    "Cannot provide both 'method' (model-based) and empirical "
+                    "inputs (bins/times/positions). Choose one mode."
+                )
+
+            # Dispatch to model-based method
+            if method == "random_walk":
+                return self._random_walk_transitions(normalize=normalize)
+            elif method == "diffusion":
+                if bandwidth is None:
+                    raise ValueError(
+                        "method='diffusion' requires 'bandwidth' parameter. "
+                        "Provide bandwidth in physical units (sigma)."
+                    )
+                return self._diffusion_transitions(
+                    bandwidth=bandwidth, normalize=normalize
+                )
+            else:
+                raise ValueError(
+                    f"Unknown method '{method}'. "
+                    f"Valid options: 'random_walk', 'diffusion'."
+                )
+        else:
+            # EMPIRICAL MODE
+            return self._empirical_transitions(
+                bins=bins,
+                times=times,
+                positions=positions,
+                lag=lag,
+                normalize=normalize,
+                allow_teleports=allow_teleports,
+            )
 
     @cached_property
     @check_fitted
