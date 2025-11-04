@@ -917,7 +917,103 @@ Test organization (9 test suites):
 - 24 tests pass in ~0.17s
 
 ### Next Steps
-- Phase 4, Task P2.9: Field Interpolation
+- Phase 4, Task P2.10: Field Math Utilities
+- Ready to begin TDD cycle
+
+---
+
+## Phase 4, P2.9 Complete! (2025-11-03)
+
+### Summary
+- Implemented `Environment.interpolate()` method for evaluating bin-valued fields at arbitrary points
+- Comprehensive test suite (24 tests passing, 1 skipped)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+- **Method**: `Environment.interpolate(field, points, *, mode='nearest')`
+- **Location**: src/neurospatial/environment.py (lines 2370-2629)
+- **Features**:
+  - Two modes: 'nearest' (KDTree, all layouts) and 'linear' (scipy RegularGridInterpolator, grids only)
+  - Points outside environment return NaN (no extrapolation)
+  - Comprehensive validation: field shape, dimensionality, NaN/Inf in both field and points
+  - Deterministic tie-breaking via `tie_break="lowest_index"`
+  - Helper methods: `_interpolate_nearest()` and `_interpolate_linear()`
+
+### Key Design Decisions
+
+1. **Nearest-Neighbor via KDTree**: Delegates to `map_points_to_bins()` for consistency
+   - Leverages existing KDTree caching infrastructure
+   - Returns -1 for outside points, which we map to NaN
+   - Works on all layout types
+
+2. **Linear via scipy**: Uses RegularGridInterpolator for smooth interpolation
+   - Requires RegularGridLayout (explicit isinstance check)
+   - Computes bin centers from grid_edges
+   - Sets `bounds_error=False, fill_value=np.nan` for outside points
+   - Exact for linear functions (tested with f(x,y) = 2x + 3y)
+
+3. **NaN/Inf Validation**: Added after code review
+   - Both field and points validated for non-finite values
+   - Provides diagnostic error messages with counts
+   - Prevents cryptic scipy errors downstream
+
+4. **Empty Points Handling**: Returns empty array with shape (0,)
+   - Consistent with NumPy conventions
+   - Explicitly tested
+
+### Files Created/Modified
+- NEW: tests/test_interpolate.py (395 lines, 24 tests passing + 1 skipped)
+- MODIFIED: src/neurospatial/environment.py (added interpolate() method + 2 helpers, ~260 lines)
+
+### Test Coverage
+Test organization (8 test suites):
+1. **TestInterpolateBasic**: Core functionality (4 tests)
+2. **TestInterpolateOutsideBehavior**: NaN returns for outside points (2 tests)
+3. **TestInterpolateLinearGridOnly**: Layout type restrictions (1 test)
+4. **TestInterpolateValidation**: Input validation (9 tests including NaN/Inf)
+5. **TestInterpolateEdgeCases**: Boundary conditions (3 tests)
+6. **TestInterpolateMultipleLayouts**: Different layout types (2 tests, 1 skipped)
+7. **TestInterpolateLinearAccuracy**: Mathematical correctness (2 tests)
+8. **TestInterpolateDeterminism**: Reproducibility (1 test)
+
+### Code Quality Metrics
+- NumPy docstring format: ✅
+- Type safety: ✅ (Complete type annotations with Literal)
+- Input validation: ✅ (Comprehensive with diagnostic errors for field AND points)
+- Test coverage: ✅ (24/24 passing, 1 skipped - hexagonal needs fixture)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed, auto-fixed 1 unused import)
+- Code review: ✅ (All critical issues addressed - NaN/Inf points validation added)
+
+### Code Review Feedback Addressed
+**Critical Issues Fixed**:
+- ✅ Added NaN/Inf validation for points array (prevents cryptic scipy errors)
+- ✅ Added 2 tests for NaN/Inf in points (test_interpolate_nan_in_points, test_interpolate_inf_in_points)
+- ✅ Unskipped linear mode test (uses polygon layout instead of graph)
+
+**Approved Aspects**:
+- Excellent NumPy docstring with all sections (Parameters, Returns, Raises, See Also, Notes, Examples)
+- Proper @check_fitted decorator usage
+- Clean delegation to helper methods
+- Smart layout type checking (isinstance for RegularGridLayout)
+- Graceful outside handling (NaN prevents extrapolation)
+- Comprehensive test coverage (8 test suites, 24 tests)
+- Deterministic tie-breaking for reproducibility
+- Correct scipy usage (lazy import, proper bounds handling)
+
+### Performance
+- Nearest mode: O(log N) per query after KDTree cached (first call builds tree)
+- Linear mode: O(N) overhead to build interpolator, then O(1) per query
+- 24 tests pass in ~0.08s
+
+### Scientific Correctness
+- Linear interpolation correctly uses scipy.interpolate.RegularGridInterpolator
+- Implements multilinear interpolation (bilinear for 2D, trilinear for 3D)
+- Exact for linear functions f(x,y) = ax + by + c (verified in test_linear_interpolation_of_plane)
+
+### Next Steps
+- Phase 4, Task P2.10: Field Math Utilities (normalize, clamp, combine, divergence)
 - Ready to begin TDD cycle
 
 ---

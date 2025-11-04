@@ -182,20 +182,25 @@
 
 **Goal**: Implement P2 operations (interpolation, field math).
 
-### P2.9: Field Interpolation
+### P2.9: Field Interpolation ✅
 
-- [ ] Implement `Environment.interpolate()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Input validation
-  - [ ] Nearest neighbor mode (KDTree, all layouts)
-  - [ ] Linear mode (grids only)
-    - [ ] Check layout is `RegularGridLayout`
-    - [ ] Use `scipy.interpolate.RegularGridInterpolator`
-  - [ ] Handle out-of-bounds → NaN
-- [ ] Tests for `interpolate()`
-  - [ ] Known plane field f(x,y) = x + 2*y (linear mode)
-  - [ ] Nearest mode on irregular graph
-  - [ ] Out-of-bounds points → NaN
+- [x] Implement `Environment.interpolate()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Input validation (field, points, mode, NaN/Inf checks)
+  - [x] Nearest neighbor mode (KDTree, all layouts)
+  - [x] Linear mode (grids only)
+    - [x] Check layout is `RegularGridLayout`
+    - [x] Use `scipy.interpolate.RegularGridInterpolator`
+  - [x] Handle out-of-bounds → NaN
+- [x] Tests for `interpolate()` (24 passing, 1 skipped)
+  - [x] Known plane field f(x,y) = 2x + 3y (linear mode - exact recovery)
+  - [x] Nearest mode on polygon layout
+  - [x] Out-of-bounds points → NaN
+  - [x] Linear mode requires RegularGridLayout
+  - [x] Comprehensive validation tests (9 tests)
+  - [x] Edge cases (3 tests)
+  - [x] Multiple layouts (2 tests)
+  - [x] Determinism test
 
 ### P2.10: Field Math Utilities
 
