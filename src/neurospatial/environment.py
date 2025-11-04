@@ -2757,7 +2757,7 @@ class Environment:
         if total_distance < 1e-12:
             # No movement - allocate all time to starting bin
             start_bin_idx = self._position_to_flat_index(
-                start_pos, grid_edges, grid_shape
+                start_pos, list(grid_edges), grid_shape
             )
             if start_bin_idx >= 0:
                 return [(start_bin_idx, total_time)]
@@ -3045,15 +3045,15 @@ class Environment:
             )
 
         # Check layout compatibility for linear allocation
-        if time_allocation == "linear":
-            from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
-            if not isinstance(self.layout, RegularGridLayout):  # type: ignore[unreachable]
-                raise NotImplementedError(
-                    "time_allocation='linear' is only supported for RegularGridLayout. "
-                    f"Current layout type: {type(self.layout).__name__}. "
-                    "Use time_allocation='start' for other layout types."
-                )
+        if (
+            time_allocation == "linear"
+            and type(self.layout).__name__ != "RegularGridLayout"
+        ):
+            raise NotImplementedError(
+                "time_allocation='linear' is only supported for RegularGridLayout. "
+                f"Current layout type: {type(self.layout).__name__}. "
+                "Use time_allocation='start' for other layout types."
+            )
 
         # Handle empty arrays
         if len(times) == 0:
@@ -3102,9 +3102,9 @@ class Environment:
                 )
                 occupancy[:] = counts[: self.n_bins]
 
-        else:  # time_allocation == "linear"
+        elif time_allocation == "linear":
             # Linear allocation: split time across bins traversed by ray
-            occupancy = self._allocate_time_linear(  # type: ignore[unreachable]
+            occupancy = self._allocate_time_linear(
                 positions, dt, valid_mask, bin_indices
             )
 
