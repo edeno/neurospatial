@@ -628,6 +628,63 @@ class TestTransitionsModelBased:
         with pytest.raises(ValueError, match=r"Unknown method"):
             env.transitions(method="levy_flight")
 
+    def test_model_with_lag_parameter_error(self):
+        """Test error when providing lag parameter with model-based method."""
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        with pytest.raises(ValueError, match=r"'lag' is only valid in empirical mode"):
+            env.transitions(method="random_walk", lag=2)
+
+    def test_model_with_allow_teleports_error(self):
+        """Test error when providing allow_teleports parameter with model-based method."""
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        with pytest.raises(
+            ValueError, match=r"'allow_teleports' is only valid in empirical mode"
+        ):
+            env.transitions(method="diffusion", bandwidth=5.0, allow_teleports=True)
+
+    def test_random_walk_with_bandwidth_error(self):
+        """Test error when providing bandwidth to random_walk method."""
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        with pytest.raises(
+            ValueError, match=r"'bandwidth' is only valid with method='diffusion'"
+        ):
+            env.transitions(method="random_walk", bandwidth=5.0)
+
+    def test_diffusion_normalize_false_error(self):
+        """Test error when using normalize=False with diffusion method."""
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        with pytest.raises(ValueError, match=r"does not support normalize=False"):
+            env.transitions(method="diffusion", bandwidth=5.0, normalize=False)
+
+    def test_random_walk_normalize_false(self):
+        """Test that random walk works with normalize=False."""
+        env = Environment.from_samples(
+            np.array([[i] for i in range(0, 11, 2)], dtype=float),
+            bin_size=2.5,
+        )
+
+        T = env.transitions(method="random_walk", normalize=False)
+        assert scipy.sparse.issparse(T)
+        assert T.shape == (env.n_bins, env.n_bins)
+        # Should be unnormalized adjacency matrix (integer counts)
+        assert T.dtype in [np.int32, np.int64, np.float64]
+
     def test_random_walk_vs_diffusion(self):
         """Test that random walk and diffusion give different results."""
         # Create environment

@@ -580,6 +580,7 @@ class Environment:
           Dimension 1: 5.00
         <BLANKLINE>
         Regions: 0
+
         """
         # Build output line by line
         lines = []
@@ -686,6 +687,7 @@ class Environment:
         ValueError
             If the connectivity graph from the layout engine is invalid
             (missing required node/edge attributes, wrong dimensions, etc.)
+
         """
         self.bin_centers = self.layout.bin_centers
         self.connectivity = getattr(self.layout, "connectivity", nx.Graph())
@@ -1584,6 +1586,7 @@ class Environment:
         >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
         >>> # Apply to field
         >>> smoothed_field = kernel @ field
+
         """
         from neurospatial.kernels import compute_diffusion_kernels
 
@@ -1712,6 +1715,7 @@ class Environment:
         >>> occ_filtered = env.occupancy(
         ...     times, positions, speed=speeds, min_speed=2.0, kernel_bandwidth=3.0
         ... )
+
         """
         from neurospatial.spatial import map_points_to_bins
 
@@ -1915,6 +1919,7 @@ class Environment:
         >>>
         >>> # Drop outside samples entirely
         >>> bins = env.bin_sequence(times, positions, outside_value=None)
+
         """
         # Input validation
         times = np.asarray(times, dtype=np.float64)
@@ -2148,6 +2153,7 @@ class Environment:
 
         >>> # Multi-step transitions (lag=2)
         >>> T_2step = env.transitions(bins=bin_sequence, lag=2)
+
         """
         import scipy.sparse
 
@@ -2327,10 +2333,11 @@ class Environment:
             kernel = scipy.sparse.csr_matrix(kernel)
 
         if not normalize:
-            # If user wants unnormalized, we'd need to scale back
-            # For now, diffusion is inherently normalized
-            # Could raise warning or just return normalized version
-            pass
+            raise ValueError(
+                "method='diffusion' does not support normalize=False. "
+                "Heat kernel transitions are inherently normalized (row-stochastic). "
+                "Set normalize=True or use method='random_walk'."
+            )
 
         return kernel
 
@@ -2409,8 +2416,11 @@ class Environment:
         ------
         ValueError
             If method is None and neither bins nor times/positions are provided.
-            If method is provided together with empirical inputs.
+            If method is provided together with empirical inputs (bins/times/positions).
+            If method is provided together with empirical parameters (lag != 1 or allow_teleports != False).
+            If method='random_walk' but bandwidth is provided.
             If method='diffusion' but bandwidth is not provided.
+            If method='diffusion' but normalize=False (not supported).
             If bins contains invalid indices outside [0, n_bins).
             If lag is not positive (empirical mode).
 
@@ -2452,6 +2462,7 @@ class Environment:
         >>> # Compare empirical vs model
         >>> diff = (T_empirical - T_diffusion).toarray()
         >>> # Large differences indicate non-random exploration
+
         """
         # Dispatch based on mode
         if method is not None:
@@ -2461,6 +2472,28 @@ class Environment:
                 raise ValueError(
                     "Cannot provide both 'method' (model-based) and empirical "
                     "inputs (bins/times/positions). Choose one mode."
+                )
+
+            # Validate that empirical parameters aren't silently ignored
+            if lag != 1:
+                raise ValueError(
+                    f"Parameter 'lag' is only valid in empirical mode. "
+                    f"Got lag={lag} with method='{method}'. "
+                    f"Remove 'lag' parameter or set method=None for empirical mode."
+                )
+            if allow_teleports is not False:
+                raise ValueError(
+                    f"Parameter 'allow_teleports' is only valid in empirical mode. "
+                    f"Got allow_teleports={allow_teleports} with method='{method}'. "
+                    f"Remove 'allow_teleports' parameter or set method=None for empirical mode."
+                )
+
+            # Validate bandwidth parameter usage
+            if method == "random_walk" and bandwidth is not None:
+                raise ValueError(
+                    f"Parameter 'bandwidth' is only valid with method='diffusion'. "
+                    f"Got bandwidth={bandwidth} with method='random_walk'. "
+                    f"Remove 'bandwidth' parameter."
                 )
 
             # Dispatch to model-based method

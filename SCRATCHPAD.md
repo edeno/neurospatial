@@ -449,6 +449,50 @@ T = env.transitions(method='diffusion', bandwidth=5.0)
 - Diffusion: Same as `compute_kernel()` - leverages existing implementation
 - No performance regression for empirical mode
 
+### Code Review Fixes Applied (2025-11-03)
+
+**Critical issues fixed**:
+1. ✅ Added parameter validation to reject empirical parameters (lag, allow_teleports) when method is specified
+2. ✅ Added error handling for normalize=False with diffusion method
+
+**Quality improvements**:
+- ✅ Updated docstring Raises section with all validation cases
+- ✅ Added 5 new validation tests:
+  - test_model_with_lag_parameter_error
+  - test_model_with_allow_teleports_error
+  - test_random_walk_with_bandwidth_error
+  - test_diffusion_normalize_false_error
+  - test_random_walk_normalize_false
+
+**Test results**: 40/40 passing (26 empirical + 14 model-based)
+**Linting**: ✅ All checks passed
+**Code quality**: Production-ready
+
+### Implementation Details - Validation
+
+**Parameter validation logic** (lines 2474-2494 in environment.py):
+```python
+# Validate that empirical parameters aren't silently ignored
+if lag != 1:
+    raise ValueError(f"Parameter 'lag' is only valid in empirical mode...")
+if allow_teleports is not False:
+    raise ValueError(f"Parameter 'allow_teleports' is only valid in empirical mode...")
+
+# Validate bandwidth parameter usage
+if method == "random_walk" and bandwidth is not None:
+    raise ValueError(f"Parameter 'bandwidth' is only valid with method='diffusion'...")
+```
+
+**Normalize=False handling** (lines 2335-2340 in environment.py):
+```python
+if not normalize:
+    raise ValueError(
+        "method='diffusion' does not support normalize=False. "
+        "Heat kernel transitions are inherently normalized (row-stochastic). "
+        "Set normalize=True or use method='random_walk'."
+    )
+```
+
 ### Next Steps (Current Status)
 - Phase 2, Task P0.4: Connected Components / Reachability
 - Ready to begin TDD cycle
