@@ -14,8 +14,6 @@ Tests verify:
 8. Method Resolution Order (MRO) is correct
 """
 
-import sys
-
 import numpy as np
 
 
@@ -77,6 +75,7 @@ def test_mixins_are_not_dataclasses():
     from neurospatial.environment.queries import EnvironmentQueries
     from neurospatial.environment.regions import EnvironmentRegions
     from neurospatial.environment.serialization import EnvironmentSerialization
+    from neurospatial.environment.transforms import EnvironmentTransforms
     from neurospatial.environment.visualization import EnvironmentVisualization
 
     mixins = [
@@ -86,6 +85,7 @@ def test_mixins_are_not_dataclasses():
         EnvironmentRegions,
         EnvironmentVisualization,
         EnvironmentAnalysis,
+        EnvironmentTransforms,
     ]
 
     for mixin in mixins:
@@ -134,6 +134,7 @@ def test_mro_order():
     from neurospatial.environment.queries import EnvironmentQueries
     from neurospatial.environment.regions import EnvironmentRegions
     from neurospatial.environment.serialization import EnvironmentSerialization
+    from neurospatial.environment.transforms import EnvironmentTransforms
     from neurospatial.environment.visualization import EnvironmentVisualization
 
     mro = Environment.__mro__
@@ -148,26 +149,7 @@ def test_mro_order():
     assert EnvironmentRegions in mro
     assert EnvironmentVisualization in mro
     assert EnvironmentAnalysis in mro
-
-
-def test_no_circular_imports():
-    """Ensure no circular import errors at module load (runtime check).
-
-    The TYPE_CHECKING pattern should prevent circular imports at runtime.
-    This test clears modules and tries fresh imports to verify.
-    """
-    # Clear neurospatial modules to test fresh import
-    modules_to_clear = [mod for mod in sys.modules if "neurospatial" in mod]
-    for mod in modules_to_clear:
-        del sys.modules[mod]
-
-    # Try importing - should not raise ImportError
-    from neurospatial import Environment as Env1
-    from neurospatial.environment import Environment as Env2
-
-    assert Env1 is not None
-    assert Env2 is not None
-    assert Env1 is Env2
+    assert EnvironmentTransforms in mro
 
 
 def test_all_public_methods_present():

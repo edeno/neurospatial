@@ -909,3 +909,9 @@ def test_boundary_1d_grid_degree_logic(env_1d_grid_3bins: Environment):
     # threshold_degree = 1.5
     boundary_indices = env_1d_grid_3bins.boundary_bins
     assert np.array_equal(np.sort(boundary_indices), np.array([0, 2]))
+
+
+# ==============================================================================
+# Note: Mixin verification tests have been moved to tests/test_import_paths.py
+# to avoid duplication and improve test organization.
+# ==============================================================================
