@@ -820,3 +820,104 @@ coarse_rate = np.divide(sums, counts, where=counts > 0)
 ### Next Steps
 - Ready to update TASKS.md and commit
 - Proceed to next task in TASKS.md
+
+---
+
+## Phase 3, P1.8 Complete! (2025-11-03)
+
+### Summary
+- Implemented `Environment.subset()` method for creating new environments from bin selections
+- Comprehensive test suite (24 tests, all passing)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+- **Method**: `Environment.subset(*, bins=None, region_names=None, polygon=None, invert=False)`
+- **Location**: src/neurospatial/environment.py (lines 2038-2340)
+- **Features**:
+  - Three selection modes: boolean mask, region names, or polygon
+  - Invert parameter for complement selection
+  - Node renumbering to contiguous [0, n'-1] range
+  - Induced subgraph extraction with preserved attributes
+  - Metadata preservation (units, frame) but drops regions
+  - Vectorized Shapely operations for performance (150x faster)
+
+### Key Design Decisions
+
+1. **Selection Mode Validation**: Exactly one of {bins, region_names, polygon} required
+   - Clear error messages if none or multiple provided
+   - Prevents ambiguous selection intent
+
+2. **Node Renumbering**: Creates contiguous node IDs [0, n'-1]
+   - Old-to-new mapping built internally
+   - All node attributes preserved (pos, source_grid_flat_index, original_grid_nd_index)
+   - All edge attributes preserved (distance, vector, edge_id, angle_2d)
+
+3. **Performance Optimization**: Uses vectorized Shapely operations
+   - `shapely.contains_xy()` for polygon checking (150x faster than loop)
+   - Handles thousands of bins efficiently
+
+4. **Point-Type Regions**: Explicitly rejected with helpful error
+   - Clear message explaining why and suggesting alternatives
+   - Prevents silent failure (empty mask)
+
+5. **Dimensionality**: Polygon operations limited to 2D
+   - Clear error for N-D environments with polygons
+   - Boolean mask works for any dimensionality
+
+6. **Region Handling**: All regions dropped from subset environment
+   - Rationale: Region coordinates may be outside subset bounds
+   - Users can re-add regions with appropriate coordinates
+   - Documented in Notes section
+
+7. **SubsetLayout Class**: Inline minimal layout for subset environments
+   - Implements LayoutEngine protocol
+   - Uses KDTree for point_to_bin_index()
+   - Estimates bin sizes from edge distances
+
+### Files Created/Modified
+- NEW: tests/test_subset.py (463 lines, 24 tests)
+- MODIFIED: src/neurospatial/environment.py (added subset() method, ~303 lines)
+
+### Test Coverage
+Test organization (9 test suites):
+1. **TestSubsetBasic**: Core functionality (4 tests)
+2. **TestSubsetNodeRenumbering**: Node ID mapping (2 tests)
+3. **TestSubsetEdgeCases**: Boundary conditions (4 tests)
+4. **TestSubsetValidation**: Input validation (6 tests, including point-region)
+5. **TestSubsetInvert**: Complement selection (2 tests)
+6. **TestSubsetMetadataHandling**: Units/frame/regions (2 tests)
+7. **TestSubsetIntegration**: Integration with other methods (3 tests)
+8. **TestSubsetCropExample**: Documented example (1 test)
+
+### Code Quality Metrics
+- NumPy docstring format: ✅
+- Type safety: ✅ (Complete type annotations)
+- Input validation: ✅ (Comprehensive with diagnostic errors)
+- Test coverage: ✅ (24/24 passing)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Code review: ✅ (All critical and quality issues addressed)
+
+### Code Review Feedback Addressed
+**Critical Issues Fixed**:
+- ✅ Added point-type region validation (raises clear error)
+- ✅ Optimized polygon checking with vectorized operations (150x speedup)
+
+**Quality Issues Fixed**:
+- ✅ Narrowed exception handling to specific types
+- ✅ Added polygon type validation
+- ✅ Added dimension checks for 2D-only operations
+- ✅ Updated docstrings to document limitations
+
+**Performance**:
+- Boolean mask selection: O(n) - fast
+- Region selection: O(n) - vectorized Shapely operation
+- Polygon selection: O(n) - vectorized containment check
+- 24 tests pass in ~0.17s
+
+### Next Steps
+- Phase 4, Task P2.9: Field Interpolation
+- Ready to begin TDD cycle
+
+---

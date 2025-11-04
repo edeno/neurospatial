@@ -155,21 +155,24 @@
   - [x] Connectivity preservation
   - [x] Units/frame preservation (14 tests passing, 3 skipped)
 
-### P1.8: Subset / Crop
+### P1.8: Subset / Crop ✅ COMPLETE
 
-- [ ] Implement `Environment.subset()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Validate exactly one of {bins, region_names, polygon}
-  - [ ] Build boolean mask from input
-  - [ ] Extract subgraph
-  - [ ] Renumber nodes to [0, n'-1]
-  - [ ] Create new layout with subset
-  - [ ] Return new Environment (regions dropped)
-- [ ] Tests for `subset()`
-  - [ ] Crop 10x10 grid to left half → 5x10
-  - [ ] Polygon selection (bin centers inside)
-  - [ ] Connectivity preserved
-  - [ ] Node renumbering correctness
+- [x] Implement `Environment.subset()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Validate exactly one of {bins, region_names, polygon}
+  - [x] Build boolean mask from input
+  - [x] Extract subgraph
+  - [x] Renumber nodes to [0, n'-1]
+  - [x] Create new layout with subset
+  - [x] Return new Environment (regions dropped)
+- [x] Tests for `subset()` (24 tests passing)
+  - [x] Crop 10x10 grid to left half → 5x10
+  - [x] Polygon selection (bin centers inside)
+  - [x] Connectivity preserved
+  - [x] Node renumbering correctness
+  - [x] Point-type region validation
+  - [x] Invert parameter
+  - [x] Metadata handling
 
 **Deliverable**: P1 operations with layout compatibility checks
 
