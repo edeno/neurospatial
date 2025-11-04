@@ -189,79 +189,64 @@
 
 ---
 
-## Milestone 7: Extract Queries (1.5 hours)
+## Milestone 7: Extract Queries (1.5 hours) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/queries.py`
-- [ ] Add TYPE_CHECKING guard
-- [ ] Create `EnvironmentQueries` mixin class (plain class)
-- [ ] Move spatial query methods:
-  - [ ] `bin_at()`
-  - [ ] `contains()`
-  - [ ] `neighbors()`
-  - [ ] `distance_between()`
-  - [ ] `bin_center_of()`
-  - [ ] `shortest_path()`
-  - [ ] `bin_sizes()`
-- [ ] Add type hints: `def bin_at(self: "Environment", ...) -> int:`
-- [ ] Import check_fitted decorator
-- [ ] Add module docstring
-- [ ] Run tests:
+- [x] Create `src/neurospatial/environment/queries.py`
+- [x] Add TYPE_CHECKING guard
+- [x] Create `EnvironmentQueries` mixin class (plain class)
+- [x] Move spatial query methods:
+  - [x] `bin_at()`
+  - [x] `contains()`
+  - [x] `neighbors()`
+  - [x] `distance_between()`
+  - [x] `bin_center_of()`
+  - [x] `shortest_path()`
+  - [x] `bin_sizes()`
+- [x] Add type hints: `def bin_at(self: "Environment", ...) -> int:`
+- [x] Import check_fitted decorator
+- [x] Add module docstring
+- [x] Run tests:
 
-  ```bash
-  uv run pytest tests/test_environment.py::test_bin_at -v
-  uv run pytest tests/test_environment.py::test_contains -v
-  ```
+  **Result**: 28/28 tests passed
 
 ### Success Criteria
 
-- ✅ `queries.py` created (~600-800 lines)
+- ✅ `queries.py` created (385 lines - under target)
 - ✅ All query methods extracted
 - ✅ Class is plain, NOT @dataclass
-- ✅ Query tests pass
+- ✅ Query tests pass (28/28)
 
 ---
 
-## Milestone 8: Extract Factories (2 hours)
+## Milestone 8: Extract Factories (2 hours) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/factories.py`
-- [ ] Add TYPE_CHECKING guard
-- [ ] Create `EnvironmentFactories` mixin class (plain class)
-- [ ] Move factory classmethods:
-  - [ ] `from_layout()` (line 813)
-  - [ ] `from_samples()` (line 1017)
-  - [ ] `from_graph()` (line 1071)
-  - [ ] `from_polygon()` (line 1153)
-  - [ ] `from_mask()` (line 1227)
-  - [ ] `from_image()` (line 1294)
-- [ ] Add type hints for classmethods:
-
-  ```python
-  @classmethod
-  def from_samples(cls, data_samples, bin_size, **kwargs):
-      # cls will be Environment when called as Environment.from_samples()
-      ...
-  ```
-
-- [ ] Add return type: `-> "Environment"`
-- [ ] Import necessary dependencies (layout engines, etc.)
-- [ ] Add module docstring
-- [ ] Run factory tests:
-
-  ```bash
-  uv run pytest tests/test_environment.py::test_from_samples -v
-  uv run pytest tests/test_environment.py::test_from_graph -v
-  ```
+- [x] Create `src/neurospatial/environment/factories.py`
+- [x] Add TYPE_CHECKING guard
+- [x] Create `EnvironmentFactories` mixin class (plain class)
+- [x] Move factory classmethods:
+  - [x] `from_layout()` (line 595)
+  - [x] `from_samples()` (line 113)
+  - [x] `from_graph()` (line 319)
+  - [x] `from_polygon()` (line 372)
+  - [x] `from_mask()` (line 478)
+  - [x] `from_image()` (line 544)
+- [x] Add type hints for classmethods
+- [x] Add return type: `-> Environment`
+- [x] Import necessary dependencies (layout engines, etc.)
+- [x] Add module docstring
+- [x] Run factory tests (16/16 tests pass)
 
 ### Success Criteria
 
-- ✅ `factories.py` created (~1200-1500 lines)
+- ✅ `factories.py` created (631 lines - well under 1,500 line target)
 - ✅ All 6 factory methods extracted
 - ✅ Class is plain, NOT @dataclass
-- ✅ Factory tests pass
+- ✅ Factory tests pass (16/16)
+- ✅ Code review approved with 5/5 ratings
 
 ---
 
