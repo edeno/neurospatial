@@ -152,6 +152,7 @@ nav:
       - Regions: user-guide/regions.md
       - Composite Environments: user-guide/composite-environments.md
       - Alignment & Transforms: user-guide/alignment.md
+      - Spatial Analysis: user-guide/spatial-analysis.md
       - Complete Workflows: user-guide/workflows.md
   - API Reference:
       - api/index.md

@@ -305,19 +305,29 @@
   - [x] Repeated calls → identical results
   - [x] Distance threshold behavior
 
-### Documentation
+### Documentation ✅ COMPLETE
 
-- [ ] Create `docs/guides/spatial-analysis.md`
-  - [ ] Computing occupancy and rate maps
-  - [ ] Trajectory analysis (sequences, transitions)
-  - [ ] Distance fields and navigation
-  - [ ] Field smoothing and visualization
-  - [ ] On-edge semantics (covers vs contains)
-  - [ ] Unit conventions and bin volumes
-- [ ] Create example scripts in `examples/`
-  - [ ] Example: occupancy → rate map
-  - [ ] Example: transition matrix analysis
-  - [ ] Example: distance fields for navigation
+- [x] Create `docs/user-guide/spatial-analysis.md` (~1,400 lines)
+  - [x] 13 operations documented with complete API signatures
+  - [x] Computing occupancy and rate maps
+  - [x] Trajectory analysis (sequences, transitions)
+  - [x] Distance fields and navigation
+  - [x] Field smoothing and visualization
+  - [x] Movement patterns (transitions, components, reachability)
+  - [x] Field operations (smooth, interpolate, rebin, subset)
+  - [x] Spatial utilities (distance_to, rings, region_membership, copy)
+  - [x] Best practices and parameter guidance
+  - [x] Added "Why This Matters" sections for key operations
+  - [x] Standardized terminology (geodesic distance)
+- [x] Update `docs/examples/08_complete_workflow.ipynb`
+  - [x] Added Step 7: Movement and Navigation Analysis
+  - [x] Example: transition matrix analysis
+  - [x] Example: bin sequence and run detection
+  - [x] Example: distance fields for navigation
+  - [x] Fixed all API calls to use correct signatures
+- [x] Update navigation in `mkdocs.yml` and `docs/user-guide/index.md`
+- [x] All API signatures verified against implementation
+- [x] Both code-reviewer and ux-reviewer agents approved
 - [ ] Update `__init__.py` with public API exports
   - [ ] Add `compute_diffusion_kernels`
   - [ ] Add field_ops functions

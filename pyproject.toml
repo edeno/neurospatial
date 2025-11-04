@@ -64,6 +64,7 @@ docs = [
     "mkdocs-literate-nav>=0.6.0",
     "mkdocs-section-index>=0.3.0",
     "mkdocs-jupyter>=0.25.0",
+    "jupytext>=1.16.0",
 ]
 opencv = [
     "opencv-python>=4.11.0.86",
@@ -137,8 +138,11 @@ ignore = [
 ]
 
 # Example notebooks: Allow imports in cells (converted from .ipynb)
-"examples/*.py" = [
+"docs/examples/*.py" = [
     "E402",  # Module level import not at top of file (common in notebook cells)
+    "N803",  # Allow uppercase argument names (mathematical notation in examples)
+    "N806",  # Allow uppercase variables (T, G, etc. - standard math notation)
+    "B905",  # Allow zip() without strict parameter (backward compatibility)
 ]
 
 # Source files with intentional mathematical notation
@@ -244,3 +248,8 @@ module = "tests.*"
 disallow_untyped_defs = false
 allow_untyped_calls = true
 allow_incomplete_defs = true
+
+# Example notebooks: Skip type checking (converted from .ipynb)
+[[tool.mypy.overrides]]
+module = "docs.examples.*"
+ignore_errors = true

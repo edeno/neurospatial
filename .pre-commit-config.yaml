@@ -8,7 +8,7 @@ repos:
         exclude: '^mkdocs\.yml$'
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: '^examples/.*\.ipynb$'
+        exclude: '^docs/examples/.*\.ipynb$'
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
@@ -18,7 +18,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: '^docs/examples/.*\.(ipynb|py)$'
       - id: ruff-format
+        exclude: '^docs/examples/.*\.(ipynb|py)$'
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
@@ -33,3 +35,4 @@ repos:
           - scikit-learn
           - shapely
         args: [--ignore-missing-imports, --warn-unused-ignores]
+        exclude: '^docs/examples/.*\.py$'

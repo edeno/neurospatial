@@ -9,6 +9,8 @@ This guide provides detailed explanations of neurospatial's features and workflo
 - **[Regions](regions.md)**: Defining and managing regions of interest
 - **[Composite Environments](composite-environments.md)**: Merging multiple environments
 - **[Alignment & Transforms](alignment.md)**: Transforming spatial representations
+- **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
+- **[Complete Workflows](workflows.md)**: End-to-end analysis examples
 
 ## Who This Guide Is For
 
@@ -41,6 +43,9 @@ Each page covers a specific feature area with:
 - [Creating different environment types](environments.md#factory-methods)
 - [Choosing the right layout engine](layout-engines.md#quick-decision-guide)
 - [Defining regions](regions.md)
+- [Computing occupancy and firing rates](spatial-analysis.md#occupancy)
+- [Analyzing movement patterns](spatial-analysis.md#movement-patterns)
+- [Computing distance fields](spatial-analysis.md#distance-to)
 - [Combining multiple environments](composite-environments.md)
 - [Aligning spatial maps](alignment.md)
 
