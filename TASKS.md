@@ -107,60 +107,61 @@
 
 ---
 
-## Milestone 4: Extract Analysis (1 hour)
+## Milestone 4: Extract Analysis (1 hour) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/analysis.py`
-- [ ] Add TYPE_CHECKING guard (same pattern as visualization)
-- [ ] Create `EnvironmentAnalysis` mixin class (plain class)
-- [ ] Move `boundary_bins()` method (line 3871)
-- [ ] Move `bin_attributes()` method (line 3918)
-- [ ] Move `edge_attributes()` method (line 3951)
-- [ ] Move `to_linear()` / `linear_to_nd()` methods (if present)
-- [ ] Add type hints with string annotations
-- [ ] Import check_fitted decorator
-- [ ] Add module docstring
-- [ ] Run import test
+- [x] Create `src/neurospatial/environment/analysis.py`
+- [x] Add TYPE_CHECKING guard (same pattern as visualization)
+- [x] Create `EnvironmentAnalysis` mixin class (plain class)
+- [x] Move `boundary_bins()` method (line 3871)
+- [x] Move `bin_attributes()` method (line 3918)
+- [x] Move `edge_attributes()` method (line 3951)
+- [x] Move `to_linear()` / `linear_to_nd()` methods (if present)
+- [x] Add type hints with string annotations
+- [x] Import check_fitted decorator
+- [x] Add module docstring
+- [x] Run import test
 
 ### Success Criteria
 
-- ✅ `analysis.py` created (~800-1200 lines)
+- ✅ `analysis.py` created (413 lines - well under target)
 - ✅ Class is plain, NOT @dataclass
 - ✅ No circular imports
 
 ---
 
-## Milestone 5: Extract Regions (30 minutes)
+## Milestone 5: Extract Regions (30 minutes) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/regions.py`
-- [ ] Add TYPE_CHECKING guard
-- [ ] Create `EnvironmentRegions` mixin class (plain class)
-- [ ] Move `bins_in_region()` method (line 4465)
-- [ ] Move `mask_for_region()` method (line 4522)
-- [ ] Add type hints
-- [ ] Import check_fitted decorator
-- [ ] Add module docstring
-- [ ] Run import test
+- [x] Create `src/neurospatial/environment/regions.py`
+- [x] Add TYPE_CHECKING guard
+- [x] Create `EnvironmentRegions` mixin class (plain class)
+- [x] Move `bins_in_region()` method (line 4465)
+- [x] Move `mask_for_region()` method (line 4522)
+- [x] Add type hints
+- [x] Import check_fitted decorator
+- [x] Add module docstring
+- [x] Run import test
 
 ### Success Criteria
 
-- ✅ `regions.py` created (~300-400 lines)
+- ✅ `regions.py` created (222 lines - well under target)
 - ✅ Class is plain, NOT @dataclass
 - ✅ No circular imports
+- ✅ All 15/15 region tests pass
 
 ---
 
-## Milestone 6: Extract Serialization (1 hour)
+## Milestone 6: Extract Serialization (1 hour) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/serialization.py`
-- [ ] Add TYPE_CHECKING guard
-- [ ] Create `EnvironmentSerialization` mixin class (plain class)
-- [ ] Implement thin delegation methods:
+- [x] Create `src/neurospatial/environment/serialization.py`
+- [x] Add TYPE_CHECKING guard
+- [x] Create `EnvironmentSerialization` mixin class (plain class)
+- [x] Implement thin delegation methods:
 
   ```python
   def to_file(self: "Environment", path: Path | str) -> None:
@@ -168,20 +169,22 @@
       return to_file(self, path)
   ```
 
-- [ ] Move `save()`, `load()`, `to_file()`, `from_file()`, `to_dict()`, `from_dict()`
-- [ ] Add type hints for classmethods: `cls: type["Environment"]`
-- [ ] Add module docstring
-- [ ] Run serialization tests:
+- [x] Move `save()`, `load()`, `to_file()`, `from_file()`, `to_dict()`, `from_dict()`
+- [x] Add type hints for classmethods: `cls: type["Environment"]`
+- [x] Add module docstring
+- [x] Run serialization tests:
 
   ```bash
   uv run pytest tests/test_io.py -v
   ```
 
+  **Result**: 12/12 tests passed
+
 ### Success Criteria
 
-- ✅ `serialization.py` created (~400-600 lines)
+- ✅ `serialization.py` created (314 lines - well under target)
 - ✅ Delegates to `io.py` (no code duplication)
-- ✅ All serialization tests pass
+- ✅ All serialization tests pass (12/12)
 - ✅ Class is plain, NOT @dataclass
 
 ---
