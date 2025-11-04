@@ -130,8 +130,18 @@ The codebase follows a three-layer architecture:
    - Factory pattern via `create_layout()` in [layout/factories.py](src/neurospatial/layout/factories.py:126-177)
    - All engines produce: `bin_centers`, `connectivity` graph, `dimension_ranges`, and optional grid metadata
 
-2. **Environment** (`src/neurospatial/environment.py`)
+2. **Environment** (`src/neurospatial/environment/`)
    - Main user-facing class wrapping a `LayoutEngine` instance
+   - **Modular package structure** (as of v0.2.1) using mixin pattern:
+     - [core.py](src/neurospatial/environment/core.py) - Core `Environment` dataclass with state and properties (1,016 lines)
+     - [factories.py](src/neurospatial/environment/factories.py) - Factory classmethods for creating instances (630 lines)
+     - [queries.py](src/neurospatial/environment/queries.py) - Spatial query methods (897 lines)
+     - [analysis.py](src/neurospatial/environment/analysis.py) - Analysis and computation methods (2,104 lines)
+     - [serialization.py](src/neurospatial/environment/serialization.py) - Save/load methods (315 lines)
+     - [regions.py](src/neurospatial/environment/regions.py) - Region operations (398 lines)
+     - [visualization.py](src/neurospatial/environment/visualization.py) - Plotting methods (211 lines)
+     - [transforms.py](src/neurospatial/environment/transforms.py) - Rebin/subset operations (634 lines)
+     - [decorators.py](src/neurospatial/environment/decorators.py) - `@check_fitted` decorator (77 lines)
    - Factory methods for common use cases:
      - `Environment.from_samples()` - Discretize point data into bins
      - `Environment.from_graph()` - Create 1D track-based environments
@@ -141,7 +151,7 @@ The codebase follows a three-layer architecture:
      - `Environment.from_layout()` - Direct layout specification
    - Provides spatial queries: `bin_at()`, `contains()`, `neighbors()`, `distance_between()`, `shortest_path()`
    - Integrates `Regions` for defining named ROIs (regions of interest)
-   - Uses `@check_fitted` decorator ([environment.py:42-63](src/neurospatial/environment.py#L42-L63)) to ensure methods are only called after initialization
+   - Uses `@check_fitted` decorator ([environment/decorators.py](src/neurospatial/environment/decorators.py)) to ensure methods are only called after initialization
 
 3. **Regions** (`src/neurospatial/regions/`)
    - Immutable `Region` dataclass for points or polygons ([regions/core.py:36-125](src/neurospatial/regions/core.py#L36-L125))
@@ -207,6 +217,45 @@ The connectivity graph (`nx.Graph`) has **mandatory node and edge attributes**:
 - `'vector'`: Tuple[float, ...] - Displacement vector
 - `'edge_id'`: int - Unique edge ID
 - `'angle_2d'`: Optional[float] - Angle for 2D layouts
+
+### Mixin Pattern for Environment
+
+The `Environment` class uses **mixin inheritance** to organize its 5,000+ lines of functionality into focused modules:
+
+```python
+# In src/neurospatial/environment/core.py
+@dataclass  # Only Environment is a dataclass
+class Environment(
+    EnvironmentFactories,      # Factory classmethods
+    EnvironmentQueries,         # Spatial query methods
+    EnvironmentSerialization,   # Save/load methods
+    EnvironmentRegions,         # Region operations
+    EnvironmentVisualization,   # Plotting methods
+    EnvironmentAnalysis,        # Analysis methods
+    EnvironmentTransforms,      # Rebin/subset operations
+):
+    """Main Environment class assembled from mixins."""
+    name: str = ""
+    layout: LayoutEngine | None = None
+    # ... rest of dataclass fields
+```
+
+**Key constraints:**
+
+- **ONLY `Environment` is a `@dataclass`** - All mixins MUST be plain classes
+- Mixins use `TYPE_CHECKING` guards to avoid circular imports:
+  ```python
+  from typing import TYPE_CHECKING
+  if TYPE_CHECKING:
+      from neurospatial.environment.core import Environment
+
+  class EnvironmentQueries:
+      def bin_at(self: "Environment", points) -> int:
+          # Use string annotation for type hint
+          ...
+  ```
+- All mixin methods have access to `self` attributes (from Environment dataclass)
+- Public API unchanged: `from neurospatial import Environment` still works
 
 ### Protocol-Based Design
 

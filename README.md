@@ -291,7 +291,16 @@ print(f"RewardZone1 area: {area:.2f}, center: {center}")
 ```text
 neurospatial/
 ├── src/neurospatial/
-│   ├── environment.py          # Main Environment class
+│   ├── environment/            # Main Environment class (modular package)
+│   │   ├── core.py            # Core dataclass with state and properties
+│   │   ├── factories.py       # Factory classmethods (from_samples, from_graph, etc.)
+│   │   ├── queries.py         # Spatial query methods
+│   │   ├── analysis.py        # Analysis and computation methods
+│   │   ├── serialization.py   # Save/load methods
+│   │   ├── regions.py         # Region operations
+│   │   ├── visualization.py   # Plotting methods
+│   │   ├── transforms.py      # Rebin/subset operations
+│   │   └── decorators.py      # check_fitted decorator
 │   ├── composite.py            # CompositeEnvironment for multi-env merging
 │   ├── alignment.py            # Probability distribution transforms
 │   ├── transforms.py           # 2D affine transformations
@@ -302,7 +311,7 @@ neurospatial/
 │   └── regions/
 │       ├── core.py            # Region and Regions classes
 │       └── serialization.py   # JSON I/O for regions
-└── tests/                      # Comprehensive test suite
+└── tests/                      # Comprehensive test suite (1,076 tests)
 ```
 
 ## Requirements

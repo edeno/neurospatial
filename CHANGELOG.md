@@ -1,10 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Internal**: Refactored `environment.py` (5,335 lines) into modular package structure for improved maintainability
+  - Split into 9 focused modules: `core.py` (1,016 lines), `analysis.py` (2,104 lines), `factories.py` (630 lines), `queries.py` (897 lines), `serialization.py` (315 lines), `regions.py` (398 lines), `visualization.py` (211 lines), `transforms.py` (634 lines), `decorators.py` (77 lines)
+  - Implemented mixin pattern: Environment inherits from all functionality mixins
+  - No breaking changes - `from neurospatial import Environment` continues to work
+  - All 1,076 tests passing (100% success rate)
+  - Improved code organization for easier contribution and maintenance
+
 ## [v0.2.0] - 2025-11-04
 
 ## What's Changed
 
 ### Features
+
 - feat(P3.15): implement deterministic KDTree with distance thresholds (7ef1109)
 - feat(P3.14): implement Environment.copy() method (17a1d0e)
 - feat(P3.13): implement distance utilities (distance_to and rings) (2e07dce)
@@ -23,18 +35,21 @@
 - feat(ci): add manual workflow dispatch to publish workflow (703ed86)
 
 ### Bug Fixes
+
 - fix(lint): resolve ruff errors in example notebook (6b69b2e)
 - fix(GraphLayout): support 1D graph layouts (26b8abc)
 - fix(P2.11): combine nested if statements, apply ruff format (5bddcdf)
 - fix(P0.3): add parameter validation for transitions() method (dad0f96)
 
 ### Documentation
+
 - docs: mark all Environment Operations tasks complete (46e65ab)
 - docs: add jupytext pairing and track all example notebooks (a341e36)
 - docs: mark P3.15 (Deterministic KDTree) as complete (eda4f9b)
 - docs: update CHANGELOG.md for v0.1.0 (84e8a46)
 
 ### Other Changes
+
 - chore: remove completed project management files (66666e7)
 - test: fix disconnected graph tests using systematic debugging (8dc6de6)
 - refactor(test): remove untestable unfitted Environment check_fitted test (03b3722)
@@ -44,8 +59,7 @@
 - chore: sync notebooks with formatting changes from pre-commit (f8b7528)
 - refactor(P0.3): add unified transitions() interface with model-based methods (d27a1e9)
 
-**Full Changelog**: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0
-
+**Full Changelog**: <https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0>
 
 All notable changes to the neurospatial project will be documented in this file.
 
@@ -59,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Environment Operations (Complete Feature Set)
 
 **Core Analysis Operations (P0)**
+
 - `Environment.occupancy()` - Compute time-in-bin from trajectory data with speed filtering, gap handling, and optional kernel smoothing
 - `Environment.bin_sequence()` - Convert trajectories to bin sequences with run-length encoding
 - `Environment.transitions()` - Compute empirical transition matrices with adjacency filtering and normalization
@@ -66,11 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Environment.reachable_from()` - Compute reachable bins via BFS or geodesic distance
 
 **Smoothing & Resampling (P1)**
+
 - `Environment.smooth()` - Apply diffusion kernel smoothing to arbitrary fields
 - `Environment.rebin()` - Conservative grid coarsening with mass/mean aggregation (grid-only)
 - `Environment.subset()` - Extract subregions by bins, regions, or polygons
 
 **Interpolation & Field Utilities (P2)**
+
 - `Environment.interpolate()` - Evaluate bin-valued fields at continuous points (nearest/linear modes)
 - `Environment.occupancy()` linear mode - Ray-grid intersection for accurate boundary handling (grid-only)
 - `field_ops.py` module:
@@ -80,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `divergence()` - KL/JS divergence and cosine distance
 
 **Utilities & Polish (P3)**
+
 - `Environment.region_membership()` - Vectorized bin-to-region containment checks
 - `Environment.distance_to()` - Compute distances to target bins or regions (Euclidean/geodesic)
 - `Environment.rings()` - K-hop neighborhoods via BFS layers
@@ -87,12 +105,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `spatial.map_points_to_bins()` - Enhanced with `max_distance` and `max_distance_factor` thresholds for deterministic boundary decisions
 
 **Diffusion Kernel Infrastructure**
+
 - `kernels.py` module:
   - `compute_diffusion_kernels()` - Matrix-exponential heat kernel on graphs with volume correction
   - `Environment.compute_kernel()` - Convenience wrapper with caching
   - Support for both transition and density normalization modes
 
 **Documentation**
+
 - `docs/user-guide/spatial-analysis.md` - Comprehensive 1,400+ line guide covering all operations with scientific context
 - `docs/examples/08_complete_workflow.ipynb` - Enhanced workflow notebook with movement/navigation analysis
 - All methods have NumPy-style docstrings with working examples
@@ -131,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-11-03
 
 ### Added
+
 - **CompositeEnvironment API parity**: Added `bins_in_region()`, `mask_for_region()`, `shortest_path()`, `info()`, `save()`, and `load()` methods to CompositeEnvironment for full API compatibility with Environment class
 - **KDTree-optimized spatial queries**: CompositeEnvironment.bin_at() now uses KDTree for O(M log N) performance instead of O(N×M) sequential queries (enabled by default via `use_kdtree_query=True`)
 - **Structured logging infrastructure**: New `_logging.py` module with NullHandler by default, enabling optional logging for debugging and workflow tracing
@@ -140,16 +161,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dimensionality support documentation**: New `docs/dimensionality_support.md` clarifying 1D/2D/3D feature support with compatibility matrix
 
 ### Changed
+
 - **Updated alignment module**: Now uses centralized constants (`IDW_MIN_DISTANCE`, `KDTREE_LEAF_SIZE`)
 - **Updated regions module**: Uses `POINT_TOLERANCE` constant for consistent geometric comparisons
 - **Enhanced error messages**: CompositeEnvironment now provides detailed diagnostics for dimension mismatches and type errors
 - **Clarified 2D-only transforms**: Updated `transforms.py` docstring to explicitly state 2D-only status and suggest scipy for 3D
 
 ### Fixed
+
 - Removed unused `type: ignore` comment in `regular_grid.py`
 - Fixed potential `KeyError` in logging by renaming `name` parameter to `env_name` (avoids conflict with LogRecord reserved field)
 
 ### Documentation
+
 - Added comprehensive dimensionality support guide (1D/2D/3D feature matrix)
 - Updated CLAUDE.md with latest patterns and requirements
 - Added 18 new tests for CompositeEnvironment type validation
@@ -157,6 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added 28 new tests for graph validation
 
 ### Internal
+
 - Consolidated duplicate dimension inference code
 - All 614 tests passing
 - Ruff and mypy checks passing
