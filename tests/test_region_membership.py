@@ -402,12 +402,10 @@ class TestRegionMembershipDifferentLayouts:
         assert membership.shape == (env.n_bins, 1)
         assert np.any(membership[:, 0])
 
-    @pytest.mark.skip(reason="Need to create appropriate 1D graph layout test fixture")
-    def test_graph_layout(self):
-        """Test on 1D graph layout."""
-        # Graph layouts are 1D, so regions might not be applicable
-        # Skip for now or implement with appropriate fixture
-        pass
+    # NOTE: No test for 1D graph layouts because region_membership() cannot work with 1D:
+    # - Shapely only supports 2D/3D geometries (not 1D)
+    # - Point regions always return False in region_membership() (no area)
+    # This is a fundamental limitation, not a bug.
 
 
 class TestRegionMembershipReturnFormat:
