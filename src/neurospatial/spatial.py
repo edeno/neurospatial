@@ -21,12 +21,48 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
+def _estimate_typical_bin_spacing(
+    kdtree: cKDTree, bin_centers: NDArray[np.float64]
+) -> float:
+    """Estimate typical bin spacing using deterministic quantile-based sampling.
+
+    Parameters
+    ----------
+    kdtree : cKDTree
+        KD-tree built from bin centers.
+    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Coordinates of all bin centers.
+
+    Returns
+    -------
+    typical_spacing : float
+        Median nearest-neighbor distance, estimated from sample of bins.
+        Returns np.inf if there is only one bin.
+
+    Notes
+    -----
+    Uses deterministic quantile-based sampling for reproducibility, selecting
+    up to 100 evenly-spaced bin indices.
+    """
+    if len(bin_centers) <= 1:
+        return np.inf
+
+    sample_size = min(100, len(bin_centers))
+    # Deterministic quantile-based sampling (not random)
+    sample_indices = np.linspace(0, len(bin_centers) - 1, sample_size, dtype=int)
+    sample_centers = bin_centers[sample_indices]
+    nn_dists, _ = kdtree.query(sample_centers, k=2, workers=-1)
+    return float(np.median(nn_dists[:, 1]))
+
+
 def map_points_to_bins(
     points: NDArray[np.float64],
     env: Environment,
     *,
     tie_break: Literal["lowest_index", "closest_center"] = "lowest_index",
     return_dist: bool = False,
+    max_distance: float | None = None,
+    max_distance_factor: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
     """Map points to bin indices with deterministic tie-breaking.
 
@@ -52,6 +88,14 @@ def map_points_to_bins(
 
     return_dist : bool, default=False
         If True, also return the distance from each point to its assigned bin center.
+    max_distance : float, optional
+        Absolute distance threshold in physical units. Points farther than this
+        from the nearest bin center are marked as outside (-1). Cannot be used
+        with max_distance_factor.
+    max_distance_factor : float, optional
+        Relative distance threshold as a multiple of typical bin spacing. Points
+        farther than (max_distance_factor × typical_bin_spacing) from the nearest
+        bin center are marked as outside (-1). Cannot be used with max_distance.
 
     Returns
     -------
@@ -60,6 +104,12 @@ def map_points_to_bins(
     distances : NDArray[np.float64], shape (n_points,), optional
         Distance from each point to its assigned bin center.
         Only returned if `return_dist=True`.
+
+    Raises
+    ------
+    ValueError
+        If both max_distance and max_distance_factor are specified, or if either
+        is negative, or if invalid tie_break mode.
 
     Examples
     --------
@@ -78,6 +128,12 @@ def map_points_to_bins(
     >>> dists
     array([0.23, 0.45, inf])
 
+    >>> # Filter outliers with absolute threshold
+    >>> bins = map_points_to_bins(points, env, max_distance=15.0)
+
+    >>> # Filter outliers with relative threshold (adapts to bin size)
+    >>> bins = map_points_to_bins(points, env, max_distance_factor=1.5)
+
     Notes
     -----
     This function builds and caches a KD-tree on the environment's bin_centers
@@ -90,12 +146,29 @@ def map_points_to_bins(
     the cache to become stale and produce incorrect results. If you need a modified
     environment, create a new Environment instance instead.
 
+    The typical bin spacing is estimated using deterministic quantile-based
+    sampling for reproducibility.
+
     See Also
     --------
     Environment.bin_at : Basic point-to-bin mapping (delegates to layout engine)
     Environment.contains : Check if points are within environment bounds
 
     """
+    # Validate parameters
+    if max_distance is not None and max_distance_factor is not None:
+        raise ValueError(
+            "Cannot specify both max_distance and max_distance_factor. "
+            "Choose one distance threshold method."
+        )
+
+    if max_distance is not None and max_distance < 0:
+        raise ValueError(f"max_distance must be non-negative, got {max_distance}")
+
+    if max_distance_factor is not None and max_distance_factor <= 0:
+        raise ValueError(
+            f"max_distance_factor must be positive, got {max_distance_factor}"
+        )
     # Build or retrieve cached KD-tree
     if not hasattr(env, "_kdtree_cache") or env._kdtree_cache is None:
         env._kdtree_cache = cKDTree(env.bin_centers)
@@ -144,18 +217,23 @@ def map_points_to_bins(
             f"Must be 'lowest_index' or 'closest_center'."
         )
 
-    # Check if any points are outside the environment
-    # Points far from any bin center should be marked as -1
-    # Use a heuristic: if distance > 10 * mean_bin_size, mark as outside
-    if len(env.bin_centers) > 1:
-        # Estimate typical bin spacing from nearest-neighbor distances
-        sample_size = min(100, len(env.bin_centers))
-        sample_indices = np.random.choice(
-            len(env.bin_centers), size=sample_size, replace=False
-        )
-        sample_centers = env.bin_centers[sample_indices]
-        nn_dists, _ = kdtree.query(sample_centers, k=2, workers=-1)
-        typical_bin_spacing = np.median(nn_dists[:, 1])
+    # Check if any points are outside the environment based on distance threshold
+    if max_distance is not None or max_distance_factor is not None:
+        # Explicit distance threshold provided
+        if max_distance is not None:
+            threshold = max_distance
+        else:
+            # Estimate typical bin spacing and apply factor
+            # assert: max_distance_factor is not None (checked above)
+            assert max_distance_factor is not None  # for mypy
+            typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, env.bin_centers)
+            threshold = max_distance_factor * typical_bin_spacing
+
+        # Mark points beyond threshold as outside
+        bin_indices[distances > threshold] = -1
+    elif len(env.bin_centers) > 1:
+        # Backward compatibility: use old heuristic (10× typical spacing)
+        typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, env.bin_centers)
 
         # Mark points that are suspiciously far as outside
         threshold = 10 * typical_bin_spacing
