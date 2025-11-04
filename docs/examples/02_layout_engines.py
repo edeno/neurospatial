@@ -168,6 +168,7 @@ plt.show()
 #
 # Let's verify that hexagonal layouts have more uniform neighbor distances:
 
+
 # %%
 def analyze_neighbor_distances(env, name):
     """Compute statistics about neighbor distances."""

@@ -427,6 +427,7 @@ print("This captures the different trajectories through the center.")
 #
 # Let's demonstrate why linearization is crucial for neural analysis on tracks.
 
+
 # %%
 # Simulate a place cell that fires on the north arm only
 def simulate_trajectory_specific_cell(

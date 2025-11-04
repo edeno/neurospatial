@@ -61,6 +61,7 @@ plt.rcParams["font.size"] = 11
 #
 # Let's simulate what real position tracking often looks like: an animal that prefers certain regions and avoids others.
 
+
 # %%
 def create_sparse_trajectory(n_samples=3000, seed=42):
     """
@@ -371,6 +372,7 @@ print("Use this to focus on well-sampled regions only")
 #
 # Let's simulate a complete analysis workflow where sparse data causes problems, then fix it.
 
+
 # %%
 # Simulate neural spiking data correlated with position
 def generate_place_cell_spikes(position, preferred_location, field_size=15.0):
@@ -640,6 +642,7 @@ print("Morphological operations should be used conservatively.")
 # ### Pitfall 3: Forgetting to check connectivity
 #
 # Always verify your environment is connected before computing spatial paths or distances:
+
 
 # %%
 def check_environment_quality(env):

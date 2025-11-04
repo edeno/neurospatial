@@ -77,6 +77,7 @@ plt.rcParams["axes.titlesize"] = 14
 # %% [markdown]
 # ### 1.1 Simulate Position Tracking
 
+
 # %%
 def generate_plus_maze_trajectory(n_samples=36000, sampling_rate=30.0):
     """
@@ -208,6 +209,7 @@ plt.show()
 
 # %% [markdown]
 # ### 1.2 Simulate Neural Activity (Place Cells)
+
 
 # %%
 def generate_place_cell_spikes(position_data, timestamps, n_neurons=20):
@@ -400,6 +402,7 @@ plt.show()
 # 2. Occupancy-normalized firing rate (spikes/second)
 # 3. Smoothed firing rate map
 
+
 # %%
 def compute_place_field(
     spike_times,
@@ -531,6 +534,7 @@ plt.show()
 # ## Step 5: Spatial Information and Place Cell Detection
 #
 # We'll compute spatial information (bits/spike) to quantify how well each neuron encodes spatial location.
+
 
 # %%
 def compute_spatial_information(firing_rate, occupancy_time):
@@ -670,6 +674,7 @@ plt.show()
 # ## Step 6: Multi-Region Analysis
 #
 # Analyze how neurons respond differently in different maze compartments.
+
 
 # %%
 def compute_region_firing_rates(
@@ -920,19 +925,23 @@ print("locations have similar population activity patterns (smooth representatio
 # %%
 # Compute transition matrix using the built-in method
 # This counts how often the animal moves from one bin to another
-transitions_raw = env.transitions(times=timestamps, positions=position_data, normalize=False)
-transitions_prob = env.transitions(times=timestamps, positions=position_data, normalize=True)
+transitions_raw = env.transitions(
+    times=timestamps, positions=position_data, normalize=False
+)
+transitions_prob = env.transitions(
+    times=timestamps, positions=position_data, normalize=True
+)
 
-print(f"\nTransition Matrix:")
+print("\nTransition Matrix:")
 print(f"  Shape: {transitions_raw.shape}")
 print(f"  Total transitions: {transitions_raw.nnz}")
-print(f"  Sparsity: {100 * (1 - transitions_raw.nnz / (env.n_bins ** 2)):.1f}%")
+print(f"  Sparsity: {100 * (1 - transitions_raw.nnz / (env.n_bins**2)):.1f}%")
 
 # Find most common transitions
 transitions_dense = transitions_prob.toarray()
 max_prob = np.max(transitions_dense)
 max_idx = np.unravel_index(np.argmax(transitions_dense), transitions_dense.shape)
-print(f"\nMost common transition:")
+print("\nMost common transition:")
 print(f"  Bin {max_idx[0]} → Bin {max_idx[1]}")
 print(f"  Probability: {max_prob:.3f}")
 print(f"  Position: {env.bin_centers[max_idx[0]]} → {env.bin_centers[max_idx[1]]}")
@@ -942,21 +951,31 @@ print(f"  Position: {env.bin_centers[max_idx[0]]} → {env.bin_centers[max_idx[1
 fig, axes = plt.subplots(1, 2, figsize=(18, 8))
 
 # Raw counts
-im1 = axes[0].imshow(transitions_raw.toarray(), cmap='hot', interpolation='nearest', aspect='auto')
-axes[0].set_xlabel('To Bin')
-axes[0].set_ylabel('From Bin')
-axes[0].set_title('Transition Counts')
-plt.colorbar(im1, ax=axes[0], label='Count')
+im1 = axes[0].imshow(
+    transitions_raw.toarray(), cmap="hot", interpolation="nearest", aspect="auto"
+)
+axes[0].set_xlabel("To Bin")
+axes[0].set_ylabel("From Bin")
+axes[0].set_title("Transition Counts")
+plt.colorbar(im1, ax=axes[0], label="Count")
 
 # Normalized probabilities
-im2 = axes[1].imshow(transitions_dense, cmap='hot', interpolation='nearest', aspect='auto', vmin=0, vmax=0.5)
-axes[1].set_xlabel('To Bin')
-axes[1].set_ylabel('From Bin')
-axes[1].set_title('Transition Probabilities')
-plt.colorbar(im2, ax=axes[1], label='Probability')
+im2 = axes[1].imshow(
+    transitions_dense,
+    cmap="hot",
+    interpolation="nearest",
+    aspect="auto",
+    vmin=0,
+    vmax=0.5,
+)
+axes[1].set_xlabel("To Bin")
+axes[1].set_ylabel("From Bin")
+axes[1].set_title("Transition Probabilities")
+plt.colorbar(im2, ax=axes[1], label="Probability")
 
 plt.tight_layout()
 plt.show()
+
 
 # %%
 # Compute transition entropy (measure of movement randomness)
@@ -973,12 +992,15 @@ def compute_transition_entropy(T_normalized):
 
     return entropy
 
+
 transition_entropy = compute_transition_entropy(transitions_prob)
 
-print(f"\nTransition Entropy:")
+print("\nTransition Entropy:")
 print(f"  Mean: {transition_entropy[transition_entropy > 0].mean():.2f} bits")
 print(f"  Max: {transition_entropy.max():.2f} bits (most random movement)")
-print(f"  Min: {transition_entropy[transition_entropy > 0].min():.2f} bits (most stereotyped)")
+print(
+    f"  Min: {transition_entropy[transition_entropy > 0].min():.2f} bits (most stereotyped)"
+)
 
 # Visualize entropy
 fig, ax = plt.subplots(figsize=(10, 10))
@@ -987,15 +1009,17 @@ scatter = ax.scatter(
     env.bin_centers[:, 1],
     c=transition_entropy,
     s=200,
-    cmap='viridis',
-    edgecolors='black',
-    linewidth=0.5
+    cmap="viridis",
+    edgecolors="black",
+    linewidth=0.5,
 )
-plt.colorbar(scatter, ax=ax, label='Transition Entropy (bits)')
-ax.set_xlabel('X position (cm)')
-ax.set_ylabel('Y position (cm)')
-ax.set_title('Movement Randomness\n(High = many transition options, Low = stereotyped paths)')
-ax.set_aspect('equal')
+plt.colorbar(scatter, ax=ax, label="Transition Entropy (bits)")
+ax.set_xlabel("X position (cm)")
+ax.set_ylabel("Y position (cm)")
+ax.set_title(
+    "Movement Randomness\n(High = many transition options, Low = stereotyped paths)"
+)
+ax.set_aspect("equal")
 plt.tight_layout()
 plt.show()
 
@@ -1007,7 +1031,7 @@ plt.show()
 # This is useful for detecting runs (consecutive time in same location)
 bin_sequence = env.bin_sequence(timestamps, position_data)
 
-print(f"\nBin Sequence Analysis:")
+print("\nBin Sequence Analysis:")
 print(f"  Total samples: {len(position_data)}")
 print(f"  Valid bin assignments: {len(bin_sequence)}")
 print(f"  First 20 bins visited: {bin_sequence[:20]}")
@@ -1021,7 +1045,7 @@ run_bins = bin_sequence[run_starts]
 run_durations_samples = run_ends - run_starts
 run_durations_time = run_durations_samples / 30.0  # Convert to seconds
 
-print(f"\nRun Statistics:")
+print("\nRun Statistics:")
 print(f"  Total runs: {len(run_starts)}")
 print(f"  Mean run duration: {run_durations_time.mean():.2f} seconds")
 print(f"  Median run duration: {np.median(run_durations_time):.2f} seconds")
@@ -1030,7 +1054,7 @@ print(f"  Longest run: {run_durations_time.max():.2f} seconds")
 # Find longest run
 longest_idx = np.argmax(run_durations_time)
 longest_bin = run_bins[longest_idx]
-print(f"\nLongest run:")
+print("\nLongest run:")
 print(f"  Bin: {longest_bin}")
 print(f"  Position: {env.bin_centers[longest_bin]}")
 print(f"  Duration: {run_durations_time[longest_idx]:.2f} seconds")
@@ -1040,14 +1064,19 @@ print(f"  Duration: {run_durations_time[longest_idx]:.2f} seconds")
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
 # Histogram of run durations
-axes[0].hist(run_durations_time, bins=50, edgecolor='black', alpha=0.7)
-axes[0].set_xlabel('Run Duration (seconds)')
-axes[0].set_ylabel('Count')
-axes[0].set_title('Distribution of Run Durations')
-axes[0].axvline(run_durations_time.mean(), color='red', linestyle='--',
-                linewidth=2, label=f'Mean = {run_durations_time.mean():.2f}s')
+axes[0].hist(run_durations_time, bins=50, edgecolor="black", alpha=0.7)
+axes[0].set_xlabel("Run Duration (seconds)")
+axes[0].set_ylabel("Count")
+axes[0].set_title("Distribution of Run Durations")
+axes[0].axvline(
+    run_durations_time.mean(),
+    color="red",
+    linestyle="--",
+    linewidth=2,
+    label=f"Mean = {run_durations_time.mean():.2f}s",
+)
 axes[0].legend()
-axes[0].grid(True, alpha=0.3, axis='y')
+axes[0].grid(True, alpha=0.3, axis="y")
 
 # Mean run duration per bin
 mean_duration_per_bin = np.zeros(env.n_bins)
@@ -1061,16 +1090,16 @@ scatter = axes[1].scatter(
     env.bin_centers[:, 1],
     c=mean_duration_per_bin,
     s=200,
-    cmap='plasma',
-    edgecolors='black',
+    cmap="plasma",
+    edgecolors="black",
     linewidth=0.5,
-    vmin=0
+    vmin=0,
 )
-plt.colorbar(scatter, ax=axes[1], label='Mean Run Duration (s)')
-axes[1].set_xlabel('X position (cm)')
-axes[1].set_ylabel('Y position (cm)')
-axes[1].set_title('Average Time Spent Per Visit')
-axes[1].set_aspect('equal')
+plt.colorbar(scatter, ax=axes[1], label="Mean Run Duration (s)")
+axes[1].set_xlabel("X position (cm)")
+axes[1].set_ylabel("Y position (cm)")
+axes[1].set_title("Average Time Spent Per Visit")
+axes[1].set_aspect("equal")
 
 plt.tight_layout()
 plt.show()
@@ -1083,29 +1112,29 @@ plt.show()
 # This is useful for analyzing goal-directed behavior
 
 # North reward location
-north_reward = env.regions['north_reward'].data
+north_reward = env.regions["north_reward"].data
 north_reward_bin = env.bin_at(north_reward.reshape(1, -1))[0]
 
 # Compute distance field using the built-in method
 # distance_to() requires targets as a sequence (list, tuple, or array)
-distances_to_north = env.distance_to([north_reward_bin], metric='geodesic')
+distances_to_north = env.distance_to([north_reward_bin], metric="geodesic")
 
 # Also compute Euclidean for comparison
-distances_euclidean = env.distance_to([north_reward_bin], metric='euclidean')
+distances_euclidean = env.distance_to([north_reward_bin], metric="euclidean")
 
-print(f"\nDistance Field Analysis:")
+print("\nDistance Field Analysis:")
 print(f"  North reward bin: {north_reward_bin}")
 print(f"  North reward position: {north_reward}")
-print(f"\nGeodesic distances:")
+print("\nGeodesic distances:")
 print(f"  Mean: {distances_to_north[np.isfinite(distances_to_north)].mean():.2f} cm")
 print(f"  Max: {distances_to_north[np.isfinite(distances_to_north)].max():.2f} cm")
-print(f"\nEuclidean distances:")
+print("\nEuclidean distances:")
 print(f"  Mean: {distances_euclidean.mean():.2f} cm")
 print(f"  Max: {distances_euclidean.max():.2f} cm")
 
 # Compute ratio (measures path complexity)
 ratio = distances_to_north / distances_euclidean
-print(f"\nGeodesic/Euclidean ratio:")
+print("\nGeodesic/Euclidean ratio:")
 print(f"  Mean: {ratio[np.isfinite(ratio)].mean():.2f}")
 print(f"  Max: {ratio[np.isfinite(ratio)].max():.2f}")
 
@@ -1119,18 +1148,26 @@ scatter1 = axes[0].scatter(
     env.bin_centers[:, 1],
     c=distances_euclidean,
     s=150,
-    cmap='viridis',
-    edgecolors='black',
-    linewidth=0.3
+    cmap="viridis",
+    edgecolors="black",
+    linewidth=0.3,
 )
-axes[0].scatter(*north_reward, c='red', s=400, marker='*',
-                edgecolors='white', linewidth=2, label='North Reward', zorder=10)
-axes[0].set_xlabel('X position (cm)')
-axes[0].set_ylabel('Y position (cm)')
-axes[0].set_title('Euclidean Distance to Reward')
-axes[0].set_aspect('equal')
+axes[0].scatter(
+    *north_reward,
+    c="red",
+    s=400,
+    marker="*",
+    edgecolors="white",
+    linewidth=2,
+    label="North Reward",
+    zorder=10,
+)
+axes[0].set_xlabel("X position (cm)")
+axes[0].set_ylabel("Y position (cm)")
+axes[0].set_title("Euclidean Distance to Reward")
+axes[0].set_aspect("equal")
 axes[0].legend()
-plt.colorbar(scatter1, ax=axes[0], label='Distance (cm)')
+plt.colorbar(scatter1, ax=axes[0], label="Distance (cm)")
 
 # Geodesic distance
 scatter2 = axes[1].scatter(
@@ -1138,18 +1175,26 @@ scatter2 = axes[1].scatter(
     env.bin_centers[:, 1],
     c=distances_to_north,
     s=150,
-    cmap='viridis',
-    edgecolors='black',
-    linewidth=0.3
+    cmap="viridis",
+    edgecolors="black",
+    linewidth=0.3,
 )
-axes[1].scatter(*north_reward, c='red', s=400, marker='*',
-                edgecolors='white', linewidth=2, label='North Reward', zorder=10)
-axes[1].set_xlabel('X position (cm)')
-axes[1].set_ylabel('Y position (cm)')
-axes[1].set_title('Geodesic Distance to Reward\n(Through Environment)')
-axes[1].set_aspect('equal')
+axes[1].scatter(
+    *north_reward,
+    c="red",
+    s=400,
+    marker="*",
+    edgecolors="white",
+    linewidth=2,
+    label="North Reward",
+    zorder=10,
+)
+axes[1].set_xlabel("X position (cm)")
+axes[1].set_ylabel("Y position (cm)")
+axes[1].set_title("Geodesic Distance to Reward\n(Through Environment)")
+axes[1].set_aspect("equal")
 axes[1].legend()
-plt.colorbar(scatter2, ax=axes[1], label='Distance (cm)')
+plt.colorbar(scatter2, ax=axes[1], label="Distance (cm)")
 
 # Ratio (path complexity)
 scatter3 = axes[2].scatter(
@@ -1157,20 +1202,28 @@ scatter3 = axes[2].scatter(
     env.bin_centers[:, 1],
     c=ratio,
     s=150,
-    cmap='RdYlGn_r',
-    edgecolors='black',
+    cmap="RdYlGn_r",
+    edgecolors="black",
     linewidth=0.3,
     vmin=1.0,
-    vmax=2.0
+    vmax=2.0,
 )
-axes[2].scatter(*north_reward, c='red', s=400, marker='*',
-                edgecolors='white', linewidth=2, label='North Reward', zorder=10)
-axes[2].set_xlabel('X position (cm)')
-axes[2].set_ylabel('Y position (cm)')
-axes[2].set_title('Path Complexity\n(Geodesic/Euclidean Ratio)')
-axes[2].set_aspect('equal')
+axes[2].scatter(
+    *north_reward,
+    c="red",
+    s=400,
+    marker="*",
+    edgecolors="white",
+    linewidth=2,
+    label="North Reward",
+    zorder=10,
+)
+axes[2].set_xlabel("X position (cm)")
+axes[2].set_ylabel("Y position (cm)")
+axes[2].set_title("Path Complexity\n(Geodesic/Euclidean Ratio)")
+axes[2].set_aspect("equal")
 axes[2].legend()
-plt.colorbar(scatter3, ax=axes[2], label='Ratio')
+plt.colorbar(scatter3, ax=axes[2], label="Ratio")
 
 plt.tight_layout()
 plt.show()
@@ -1191,27 +1244,38 @@ neuron_firing_rate = place_fields[best_neuron]
 
 # Bin distance field into ranges
 distance_bins = [0, 20, 40, 60, 100]
-distance_labels = ['0-20 cm', '20-40 cm', '40-60 cm', '>60 cm']
+distance_labels = ["0-20 cm", "20-40 cm", "40-60 cm", ">60 cm"]
 
 mean_rate_by_distance = []
 for i in range(len(distance_bins) - 1):
-    mask = (distances_to_north >= distance_bins[i]) & (distances_to_north < distance_bins[i+1])
+    mask = (distances_to_north >= distance_bins[i]) & (
+        distances_to_north < distance_bins[i + 1]
+    )
     if mask.any():
         rates_in_range = neuron_firing_rate[mask]
-        mean_rate_by_distance.append(rates_in_range[rates_in_range > 0].mean() if (rates_in_range > 0).any() else 0)
+        mean_rate_by_distance.append(
+            rates_in_range[rates_in_range > 0].mean()
+            if (rates_in_range > 0).any()
+            else 0
+        )
     else:
         mean_rate_by_distance.append(0)
 
 # Plot
 fig, ax = plt.subplots(figsize=(10, 6))
-ax.bar(range(len(distance_labels)), mean_rate_by_distance,
-       color='steelblue', edgecolor='black', alpha=0.7)
+ax.bar(
+    range(len(distance_labels)),
+    mean_rate_by_distance,
+    color="steelblue",
+    edgecolor="black",
+    alpha=0.7,
+)
 ax.set_xticks(range(len(distance_labels)))
 ax.set_xticklabels(distance_labels)
-ax.set_xlabel('Distance to North Reward')
-ax.set_ylabel('Mean Firing Rate (Hz)')
-ax.set_title(f'Neuron {best_neuron}: Firing Rate vs Distance to Goal')
-ax.grid(True, alpha=0.3, axis='y')
+ax.set_xlabel("Distance to North Reward")
+ax.set_ylabel("Mean Firing Rate (Hz)")
+ax.set_title(f"Neuron {best_neuron}: Firing Rate vs Distance to Goal")
+ax.grid(True, alpha=0.3, axis="y")
 plt.tight_layout()
 plt.show()
 

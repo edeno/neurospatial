@@ -262,6 +262,7 @@ print("\nNote: Geodesic is longer because it follows the connectivity graph.")
 #
 # Sometimes you want to limit which environments connect to each other. The `max_mnn_distance` parameter controls this.
 
+
 # %%
 # Create three separate circular arenas at different locations
 def create_circular_arena(
