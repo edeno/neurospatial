@@ -259,18 +259,22 @@ def _create_graph_layout_connectivity_graph(
             displacement_vector = bin_centers_nd[bin_ind1] - bin_centers_nd[bin_ind2]
             dist = float(np.linalg.norm(displacement_vector))
 
+            edge_attrs = {
+                "distance": dist,
+                "vector": tuple(displacement_vector.tolist()),
+            }
+            # Only compute angle_2d for 2D or higher dimensional data
+            if len(displacement_vector) >= 2:
+                edge_attrs["angle_2d"] = math.atan2(
+                    displacement_vector[1],
+                    displacement_vector[0],
+                )
+
             edges_to_add.append(
                 (
                     int(bin_ind1),
                     int(bin_ind2),
-                    {
-                        "distance": dist,
-                        "vector": tuple(displacement_vector.tolist()),
-                        "angle_2d": math.atan2(
-                            displacement_vector[1],
-                            displacement_vector[0],
-                        ),
-                    },
+                    edge_attrs,
                 ),
             )
 
@@ -290,18 +294,22 @@ def _create_graph_layout_connectivity_graph(
                 displacement_vector = (
                     bin_centers_nd[connections[i]] - bin_centers_nd[connections[i + 1]]
                 )
+                edge_attrs = {
+                    "distance": float(np.linalg.norm(displacement_vector)),
+                    "vector": tuple(displacement_vector.tolist()),
+                }
+                # Only compute angle_2d for 2D or higher dimensional data
+                if len(displacement_vector) >= 2:
+                    edge_attrs["angle_2d"] = math.atan2(
+                        displacement_vector[1],
+                        displacement_vector[0],
+                    )
+
                 bins_to_connect.append(
                     (
                         int(connections[i]),
                         int(connections[i + 1]),
-                        {
-                            "distance": float(np.linalg.norm(displacement_vector)),
-                            "vector": tuple(displacement_vector.tolist()),
-                            "angle_2d": math.atan2(
-                                displacement_vector[1],
-                                displacement_vector[0],
-                            ),
-                        },
+                        edge_attrs,
                     ),
                 )
     connectivity_graph.add_edges_from(bins_to_connect)

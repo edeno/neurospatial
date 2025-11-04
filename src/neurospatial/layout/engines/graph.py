@@ -123,12 +123,14 @@ class GraphLayout(_KDTreeMixin):
             original_edge_ids=edge_ids,
             edge_order=edge_order,
         )
-        self.dimension_ranges = (
+        # Compute dimension_ranges dynamically based on actual dimensionality
+        n_dims = self.bin_centers.shape[1]
+        self.dimension_ranges = tuple(
             (
-                np.min(self.bin_centers[:, 0]),
-                np.max(self.bin_centers[:, 0]),
-            ),
-            (np.min(self.bin_centers[:, 1]), np.max(self.bin_centers[:, 1])),
+                np.min(self.bin_centers[:, dim]),
+                np.max(self.bin_centers[:, dim]),
+            )
+            for dim in range(n_dims)
         )
 
         # --- Build KDTree ---

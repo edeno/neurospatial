@@ -367,9 +367,6 @@ class TestReachableFromEdgeCases:
 class TestConnectivityMultipleLayouts:
     """Test connectivity operations on different layout types."""
 
-    @pytest.mark.skip(
-        reason="GraphLayout has issue with 1D data (tries to access [1] on 1D array)"
-    )
     def test_components_graph_layout(self):
         """Test components() on 1D graph layout."""
         # Create simple 1D track using networkx
@@ -400,9 +397,6 @@ class TestConnectivityMultipleLayouts:
         assert len(comps) == 1
         assert len(comps[0]) == env.n_bins
 
-    @pytest.mark.skip(
-        reason="GraphLayout has issue with 1D data (tries to access [1] on 1D array)"
-    )
     def test_reachable_from_graph_layout(self):
         """Test reachable_from() on 1D graph layout."""
         # Create 1D track with two disconnected segments
