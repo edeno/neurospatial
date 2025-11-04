@@ -117,12 +117,33 @@ class TestDistanceToMetrics:
 
     def test_geodesic_on_disconnected_graph(self, sample_2d_grid):
         """Geodesic distance on disconnected graph returns inf for unreachable bins."""
-        # For this test, we'd need to artificially disconnect the graph,
-        # but sample_2d_grid is fully connected.
-        # Skip this test as it would require special infrastructure.
-        pytest.skip(
-            "sample_2d_grid is fully connected; disconnected test needs special environment"
-        )
+        env = sample_2d_grid
+
+        # Create disconnection by removing edges that cross the middle vertical line
+        mid_x = (env.dimension_ranges[0][0] + env.dimension_ranges[0][1]) / 2
+        edges_to_remove = []
+        for u, v in list(env.connectivity.edges()):
+            pos_u = env.connectivity.nodes[u]["pos"]
+            pos_v = env.connectivity.nodes[v]["pos"]
+            # If edge crosses middle line (one side < mid_x, other >= mid_x)
+            if (pos_u[0] < mid_x and pos_v[0] >= mid_x) or (
+                pos_v[0] < mid_x and pos_u[0] >= mid_x
+            ):
+                edges_to_remove.append((u, v))
+
+        env.connectivity.remove_edges_from(edges_to_remove)
+
+        # Verify we created a disconnected graph
+        comps = env.components()
+        assert len(comps) >= 2, "Failed to create disconnected graph"
+
+        # Pick source in first component, target in second component
+        source_bin = comps[0][0]
+        target_bin = comps[1][0]
+
+        # Geodesic distance from source to unreachable target should be inf
+        distances = env.distance_to([target_bin], metric="geodesic")
+        assert distances[source_bin] == np.inf
 
 
 class TestDistanceToValidation:
@@ -392,13 +413,42 @@ class TestRingsEdgeCases:
         for k in range(1, 6):
             assert len(rings_result[k]) == 0  # Empty rings
 
-    def test_rings_disconnected_graph(self):
+    def test_rings_disconnected_graph(self, sample_2d_grid):
         """Rings on disconnected graph stop at component boundary."""
-        # For testing disconnected graphs, we'd need CompositeEnvironment,
-        # but it doesn't inherit from Environment and doesn't have rings() method.
-        # Skip this test as it would require extensive infrastructure.
-        pytest.skip(
-            "Testing disconnected graphs requires CompositeEnvironment infrastructure"
+        env = sample_2d_grid
+
+        # Create disconnection by removing edges crossing the middle vertical line
+        mid_x = (env.dimension_ranges[0][0] + env.dimension_ranges[0][1]) / 2
+        edges_to_remove = []
+        for u, v in list(env.connectivity.edges()):
+            pos_u = env.connectivity.nodes[u]["pos"]
+            pos_v = env.connectivity.nodes[v]["pos"]
+            if (pos_u[0] < mid_x and pos_v[0] >= mid_x) or (
+                pos_v[0] < mid_x and pos_u[0] >= mid_x
+            ):
+                edges_to_remove.append((u, v))
+
+        env.connectivity.remove_edges_from(edges_to_remove)
+
+        # Verify disconnection
+        comps = env.components()
+        assert len(comps) >= 2, "Failed to create disconnected graph"
+
+        # Start from a bin in the first component
+        center = comps[0][0]
+        comp0_bins = set(comps[0])
+
+        # Get rings with large hops (more than graph diameter)
+        rings_result = env.rings(center, hops=20)
+
+        # Collect all bins reached by rings
+        reached_bins = set()
+        for ring in rings_result:
+            reached_bins.update(ring)
+
+        # Rings should only reach bins in the same component
+        assert reached_bins == comp0_bins, (
+            f"Rings reached bins outside component: {reached_bins - comp0_bins}"
         )
 
     def test_rings_large_hops(self, sample_2d_grid):
