@@ -55,14 +55,9 @@ def list_available_layouts() -> list[str]:
         `LayoutEngine` types (e.g., "RegularGrid", "Hexagonal").
 
     """
-    unique_options: list[str] = []
-    processed_normalized_options: set[str] = set()
-    for opt in _LAYOUT_MAP:
-        norm_opt = _normalize_name(opt)
-        if norm_opt not in processed_normalized_options:
-            unique_options.append(opt)
-            processed_normalized_options.add(norm_opt)
-    return sorted(unique_options)
+    # dict preserves insertion order (Python 3.7+) and deduplicates by key
+    unique_layouts = {_normalize_name(name): name for name in _LAYOUT_MAP}
+    return sorted(unique_layouts.values())
 
 
 def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
@@ -149,13 +144,9 @@ def create_layout(kind: str, **kwargs) -> LayoutEngine:
 
     """
     # 1) Normalize user input and find matching key
-    norm_query = "".join(ch for ch in kind if ch.isalnum()).lower()
+    norm_query = _normalize_name(kind)
     found_key = next(
-        (
-            name
-            for name in _LAYOUT_MAP
-            if "".join(ch for ch in name if ch.isalnum()).lower() == norm_query
-        ),
+        (name for name in _LAYOUT_MAP if _normalize_name(name) == norm_query),
         None,
     )
     if found_key is None:

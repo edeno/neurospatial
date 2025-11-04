@@ -13,6 +13,7 @@ wraps pre-fitted sub-environments. plot_1d is not applicable for composite envir
 """
 
 from collections.abc import Sequence
+from itertools import chain
 from typing import Any, cast
 
 import matplotlib
@@ -26,7 +27,68 @@ from sklearn.neighbors import KDTree
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
 from neurospatial._logging import log_composite_build
 from neurospatial.environment import Environment
-from neurospatial.regions import Region, Regions
+from neurospatial.regions import Regions
+
+
+def _validate_subenvs(subenvs: Any) -> list[Environment]:
+    """Validate and normalize subenvs parameter.
+
+    Parameters
+    ----------
+    subenvs : Any
+        Input to validate as list of Environment instances.
+
+    Returns
+    -------
+    list[Environment]
+        Validated list of Environment instances.
+
+    Raises
+    ------
+    TypeError
+        If subenvs is wrong type or contains non-Environment objects.
+    ValueError
+        If subenvs is empty, environments not fitted, or have mismatched dimensions.
+
+    """
+    # Type check
+    if not isinstance(subenvs, (list, tuple)):
+        raise TypeError(
+            f"subenvs must be a list or tuple, got {type(subenvs).__name__}. "
+            f"Use [env] to wrap it in a list."
+        )
+
+    # Empty check
+    if not subenvs:
+        raise ValueError("At least one sub-environment is required.")
+
+    # Element type check
+    for i, env in enumerate(subenvs):
+        if not isinstance(env, Environment):
+            raise TypeError(
+                f"subenvs[{i}] must be an Environment instance, "
+                f"got {type(env).__name__}."
+            )
+        if not env._is_fitted:
+            raise ValueError(f"Sub-environment {i} is not fitted.")
+
+    # Dimension consistency check
+    first_ndims = subenvs[0].n_dims
+    for i, env in enumerate(subenvs[1:], start=1):
+        if env.n_dims != first_ndims:
+            raise ValueError(
+                f"All sub-environments must share the same n_dims. "
+                f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}.\n"
+                "\n"
+                "Common cause: Mixing environments with different dimensionalities "
+                "(e.g., 2D position data and 3D spatial data).\n"
+                "\n"
+                "To fix:\n"
+                "  1. Check that all data_samples arrays have the same number of columns\n"
+                "  2. Verify each environment's n_dims property before creating the composite"
+            )
+
+    return list(subenvs)  # Normalize to list
 
 
 class CompositeEnvironment:
@@ -135,56 +197,11 @@ class CompositeEnvironment:
            verify that bin locations are spatially separated.
 
         """
-        # Validate container type
-        if not isinstance(subenvs, (list, tuple)):
-            raise TypeError(
-                f"subenvs must be a list or tuple of Environment instances, "
-                f"got {type(subenvs).__name__}. "
-                f"Did you pass a single Environment instead of a list? "
-                f"Use [env] to wrap it in a list."
-            )
-
-        # Validate not empty
-        if len(subenvs) == 0:
-            raise ValueError(
-                "At least one sub-environment is required. Received empty list."
-            )
-
-        # Validate each element is Environment instance
-        for i, env in enumerate(subenvs):
-            if not isinstance(env, Environment):
-                raise TypeError(
-                    f"subenvs[{i}] must be an Environment instance, "
-                    f"got {type(env).__name__}. "
-                    f"All elements of subenvs must be Environment objects."
-                )
+        # Validate and normalize subenvs
+        subenvs = _validate_subenvs(subenvs)
 
         self._use_kdtree_query = use_kdtree_query
-
-        # Validate that all sub-environments share the same n_dims and are fitted
         self._n_dims = subenvs[0].n_dims
-        if not subenvs[0]._is_fitted:
-            raise ValueError("Sub-environment 0 is not fitted.")
-
-        for i, e in enumerate(subenvs[1:], 1):
-            if not e._is_fitted:
-                raise ValueError(f"Sub-environment {i} is not fitted.")
-            if e.n_dims != self._n_dims:
-                raise ValueError(
-                    f"All sub-environments must share the same n_dims. "
-                    f"Env 0 has {self._n_dims}, Env {i} has {e.n_dims}.\n"
-                    "\n"
-                    "Common cause:\n"
-                    "  This typically occurs when mixing environments created from data with "
-                    "different dimensionalities (e.g., 2D position tracking data and 3D spatial data).\n"
-                    "\n"
-                    "To fix:\n"
-                    "  1. Check that all data_samples arrays used to create environments have the same "
-                    "number of columns (n_dims)\n"
-                    "  2. Ensure all environments represent the same spatial dimensionality "
-                    "(all 2D or all 3D)\n"
-                    "  3. Verify each environment's n_dims property before creating the composite"
-                )
 
         # Build index offsets for each sub-environment
         self._subenvs_info = []
@@ -228,34 +245,18 @@ class CompositeEnvironment:
         if self.bin_centers.shape[0] > 0:
             min_coords = np.min(self.bin_centers, axis=0)
             max_coords = np.max(self.bin_centers, axis=0)
-            self.dimension_ranges = tuple(
-                (min_coords[i], max_coords[i]) for i in range(self._n_dims)
-            )
+            self.dimension_ranges = tuple(zip(min_coords, max_coords, strict=True))
         else:
             self.dimension_ranges = (
-                tuple(
-                    (np.nan, np.nan)
-                    for _ in range(self._n_dims)  # Or None, as per Environment
-                )
+                tuple((np.nan, np.nan) for _ in range(self._n_dims))
                 if self._n_dims > 0
                 else None
             )
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
-        # “all_regions” will hold every Region from every sub‐environment
-        all_regions: list[Region] = []
-        for child in subenvs:
-            # child.regions is itself a Regions (mapping name → Region).
-            # We want to pull out each Region object
-            for reg in child.regions.values():
-                # If you suspect two children might have regions with the same name,
-                # you can either rename here (e.g. prefix with child.name) or let
-                # Regions(...) raise a KeyError. Below we simply re‐use the original name,
-                # assuming no collisions.
-                all_regions.append(reg)
-
-        # Now create a single Regions object containing every Region from every child
+        # Flatten all regions from all sub-environments
+        all_regions = chain.from_iterable(child.regions.values() for child in subenvs)
         self.regions = Regions(all_regions)
 
         self._layout_type_used = "Composite"

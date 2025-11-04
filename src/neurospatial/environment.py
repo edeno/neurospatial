@@ -397,6 +397,58 @@ class Environment:
 
         return f"Environment(name={name_str}, {dims_str}, {n_bins} bins, {layout_type})"
 
+    @staticmethod
+    def _html_table_row(label: str, value: str, highlight: bool = False) -> str:
+        """Generate a single HTML table row.
+
+        Parameters
+        ----------
+        label : str
+            Row label (left column).
+        value : str
+            Row value (right column).
+        highlight : bool, default=False
+            If True, use highlighted background color.
+
+        Returns
+        -------
+        str
+            HTML string for the table row.
+
+        """
+        bg_color = "#fffacd" if highlight else "#fff"
+        return (
+            f'<tr style="background-color: {bg_color};">'
+            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
+            f'font-weight: bold; color: #555;">{label}</td>'
+            f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
+            f'color: #000;">{value}</td>'
+            "</tr>"
+        )
+
+    @staticmethod
+    def _html_table_header(title: str) -> str:
+        """Generate HTML table header row.
+
+        Parameters
+        ----------
+        title : str
+            Title text for the header (already HTML-escaped).
+
+        Returns
+        -------
+        str
+            HTML string for the header row.
+
+        """
+        return (
+            '<tr style="background-color: #f0f0f0; border-bottom: 2px solid #999;">'
+            '<th colspan="2" style="padding: 8px; text-align: left; '
+            'font-weight: bold; font-size: 14px;">'
+            f"{title}"
+            "</th></tr>"
+        )
+
     def _repr_html_(self) -> str:
         """Generate rich HTML representation for Jupyter notebooks.
 
@@ -445,59 +497,39 @@ class Environment:
         # Escape HTML special characters in name
         name = html.escape(str(self.name) if self.name else "None")
 
-        # Build HTML table
-        html_parts = []
-        html_parts.append('<div style="margin: 10px;">')
-        html_parts.append(
-            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
-            'font-family: monospace; font-size: 12px;">'
-        )
-
-        # Header row
-        html_parts.append(
-            '<tr style="background-color: #f0f0f0; border-bottom: 2px solid #999;">'
-        )
-        html_parts.append(
-            '<th colspan="2" style="padding: 8px; text-align: left; '
-            'font-weight: bold; font-size: 14px;">'
-        )
-        html_parts.append(f"Environment: {name}")
-        html_parts.append("</th></tr>")
-
-        # Helper function to add rows
-        def add_row(label: str, value: str, highlight: bool = False) -> None:
-            bg_color = "#fffacd" if highlight else "#fff"
-            html_parts.append(f'<tr style="background-color: {bg_color};">')
-            html_parts.append(
-                f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-                f'font-weight: bold; color: #555;">{label}</td>'
-            )
-            html_parts.append(
-                f'<td style="padding: 6px 12px; border-top: 1px solid #ddd; '
-                f'color: #000;">{value}</td>'
-            )
-            html_parts.append("</tr>")
+        # Build table rows
+        rows = []
+        rows.append(self._html_table_header(f"Environment: {name}"))
 
         # Check if fitted
         if not self._is_fitted:
-            add_row("Status", "Not fitted", highlight=True)
-            add_row("Layout Type", self._layout_type_used or "Unknown")
-            html_parts.append("</table></div>")
-            return "".join(html_parts)
+            rows.append(self._html_table_row("Status", "Not fitted", highlight=True))
+            rows.append(
+                self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
+            )
+            return (
+                '<div style="margin: 10px;">'
+                '<table style="border-collapse: collapse; border: 1px solid #ddd; '
+                'font-family: monospace; font-size: 12px;">'
+                f"{''.join(rows)}"
+                "</table></div>"
+            )
 
         # Fitted environment - show full details
-        add_row("Layout Type", self._layout_type_used or "Unknown")
+        rows.append(
+            self._html_table_row("Layout Type", self._layout_type_used or "Unknown")
+        )
 
         # Dimensions and bins
         try:
             n_dims = self.n_dims
-            add_row("Dimensions", str(n_dims))
+            rows.append(self._html_table_row("Dimensions", str(n_dims)))
         except (RuntimeError, AttributeError):
-            add_row("Dimensions", "Unknown")
+            rows.append(self._html_table_row("Dimensions", "Unknown"))
             n_dims = None
 
         n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
-        add_row("Number of Bins", str(n_bins))
+        rows.append(self._html_table_row("Number of Bins", str(n_bins)))
 
         # Spatial extent
         if hasattr(self, "dimension_ranges") and self.dimension_ranges:
@@ -505,21 +537,28 @@ class Environment:
             for dim_idx, (min_val, max_val) in enumerate(self.dimension_ranges):
                 extent_parts.append(f"dim{dim_idx}: [{min_val:.2f}, {max_val:.2f}]")
             extent_str = "<br>".join(extent_parts)
-            add_row("Spatial Extent", extent_str)
+            rows.append(self._html_table_row("Spatial Extent", extent_str))
 
         # Regions
         n_regions = len(self.regions) if hasattr(self, "regions") else 0
         if n_regions > 0:
-            add_row("Regions", f"{n_regions} defined")
+            rows.append(self._html_table_row("Regions", f"{n_regions} defined"))
         else:
-            add_row("Regions", "None")
+            rows.append(self._html_table_row("Regions", "None"))
 
         # 1D-specific info
         if n_dims == 1 and hasattr(self, "is_1d") and self.is_1d:
-            add_row("Linearization", "Available (1D environment)")
+            rows.append(
+                self._html_table_row("Linearization", "Available (1D environment)")
+            )
 
-        html_parts.append("</table></div>")
-        return "".join(html_parts)
+        return (
+            '<div style="margin: 10px;">'
+            '<table style="border-collapse: collapse; border: 1px solid #ddd; '
+            'font-family: monospace; font-size: 12px;">'
+            f"{''.join(rows)}"
+            "</table></div>"
+        )
 
     @check_fitted
     def info(self) -> str:
@@ -938,35 +977,40 @@ class Environment:
             )
 
         # Build the dict of layout parameters
-        layout_params: dict[str, Any] = {
+        # Common parameters for all layouts
+        common_params = {
             "data_samples": data_samples,
             "infer_active_bins": infer_active_bins,
             "bin_count_threshold": bin_count_threshold,
-            **layout_specific_kwargs,
         }
 
-        if kind_lower == "regulargrid":
-            layout_params.update(
-                {
-                    "bin_size": bin_size,
-                    "add_boundary_bins": add_boundary_bins,
-                    "dilate": dilate,
-                    "fill_holes": fill_holes,
-                    "close_gaps": close_gaps,
-                    "connect_diagonal_neighbors": connect_diagonal_neighbors,
-                },
-            )
-        elif kind_lower == "hexagonal":
-            layout_params.update(
-                {
-                    "hexagon_width": bin_size,
-                },
-            )
-        else:
+        # Layout-specific parameters
+        specific_params = {
+            "regulargrid": {
+                "bin_size": bin_size,
+                "add_boundary_bins": add_boundary_bins,
+                "dilate": dilate,
+                "fill_holes": fill_holes,
+                "close_gaps": close_gaps,
+                "connect_diagonal_neighbors": connect_diagonal_neighbors,
+            },
+            "hexagonal": {
+                "hexagon_width": bin_size,
+            },
+        }
+
+        if kind_lower not in specific_params:
             raise NotImplementedError(
                 f"Layout kind '{layout_kind}' is not supported. "
                 "Use 'RegularGrid' or 'Hexagonal'.",
             )
+
+        # Build final params dict
+        layout_params = {
+            **common_params,
+            **specific_params[kind_lower],
+            **layout_specific_kwargs,
+        }
 
         return cls.from_layout(kind=layout_kind, layout_params=layout_params, name=name)
 

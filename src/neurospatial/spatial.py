@@ -183,31 +183,43 @@ def map_points_to_bins(
 
     elif tie_break == "lowest_index":
         # Deterministic path: find all ties and pick lowest index
-        # Query for nearest neighbor
-        distances, indices = kdtree.query(points, k=1, workers=-1)
-
-        # For boundary points, we need to check if there are multiple
-        # equidistant bins. Query for k=2 to detect ties.
-        distances_k2, _ = kdtree.query(points, k=2, workers=-1)
+        # Query for top 2 neighbors to detect ties (avoid redundant k=1 query)
+        distances_k2, indices_k2 = kdtree.query(points, k=2, workers=-1)
+        distances = distances_k2[:, 0]
+        indices = indices_k2[:, 0].copy()  # Copy to allow modification
 
         # Check where distance to 2nd nearest equals 1st nearest (within tolerance)
         has_tie = np.abs(distances_k2[:, 0] - distances_k2[:, 1]) < 1e-10
 
+        # For any ties detected in k=2 query, pick the lowest index immediately
         if np.any(has_tie):
-            # For tied points, query more neighbors and pick lowest index
-            # Adaptive: query enough neighbors to find all at same distance
-            max_neighbors = min(10, len(env.bin_centers))
-            distances_kn, indices_kn = kdtree.query(
-                points[has_tie], k=max_neighbors, workers=-1
-            )
+            # For simple 2-way ties, just pick minimum of the two
+            simple_ties = has_tie.copy()
 
-            # For each tied point, find all neighbors at same distance and pick min index
-            for i, (dists, idxs) in enumerate(
-                zip(distances_kn, indices_kn, strict=False)
-            ):
-                min_dist = dists[0]
-                tied_indices = idxs[np.abs(dists - min_dist) < 1e-10]
-                indices[has_tie][i] = tied_indices.min()
+            # First handle simple ties where only 2 bins are equidistant
+            for idx in np.where(simple_ties)[0]:
+                # Get the two nearest indices from k=2 query
+                two_nearest = indices_k2[idx, :2]
+                indices[idx] = two_nearest.min()
+
+            # Now check if we need to query more neighbors for complex ties
+            # Re-query only points that might have more than 2 tied neighbors
+            max_neighbors = min(10, len(env.bin_centers))
+            if max_neighbors > 2:
+                distances_kn, indices_kn = kdtree.query(
+                    points[has_tie], k=max_neighbors, workers=-1
+                )
+
+                # For each tied point, find ALL neighbors at same distance
+                for i, (dists, idxs) in enumerate(
+                    zip(distances_kn, indices_kn, strict=False)
+                ):
+                    min_dist = dists[0]
+                    # Find all indices within tolerance of minimum distance
+                    tied_indices = idxs[np.abs(dists - min_dist) < 1e-10]
+                    # Update only if we found more than the 2 we already considered
+                    if len(tied_indices) > 2:
+                        indices[has_tie][i] = tied_indices.min()
 
         bin_indices = indices.astype(np.int64)
 
