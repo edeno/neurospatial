@@ -295,15 +295,15 @@
   - [x] Shallow copy: shared references
   - [x] Cache cleared after copy
 
-### P3.15: Deterministic KDTree
+### P3.15: Deterministic KDTree ✅ COMPLETE
 
-- [ ] Update `spatial.map_points_to_bins()`
-  - [ ] Add `max_distance` parameter
-  - [ ] Add `max_distance_factor` parameter
-  - [ ] Replace random subsampling with deterministic quantiles
-- [ ] Tests for deterministic behavior
-  - [ ] Repeated calls → identical results
-  - [ ] Distance threshold behavior
+- [x] Update `spatial.map_points_to_bins()`
+  - [x] Add `max_distance` parameter
+  - [x] Add `max_distance_factor` parameter
+  - [x] Replace random subsampling with deterministic quantiles
+- [x] Tests for deterministic behavior
+  - [x] Repeated calls → identical results
+  - [x] Distance threshold behavior
 
 ### Documentation
 
