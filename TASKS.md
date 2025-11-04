@@ -284,16 +284,16 @@
   - [x] Edge cases (single bin, large hops) ✅
   - [x] Integration with distance_field ✅
 
-### P3.14: Copy / Clone
+### P3.14: Copy / Clone ✅ COMPLETE
 
-- [ ] Implement `Environment.copy()` in `environment.py`
-  - [ ] Support `deep=True` (deepcopy)
-  - [ ] Support `deep=False` (shallow)
-  - [ ] Clear all caches (KDTree, kernels)
-- [ ] Tests for `copy()`
-  - [ ] Deep copy: modify copy doesn't affect original
-  - [ ] Shallow copy: shared references
-  - [ ] Cache cleared after copy
+- [x] Implement `Environment.copy()` in `environment.py`
+  - [x] Support `deep=True` (deepcopy)
+  - [x] Support `deep=False` (shallow)
+  - [x] Clear all caches (KDTree, kernels)
+- [x] Tests for `copy()`
+  - [x] Deep copy: modify copy doesn't affect original
+  - [x] Shallow copy: shared references
+  - [x] Cache cleared after copy
 
 ### P3.15: Deterministic KDTree
 

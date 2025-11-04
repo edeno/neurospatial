@@ -5183,3 +5183,109 @@ class Environment:
         ]
 
         return rings_arrays
+
+    @check_fitted
+    def copy(self, *, deep: bool = True) -> Environment:
+        """Create a copy of the environment.
+
+        Parameters
+        ----------
+        deep : bool, default=True
+            If True, create a deep copy where modifying the copy will not
+            affect the original. Arrays and the connectivity graph are copied.
+            If False, create a shallow copy that shares underlying data with
+            the original.
+
+        Returns
+        -------
+        env_copy : Environment
+            New environment instance. Transient caches (KDTree, kernels) are
+            always cleared regardless of `deep` parameter.
+
+        See Also
+        --------
+        Environment.subset : Create new environment from bin selection.
+
+        Notes
+        -----
+        **Deep copy (deep=True, default)**:
+
+        - All numpy arrays are copied (bin_centers, dimension_ranges, etc.)
+        - Connectivity graph is deep copied
+        - Regions are deep copied
+        - Layout object is deep copied
+
+        Modifying the copy will not affect the original environment.
+
+        **Shallow copy (deep=False)**:
+
+        - Arrays and graph are shared with the original
+        - Modifying the copy will affect the original
+
+        **Cache invalidation**:
+
+        Both deep and shallow copies always clear transient caches to ensure
+        consistency. Caches are rebuilt on-demand when needed:
+
+        - KDTree cache (used by spatial query methods)
+        - Kernel cache (used by smooth() and occupancy())
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create environment
+        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> env.units = "cm"
+        >>>
+        >>> # Deep copy (default)
+        >>> env_copy = env.copy()
+        >>> env_copy.bin_centers[0, 0] = 999.0
+        >>> bool(env.bin_centers[0, 0] != 999.0)  # Original unchanged
+        True
+        >>>
+        >>> # Shallow copy
+        >>> env_shallow = env.copy(deep=False)
+        >>> original_value = env.bin_centers[0, 0]
+        >>> env_shallow.bin_centers[0, 0] = 888.0
+        >>> bool(env.bin_centers[0, 0] == 888.0)  # Original changed
+        True
+        >>> # Restore for other tests
+        >>> env.bin_centers[0, 0] = original_value
+        """
+        import copy as copy_module
+
+        if deep:
+            # Deep copy: arrays, graph, regions, layout
+            env_copy = Environment(
+                name=self.name,
+                layout=copy_module.deepcopy(self.layout),
+                layout_type_used=self._layout_type_used,
+                layout_params_used=copy_module.deepcopy(self._layout_params_used),
+                regions=copy_module.deepcopy(self.regions),
+            )
+
+            # Copy metadata
+            env_copy.units = self.units
+            env_copy.frame = self.frame
+        else:
+            # Shallow copy: share references
+            env_copy = Environment(
+                name=self.name,
+                layout=self.layout,  # Shared reference
+                layout_type_used=self._layout_type_used,
+                layout_params_used=self._layout_params_used,  # Shared reference
+                regions=self.regions,  # Shared reference
+            )
+
+            # Copy metadata
+            env_copy.units = self.units
+            env_copy.frame = self.frame
+
+        # Always clear caches (regardless of deep/shallow)
+        # This ensures caches are rebuilt for the new environment object
+        env_copy._kdtree_cache = None
+        env_copy._kernel_cache = {}
+
+        return env_copy
