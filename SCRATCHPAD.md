@@ -276,3 +276,18 @@ Based on user feedback, consider:
 ---
 
 **Final Status**: ✅ ALL WORK COMPLETE - READY FOR RELEASE
+
+---
+
+## Update 2025-11-04: Public API Verification
+
+**Task**: Verify `__init__.py` exports for new functionality
+
+**Finding**: ✅ All exports already in place
+- `compute_diffusion_kernels` imported from `kernels.py` (line 15)
+- Field operations imported from `field_ops.py` (lines 9-14)
+  - `clamp`, `combine_fields`, `divergence`, `normalize_field`
+- All new functions included in `__all__` list (lines 30-47)
+- Import verification: ✅ All imports work correctly
+
+**Status**: No changes needed - public API complete

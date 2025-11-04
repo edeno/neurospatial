@@ -328,10 +328,10 @@
 - [x] Update navigation in `mkdocs.yml` and `docs/user-guide/index.md`
 - [x] All API signatures verified against implementation
 - [x] Both code-reviewer and ux-reviewer agents approved
-- [ ] Update `__init__.py` with public API exports
-  - [ ] Add `compute_diffusion_kernels`
-  - [ ] Add field_ops functions
-  - [ ] Update `__all__`
+- [x] Update `__init__.py` with public API exports
+  - [x] Add `compute_diffusion_kernels`
+  - [x] Add field_ops functions
+  - [x] Update `__all__`
 
 ### Performance & Polish
 
