@@ -316,7 +316,26 @@ class TestInterpolateMultipleLayouts:
 
     def test_interpolate_nearest_on_hexagonal(self):
         """Nearest-neighbor should work on hexagonal layout."""
-        pytest.skip("Hexagonal layout fixture needed")
+        # Create sample data for hexagonal grid
+        np.random.seed(42)
+        data_points = np.random.uniform(0, 10, size=(100, 2))
+
+        env = Environment.from_samples(
+            data_samples=data_points,
+            bin_size=2.0,
+            layout_kind="Hexagonal",
+        )
+
+        # Create a simple field (e.g., distance from origin)
+        field = np.linalg.norm(env.bin_centers, axis=1)
+
+        # Query points
+        query_points = np.array([[2.0, 2.0], [5.0, 5.0], [8.0, 8.0]])
+
+        result = env.interpolate(field, query_points, mode="nearest")
+
+        assert result.shape == (3,)
+        assert not np.any(np.isnan(result))  # All points should be inside environment
 
     def test_interpolate_nearest_on_polygon(self):
         """Nearest-neighbor should work on polygon layout."""
