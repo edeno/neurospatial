@@ -253,8 +253,3 @@ allow_incomplete_defs = true
 [[tool.mypy.overrides]]
 module = "docs.examples.*"
 ignore_errors = true
-
-# Environment mixins: Skip type checking (mypy doesn't understand mixin pattern)
-[[tool.mypy.overrides]]
-module = "neurospatial.environment.*"
-ignore_errors = true
