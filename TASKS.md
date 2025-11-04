@@ -220,17 +220,25 @@
   - [x] Test normalization preserves shape
   - [x] Test combine_fields with weights (51 tests passing)
 
-### P2.11: Linear Occupancy (Grid Enhancement)
+### P2.11: Linear Occupancy (Grid Enhancement) ✅ COMPLETE
 
-- [ ] Add `time_allocation` parameter to `occupancy()`
-  - [ ] Support `time_allocation='start'` (default)
-  - [ ] Support `time_allocation='linear'` (grids only)
-  - [ ] Ray-grid intersection logic
-  - [ ] Proportional time splitting across bins
-- [ ] Tests for linear occupancy
-  - [ ] Diagonal trajectory across 4 cells
-  - [ ] Compare linear vs start allocation
-  - [ ] Non-grid layout raises error
+- [x] Add `time_allocation` parameter to `occupancy()`
+  - [x] Support `time_allocation='start'` (default)
+  - [x] Support `time_allocation='linear'` (grids only)
+  - [x] Ray-grid intersection logic (DDA-like algorithm)
+  - [x] Proportional time splitting across bins
+  - [x] Helper methods: `_allocate_time_linear()`, `_compute_ray_grid_intersections()`, `_position_to_flat_index()`
+- [x] Tests for linear occupancy (17 tests, all passing)
+  - [x] Diagonal trajectory across 4 bins
+  - [x] Proportional time allocation (horizontal line)
+  - [x] Same-bin equivalence with 'start' mode
+  - [x] Default behavior unchanged
+  - [x] Mass conservation (complex trajectory, with gaps)
+  - [x] Layout compatibility (GraphLayout/PolygonLayout raise errors)
+  - [x] Input validation (invalid values, type checking)
+  - [x] Edge cases (single sample, empty arrays, outside environment)
+  - [x] Integration (speed filtering, kernel smoothing)
+  - [x] Accuracy (45° diagonal, vertical line)
 
 **Deliverable**: P2 operations and field utilities
 

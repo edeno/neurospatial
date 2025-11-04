@@ -2645,6 +2645,217 @@ class Environment:
 
         return result
 
+    def _allocate_time_linear(
+        self,
+        positions: NDArray[np.float64],
+        dt: NDArray[np.float64],
+        valid_mask: NDArray[np.bool_],
+        bin_indices: NDArray[np.int64],
+    ) -> NDArray[np.float64]:
+        """Allocate time intervals linearly across traversed bins (helper for occupancy).
+
+        This method implements ray-grid intersection to split each time interval
+        proportionally across all bins crossed by the straight-line path between
+        consecutive position samples.
+
+        Parameters
+        ----------
+        positions : NDArray[np.float64], shape (n_samples, n_dims)
+            Position samples.
+        dt : NDArray[np.float64], shape (n_samples-1,)
+            Time intervals between consecutive samples.
+        valid_mask : NDArray[np.bool_], shape (n_samples-1,)
+            Boolean mask indicating which intervals are valid (pass filtering).
+        bin_indices : NDArray[np.int64], shape (n_samples,)
+            Bin indices for each position (-1 if outside environment).
+
+        Returns
+        -------
+        occupancy : NDArray[np.float64], shape (n_bins,)
+            Time allocated to each bin via linear interpolation.
+        """
+        from neurospatial.layout.engines.regular_grid import RegularGridLayout
+
+        # Ensure we have RegularGridLayout (already validated in occupancy())
+        layout: RegularGridLayout = self.layout  # type: ignore[assignment]
+
+        # Get grid structure
+        grid_edges = layout.grid_edges
+        grid_shape = layout.grid_shape
+
+        # Assert non-None for mypy (RegularGridLayout always has these)
+        assert grid_edges is not None, "RegularGridLayout must have grid_edges"
+        assert grid_shape is not None, "RegularGridLayout must have grid_shape"
+
+        # Initialize occupancy array
+        occupancy = np.zeros(self.n_bins, dtype=np.float64)
+
+        # Process each valid interval
+        for i in np.where(valid_mask)[0]:
+            start_pos = positions[i]
+            end_pos = positions[i + 1]
+            interval_time = dt[i]
+
+            # Get starting and ending bin indices
+            start_bin = bin_indices[i]
+            end_bin = bin_indices[i + 1]
+
+            # If both points are in same bin, simple allocation
+            if start_bin == end_bin and start_bin >= 0:
+                occupancy[start_bin] += interval_time
+                continue
+
+            # Compute ray-grid intersections
+            bin_times = self._compute_ray_grid_intersections(
+                start_pos, end_pos, list(grid_edges), grid_shape, interval_time
+            )
+
+            # Accumulate time to each bin
+            for bin_idx, time_in_bin in bin_times:
+                if 0 <= bin_idx < self.n_bins:
+                    occupancy[bin_idx] += time_in_bin
+
+        return occupancy
+
+    def _compute_ray_grid_intersections(
+        self,
+        start_pos: NDArray[np.float64],
+        end_pos: NDArray[np.float64],
+        grid_edges: list[NDArray[np.float64]],
+        grid_shape: tuple[int, ...],
+        total_time: float,
+    ) -> list[tuple[int, float]]:
+        """Compute time spent in each bin along a ray (helper for linear allocation).
+
+        Uses DDA-like algorithm to traverse grid and compute intersection distances.
+
+        Parameters
+        ----------
+        start_pos : NDArray[np.float64], shape (n_dims,)
+            Starting position.
+        end_pos : NDArray[np.float64], shape (n_dims,)
+            Ending position.
+        grid_edges : list[NDArray[np.float64]]
+            Grid edges per dimension.
+        grid_shape : tuple[int, ...]
+            Grid shape.
+        total_time : float
+            Total time interval to split across bins.
+
+        Returns
+        -------
+        bin_times : list[tuple[int, float]]
+            List of (bin_index, time_in_bin) pairs.
+        """
+        n_dims = len(grid_shape)
+
+        # Compute ray direction and total distance
+        ray_dir = end_pos - start_pos
+        total_distance = np.linalg.norm(ray_dir)
+
+        # Handle zero-distance case (no movement)
+        if total_distance < 1e-12:
+            # No movement - allocate all time to starting bin
+            start_bin_idx = self._position_to_flat_index(
+                start_pos, grid_edges, grid_shape
+            )
+            if start_bin_idx >= 0:
+                return [(start_bin_idx, total_time)]
+            return []
+
+        # Normalize ray direction
+        ray_dir = ray_dir / total_distance
+
+        # Find all grid crossings along each dimension
+        crossings: list[tuple[float, int, int]] = []  # (t, dim, grid_index)
+
+        for dim in range(n_dims):
+            if abs(ray_dir[dim]) < 1e-12:
+                # Ray parallel to this dimension - no crossings
+                continue
+
+            edges = grid_edges[dim]
+            # Find which edges the ray crosses
+            for edge_idx, edge_pos in enumerate(edges):
+                # Parametric intersection: start + t * ray_dir = edge_pos
+                t = (edge_pos - start_pos[dim]) / ray_dir[dim]
+                if 0 < t < total_distance:  # Exclude endpoints
+                    crossings.append((t, dim, edge_idx))
+
+        # Sort crossings by distance along ray
+        crossings.sort(key=lambda x: x[0])
+
+        # Add start and end points
+        segments = [0.0] + [t for t, _, _ in crossings] + [total_distance]
+
+        # Compute bin index and time for each segment
+        bin_times: list[tuple[int, float]] = []
+        for seg_idx in range(len(segments) - 1):
+            # Midpoint of segment (to determine which bin we're in)
+            t_mid = (segments[seg_idx] + segments[seg_idx + 1]) / 2
+            mid_pos = start_pos + t_mid * ray_dir
+
+            # Get bin index at midpoint
+            bin_idx = self._position_to_flat_index(
+                mid_pos, list(grid_edges), grid_shape
+            )
+
+            if bin_idx >= 0:
+                # Compute time in this segment
+                seg_distance = segments[seg_idx + 1] - segments[seg_idx]
+                seg_time = total_time * (seg_distance / total_distance)
+                bin_times.append((bin_idx, seg_time))
+
+        return bin_times
+
+    def _position_to_flat_index(
+        self,
+        pos: NDArray[np.float64],
+        grid_edges: list[NDArray[np.float64]],
+        grid_shape: tuple[int, ...],
+    ) -> int:
+        """Convert N-D position to flat bin index (helper for ray intersection).
+
+        Parameters
+        ----------
+        pos : NDArray[np.float64], shape (n_dims,)
+            Position coordinates.
+        grid_edges : list[NDArray[np.float64]]
+            Grid edges per dimension.
+        grid_shape : tuple[int, ...]
+            Grid shape.
+
+        Returns
+        -------
+        flat_index : int
+            Flat bin index, or -1 if position is outside grid bounds.
+        """
+        n_dims = len(grid_shape)
+        nd_index = []
+
+        for dim in range(n_dims):
+            edges = grid_edges[dim]
+            coord = pos[dim]
+
+            # Find which bin this coordinate falls into
+            # bins are [edges[i], edges[i+1])
+            bin_idx = np.searchsorted(edges, coord, side="right") - 1
+
+            # Check bounds
+            if bin_idx < 0 or bin_idx >= grid_shape[dim]:
+                return -1  # Outside grid
+
+            nd_index.append(bin_idx)
+
+        # Convert N-D index to flat index (row-major order)
+        flat_idx = 0
+        stride = 1
+        for dim in reversed(range(n_dims)):
+            flat_idx += nd_index[dim] * stride
+            stride *= grid_shape[dim]
+
+        return flat_idx
+
     @check_fitted
     def occupancy(
         self,
@@ -2655,6 +2866,7 @@ class Environment:
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
         kernel_bandwidth: float | None = None,
+        time_allocation: Literal["start", "linear"] = "start",
     ) -> NDArray[np.float64]:
         """Compute occupancy (time spent in each bin).
 
@@ -2681,6 +2893,12 @@ class Environment:
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
             Smoothing preserves total occupancy time.
+        time_allocation : {'start', 'linear'}, default='start'
+            Method for allocating time intervals across bins:
+
+            - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
+            - 'linear': Split Δt proportionally across bins traversed by
+              straight-line path (more accurate, RegularGridLayout only).
 
         Returns
         -------
@@ -2698,6 +2916,10 @@ class Environment:
             inconsistent, or if min_speed is provided without speed.
         ValueError
             If positions have wrong number of dimensions.
+        ValueError
+            If time_allocation is not 'start' or 'linear'.
+        NotImplementedError
+            If time_allocation='linear' is used on non-RegularGridLayout.
 
         See Also
         --------
@@ -2706,10 +2928,18 @@ class Environment:
 
         Notes
         -----
-        **Time allocation**: Each time interval Δt = times[i+1] - times[i]
-        is assigned entirely to the bin at positions[i] (the starting position).
-        This is a simple and fast approximation. For more accurate boundary
-        handling on regular grids, see the 'linear' allocation method (P2.11).
+        **Time allocation methods**:
+
+        - time_allocation='start' (default): Each time interval Δt is assigned
+          entirely to the bin at the starting position. Fast and works on all
+          layout types, but may underestimate occupancy in bins the animal
+          passed through.
+
+        - time_allocation='linear': Splits Δt proportionally across all bins
+          traversed by the straight-line path between consecutive samples.
+          More accurate for trajectories that cross multiple bins, but only
+          supported on RegularGridLayout. Requires ray-grid intersection
+          calculations.
 
         **Mass conservation**: The sum of the returned occupancy array equals
         the total valid time:
@@ -2806,6 +3036,25 @@ class Environment:
                     f"Got speed: {len(speed)}, times: {len(times)}"
                 )
 
+        # Validate time_allocation parameter
+        if time_allocation not in ("start", "linear"):
+            raise ValueError(
+                f"time_allocation must be 'start' or 'linear' (got '{time_allocation}'). "
+                "Use 'start' for simple allocation (all layouts) or 'linear' for "
+                "ray-grid intersection (RegularGridLayout only)."
+            )
+
+        # Check layout compatibility for linear allocation
+        if time_allocation == "linear":
+            from neurospatial.layout.engines.regular_grid import RegularGridLayout
+
+            if not isinstance(self.layout, RegularGridLayout):  # type: ignore[unreachable]
+                raise NotImplementedError(
+                    "time_allocation='linear' is only supported for RegularGridLayout. "
+                    f"Current layout type: {type(self.layout).__name__}. "
+                    "Use time_allocation='start' for other layout types."
+                )
+
         # Handle empty arrays
         if len(times) == 0:
             return np.zeros(self.n_bins, dtype=np.float64)
@@ -2840,15 +3089,24 @@ class Environment:
         # Initialize occupancy array
         occupancy = np.zeros(self.n_bins, dtype=np.float64)
 
-        # Accumulate valid time intervals
-        valid_bins = bin_indices[:-1][valid_mask]
-        valid_dt = dt[valid_mask]
+        # Dispatch to appropriate time allocation method
+        if time_allocation == "start":
+            # Simple allocation: entire interval goes to starting bin
+            valid_bins = bin_indices[:-1][valid_mask]
+            valid_dt = dt[valid_mask]
 
-        # Use np.bincount for efficient accumulation
-        # (handles repeated indices automatically)
-        if len(valid_bins) > 0:
-            counts = np.bincount(valid_bins, weights=valid_dt, minlength=self.n_bins)
-            occupancy[:] = counts[: self.n_bins]
+            # Use np.bincount for efficient accumulation
+            if len(valid_bins) > 0:
+                counts = np.bincount(
+                    valid_bins, weights=valid_dt, minlength=self.n_bins
+                )
+                occupancy[:] = counts[: self.n_bins]
+
+        else:  # time_allocation == "linear"
+            # Linear allocation: split time across bins traversed by ray
+            occupancy = self._allocate_time_linear(  # type: ignore[unreachable]
+                positions, dt, valid_mask, bin_indices
+            )
 
         # Apply kernel smoothing if requested
         if kernel_bandwidth is not None:
