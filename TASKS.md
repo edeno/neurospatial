@@ -250,12 +250,12 @@
 
 ---
 
-## Milestone 9: Create Core Module (2 hours)
+## Milestone 9: Create Core Module (2 hours) ✅ COMPLETED
 
 ### Tasks
 
-- [ ] Create `src/neurospatial/environment/core.py`
-- [ ] Import all mixin classes:
+- [x] Create `src/neurospatial/environment/core.py`
+- [x] Import all mixin classes:
 
   ```python
   from neurospatial.environment.decorators import check_fitted
@@ -267,7 +267,7 @@
   from neurospatial.environment.analysis import EnvironmentAnalysis
   ```
 
-- [ ] Create Environment class with mixin inheritance:
+- [x] Create Environment class with mixin inheritance:
 
   ```python
   @dataclass  # ← ONLY Environment is a dataclass
@@ -285,24 +285,25 @@
       # ... rest of dataclass fields
   ```
 
-- [ ] Move core methods:
-  - [ ] `_setup_from_layout()`
-  - [ ] `__eq__()`
-  - [ ] `__repr__()`
-  - [ ] `_repr_html_()`
-  - [ ] `info()`
-  - [ ] `copy()`
-- [ ] Move properties: `n_dims`, `n_bins`, `layout_type`, `layout_parameters`, `is_1d`
-- [ ] Move HTML helpers: `_html_table_row()`, `_html_table_header()`
-- [ ] Move internal helpers: `_source_flat_to_active_node_id_map()`
-- [ ] Add class docstring
+- [x] Move core methods:
+  - [x] `_setup_from_layout()`
+  - [x] `__eq__()`
+  - [x] `__repr__()`
+  - [x] `_repr_html_()`
+  - [x] `info()`
+  - [x] `copy()`
+- [x] Move properties: `n_dims`, `n_bins`, `layout_type`, `layout_parameters`, `is_1d`
+- [x] Move HTML helpers: `_html_table_row()`, `_html_table_header()`
+- [x] Move internal helpers: `_source_flat_to_active_node_id_map()`
+- [x] Add class docstring
 
 ### Success Criteria
 
-- ✅ `core.py` created (~800-1000 lines)
+- ✅ `core.py` created (1,017 lines - acceptable for core module)
 - ✅ Environment inherits from all mixins
-- ✅ ONLY Environment is @dataclass (verify with `hasattr(Environment, '__dataclass_fields__')`)
+- ✅ ONLY Environment is @dataclass (verified)
 - ✅ No circular import errors
+- ✅ Code review APPROVED
 
 ---
 
