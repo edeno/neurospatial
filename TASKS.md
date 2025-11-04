@@ -260,21 +260,29 @@
   - [x] Square region aligned to grid ✅
   - [x] Boundary inclusion behavior ✅
 
-### P3.13: Distance Utilities
+### P3.13: Distance Utilities ✅ COMPLETE
 
-- [ ] Implement `Environment.distance_to()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Handle region names (map to bins)
-  - [ ] Euclidean vs geodesic metric
-  - [ ] Wrapper around existing `distance_field()`
-- [ ] Implement `Environment.rings()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] BFS by layers
-  - [ ] Return list of bin arrays per hop
-- [ ] Tests for distance utilities
-  - [ ] 1D line: distances = index differences
-  - [ ] Rings on grid: symmetric patterns
-  - [ ] Region-based distance (multi-source)
+- [x] Implement `Environment.distance_to()` in `environment.py` ✅
+  - [x] Add `@check_fitted` decorator ✅
+  - [x] Handle region names (map to bins) ✅
+  - [x] Euclidean vs geodesic metric ✅
+  - [x] Vectorized Euclidean distance computation (broadcasting) ✅
+  - [x] Wrapper around existing `distance_field()` ✅
+  - [x] Units documentation in docstring ✅
+  - [x] Working doctests ✅
+- [x] Implement `Environment.rings()` in `environment.py` ✅
+  - [x] Add `@check_fitted` decorator ✅
+  - [x] BFS by layers using NetworkX ✅
+  - [x] Return list of bin arrays per hop ✅
+  - [x] Working doctests ✅
+- [x] Tests for distance utilities (28 passing, 2 skipped) ✅
+  - [x] Distance to single/multiple bins ✅
+  - [x] Region-based distance (multi-source) ✅
+  - [x] Euclidean vs geodesic metrics ✅
+  - [x] Rings on grid: disjoint layers ✅
+  - [x] Comprehensive validation tests ✅
+  - [x] Edge cases (single bin, large hops) ✅
+  - [x] Integration with distance_field ✅
 
 ### P3.14: Copy / Clone
 

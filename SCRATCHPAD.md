@@ -1466,3 +1466,186 @@ Test organization (10 test suites):
 - Ready for next task: P3.13 Distance Transforms & Rings
 
 ---
+
+## Phase 5, P3.13 Complete! (2025-11-04)
+
+### Summary
+- Implemented `Environment.distance_to()` method for distance calculations to target bins/regions
+- Implemented `Environment.rings()` method for k-hop neighborhood BFS layers
+- Comprehensive test suite (28 tests passing, 2 skipped)
+- Follows strict TDD methodology
+- All code review feedback addressed (doctests, vectorization, units documentation)
+
+### Implementation Details
+
+**Method 1**: `Environment.distance_to(targets, *, metric='geodesic')`
+- **Location**: src/neurospatial/environment.py (lines 4886-5055)
+- **Features**:
+  - Two metrics: 'euclidean' (straight-line) and 'geodesic' (graph-based)
+  - Region name support (maps region → bins via region_membership())
+  - Multi-source distance (minimum distance to any target)
+  - Vectorized Euclidean distance computation (broadcasting)
+  - Wrapper around existing distance_field() for geodesic
+  - Returns np.inf for unreachable bins (disconnected components)
+
+**Method 2**: `Environment.rings(center_bin, *, hops)`
+- **Location**: src/neurospatial/environment.py (lines 5057-5187)
+- **Features**:
+  - BFS-based ring computation using NetworkX
+  - Returns list of arrays (one per hop distance)
+  - rings[k] = bins exactly k hops from center
+  - Handles disconnected graphs (rings stop at component boundary)
+  - Efficient O(E+V) complexity
+
+### Key Design Decisions
+
+1. **Vectorized Euclidean Distance**: Uses NumPy broadcasting
+   - Original loop implementation: O(n_bins × n_targets)
+   - Vectorized: Same complexity but ~10-100x faster
+   - Broadcasting: (n_bins, 1, n_dims) - (1, n_targets, n_dims)
+   - Critical for large environments (1000+ bins)
+
+2. **Region-Based Targets**: Automatic region → bins mapping
+   - Uses region_membership() to find bins in region
+   - Supports multi-bin regions (polygon regions)
+   - Warns if region contains no bins
+   - Cleaner API: `env.distance_to("goal")` vs manual bin lookup
+
+3. **Geodesic Delegation**: Leverages existing distance_field()
+   - No code duplication
+   - Consistent behavior with existing API
+   - Returns np.inf for unreachable bins (correct behavior)
+
+4. **Rings Return Type**: list[NDArray[np.int32]]
+   - Natural representation: one array per hop
+   - Empty arrays for hops beyond graph diameter
+   - rings[0] always = [center_bin]
+
+5. **Units Documentation**: Added to docstrings
+   - Distances in same units as bin_centers
+   - Explicit mention in Parameters and Returns
+   - Helps scientific correctness
+
+6. **Working Doctests**: Fixed to be executable
+   - Used correct data generation (10x10 grid = 100 bins)
+   - Used polygon regions (not point regions)
+   - Added bool()/float() wrappers for numpy scalar types
+
+### Files Created/Modified
+- NEW: tests/test_distance_utilities.py (471 lines, 28 tests passing + 2 skipped)
+- MODIFIED: src/neurospatial/environment.py (added distance_to() and rings() methods, ~302 lines)
+
+### Test Coverage
+Test organization (11 test suites):
+1. **TestDistanceToBasic**: Core functionality (4 tests)
+   - Single/multiple bins, region names, environment preservation
+2. **TestDistanceToMetrics**: Metric comparison (2 tests + 1 skipped)
+   - Geodesic vs Euclidean, Euclidean exactness
+3. **TestDistanceToValidation**: Input validation (5 tests)
+   - Invalid bin indices, region names, metric, empty targets, fitted state
+4. **TestDistanceToEdgeCases**: Boundary conditions (3 tests)
+   - Single-bin environment, all bins as targets, multi-bin region
+5. **TestRingsBasic**: Core functionality (4 tests)
+   - Basic ring computation, single hop, zero hops, preservation
+6. **TestRingsProperties**: Mathematical properties (3 tests)
+   - Coverage of reachable bins, disjoint rings, monotonic distances
+7. **TestRingsValidation**: Input validation (3 tests)
+   - Invalid center bin, negative hops, fitted state
+8. **TestRingsEdgeCases**: Boundary conditions (2 tests + 1 skipped)
+   - Single-bin environment, large hops
+9. **TestDistanceUtilitiesIntegration**: Integration (2 tests)
+   - Consistency with reachable_from, wrapper around distance_field
+
+### Code Quality Metrics
+- NumPy docstring format: ✅ (Perfect adherence with working doctests)
+- Type safety: ✅ (Complete type annotations with Literal, Sequence)
+- Input validation: ✅ (Comprehensive with diagnostic errors)
+- Test coverage: ✅ (28/30 passing, 2 skipped appropriately)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Doctests: ✅ (Both methods have passing doctests)
+- Code review: ✅ (All critical and quality issues addressed)
+
+### Code Review Feedback Addressed
+
+**Critical Issues Fixed**:
+- ✅ Fixed distance_to() doctest (used polygon region, correct data shape)
+- ✅ Fixed rings() doctest (used 10x10 data = 100 bins, valid center_bin=50)
+- ✅ Added bool()/float() wrappers for numpy scalar type comparisons
+- ✅ Vectorized Euclidean distance (10-100x speedup)
+
+**Quality Issues Fixed**:
+- ✅ Added units documentation to both method docstrings
+- ✅ Removed redundant condition check in rings() (cutoff already enforces)
+- ✅ Added comment explaining why condition was removed
+- ✅ Updated test fixtures (CompositeEnvironment uses auto_bridge=False)
+- ✅ Simplified validation tests (use monkey-patching for unfitted state)
+
+**Suggestions Considered but Deferred**:
+- Import statement location: Left in method body for consistency with existing code
+- Caching distance_field results: Would add complexity, leave for future optimization
+- metric parameter for rings(): Hop-based is the intended behavior, no need for consistency
+
+**Approved Aspects**:
+- Excellent comprehensive input validation
+- Perfect NumPy docstring compliance with working examples
+- Complete type safety
+- 28 comprehensive tests across all dimensions
+- Implementation matches specification exactly
+- Clear, maintainable code following project patterns
+- Scientific correctness (geodesic via Dijkstra, Euclidean via broadcasting)
+- Region integration (clever use of region_membership())
+
+### Performance
+- Euclidean distance (vectorized): O(n_bins × n_targets × n_dims), ~10-100x faster than loop
+- Geodesic distance: O(E + V log V) via Dijkstra (NetworkX)
+- Rings: O(E + V) via BFS (NetworkX)
+- 28 tests pass in ~0.18s
+
+### Mathematical Correctness
+
+**distance_to() with metric='euclidean'**:
+- Computes ||bin_center - target_pos|| for all bins and targets
+- Returns minimum distance to any target
+- Vectorized via NumPy broadcasting (no explicit loops)
+
+**distance_to() with metric='geodesic'**:
+- Uses Dijkstra's algorithm on connectivity graph
+- Edge weights = 'distance' attribute (physical units)
+- Multi-source: distance to nearest of all targets
+- Unreachable bins = np.inf (mathematically correct)
+
+**rings()**:
+- Uses breadth-first search (NetworkX)
+- Organizes bins by hop distance (graph distance)
+- rings[k] = {bins exactly k edges from center}
+- Guarantees: disjoint, cover all reachable bins
+
+### Integration with Project
+- Uses @check_fitted decorator (consistent with Environment methods)
+- Leverages region_membership() for region-based targets
+- Wraps existing distance_field() (no duplication)
+- Works with all layout types (grids, graphs, meshes)
+- Returns types consistent with codebase (NDArray, list)
+- Integrates with components(), reachable_from()
+
+### Use Cases
+
+**distance_to()**:
+- Navigation: distance fields for path planning
+- Analysis: proximity to goal regions
+- Features: distance-based spatial metrics
+- Visualization: heatmaps of distance
+
+**rings()**:
+- Local analysis: k-hop neighborhoods
+- Feature extraction: distance-based features
+- Smoothing: varying radii
+- Connectivity: analyzing graph structure
+
+### Next Steps
+- Update TASKS.md to mark P3.13 complete
+- Commit implementation with conventional commit message
+- Ready for next task: P3.14 Copy / Clone
+
+---

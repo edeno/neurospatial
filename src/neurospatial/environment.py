@@ -4882,3 +4882,304 @@ class Environment:
                 membership[:, region_idx] = mask
 
         return membership
+
+    @check_fitted
+    def distance_to(
+        self,
+        targets: Sequence[int] | str,
+        *,
+        metric: Literal["euclidean", "geodesic"] = "geodesic",
+    ) -> NDArray[np.float64]:
+        """Compute distance from each bin to target set.
+
+        This method computes the distance from every bin in the environment to
+        the nearest target bin. Useful for:
+        - Navigation and path planning
+        - Computing distance-based features
+        - Analyzing spatial distributions relative to landmarks
+        - Creating distance fields for visualization
+
+        Parameters
+        ----------
+        targets : Sequence[int] or str
+            Target bin indices, or a region name. If a region name is provided,
+            all bins inside that region are used as targets (multi-source).
+        metric : {'euclidean', 'geodesic'}, default='geodesic'
+            Distance metric to use:
+            - 'euclidean': Straight-line distance in physical coordinates (same units as bin_centers).
+            - 'geodesic': Graph distance respecting connectivity (shortest path, in physical units).
+
+        Returns
+        -------
+        distances : NDArray[np.float64], shape (n_bins,)
+            Distance from each bin to the nearest target, in the same units as
+            bin_centers (e.g., cm, meters, pixels). For bins unreachable
+            from all targets (disconnected graph components), returns np.inf.
+
+        Raises
+        ------
+        ValueError
+            If targets is empty, or if target bin indices are out of range,
+            or if metric is invalid.
+        KeyError
+            If targets is a string (region name) that doesn't exist in self.regions.
+        TypeError
+            If targets is neither a sequence of integers nor a string.
+
+        See Also
+        --------
+        rings : Compute k-hop neighborhoods (BFS layers).
+        reachable_from : Find bins reachable from a source within a radius.
+        distance_field : Low-level function for computing geodesic distances.
+
+        Notes
+        -----
+        **Geodesic Distance**:
+        Uses Dijkstra's algorithm to compute shortest paths on the connectivity
+        graph. Edge weights are the 'distance' attribute (physical distance between
+        bin centers). For disconnected graphs, unreachable bins have distance np.inf.
+
+        **Euclidean Distance**:
+        Computes straight-line distance in the coordinate space, ignoring graph
+        connectivity. This is faster but doesn't respect physical barriers.
+
+        **Multi-Source Distances**:
+        When multiple targets are provided (or a region containing multiple bins),
+        each bin's distance is the minimum distance to any target.
+
+        **Region-Based Targets**:
+        If targets is a string, it must be a valid region name in self.regions.
+        All bins inside that region (as determined by region_membership) become
+        target bins.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from shapely.geometry import box
+        >>> # Create 10x10 grid
+        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> # Distance to goal region (polygon covering multiple bins)
+        >>> _ = env.regions.add("goal", polygon=box(8.0, 8.0, 10.0, 10.0))
+        >>> dist = env.distance_to("goal", metric="geodesic")
+        >>> dist.shape
+        (100,)
+        >>> bool(np.all(dist >= 0.0))
+        True
+
+        >>> # Distance to specific bins (opposite corners)
+        >>> targets = [0, env.n_bins - 1]
+        >>> dist = env.distance_to(targets, metric="euclidean")
+        >>> float(dist[targets[0]])
+        0.0
+        >>> float(dist[targets[1]])
+        0.0
+
+        """
+        # Validate metric
+        if metric not in ("euclidean", "geodesic"):
+            raise ValueError(
+                f"metric must be 'euclidean' or 'geodesic', got '{metric}'"
+            )
+
+        # Handle region name targets
+        if isinstance(targets, str):
+            region_name = targets
+            if region_name not in self.regions:
+                raise KeyError(
+                    f"Region '{region_name}' not found in environment regions. "
+                    f"Available regions: {list(self.regions.keys())}"
+                )
+
+            # Get bins in region via membership
+            membership = self.region_membership()
+            region_idx = list(self.regions.keys()).index(region_name)
+            targets = np.where(membership[:, region_idx])[0].tolist()
+
+            if len(targets) == 0:
+                warnings.warn(
+                    f"Region '{region_name}' contains no bins. "
+                    f"All distances will be inf.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        # Convert to numpy array for validation
+        try:
+            target_array = np.asarray(targets, dtype=np.int32)
+        except (ValueError, TypeError) as e:
+            raise TypeError(
+                f"targets must be a sequence of integers or a string (region name), "
+                f"got {type(targets).__name__}"
+            ) from e
+
+        # Validate targets not empty
+        if len(target_array) == 0:
+            raise ValueError(
+                "targets cannot be empty. Provide at least one target bin index "
+                "or a region name containing bins."
+            )
+
+        # Validate target indices in range
+        if np.any(target_array < 0) or np.any(target_array >= self.n_bins):
+            invalid = target_array[(target_array < 0) | (target_array >= self.n_bins)]
+            raise ValueError(
+                f"Target bin indices must be in range [0, {self.n_bins}), "
+                f"got invalid indices: {invalid.tolist()}"
+            )
+
+        # Compute distances based on metric
+        if metric == "euclidean":
+            # Euclidean distance: straight-line distance to nearest target
+            # Vectorized implementation using broadcasting for performance
+            target_positions = self.bin_centers[target_array]  # (n_targets, n_dims)
+
+            # Broadcasting: (n_bins, 1, n_dims) - (1, n_targets, n_dims) -> (n_bins, n_targets)
+            diffs = (
+                self.bin_centers[:, np.newaxis, :] - target_positions[np.newaxis, :, :]
+            )
+            dists_to_targets = np.linalg.norm(diffs, axis=2)  # (n_bins, n_targets)
+            distances_result: NDArray[np.float64] = np.min(
+                dists_to_targets, axis=1
+            )  # (n_bins,)
+
+        else:  # metric == "geodesic"
+            # Geodesic distance: graph-based shortest path
+            from neurospatial.distance import distance_field
+
+            distances_result = np.asarray(
+                distance_field(self.connectivity, sources=target_array.tolist()),
+                dtype=np.float64,
+            )
+
+        return distances_result
+
+    @check_fitted
+    def rings(
+        self,
+        center_bin: int,
+        *,
+        hops: int,
+    ) -> list[NDArray[np.int32]]:
+        """Compute k-hop neighborhoods (BFS layers).
+
+        This method performs breadth-first search (BFS) from the center bin,
+        organizing bins into "rings" by their hop distance. Ring k contains
+        all bins exactly k graph edges away from the center. Useful for:
+        - Local neighborhood analysis
+        - Distance-based feature extraction
+        - Spatial smoothing with varying radii
+        - Analyzing connectivity patterns
+
+        Parameters
+        ----------
+        center_bin : int
+            Starting bin index.
+        hops : int
+            Number of hop layers to compute (non-negative).
+
+        Returns
+        -------
+        rings : list[NDArray[np.int32]], length hops+1
+            List of bin index arrays, one per hop distance.
+            rings[k] contains all bins exactly k hops from center.
+            rings[0] = [center_bin] (the center itself).
+            If fewer than hops layers exist (small or disconnected graph),
+            later rings will be empty arrays.
+
+        Raises
+        ------
+        ValueError
+            If center_bin is out of range [0, n_bins), or if hops is negative.
+        TypeError
+            If center_bin is not an integer type, or if hops is not an integer.
+
+        See Also
+        --------
+        distance_to : Compute distance from each bin to target set.
+        reachable_from : Find bins reachable from source within a radius.
+        components : Find connected components of the graph.
+
+        Notes
+        -----
+        **Hop Distance vs Physical Distance**:
+        Rings are based on graph edges (hops), not physical distance. In a
+        regular grid, 1 hop = 1 grid edge. In irregular graphs, hop distance
+        may not correlate with Euclidean distance.
+
+        **Disconnected Graphs**:
+        If the center bin is in a disconnected component, rings will only
+        cover bins in the same component. Bins in other components will never
+        appear in any ring.
+
+        **Ring Coverage**:
+        The union of all rings equals the set of bins reachable from center
+        within `hops` edges. Rings are mutually disjoint.
+
+        **Performance**:
+        Uses BFS with NetworkX. Complexity is O(E + V) where E = edges,
+        V = vertices (bins). Very fast even for large graphs.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> # Create 10x10 grid
+        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> # Get 2-hop neighborhood from center
+        >>> rings_result = env.rings(center_bin=50, hops=2)
+        >>> len(rings_result)
+        3
+        >>> len(rings_result[0])  # Center only
+        1
+        >>> len(rings_result[1]) > 0  # First neighbors
+        True
+
+        >>> # All rings are disjoint
+        >>> all_bins = np.concatenate(rings_result)
+        >>> len(all_bins) == len(np.unique(all_bins))
+        True
+
+        """
+        # Type validation for center_bin
+        if not isinstance(center_bin, (int, np.integer)):
+            raise TypeError(
+                f"center_bin must be an integer, got {type(center_bin).__name__}"
+            )
+
+        # Range validation for center_bin
+        if center_bin < 0 or center_bin >= self.n_bins:
+            raise ValueError(
+                f"center_bin must be in range [0, {self.n_bins}), got {center_bin}"
+            )
+
+        # Type validation for hops
+        if not isinstance(hops, (int, np.integer)):
+            raise TypeError(f"hops must be an integer, got {type(hops).__name__}")
+
+        # Validate hops is non-negative
+        if hops < 0:
+            raise ValueError(f"hops must be non-negative (>= 0), got {hops}")
+
+        # Perform BFS to get shortest path lengths
+        try:
+            # nx.single_source_shortest_path_length returns dict: {node: distance}
+            distances = nx.single_source_shortest_path_length(
+                self.connectivity, center_bin, cutoff=hops
+            )
+        except nx.NetworkXError:
+            # If center_bin has no edges (isolated), only ring 0 exists
+            distances = {center_bin: 0}
+
+        # Organize bins into rings by hop distance
+        # Note: cutoff parameter already ensures dist <= hops, so all nodes are valid
+        rings_lists: list[list[int]] = [[] for _ in range(hops + 1)]
+        for node, dist in distances.items():
+            rings_lists[dist].append(node)
+
+        # Convert to numpy arrays
+        rings_arrays: list[NDArray[np.int32]] = [
+            np.array(ring, dtype=np.int32) for ring in rings_lists
+        ]
+
+        return rings_arrays
