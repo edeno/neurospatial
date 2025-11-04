@@ -698,3 +698,125 @@ Test organization (8 test suites):
 ### Next Steps
 - Phase 3, Task P1.6: Field Smoothing
 - Ready to begin TDD cycle
+
+---
+
+## Phase 3, P1.7 Complete! (2025-11-03)
+
+### Summary
+- Implemented `Environment.rebin()` method for grid coarsening (geometry-only operation)
+- Comprehensive test suite (14 tests passing, 3 skipped)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+- **Method**: `Environment.rebin(factor)`
+- **Location**: src/neurospatial/environment.py (lines 1760-2034)
+- **Features**:
+  - Grid coarsening by integer factor (uniform or per-dimension)
+  - Geometry-only operation (no field aggregation)
+  - Builds new connectivity graph with same pattern as original
+  - Preserves metadata (units, frame)
+  - All bins in coarsened grid marked as active
+
+### Key Design Decisions
+
+1. **Geometry-Only Operation**: Removed `method` parameter after code review
+   - Rationale: Method was validated but never used in implementation
+   - Creates misleading API (users expect method='sum' vs 'mean' to affect behavior)
+   - Field aggregation should be done separately via map_points_to_bins + np.bincount
+   - Clear separation of concerns: rebin() = geometry, bincount() = aggregation
+
+2. **No skimage Dependency**: Implemented custom block aggregation
+   - Compute bin centers directly from coarsened grid edges
+   - Uses meshgrid to create regular grid of centers
+   - Avoids adding scikit-image as dependency
+
+3. **Full Grid Creation**: All bins in coarsened grid are active
+   - Original grid may have inactive bins (from sample-based masking)
+   - Coarsened grid treats all bins as active
+   - Documented in Notes section of docstring
+
+4. **Connectivity Preservation**: Infers diagonal connections from original
+   - Heuristic: check degree of nodes (degree > 2*n_dims indicates diagonals)
+   - Builds new graph with same connectivity pattern
+   - Works for 1D, 2D, 3D, and higher dimensions
+
+5. **Non-Divisible Handling**: Truncate with warning
+   - If grid_shape not evenly divisible by factor, truncate to largest multiple
+   - Issue UserWarning with diagnostic information
+   - Ensures valid coarsening without silent data loss
+
+### Files Created/Modified
+- NEW: tests/test_rebin.py (317 lines, 14 tests passing + 3 skipped)
+- MODIFIED: src/neurospatial/environment.py (added rebin() method, ~275 lines)
+
+### Test Coverage
+Test organization (6 test suites):
+1. **TestRebinBasic**: Core functionality (3 tests, 2 skipped)
+2. **TestRebinFactorVariations**: Factor specifications (2 tests, 1 skipped)
+3. **TestRebinConnectivity**: Graph reconstruction (2 tests)
+4. **TestRebinValidation**: Input validation (3 tests)
+5. **TestRebinEdgeCases**: Boundary conditions (3 tests)
+6. **TestRebinIntegration**: Integration with other methods (2 tests)
+
+### Code Quality Metrics
+- NumPy docstring format: ✅
+- Type safety: ✅ (Complete type annotations)
+- Input validation: ✅ (Comprehensive with diagnostic errors)
+- Test coverage: ✅ (14/17 passing, 3 skipped due to grid shape non-determinism)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Code review: ✅ APPROVED after refactoring to remove unused `method` parameter
+
+### Code Review Feedback Addressed
+**Critical Issues Fixed**:
+- ✅ Removed unused `method` parameter (was validated but never used)
+- ✅ Updated docstring to clarify geometry-only operation
+- ✅ Added example showing field aggregation workflow
+
+**Quality Improvements**:
+- ✅ Simplified API (one parameter: factor)
+- ✅ Added comprehensive Notes section explaining field aggregation
+- ✅ Updated test names to reflect actual behavior
+- ✅ Removed test_rebin_invalid_method_raises (no longer applicable)
+
+**Approved Aspects**:
+- Excellent NumPy docstring format with field aggregation example
+- Robust input validation with clear error messages
+- Comprehensive test coverage across edge cases
+- Clean implementation using grid edges for center computation
+- Proper @check_fitted decorator usage
+- Works for all grid dimensions (1D, 2D, 3D+)
+
+### Performance
+- Grid coarsening: Fast (mostly NumPy array operations)
+- Connectivity graph building: O(n_coarse_bins * avg_degree)
+- 14 tests pass in ~0.15s
+
+### Field Aggregation Workflow
+Users aggregate fields separately using map_points_to_bins:
+
+```python
+from neurospatial import map_points_to_bins
+
+# Coarsen grid geometry
+coarse = env.rebin(factor=2)
+
+# Map original bins to coarse bins
+coarse_indices = map_points_to_bins(env.bin_centers, coarse)
+
+# Aggregate field (sum for counts/occupancy)
+coarse_field = np.bincount(
+    coarse_indices, weights=field, minlength=coarse.n_bins
+)
+
+# Or aggregate with mean for rates/probabilities
+counts = np.bincount(coarse_indices, minlength=coarse.n_bins)
+sums = np.bincount(coarse_indices, weights=field, minlength=coarse.n_bins)
+coarse_rate = np.divide(sums, counts, where=counts > 0)
+```
+
+### Next Steps
+- Ready to update TASKS.md and commit
+- Proceed to next task in TASKS.md

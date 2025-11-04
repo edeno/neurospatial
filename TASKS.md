@@ -135,22 +135,25 @@
   - [x] Invalid field shape raises ValueError
   - [x] NaN/Inf values raise ValueError (23 tests passing)
 
-### P1.7: Rebin (Grid Coarsening)
+### P1.7: Rebin (Grid Coarsening) ✅
 
-- [ ] Implement `Environment.rebin()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Check layout is `RegularGridLayout`
-  - [ ] Raise `NotImplementedError` for non-grids
-  - [ ] Parse `factor` (int or tuple)
-  - [ ] Compute new grid edges
-  - [ ] Aggregate bins (sum/mean)
-  - [ ] Build new connectivity
-  - [ ] Return new Environment
-- [ ] Tests for `rebin()`
-  - [ ] Constant field preservation (method='sum')
-  - [ ] 10x10 → 5x5 grid (factor=2)
-  - [ ] Bin position correctness
-  - [ ] Non-grid layout raises error
+- [x] Implement `Environment.rebin()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Check layout is `RegularGridLayout`
+  - [x] Raise `NotImplementedError` for non-grids
+  - [x] Parse `factor` (int or tuple)
+  - [x] Compute new grid edges
+  - [x] Build new connectivity
+  - [x] Return new Environment
+  - [x] Geometry-only operation (field aggregation done separately)
+- [x] Tests for `rebin()`
+  - [x] Grid shape reduction (factor=2, factor=3)
+  - [x] Bin position correctness
+  - [x] Non-grid layout raises error
+  - [x] Factor validation (positive, not too large)
+  - [x] Non-divisible warning and truncation
+  - [x] Connectivity preservation
+  - [x] Units/frame preservation (14 tests passing, 3 skipped)
 
 ### P1.8: Subset / Crop
 

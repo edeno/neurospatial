@@ -1758,6 +1758,284 @@ class Environment:
         return smoothed
 
     @check_fitted
+    def rebin(
+        self,
+        factor: int | tuple[int, ...],
+    ) -> Environment:
+        """Coarsen regular grid by integer factor (geometry-only operation).
+
+        Creates a new environment with coarser spatial resolution by reducing
+        the number of bins. This method only modifies the grid geometry and
+        connectivity; it does not aggregate any field values.
+
+        Only supported for RegularGridLayout environments.
+
+        Parameters
+        ----------
+        factor : int or tuple of int
+            Coarsening factor per dimension. If int, applied uniformly to all
+            dimensions. If tuple, must match the number of dimensions.
+            Each factor must be a positive integer.
+
+        Returns
+        -------
+        coarse_env : Environment
+            New environment with reduced resolution. The new grid shape is
+            ``original_shape // factor`` in each dimension. All bins in the
+            coarsened grid are marked as active.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        NotImplementedError
+            If environment layout is not RegularGridLayout.
+        ValueError
+            If factor is not positive or if factor is too large for grid shape.
+
+        See Also
+        --------
+        smooth : Apply diffusion kernel smoothing to fields.
+        subset : Extract spatial subset of environment.
+        map_points_to_bins : Map original bin centers to coarsened bins.
+
+        Notes
+        -----
+        **Geometry only**: This method only coarsens the grid structure. To
+        aggregate field values (occupancy, spike counts, etc.) from the original
+        grid to the coarsened grid, map the original bin centers and aggregate:
+
+            >>> from neurospatial import map_points_to_bins
+            >>> coarse = env.rebin(factor=2)
+            >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
+            >>> coarse_field = np.bincount(
+            ...     coarse_indices, weights=field, minlength=coarse.n_bins
+            ... )
+
+        **Grid-only operation**: This method only works for environments with
+        RegularGridLayout. Other layout types will raise NotImplementedError.
+
+        **Non-divisible dimensions**: If the grid shape is not evenly divisible
+        by the factor in any dimension, the grid is truncated to the largest
+        multiple of the factor. A warning is issued in this case.
+
+        **Connectivity**: The connectivity graph is rebuilt for the coarsened
+        grid with the same connectivity pattern as the original (e.g., if
+        original had diagonal connections, coarsened grid will too).
+
+        **Bin centers**: New bin centers are computed from the coarsened grid
+        edges as midpoints between edge positions.
+
+        **Active bins**: All bins in the coarsened environment are marked as
+        active, even if the original grid had inactive regions.
+
+        **Metadata preservation**: The units and frame attributes are copied
+        from the original environment to the coarsened environment.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create 10x10 grid
+        >>> data = np.random.rand(1000, 2) * 100
+        >>> env = Environment.from_samples(data, bin_size=10.0)
+        >>> env.layout.grid_shape
+        (10, 10)
+        >>>
+        >>> # Coarsen by factor 2 → 5x5 grid
+        >>> coarse = env.rebin(factor=2)
+        >>> coarse.layout.grid_shape
+        (5, 5)
+        >>>
+        >>> # Anisotropic coarsening with tuple
+        >>> coarse_aniso = env.rebin(factor=(2, 5))
+        >>> coarse_aniso.layout.grid_shape
+        (5, 2)
+        >>>
+        >>> # Aggregate a field to the coarsened grid
+        >>> from neurospatial import map_points_to_bins
+        >>> occupancy = np.random.rand(env.n_bins) * 100
+        >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
+        >>> coarse_occupancy = np.bincount(
+        ...     coarse_indices, weights=occupancy, minlength=coarse.n_bins
+        ... )
+        >>> # Total time is preserved
+        >>> np.isclose(occupancy.sum(), coarse_occupancy.sum())
+        True
+        """
+        from neurospatial.layout.engines.regular_grid import RegularGridLayout
+
+        # --- Input validation ---
+
+        # Check layout type
+        if not isinstance(self.layout, RegularGridLayout):  # type: ignore[unreachable]
+            raise NotImplementedError(
+                "rebin() is only supported for RegularGridLayout. "
+                f"Current layout type: {self.layout._layout_type_tag}. "
+                "For other layout types, consider using smooth() for field smoothing "
+                "or subset() for spatial cropping."
+            )
+
+        # Parse factor
+        grid_shape = self.layout.grid_shape  # type: ignore[unreachable]
+        n_dims = len(grid_shape)
+
+        factor_tuple = (factor,) * n_dims if isinstance(factor, int) else tuple(factor)
+
+        # Validate factor dimensions
+        if len(factor_tuple) != n_dims:
+            raise ValueError(
+                f"factor has {len(factor_tuple)} elements but environment has "
+                f"{n_dims} dimensions. factor must be int or tuple matching "
+                "environment dimensionality."
+            )
+
+        # Validate factor values
+        for i, f in enumerate(factor_tuple):
+            if not isinstance(f, (int, np.integer)):
+                raise ValueError(
+                    f"factor[{i}] = {f} must be an integer, got {type(f).__name__}"
+                )
+            if f <= 0:
+                raise ValueError(
+                    f"factor[{i}] = {f} must be positive. "
+                    "Coarsening factor must be at least 1."
+                )
+            if f > grid_shape[i]:
+                raise ValueError(
+                    f"factor[{i}] = {f} is too large for grid shape {grid_shape}. "
+                    f"Dimension {i} has only {grid_shape[i]} bins."
+                )
+
+        # Check for non-divisible dimensions
+        truncated_shape = tuple(
+            s // f * f for s, f in zip(grid_shape, factor_tuple, strict=True)
+        )
+        if truncated_shape != grid_shape:
+            warnings.warn(
+                f"Grid shape {grid_shape} is not evenly divisible by factor "
+                f"{factor_tuple}. Grid will be truncated to {truncated_shape} "
+                f"before coarsening.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        # --- Compute new grid parameters ---
+
+        # Truncate grid edges if needed
+        grid_edges = self.layout.grid_edges
+        truncated_edges = []
+        for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
+            # Keep edges up to truncated_size + 1 (edges define bins)
+            truncated_edges.append(edges[: trunc_size + 1])
+
+        # Compute new coarsened edges
+        coarse_edges = tuple(
+            edges[::f] for edges, f in zip(truncated_edges, factor_tuple, strict=True)
+        )
+
+        # New grid shape
+        coarse_shape = tuple(len(edges) - 1 for edges in coarse_edges)
+
+        # --- Compute new bin centers from coarsened edges ---
+
+        # For each coarse bin, compute center from the coarse grid edges
+        # This avoids issues with active/inactive bins from the original grid
+
+        # Create bin centers from coarse edges using meshgrid
+        coarse_grid_centers = []
+        for edges in coarse_edges:
+            # Bin centers are midpoints between edges
+            centers = (edges[:-1] + edges[1:]) / 2
+            coarse_grid_centers.append(centers)
+
+        # Create meshgrid of bin centers
+        if n_dims == 1:
+            center_coords = [coarse_grid_centers[0]]
+        else:
+            center_grids = np.meshgrid(*coarse_grid_centers, indexing="ij")
+            center_coords = [grid.ravel() for grid in center_grids]
+
+        # Stack into (n_bins, n_dims)
+        coarse_bin_centers = np.column_stack(center_coords)
+
+        # --- Build new connectivity graph ---
+
+        # Check if original had diagonal connections
+        # Sample: check degree of a center node (not on boundary)
+        center_node = grid_shape[0] // 2
+        if n_dims == 2:
+            center_flat_idx = center_node * grid_shape[1] + grid_shape[1] // 2
+        else:
+            # For higher dims, just check if any node has more than 2*n_dims neighbors
+            center_flat_idx = 0
+
+        # Get degree
+        if center_flat_idx in self.connectivity:
+            degree = self.connectivity.degree(center_flat_idx)
+            # 2D: 4-conn has degree 4, 8-conn has degree 8
+            # 3D: 6-conn has degree 6, 26-conn has degree 26
+            # Heuristic: if degree > 2*n_dims, assume diagonal connections
+            connect_diagonal = degree > 2 * n_dims
+        else:
+            # Default to True (common case)
+            connect_diagonal = True
+
+        # Create new layout
+        from neurospatial.layout.helpers.regular_grid import (
+            _create_regular_grid_connectivity_graph,
+        )
+
+        # Build connectivity for the coarsened grid (all active)
+        active_mask_coarse = np.ones(coarse_shape, dtype=bool)
+
+        coarse_connectivity = _create_regular_grid_connectivity_graph(
+            full_grid_bin_centers=coarse_bin_centers,
+            active_mask_nd=active_mask_coarse,
+            grid_shape=coarse_shape,
+            connect_diagonal=connect_diagonal,
+        )
+
+        # --- Create new Environment ---
+
+        # Create new layout instance
+        new_layout = RegularGridLayout()
+        new_layout.bin_centers = coarse_bin_centers
+        new_layout.connectivity = coarse_connectivity
+        new_layout.dimension_ranges = tuple(
+            (edges[0], edges[-1]) for edges in coarse_edges
+        )
+        new_layout.grid_edges = coarse_edges
+        new_layout.grid_shape = coarse_shape
+        new_layout.active_mask = active_mask_coarse
+        new_layout._layout_type_tag = "RegularGrid"
+        new_layout._build_params_used = {
+            "bin_size": tuple(
+                (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+            ),
+            "dimension_ranges": new_layout.dimension_ranges,
+            "rebinned_from": f"factor={factor_tuple}",
+        }
+
+        # Create new environment
+        coarse_env = Environment(
+            layout=new_layout,
+            name=f"{self.name}_rebinned" if self.name else "",
+            regions=Regions(),  # Start with empty regions
+        )
+        coarse_env._layout_type_used = "RegularGrid"
+        coarse_env._layout_params_used = new_layout._build_params_used
+        coarse_env._setup_from_layout()
+
+        # Preserve metadata
+        if hasattr(self, "units") and self.units is not None:
+            coarse_env.units = self.units
+        if hasattr(self, "frame") and self.frame is not None:
+            coarse_env.frame = self.frame
+
+        return coarse_env
+
+    @check_fitted
     def occupancy(
         self,
         times: NDArray[np.float64],
