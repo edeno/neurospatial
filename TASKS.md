@@ -74,24 +74,24 @@
   - [x] Outside samples handling
   - [x] Edge case: trajectory crossing boundary
 
-### P0.3: Transitions / Adjacency Matrix
+### P0.3: Transitions / Adjacency Matrix ✅ COMPLETE
 
-- [ ] Implement `Environment.transitions()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Input validation
-  - [ ] Call `bin_sequence()` if bins not provided
-  - [ ] Extract transition pairs with lag
-  - [ ] Build adjacency set from graph
-  - [ ] Filter non-adjacent transitions (`allow_teleports=False`)
-  - [ ] Count transitions in sparse COO format
-  - [ ] Convert to CSR matrix
-  - [ ] Optional row normalization
-- [ ] Tests for `transitions()`
-  - [ ] 1D track: symmetric transitions
-  - [ ] Grid navigation patterns
-  - [ ] Teleport filtering (non-adjacent transitions)
-  - [ ] Normalization: rows sum to 1
-  - [ ] Lag parameter behavior
+- [x] Implement `Environment.transitions()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Input validation
+  - [x] Call `bin_sequence()` if bins not provided
+  - [x] Extract transition pairs with lag
+  - [x] Build adjacency set from graph
+  - [x] Filter non-adjacent transitions (`allow_teleports=False`)
+  - [x] Count transitions in sparse COO format
+  - [x] Convert to CSR matrix
+  - [x] Optional row normalization
+- [x] Tests for `transitions()` (26 tests passing)
+  - [x] 1D track: symmetric transitions
+  - [x] Grid navigation patterns
+  - [x] Teleport filtering (non-adjacent transitions)
+  - [x] Normalization: rows sum to 1
+  - [x] Lag parameter behavior
 
 ### P0.4: Connected Components / Reachability
 

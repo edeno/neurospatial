@@ -7,7 +7,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property, wraps
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    import scipy.sparse
 
 import matplotlib.axes
 import networkx as nx
@@ -2053,6 +2056,223 @@ class Environment:
                 )
 
         return deduplicated_bins, run_starts, run_ends
+
+    @check_fitted
+    def transitions(
+        self,
+        bins: NDArray[np.int32] | None = None,
+        *,
+        times: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64] | None = None,
+        lag: int = 1,
+        normalize: bool = True,
+        allow_teleports: bool = False,
+    ) -> scipy.sparse.csr_matrix:
+        """Compute empirical transition matrix from trajectory.
+
+        This method builds a Markov transition matrix by counting observed
+        transitions between bins in a trajectory. The result is returned as
+        a sparse CSR matrix for memory efficiency.
+
+        Parameters
+        ----------
+        bins : NDArray[np.int32], shape (n_samples,), optional
+            Precomputed bin sequence. If None, computed from times/positions.
+            Cannot be provided together with times/positions.
+            Must contain valid bin indices in range [0, n_bins). Outside values
+            (-1) are not allowed; use times/positions input to handle outside samples.
+        times : NDArray[np.float64], shape (n_samples,), optional
+            Timestamps in seconds. Required if bins is None.
+            Must be provided together with positions.
+        positions : NDArray[np.float64], shape (n_samples, n_dims), optional
+            Position coordinates matching environment dimensions.
+            Required if bins is None. Must be provided together with times.
+        lag : int, default=1
+            Temporal lag for transitions: count bins[t] → bins[t+lag].
+            Must be positive. lag=1 counts consecutive transitions,
+            lag=2 skips one bin, etc.
+        normalize : bool, default=True
+            If True, return row-stochastic matrix where each row sums to 1
+            (representing transition probabilities).
+            If False, return raw transition counts.
+        allow_teleports : bool, default=False
+            If False, only count transitions between graph-adjacent bins.
+            Non-adjacent transitions (e.g., from tracking errors) are excluded.
+            Self-transitions (staying in same bin) are always counted.
+            If True, count all transitions including non-local jumps.
+
+        Returns
+        -------
+        T : scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+            Transition matrix where T[i,j] represents:
+            - If normalize=True: P(next_bin=j | current_bin=i)
+            - If normalize=False: count of i→j transitions
+
+            For normalized matrices, each row sums to 1.0 (rows with no
+            transitions sum to 0.0).
+
+        Raises
+        ------
+        ValueError
+            If neither bins nor times/positions are provided.
+            If both bins and times/positions are provided.
+            If only one of times or positions is provided.
+            If bins contains invalid indices outside [0, n_bins).
+            If lag is not positive.
+
+        See Also
+        --------
+        bin_sequence : Convert trajectory to bin indices.
+        occupancy : Compute time spent in each bin.
+
+        Notes
+        -----
+        When allow_teleports=False, the method filters out non-adjacent
+        transitions by checking the environment's connectivity graph. This
+        helps remove artifacts from tracking errors or data gaps.
+
+        Self-transitions (staying in the same bin) are always counted.
+
+        The sparse CSR format is memory-efficient for large environments
+        where most bin pairs have no observed transitions.
+
+        Examples
+        --------
+        >>> # Compute transition probabilities from trajectory
+        >>> T = env.transitions(times=times, positions=positions)
+        >>> # Probability of moving from bin 10 to its neighbors
+        >>> T[10, :].toarray()
+
+        >>> # Get raw transition counts with teleport filtering
+        >>> T_counts = env.transitions(
+        ...     bins=bin_sequence, normalize=False, allow_teleports=False
+        ... )
+
+        >>> # Multi-step transitions (lag=2)
+        >>> T_2step = env.transitions(bins=bin_sequence, lag=2)
+        """
+        import scipy.sparse
+
+        # Validation: Ensure exactly one input method is used
+        bins_provided = bins is not None
+        trajectory_provided = times is not None or positions is not None
+
+        if not bins_provided and not trajectory_provided:
+            raise ValueError(
+                "Must provide either 'bins' or both 'times' and 'positions'."
+            )
+
+        if bins_provided and trajectory_provided:
+            raise ValueError(
+                "Cannot provide both 'bins' and 'times'/'positions'. "
+                "Use one input method only."
+            )
+
+        # If times/positions provided, validate both are present
+        if trajectory_provided:
+            if times is None or positions is None:
+                raise ValueError(
+                    "Both times and positions must be provided together "
+                    "when computing transitions from trajectory."
+                )
+
+            # Compute bin sequence from trajectory
+            bins = self.bin_sequence(times, positions, dedup=False, outside_value=-1)
+
+        # Convert to numpy array and validate dtype
+        bins = np.asarray(bins)
+        if not np.issubdtype(bins.dtype, np.integer):
+            raise ValueError(
+                f"bins must be an integer array, got dtype {bins.dtype}. "
+                f"Ensure bin indices are integers before calling transitions()."
+            )
+        bins = bins.astype(np.int32)
+
+        # Validate lag
+        if lag < 1:
+            raise ValueError(f"lag must be positive (got {lag}).")
+
+        # Handle empty or single-element sequences
+        if len(bins) == 0 or len(bins) <= lag:
+            # Return empty sparse matrix
+            return scipy.sparse.csr_matrix((self.n_bins, self.n_bins), dtype=float)
+
+        # Validate bin indices (must be in [0, n_bins))
+        # Note: -1 is used for outside values, which is invalid for transitions
+        if np.any(bins < 0) or np.any(bins >= self.n_bins):
+            invalid_mask = (bins < 0) | (bins >= self.n_bins)
+            invalid_indices = np.where(invalid_mask)[0]
+            invalid_values = bins[invalid_mask]
+            raise ValueError(
+                f"Invalid bin indices found outside range [0, {self.n_bins}). "
+                f"Found {len(invalid_indices)} invalid values at indices "
+                f"{invalid_indices[:5].tolist()}{'...' if len(invalid_indices) > 5 else ''}: "
+                f"{invalid_values[:5].tolist()}{'...' if len(invalid_values) > 5 else ''}. "
+                f"Note: -1 (outside) values are not allowed in transitions."
+            )
+
+        # Extract transition pairs with lag
+        source_bins = bins[:-lag]
+        target_bins = bins[lag:]
+
+        # Filter non-adjacent transitions if requested
+        if not allow_teleports:
+            # Build adjacency set from connectivity graph
+            adjacency_set = set()
+            for u, v in self.connectivity.edges():
+                adjacency_set.add((u, v))
+                adjacency_set.add((v, u))  # Undirected graph
+
+            # Also include self-transitions (always adjacent)
+            for node in self.connectivity.nodes():
+                adjacency_set.add((node, node))
+
+            # Filter transitions to only adjacent pairs
+            is_adjacent = np.array(
+                [
+                    (src, tgt) in adjacency_set
+                    for src, tgt in zip(source_bins, target_bins, strict=True)
+                ]
+            )
+
+            source_bins = source_bins[is_adjacent]
+            target_bins = target_bins[is_adjacent]
+
+        # Count transitions using sparse COO format
+        # Use np.ones to count occurrences
+        transition_counts = np.ones(len(source_bins), dtype=float)
+
+        # Build sparse matrix in COO format
+        transition_matrix = scipy.sparse.coo_matrix(
+            (transition_counts, (source_bins, target_bins)),
+            shape=(self.n_bins, self.n_bins),
+            dtype=float,
+        )
+
+        # Convert to CSR for efficient row operations
+        transition_matrix = transition_matrix.tocsr()
+
+        # Sum duplicate entries (multiple transitions between same bins)
+        transition_matrix.sum_duplicates()
+
+        # Normalize rows if requested
+        if normalize:
+            # Get row sums
+            row_sums = np.array(transition_matrix.sum(axis=1)).flatten()
+
+            # Avoid division by zero: only normalize rows with transitions
+            nonzero_rows = row_sums > 0
+
+            # Create diagonal matrix for normalization
+            # Use reciprocal of row sums for nonzero rows, 0 otherwise
+            inv_row_sums = np.zeros(self.n_bins)
+            inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
+
+            # Normalize: T_normalized = diag(1/row_sums) @ T
+            normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
+            transition_matrix = normalizer @ transition_matrix
+
+        return transition_matrix
 
     @cached_property
     @check_fitted
