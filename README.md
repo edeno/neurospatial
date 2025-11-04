@@ -9,22 +9,36 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 
 ## Key Features
 
+### Core Capabilities
 - **Multiple Layout Engines**: Choose from regular grids, hexagonal tessellations, masked regions, polygon-bounded areas, triangular meshes, and 1D linearized tracks
 - **Automatic Bin Detection**: Infer active bins from data samples with morphological operations (dilation, closing, hole filling)
 - **Connectivity Graphs**: Built-in NetworkX graphs with mandatory node/edge metadata for spatial queries
 - **1D Linearization**: Transform complex 2D environments into 1D linearized coordinates for track-based analysis
-- **Spatial Queries**: Point-to-bin mapping, neighbor finding, shortest paths, geodesic distances
 - **Region Support**: Define and manage named regions of interest (ROIs) with immutable semantics
 - **Environment Composition**: Merge multiple environments with automatic bridge inference
-- **Alignment Tools**: Transform and map probability distributions between environments
 - **Type-Safe Protocol Design**: Layout engines implement protocols, not inheritance, for maximum flexibility
+
+### Spatial Analysis Operations (v0.2.0+)
+- **Trajectory Analysis**: Convert trajectories to bin sequences, compute empirical transition matrices with adjacency filtering
+- **Occupancy Mapping**: Time-in-bin computation with speed filtering, gap handling, and optional kernel smoothing (including linear time allocation for accurate boundary handling)
+- **Field Smoothing**: Diffusion kernel smoothing on graphs with volume correction for continuous fields
+- **Interpolation**: Evaluate bin-valued fields at arbitrary points (nearest neighbor or bilinear/trilinear for grids)
+- **Distance Fields**: Compute geodesic and Euclidean distances, k-hop neighborhoods, connected components
+- **Field Utilities**: Normalize, clamp, combine fields; compute KL/JS divergence and cosine distance
+- **Environment Operations**: Subset/crop environments by regions or polygons, rebin grids, copy with cache management
 
 ## Installation
 
-### From PyPI (when released)
+### From PyPI
 
 ```bash
 pip install neurospatial
+```
+
+Or with uv:
+
+```bash
+uv pip install neurospatial
 ```
 
 ### For Development
@@ -45,7 +59,7 @@ pip install -e ".[dev]"
 
 ### Tested Dependency Versions
 
-neurospatial v0.1.0 has been tested with the following dependency versions:
+neurospatial v0.2.0 has been tested with the following dependency versions:
 
 | Package | Tested Version |
 |---------|---------------|
@@ -152,7 +166,9 @@ You typically don't interact with layout engines directly; instead, use the `Env
 
 ```python
 # Load position tracking data
+times = load_timestamps()  # Shape: (n_timepoints,) in seconds
 position = load_tracking_data()  # Shape: (n_timepoints, 2)
+speeds = load_speeds()  # Shape: (n_timepoints,)
 
 # Create environment with 5 cm bins, auto-detect active areas
 env = Environment.from_samples(
@@ -164,11 +180,18 @@ env = Environment.from_samples(
     name="Experiment1_OpenField"
 )
 
-# Compute occupancy
-time_in_bin, _ = np.histogram(
-    env.bin_at(position),
-    bins=np.arange(env.n_bins + 1)
+# Compute occupancy with speed filtering (v0.2.0+)
+occupancy = env.occupancy(
+    times=times,
+    positions=position,
+    speed=speeds,
+    min_speed=2.5,  # cm/s - filter slow periods
+    kernel_bandwidth=10.0  # cm - smooth the occupancy map
 )
+
+# Analyze movement patterns (v0.2.0+)
+transitions = env.transitions(times=times, positions=position, normalize=True)
+bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True)
 ```
 
 ### 2. Creating Masked Environments
