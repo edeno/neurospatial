@@ -1608,6 +1608,221 @@ class Environment:
 
         return kernel
 
+    @check_fitted
+    def occupancy(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        speed: NDArray[np.float64] | None = None,
+        min_speed: float | None = None,
+        max_gap: float | None = 0.5,
+        kernel_bandwidth: float | None = None,
+    ) -> NDArray[np.float64]:
+        """Compute occupancy (time spent in each bin).
+
+        Accumulates time spent in each bin from continuous trajectory samples.
+        Supports optional speed filtering, gap handling, and kernel smoothing.
+
+        Parameters
+        ----------
+        times : NDArray[np.float64], shape (n_samples,)
+            Timestamps in seconds. Must be monotonically increasing.
+        positions : NDArray[np.float64], shape (n_samples, n_dims)
+            Position coordinates matching environment dimensions.
+        speed : NDArray[np.float64], shape (n_samples,), optional
+            Instantaneous speed at each sample. If provided with min_speed,
+            samples below threshold are excluded from occupancy calculation.
+        min_speed : float, optional
+            Minimum speed threshold in physical units per second. Requires
+            speed parameter. Samples with speed < min_speed are excluded.
+        max_gap : float, optional
+            Maximum time gap in seconds. Intervals with Δt > max_gap are
+            not counted toward occupancy. Default: 0.5 seconds. Set to None
+            to count all intervals regardless of gap size.
+        kernel_bandwidth : float, optional
+            If provided, apply diffusion kernel smoothing with this bandwidth
+            (in physical units). Uses mode='transition' to preserve total mass.
+            Smoothing preserves total occupancy time.
+
+        Returns
+        -------
+        occupancy : NDArray[np.float64], shape (n_bins,)
+            Time in seconds spent in each bin. The sum of occupancy equals
+            the total valid time (within numerical precision), excluding
+            filtered periods and large gaps.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        ValueError
+            If times and positions have different lengths, if arrays are
+            inconsistent, or if min_speed is provided without speed.
+        ValueError
+            If positions have wrong number of dimensions.
+
+        See Also
+        --------
+        compute_kernel : Compute diffusion kernel for smoothing.
+        bin_at : Map single N-dimensional point to bin index.
+
+        Notes
+        -----
+        **Time allocation**: Each time interval Δt = times[i+1] - times[i]
+        is assigned entirely to the bin at positions[i] (the starting position).
+        This is a simple and fast approximation. For more accurate boundary
+        handling on regular grids, see the 'linear' allocation method (P2.11).
+
+        **Mass conservation**: The sum of the returned occupancy array equals
+        the total valid time:
+
+        .. math::
+            \\sum_i \\text{occupancy}[i] = \\sum_{\\text{valid } k} (t_{k+1} - t_k)
+
+        where valid intervals satisfy:
+        - Δt ≤ max_gap (if max_gap is not None)
+        - speed[k] ≥ min_speed (if min_speed is not None)
+        - positions[k] is inside environment
+
+        **Kernel smoothing**: When kernel_bandwidth is provided, smoothing
+        is applied after accumulation using mode='transition' normalization
+        (kernel columns sum to 1), which preserves the total occupancy mass.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create environment
+        >>> data = np.array([[0, 0], [20, 20]])
+        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>>
+        >>> # Basic occupancy
+        >>> times = np.array([0.0, 1.0, 2.0, 3.0])
+        >>> positions = np.array([[5, 5], [5, 5], [10, 10], [10, 10]])
+        >>> occ = env.occupancy(times, positions)
+        >>> occ.sum()  # Total time = 3.0 seconds
+        3.0
+        >>>
+        >>> # Filter slow periods and smooth
+        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])
+        >>> occ_filtered = env.occupancy(
+        ...     times, positions, speed=speeds, min_speed=2.0, kernel_bandwidth=3.0
+        ... )
+        """
+        from neurospatial.spatial import map_points_to_bins
+
+        # Input validation
+        times = np.asarray(times, dtype=np.float64)
+        positions = np.asarray(positions, dtype=np.float64)
+
+        # Validate monotonicity of timestamps
+        if len(times) > 1 and not np.all(np.diff(times) >= 0):
+            decreasing_indices = np.where(np.diff(times) < 0)[0]
+            raise ValueError(
+                "times must be monotonically increasing (non-decreasing). "
+                f"Found {len(decreasing_indices)} decreasing interval(s) at "
+                f"indices: {decreasing_indices.tolist()[:5]}"  # Show first 5
+                + (" ..." if len(decreasing_indices) > 5 else "")
+            )
+
+        # Check array shapes
+        if times.ndim != 1:
+            raise ValueError(
+                f"times must be 1-dimensional array, got shape {times.shape}"
+            )
+
+        if positions.ndim != 2:
+            raise ValueError(
+                f"positions must be 2-dimensional array (n_samples, n_dims), "
+                f"got shape {positions.shape}"
+            )
+
+        if len(times) != len(positions):
+            raise ValueError(
+                f"times and positions must have same length. "
+                f"Got times: {len(times)}, positions: {len(positions)}"
+            )
+
+        # Validate positions dimensionality
+        if self.dimension_ranges is not None:
+            expected_dims = len(self.dimension_ranges)
+            if positions.shape[1] != expected_dims:
+                raise ValueError(
+                    f"positions must have {expected_dims} dimensions to match environment. "
+                    f"Got {positions.shape[1]} dimensions."
+                )
+
+        # Validate speed parameters
+        if min_speed is not None and speed is None:
+            raise ValueError(
+                "min_speed parameter requires speed array to be provided. "
+                "Pass speed=<array> along with min_speed=<threshold>."
+            )
+
+        if speed is not None:
+            speed = np.asarray(speed, dtype=np.float64)
+            if len(speed) != len(times):
+                raise ValueError(
+                    f"speed and times must have same length. "
+                    f"Got speed: {len(speed)}, times: {len(times)}"
+                )
+
+        # Handle empty arrays
+        if len(times) == 0:
+            return np.zeros(self.n_bins, dtype=np.float64)
+
+        # Handle single sample (no intervals to accumulate)
+        if len(times) == 1:
+            return np.zeros(self.n_bins, dtype=np.float64)
+
+        # Map positions to bin indices
+        bin_indices: NDArray[np.int64] = map_points_to_bins(  # type: ignore[assignment]
+            positions, self, tie_break="lowest_index"
+        )
+
+        # Compute time intervals
+        dt = np.diff(times)
+
+        # Build mask for valid intervals
+        valid_mask = np.ones(len(dt), dtype=bool)
+
+        # Filter by max_gap
+        if max_gap is not None:
+            valid_mask &= dt <= max_gap
+
+        # Filter by min_speed (applied to starting position of each interval)
+        if min_speed is not None and speed is not None:
+            valid_mask &= speed[:-1] >= min_speed
+
+        # Filter out intervals starting outside environment bounds
+        # (map_points_to_bins returns -1 for points that don't map to any bin)
+        valid_mask &= bin_indices[:-1] >= 0
+
+        # Initialize occupancy array
+        occupancy = np.zeros(self.n_bins, dtype=np.float64)
+
+        # Accumulate valid time intervals
+        valid_bins = bin_indices[:-1][valid_mask]
+        valid_dt = dt[valid_mask]
+
+        # Use np.bincount for efficient accumulation
+        # (handles repeated indices automatically)
+        if len(valid_bins) > 0:
+            counts = np.bincount(valid_bins, weights=valid_dt, minlength=self.n_bins)
+            occupancy[:] = counts[: self.n_bins]
+
+        # Apply kernel smoothing if requested
+        if kernel_bandwidth is not None:
+            # Use mode='transition' for occupancy (counts), not 'density'
+            # This ensures mass conservation: kernel columns sum to 1
+            kernel = self.compute_kernel(
+                bandwidth=kernel_bandwidth, mode="transition", cache=True
+            )
+            occupancy = kernel @ occupancy
+
+        return occupancy
+
     @cached_property
     @check_fitted
     def boundary_bins(self) -> NDArray[np.int_]:

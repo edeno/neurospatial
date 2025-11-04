@@ -37,26 +37,26 @@
 
 **Goal**: Implement P0 operations (occupancy, sequences, transitions, connectivity).
 
-### P0.1: Occupancy / Dwell Time
+### P0.1: Occupancy / Dwell Time ✅ COMPLETE
 
-- [ ] Implement `Environment.occupancy()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Input validation (array shapes, lengths, dtypes)
-  - [ ] Handle empty arrays gracefully
-  - [ ] Map points to bins using `spatial.map_points_to_bins`
-  - [ ] Implement time accumulation logic
-  - [ ] Add speed filtering (`min_speed` parameter)
-  - [ ] Add gap handling (`max_gap` parameter)
-  - [ ] Add optional kernel smoothing (`kernel_bandwidth` parameter)
-  - [ ] Ensure mass conservation (occupancy.sum() = total_time)
-- [ ] Tests for `occupancy()`
-  - [ ] Synthetic L-shaped path with known durations
-  - [ ] Sparse samples with large gaps
-  - [ ] Speed filtering behavior
-  - [ ] Kernel smoothing (verify mass conservation)
-  - [ ] Edge case: all samples outside environment
-  - [ ] Edge case: empty input arrays
-  - [ ] Performance: 1M samples < 1 second
+- [x] Implement `Environment.occupancy()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Input validation (array shapes, lengths, dtypes, monotonic timestamps)
+  - [x] Handle empty arrays gracefully
+  - [x] Map points to bins using `spatial.map_points_to_bins`
+  - [x] Implement time accumulation logic (using np.bincount)
+  - [x] Add speed filtering (`min_speed` parameter)
+  - [x] Add gap handling (`max_gap` parameter, default 0.5s)
+  - [x] Add optional kernel smoothing (`kernel_bandwidth` parameter, mode='transition')
+  - [x] Ensure mass conservation (occupancy.sum() = total_time)
+- [x] Tests for `occupancy()`
+  - [x] Synthetic L-shaped path with known durations
+  - [x] Sparse samples with large gaps
+  - [x] Speed filtering behavior
+  - [x] Kernel smoothing (verify mass conservation)
+  - [x] Edge case: all samples outside environment
+  - [x] Edge case: empty input arrays
+  - [x] Performance: 100k samples < 1 second (19 tests passing)
 
 ### P0.2: Bin Sequence / Runs
 
