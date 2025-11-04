@@ -178,5 +178,91 @@ Test organization (6 test suites):
 - KDTree caching via map_points_to_bins
 
 ### Next Steps
-- Phase 2, Task P0.2: Bin Sequence / Runs
+- Phase 2, Task P0.3: Transitions / Adjacency Matrix
+- Ready to begin TDD cycle
+
+---
+
+## Phase 2, P0.2 Complete! (2025-11-03)
+
+### Summary
+- Implemented `Environment.bin_sequence()` method for trajectory-to-bin-sequence conversion
+- Comprehensive test suite (24 tests, all passing)
+- Follows strict TDD methodology
+- All code review feedback addressed
+
+### Implementation Details
+- **Method**: `Environment.bin_sequence(times, positions, *, dedup=True, return_runs=False, outside_value=-1)`
+- **Location**: src/neurospatial/environment.py (lines 1826-2053)
+- **Features**:
+  - Deduplication (default dedup=True collapses consecutive repeats)
+  - Run-length encoding (return_runs=True provides start/end indices)
+  - Outside handling (outside_value=-1 marks outside, None drops them)
+  - Uses bin_at() which correctly returns -1 for points outside environment
+  - Deterministic behavior via bin_at()'s underlying layout.point_to_bin_index()
+
+### Key Design Decisions
+
+1. **Validation Consistency**: Matched `occupancy()` validation patterns
+   - Raise ValueError for non-monotonic times (not just warn)
+   - Require 2D positions array (no auto-reshape from 1D)
+   - Comprehensive diagnostics in error messages
+
+2. **Run Encoding**: Correctly handles both dedup=True and dedup=False
+   - With dedup: run boundaries based on deduplicated sequence
+   - Without dedup: run boundaries based on full bin_indices array
+   - Handles outside_value=None affecting run boundaries
+
+3. **Outside Handling**: Uses bin_at() instead of map_points_to_bins
+   - bin_at() returns -1 for points outside environment (correct behavior)
+   - map_points_to_bins() always maps to nearest bin (incorrect for this use case)
+
+4. **Type Safety**: Explicit dtype conversions
+   - bin_indices converted to int32 (consistent with return type)
+   - run boundaries use int64 (for large trajectory support)
+
+### Files Created/Modified
+- NEW: tests/test_bin_sequence.py (507 lines, 24 tests)
+- MODIFIED: src/neurospatial/environment.py (added bin_sequence() method, ~235 lines)
+
+### Test Coverage
+Test organization (9 test suites):
+1. **TestBinSequenceBasic**: Core functionality (4 tests)
+2. **TestBinSequenceDeduplication**: dedup parameter (3 tests)
+3. **TestBinSequenceRuns**: Run-length encoding (4 tests)
+4. **TestBinSequenceOutsideBehavior**: outside_value parameter (3 tests)
+5. **TestBinSequenceValidation**: Input validation (4 tests)
+6. **TestBinSequenceMultipleLayouts**: Different layout types (2 tests)
+7. **TestBinSequenceEdgeCases**: Boundary conditions (4 tests)
+
+### Code Quality Metrics
+- NumPy docstring format: ✅
+- Type safety: ✅ (Complete type annotations)
+- Input validation: ✅ (Comprehensive with diagnostic errors)
+- Test coverage: ✅ (24/24 passing)
+- TDD compliance: ✅ (Tests written first, verified failure, then implementation)
+- Linting: ✅ (ruff check passed)
+- Code review: ✅ (All quality issues addressed)
+
+### Code Review Feedback Addressed
+**Quality Issues Fixed**:
+- ✅ Fixed time validation inconsistency (now raises ValueError like occupancy())
+- ✅ Fixed positions.ndim validation (now requires 2D like occupancy())
+- ✅ Updated docstring to reflect ValueError for non-monotonic times
+- ✅ Updated test to expect ValueError instead of UserWarning
+
+**Approved Aspects**:
+- Excellent NumPy docstring with comprehensive examples
+- Proper @check_fitted decorator usage
+- Clear algorithm structure and efficient implementation
+- Correct run-length encoding logic
+- Comprehensive edge case handling
+
+### Performance
+- Expected: Fast for typical neuroscience trajectories (tested with various sizes)
+- Efficient vectorized NumPy operations throughout
+- bin_at() delegation to layout engine (varies by layout type)
+
+### Next Steps (Current Status)
+- Phase 2, Task P0.3: Transitions / Adjacency Matrix
 - Ready to begin TDD cycle

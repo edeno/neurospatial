@@ -1823,6 +1823,237 @@ class Environment:
 
         return occupancy
 
+    @check_fitted
+    def bin_sequence(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool = True,
+        return_runs: bool = False,
+        outside_value: int | None = -1,
+    ) -> (
+        NDArray[np.int32]
+        | tuple[NDArray[np.int32], NDArray[np.int64], NDArray[np.int64]]
+    ):
+        """Map trajectory to sequence of bin indices.
+
+        Converts a continuous trajectory (times and positions) into a discrete
+        sequence of bin indices, with optional deduplication of consecutive
+        repeats and run-length encoding.
+
+        Parameters
+        ----------
+        times : NDArray[np.float64], shape (n_samples,)
+            Timestamps in seconds. Should be monotonically increasing.
+        positions : NDArray[np.float64], shape (n_samples, n_dims)
+            Position coordinates matching environment dimensions.
+        dedup : bool, default=True
+            If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
+            If False, return bin index for every sample.
+        return_runs : bool, default=False
+            If True, also return run boundaries (indices into times array).
+            A "run" is a maximal contiguous subsequence in the same bin.
+        outside_value : int or None, default=-1
+            Bin index for samples outside environment bounds.
+            - If -1 (default), outside samples are marked with -1.
+            - If None, outside samples are dropped from the sequence entirely.
+
+        Returns
+        -------
+        bins : NDArray[np.int32], shape (n_sequences,)
+            Bin index at each time point (or deduplicated sequence).
+            Values are in range [0, n_bins-1] for valid bins, or -1 for
+            outside samples (when outside_value=-1).
+        run_start_idx : NDArray[np.int64], shape (n_runs,), optional
+            Start index (into original times array) of each contiguous run.
+            Only returned if return_runs=True.
+        run_end_idx : NDArray[np.int64], shape (n_runs,), optional
+            End index (inclusive, into original times array) of each run.
+            Only returned if return_runs=True.
+
+        Raises
+        ------
+        ValueError
+            If times and positions have different lengths, if positions
+            have wrong number of dimensions, or if timestamps are not
+            monotonically increasing (non-decreasing).
+
+        See Also
+        --------
+        occupancy : Compute time spent in each bin.
+        transitions : Build empirical transition matrix from trajectory.
+
+        Notes
+        -----
+        A "run" is a maximal contiguous subsequence where all samples map to
+        the same bin. When outside_value=-1, runs are split at boundary
+        crossings (transitions to/from outside).
+
+        When outside_value=None and samples fall outside the environment,
+        they are completely removed from the sequence. This affects run
+        boundaries if return_runs=True.
+
+        Timestamps must be monotonically increasing (non-decreasing).
+        Sort your data by time before calling this method if needed.
+
+        Examples
+        --------
+        >>> # Basic usage: deduplicated bin sequence
+        >>> bins = env.bin_sequence(times, positions)
+        >>>
+        >>> # Get run boundaries for duration calculations
+        >>> bins, starts, ends = env.bin_sequence(times, positions, return_runs=True)
+        >>> # Duration of first run:
+        >>> duration = times[ends[0]] - times[starts[0]]
+        >>>
+        >>> # Keep all samples (no deduplication)
+        >>> bins = env.bin_sequence(times, positions, dedup=False)
+        >>>
+        >>> # Drop outside samples entirely
+        >>> bins = env.bin_sequence(times, positions, outside_value=None)
+        """
+        # Input validation
+        times = np.asarray(times, dtype=np.float64)
+        positions = np.asarray(positions, dtype=np.float64)
+
+        # Validate positions is 2D (consistent with occupancy())
+        if positions.ndim != 2:
+            raise ValueError(
+                f"positions must be a 2-dimensional array (n_samples, n_dims), "
+                f"got shape {positions.shape}"
+            )
+
+        # Validate lengths match
+        if len(times) != len(positions):
+            raise ValueError(
+                f"times and positions must have the same length. "
+                f"Got times: {len(times)}, positions: {len(positions)}"
+            )
+
+        # Validate dimensions match environment
+        n_dims = self.n_dims
+        if positions.shape[1] != n_dims:
+            raise ValueError(
+                f"positions must have {n_dims} dimensions to match environment. "
+                f"Got positions.shape[1] = {positions.shape[1]}"
+            )
+
+        # Check for monotonic timestamps (raise error for consistency with occupancy())
+        if len(times) > 1 and not np.all(np.diff(times) >= 0):
+            decreasing_indices = np.where(np.diff(times) < 0)[0]
+            raise ValueError(
+                "times must be monotonically increasing (non-decreasing). "
+                f"Found {len(decreasing_indices)} decreasing interval(s) at "
+                f"indices: {decreasing_indices.tolist()[:5]}"
+                + (" ..." if len(decreasing_indices) > 5 else "")
+            )
+
+        # Handle empty input
+        if len(times) == 0:
+            empty_bins = np.array([], dtype=np.int32)
+            if return_runs:
+                empty_runs = np.array([], dtype=np.int64)
+                return empty_bins, empty_runs, empty_runs
+            return empty_bins
+
+        # Map positions to bin indices
+        # Use bin_at which returns -1 for points outside environment
+        bin_indices = self.bin_at(positions).astype(np.int32)  # Ensure int32 dtype
+
+        # Handle outside_value=None (drop outside samples)
+        if outside_value is None:
+            # Filter out samples that are outside (bin_indices == -1)
+            valid_mask = bin_indices != -1
+            bin_indices = bin_indices[valid_mask]
+
+            # Track original indices for run boundaries
+            original_indices = np.arange(len(times))[valid_mask]
+
+            if len(bin_indices) == 0:
+                # All samples were outside
+                empty_bins = np.array([], dtype=np.int32)
+                if return_runs:
+                    empty_runs = np.array([], dtype=np.int64)
+                    return empty_bins, empty_runs, empty_runs
+                return empty_bins
+        else:
+            # Keep original indices (no filtering)
+            original_indices = np.arange(len(times))
+
+        # Apply deduplication if requested
+        deduplicated_bins: NDArray[np.int32]
+        deduplicated_indices: NDArray[np.int_]
+
+        if dedup:
+            if len(bin_indices) == 0:
+                # Already empty, nothing to deduplicate
+                deduplicated_bins = bin_indices
+                deduplicated_indices = original_indices
+            else:
+                # Find change points (where bin index changes)
+                # Prepend True to include first element
+                change_points = np.concatenate(
+                    [[True], bin_indices[1:] != bin_indices[:-1]]
+                )
+                deduplicated_bins = bin_indices[change_points]
+                deduplicated_indices = original_indices[change_points]
+        else:
+            deduplicated_bins = bin_indices
+            deduplicated_indices = original_indices
+
+        # Return just bins if runs not requested
+        if not return_runs:
+            return deduplicated_bins
+
+        # Compute run boundaries
+        if len(deduplicated_bins) == 0:
+            # No runs
+            empty_runs = np.array([], dtype=np.int64)
+            return deduplicated_bins, empty_runs, empty_runs
+
+        # For each run, find start and end indices in the *original* times array
+        if dedup:
+            # deduplicated_indices already contains the start of each run
+            run_starts = deduplicated_indices
+
+            # End of each run is just before the start of the next run
+            # (or the last valid index for the final run)
+            if outside_value is None:
+                # Use the last valid index from original_indices
+                run_ends = np.concatenate(
+                    [deduplicated_indices[1:] - 1, [original_indices[-1]]]
+                )
+            else:
+                # Use len(times) - 1 for the last run end
+                run_ends = np.concatenate(
+                    [deduplicated_indices[1:] - 1, [len(times) - 1]]
+                )
+        else:
+            # No dedup: find runs in the un-deduplicated bin_indices
+            # Find change points to identify run boundaries
+            if len(bin_indices) == 1:
+                # Single sample = single run
+                run_starts = np.array([original_indices[0]], dtype=np.int64)
+                run_ends = np.array([original_indices[0]], dtype=np.int64)
+            else:
+                # Find where bin index changes
+                # A change occurs when bin_indices[i] != bin_indices[i-1]
+                is_change = np.concatenate(
+                    [[True], bin_indices[1:] != bin_indices[:-1]]
+                )
+                change_positions = np.where(is_change)[0]
+
+                # Start of each run is at a change position
+                run_starts = original_indices[change_positions]
+
+                # End of each run is just before the next change (or last index)
+                run_ends = np.concatenate(
+                    [original_indices[change_positions[1:] - 1], [original_indices[-1]]]
+                )
+
+        return deduplicated_bins, run_starts, run_ends
+
     @cached_property
     @check_fitted
     def boundary_bins(self) -> NDArray[np.int_]:

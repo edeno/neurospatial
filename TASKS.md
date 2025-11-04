@@ -58,21 +58,21 @@
   - [x] Edge case: empty input arrays
   - [x] Performance: 100k samples < 1 second (19 tests passing)
 
-### P0.2: Bin Sequence / Runs
+### P0.2: Bin Sequence / Runs ✅ COMPLETE
 
-- [ ] Implement `Environment.bin_sequence()` in `environment.py`
-  - [ ] Add `@check_fitted` decorator
-  - [ ] Input validation
-  - [ ] Map trajectory to bin indices
-  - [ ] Implement deduplication (`dedup=True`)
-  - [ ] Implement run-length encoding (`return_runs=True`)
-  - [ ] Handle `outside_value=None` (drop samples)
-- [ ] Tests for `bin_sequence()`
-  - [ ] Known trajectory with expected bin sequence
-  - [ ] Deduplication: [A,A,B,B,C] → [A,B,C]
-  - [ ] Run boundaries (start/end indices)
-  - [ ] Outside samples handling
-  - [ ] Edge case: trajectory crossing boundary
+- [x] Implement `Environment.bin_sequence()` in `environment.py`
+  - [x] Add `@check_fitted` decorator
+  - [x] Input validation (consistent with occupancy())
+  - [x] Map trajectory to bin indices (using bin_at())
+  - [x] Implement deduplication (`dedup=True`)
+  - [x] Implement run-length encoding (`return_runs=True`)
+  - [x] Handle `outside_value=None` (drop samples)
+- [x] Tests for `bin_sequence()` (24 tests passing)
+  - [x] Known trajectory with expected bin sequence
+  - [x] Deduplication: [A,A,B,B,C] → [A,B,C]
+  - [x] Run boundaries (start/end indices)
+  - [x] Outside samples handling
+  - [x] Edge case: trajectory crossing boundary
 
 ### P0.3: Transitions / Adjacency Matrix
 
