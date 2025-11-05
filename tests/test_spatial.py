@@ -65,7 +65,7 @@ class TestMapPointsToBins:
         """Test that invalid tie_break mode raises error."""
         points = np.array([[5.0, 5.0]])
 
-        with pytest.raises(ValueError, match="Invalid tie_break mode"):
+        with pytest.raises(ValueError, match="Invalid tie_break value"):
             map_points_to_bins(points, grid_env, tie_break="invalid")
 
     def test_kdtree_caching(self, grid_env):
