@@ -11,6 +11,7 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -19,6 +20,35 @@ from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
+
+
+class TieBreakStrategy(Enum):
+    """Strategy for resolving ties when a point is equidistant from multiple bins.
+
+    Attributes
+    ----------
+    LOWEST_INDEX : str
+        Choose the bin with the smallest index among equidistant candidates.
+        This ensures deterministic, reproducible results even when points lie
+        exactly on bin boundaries. Recommended for scientific reproducibility.
+
+    CLOSEST_CENTER : str
+        Choose the bin whose center is geometrically closest to the point.
+        This breaks numerical ties but may still be non-deterministic for
+        exact ties. Faster than LOWEST_INDEX as it skips secondary checks.
+
+    Examples
+    --------
+    >>> from neurospatial import TieBreakStrategy, map_points_to_bins
+    >>> import numpy as np
+    >>> # Use enum for autocomplete and type safety
+    >>> result = map_points_to_bins(
+    ...     points, env, tie_break=TieBreakStrategy.CLOSEST_CENTER
+    ... )  # doctest: +SKIP
+    """
+
+    LOWEST_INDEX = "lowest_index"
+    CLOSEST_CENTER = "closest_center"
 
 
 def _estimate_typical_bin_spacing(
@@ -59,7 +89,8 @@ def map_points_to_bins(
     points: NDArray[np.float64],
     env: EnvironmentProtocol,
     *,
-    tie_break: Literal["lowest_index", "closest_center"] = "lowest_index",
+    tie_break: TieBreakStrategy
+    | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
     return_dist: bool = False,
     max_distance: float | None = None,
     max_distance_factor: float | None = None,
@@ -78,13 +109,14 @@ def map_points_to_bins(
         Continuous coordinates to map to bins.
     env : Environment
         Environment containing the bin discretization.
-    tie_break : {"lowest_index", "closest_center"}, default="lowest_index"
+    tie_break : TieBreakStrategy or {"lowest_index", "closest_center"}, default=TieBreakStrategy.LOWEST_INDEX
         Strategy for resolving ties when a point is equidistant from multiple
-        bin centers:
+        bin centers. Can pass either a TieBreakStrategy enum member or a string.
 
-        - "lowest_index": Choose the bin with smallest index (deterministic)
-        - "closest_center": Return the actual closest (may be non-deterministic
-          for exact ties, but faster)
+        - TieBreakStrategy.LOWEST_INDEX or "lowest_index": Choose the bin with
+          smallest index (deterministic, recommended for reproducibility)
+        - TieBreakStrategy.CLOSEST_CENTER or "closest_center": Return the actual
+          closest (may be non-deterministic for exact ties, but faster)
 
     return_dist : bool, default=False
         If True, also return the distance from each point to its assigned bin center.
@@ -169,6 +201,17 @@ def map_points_to_bins(
         raise ValueError(
             f"max_distance_factor must be positive, got {max_distance_factor}"
         )
+
+    # Convert string to enum if needed (backwards compatibility)
+    if isinstance(tie_break, str):
+        try:
+            tie_break = TieBreakStrategy(tie_break)
+        except ValueError:
+            raise ValueError(
+                f"Invalid tie_break value: '{tie_break}'. "
+                f"Must be one of: {[e.value for e in TieBreakStrategy]}"
+            ) from None
+
     # Build or retrieve cached KD-tree
     if not hasattr(env, "_kdtree_cache") or env._kdtree_cache is None:
         env._kdtree_cache = cKDTree(env.bin_centers)
@@ -176,12 +219,12 @@ def map_points_to_bins(
     kdtree: cKDTree = env._kdtree_cache
 
     # Query KD-tree
-    if tie_break == "closest_center":
+    if tie_break == TieBreakStrategy.CLOSEST_CENTER:
         # Fast path: just use nearest neighbor
         distances, indices = kdtree.query(points, k=1, workers=-1)
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
 
-    elif tie_break == "lowest_index":
+    elif tie_break == TieBreakStrategy.LOWEST_INDEX:
         # Deterministic path: find all ties and pick lowest index
         # Query for top 2 neighbors to detect ties (avoid redundant k=1 query)
         distances_k2, indices_k2 = kdtree.query(points, k=2, workers=-1)

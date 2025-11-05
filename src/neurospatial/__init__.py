@@ -18,7 +18,7 @@ from neurospatial.layout.factories import (
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
-from neurospatial.spatial import map_points_to_bins
+from neurospatial.spatial import TieBreakStrategy, map_points_to_bins
 from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
@@ -29,6 +29,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
     "Environment",
+    "TieBreakStrategy",
     "apply_transform_to_environment",
     "clamp",
     "combine_fields",
