@@ -586,7 +586,7 @@ class EnvironmentTransforms:
                 # Use edge distances to estimate bin sizes
                 sizes = np.ones(len(self.bin_centers))
                 for node in self.connectivity.nodes():
-                    neighbors = list(self.connectivity.neighbors(node))
+                    neighbors = tuple(self.connectivity.neighbors(node))
                     if neighbors:
                         distances = [
                             self.connectivity[node][n]["distance"] for n in neighbors
