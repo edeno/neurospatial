@@ -13,14 +13,19 @@ from neurospatial.field_ops import (
     divergence,
     normalize_field,
 )
-from neurospatial.kernels import compute_diffusion_kernels
+from neurospatial.kernels import apply_kernel, compute_diffusion_kernels
 from neurospatial.layout.factories import (
     LayoutType,
     get_layout_parameters,
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
-from neurospatial.spatial import TieBreakStrategy, map_points_to_bins
+from neurospatial.spatial import (
+    TieBreakStrategy,
+    map_points_to_bins,
+    regions_to_mask,
+    resample_field,
+)
 from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
@@ -34,6 +39,7 @@ __all__ = [
     "Environment",
     "LayoutType",
     "TieBreakStrategy",
+    "apply_kernel",
     "apply_transform_to_environment",
     "clamp",
     "combine_fields",
@@ -48,5 +54,7 @@ __all__ = [
     "map_probabilities_to_nearest_target_bin",
     "normalize_field",
     "pairwise_distances",
+    "regions_to_mask",
+    "resample_field",
     "validate_environment",
 ]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal
 
 import networkx as nx
@@ -121,3 +123,208 @@ def compute_diffusion_kernels(
     )  # Broadcast scale across rows
 
     return kernel_normalized
+
+
+def apply_kernel(
+    field: NDArray[np.float64],
+    kernel: NDArray[np.float64],
+    *,
+    mode: Literal["forward", "adjoint"] = "forward",
+    bin_sizes: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """Apply diffusion kernel in forward or adjoint mode.
+
+    This function provides a unified interface for applying diffusion kernels
+    to fields, with explicit support for adjoint operations. The adjoint is
+    essential for likelihood computations, Bayesian inference, and gradient-based
+    analyses on spatial fields.
+
+    Parameters
+    ----------
+    field : NDArray[np.float64], shape (n_bins,)
+        Input field to transform.
+    kernel : NDArray[np.float64], shape (n_bins, n_bins)
+        Diffusion kernel matrix (from compute_kernel or compute_diffusion_kernels).
+    mode : "forward" | "adjoint", default="forward"
+        Direction of operation:
+        - "forward": Standard kernel application (K @ field)
+        - "adjoint": Transpose operation with optional mass weighting
+    bin_sizes : NDArray[np.float64], shape (n_bins,), optional
+        Bin sizes (areas/volumes) for mass-weighted adjoint in density mode.
+        Typically obtained from ``env.bin_sizes``.
+        - If None: adjoint is simple transpose (K.T @ field)
+        - If provided: adjoint is mass-weighted (M^{-1} K.T M @ field)
+          where M = diag(bin_sizes)
+
+    Returns
+    -------
+    result : NDArray[np.float64], shape (n_bins,)
+        Transformed field.
+        - Forward: result = K @ field
+        - Adjoint (no bin_sizes): result = K.T @ field
+        - Adjoint (with bin_sizes): result = M^{-1} K.T M @ field
+
+    Raises
+    ------
+    ValueError
+        If mode is not 'forward' or 'adjoint'.
+        If field size doesn't match kernel dimensions.
+        If bin_sizes size doesn't match field size.
+        If bin_sizes has non-positive values (adjoint mode only).
+        If kernel is not square.
+
+    Notes
+    -----
+    **Quick Guide**:
+
+    - **Forward mode**: Standard smoothing/diffusion (result = K @ field)
+    - **Adjoint mode**: Used for likelihood calculations in Bayesian inference
+
+      - Without bin_sizes: Use for transition kernels (K.T @ field)
+      - With bin_sizes: Use for density kernels (pass ``env.bin_sizes``)
+
+    **When to use adjoint mode**:
+
+    - Computing likelihood fields for spatial decoding
+    - Gradient-based optimization on spatial fields
+    - Bayesian inference with density representations
+    - Backpropagation-style analyses on place fields
+
+    **Forward Mode**:
+
+    Applies the kernel as a linear operator: result = K @ field
+    Use this for smoothing, diffusion, or prediction on spatial fields.
+
+    **Adjoint Mode**:
+
+    The adjoint depends on whether bin_sizes is provided:
+
+    - **Without bin_sizes** (transition mode):
+      Adjoint is the matrix transpose: result = K.T @ field
+      This is the standard adjoint for the Euclidean inner product.
+      Use with transition kernels (from ``mode="transition"``).
+
+    - **With bin_sizes** (density mode):
+      Adjoint is mass-weighted: result = M^{-1} K.T M @ field
+      where M = diag(bin_sizes) is the mass matrix.
+      This is the adjoint with respect to the weighted inner product:
+      <u, v>_M = sum(u * M * v)
+      Use with density kernels (from ``mode="density"``).
+
+    **Mathematical Properties** (optional reading):
+
+    - Inner product preservation (transition):
+      <K x, y> = <x, K^T y>
+
+    - Weighted inner product preservation (density):
+      <K x, y>_M = <x, K^* y>_M
+      where K^* = M^{-1} K^T M is the mass-weighted adjoint
+
+    - Mass conservation (density forward):
+      sum((K @ field) * bin_sizes) = sum(field * bin_sizes)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.kernels import apply_kernel
+
+    Create environment and kernel:
+
+    >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
+    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> K = env.compute_kernel(bandwidth=1.0, mode="transition")
+
+    Forward application (smoothing):
+
+    >>> field = np.zeros(env.n_bins)
+    >>> field[env.n_bins // 2] = 1.0  # Spike at center
+    >>> smoothed = apply_kernel(field, K, mode="forward")
+    >>> smoothed.shape
+    (36,)
+
+    Adjoint application (for likelihoods):
+
+    >>> observation = np.random.rand(env.n_bins)
+    >>> adjoint_result = apply_kernel(observation, K, mode="adjoint")
+    >>> adjoint_result.shape
+    (36,)
+
+    Density mode with mass weighting:
+
+    >>> bin_sizes = env.bin_sizes
+    >>> K_density = env.compute_kernel(bandwidth=1.0, mode="density")
+    >>> field_density = np.random.rand(env.n_bins)
+    >>> result = apply_kernel(
+    ...     field_density, K_density, mode="adjoint", bin_sizes=bin_sizes
+    ... )
+    >>> result.shape
+    (36,)
+
+    See Also
+    --------
+    compute_diffusion_kernels : Compute diffusion kernel from graph
+    Environment.compute_kernel : Compute kernel for environment
+    Environment.smooth : Smooth field using kernel (forward mode)
+    resample_field : Resample fields across environments (spatial resampling)
+    regions_to_mask : Convert regions to bin masks (spatial discretization)
+
+    References
+    ----------
+    .. [1] Coifman, R. R., & Lafon, S. (2006). Diffusion maps.
+           Applied and Computational Harmonic Analysis, 21(1), 5-30.
+    .. [2] Grigor'yan, A. (2009). Heat Kernel and Analysis on Manifolds. AMS.
+
+    """
+    # Input validation
+    if mode not in ("forward", "adjoint"):
+        raise ValueError(f"mode must be 'forward' or 'adjoint', got '{mode}'")
+
+    # Check kernel is square
+    if kernel.ndim != 2 or kernel.shape[0] != kernel.shape[1]:
+        raise ValueError(f"Kernel must be square, got shape {kernel.shape}")
+
+    n_bins = kernel.shape[0]
+
+    # Check field size
+    if field.shape != (n_bins,):
+        raise ValueError(
+            f"Field size {field.shape[0]} does not match kernel size {n_bins}"
+        )
+
+    # Check bin_sizes size and validate positive values if provided
+    if bin_sizes is not None:
+        if bin_sizes.shape != (n_bins,):
+            raise ValueError(
+                f"bin_sizes size {bin_sizes.shape[0]} does not match field size {n_bins}. "
+                f"bin_sizes should come from env.bin_sizes for the environment."
+            )
+        # Validate bin_sizes for adjoint mode (division required)
+        if mode == "adjoint" and np.any(bin_sizes <= 0):
+            raise ValueError(
+                f"bin_sizes must have strictly positive values for adjoint mode. "
+                f"Found {np.sum(bin_sizes <= 0)} non-positive values. "
+                f"Check that env.bin_sizes contains valid bin areas/volumes."
+            )
+
+    # Apply kernel based on mode
+    if mode == "forward":
+        # Standard matrix-vector product
+        result = kernel @ field
+
+    else:  # mode == "adjoint"
+        if bin_sizes is None:
+            # Simple transpose
+            result = kernel.T @ field
+        else:
+            # Mass-weighted adjoint: M^{-1} K^T M @ field
+            # First apply mass matrix: M @ field
+            m_field = bin_sizes * field
+
+            # Then apply transpose: K^T @ (M @ field)
+            kt_m_field = kernel.T @ m_field
+
+            # Finally apply inverse mass matrix: M^{-1} @ (K^T @ M @ field)
+            result = kt_m_field / bin_sizes
+
+    return result
