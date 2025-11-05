@@ -5,7 +5,7 @@ from neurospatial.alignment import (
     map_probabilities_to_nearest_target_bin,
 )
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.distance import distance_field, pairwise_distances
+from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
 from neurospatial.environment import Environment
 from neurospatial.field_ops import (
     clamp,
@@ -52,6 +52,7 @@ __all__ = [
     "list_available_layouts",
     "map_points_to_bins",
     "map_probabilities_to_nearest_target_bin",
+    "neighbors_within",
     "normalize_field",
     "pairwise_distances",
     "regions_to_mask",
