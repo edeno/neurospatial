@@ -169,7 +169,7 @@ class EnvironmentQueries:
         )
 
     @check_fitted
-    def neighbors(self: EnvironmentProtocol, bin_index: int) -> list[int]:
+    def neighbors(self: EnvironmentProtocol, bin_index: int) -> tuple[int, ...]:
         """Find indices of neighboring active bins for a given active bin index.
 
         This method delegates to the `neighbors` method of the
@@ -183,8 +183,9 @@ class EnvironmentQueries:
 
         Returns
         -------
-        list[int]
-            A list of active bin indices that are neighbors to `bin_index`.
+        tuple[int, ...]
+            A tuple of active bin indices that are neighbors to `bin_index`.
+            Immutable snapshot of neighbor relationships.
 
         Raises
         ------
@@ -202,7 +203,7 @@ class EnvironmentQueries:
         4  # Number of neighbors varies by layout
 
         """
-        return list(self.connectivity.neighbors(bin_index))
+        return tuple(self.connectivity.neighbors(bin_index))
 
     # Note: Decorator order matters - @cached_property must be on top
     # so that @check_fitted can see the underlying method

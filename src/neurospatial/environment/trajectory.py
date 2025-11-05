@@ -24,6 +24,7 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
+from operator import itemgetter
 from typing import TYPE_CHECKING, Literal, cast
 
 import networkx as nx
@@ -1137,7 +1138,7 @@ class EnvironmentTrajectory:
                     crossings.append((t, dim, edge_idx))
 
         # Sort crossings by distance along ray
-        crossings.sort(key=lambda x: x[0])
+        crossings.sort(key=itemgetter(0))
 
         # Add start and end points
         segments = [0.0] + [t for t, _, _ in crossings] + [total_distance]

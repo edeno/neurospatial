@@ -73,12 +73,12 @@ class TestEnvironmentFromGraph:
     def test_neighbors(self, graph_env: Environment):
         """Test getting neighbors of a bin."""
         neighbors_of_0 = graph_env.neighbors(0)  # Start of West arm segment
-        assert isinstance(neighbors_of_0, list)
+        assert isinstance(neighbors_of_0, tuple)
         assert set(neighbors_of_0) == {1}  # Only connected to next bin on segment
 
         idx_on_west_arm = graph_env.bin_at(np.array([[-1.0, 0.0]]))[0]  # Bin 2
         neighbors_on_west = graph_env.neighbors(idx_on_west_arm)
-        assert isinstance(neighbors_on_west, list)
+        assert isinstance(neighbors_on_west, tuple)
         assert len(neighbors_on_west) > 0
         if 0 < idx_on_west_arm < 3:
             assert set(neighbors_on_west) == {idx_on_west_arm - 1, idx_on_west_arm + 1}
@@ -87,7 +87,7 @@ class TestEnvironmentFromGraph:
         # Based on current graph_utils, it connects to bin 2 (intra-segment)
         # and to bin 4 (start of North arm, due to (3,4) inter-segment connection)
         neighbors_of_3 = graph_env.neighbors(3)
-        assert isinstance(neighbors_of_3, list)
+        assert isinstance(neighbors_of_3, tuple)
         expected_neighbors_of_3 = {2, 4}  # Corrected expectation
         assert set(neighbors_of_3) == expected_neighbors_of_3
 
@@ -568,7 +568,7 @@ class TestHexagonalLayout:
         # Neighbors should be distinct and their centers should be approx hexagon_width away.
         some_bin_idx = env_hexagonal.bin_centers.shape[0] // 2  # A somewhat central bin
         neighbors = env_hexagonal.neighbors(some_bin_idx)
-        assert isinstance(neighbors, list)
+        assert isinstance(neighbors, tuple)
         if len(neighbors) > 0:
             assert len(set(neighbors)) == len(neighbors)  # Unique neighbors
             center_node = env_hexagonal.bin_centers[some_bin_idx]
