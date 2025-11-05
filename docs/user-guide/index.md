@@ -10,6 +10,7 @@ This guide provides detailed explanations of neurospatial's features and workflo
 - **[Composite Environments](composite-environments.md)**: Merging multiple environments
 - **[Alignment & Transforms](alignment.md)**: Transforming spatial representations
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
+- **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
 
 ## Who This Guide Is For
@@ -48,6 +49,7 @@ Each page covers a specific feature area with:
 - [Computing distance fields](spatial-analysis.md#distance-to)
 - [Combining multiple environments](composite-environments.md)
 - [Aligning spatial maps](alignment.md)
+- [Optimizing performance and managing memory](performance.md)
 
 ## See Also
 

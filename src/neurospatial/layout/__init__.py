@@ -6,7 +6,12 @@ from .engines.masked_grid import MaskedGridLayout
 from .engines.regular_grid import RegularGridLayout
 from .engines.shapely_polygon import ShapelyPolygonLayout
 from .engines.triangular_mesh import TriangularMeshLayout
-from .factories import create_layout, get_layout_parameters, list_available_layouts
+from .factories import (
+    LayoutType,
+    create_layout,
+    get_layout_parameters,
+    list_available_layouts,
+)
 from .helpers.utils import get_centers, get_n_bins
 
 __all__ = [
@@ -14,6 +19,7 @@ __all__ = [
     "HexagonalLayout",
     "ImageMaskLayout",
     "LayoutEngine",
+    "LayoutType",
     "MaskedGridLayout",
     "RegularGridLayout",
     "ShapelyPolygonLayout",

@@ -1,4 +1,5 @@
 import inspect
+from enum import Enum
 from typing import Any
 
 from neurospatial.layout.base import LayoutEngine
@@ -14,16 +15,64 @@ from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
+
+class LayoutType(str, Enum):
+    """Available layout engine types.
+
+    This enum provides IDE autocomplete and type safety for layout selection.
+    Each value corresponds to a concrete layout engine implementation.
+
+    Attributes
+    ----------
+    REGULAR_GRID : str
+        Standard rectangular/cuboid grids with uniform bin sizes.
+    MASKED_GRID : str
+        Grids with arbitrary active/inactive regions defined by a boolean mask.
+    IMAGE_MASK : str
+        Binary image-based layouts where white pixels define active bins.
+    HEXAGONAL : str
+        Hexagonal tessellations with more uniform neighbor distances.
+    GRAPH : str
+        1D linearized track representations for maze/track experiments.
+    TRIANGULAR_MESH : str
+        Triangular tessellations for specialized spatial discretization.
+    SHAPELY_POLYGON : str
+        Polygon-bounded grids using Shapely geometry.
+
+    Examples
+    --------
+    >>> from neurospatial.layout import LayoutType, create_layout
+    >>> # Use enum for autocomplete and type safety
+    >>> layout = create_layout(
+    ...     LayoutType.REGULAR_GRID, bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]
+    ... )  # doctest: +SKIP
+
+    Notes
+    -----
+    String values are also accepted for backward compatibility:
+
+    >>> layout = create_layout("regular_grid", bin_size=2.0)  # doctest: +SKIP
+    """
+
+    REGULAR_GRID = "RegularGrid"
+    MASKED_GRID = "MaskedGrid"
+    IMAGE_MASK = "ImageMask"
+    HEXAGONAL = "Hexagonal"
+    GRAPH = "Graph"
+    TRIANGULAR_MESH = "TriangularMesh"
+    SHAPELY_POLYGON = "ShapelyPolygon"
+
+
 # Note: We use Any here because LayoutEngine is a Protocol, and type[Protocol]
 # causes mypy errors when used with concrete class types
 _LAYOUT_MAP: dict[str, Any] = {
-    "RegularGrid": RegularGridLayout,
-    "MaskedGrid": MaskedGridLayout,
-    "ImageMask": ImageMaskLayout,
-    "Hexagonal": HexagonalLayout,
-    "Graph": GraphLayout,
-    "TriangularMesh": TriangularMeshLayout,
-    "ShapelyPolygon": ShapelyPolygonLayout,
+    LayoutType.REGULAR_GRID.value: RegularGridLayout,
+    LayoutType.MASKED_GRID.value: MaskedGridLayout,
+    LayoutType.IMAGE_MASK.value: ImageMaskLayout,
+    LayoutType.HEXAGONAL.value: HexagonalLayout,
+    LayoutType.GRAPH.value: GraphLayout,
+    LayoutType.TRIANGULAR_MESH.value: TriangularMeshLayout,
+    LayoutType.SHAPELY_POLYGON.value: ShapelyPolygonLayout,
 }
 
 
@@ -120,16 +169,17 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
     return params_info
 
 
-def create_layout(kind: str, **kwargs) -> LayoutEngine:
+def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
     """Factory for creating and building a spatial-layout engine.
 
     Parameters
     ----------
-    kind : str
-        Case-insensitive name of the layout engine to create
-        (e.g., "RegularGrid", "Hexagonal", "Graph", etc.).
+    kind : LayoutType | str
+        The layout engine type to create. Can be:
+        - A LayoutType enum member (recommended for IDE autocomplete)
+        - A case-insensitive string name (e.g., "RegularGrid", "Hexagonal")
     **kwargs : any
-        Parameters passed to the chosen engine’s `build(...)` method.
+        Parameters passed to the chosen engine's `build(...)` method.
 
     Returns
     -------
@@ -142,16 +192,34 @@ def create_layout(kind: str, **kwargs) -> LayoutEngine:
         - If `kind` is not one of the available layouts.
         - If any unexpected keyword arguments are passed to `build`.
 
+    Examples
+    --------
+    Using the enum (recommended):
+
+    >>> from neurospatial.layout import LayoutType, create_layout
+    >>> layout = create_layout(
+    ...     LayoutType.REGULAR_GRID, bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]
+    ... )  # doctest: +SKIP
+
+    Using strings (backward compatible):
+
+    >>> layout = create_layout(
+    ...     "regular_grid", bin_size=2.0, dimension_ranges=[(0, 100), (0, 100)]
+    ... )  # doctest: +SKIP
+
     """
-    # 1) Normalize user input and find matching key
-    norm_query = _normalize_name(kind)
+    # 1) Convert enum to string if needed
+    kind_str = kind.value if isinstance(kind, LayoutType) else kind
+
+    # 2) Normalize user input and find matching key
+    norm_query = _normalize_name(kind_str)
     found_key = next(
         (name for name in _LAYOUT_MAP if _normalize_name(name) == norm_query),
         None,
     )
     if found_key is None:
         suggestions = ", ".join(list_available_layouts())
-        raise ValueError(f"Unknown layout kind '{kind}'. Available: {suggestions}")
+        raise ValueError(f"Unknown layout kind '{kind_str}'. Available: {suggestions}")
 
     # 2) Instantiate the class
     engine_cls = _LAYOUT_MAP[found_key]
