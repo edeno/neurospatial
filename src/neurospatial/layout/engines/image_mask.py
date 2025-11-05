@@ -10,6 +10,7 @@ from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class ImageMaskLayout(_GridMixin):
@@ -144,3 +145,6 @@ class ImageMaskLayout(_GridMixin):
             grid_shape=self.grid_shape,
             connect_diagonal=connect_diagonal_neighbors,
         )
+
+        # Validate connectivity graph has required attributes
+        validate_connectivity_graph(self.connectivity, n_dims=2)

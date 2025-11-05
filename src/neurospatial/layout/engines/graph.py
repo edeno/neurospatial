@@ -18,6 +18,7 @@ from neurospatial.layout.helpers.graph import (
     _project_1d_to_2d,
 )
 from neurospatial.layout.mixins import _KDTreeMixin
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class GraphLayout(_KDTreeMixin):
@@ -123,8 +124,12 @@ class GraphLayout(_KDTreeMixin):
             original_edge_ids=edge_ids,
             edge_order=edge_order,
         )
+
         # Compute dimension_ranges dynamically based on actual dimensionality
         n_dims = self.bin_centers.shape[1]
+
+        # Validate connectivity graph has required attributes
+        validate_connectivity_graph(self.connectivity, n_dims=n_dims)
         self.dimension_ranges = tuple(
             (
                 np.min(self.bin_centers[:, dim]),

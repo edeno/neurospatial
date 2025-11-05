@@ -18,6 +18,7 @@ from neurospatial.layout.helpers.hexagonal import (
     _points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.utils import _generic_graph_plot
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class HexagonalLayout:
@@ -135,6 +136,9 @@ class HexagonalLayout:
             full_grid_bin_centers=full_grid_bin_centers,
             centers_shape=self.grid_shape,
         )
+
+        # Validate connectivity graph has required attributes
+        validate_connectivity_graph(self.connectivity, n_dims=2)
 
         self._source_flat_to_active_id_map = {
             data["source_grid_flat_index"]: node_id

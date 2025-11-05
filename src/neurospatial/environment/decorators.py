@@ -6,14 +6,17 @@ and its mixins to enforce constraints and add functionality.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
+T = TypeVar("T")
 
-def check_fitted(method):
+
+def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
     """Decorator to ensure that an Environment method is called only after fitting.
 
     Parameters
@@ -60,7 +63,7 @@ def check_fitted(method):
     """
 
     @wraps(method)
-    def _inner(self: Environment, *args, **kwargs):
+    def _inner(self: Environment, *args, **kwargs) -> T:
         if not getattr(self, "_is_fitted", False):
             raise RuntimeError(
                 f"{self.__class__.__name__}.{method.__name__}() "

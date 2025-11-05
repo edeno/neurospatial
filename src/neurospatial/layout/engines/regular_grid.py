@@ -15,6 +15,7 @@ from neurospatial.layout.helpers.utils import (
     _infer_dimension_ranges_from_samples,
 )
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class RegularGridLayout(_GridMixin):
@@ -218,4 +219,9 @@ class RegularGridLayout(_GridMixin):
             active_mask_nd=self.active_mask,
             grid_shape=self.grid_shape,
             connect_diagonal=connect_diagonal_neighbors,
+        )
+
+        # Validate connectivity graph has required attributes
+        validate_connectivity_graph(
+            self.connectivity, n_dims=len(self.dimension_ranges)
         )

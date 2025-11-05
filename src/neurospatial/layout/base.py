@@ -1,15 +1,17 @@
 import inspect
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import wraps
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+T = TypeVar("T")
 
-def capture_build_params(build_method):
+
+def capture_build_params(build_method: Callable[..., T]) -> Callable[..., T]:
     """Decorator to capture build parameters for layout engines.
 
     This decorator automatically captures all parameters passed to a layout
@@ -44,7 +46,7 @@ def capture_build_params(build_method):
     sig = inspect.signature(build_method)
 
     @wraps(build_method)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self, *args, **kwargs) -> T:
         # Bind all arguments to the signature
         bound = sig.bind(self, *args, **kwargs)
         bound.apply_defaults()

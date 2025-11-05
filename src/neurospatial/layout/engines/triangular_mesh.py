@@ -23,6 +23,7 @@ from neurospatial.layout.helpers.triangular_mesh import (
     _sample_polygon_boundary,
     _triangulate_points,
 )
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class TriangularMeshLayout:
@@ -156,6 +157,9 @@ class TriangularMeshLayout:
             self._original_simplex_to_active_idx_map,
             self._full_delaunay_tri,
         )
+
+        # Validate connectivity graph has required attributes
+        validate_connectivity_graph(self.connectivity, n_dims=2)
 
         # 7. Compute dimension_ranges based on active bin centers
         self.dimension_ranges = _compute_mesh_dimension_ranges(self.bin_centers)

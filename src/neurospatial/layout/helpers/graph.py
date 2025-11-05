@@ -174,7 +174,7 @@ def _create_graph_layout_connectivity_graph(
 
     Nodes in the connectivity graph represent centers of active bins.
     Edges connect adjacent bins, both within the same original graph edge
-    (intra-segment) and between bins at the a_junction of original graph edges
+    (intra-segment) and between bins at a junction of original graph edges
     (inter-segment).
 
     Parameters
@@ -187,8 +187,6 @@ def _create_graph_layout_connectivity_graph(
         1D coordinates of all bin centers (active and inactive).
     original_edge_ids : NDArray[np.int_], shape (n_active_bins,)
         Integer IDs of the original graph edge for each active bin.
-    active_mask : NDArray[np.bool_], shape (n_total_bins,), dtype=bool
-        Mask indicating which bins in `linear_bin_centers` are active.
     edge_order : list of tuples
         The ordered sequence of edges from the original graph that defines
         the linearized track layout. Used for inter-segment connections.
