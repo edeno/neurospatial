@@ -18,7 +18,7 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def _estimate_typical_bin_spacing(
@@ -57,7 +57,7 @@ def _estimate_typical_bin_spacing(
 
 def map_points_to_bins(
     points: NDArray[np.float64],
-    env: Environment,
+    env: EnvironmentProtocol,
     *,
     tie_break: Literal["lowest_index", "closest_center"] = "lowest_index",
     return_dist: bool = False,
@@ -260,7 +260,7 @@ def map_points_to_bins(
     return bin_indices
 
 
-def clear_kdtree_cache(env: Environment) -> None:
+def clear_kdtree_cache(env: EnvironmentProtocol) -> None:
     """Clear the cached KD-tree for an environment.
 
     This is useful if bin_centers have been modified (not recommended) or
@@ -268,7 +268,7 @@ def clear_kdtree_cache(env: Environment) -> None:
 
     Parameters
     ----------
-    env : Environment
+    env : EnvironmentProtocol
         Environment whose KD-tree cache should be cleared.
 
     Examples

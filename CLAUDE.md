@@ -133,14 +133,16 @@ The codebase follows a three-layer architecture:
 2. **Environment** (`src/neurospatial/environment/`)
    - Main user-facing class wrapping a `LayoutEngine` instance
    - **Modular package structure** (as of v0.2.1) using mixin pattern:
-     - [core.py](src/neurospatial/environment/core.py) - Core `Environment` dataclass with state and properties (1,016 lines)
+     - [core.py](src/neurospatial/environment/core.py) - Core `Environment` dataclass with state and properties (1,023 lines)
      - [factories.py](src/neurospatial/environment/factories.py) - Factory classmethods for creating instances (630 lines)
      - [queries.py](src/neurospatial/environment/queries.py) - Spatial query methods (897 lines)
-     - [analysis.py](src/neurospatial/environment/analysis.py) - Analysis and computation methods (2,104 lines)
-     - [serialization.py](src/neurospatial/environment/serialization.py) - Save/load methods (315 lines)
-     - [regions.py](src/neurospatial/environment/regions.py) - Region operations (398 lines)
-     - [visualization.py](src/neurospatial/environment/visualization.py) - Plotting methods (211 lines)
+     - [trajectory.py](src/neurospatial/environment/trajectory.py) - Trajectory analysis (occupancy, bin_sequence, transitions) (1,222 lines)
      - [transforms.py](src/neurospatial/environment/transforms.py) - Rebin/subset operations (634 lines)
+     - [fields.py](src/neurospatial/environment/fields.py) - Spatial field operations (compute_kernel, smooth, interpolate) (564 lines)
+     - [metrics.py](src/neurospatial/environment/metrics.py) - Environment metrics and properties (boundary_bins, bin_attributes, linearization) (469 lines)
+     - [regions.py](src/neurospatial/environment/regions.py) - Region operations (398 lines)
+     - [serialization.py](src/neurospatial/environment/serialization.py) - Save/load methods (315 lines)
+     - [visualization.py](src/neurospatial/environment/visualization.py) - Plotting methods (211 lines)
      - [decorators.py](src/neurospatial/environment/decorators.py) - `@check_fitted` decorator (77 lines)
    - Factory methods for common use cases:
      - `Environment.from_samples()` - Discretize point data into bins
@@ -220,7 +222,7 @@ The connectivity graph (`nx.Graph`) has **mandatory node and edge attributes**:
 
 ### Mixin Pattern for Environment
 
-The `Environment` class uses **mixin inheritance** to organize its 5,000+ lines of functionality into focused modules:
+The `Environment` class uses **mixin inheritance** to organize its 6,000+ lines of functionality into focused modules:
 
 ```python
 # In src/neurospatial/environment/core.py
@@ -231,7 +233,9 @@ class Environment(
     EnvironmentSerialization,   # Save/load methods
     EnvironmentRegions,         # Region operations
     EnvironmentVisualization,   # Plotting methods
-    EnvironmentAnalysis,        # Analysis methods
+    EnvironmentMetrics,         # Metrics and spatial properties
+    EnvironmentFields,          # Spatial field operations
+    EnvironmentTrajectory,      # Trajectory analysis
     EnvironmentTransforms,      # Rebin/subset operations
 ):
     """Main Environment class assembled from mixins."""
@@ -256,6 +260,106 @@ class Environment(
   ```
 - All mixin methods have access to `self` attributes (from Environment dataclass)
 - Public API unchanged: `from neurospatial import Environment` still works
+
+### Mypy Type Checking Requirements
+
+**CRITICAL: Mypy is mandatory and must pass without errors or suppressions.**
+
+This project enforces strict mypy type checking through pre-commit hooks. The following requirements are **non-negotiable**:
+
+1. **NEVER skip mypy** - Running `SKIP=mypy` is not allowed
+2. **NEVER use `type: ignore` comments** - All type errors must be fixed properly
+3. **All mixin methods must be properly typed** - Use proper type annotations that mypy understands
+
+**Mixin Type Annotation Pattern:**
+
+The mixin pattern requires special care for mypy. Since mixins access Environment attributes that don't exist on the mixin class itself, use these patterns:
+
+```python
+from __future__ import annotations
+from typing import TYPE_CHECKING, Protocol
+import numpy as np
+from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from neurospatial.environment.core import Environment
+
+class EnvironmentMixin:
+    """Mixin providing methods for Environment class.
+
+    Methods in this mixin expect to be called on an Environment instance
+    and will have access to all Environment attributes.
+    """
+
+    def method_name(self: "Environment", param: int) -> NDArray[np.float64]:
+        """Use string annotation 'Environment' for self parameter."""
+        # Mypy understands self has Environment attributes
+        return self.bin_centers  # ✓ No error
+```
+
+**Common mypy issues and fixes:**
+
+- **Missing attribute errors**: Ensure `self: "Environment"` annotation is present
+- **Type mismatches**: Ensure return types match exactly between mixin and Environment
+- **Cache type annotations**: Use precise Literal types for cache keys
+- **Import TYPE_CHECKING**: Always use `if TYPE_CHECKING:` guard for Environment import
+
+**Pre-commit mypy configuration** (`.pre-commit-config.yaml`):
+
+```yaml
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.13.0
+  hooks:
+    - id: mypy
+      args: [--ignore-missing-imports, --warn-unused-ignores]
+```
+
+**Using Protocol for Mixin Type Safety:**
+
+This project uses the `Protocol` pattern (PEP 544) to enable proper type checking for mixins. See [mypy docs on mixins](https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes).
+
+**Pattern** (`src/neurospatial/environment/_protocols.py`):
+
+```python
+from typing import Protocol
+
+class EnvironmentProtocol(Protocol):
+    """Interface that Environment provides to mixins."""
+    name: str
+    bin_centers: NDArray[np.float64]
+    connectivity: nx.Graph
+    # ... all attributes mixins need
+
+    def bin_at(self, points: NDArray[np.float64]) -> NDArray[np.int_]: ...
+```
+
+**Mixin Usage:**
+
+```python
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from neurospatial.environment._protocols import EnvironmentProtocol
+
+class EnvironmentFields:
+    def smooth(self: EnvironmentProtocol, field: NDArray, ...) -> NDArray:
+        # Mypy validates Protocol at call sites, not definition sites
+        return self.compute_kernel(...) @ field
+```
+
+**Why this works:** Mypy checks that `Environment` satisfies `EnvironmentProtocol` at usage sites. Mixins can safely access Protocol-defined attributes without "erased type" errors.
+
+**Running mypy manually:**
+
+```bash
+# Check all files (same args as pre-commit)
+uv run mypy --ignore-missing-imports --warn-unused-ignores src/neurospatial/
+
+# Check specific file
+uv run mypy --ignore-missing-imports --warn-unused-ignores src/neurospatial/environment/fields.py
+
+# Check with pyproject.toml config (recommended)
+uv run mypy src/neurospatial/
+```
 
 ### Protocol-Based Design
 

@@ -70,11 +70,13 @@ def test_mixins_are_not_dataclasses():
     Mixins must be plain classes to avoid MRO conflicts with
     dataclass field inheritance.
     """
-    from neurospatial.environment.analysis import EnvironmentAnalysis
     from neurospatial.environment.factories import EnvironmentFactories
+    from neurospatial.environment.fields import EnvironmentFields
+    from neurospatial.environment.metrics import EnvironmentMetrics
     from neurospatial.environment.queries import EnvironmentQueries
     from neurospatial.environment.regions import EnvironmentRegions
     from neurospatial.environment.serialization import EnvironmentSerialization
+    from neurospatial.environment.trajectory import EnvironmentTrajectory
     from neurospatial.environment.transforms import EnvironmentTransforms
     from neurospatial.environment.visualization import EnvironmentVisualization
 
@@ -84,7 +86,9 @@ def test_mixins_are_not_dataclasses():
         EnvironmentSerialization,
         EnvironmentRegions,
         EnvironmentVisualization,
-        EnvironmentAnalysis,
+        EnvironmentMetrics,
+        EnvironmentFields,
+        EnvironmentTrajectory,
         EnvironmentTransforms,
     ]
 
@@ -129,11 +133,13 @@ def test_mro_order():
     This ensures proper method resolution and attribute access.
     """
     from neurospatial.environment import Environment
-    from neurospatial.environment.analysis import EnvironmentAnalysis
     from neurospatial.environment.factories import EnvironmentFactories
+    from neurospatial.environment.fields import EnvironmentFields
+    from neurospatial.environment.metrics import EnvironmentMetrics
     from neurospatial.environment.queries import EnvironmentQueries
     from neurospatial.environment.regions import EnvironmentRegions
     from neurospatial.environment.serialization import EnvironmentSerialization
+    from neurospatial.environment.trajectory import EnvironmentTrajectory
     from neurospatial.environment.transforms import EnvironmentTransforms
     from neurospatial.environment.visualization import EnvironmentVisualization
 
@@ -148,7 +154,9 @@ def test_mro_order():
     assert EnvironmentSerialization in mro
     assert EnvironmentRegions in mro
     assert EnvironmentVisualization in mro
-    assert EnvironmentAnalysis in mro
+    assert EnvironmentMetrics in mro
+    assert EnvironmentFields in mro
+    assert EnvironmentTrajectory in mro
     assert EnvironmentTransforms in mro
 
 

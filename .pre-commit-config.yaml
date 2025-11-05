@@ -35,4 +35,4 @@ repos:
           - scikit-learn
           - shapely
         args: [--ignore-missing-imports, --warn-unused-ignores]
-        exclude: '^docs/examples/.*\.py$'
+        exclude: '^(docs/examples/.*\.py|tests/.*)$'

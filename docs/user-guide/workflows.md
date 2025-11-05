@@ -422,6 +422,6 @@ env_fine = Environment.from_samples(
 
 ## See Also
 
-- [Environment API](../api/neurospatial/environment.md): Complete method documentation
+- [Environment API](../api/neurospatial/environment/index.md): Complete method documentation
 - [Regions Guide](regions.md): Working with ROIs
 - [Example Notebooks](../examples/index.md): Interactive tutorials

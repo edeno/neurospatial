@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     import shapely
 
+    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import Environment
 
 from neurospatial.regions import Regions
@@ -25,7 +26,7 @@ class EnvironmentTransforms:
     """Mixin providing environment transformation methods."""
 
     def rebin(
-        self,
+        self: EnvironmentProtocol,
         factor: int | tuple[int, ...],
     ) -> Environment:
         """Coarsen regular grid by integer factor (geometry-only operation).
@@ -134,8 +135,8 @@ class EnvironmentTransforms:
 
         # --- Input validation ---
 
-        # Check layout type
-        if not isinstance(self.layout, RegularGridLayout):  # type: ignore[unreachable]
+        # Check layout type using _layout_type_tag (Protocol-safe check)
+        if self.layout._layout_type_tag != "RegularGrid":
             raise NotImplementedError(
                 "rebin() is only supported for RegularGridLayout. "
                 f"Current layout type: {self.layout._layout_type_tag}. "
@@ -144,7 +145,15 @@ class EnvironmentTransforms:
             )
 
         # Parse factor
-        grid_shape = self.layout.grid_shape  # type: ignore[unreachable]
+        # Cast to RegularGridLayout to access grid-specific attributes
+        layout = cast("RegularGridLayout", self.layout)
+        grid_shape = layout.grid_shape
+        grid_edges = layout.grid_edges
+
+        # Assert non-None (RegularGridLayout always has these)
+        assert grid_shape is not None, "RegularGridLayout must have grid_shape"
+        assert grid_edges is not None, "RegularGridLayout must have grid_edges"
+
         n_dims = len(grid_shape)
 
         factor_tuple = (factor,) * n_dims if isinstance(factor, int) else tuple(factor)
@@ -190,7 +199,8 @@ class EnvironmentTransforms:
         # --- Compute new grid parameters ---
 
         # Truncate grid edges if needed
-        grid_edges = self.layout.grid_edges
+        # grid_edges was already asserted non-None above but mypy needs reminder
+        assert grid_edges is not None
         truncated_edges = []
         for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
             # Keep edges up to truncated_size + 1 (edges define bins)
@@ -284,9 +294,12 @@ class EnvironmentTransforms:
             "rebinned_from": f"factor={factor_tuple}",
         }
 
-        # Create new environment
-        coarse_env = self.__class__(
-            layout=new_layout,
+        # Create new environment - cast to Environment class for proper type checking
+        from neurospatial.layout.base import LayoutEngine
+
+        env_cls = cast("type[Environment]", self.__class__)
+        coarse_env = env_cls(
+            layout=cast("LayoutEngine", new_layout),
             name=f"{self.name}_rebinned" if self.name else "",
             regions=Regions(),  # Start with empty regions
         )
@@ -303,7 +316,7 @@ class EnvironmentTransforms:
         return coarse_env
 
     def subset(
-        self,
+        self: EnvironmentProtocol,
         *,
         bins: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
@@ -613,9 +626,15 @@ class EnvironmentTransforms:
 
         # Create new environment - directly instantiate
         # (from_layout is for factory pattern with string kind)
-        sub_env = self.__class__(
+        # Cast to Environment class for proper type checking
+        from neurospatial.layout.base import LayoutEngine
+
+        env_cls = cast("type[Environment]", self.__class__)
+        sub_env = env_cls(
             name="",
-            layout=layout,  # type: ignore[arg-type]  # SubsetLayout implements LayoutEngine protocol
+            layout=cast(
+                "LayoutEngine", layout
+            ),  # SubsetLayout implements LayoutEngine protocol
             layout_type_used="subset",
             layout_params_used={"source": "subset", "original_n_bins": self.n_bins},
             regions=Regions(),  # Empty regions as documented

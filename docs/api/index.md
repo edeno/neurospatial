@@ -4,13 +4,22 @@ Complete API documentation for neurospatial, automatically generated from source
 
 ## Core Modules
 
-### [neurospatial.environment](neurospatial/environment.md)
+### [neurospatial.environment](neurospatial/environment/index.md)
 
-The main `Environment` class and related functionality.
+The main `Environment` class and related functionality (modular package).
 
 **Key Classes:**
 
 - `Environment`: Main class for discretized spatial environments
+
+**Modules:**
+
+- `environment.core`: Core dataclass with state and properties
+- `environment.factories`: Factory classmethods for creating environments
+- `environment.queries`: Spatial query methods
+- `environment.trajectory`: Trajectory analysis methods
+- `environment.fields`: Spatial field operations
+- `environment.metrics`: Environment metrics and properties
 
 ### [neurospatial.composite](neurospatial/composite.md)
 

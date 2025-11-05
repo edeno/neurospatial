@@ -5,11 +5,12 @@
 ### Changed
 
 - **Internal**: Refactored `environment.py` (5,335 lines) into modular package structure for improved maintainability
-  - Split into 9 focused modules: `core.py` (1,016 lines), `analysis.py` (2,104 lines), `factories.py` (630 lines), `queries.py` (897 lines), `serialization.py` (315 lines), `regions.py` (398 lines), `visualization.py` (211 lines), `transforms.py` (634 lines), `decorators.py` (77 lines)
+  - Split into 11 focused modules: `core.py` (1,023 lines), `factories.py` (630 lines), `queries.py` (897 lines), `trajectory.py` (1,222 lines), `transforms.py` (634 lines), `fields.py` (564 lines), `metrics.py` (469 lines), `regions.py` (398 lines), `serialization.py` (315 lines), `visualization.py` (211 lines), `decorators.py` (77 lines)
   - Implemented mixin pattern: Environment inherits from all functionality mixins
   - No breaking changes - `from neurospatial import Environment` continues to work
   - All 1,076 tests passing (100% success rate)
   - Improved code organization for easier contribution and maintenance
+  - Largest module is trajectory.py at 1,222 lines (down from original analysis.py at 2,104 lines)
 
 ## [v0.2.0] - 2025-11-04
 

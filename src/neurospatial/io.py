@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 # Schema version for serialization format
 _SCHEMA_VERSION = "Environment-v1"
@@ -102,7 +103,7 @@ def _get_library_version() -> str:
         return "unknown"
 
 
-def to_file(env: Environment, path: str | Path) -> None:
+def to_file(env: EnvironmentProtocol, path: str | Path) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
     Creates two files:
@@ -331,7 +332,7 @@ def from_file(path: str | Path) -> Environment:
     return env
 
 
-def to_dict(env: Environment) -> dict[str, Any]:
+def to_dict(env: EnvironmentProtocol) -> dict[str, Any]:
     """Convert Environment to a dictionary for in-memory handoff.
 
     This is useful for passing environments between processes or for

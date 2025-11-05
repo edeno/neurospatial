@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class EnvironmentQueries:
@@ -41,7 +41,9 @@ class EnvironmentQueries:
     """
 
     @check_fitted
-    def bin_at(self: Environment, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
+    def bin_at(
+        self: EnvironmentProtocol, points_nd: NDArray[np.float64]
+    ) -> NDArray[np.int_]:
         """Map N-dimensional continuous points to discrete active bin indices.
 
         This method delegates to the `point_to_bin_index` method of the
@@ -76,11 +78,11 @@ class EnvironmentQueries:
         [12 -1]  # Second point outside environment
 
         """
-        return self.layout.point_to_bin_index(points_nd)  # type: ignore[no-any-return]
+        return self.layout.point_to_bin_index(points_nd)
 
     @check_fitted
     def contains(
-        self: Environment, points_nd: NDArray[np.float64]
+        self: EnvironmentProtocol, points_nd: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
 
@@ -124,7 +126,7 @@ class EnvironmentQueries:
 
     @check_fitted
     def bin_center_of(
-        self: Environment,
+        self: EnvironmentProtocol,
         bin_indices: int | Sequence[int] | NDArray[np.int_],
     ) -> NDArray[np.float64]:
         """Given one or more active-bin indices, return their N-D center coordinates.
@@ -167,7 +169,7 @@ class EnvironmentQueries:
         )
 
     @check_fitted
-    def neighbors(self: Environment, bin_index: int) -> list[int]:
+    def neighbors(self: EnvironmentProtocol, bin_index: int) -> list[int]:
         """Find indices of neighboring active bins for a given active bin index.
 
         This method delegates to the `neighbors` method of the
@@ -206,7 +208,7 @@ class EnvironmentQueries:
     # so that @check_fitted can see the underlying method
     @cached_property
     @check_fitted
-    def bin_sizes(self: Environment) -> NDArray[np.float64]:
+    def bin_sizes(self: EnvironmentProtocol) -> NDArray[np.float64]:
         """Calculate the area (for 2D) or volume (for 3D+) of each active bin.
 
         This represent the actual size of each bin in the environment, as
@@ -247,10 +249,10 @@ class EnvironmentQueries:
         True
 
         """
-        return self.layout.bin_sizes()  # type: ignore[no-any-return]
+        return self.layout.bin_sizes()
 
     def distance_between(
-        self: Environment,
+        self: EnvironmentProtocol,
         point1: NDArray[np.float64],
         point2: NDArray[np.float64],
         edge_weight: str = "distance",
@@ -313,7 +315,7 @@ class EnvironmentQueries:
 
     @check_fitted
     def shortest_path(
-        self: Environment,
+        self: EnvironmentProtocol,
         source_active_bin_idx: int,
         target_active_bin_idx: int,
     ) -> list[int]:
@@ -386,7 +388,7 @@ class EnvironmentQueries:
             ) from e
 
     def distance_to(
-        self,
+        self: EnvironmentProtocol,
         targets: Sequence[int] | str,
         *,
         metric: Literal["euclidean", "geodesic"] = "geodesic",
@@ -556,7 +558,7 @@ class EnvironmentQueries:
         return distances_result
 
     def reachable_from(
-        self,
+        self: EnvironmentProtocol,
         source_bin: int,
         *,
         radius: int | float | None = None,
@@ -700,7 +702,7 @@ class EnvironmentQueries:
         return reachable
 
     def components(
-        self,
+        self: EnvironmentProtocol,
         *,
         largest_only: bool = False,
     ) -> list[NDArray[np.int32]]:
@@ -768,7 +770,7 @@ class EnvironmentQueries:
         return components
 
     def rings(
-        self,
+        self: EnvironmentProtocol,
         center_bin: int,
         *,
         hops: int,

@@ -10,6 +10,7 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 ## Key Features
 
 ### Core Capabilities
+
 - **Multiple Layout Engines**: Choose from regular grids, hexagonal tessellations, masked regions, polygon-bounded areas, triangular meshes, and 1D linearized tracks
 - **Automatic Bin Detection**: Infer active bins from data samples with morphological operations (dilation, closing, hole filling)
 - **Connectivity Graphs**: Built-in NetworkX graphs with mandatory node/edge metadata for spatial queries
@@ -19,6 +20,7 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 - **Type-Safe Protocol Design**: Layout engines implement protocols, not inheritance, for maximum flexibility
 
 ### Spatial Analysis Operations (v0.2.0+)
+
 - **Trajectory Analysis**: Convert trajectories to bin sequences, compute empirical transition matrices with adjacency filtering
 - **Occupancy Mapping**: Time-in-bin computation with speed filtering, gap handling, and optional kernel smoothing (including linear time allocation for accurate boundary handling)
 - **Field Smoothing**: Diffusion kernel smoothing on graphs with volume correction for continuous fields
@@ -295,11 +297,13 @@ neurospatial/
 │   │   ├── core.py            # Core dataclass with state and properties
 │   │   ├── factories.py       # Factory classmethods (from_samples, from_graph, etc.)
 │   │   ├── queries.py         # Spatial query methods
-│   │   ├── analysis.py        # Analysis and computation methods
+│   │   ├── trajectory.py      # Trajectory analysis (occupancy, transitions)
+│   │   ├── transforms.py      # Rebin/subset operations
+│   │   ├── fields.py          # Spatial field operations (smooth, interpolate)
+│   │   ├── metrics.py         # Environment metrics and properties
 │   │   ├── serialization.py   # Save/load methods
 │   │   ├── regions.py         # Region operations
 │   │   ├── visualization.py   # Plotting methods
-│   │   ├── transforms.py      # Rebin/subset operations
 │   │   └── decorators.py      # check_fitted decorator
 │   ├── composite.py            # CompositeEnvironment for multi-env merging
 │   ├── alignment.py            # Probability distribution transforms

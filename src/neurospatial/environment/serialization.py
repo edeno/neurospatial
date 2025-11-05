@@ -30,9 +30,10 @@ from __future__ import annotations
 import logging
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import Environment
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ class EnvironmentSerialization:
 
     """
 
-    def to_file(self: Environment, path: str | Path) -> None:
+    def to_file(self: EnvironmentProtocol, path: str | Path) -> None:
         """Save Environment to versioned JSON + npz files.
 
         This method provides stable, reproducible serialization that is safer
@@ -125,7 +126,7 @@ class EnvironmentSerialization:
         _to_file(self, path)
 
     @classmethod
-    def from_file(cls: type[Environment], path: str | Path) -> Environment:
+    def from_file(cls: type[EnvironmentProtocol], path: str | Path) -> Environment:
         """Load Environment from versioned JSON + npz files.
 
         Parameters
@@ -164,7 +165,7 @@ class EnvironmentSerialization:
 
         return _from_file(path)
 
-    def to_dict(self: Environment) -> dict[str, Any]:
+    def to_dict(self: EnvironmentProtocol) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
         Returns a dictionary representation with all numpy arrays converted
@@ -201,7 +202,7 @@ class EnvironmentSerialization:
         return _to_dict(self)
 
     @classmethod
-    def from_dict(cls: type[Environment], data: dict[str, Any]) -> Environment:
+    def from_dict(cls: type[EnvironmentProtocol], data: dict[str, Any]) -> Environment:
         """Reconstruct Environment from dictionary representation.
 
         Parameters
@@ -231,7 +232,7 @@ class EnvironmentSerialization:
 
         return _from_dict(data)
 
-    def save(self: Environment, filename: str = "environment.pkl") -> None:
+    def save(self: EnvironmentProtocol, filename: str = "environment.pkl") -> None:
         """Save the Environment object to a file using pickle.
 
         .. deprecated:: 0.1.0
@@ -267,7 +268,7 @@ class EnvironmentSerialization:
         logger.info("Environment saved to %s", filename)
 
     @classmethod
-    def load(cls: type[Environment], filename: str) -> Environment:
+    def load(cls: type[EnvironmentProtocol], filename: str) -> Environment:
         """Load an Environment object from a pickled file.
 
         .. deprecated:: 0.1.0
@@ -312,4 +313,4 @@ class EnvironmentSerialization:
             environment = pickle.load(fh)
         if not isinstance(environment, cls):
             raise TypeError(f"Loaded object is not type {cls.__name__}")
-        return environment
+        return cast("Environment", environment)

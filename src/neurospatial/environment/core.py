@@ -8,7 +8,10 @@ functionality from specialized mixin classes:
 - EnvironmentSerialization: Save/load methods (to_file, from_file, etc.)
 - EnvironmentRegions: Region operations (bins_in_region, mask_for_region)
 - EnvironmentVisualization: Plotting methods (plot, plot_1d)
-- EnvironmentAnalysis: Analysis methods (boundary_bins, bin_attributes, etc.)
+- EnvironmentMetrics: Environment metrics (boundary_bins, bin_attributes, to_linear, etc.)
+- EnvironmentFields: Spatial field operations (compute_kernel, smooth, interpolate)
+- EnvironmentTrajectory: Trajectory analysis (occupancy, bin_sequence, transitions)
+- EnvironmentTransforms: Transform operations (rebin, subset)
 
 The Environment class is the ONLY dataclass in the hierarchy - all mixins
 are plain classes. This design prevents dataclass field inheritance conflicts
@@ -21,19 +24,21 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any
+from typing import Any, Literal
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._logging import log_environment_created, log_graph_validation
-from neurospatial.environment.analysis import EnvironmentAnalysis
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.factories import EnvironmentFactories
+from neurospatial.environment.fields import EnvironmentFields
+from neurospatial.environment.metrics import EnvironmentMetrics
 from neurospatial.environment.queries import EnvironmentQueries
 from neurospatial.environment.regions import EnvironmentRegions
 from neurospatial.environment.serialization import EnvironmentSerialization
+from neurospatial.environment.trajectory import EnvironmentTrajectory
 from neurospatial.environment.transforms import EnvironmentTransforms
 from neurospatial.environment.visualization import EnvironmentVisualization
 from neurospatial.layout.base import LayoutEngine
@@ -53,7 +58,9 @@ class Environment(
     EnvironmentSerialization,
     EnvironmentRegions,
     EnvironmentVisualization,
-    EnvironmentAnalysis,
+    EnvironmentMetrics,
+    EnvironmentFields,
+    EnvironmentTrajectory,
     EnvironmentTransforms,
 ):
     """Represents a discretized N-dimensional space with connectivity.
@@ -237,9 +244,9 @@ class Environment(
     _kdtree_cache: Any = field(init=False, default=None, repr=False)
 
     # Kernel cache for smoothing operations (keyed by (bandwidth, mode))
-    _kernel_cache: dict[tuple[float, str], NDArray] = field(
-        init=False, default_factory=dict, repr=False
-    )
+    _kernel_cache: dict[
+        tuple[float, Literal["transition", "density"]], NDArray[np.float64]
+    ] = field(init=False, default_factory=dict, repr=False)
 
     # For introspection and serialization
     _layout_type_used: str | None = field(init=False, default=None)

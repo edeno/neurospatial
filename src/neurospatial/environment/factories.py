@@ -24,7 +24,7 @@ in type hints. At runtime, TYPE_CHECKING is False, so no import occurs.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 import numpy as np
@@ -626,5 +626,6 @@ class EnvironmentFactories:
         """
         layout_instance = create_layout(kind=kind, **layout_params)
         # Note: This call will work when cls is Environment (via inheritance).
-        # Mypy can't infer this for mixins, so we suppress the error.
-        return cls(name, layout_instance, kind, layout_params, regions=regions)  # type: ignore[call-arg]
+        # Mypy can't infer this for mixins, so we use cast() to help the type checker.
+        env_cls = cast("type[Environment]", cls)
+        return env_cls(name, layout_instance, kind, layout_params, regions=regions)

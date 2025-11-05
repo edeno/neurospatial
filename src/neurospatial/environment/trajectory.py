@@ -1,15 +1,14 @@
-"""Analysis methods for Environment class.
+"""Trajectory analysis methods for Environment class.
 
-This module provides methods for analyzing and extracting information from
-spatial environments, including boundary detection, attribute extraction,
-and coordinate transformations.
+This module provides methods for analyzing trajectory data, including
+occupancy computation, bin sequence extraction, and transition matrix calculation.
 
 Key Features
 ------------
-- Boundary bin detection for identifying edge bins
-- Attribute extraction to DataFrames for analysis
-- Linearization support for 1D environments (GraphLayout)
-- Cached properties for efficient repeated access
+- Occupancy (time-in-bin) computation with speed filtering
+- Bin sequence extraction with run-length encoding
+- Transition matrix calculation (empirical, random walk, diffusion)
+- Linear time allocation for grid environments
 
 Notes
 -----
@@ -19,803 +18,32 @@ should be a dataclass.
 
 TYPE_CHECKING Pattern
 ---------------------
-To avoid circular imports, we import Environment only for type checking:
-
-    from typing import TYPE_CHECKING
-    if TYPE_CHECKING:
-    import scipy.sparse
-        from neurospatial.environment.core import Environment
-
-Then use string annotations in method signatures: `self: "Environment"`
-
-Examples
---------
-This class is not used directly. Instead, it's mixed into Environment:
-
-    >>> from neurospatial import Environment
-    >>> import numpy as np
-    >>> data = np.random.rand(100, 2) * 10
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>>
-    >>> # Get boundary bins (from EnvironmentAnalysis)
-    >>> boundary = env.boundary_bins
-    >>> print(f"Found {len(boundary)} boundary bins")
-    Found ... boundary bins
-    >>>
-    >>> # Get bin attributes as DataFrame
-    >>> df = env.bin_attributes
-    >>> print(df.columns.tolist())
-    ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
+To avoid circular imports, we import Environment only for type checking.
 
 """
 
 from __future__ import annotations
 
-from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import networkx as nx
 import numpy as np
-import pandas as pd
 from numpy.typing import NDArray
-
-from neurospatial.environment.decorators import check_fitted
-from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 if TYPE_CHECKING:
     import scipy.sparse
 
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
-class EnvironmentAnalysis:
-    """Analysis methods mixin for Environment.
+class EnvironmentTrajectory:
+    """Trajectory analysis methods mixin.
 
-    This mixin provides methods for analyzing spatial environments:
-    - Boundary detection
-    - Attribute extraction to DataFrames
-    - Linearization (for 1D environments)
-    - Linearization properties
-
-    All methods assume the Environment is fitted (has been initialized
-    via a factory method).
-
-    See Also
-    --------
-    Environment : Main class that uses this mixin
-    EnvironmentQueries : Spatial query methods
-    EnvironmentVisualization : Plotting methods
-
+    Provides methods for analyzing trajectories through environments.
     """
 
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def boundary_bins(self: Environment) -> NDArray[np.int_]:
-        """Get the boundary bin indices.
-
-        Returns
-        -------
-        NDArray[np.int_], shape (n_boundary_bins,)
-            An array of indices of the boundary bins in the environment.
-            These are the bins that are at the edges of the active area.
-
-        Notes
-        -----
-        This property is cached after first access. The fitted check only
-        runs on the first computation, not on subsequent cached accesses.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> boundary = env.boundary_bins
-        >>> print(f"Number of boundary bins: {len(boundary)}")
-        Number of boundary bins: ...
-
-        """
-        return find_boundary_nodes(
-            graph=self.connectivity,
-            grid_shape=self.grid_shape,
-            active_mask=self.active_mask,
-            layout_kind=self._layout_type_used,
-        )
-
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def linearization_properties(
-        self: Environment,
-    ) -> dict[str, Any] | None:
-        """If the environment uses a GraphLayout, returns properties needed
-        for linearization (converting a 2D/3D track to a 1D line) using the
-        `track_linearization` library.
-
-        These properties are typically passed to `track_linearization.get_linearized_position`.
-
-        Returns
-        -------
-        Optional[Dict[str, Any]]
-            A dictionary with keys 'track_graph', 'edge_order', 'edge_spacing'
-            if the layout is `GraphLayout` and parameters are available.
-            Individual values may be None if not available in layout parameters.
-            Returns `None` for non-1D environments.
-
-        Notes
-        -----
-        This property is cached after first access. The fitted check only
-        runs on the first computation, not on subsequent cached accesses.
-
-        Examples
-        --------
-        >>> from neurospatial import Environment
-        >>> # Create a 1D environment (requires GraphLayout)
-        >>> # env = Environment.from_graph(...)  # Requires track-linearization
-        >>> # props = env.linearization_properties
-        >>> # if props is not None:
-        >>> #     print(props.keys())
-        >>> #     dict_keys(['track_graph', 'edge_order', 'edge_spacing'])
-
-        Notes
-        -----
-        This property returns None for non-1D environments or environments
-        not created from graph-based layouts.
-
-        """
-        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
-        if hasattr(self.layout, "to_linear") and hasattr(self.layout, "linear_to_nd"):
-            return {
-                "track_graph": self._layout_params_used.get("graph_definition"),
-                "edge_order": self._layout_params_used.get("edge_order"),
-                "edge_spacing": self._layout_params_used.get("edge_spacing"),
-            }
-        return None
-
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def bin_attributes(self: Environment) -> pd.DataFrame:
-        """Build a DataFrame of attributes for each active bin (node) in the environment's graph.
-
-        Returns
-        -------
-        df : pandas.DataFrame
-            Rows are indexed by `active_bin_id` (int), matching 0..(n_bins-1).
-            Columns correspond to node attributes. If a 'pos' attribute exists
-            for any node and is non-null, it will be expanded into columns
-            'pos_dim0', 'pos_dim1', ..., with numeric coordinates.
-
-        Raises
-        ------
-        ValueError
-            If there are no active bins (graph has zero nodes).
-
-        Notes
-        -----
-        This property is cached after first access. The fitted check only
-        runs on the first computation, not on subsequent cached accesses.
-
-        For very large environments (>100,000 bins), this method converts
-        the entire connectivity graph to a DataFrame which may consume
-        significant memory. Consider querying specific attributes from
-        self.connectivity directly if you only need a subset.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> df = env.bin_attributes
-        >>> print(df.columns.tolist())
-        ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
-        >>> print(f"Shape: {df.shape}")
-        Shape: (..., 4)
-
-        """
-        graph = self.connectivity
-        if graph.number_of_nodes() == 0:
-            raise ValueError("No active bins in the environment.")
-
-        df = pd.DataFrame.from_dict(dict(graph.nodes(data=True)), orient="index")
-        df.index.name = "active_bin_id"  # Index is 0..N-1
-
-        if "pos" in df.columns and not df["pos"].dropna().empty:
-            pos_df = pd.DataFrame(df["pos"].tolist(), index=df.index)
-            pos_df.columns = [f"pos_dim{i}" for i in range(pos_df.shape[1])]
-            df = pd.concat([df.drop(columns="pos"), pos_df], axis=1)
-
-        return df
-
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def edge_attributes(self: Environment) -> pd.DataFrame:
-        """Return a Pandas DataFrame where each row corresponds to one directed edge
-        (u → v) in the connectivity graph, and columns include all stored edge
-        attributes (e.g. 'distance', 'vector', 'weight', 'angle_2d', etc.).
-
-        The DataFrame will have a MultiIndex of (source_bin, target_bin). If you
-        prefer flat columns, you can reset the index.
-
-        Returns
-        -------
-        pd.DataFrame
-            A DataFrame whose index is a MultiIndex (source_bin, target_bin),
-            and whose columns are the union of all attribute-keys stored on each edge.
-
-        Raises
-        ------
-        ValueError
-            If there are no edges in the connectivity graph.
-        RuntimeError
-            If called before the environment is fitted.
-
-        Notes
-        -----
-        This property is cached after first access. The fitted check only
-        runs on the first computation, not on subsequent cached accesses.
-
-        For very large environments (>100,000 edges), this method converts
-        the entire connectivity graph to a DataFrame which may consume
-        significant memory. Consider querying specific attributes from
-        self.connectivity directly if you only need a subset.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> df = env.edge_attributes
-        >>> print(df.columns.tolist())
-        ['distance', 'vector', 'edge_id', 'angle_2d']
-        >>> print(f"Number of edges: {len(df)}")
-        Number of edges: ...
-
-        """
-        graph = self.connectivity
-        if graph.number_of_edges() == 0:
-            raise ValueError("No edges in the connectivity graph.")
-
-        # Build a dict of edge_attr_dicts keyed by (u, v)
-        # networkx's graph.edges(data=True) yields (u, v, attr_dict)
-        edge_dict: dict[tuple[int, int], dict] = {
-            (u, v): data.copy() for u, v, data in graph.edges(data=True)
-        }
-
-        # Convert that to a DataFrame, using the (u, v) tuples as a MultiIndex
-        df = pd.DataFrame.from_dict(edge_dict, orient="index")
-        # The index is now a MultiIndex of (u, v)
-        df.index = pd.MultiIndex.from_tuples(
-            df.index,
-            names=["source_bin", "target_bin"],
-        )
-
-        return df
-
-    @check_fitted
-    def to_linear(
-        self: Environment, points_nd: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        """Convert N-dimensional points to 1D linearized coordinates.
-
-        This method is only applicable if the environment uses a `GraphLayout`
-        and `is_1d` is True. It delegates to the layout's
-        `to_linear` method.
-
-        Parameters
-        ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            N-dimensional points to linearize.
-
-        Returns
-        -------
-        NDArray[np.float64], shape (n_points,)
-            1D linearized coordinates corresponding to the input points.
-
-        Raises
-        ------
-        TypeError
-            If the environment is not 1D or not based on a `GraphLayout`.
-        RuntimeError
-            If called before the environment is fitted.
-
-        Examples
-        --------
-        >>> from neurospatial import Environment
-        >>> # Create a 1D environment (requires GraphLayout)
-        >>> # env = Environment.from_graph(...)  # Requires track-linearization
-        >>> # import numpy as np
-        >>> # points = np.array([[1.0, 2.0], [3.0, 4.0]])
-        >>> # linear_pos = env.to_linear(points)
-        >>> # print(linear_pos)
-        >>> # [0.5 1.2]  # Example output
-
-        Notes
-        -----
-        This method requires that the environment was created using a GraphLayout
-        (typically via `Environment.from_graph()`). For N-D grid environments,
-        this method will raise a TypeError.
-
-        See Also
-        --------
-        linear_to_nd : Convert linearized coordinates back to N-D
-        is_1d : Property indicating if environment is 1D
-        linearization_properties : Properties needed for linearization
-
-        """
-        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
-        if not self.is_1d or not hasattr(self.layout, "to_linear"):
-            raise TypeError(
-                "Linearization is only available for 1D environments (GraphLayout). "
-                f"This environment has is_1d={self.is_1d}. "
-                "Use Environment.from_graph() to create a 1D environment."
-            )
-        result = self.layout.to_linear(points_nd)
-        return np.asarray(result, dtype=np.float64)
-
-    @check_fitted
-    def linear_to_nd(
-        self: Environment,
-        linear_coordinates: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Convert 1D linearized coordinates back to N-dimensional coordinates.
-
-        This method is only applicable if the environment uses a `GraphLayout`
-        and `is_1d` is True. It delegates to the layout's
-        `linear_to_nd` method.
-
-        Parameters
-        ----------
-        linear_coordinates : NDArray[np.float64], shape (n_points,)
-            1D linearized coordinates to map to N-D space.
-
-        Returns
-        -------
-        NDArray[np.float64], shape (n_points, n_dims)
-            N-dimensional coordinates corresponding to the input linear coordinates.
-
-        Raises
-        ------
-        TypeError
-            If the environment is not 1D or not based on a `GraphLayout`.
-        RuntimeError
-            If called before the environment is fitted.
-
-        Examples
-        --------
-        >>> from neurospatial import Environment
-        >>> # Create a 1D environment (requires GraphLayout)
-        >>> # env = Environment.from_graph(...)  # Requires track-linearization
-        >>> # import numpy as np
-        >>> # linear_pos = np.array([0.5, 1.2])
-        >>> # points = env.linear_to_nd(linear_pos)
-        >>> # print(points)
-        >>> # [[1.0 2.0]
-        >>> #  [3.0 4.0]]  # Example output
-
-        Notes
-        -----
-        This method requires that the environment was created using a GraphLayout
-        (typically via `Environment.from_graph()`). For N-D grid environments,
-        this method will raise a TypeError.
-
-        See Also
-        --------
-        to_linear : Convert N-D points to linearized coordinates
-        is_1d : Property indicating if environment is 1D
-        linearization_properties : Properties needed for linearization
-
-        """
-        # Use hasattr instead of isinstance to avoid Protocol/concrete class conflict
-        if not self.is_1d or not hasattr(self.layout, "linear_to_nd"):
-            raise TypeError(
-                "Linearization is only available for 1D environments (GraphLayout). "
-                f"This environment has is_1d={self.is_1d}. "
-                "Use Environment.from_graph() to create a 1D environment."
-            )
-        result = self.layout.linear_to_nd(linear_coordinates)
-        return np.asarray(result, dtype=np.float64)
-
-    def compute_kernel(
-        self,
-        bandwidth: float,
-        *,
-        mode: Literal["transition", "density"] = "density",
-        cache: bool = True,
-    ) -> NDArray[np.float64]:
-        """Compute diffusion kernel for smoothing operations.
-
-        Convenience wrapper for kernels.compute_diffusion_kernels() that
-        automatically uses this environment's connectivity graph and bin sizes.
-
-        Parameters
-        ----------
-        bandwidth : float
-            Smoothing bandwidth in physical units (σ in the Gaussian kernel).
-            Controls the scale of diffusion.
-        mode : {'transition', 'density'}, default='density'
-            Normalization mode:
-
-            - 'transition': Each column sums to 1 (discrete probability).
-            - 'density': Each column integrates to 1 over bin volumes
-              (continuous density).
-        cache : bool, default=True
-            If True, cache the computed kernel for reuse. Subsequent calls
-            with the same (bandwidth, mode) will return the cached result.
-
-        Returns
-        -------
-        kernel : NDArray[np.float64], shape (n_bins, n_bins)
-            Diffusion kernel matrix where kernel[:, j] represents the smoothed
-            distribution resulting from a unit mass at bin j.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If bandwidth is not positive.
-
-        See Also
-        --------
-        neurospatial.kernels.compute_diffusion_kernels :
-            Lower-level function with more control.
-
-        Notes
-        -----
-        The kernel is computed via matrix exponential of the graph Laplacian:
-
-        .. math::
-            K = \\exp(-t L)
-
-        where :math:`t = \\sigma^2 / 2` and :math:`L` is the graph Laplacian.
-
-        For mode='density', the Laplacian is volume-corrected to properly
-        handle bins of varying sizes.
-
-        Performance warning: Kernel computation has O(n³) complexity where
-        n is the number of bins. For large environments (>1000 bins),
-        computation may be slow. Consider caching or using smaller bandwidths.
-
-        Examples
-        --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> # Compute kernel for smoothing
-        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
-        >>> # Apply to field
-        >>> smoothed_field = kernel @ field
-
-        """
-        from neurospatial.kernels import compute_diffusion_kernels
-
-        # Initialize cache if it doesn't exist
-        # (for backward compatibility with environments deserialized from older versions)
-        if not hasattr(self, "_kernel_cache"):
-            self._kernel_cache = {}
-
-        # Check cache first if enabled
-        cache_key = (bandwidth, mode)
-        if cache and cache_key in self._kernel_cache:
-            return self._kernel_cache[cache_key]
-
-        # Compute kernel
-        kernel = compute_diffusion_kernels(
-            graph=self.connectivity,
-            bandwidth_sigma=bandwidth,
-            bin_sizes=self.bin_sizes if mode == "density" else None,
-            mode=mode,
-        )
-
-        # Store in cache if enabled
-        if cache:
-            self._kernel_cache[cache_key] = kernel
-
-        return kernel
-
-    def smooth(
-        self,
-        field: NDArray[np.float64],
-        bandwidth: float,
-        *,
-        mode: Literal["transition", "density"] = "density",
-    ) -> NDArray[np.float64]:
-        """Apply diffusion kernel smoothing to a field.
-
-        This method smooths bin-valued fields using diffusion kernels computed
-        via the graph Laplacian. It works uniformly across all layout types
-        (grids, graphs, meshes) and respects the connectivity structure.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values per bin to smooth. Must be a 1-D array with length
-            equal to n_bins.
-        bandwidth : float
-            Smoothing bandwidth in physical units (σ). Controls the scale
-            of spatial smoothing. Must be positive.
-        mode : {'transition', 'density'}, default='density'
-            Smoothing mode that controls normalization:
-
-            - 'transition': Mass-conserving smoothing. Total sum is preserved:
-              smoothed.sum() = field.sum(). Use for count data (occupancy,
-              spike counts).
-            - 'density': Volume-corrected smoothing. Accounts for varying bin
-              sizes. Use for continuous density fields (rate maps,
-              probability distributions).
-
-        Returns
-        -------
-        smoothed : NDArray[np.float64], shape (n_bins,)
-            Smoothed field values.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If field has wrong shape, wrong dimensionality, bandwidth is not
-            positive, or mode is invalid.
-
-        See Also
-        --------
-        compute_kernel : Compute the smoothing kernel explicitly.
-        occupancy : Compute occupancy with optional smoothing.
-
-        Notes
-        -----
-        The smoothing operation is:
-
-        .. math::
-            \\text{smoothed} = K \\cdot \\text{field}
-
-        where :math:`K` is the diffusion kernel computed via matrix exponential
-        of the graph Laplacian.
-
-        For mode='transition', mass is conserved:
-
-        .. math::
-            \\sum_i \\text{smoothed}_i = \\sum_i \\text{field}_i
-
-        For mode='density', the kernel accounts for bin volumes, making it
-        appropriate for continuous density fields.
-
-        The kernel is cached automatically, so repeated smoothing operations
-        with the same bandwidth and mode are efficient.
-
-        Edge preservation: Smoothing respects graph connectivity. Mass does
-        not leak between disconnected components.
-
-        Examples
-        --------
-        >>> # Smooth spike counts (mass-conserving)
-        >>> smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
-        >>> # Total spikes preserved
-        >>> assert np.isclose(smoothed_counts.sum(), spike_counts.sum())
-
-        >>> # Smooth a rate map (volume-corrected)
-        >>> smoothed_rates = env.smooth(rate_map, bandwidth=3.0, mode="density")
-
-        >>> # Smooth a probability distribution
-        >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
-
-        """
-        # Input validation
-        field = np.asarray(field, dtype=np.float64)
-
-        # Check field dimensionality
-        if field.ndim != 1:
-            raise ValueError(
-                f"Field must be 1-D array (got {field.ndim}-D array). "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got shape {field.shape}."
-            )
-
-        # Check field shape matches n_bins
-        if field.shape[0] != self.n_bins:
-            raise ValueError(
-                f"Field shape {field.shape} must match n_bins={self.n_bins}. "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got ({field.shape[0]},)."
-            )
-
-        # Check for NaN/Inf values
-        if np.any(np.isnan(field)):
-            raise ValueError(
-                "Field contains NaN values. "
-                f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
-                "NaN values are not supported in smoothing operations."
-            )
-
-        if np.any(np.isinf(field)):
-            raise ValueError(
-                "Field contains infinite values. "
-                f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
-                "Infinite values are not supported in smoothing operations."
-            )
-
-        # Validate bandwidth
-        if bandwidth <= 0:
-            raise ValueError(
-                f"bandwidth must be positive (got {bandwidth}). "
-                "Bandwidth controls the spatial scale of smoothing."
-            )
-
-        # Validate mode
-        valid_modes = {"transition", "density"}
-        if mode not in valid_modes:
-            raise ValueError(
-                f"mode must be one of {valid_modes} (got '{mode}'). "
-                "Use 'transition' for mass-conserving smoothing or 'density' "
-                "for volume-corrected smoothing."
-            )
-
-        # Compute kernel (uses cache automatically)
-        kernel = self.compute_kernel(bandwidth, mode=mode, cache=True)
-
-        # Apply smoothing
-        smoothed: NDArray[np.float64] = kernel @ field
-
-        return smoothed
-
-    def interpolate(
-        self,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-        *,
-        mode: Literal["nearest", "linear"] = "nearest",
-    ) -> NDArray[np.float64]:
-        """Interpolate field values at arbitrary points.
-
-        Evaluates bin-valued fields at continuous query points using either
-        nearest-neighbor or linear interpolation. Nearest mode works on all
-        layout types; linear mode requires regular grid layouts.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values per bin. Must be a 1-D array with length equal to n_bins.
-            Must not contain NaN or Inf values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points in environment coordinates. Must be a 2-D array where
-            each row is a point with dimensionality matching the environment.
-        mode : {'nearest', 'linear'}, default='nearest'
-            Interpolation mode:
-
-            - 'nearest': Use value of nearest bin center (all layouts).
-              Points outside environment bounds return NaN.
-            - 'linear': Bilinear (2D) or trilinear (3D) interpolation for
-              regular grids. Only supported for RegularGridLayout.
-              Points outside grid bounds return NaN.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated field values. Points outside environment → NaN.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        ValueError
-            If field has wrong shape, wrong dimensionality, contains NaN/Inf,
-            points have wrong dimensionality, mode is invalid, or dimensions
-            don't match.
-        NotImplementedError
-            If mode='linear' is requested for non-grid layout.
-
-        See Also
-        --------
-        smooth : Apply diffusion kernel smoothing to fields.
-        occupancy : Compute occupancy with optional smoothing.
-
-        Notes
-        -----
-        **Nearest-neighbor mode**: Uses KDTree to find closest bin center.
-        Deterministic and works on all layout types. Points farther than a
-        reasonable threshold from any bin center are marked as outside (NaN).
-
-        **Linear mode**: Uses scipy.interpolate.RegularGridInterpolator for
-        smooth interpolation on rectangular grids. For linear functions
-        f(x,y) = ax + by + c, interpolation is exact up to numerical precision.
-
-        **Outside handling**: Points outside the environment bounds return NaN
-        in both modes. This prevents extrapolation errors.
-
-        Examples
-        --------
-        >>> # Nearest-neighbor interpolation (all layouts)
-        >>> field = np.random.rand(env.n_bins)
-        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])
-        >>> values = env.interpolate(field, query_points, mode="nearest")
-
-        >>> # Linear interpolation (grids only)
-        >>> # For plane f(x,y) = 2x + 3y, interpolation is exact
-        >>> plane_field = 2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
-        >>> values = env.interpolate(plane_field, query_points, mode="linear")
-
-        >>> # Evaluate rate map at trajectory positions
-        >>> rates_at_trajectory = env.interpolate(rate_map, positions, mode="linear")
-
-        """
-        # Input validation - field
-        field = np.asarray(field, dtype=np.float64)
-
-        # Check field dimensionality
-        if field.ndim != 1:
-            raise ValueError(
-                f"Field must be 1-D array (got {field.ndim}-D array). "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got shape {field.shape}."
-            )
-
-        # Check field shape matches n_bins
-        if field.shape[0] != self.n_bins:
-            raise ValueError(
-                f"Field shape {field.shape} must match n_bins={self.n_bins}. "
-                f"Expected shape (n_bins,) = ({self.n_bins},), got ({field.shape[0]},)."
-            )
-
-        # Check for NaN/Inf values in field
-        if np.any(np.isnan(field)):
-            raise ValueError(
-                "Field contains NaN values. "
-                f"Found {np.sum(np.isnan(field))} NaN values out of {len(field)} bins. "
-                "NaN values are not supported in interpolation operations."
-            )
-
-        if np.any(np.isinf(field)):
-            raise ValueError(
-                "Field contains infinite values. "
-                f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
-                "Infinite values are not supported in interpolation operations."
-            )
-
-        # Input validation - points
-        points = np.asarray(points, dtype=np.float64)
-
-        # Check points dimensionality
-        if points.ndim != 2:
-            raise ValueError(
-                f"Points must be 2-D array (got {points.ndim}-D array). "
-                f"Expected shape (n_points, n_dims), got shape {points.shape}."
-            )
-
-        # Check points dimension matches environment
-        n_dims = self.bin_centers.shape[1]
-        if points.shape[1] != n_dims:
-            raise ValueError(
-                f"Points dimension {points.shape[1]} must match environment "
-                f"dimension {n_dims}. Expected shape (n_points, {n_dims}), "
-                f"got shape {points.shape}."
-            )
-
-        # Check for NaN/Inf values in points
-        if np.any(~np.isfinite(points)):
-            n_invalid = np.sum(~np.isfinite(points))
-            raise ValueError(
-                f"Points array contains {n_invalid} non-finite value(s) (NaN or Inf). "
-                f"All point coordinates must be finite. Check your input data for "
-                f"missing values or infinities."
-            )
-
-        # Validate mode
-        valid_modes = {"nearest", "linear"}
-        if mode not in valid_modes:
-            raise ValueError(
-                f"mode must be one of {valid_modes} (got '{mode}'). "
-                "Use 'nearest' for nearest-neighbor interpolation or 'linear' "
-                "for bilinear/trilinear interpolation (grids only)."
-            )
-
-        # Handle empty points array
-        if points.shape[0] == 0:
-            return np.array([], dtype=np.float64)
-
-        # Dispatch based on mode
-        if mode == "nearest":
-            return self._interpolate_nearest(field, points)
-        else:  # mode == "linear"
-            return self._interpolate_linear(field, points)
-
     def occupancy(
-        self,
+        self: EnvironmentProtocol,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1021,8 +249,9 @@ class EnvironmentAnalysis:
             return np.zeros(self.n_bins, dtype=np.float64)
 
         # Map positions to bin indices
-        bin_indices: NDArray[np.int64] = map_points_to_bins(  # type: ignore[assignment]
-            positions, self, tie_break="lowest_index"
+        bin_indices = cast(
+            "NDArray[np.int64]",
+            map_points_to_bins(positions, self, tie_break="lowest_index"),
         )
 
         # Compute time intervals
@@ -1077,7 +306,7 @@ class EnvironmentAnalysis:
         return occupancy
 
     def bin_sequence(
-        self,
+        self: EnvironmentProtocol,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1308,7 +537,7 @@ class EnvironmentAnalysis:
         return deduplicated_bins, run_starts, run_ends
 
     def transitions(
-        self,
+        self: EnvironmentProtocol,
         bins: NDArray[np.int32] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
@@ -1490,7 +719,7 @@ class EnvironmentAnalysis:
             )
 
     def _empirical_transitions(
-        self,
+        self: EnvironmentProtocol,
         bins: NDArray[np.int32] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
@@ -1706,7 +935,7 @@ class EnvironmentAnalysis:
         return transition_matrix
 
     def _random_walk_transitions(
-        self,
+        self: EnvironmentProtocol,
         *,
         normalize: bool = True,
     ) -> scipy.sparse.csr_matrix:
@@ -1739,7 +968,7 @@ class EnvironmentAnalysis:
         return transition_matrix
 
     def _diffusion_transitions(
-        self,
+        self: EnvironmentProtocol,
         bandwidth: float,
         *,
         normalize: bool = True,
@@ -1768,129 +997,8 @@ class EnvironmentAnalysis:
 
         return kernel
 
-    def _interpolate_nearest(
-        self,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Nearest-neighbor interpolation using KDTree.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated values (NaN for points outside).
-
-        """
-        from typing import cast
-
-        from neurospatial.spatial import map_points_to_bins
-
-        # Map points to bins (-1 for outside points)
-        # With return_dist=False, we get just the indices (not a tuple)
-        bin_indices = cast(
-            "NDArray[np.int64]",
-            map_points_to_bins(
-                points, self, tie_break="lowest_index", return_dist=False
-            ),
-        )
-
-        # Initialize result with NaN
-        result = np.full(points.shape[0], np.nan, dtype=np.float64)
-
-        # Fill in values for points inside environment
-        inside_mask = bin_indices >= 0
-        result[inside_mask] = field[bin_indices[inside_mask]]
-
-        return result
-
-    def _interpolate_linear(
-        self,
-        field: NDArray[np.float64],
-        points: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
-        """Linear interpolation using scipy RegularGridInterpolator.
-
-        Parameters
-        ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            Query points.
-
-        Returns
-        -------
-        values : NDArray[np.float64], shape (n_points,)
-            Interpolated values (NaN for points outside).
-
-        Raises
-        ------
-        NotImplementedError
-            If layout is not RegularGridLayout.
-
-        """
-        # Check layout type - must be RegularGridLayout, not masked/polygon layouts
-        # Use _layout_type_tag to avoid mypy Protocol isinstance issues
-        if self.layout._layout_type_tag != "RegularGrid":
-            raise NotImplementedError(
-                f"Linear interpolation (mode='linear') is only supported for "
-                f"RegularGridLayout. Current layout type: {type(self.layout).__name__}. "
-                f"Use mode='nearest' for non-grid layouts, or create a regular grid "
-                f"environment with Environment.from_samples()."
-            )
-
-        # Import scipy
-        try:
-            from scipy.interpolate import RegularGridInterpolator
-        except ImportError as e:
-            raise ImportError(
-                "Linear interpolation requires scipy. Install with: pip install scipy"
-            ) from e
-
-        # Get grid properties (we know layout has these from the check above)
-        # Cast to Any to work around mypy Protocol limitation
-        from typing import cast
-
-        layout_any = cast("Any", self.layout)
-        grid_shape: tuple[int, ...] = layout_any.grid_shape
-        grid_edges: tuple[NDArray[np.float64], ...] = layout_any.grid_edges
-        n_dims = len(grid_shape)
-
-        # Reshape field to grid
-        # Note: RegularGridLayout stores bin_centers in row-major order
-        field_grid = field.reshape(grid_shape)
-
-        # Create grid points for each dimension (bin centers)
-        grid_points: list[NDArray[np.float64]] = []
-        for dim in range(n_dims):
-            edges = grid_edges[dim]
-            # Bin centers are midpoints between edges
-            centers = (edges[:-1] + edges[1:]) / 2
-            grid_points.append(centers)
-
-        # Create interpolator
-        # bounds_error=False, fill_value=np.nan → outside points return NaN
-        interpolator = RegularGridInterpolator(
-            grid_points,
-            field_grid,
-            method="linear",
-            bounds_error=False,
-            fill_value=np.nan,
-        )
-
-        # Evaluate at query points
-        result: NDArray[np.float64] = interpolator(points)
-
-        return result
-
     def _allocate_time_linear(
-        self,
+        self: EnvironmentProtocol,
         positions: NDArray[np.float64],
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
@@ -1922,7 +1030,7 @@ class EnvironmentAnalysis:
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
         # Ensure we have RegularGridLayout (already validated in occupancy())
-        layout: RegularGridLayout = self.layout  # type: ignore[assignment]
+        layout = cast("RegularGridLayout", self.layout)
 
         # Get grid structure
         grid_edges = layout.grid_edges
@@ -1963,7 +1071,7 @@ class EnvironmentAnalysis:
         return occupancy
 
     def _compute_ray_grid_intersections(
-        self,
+        self: EnvironmentProtocol,
         start_pos: NDArray[np.float64],
         end_pos: NDArray[np.float64],
         grid_edges: list[NDArray[np.float64]],
@@ -2055,7 +1163,7 @@ class EnvironmentAnalysis:
         return bin_times
 
     def _position_to_flat_index(
-        self,
+        self: EnvironmentProtocol,
         pos: NDArray[np.float64],
         grid_edges: list[NDArray[np.float64]],
         grid_shape: tuple[int, ...],

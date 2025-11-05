@@ -16,6 +16,8 @@ forward references.
 
 """
 
+from __future__ import annotations
+
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -25,7 +27,7 @@ import matplotlib.axes
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class EnvironmentVisualization:
@@ -60,7 +62,7 @@ class EnvironmentVisualization:
 
     @check_fitted
     def plot(
-        self: "Environment",
+        self: EnvironmentProtocol,
         ax: matplotlib.axes.Axes | None = None,
         show_regions: bool = False,
         layout_plot_kwargs: dict[str, Any] | None = None,
@@ -143,7 +145,7 @@ class EnvironmentVisualization:
         return ax
 
     def plot_1d(
-        self: "Environment",
+        self: EnvironmentProtocol,
         ax: matplotlib.axes.Axes | None = None,
         layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
