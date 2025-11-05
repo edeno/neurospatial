@@ -274,7 +274,7 @@ class TestNeighborsErrorPaths:
         valid_node = 0
         neighbors = env.neighbors(valid_node)
 
-        assert isinstance(neighbors, tuple)
+        assert isinstance(neighbors, list)
         # For regular grids, nodes typically have neighbors
 
 

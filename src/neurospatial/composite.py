@@ -483,7 +483,7 @@ class CompositeEnvironment:
         """
         return np.asarray(self.bin_at(points_nd) != -1, dtype=np.bool_)
 
-    def neighbors(self, bin_index: int) -> tuple[int, ...]:
+    def neighbors(self, bin_index: int) -> list[int]:
         """Get neighboring bins in the merged connectivity graph.
 
         Parameters
@@ -493,16 +493,16 @@ class CompositeEnvironment:
 
         Returns
         -------
-        tuple[int, ...]
-            Tuple of composite bin indices that are neighbors of bin_index.
-            Immutable snapshot of neighbor relationships.
+        list[int]
+            List of composite bin indices that are neighbors of bin_index.
+            Can be used directly for array indexing.
 
         """
         if not (0 <= bin_index < self._total_bins):
             raise KeyError(
                 f"Bin index {bin_index} is out of range [0..{self._total_bins - 1}]",
             )
-        return tuple(self.connectivity.neighbors(bin_index))
+        return list(self.connectivity.neighbors(bin_index))
 
     def distance_between(
         self,
