@@ -252,38 +252,92 @@ ds_interp = filtering.interpolate_missing_data(
 **Define and analyze spatial regions**:
 
 ```python
-from movement import roi
+from movement.roi import Polygon, Line
 
 # Define ROI (polygon)
-goal_region = roi.define_polygon(
+goal_region = Polygon(
     vertices=[[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
 )
 
-# Check if keypoints are in ROI
-in_goal = roi.is_in_region(ds, region=goal_region, keypoint="centroid")
-# Returns: boolean array (time,)
+# Check if points are in ROI
+in_goal = goal_region.contains_point(ds.position)
+# Returns: boolean xarray
 
-# Time spent in ROI
-time_in_goal = roi.time_in_region(ds, region=goal_region)
+# Distance to ROI
+distance = goal_region.compute_distance_to(ds.position)
+
+# Angle to ROI (allocentric - fixed reference)
+angle = goal_region.compute_allocentric_angle_to_nearest_point(
+    ds.position,
+    reference_point=[0, 0],
+)
+
+# Angle to ROI (egocentric - based on heading)
+ego_angle = goal_region.compute_egocentric_angle_to_nearest_point(
+    ds.position,
+    heading_vector=velocity,
+)
 ```
+
+**Geometric queries**:
+- `contains_point()` - Check if position in region
+- `compute_distance_to()` - Euclidean distance to region
+- `compute_nearest_point_to()` - Closest point on region boundary
+- `compute_approach_vector()` - Vector pointing toward region
+
+**Limitations**:
+- ❌ No time-in-region calculation
+- ❌ No entry/exit detection
+- ❌ No region crossing events
+- ⚠️ Geometric queries only (no temporal analysis)
 
 ---
 
 ### 3.5 Visualization (plots/)
 
-**Plotting functions**:
+**Occupancy plotting** ⭐:
 
 ```python
-from movement import plots
+from movement.plots import plot_occupancy
 
-# Plot trajectory
-plots.plot_trajectory(ds, keypoint="nose", show=True)
+# Plot 2D occupancy heatmap
+fig, ax, hist_info = plot_occupancy(
+    ds.position,
+    individuals="mouse1",
+    keypoints="centroid",
+    bins=50,  # Passed to matplotlib hist2d
+    cmap='hot',
+)
 
-# Heatmap (occupancy)
-plots.plot_heatmap(ds, keypoint="centroid", bins=50)
+# Returns:
+# - fig, ax: matplotlib objects
+# - hist_info: dict with 'counts', 'x_edges', 'y_edges'
+```
 
-# Velocity over time
-plots.plot_velocity_timeseries(ds, keypoint="nose")
+**How it works**:
+- Wraps `matplotlib.pyplot.hist2d()`
+- Computes 2D histogram of position data
+- Supports filtering by individuals/keypoints
+- Auto-computes centroid if multiple keypoints
+- Removes NaN values automatically
+
+**Limitations**:
+- ⚠️ **Visualization only** - Returns plot, not occupancy data
+- ⚠️ **No occupancy array** - Can't reuse for analysis
+- ⚠️ **No normalization** - Raw counts, not time-normalized
+- ⚠️ **Fixed bins** - Uses matplotlib's binning (no custom edges)
+
+**Trajectory plotting**:
+
+```python
+from movement.plots import plot_trajectory
+
+# Plot trajectory path
+fig, ax = plot_trajectory(
+    ds.position,
+    individuals="mouse1",
+    keypoints="nose",
+)
 ```
 
 **napari integration** (GUI):
@@ -336,9 +390,10 @@ low_confidence = validators.check_confidence_threshold(
 | **Place fields** | ❌ | ✅ Planned |
 | **Grid cells** | ❌ | ✅ Planned |
 | **Behavioral segmentation** | ⚠️ Basic ROI | ✅ Advanced (runs, laps, trials) |
+| **Occupancy** | ⚠️ Plot only (hist2d) | ✅ Data + normalization |
 | **File format support** | ✅ DLC, SLEAP, LP, etc. | ❌ (assumes clean data) |
 | **Filtering/smoothing** | ✅ Extensive | ⚠️ Basic |
-| **Visualization** | ✅ napari GUI | ⚠️ matplotlib |
+| **Visualization** | ✅ napari GUI + occupancy | ⚠️ matplotlib |
 
 ---
 
@@ -453,11 +508,12 @@ for run in runs:
 1. **Comprehensive file format support** - DLC, SLEAP, LightningPose, Anipose, NWB
 2. **Data cleaning pipeline** - Filtering, smoothing, interpolation
 3. **Kinematic analysis** - Velocity, acceleration, speed, path length
-4. **Multi-view tracking** - Merge data from multiple cameras
-5. **xarray data structure** - Labeled N-D arrays with metadata
-6. **napari GUI** - Interactive visualization
-7. **Active development** - Modern Python package, well-maintained
-8. **Standardized interface** - Consistent API across tracking tools
+4. **Occupancy visualization** - 2D heatmap plotting (matplotlib hist2d wrapper)
+5. **Multi-view tracking** - Merge data from multiple cameras
+6. **xarray data structure** - Labeled N-D arrays with metadata
+7. **napari GUI** - Interactive visualization
+8. **Active development** - Modern Python package, well-maintained
+9. **Standardized interface** - Consistent API across tracking tools
 
 ### Example Use Cases
 
@@ -481,23 +537,27 @@ for run in runs:
 2. ❌ **No environment abstraction** - No graph, no bins, no connectivity
 3. ❌ **No spatial metrics** - No Skaggs info, grid score, place fields
 4. ❌ **No graph operations** - No neighbors, paths, distances on graphs
-5. ❌ **Basic ROI only** - Simple polygon checks, no sophisticated segmentation
+5. ❌ **Occupancy for visualization only** - Returns plot, not occupancy data
+   - Cannot compute firing rate (spikes/occupancy)
+   - No time-normalized occupancy
+   - No occupancy as reusable array
+6. ❌ **Basic ROI only** - Geometric queries, no temporal analysis (time in region, entry/exit events)
 
 **Behavioral analysis**:
-6. ❌ **No lap detection** - Can't automatically find laps/trials
-7. ❌ **No run segmentation** - Can't detect runs between regions
-8. ❌ **No trial labeling** - Can't identify T-maze left/right trials
-9. ❌ **No trajectory similarity** - Can't compare trajectory segments
+7. ❌ **No lap detection** - Can't automatically find laps/trials
+8. ❌ **No run segmentation** - Can't detect runs between regions
+9. ❌ **No trial labeling** - Can't identify T-maze left/right trials
+10. ❌ **No trajectory similarity** - Can't compare trajectory segments
 
 **Neural analysis**:
-10. ❌ **No spike train integration** - Assumes tracking only
-11. ❌ **No place field detection**
-12. ❌ **No replay analysis**
-13. ❌ **No decoding**
+11. ❌ **No spike train integration** - Assumes tracking only
+12. ❌ **No place field detection**
+13. ❌ **No replay analysis**
+14. ❌ **No decoding**
 
 **Platform limitations**:
-14. ❌ **Irregular graphs not supported** - Assumes 2D/3D continuous space
-15. ❌ **No track linearization** - Can't map complex mazes to 1D
+15. ❌ **Irregular graphs not supported** - Assumes 2D/3D continuous space
+16. ❌ **No track linearization** - Can't map complex mazes to 1D
 
 ---
 
