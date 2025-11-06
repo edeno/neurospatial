@@ -4,10 +4,10 @@
 
 This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 14 weeks (3.5 months) - UPDATED after opexebo analysis
+**Timeline**: 15 weeks (3.75 months) - UPDATED after neurocode analysis
 **Priority**: HIGH - Enables analyses not possible in any other package
 **Breaking Changes**: Minimal (one function rename required)
-**Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014)
+**Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
 
 ### What This Enables
 
@@ -695,8 +695,14 @@ def detect_place_fields(
     *,
     threshold: float = 0.2,
     min_size: float | None = None,
+    detect_subfields: bool = True,
 ) -> list[NDArray[np.int64]]:
-    """Detect place fields as connected components above threshold."""
+    """
+    Detect place fields as connected components above threshold.
+
+    Implements iterative peak-based detection with optional coalescent
+    subfield discrimination (neurocode approach).
+    """
 
 def field_size(field_bins: NDArray, env: Environment) -> float:
     """Compute place field area in physical units."""
@@ -878,7 +884,207 @@ def coherence(
 
 ---
 
-#### 4.4 Documentation (Week 14)
+#### 4.4 Circular Statistics (Week 15) - NEW from neurocode
+
+**File**: `src/neurospatial/metrics/circular.py`
+
+**Motivation**: neurocode provides von Mises fitting and circular statistics for 1D circular tracks (e.g., circular mazes). This is important for:
+- Head direction cells
+- Circular track place fields
+- Angular tuning curves
+
+**Functions**:
+```python
+def circular_mean(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute circular mean angle.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle (e.g., occupancy)
+
+    Returns
+    -------
+    mean_angle : float
+        Circular mean in radians [-π, π]
+    """
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    # Compute mean resultant vector
+    C = np.sum(weights * np.cos(angles))
+    S = np.sum(weights * np.sin(angles))
+
+    return np.arctan2(S, C)
+
+def circular_variance(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute circular variance (1 - r).
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    variance : float
+        Circular variance [0, 1]
+    """
+    r = resultant_vector_length(angles, weights)
+    return 1 - r
+
+def resultant_vector_length(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute mean resultant length (concentration measure).
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    r : float
+        Mean resultant length [0, 1]
+        - r ≈ 0: Uniform distribution
+        - r ≈ 1: Highly concentrated
+    """
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    C = np.sum(weights * np.cos(angles))
+    S = np.sum(weights * np.sin(angles))
+    R = np.sqrt(C**2 + S**2)
+
+    return R / np.sum(weights)
+
+def fit_von_mises(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> tuple[float, float]:
+    """
+    Fit von Mises distribution to circular data.
+
+    The von Mises distribution is the circular analog of the Gaussian.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    mu : float
+        Mean direction (radians)
+    kappa : float
+        Concentration parameter
+        - kappa ≈ 0: Uniform distribution
+        - kappa >> 1: Highly concentrated
+
+    References
+    ----------
+    .. [1] neurocode MapStats.m (circular statistics)
+    .. [2] Fisher (1993). Statistical Analysis of Circular Data.
+
+    Examples
+    --------
+    >>> # Head direction cell
+    >>> angles = np.linspace(0, 2*np.pi, 100)
+    >>> firing_rate = np.exp(kappa * np.cos(angles - preferred_direction))
+    >>> mu, kappa = fit_von_mises(angles, weights=firing_rate)
+    """
+    # Circular mean
+    mu = circular_mean(angles, weights)
+
+    # Mean resultant length
+    r = resultant_vector_length(angles, weights)
+
+    # Estimate kappa from r (approximate MLE)
+    # For small r: kappa ≈ 2*r
+    # For large r: kappa ≈ 1 / (1 - r)
+    if r < 0.53:
+        kappa = 2 * r + r**3 + 5 * r**5 / 6
+    elif r < 0.85:
+        kappa = -0.4 + 1.39 * r + 0.43 / (1 - r)
+    else:
+        kappa = 1 / (2 * (1 - r))
+
+    return mu, kappa
+
+def rayleigh_test(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> tuple[float, float]:
+    """
+    Rayleigh test for uniformity of circular data.
+
+    Tests null hypothesis: angles are uniformly distributed.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    z : float
+        Rayleigh Z statistic
+    p_value : float
+        P-value for uniformity test
+
+    Notes
+    -----
+    Small p-value (< 0.05) indicates non-uniform distribution
+    (e.g., significant head direction tuning).
+    """
+    n = len(angles)
+    r = resultant_vector_length(angles, weights)
+
+    # Rayleigh Z statistic
+    z = n * r**2
+
+    # Approximate p-value (valid for n > 10)
+    p_value = np.exp(-z) * (1 + (2*z - z**2) / (4*n) -
+                             (24*z - 132*z**2 + 76*z**3 - 9*z**4) / (288*n**2))
+
+    return z, p_value
+```
+
+**Tests**: Comprehensive unit tests for each function
+**Effort**: 3 days
+**Risk**: Low (well-established circular statistics)
+**Blockers**: None
+
+**Key insights from neurocode**:
+- ✅ Circular statistics essential for head direction cells
+- ✅ Von Mises is circular analog of Gaussian
+- ✅ Concentration parameter κ measures tuning sharpness
+- ✅ Rayleigh test for significance testing
+
+---
+
+#### 4.5 Documentation (Week 15)
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
@@ -886,24 +1092,28 @@ def coherence(
 
 **Example notebook**: `examples/11_grid_cell_detection.ipynb`
 
+**Example notebook**: `examples/12_head_direction_analysis.ipynb` - NEW
+
 **Effort**: 3 days
 
 ---
 
-## Phase 5: Polish & Release (Weeks 13-14)
+## Phase 5: Polish & Release (Weeks 13-15)
 
 **UPDATED**: Overlaps with Phase 4 (reduced timeline)
 
 ### Components
 
-#### 5.1 Validation Against opexebo (NEW)
+#### 5.1 Validation Against opexebo and neurocode (UPDATED)
 - Test grid score matches opexebo within 1%
-- Test coherence matches exactly
-- Test spatial information matches exactly
-- Test autocorrelation matches exactly
+- Test coherence matches exactly (opexebo)
+- Test spatial information matches exactly (opexebo, neurocode, buzcode)
+- Test autocorrelation matches exactly (opexebo)
+- Test circular statistics match neurocode (von Mises fitting)
+- Test place field detection matches neurocode's subfield discrimination
 - Document any intentional differences
 
-**Effort**: 2 days
+**Effort**: 3 days (increased from 2 to include neurocode validation)
 
 #### 5.2 Performance Optimization
 - Profile critical paths
@@ -1216,9 +1426,9 @@ This implementation plan delivers **critical missing functionality** that:
 3. **Reduces code duplication** across labs with standard metrics
 4. **Maintains backward compatibility** except one well-managed breaking change
 
-**Timeline**: 12-16 weeks
-**Risk**: Manageable (one high-risk component with mitigation strategy)
-**Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience
+**Timeline**: 15 weeks (updated after neurocode analysis)
+**Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo and neurocode)
+**Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience on irregular graphs
 
 **Critical decision needed**: Approve breaking change (divergence rename) and migration strategy.
 
