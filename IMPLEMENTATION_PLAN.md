@@ -695,13 +695,39 @@ def detect_place_fields(
     *,
     threshold: float = 0.2,
     min_size: float | None = None,
+    max_mean_rate: float | None = 10.0,
     detect_subfields: bool = True,
 ) -> list[NDArray[np.int64]]:
     """
     Detect place fields as connected components above threshold.
 
     Implements iterative peak-based detection with optional coalescent
-    subfield discrimination (neurocode approach).
+    subfield discrimination (neurocode approach) and interneuron exclusion
+    (vandermeerlab approach).
+
+    Parameters
+    ----------
+    firing_rate : array
+        Firing rate map
+    env : Environment
+        Spatial environment
+    threshold : float, default=0.2
+        Fraction of peak rate for field boundary (20%)
+    min_size : float, optional
+        Minimum field size in physical units
+    max_mean_rate : float, optional
+        Maximum mean firing rate (Hz) for interneuron exclusion.
+        Cells exceeding this are excluded as likely interneurons.
+        Default 10 Hz (vandermeerlab). Set to None to disable.
+    detect_subfields : bool, default=True
+        Apply recursive threshold to detect coalescent subfields
+
+    Notes
+    -----
+    Interneuron exclusion from vandermeerlab:
+    - Pyramidal cells (place cells): 0.5-5 Hz mean rate
+    - Interneurons: 10-50 Hz mean rate
+    - Default threshold (10 Hz) excludes high-firing cells
     """
 
 def field_size(field_bins: NDArray, env: Environment) -> float:
