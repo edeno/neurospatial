@@ -1114,13 +1114,45 @@ def rayleigh_test(
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
-**Example notebook**: `examples/10_place_field_analysis.ipynb`
+**Example notebooks**:
+- `examples/10_place_field_analysis.ipynb` - Place field detection and metrics
+- `examples/11_grid_cell_detection.ipynb` - Grid score and spatial autocorrelation
+- `examples/12_head_direction_analysis.ipynb` - Circular statistics (NEW from neurocode)
+- `examples/13_ratinabox_integration.ipynb` - Simulation + analysis workflow (NEW from RatInABox)
 
-**Example notebook**: `examples/11_grid_cell_detection.ipynb`
+**RatInABox integration example** (NEW):
+```python
+# examples/13_ratinabox_integration.ipynb
 
-**Example notebook**: `examples/12_head_direction_analysis.ipynb` - NEW
+# 1. Generate synthetic data with RatInABox
+from ratinabox import Environment, Agent
+from ratinabox.Neurons import PlaceCells, GridCells
 
-**Effort**: 3 days
+Env = Environment(params={'scale': 1.0})
+Ag = Agent(Env)
+# ... simulate 5 minutes ...
+
+PCs = PlaceCells(Ag, params={'n': 50})
+GCs = GridCells(Ag, params={'n': 20, 'gridscale': 0.3})
+
+# 2. Discretize with neurospatial
+from neurospatial import Environment as NSEnv
+
+env = NSEnv.from_samples(Ag.history['pos'], bin_size=0.05)
+
+# 3. Analyze with neurospatial metrics
+from neurospatial.metrics import grid_score, detect_place_fields
+
+# Compute grid score
+score = grid_score(GCs.history['firingrate'], env)
+
+# 4. Validate against ground truth
+true_spacing = 0.3  # Known from simulation!
+estimated_spacing = estimate_grid_spacing(autocorr)
+print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
+```
+
+**Effort**: 4 days (increased from 3 to include RatInABox integration)
 
 ---
 
@@ -1130,7 +1162,9 @@ def rayleigh_test(
 
 ### Components
 
-#### 5.1 Validation Against opexebo and neurocode (UPDATED)
+#### 5.1 Validation Against opexebo, neurocode, and RatInABox (UPDATED)
+
+**Validation against analysis packages** (opexebo, neurocode):
 - Test grid score matches opexebo within 1%
 - Test coherence matches exactly (opexebo)
 - Test spatial information matches exactly (opexebo, neurocode, buzcode)
@@ -1139,7 +1173,30 @@ def rayleigh_test(
 - Test place field detection matches neurocode's subfield discrimination
 - Document any intentional differences
 
-**Effort**: 3 days (increased from 2 to include neurocode validation)
+**NEW: Validation against simulation package** (RatInABox):
+- Test grid score on RatInABox GridCells with known grid spacing
+  - Generate GridCells with gridscale=0.3m
+  - Compute spatial autocorrelation
+  - Estimate grid spacing from autocorr
+  - Error should be < 5% of true spacing
+- Test place field detection on RatInABox PlaceCells with known field centers
+  - Generate PlaceCells with known centers
+  - Detect fields from discretized firing rates
+  - Detection error should be < 1 bin
+- Test spatial autocorrelation accuracy
+  - Compare discretized autocorr vs RatInABox continuous
+  - Correlation should be > 0.95
+- Benchmark successor representation
+  - Compare analytical SR vs RatInABox TD-learned SR
+  - Document convergence properties
+
+**Why RatInABox validation is valuable**:
+- ✅ Known ground truth (grid spacing, field centers)
+- ✅ Biologically-realistic synthetic data
+- ✅ Test edge cases (periodic boundaries, walls, holes)
+- ✅ Benchmark performance (continuous vs discretized)
+
+**Effort**: 4 days (increased from 3 to include RatInABox validation)
 
 #### 5.2 Performance Optimization
 - Profile critical paths
@@ -1453,8 +1510,13 @@ This implementation plan delivers **critical missing functionality** that:
 4. **Maintains backward compatibility** except one well-managed breaking change
 
 **Timeline**: 15 weeks (updated after neurocode analysis)
-**Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo and neurocode)
+**Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo, neurocode, and RatInABox)
 **Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience on irregular graphs
+
+**Validation strategy** (NEW after RatInABox analysis):
+- ✅ Cross-validate against analysis packages (opexebo, neurocode, vandermeerlab, buzcode)
+- ✅ Validate against simulation package (RatInABox - known ground truth)
+- ✅ Integration example showing simulation → discretization → analysis workflow
 
 **Critical decision needed**: Approve breaking change (divergence rename) and migration strategy.
 
