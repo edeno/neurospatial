@@ -4,7 +4,7 @@
 
 This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 16 weeks (4 months) - UPDATED after behavioral segmentation addition
+**Timeline**: 17 weeks (4.25 months) - UPDATED after trajectory metrics addition
 **Priority**: HIGH - Enables analyses not possible in any other package
 **Breaking Changes**: Minimal (one function rename required)
 **Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
@@ -1523,7 +1523,270 @@ def rayleigh_test(
 
 ---
 
-#### 4.6 Documentation (Week 15)
+#### 4.6 Trajectory Metrics (Week 15) - NEW from Ecology Packages
+
+**File**: `src/neurospatial/metrics/trajectory.py`
+
+**Motivation**: Animal movement ecology packages (Traja, yupi, adehabitatHR) provide trajectory characterization metrics that are broadly applicable to neuroscience. These metrics quantify movement patterns and spatial usage.
+
+**Functions**:
+```python
+def compute_turn_angles(
+    trajectory_bins: NDArray[np.int64],
+    env: Environment,
+) -> NDArray[np.float64]:
+    """
+    Compute turn angles between consecutive trajectory segments.
+
+    For each triplet of bins (i, j, k), computes the angle between
+    vectors (i→j) and (j→k).
+
+    Parameters
+    ----------
+    trajectory_bins : array, shape (n_timepoints,)
+        Sequence of bin indices
+    env : Environment
+        Spatial environment
+
+    Returns
+    -------
+    turn_angles : array, shape (n_timepoints - 2,)
+        Turn angles in radians [0, π]
+        - 0: Straight ahead
+        - π/2: 90° turn
+        - π: 180° reversal
+
+    Examples
+    --------
+    >>> # Characterize exploration behavior
+    >>> angles = compute_turn_angles(trajectory_bins, env)
+    >>> mean_turn = np.mean(angles)
+    >>> if mean_turn > np.pi/2:
+    ...     print("Highly tortuous path (high exploration)")
+
+    Notes
+    -----
+    For bin centers p1, p2, p3:
+    - v1 = p2 - p1
+    - v2 = p3 - p2
+    - angle = arccos(v1·v2 / |v1||v2|)
+
+    References
+    ----------
+    .. [1] Traja: trajectory statistics package
+    .. [2] Benhamou (2004). Animal Behaviour 68(5).
+    """
+    angles = []
+    for i in range(len(trajectory_bins) - 2):
+        b1, b2, b3 = trajectory_bins[i:i+3]
+        p1, p2, p3 = env.bin_centers[[b1, b2, b3]]
+
+        v1 = p2 - p1
+        v2 = p3 - p2
+
+        # Compute angle between vectors
+        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+        # Clamp to [-1, 1] to handle numerical errors
+        cos_angle = np.clip(cos_angle, -1.0, 1.0)
+        angle = np.arccos(cos_angle)
+        angles.append(angle)
+
+    return np.array(angles)
+
+def compute_step_lengths(
+    trajectory_bins: NDArray[np.int64],
+    env: Environment,
+) -> NDArray[np.float64]:
+    """
+    Compute graph distances between consecutive trajectory bins.
+
+    Parameters
+    ----------
+    trajectory_bins : array, shape (n_timepoints,)
+        Sequence of bin indices
+    env : Environment
+        Spatial environment
+
+    Returns
+    -------
+    step_lengths : array, shape (n_timepoints - 1,)
+        Graph distance for each step
+
+    Examples
+    --------
+    >>> # Detect movement bouts
+    >>> steps = compute_step_lengths(trajectory_bins, env)
+    >>> movement_mask = steps > 5.0  # cm
+    >>> rest_mask = steps < 2.0
+
+    Notes
+    -----
+    Uses graph distance (shortest path), not Euclidean distance.
+    For Euclidean distance, use:
+        np.linalg.norm(np.diff(env.bin_centers[trajectory_bins], axis=0), axis=1)
+    """
+    step_lengths = []
+    for i in range(len(trajectory_bins) - 1):
+        b1, b2 = trajectory_bins[i], trajectory_bins[i+1]
+        if b1 == b2:
+            step_lengths.append(0.0)
+        else:
+            dist = env.distance_between(b1, b2)
+            step_lengths.append(dist)
+
+    return np.array(step_lengths)
+
+def compute_home_range(
+    occupancy: NDArray[np.float64],
+    threshold: float = 0.95,
+) -> NDArray[np.int64]:
+    """
+    Identify home range bins (containing X% of time).
+
+    Parameters
+    ----------
+    occupancy : array, shape (n_bins,)
+        Time spent in each bin (seconds)
+    threshold : float, default=0.95
+        Fraction of time to include [0, 1]
+        Standard: 95% (adehabitatHR)
+
+    Returns
+    -------
+    home_range_bins : array, shape (n_home_bins,)
+        Bin indices in home range (sorted by occupancy, descending)
+
+    Examples
+    --------
+    >>> # Compute 95% home range
+    >>> home_bins = compute_home_range(occupancy, threshold=0.95)
+    >>> home_area = len(home_bins) * env.bin_sizes().mean()
+    >>> print(f"95% home range: {home_area:.1f} cm²")
+
+    >>> # Visualize home range
+    >>> home_mask = np.isin(np.arange(env.n_bins), home_bins)
+    >>> env.plot(home_mask.astype(float))
+
+    References
+    ----------
+    .. [1] adehabitatHR: Home range estimation (R package)
+    .. [2] Worton (1989). Ecology 70(1).
+    """
+    # Normalize to probability
+    occ_prob = occupancy / occupancy.sum()
+
+    # Sort bins by descending occupancy
+    sorted_bins = np.argsort(occ_prob)[::-1]
+
+    # Accumulate until threshold reached
+    cumsum = np.cumsum(occ_prob[sorted_bins])
+    n_bins_to_include = np.searchsorted(cumsum, threshold) + 1
+
+    home_range_bins = sorted_bins[:n_bins_to_include]
+
+    return home_range_bins
+
+def mean_square_displacement(
+    trajectory_bins: NDArray[np.int64],
+    env: Environment,
+    *,
+    max_lag: int = 100,
+) -> NDArray[np.float64]:
+    """
+    Compute mean square displacement (MSD) on graph.
+
+    MSD characterizes diffusion properties:
+    - MSD ~ t^α
+    - α = 1: Normal diffusion (random walk)
+    - α < 1: Subdiffusion (constrained movement)
+    - α > 1: Superdiffusion (Lévy walk, ballistic)
+
+    Parameters
+    ----------
+    trajectory_bins : array, shape (n_timepoints,)
+        Sequence of bin indices
+    env : Environment
+        Spatial environment
+    max_lag : int, default=100
+        Maximum time lag to compute
+
+    Returns
+    -------
+    msd : array, shape (max_lag,)
+        Mean square displacement at each lag
+
+    Examples
+    --------
+    >>> # Characterize diffusion
+    >>> msd = mean_square_displacement(trajectory_bins, env)
+    >>>
+    >>> # Fit power law: MSD ~ t^α
+    >>> import numpy as np
+    >>> lags = np.arange(1, len(msd)+1)
+    >>> log_msd = np.log(msd)
+    >>> log_lag = np.log(lags)
+    >>> alpha = np.polyfit(log_lag, log_msd, deg=1)[0]
+    >>>
+    >>> if alpha < 0.9:
+    ...     print("Subdiffusion (constrained)")
+    >>> elif alpha > 1.1:
+    ...     print("Superdiffusion (ballistic)")
+    >>> else:
+    ...     print("Normal diffusion (random walk)")
+
+    Notes
+    -----
+    Uses graph distance (shortest path on connectivity graph).
+    For large environments, this can be slow - consider sampling lags.
+
+    References
+    ----------
+    .. [1] yupi: Trajectory analysis with MSD
+    .. [2] Saxton (1997). Biophys J 72(4).
+    """
+    msd = []
+
+    for lag in range(1, min(max_lag + 1, len(trajectory_bins))):
+        squared_displacements = []
+
+        for t in range(len(trajectory_bins) - lag):
+            b_start = trajectory_bins[t]
+            b_end = trajectory_bins[t + lag]
+
+            # Graph distance
+            dist = env.distance_between(b_start, b_end)
+            squared_displacements.append(dist ** 2)
+
+        msd.append(np.mean(squared_displacements))
+
+    return np.array(msd)
+```
+
+**Tests**: Comprehensive unit tests
+- Test turn angles on synthetic trajectories (straight, circular)
+- Test step lengths match graph distances
+- Test home range includes highest occupancy bins
+- Test MSD power law on simulated random walk
+
+**Effort**: 3 days
+**Risk**: Low (well-defined algorithms from ecology literature)
+**Blockers**: None
+
+**Key insights from ecology packages**:
+- ✅ Turn angles quantify path tortuosity (exploration vs exploitation)
+- ✅ Home range standard: 95% of time (adehabitatHR)
+- ✅ MSD power law exponent classifies diffusion type
+- ✅ Step lengths useful for velocity-based segmentation
+
+**Integration with neurospatial**:
+- Uses existing `env.distance_between()` for graph distances
+- Uses existing `env.bin_centers` for angle computation
+- Complements `segment_by_velocity()` from Phase 3.3
+- Provides quantitative metrics for trajectory characterization
+
+---
+
+#### 4.7 Documentation (Week 16)
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
@@ -1570,13 +1833,202 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ---
 
-## Phase 5: Polish & Release (Week 16)
+## Phase 5: Code Quality & Infrastructure (Week 17)
 
-**UPDATED**: Overlaps with Phase 4 (reduced timeline)
+**NEW**: Adopt code patterns from movement package analysis
 
 ### Components
 
-#### 5.1 Validation Against opexebo, neurocode, and RatInABox (UPDATED)
+#### 5.1 Logging Infrastructure (Days 1-2) - NEW from movement package
+
+**Motivation**: movement package provides robust logging architecture that neurospatial should adopt for better debugging and user feedback.
+
+**Implementation**:
+
+**Create logging module** (`src/neurospatial/utils/logging.py`):
+```python
+import logging
+import sys
+from pathlib import Path
+
+# Create logger
+logger = logging.getLogger('neurospatial')
+logger.setLevel(logging.INFO)
+
+# Console handler (stderr)
+console_handler = logging.StreamHandler(sys.stderr)
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter(
+    '%(levelname)s - %(name)s - %(message)s'
+)
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
+
+# File handler (optional, user can configure)
+def add_file_handler(log_file: Path):
+    """Add file handler for logging to file."""
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+```
+
+**Usage throughout codebase**:
+```python
+from neurospatial.utils.logging import logger
+
+# In Environment.from_samples():
+if bin_size <= 0:
+    logger.error("bin_size must be positive")
+    raise ValueError(f"bin_size must be positive (got {bin_size})")
+
+if n_samples < 100:
+    logger.warning(
+        f"Only {n_samples} samples provided - consider collecting more data "
+        "for reliable spatial discretization"
+    )
+
+# In spatial_autocorrelation():
+if np.isnan(field).sum() > 0.5 * len(field):
+    logger.warning(
+        f"Field is {np.isnan(field).mean():.1%} NaN - "
+        "autocorrelation may be unreliable"
+    )
+```
+
+**Benefits**:
+- ✅ Dual output (console + optional file)
+- ✅ Structured error messages with context
+- ✅ Warning thresholds (inform, don't block)
+- ✅ Debugging support (file logs with timestamps)
+
+**Effort**: 2 days
+**Risk**: Low (well-established pattern)
+
+---
+
+#### 5.2 Validation-First Refactoring (Days 3-4) - NEW from movement package
+
+**Motivation**: Centralize validation logic for reusability and clarity.
+
+**Pattern**: Extract validation into dedicated functions
+```python
+# Before (validation mixed with logic):
+def bin_at(self, points):
+    if points.ndim != 2:
+        raise ValueError("points must be 2D array")
+    if points.shape[1] != self.n_dim:
+        raise ValueError(f"Expected {self.n_dim}D points")
+    # ... processing logic ...
+
+# After (validation-first):
+def bin_at(self, points):
+    _validate_points_array(points, expected_dims=self.n_dim)
+    return self._map_points_to_bins_impl(points)
+
+def _validate_points_array(points, expected_dims):
+    """Centralized point validation."""
+    if not isinstance(points, np.ndarray):
+        raise TypeError(f"points must be ndarray, got {type(points)}")
+    if points.ndim != 2:
+        raise ValueError(f"points must be 2D array, got {points.ndim}D")
+    if points.shape[1] != expected_dims:
+        raise ValueError(
+            f"Expected {expected_dims}D points, got {points.shape[1]}D"
+        )
+```
+
+**Apply to critical functions**:
+- `Environment.from_samples()` - validate positions, bin_size
+- `map_points_to_bins()` - validate points array
+- `spatial_autocorrelation()` - validate field shape, NaN handling
+- `detect_runs_between_regions()` - validate region names exist
+
+**Benefits**:
+- ✅ Reusable validation logic
+- ✅ Consistent error messages
+- ✅ Easier to test validation separately
+- ✅ Cleaner main logic
+
+**Effort**: 2 days
+**Risk**: Low (refactoring, no behavior change)
+
+---
+
+#### 5.3 attrs Library for New Data Classes (Days 5-6) - NEW from movement package
+
+**Motivation**: Use attrs for automatic validation in new modules (segmentation, metrics).
+
+**Add attrs dependency**:
+```toml
+# pyproject.toml
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "networkx",
+    "scipy",
+    "scikit-learn",
+    "shapely",
+    "track-linearization",
+    "attrs>=23.0",  # NEW
+]
+```
+
+**Example usage in segmentation module**:
+```python
+from attrs import define, field, validators as v
+import numpy as np
+
+@define
+class Run:
+    """Behavioral run from source to target region."""
+    start_time: float = field(validator=v.instance_of(float))
+    end_time: float = field(validator=v.instance_of(float))
+    duration: float = field(init=False)
+    trajectory_bins: np.ndarray = field(validator=_validate_1d_array)
+    path_length: float = field(validator=[v.instance_of(float), v.gt(0)])
+    success: bool = field(default=False)
+
+    def __attrs_post_init__(self):
+        """Compute derived attributes."""
+        object.__setattr__(self, 'duration', self.end_time - self.start_time)
+
+        # Validate duration is positive
+        if self.duration <= 0:
+            raise ValueError(
+                f"end_time must be after start_time "
+                f"(got start={self.start_time}, end={self.end_time})"
+            )
+
+def _validate_1d_array(instance, attribute, value):
+    """Validator for 1D numpy arrays."""
+    if not isinstance(value, np.ndarray):
+        raise TypeError(f"{attribute.name} must be ndarray")
+    if value.ndim != 1:
+        raise ValueError(f"{attribute.name} must be 1D array")
+```
+
+**Apply to new modules**:
+- `segmentation/regions.py` - `Run`, `Crossing` classes
+- `segmentation/laps.py` - `Lap` class
+- `segmentation/trials.py` - `Trial` class
+
+**Benefits**:
+- ✅ Automatic validation on instantiation
+- ✅ Type conversion (converters)
+- ✅ Immutability (frozen=True)
+- ✅ Better error messages
+
+**Effort**: 2 days
+**Risk**: Low (well-established library)
+
+---
+
+#### 5.4 Validation Against opexebo, neurocode, and RatInABox (Days 7-8)
 
 **Validation against analysis packages** (opexebo, neurocode):
 - Test grid score matches opexebo within 1%
@@ -1612,32 +2064,38 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 **Effort**: 4 days (increased from 3 to include RatInABox validation)
 
-#### 5.2 Performance Optimization
+#### 5.5 Performance Optimization (Days 9-10)
 - Profile critical paths
 - Optimize hot loops
 - Add caching where beneficial
+- Benchmark against baseline
 
 **Effort**: 2 days
 
-#### 5.3 Documentation Polish
+#### 5.6 Documentation Polish (Parallel with validation)
 - API reference generation
 - Cross-linking between docs
-- Cross-references to opexebo
+- Cross-references to opexebo, neurocode, movement
 - Tutorial videos (optional)
 
-**Effort**: 2 days
+**Effort**: Ongoing throughout Phase 5
 
-#### 5.4 Migration Guide
+#### 5.7 Migration Guide (Day 10)
 - Breaking changes (divergence rename)
 - Upgrade instructions
 - Deprecation timeline
 - opexebo integration examples
+- Code quality improvements (logging, validation)
 
 **Effort**: 1 day
 
-#### 5.5 Release
+#### 5.8 Release (Day 10)
 - Version bump to 0.3.0
-- Changelog highlighting opexebo compatibility
+- Changelog highlighting:
+  - opexebo compatibility
+  - Behavioral segmentation
+  - Trajectory metrics
+  - Code quality improvements
 - Blog post / announcement
 - PyPI release
 
@@ -1732,29 +2190,48 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ## Effort Estimation
 
-**UPDATED after opexebo analysis**:
+**UPDATED after ecology packages and movement code patterns analysis**:
 
 | Phase | Duration | Person-Weeks | Risk Level |
 |-------|----------|--------------|------------|
 | 1. Differential Operators | 3 weeks | 3 | Low |
 | 2. Signal Processing | 6 weeks | 6 | Medium (was HIGH) |
-| 3. Path Operations | 1 week | 1 | Low |
-| 4. Metrics Module | 2 weeks (was 4) | 2 | Low (was Medium) |
-| 5. Polish & Release | 2 weeks | 2 | Low |
-| **Total** | **14 weeks** | **14** | **Medium overall** |
+| 3. Trajectory & Behavioral Segmentation | 2 weeks | 2 | Low |
+| 4. Metrics Module | 4 weeks | 4 | Low (was Medium) |
+| 5. Code Quality & Infrastructure | 2 weeks | 2 | Low |
+| **Total** | **17 weeks** | **17** | **Medium overall** |
+
+**Phase 4 breakdown**:
+- 4.1 Place Field Metrics (Week 12): 3 days
+- 4.2 Population Metrics (Week 12): 2 days
+- 4.3 Grid Cell Metrics (Weeks 13-14): 3 days
+- 4.4 Boundary Cell Metrics (Week 14): 2 days
+- 4.5 Circular Statistics (Week 15): 3 days
+- 4.6 Trajectory Metrics (Week 15): 3 days
+- 4.7 Documentation (Week 16): 4 days
+
+**Phase 5 breakdown**:
+- 5.1 Logging Infrastructure (Week 17, Days 1-2): 2 days
+- 5.2 Validation-First Refactoring (Week 17, Days 3-4): 2 days
+- 5.3 attrs Library Integration (Week 17, Days 5-6): 2 days
+- 5.4 Package Validation (Week 17, Days 7-8): 2 days
+- 5.5 Performance Optimization (Week 17, Days 9-10): 2 days
 
 **Assumptions**:
 - One full-time developer
 - No major blockers
 - spatial_autocorrelation uses opexebo's FFT approach (validated algorithm)
+- Code quality improvements integrated throughout implementation
 
 **Changes from original plan**:
-- **Timeline reduced**: 16 weeks → 14 weeks
-- **Risk reduced**: spatial_autocorrelation HIGH → MEDIUM (adopt opexebo's approach)
-- **Metrics reduced**: 4 weeks → 2 weeks (well-defined algorithms from opexebo)
+- **Timeline**: 16 weeks → 17 weeks
+- **Added Phase 3.3**: Behavioral segmentation (2 weeks)
+- **Added Phase 4.6**: Trajectory metrics from ecology packages (3 days)
+- **Expanded Phase 5**: Code quality improvements from movement package (6 days)
+- **Risk**: spatial_autocorrelation HIGH → MEDIUM (adopt opexebo's approach)
 
-**Optimistic**: 12 weeks (if FFT implementation straightforward)
-**Pessimistic**: 16 weeks (if graph-based autocorrelation needed for irregular grids)
+**Optimistic**: 15 weeks (if all implementations straightforward)
+**Pessimistic**: 19 weeks (if graph-based autocorrelation needed + code quality delays)
 
 ---
 
@@ -1772,22 +2249,35 @@ Phase 2: Signal Processing
 ├── 2.2 spatial_autocorrelation (no blockers, MEDIUM RISK - opexebo FFT approach)
 └── 2.3 convolve (no blockers, LOW RISK)
 
-Phase 3: Path Operations
-└── 3.1 accumulate (no blockers)
+Phase 3: Trajectory & Behavioral Segmentation
+├── 3.1 accumulate (no blockers)
+├── 3.2 propagate (optional, defer)
+└── 3.3 behavioral segmentation (no blockers)
 
 Phase 4: Metrics Module
 ├── 4.1 place_fields (no blockers)
 ├── 4.2 population (no blockers)
 ├── 4.3 grid_cells (needs 2.2 spatial_autocorrelation) ← BLOCKER
-└── 4.4 docs (needs 4.1, 4.2, 4.3)
+├── 4.4 boundary_cells (no blockers)
+├── 4.5 circular_statistics (no blockers)
+├── 4.6 trajectory_metrics (no blockers)
+└── 4.7 docs (needs 4.1-4.6)
 
-Phase 5: Release
-└── needs all above
+Phase 5: Code Quality & Infrastructure
+├── 5.1 logging (no blockers)
+├── 5.2 validation_refactoring (no blockers)
+├── 5.3 attrs_integration (no blockers)
+├── 5.4 package_validation (needs 4.3 for grid score validation)
+└── 5.5 performance (no blockers)
 ```
 
 **Critical path**: spatial_autocorrelation (2.2) → grid_score (4.3)
 
-**Parallelization opportunity**: Can implement Phase 1, 3, 4.1, 4.2 in parallel with Phase 2.2
+**Parallelization opportunities**:
+- Phase 1 (differential operators) can run in parallel with Phase 2.1 (neighbor_reduce)
+- Phase 3 (behavioral segmentation) can run in parallel with Phase 2.2 (spatial_autocorrelation)
+- Phase 4.1, 4.2, 4.4, 4.5, 4.6 can run in parallel with Phase 2.2 and 4.3
+- Phase 5.1-5.3 (code quality) can be integrated throughout implementation
 
 ---
 
@@ -1920,17 +2410,59 @@ This implementation plan delivers **critical missing functionality** that:
 
 1. **Enables Nobel Prize-winning analyses** (grid cells) not possible in any other package
 2. **Provides fundamental spatial primitives** for RL/replay/behavioral analysis
-3. **Reduces code duplication** across labs with standard metrics
-4. **Maintains backward compatibility** except one well-managed breaking change
+3. **Adds behavioral segmentation** for automatic epoch detection (runs, laps, trials)
+4. **Adds trajectory metrics** from ecology/ethology (turn angles, home range, MSD)
+5. **Improves code quality** with logging, validation patterns, and attrs
+6. **Reduces code duplication** across labs with standard metrics
+7. **Maintains backward compatibility** except one well-managed breaking change
 
-**Timeline**: 15 weeks (updated after neurocode analysis)
+**Timeline**: 17 weeks (4.25 months)
 **Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo, neurocode, and RatInABox)
 **Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience on irregular graphs
 
-**Validation strategy** (NEW after RatInABox analysis):
+**Key additions** (from ecosystem analysis):
+- ✅ **Phase 3.3**: Behavioral segmentation (detect_runs_between_regions, detect_laps, segment_trials)
+- ✅ **Phase 4.6**: Trajectory metrics (turn_angles, step_lengths, home_range, MSD)
+- ✅ **Phase 5**: Code quality improvements (logging, validation-first, attrs)
+
+**Validation strategy** (comprehensive cross-validation):
 - ✅ Cross-validate against analysis packages (opexebo, neurocode, vandermeerlab, buzcode)
 - ✅ Validate against simulation package (RatInABox - known ground truth)
 - ✅ Integration example showing simulation → discretization → analysis workflow
+- ✅ Code patterns validated from movement package (logging, validation, attrs)
+
+**Ecosystem context** (24 packages analyzed):
+- **Neuroscience** (16): pynapple, SpikeInterface, opexebo, neurocode, movement, etc.
+- **Ecology/Trajectory** (8): Traja, yupi, PyRAT, adehabitatHR, ctmm, moveHMM, etc.
+- **Authority**: Algorithms from Nobel Prize labs (opexebo), AyA Lab (neurocode), and established ecology methods
+
+**Module structure** (final):
+```
+src/neurospatial/
+    differential.py        # Phase 1: gradient, divergence, differential_operator
+    primitives.py          # Phase 2: neighbor_reduce, spatial_autocorrelation, convolve
+    segmentation/          # Phase 3.3: behavioral epoch segmentation
+        regions.py         #   detect_runs_between_regions, detect_region_crossings
+        laps.py            #   detect_laps (3 methods)
+        trials.py          #   segment_trials (task-specific)
+        similarity.py      #   trajectory_similarity, detect_goal_directed_runs
+    metrics/               # Phase 4: neuroscience metrics
+        place_fields.py    #   detect_place_fields, skaggs_information, sparsity
+        population.py      #   population_coverage, field_density_map
+        grid_cells.py      #   grid_score, coherence (Nobel Prize methods)
+        boundary_cells.py  #   border_score (Solstad et al. 2008)
+        circular.py        #   circular_mean, von_mises, rayleigh_test
+        trajectory.py      #   turn_angles, step_lengths, home_range, MSD
+    utils/                 # Phase 5: infrastructure
+        logging.py         #   Logging infrastructure (movement pattern)
+        validation.py      #   Centralized validation (movement pattern)
+```
+
+**Breaking changes**:
+- `divergence()` → `kl_divergence()` (alias provided in 0.3.x, removed in 0.4.0)
+
+**New dependencies**:
+- `attrs>=23.0` (automatic validation for new data classes)
 
 **Critical decision needed**: Approve breaking change (divergence rename) and migration strategy.
 
