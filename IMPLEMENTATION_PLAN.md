@@ -4,7 +4,7 @@
 
 This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 15 weeks (3.75 months) - UPDATED after neurocode analysis
+**Timeline**: 16 weeks (4 months) - UPDATED after behavioral segmentation addition
 **Priority**: HIGH - Enables analyses not possible in any other package
 **Breaking Changes**: Minimal (one function rename required)
 **Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
@@ -632,10 +632,10 @@ def convolve(
 
 ---
 
-## Phase 3: Path-Based Operations (Week 10)
+## Phase 3: Trajectory & Behavioral Segmentation (Weeks 10-11)
 
 ### Goal
-Implement trajectory and RL primitives.
+Implement trajectory primitives and behavioral epoch segmentation (runs, laps, trials).
 
 ### Components
 
@@ -664,7 +664,306 @@ Implement trajectory and RL primitives.
 
 ---
 
-## Phase 4: Convenience Metrics Module (Weeks 11-14)
+#### 3.3 Behavioral Segmentation (NEW)
+
+**New module**: `src/neurospatial/segmentation/`
+
+**Motivation**: Identify discrete behavioral epochs from continuous trajectories (e.g., "runs from nest to goal", "laps", "trials"). Most packages require manual segmentation - neurospatial can provide spatial primitives for automatic detection.
+
+**Module structure**:
+```python
+src/neurospatial/segmentation/
+    __init__.py
+    regions.py       # Region-based segmentation
+    laps.py          # Lap detection
+    trials.py        # Trial segmentation
+    similarity.py    # Trajectory similarity
+```
+
+**Core primitives**:
+
+```python
+# src/neurospatial/segmentation/regions.py
+
+def detect_region_crossings(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    region: str,
+    env: Environment,
+    direction: Literal['entry', 'exit', 'both'] = 'both',
+) -> list[Crossing]:
+    """
+    Detect when trajectory enters/exits a spatial region.
+
+    Returns
+    -------
+    crossings : List[Crossing]
+        Crossing(time, bin_index, direction='entry'/'exit')
+    """
+
+def detect_runs_between_regions(
+    trajectory_positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    source: str,
+    target: str,
+    min_duration: float = 0.5,
+    max_duration: float = 10.0,
+    velocity_threshold: float | None = None,
+) -> list[Run]:
+    """
+    Identify trajectory segments from source region to target region.
+
+    Parameters
+    ----------
+    source : str
+        Name of source region (e.g., 'nest')
+    target : str
+        Name of target region (e.g., 'goal')
+    min_duration : float
+        Minimum run duration (seconds)
+    max_duration : float
+        Maximum run duration (seconds)
+    velocity_threshold : float, optional
+        Minimum velocity to count as movement (cm/s)
+
+    Returns
+    -------
+    runs : List[Run]
+        Run(start_time, end_time, duration, trajectory_bins,
+            path_length, success=True/False)
+
+    Examples
+    --------
+    >>> # Detect goal-directed runs
+    >>> runs = detect_runs_between_regions(
+    ...     positions, times, env,
+    ...     source='nest', target='goal'
+    ... )
+    >>> success_rate = sum(r.success for r in runs) / len(runs)
+    """
+
+def segment_by_velocity(
+    trajectory_positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    threshold: float,
+    *,
+    min_duration: float = 0.5,
+    hysteresis: float = 2.0,
+    smooth_window: float = 0.2,
+) -> IntervalSet:
+    """
+    Segment trajectory into movement vs. rest periods.
+
+    Returns pynapple IntervalSet if available, otherwise list of tuples.
+    """
+```
+
+```python
+# src/neurospatial/segmentation/laps.py
+
+def detect_laps(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    method: Literal['auto', 'reference', 'region'] = 'auto',
+    min_overlap: float = 0.8,
+    direction: Literal['clockwise', 'counter', 'both'] = 'both',
+) -> list[Lap]:
+    """
+    Detect complete loops/laps in circular or figure-8 tracks.
+
+    Parameters
+    ----------
+    method : {'auto', 'reference', 'region'}
+        - 'auto': Automatically detect lap template from data
+        - 'reference': User provides reference lap
+        - 'region': Detect crossings of lap start region
+    min_overlap : float
+        Minimum spatial overlap with reference lap [0, 1]
+
+    Returns
+    -------
+    laps : List[Lap]
+        Lap(start_time, end_time, duration, trajectory_bins,
+            direction='clockwise'/'counter', overlap_score)
+
+    Examples
+    --------
+    >>> # Auto-detect laps
+    >>> laps = detect_laps(trajectory_bins, times, env)
+    >>> for i, lap in enumerate(laps):
+    ...     print(f"Lap {i}: {lap.duration:.2f}s, overlap={lap.overlap_score:.2f}")
+    """
+```
+
+```python
+# src/neurospatial/segmentation/trials.py
+
+def segment_trials(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    trial_type: Literal['tmaze', 'ymaze', 'radial_arm', 'custom'],
+    start_region: str,
+    end_regions: dict[str, str],
+    min_duration: float = 1.0,
+    max_duration: float = 15.0,
+) -> list[Trial]:
+    """
+    Detect trials based on task structure (e.g., T-maze left/right).
+
+    Parameters
+    ----------
+    trial_type : str
+        Task structure type
+    start_region : str
+        Region name where trials start
+    end_regions : dict
+        Mapping from outcome name to region name
+        Example: {'left': 'left_arm', 'right': 'right_arm'}
+
+    Returns
+    -------
+    trials : List[Trial]
+        Trial(start_time, end_time, duration, trajectory_bins,
+              outcome='left'/'right'/..., success=True/False)
+
+    Examples
+    --------
+    >>> # T-maze trials
+    >>> trials = segment_trials(
+    ...     trajectory_bins, times, env,
+    ...     trial_type='tmaze',
+    ...     start_region='center',
+    ...     end_regions={'left': 'left_arm', 'right': 'right_arm'},
+    ... )
+    >>> left_trials = [t for t in trials if t.outcome == 'left']
+    >>> right_trials = [t for t in trials if t.outcome == 'right']
+    """
+```
+
+```python
+# src/neurospatial/segmentation/similarity.py
+
+def trajectory_similarity(
+    trajectory1_bins: NDArray[np.int64],
+    trajectory2_bins: NDArray[np.int64],
+    env: Environment,
+    *,
+    method: Literal['jaccard', 'correlation', 'hausdorff', 'dtw'] = 'jaccard',
+) -> float:
+    """
+    Compute similarity between two trajectory segments.
+
+    Parameters
+    ----------
+    method : {'jaccard', 'correlation', 'hausdorff', 'dtw'}
+        - 'jaccard': Spatial overlap (Jaccard index)
+        - 'correlation': Sequential correlation
+        - 'hausdorff': Maximum deviation
+        - 'dtw': Dynamic time warping
+
+    Returns
+    -------
+    similarity : float
+        Similarity score [0, 1] (1 = identical, 0 = no overlap)
+
+    Examples
+    --------
+    >>> # Compare decoded replay to behavioral run
+    >>> similarity = trajectory_similarity(
+    ...     decoded_bins, run.trajectory_bins, env
+    ... )
+    >>> if similarity > 0.8:
+    ...     print("High similarity - likely replay of this run")
+    """
+
+def detect_goal_directed_runs(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    goal_region: str,
+    directedness_threshold: float = 0.7,
+    min_progress: float = 20.0,
+) -> list[Run]:
+    """
+    Identify runs where trajectory moves toward a goal.
+
+    Parameters
+    ----------
+    directedness_threshold : float
+        Minimum directedness score [0, 1]
+        (0 = random walk, 1 = straight line to goal)
+    min_progress : float
+        Minimum distance traveled toward goal (cm)
+
+    Returns
+    -------
+    runs : List[Run]
+        Run(start_time, end_time, directedness, progress, reached_goal)
+
+    Metrics
+    -------
+    directedness = (dist_start_to_goal - dist_end_to_goal) / path_length
+    progress = dist_start_to_goal - dist_end_to_goal
+
+    Examples
+    --------
+    >>> # Find goal-directed runs
+    >>> runs = detect_goal_directed_runs(
+    ...     trajectory_bins, times, env, goal_region='goal'
+    ... )
+    >>> for run in runs:
+    ...     if run.reached_goal:
+    ...         print(f"Directedness: {run.directedness:.2f}")
+    """
+```
+
+**Implementation timeline**:
+- **Days 1-3**: Region-based segmentation (detect_region_crossings, detect_runs_between_regions, segment_by_velocity)
+- **Days 4-5**: Lap detection (detect_laps with 3 methods)
+- **Day 6**: Trial segmentation (segment_trials for common task types)
+- **Days 7-8**: Trajectory similarity and goal-directedness
+- **Days 9-10**: Tests, documentation, pynapple integration
+
+**Effort**: 2 weeks (10 days)
+**Risk**: Low - Well-defined algorithms, no complex mathematics
+
+**Integration with pynapple**:
+All functions return `pynapple.IntervalSet` when pynapple is available:
+```python
+try:
+    import pynapple as nap
+    return nap.IntervalSet(start=starts, end=ends)
+except ImportError:
+    return [(start, end) for start, end in zip(starts, ends)]
+```
+
+**Validation**:
+- Compare lap detection with neurocode NSMAFindGoodLaps.m
+- Test on RatInABox simulated trajectories
+- Cross-validate region crossing times
+
+**Use cases**:
+1. **Goal-directed runs**: Analyze place fields during nest→goal runs
+2. **Lap-by-lap learning**: Track place field stability across laps
+3. **Trial-type selectivity**: Compare left vs. right trial firing
+4. **Replay analysis**: Match decoded trajectories to behavioral runs
+5. **Learning dynamics**: Performance/stability over trials
+
+**Authority**:
+- neurocode: NSMAFindGoodLaps.m, MovementPeriods.m, IsInZone.m
+- vandermeerlab: Task-specific segmentation scripts
+- Novel contribution: General-purpose spatial segmentation primitives
+
+---
+
+## Phase 4: Convenience Metrics Module (Weeks 12-15)
 
 ### Goal
 Provide standard neuroscience metrics as convenience wrappers.
@@ -1271,7 +1570,7 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ---
 
-## Phase 5: Polish & Release (Weeks 13-15)
+## Phase 5: Polish & Release (Week 16)
 
 **UPDATED**: Overlaps with Phase 4 (reduced timeline)
 
