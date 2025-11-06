@@ -4,9 +4,10 @@
 
 This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 12-16 weeks (3-4 months)
+**Timeline**: 14 weeks (3.5 months) - UPDATED after opexebo analysis
 **Priority**: HIGH - Enables analyses not possible in any other package
 **Breaking Changes**: Minimal (one function rename required)
+**Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014)
 
 ### What This Enables
 
@@ -429,36 +430,34 @@ def test_neighbor_reduce_weights():
 
 **THIS IS THE CRITICAL PRIMITIVE** - Enables grid cell analysis.
 
-**Challenge**: No existing implementation for irregular graphs!
+**UPDATED AFTER OPEXEBO ANALYSIS**: Risk reduced from HIGH → MEDIUM
 
-**Research needed**:
-1. How to compute autocorrelation on irregular spatial graphs?
-2. How to handle rotation on irregular grids?
-3. Validation strategy
+**Key insight from opexebo** (Moser lab, Nobel Prize 2014):
+- They use normalized 2D cross-correlation via FFT (fast, validated)
+- Assumes regular rectangular grids
+- Crops 20% of edges to reduce boundary artifacts
+- This is the field-standard approach
 
-**Proposed approach**:
+**Proposed approach** (UPDATED):
 
-**Step 1: Literature review** (Week 5)
-- Sargolini et al. (2006) - Original grid score paper
-- Stensola et al. (2012) - Grid cell properties
-- Langston et al. (2010) - Corrected grid score
-- Check if any packages handle irregular grids
+**Step 1: Adopt opexebo's FFT approach** (Week 5-6) - **RISK: LOW**
+- For regular grids: Use FFT-based 2D cross-correlation (opexebo method)
+- Fast, validated, matches field standard
+- Authority: Nobel Prize-winning lab
 
-**Step 2: Algorithm design** (Week 5-6)
+**Step 2: Extend to irregular graphs** (Week 7-8) - **RISK: MEDIUM** (optional)
 
-**Option A: Interpolation to Regular Grid**
+**Implementation** (UPDATED - adopts opexebo approach):
 ```python
 def spatial_autocorrelation(
     field: NDArray[np.float64],
     env: Environment,
     *,
-    max_lag: float | None = None,
-    n_lags: int = 50,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    method: Literal['auto', 'fft', 'graph'] = 'auto',
+    overlap_amount: float = 0.8,
+) -> NDArray[np.float64]:
     """
-    Compute spatial autocorrelation function.
-
-    For irregular grids, interpolates to regular grid for computation.
+    Compute 2D spatial autocorrelation map.
 
     Parameters
     ----------
@@ -466,108 +465,112 @@ def spatial_autocorrelation(
         Spatial field (e.g., firing rate map)
     env : Environment
         Spatial environment
-    max_lag : float, optional
-        Maximum spatial lag (physical units)
-        If None, uses environment diameter
-    n_lags : int, default=50
-        Number of lag bins
+    method : {'auto', 'fft', 'graph'}, default='auto'
+        - 'auto': Use FFT for regular grids, graph-based for irregular
+        - 'fft': FFT-based (opexebo method, fast, regular grids only)
+        - 'graph': Graph-based correlation (slower, works on any connectivity)
+    overlap_amount : float, default=0.8
+        Fraction of map to retain after edge cropping (reduces boundary noise)
 
     Returns
     -------
-    lags : array, shape (n_lags,)
-        Spatial lags (distances)
-    autocorr : array, shape (n_lags,)
-        Autocorrelation at each lag
+    autocorr_map : array, shape (height, width)
+        2D autocorrelation map (for grid score computation)
 
     Notes
     -----
-    **Algorithm**:
-    1. Interpolate irregular field to regular grid
-    2. Compute 2D FFT autocorrelation
-    3. Convert to radial profile (distance vs correlation)
+    **FFT method** (from opexebo, Moser lab):
+    1. Replace NaNs with zeros
+    2. Compute normalized cross-correlation via FFT
+    3. Crop edges (default: keep central 80%)
 
-    For grid score computation, use rotated autocorrelation maps.
+    **Graph method** (neurospatial extension for irregular grids):
+    1. Interpolate to regular grid
+    2. Apply FFT method
+    3. Or: compute pairwise correlations at each distance (slower but exact)
+
+    References
+    ----------
+    .. [1] opexebo: https://github.com/simon-ball/opexebo
+    .. [2] Sargolini et al. (2006). Science 312(5774).
 
     Examples
     --------
     >>> firing_rate_smooth = env.smooth(firing_rate, bandwidth=5.0)
-    >>> lags, autocorr = spatial_autocorrelation(firing_rate_smooth, env)
-    >>> plt.plot(lags, autocorr)
-    >>> plt.xlabel('Distance (cm)')
-    >>> plt.ylabel('Autocorrelation')
+    >>> autocorr_map = spatial_autocorrelation(firing_rate_smooth, env)
+    >>> # Use for grid score computation
+    >>> gs = grid_score(autocorr_map, env)
 
     See Also
     --------
-    grid_score : Compute grid score from autocorrelation
+    grid_score : Compute grid score from autocorrelation map
+    opexebo.analysis.autocorrelation : Reference implementation
     """
-    # Step 1: Interpolate to regular grid
-    # Step 2: 2D autocorrelation via FFT
-    # Step 3: Radial averaging
+    if method == 'auto':
+        # Choose based on layout type
+        if env.layout._layout_type_tag == 'RegularGridLayout':
+            method = 'fft'
+        else:
+            method = 'fft'  # Interpolate irregular → regular grid
+
+    if method == 'fft':
+        # Adopt opexebo's FFT approach
+        # Step 1: Reshape to 2D if regular grid (or interpolate if irregular)
+        # Step 2: Replace NaNs with zeros
+        # Step 3: normxcorr2_general() via FFT
+        # Step 4: Crop edges
+        pass  # Implementation details
+
+    elif method == 'graph':
+        # Graph-based approach for irregular grids
+        # More principled but slower
+        pass  # Implementation details
 ```
 
-**Option B: Graph-Based Autocorrelation** (harder but more principled)
-```python
-def spatial_autocorrelation_graph(
-    field: NDArray[np.float64],
-    env: Environment,
-    *,
-    max_lag: float,
-    n_lags: int = 50,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """
-    Compute spatial autocorrelation directly on graph.
+**Decision**: Start with FFT method (opexebo approach), add graph-based if users need it.
 
-    For each lag distance:
-    1. Find all pairs of bins at approximately that distance
-    2. Compute correlation between field values at those pairs
-    3. Average across all pairs
-
-    More principled but computationally expensive for large graphs.
-    """
-    lags = np.linspace(0, max_lag, n_lags)
-    autocorr = np.zeros(n_lags)
-
-    # Compute pairwise distances (use distance_field or cache)
-    # For each lag bin, find bin pairs at that distance
-    # Compute correlation
-
-    return lags, autocorr
-```
-
-**Decision**: Start with Option A (interpolation), add Option B if needed.
-
-**Step 3: Implementation** (Week 6-7)
-
-**Step 4: Validation** (Week 8)
+**Step 3: Validation** (Week 8)
 - Test on synthetic hexagonal grid data
-- Compare with published grid scores
+- **Compare with opexebo outputs** (should match within 1%)
 - Validate rotation sensitivity
 
-**Tests**:
+**Tests** (UPDATED):
 ```python
+def test_autocorr_matches_opexebo():
+    """Autocorrelation should match opexebo for regular grids"""
+    # Create regular grid environment
+    env = Environment.from_samples(positions, bin_size=2.5)
+    firing_rate = create_hexagonal_pattern()
+
+    # Compute with neurospatial
+    autocorr_ns = spatial_autocorrelation(firing_rate, env)
+
+    # Compute with opexebo (if installed)
+    try:
+        import opexebo
+        rate_map_2d = firing_rate.reshape(env.layout.grid_shape)
+        autocorr_opexebo = opexebo.analysis.autocorrelation(rate_map_2d)
+        np.testing.assert_allclose(autocorr_ns, autocorr_opexebo, rtol=0.01)
+    except ImportError:
+        pytest.skip("opexebo not installed")
+
 def test_autocorr_hexagonal_field():
     """Hexagonal field should show peaks at 60° multiples"""
     # Create synthetic grid cell firing pattern
     # Compute autocorrelation
     # Verify peaks at correct angles
 
-def test_autocorr_random_field():
-    """Random field should have autocorr → 0 quickly"""
-    field = np.random.randn(env.n_bins)
-    lags, autocorr = spatial_autocorrelation(field, env)
-    # Verify decay to zero
-
 def test_autocorr_constant_field():
     """Constant field should have autocorr = 1 everywhere"""
     field = np.ones(env.n_bins)
-    lags, autocorr = spatial_autocorrelation(field, env)
-    np.testing.assert_allclose(autocorr, 1.0)
+    autocorr = spatial_autocorrelation(field, env)
+    np.testing.assert_allclose(autocorr.max(), 1.0)
 ```
 
-**Effort**: 16-20 days (4 weeks)
-**Risk**: HIGH - Complex algorithm, no existing implementation
+**Effort**: 16-20 days (4 weeks) - UNCHANGED
+**Risk**: MEDIUM (reduced from HIGH) - opexebo provides validated algorithm
 **Blockers**: None (can implement independently)
-**Mitigation**: Start with regular grids, extend to irregular
+**Mitigation**: Adopt opexebo's FFT approach (low risk), defer graph-based (optional)
 
 ---
 
@@ -777,6 +780,8 @@ def population_vector_correlation(
 
 **File**: `src/neurospatial/metrics/grid_cells.py`
 
+**UPDATED**: Adopt opexebo's sophisticated algorithm
+
 **Functions**:
 ```python
 def grid_score(
@@ -784,12 +789,55 @@ def grid_score(
     env: Environment,
     *,
     method: Literal['sargolini', 'langston'] = 'sargolini',
+    num_gridness_radii: int = 3,
 ) -> float:
     """
-    Compute grid score (gridness).
+    Compute grid score (gridness) using annular rings approach.
 
-    Uses spatial_autocorrelation primitive.
+    This implementation matches opexebo's algorithm (Moser lab, Nobel Prize 2014):
+    1. Compute spatial autocorrelation map
+    2. Automatically detect central field radius
+    3. For expanding radii, extract annular rings (donut shapes)
+    4. Rotate autocorr at 30°, 60°, 90°, 120°, 150°
+    5. Compute Pearson correlation between rings
+    6. Grid score = min(corr[60°, 120°]) - max(corr[30°, 90°, 150°])
+    7. Apply sliding window smoothing (3 radii default)
+    8. Return maximum grid score
+
+    Parameters
+    ----------
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (should be smoothed, 5 cm bandwidth recommended)
+    env : Environment
+        Spatial environment
+    method : {'sargolini', 'langston'}, default='sargolini'
+        Grid score formula variant
+    num_gridness_radii : int, default=3
+        Sliding window width for smoothing
+
+    Returns
+    -------
+    grid_score : float
+        Grid score. Range: [-2, 2]. Typical good grids: ~1.3
+
+    References
+    ----------
+    .. [1] Sargolini et al. (2006). Science 312(5774).
+    .. [2] opexebo.analysis.grid_score: Reference implementation
+
+    See Also
+    --------
+    spatial_autocorrelation : Compute autocorrelation map
+    opexebo.analysis.grid_score : Reference implementation
     """
+    # Step 1: Compute autocorrelation
+    autocorr_map = spatial_autocorrelation(firing_rate, env)
+
+    # Step 2: Detect central field radius (automatic)
+    # Step 3: For expanding radii, compute correlations with rotations
+    # Step 4: Apply sliding window smoothing
+    # Step 5: Return maximum
+    pass  # Implementation follows opexebo exactly
 
 def grid_spacing(autocorr_map: NDArray, env: Environment) -> float:
     """Estimate grid spacing from autocorrelation map."""
@@ -806,12 +854,26 @@ def coherence(
     """
     Spatial coherence (Muller & Kubie 1989).
 
-    Uses neighbor_reduce primitive.
+    Correlation between firing rate and mean of neighbors.
+    Uses neighbor_reduce primitive (generalizes opexebo's 3x3 convolution).
+
+    References
+    ----------
+    .. [1] Muller & Kubie (1989). J Neurosci 9(12).
+    .. [2] opexebo.analysis.rate_map_coherence: Reference implementation
     """
+    neighbor_avg = neighbor_reduce(firing_rate, env, op=op)
+    return np.corrcoef(firing_rate, neighbor_avg)[0, 1]
 ```
 
-**Effort**: 5 days
-**Risk**: Medium (depends on spatial_autocorrelation)
+**Key updates**:
+- ✅ Adopt opexebo's annular rings approach
+- ✅ Automatic radius detection
+- ✅ Sliding window smoothing (3 radii)
+- ✅ Cross-reference opexebo as authority
+
+**Effort**: 3 days (reduced from 5) - well-defined algorithm
+**Risk**: Low (reduced from Medium) - opexebo provides exact specification
 **Blockers**: Phase 2.2 (spatial_autocorrelation)
 
 ---
@@ -828,30 +890,51 @@ def coherence(
 
 ---
 
-## Phase 5: Polish & Release (Weeks 15-16)
+## Phase 5: Polish & Release (Weeks 13-14)
+
+**UPDATED**: Overlaps with Phase 4 (reduced timeline)
 
 ### Components
 
-#### 5.1 Performance Optimization
+#### 5.1 Validation Against opexebo (NEW)
+- Test grid score matches opexebo within 1%
+- Test coherence matches exactly
+- Test spatial information matches exactly
+- Test autocorrelation matches exactly
+- Document any intentional differences
+
+**Effort**: 2 days
+
+#### 5.2 Performance Optimization
 - Profile critical paths
 - Optimize hot loops
 - Add caching where beneficial
 
-#### 5.2 Documentation Polish
+**Effort**: 2 days
+
+#### 5.3 Documentation Polish
 - API reference generation
 - Cross-linking between docs
+- Cross-references to opexebo
 - Tutorial videos (optional)
 
-#### 5.3 Migration Guide
+**Effort**: 2 days
+
+#### 5.4 Migration Guide
 - Breaking changes (divergence rename)
 - Upgrade instructions
 - Deprecation timeline
+- opexebo integration examples
 
-#### 5.4 Release
+**Effort**: 1 day
+
+#### 5.5 Release
 - Version bump to 0.3.0
-- Changelog
+- Changelog highlighting opexebo compatibility
 - Blog post / announcement
 - PyPI release
+
+**Effort**: 1 day
 
 ---
 
@@ -867,6 +950,7 @@ def coherence(
 ### Phase 2 (Signal Processing Primitives)
 - [ ] neighbor_reduce() works on all layout types
 - [ ] spatial_autocorrelation() produces hexagonal peaks for grid cells
+- [ ] **Autocorrelation matches opexebo within 1%** (for regular grids) ← NEW
 - [ ] Grid score matches published values (±0.05)
 - [ ] convolve() supports arbitrary kernels
 
@@ -876,9 +960,13 @@ def coherence(
 
 ### Phase 4 (Metrics Module)
 - [ ] Place field metrics match manual calculations
+- [ ] **Grid score matches opexebo within 1%** (for regular grids) ← NEW
+- [ ] **Coherence matches opexebo exactly** (for regular grids) ← NEW
+- [ ] **Spatial information matches opexebo exactly** ← NEW
 - [ ] Grid score detects known grid cells
 - [ ] Coherence correlates with place field quality
 - [ ] All metrics have examples and citations
+- [ ] All metrics cross-reference opexebo in documentation
 
 ### Phase 5 (Release)
 - [ ] All tests pass (>95% coverage)
@@ -891,53 +979,75 @@ def coherence(
 
 ## Risk Management
 
-### High-Risk Items
+**UPDATED after opexebo analysis**: Overall risk reduced from HIGH → MEDIUM
 
-**1. spatial_autocorrelation complexity**
-- **Mitigation**: Start with regular grids, validate extensively
-- **Fallback**: Provide interpolation-based approach initially
-- **Timeline buffer**: 4 weeks allocated (2 weeks minimum)
+### Medium-Risk Items (reduced from HIGH)
+
+**1. spatial_autocorrelation implementation** (was HIGH, now MEDIUM)
+- **Status**: RISK REDUCED - Adopt opexebo's validated FFT approach
+- **Mitigation**: Use opexebo's FFT method (fast, validated, field-standard)
+- **Fallback**: Graph-based approach for irregular grids (optional, defer if needed)
+- **Timeline buffer**: 4 weeks allocated (validated algorithm reduces uncertainty)
+- **Validation**: Test against opexebo outputs, should match within 1%
 
 **2. Breaking change (divergence rename)**
 - **Mitigation**: Deprecation warnings, clear migration guide
 - **Fallback**: Keep alias for 1 version, remove in 0.4.0
 - **User communication**: Announce early, provide examples
+- **Documentation**: Show opexebo integration patterns
 
 **3. Performance regressions**
 - **Mitigation**: Benchmark suite in CI/CD
 - **Monitoring**: Track key operations (smooth, distance_field, gradient)
 - **Target**: No operation >10% slower than baseline
+- **Baseline**: opexebo performance for regular grids
 
-### Medium-Risk Items
+### Low-Risk Items
 
 **4. API design conflicts**
-- **Mitigation**: Review with maintainers before implementation
-- **Validation**: User feedback on proposed APIs
+- **Status**: LOW RISK - opexebo provides reference APIs
+- **Mitigation**: Match opexebo signatures where possible
+- **Validation**: User feedback on proposed extensions
 
 **5. Grid score validation**
-- **Mitigation**: Test against published datasets
-- **Resources**: Reach out to grid cell researchers for validation data
+- **Status**: LOW RISK - opexebo provides gold standard
+- **Mitigation**: Test against opexebo outputs (should match within 1%)
+- **Resources**: opexebo test cases provide validation data
+- **Authority**: Nobel Prize-winning lab implementation
+
+**6. Algorithm correctness** (NEW)
+- **Status**: LOW RISK - adopting validated algorithms
+- **Mitigation**: Cross-reference opexebo for all overlapping metrics
+- **Testing**: Validate outputs match opexebo exactly for regular grids
+- **Documentation**: Document intentional differences (irregular graph support)
 
 ---
 
 ## Effort Estimation
 
-| Phase | Duration | Person-Weeks |
-|-------|----------|--------------|
-| 1. Differential Operators | 3 weeks | 3 |
-| 2. Signal Processing | 6 weeks | 6 |
-| 3. Path Operations | 1 week | 1 |
-| 4. Metrics Module | 4 weeks | 4 |
-| 5. Polish & Release | 2 weeks | 2 |
-| **Total** | **16 weeks** | **16** |
+**UPDATED after opexebo analysis**:
+
+| Phase | Duration | Person-Weeks | Risk Level |
+|-------|----------|--------------|------------|
+| 1. Differential Operators | 3 weeks | 3 | Low |
+| 2. Signal Processing | 6 weeks | 6 | Medium (was HIGH) |
+| 3. Path Operations | 1 week | 1 | Low |
+| 4. Metrics Module | 2 weeks (was 4) | 2 | Low (was Medium) |
+| 5. Polish & Release | 2 weeks | 2 | Low |
+| **Total** | **14 weeks** | **14** | **Medium overall** |
 
 **Assumptions**:
 - One full-time developer
 - No major blockers
-- spatial_autocorrelation takes full 4 weeks
+- spatial_autocorrelation uses opexebo's FFT approach (validated algorithm)
 
-**Optimistic**: 12 weeks (spatial_autocorrelation simpler than expected)
-**Pessimistic**: 20 weeks (spatial_autocorrelation requires novel research)
+**Changes from original plan**:
+- **Timeline reduced**: 16 weeks → 14 weeks
+- **Risk reduced**: spatial_autocorrelation HIGH → MEDIUM (adopt opexebo's approach)
+- **Metrics reduced**: 4 weeks → 2 weeks (well-defined algorithms from opexebo)
+
+**Optimistic**: 12 weeks (if FFT implementation straightforward)
+**Pessimistic**: 16 weeks (if graph-based autocorrelation needed for irregular grids)
 
 ---
 
@@ -951,9 +1061,9 @@ Phase 1: Differential Operators
 └── 1.4 docs (needs 1.2, 1.3) ────┘
 
 Phase 2: Signal Processing
-├── 2.1 neighbor_reduce (no blockers)
-├── 2.2 spatial_autocorrelation (no blockers, HIGH RISK)
-└── 2.3 convolve (no blockers)
+├── 2.1 neighbor_reduce (no blockers, LOW RISK)
+├── 2.2 spatial_autocorrelation (no blockers, MEDIUM RISK - opexebo FFT approach)
+└── 2.3 convolve (no blockers, LOW RISK)
 
 Phase 3: Path Operations
 └── 3.1 accumulate (no blockers)
@@ -987,11 +1097,12 @@ Phase 5: Release
 - Cross-layout validation (regular, hex, irregular)
 - Performance regression tests
 
-### Validation Tests
+### Validation Tests (UPDATED)
 - Compare with NetworkX (Laplacian)
 - Compare with PyGSP (gradient, divergence)
-- Compare with published grid scores
-- Validate on synthetic data with known properties
+- **Compare with opexebo** (autocorrelation, grid score, coherence, spatial info) ← NEW
+- Validate grid scores match opexebo within 1%
+- Validate on synthetic data with known properties (hexagonal patterns)
 
 ### Benchmark Suite
 ```python
