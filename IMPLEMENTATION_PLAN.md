@@ -910,7 +910,121 @@ def coherence(
 
 ---
 
-#### 4.4 Circular Statistics (Week 15) - NEW from neurocode
+#### 4.4 Boundary Cell Metrics (Week 14) - NEW from TSToolbox_Utils
+
+**File**: `src/neurospatial/metrics/boundary_cells.py`
+
+**Motivation**: Border cells (boundary vector cells) fire when the animal is near environmental boundaries. TSToolbox_Utils and opexebo provide validated implementations.
+
+**Functions**:
+```python
+def border_score(
+    firing_rate: NDArray,
+    env: Environment,
+    *,
+    threshold: float = 0.3,
+    min_area: int = 200,
+) -> float:
+    """
+    Compute border score (Solstad et al. 2008).
+
+    Formula: b = (cM - d) / (cM + d)
+
+    where:
+    - cM = maximum wall contact ratio
+    - d = normalized distance from peak to wall
+
+    Parameters
+    ----------
+    firing_rate : array
+        Spatial firing rate map
+    env : Environment
+        Spatial environment
+    threshold : float, default=0.3
+        Fraction of peak for field segmentation (30%)
+    min_area : int, default=200
+        Minimum field area (pixels) for evaluation
+
+    Returns
+    -------
+    score : float
+        Border score [-1, +1]. Higher values indicate stronger
+        boundary tuning.
+
+    Notes
+    -----
+    Algorithm from TSToolbox_Utils and opexebo:
+    1. Segment place field at 30% of peak rate
+    2. Compute wall contact ratio for each wall
+    3. Take maximum contact ratio (cM)
+    4. Compute firing-rate-weighted distance to walls (d)
+    5. Border score = (cM - d) / (cM + d)
+
+    Only fields with area > min_area and wall contact are evaluated.
+
+    References
+    ----------
+    .. [1] Solstad et al. (2008). Neuron 58(6).
+    .. [2] TSToolbox_Utils Compute_BorderScore.m
+    .. [3] opexebo.analysis.border_score
+
+    Examples
+    --------
+    >>> # Boundary vector cell
+    >>> score = border_score(firing_rate, env)
+    >>> if score > 0.5:
+    ...     print("Strong border cell!")
+    """
+    # Implementation follows TSToolbox_Utils approach:
+    # 1. Compute distance to boundaries
+    boundary_bins = env.boundary_bins
+    dist_to_boundary = compute_distance_to_boundaries(env)
+
+    # 2. Segment field
+    peak = np.max(firing_rate)
+    field_mask = firing_rate > (threshold * peak)
+
+    # 3. Compute wall contact ratio
+    # ...
+
+    pass
+
+def boundary_vector_tuning(
+    firing_rate: NDArray,
+    env: Environment,
+    positions: NDArray,
+) -> dict:
+    """
+    Analyze boundary vector cell tuning.
+
+    Returns preferred distance to boundary and preferred allocentric
+    direction to boundary.
+
+    Returns
+    -------
+    tuning : dict
+        - 'preferred_distance': float
+        - 'preferred_angle': float
+        - 'distance_tuning': array
+        - 'angle_tuning': array
+    """
+    pass
+```
+
+**Tests**: Comprehensive unit tests
+**Effort**: 2 days
+**Risk**: Low (well-documented algorithm in TSToolbox_Utils and opexebo)
+**Blockers**: None
+
+**Key insights from TSToolbox_Utils**:
+- ✅ Border score uses wall contact ratio + distance metric
+- ✅ Threshold at 30% of peak (standard)
+- ✅ Filter by minimum area (200 pixels)
+- ✅ Cross-validate with opexebo
+
+---
+
+#### 4.5 Circular Statistics (Week 15) - NEW from neurocode
 
 **File**: `src/neurospatial/metrics/circular.py`
 
@@ -1110,15 +1224,16 @@ def rayleigh_test(
 
 ---
 
-#### 4.5 Documentation (Week 15)
+#### 4.6 Documentation (Week 15)
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
 **Example notebooks**:
 - `examples/10_place_field_analysis.ipynb` - Place field detection and metrics
 - `examples/11_grid_cell_detection.ipynb` - Grid score and spatial autocorrelation
-- `examples/12_head_direction_analysis.ipynb` - Circular statistics (NEW from neurocode)
-- `examples/13_ratinabox_integration.ipynb` - Simulation + analysis workflow (NEW from RatInABox)
+- `examples/12_boundary_cell_analysis.ipynb` - Border score (NEW from TSToolbox_Utils)
+- `examples/13_head_direction_analysis.ipynb` - Circular statistics (NEW from neurocode)
+- `examples/14_ratinabox_integration.ipynb` - Simulation + analysis workflow (NEW from RatInABox)
 
 **RatInABox integration example** (NEW):
 ```python
