@@ -1,5 +1,102 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 3.2 - Population Metrics COMPLETED
+
+### Task: Implement population-level place field metrics
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/metrics/population.py` - 5 population metric functions (387 lines)
+2. `tests/metrics/test_population.py` - Comprehensive test suite (28 tests, 361 lines)
+
+**Files Modified**:
+
+1. `src/neurospatial/metrics/__init__.py` - Added population metrics to public API exports
+
+**Functions Implemented**:
+
+1. **`population_coverage(all_place_fields, n_bins)`** - Fraction of environment covered by place fields
+   - Set-based unique bin collection (efficient for sparse data)
+   - Handles empty fields gracefully (returns 0.0)
+   - Range: [0, 1] where 1.0 = complete coverage
+
+2. **`field_density_map(all_place_fields, n_bins)`** - Count overlapping fields per bin
+   - Returns integer array showing field density per bin
+   - Direct array indexing for efficiency
+   - Use case: identify high-density regions (stable coding)
+
+3. **`count_place_cells(spatial_information, threshold=0.5)`** - Count cells exceeding spatial information threshold
+   - Default threshold: 0.5 bits/spike (Skaggs et al. 1996 standard)
+   - NaN handling: excluded from count
+   - Strict inequality (>) not (>=) for threshold
+
+4. **`field_overlap(field_bins_i, field_bins_j)`** - Jaccard similarity between two fields
+   - Jaccard coefficient: |intersection| / |union|
+   - Range: [0, 1] where 1.0 = identical, 0.0 = disjoint
+   - Empty field handling: returns 0.0
+   - Use cases: remapping, stability, similarity analysis
+
+5. **`population_vector_correlation(population_matrix)`** - Pairwise Pearson correlation matrix
+   - Uses `np.corrcoef()` with explicit `dtype=np.float64` (mypy requirement)
+   - Symmetric matrix with diagonal forced to 1.0
+   - NaN for off-diagonal pairs involving zero-variance cells
+   - Use cases: functional assemblies, ensemble dynamics
+
+**Implementation Details**:
+
+- **Scientific correctness**: All formulas validated against neuroscience literature (Wilson & McNaughton 1993, Skaggs et al. 1996, Muller & Kubie 1987)
+- **Type safety**: Zero mypy errors after fixing `np.corrcoef()` dtype specification
+- **Edge case handling**: Empty fields, NaN values, constant cells, boundary conditions
+- **Efficient operations**: Vectorized NumPy operations throughout
+- **Documentation**: Complete NumPy-style docstrings with examples, references, and use cases
+
+**Key Design Decisions**:
+
+1. **Constant cells diagonal fix**: Force diagonal to 1.0 even when numpy returns NaN (self-correlation always 1.0 by definition)
+2. **Jaccard for overlap**: Preferred over correlation for sparse binary fields (invariant to non-field bins)
+3. **Set operations for coverage**: Pythonic and clear, optimal for sparse place fields
+4. **NaN exclusion in count**: Cells with undefined information excluded from place cell count
+5. **Explicit dtype for corrcoef**: Required for mypy type checking (numpy 1.20+ feature)
+
+**Test Coverage**:
+
+- 28/28 tests PASS, 2 warnings (expected from zero-variance cells)
+- **TestPopulationCoverage** (5 tests): basic, overlap, no fields, multiple fields per cell, full coverage
+- **TestFieldDensityMap** (3 tests): no overlap, overlap, multiple fields
+- **TestCountPlaceCells** (6 tests): threshold variants, boundary, NaN handling
+- **TestFieldOverlap** (6 tests): identical, disjoint, partial, subset, empty fields
+- **TestPopulationVectorCorrelation** (7 tests): shape, diagonal, identical, orthogonal, anticorrelated, single cell, constant cells
+- **TestPopulationMetricsIntegration** (1 test): full workflow combining all 5 functions
+
+**Code Quality**:
+
+- ✅ Mypy: 0 errors (strict type checking with explicit dtype)
+- ✅ Ruff: All checks pass (1 unused import auto-fixed)
+- ✅ Test coverage: 100% function coverage, comprehensive edge cases
+- ✅ Documentation: Complete NumPy-style docstrings with scientific references
+
+**Code Review Outcomes**:
+
+All issues addressed:
+- ✅ Fixed mypy type error: Added `dtype=np.float64` to `np.corrcoef()` call
+- ✅ Constant cells handled correctly: Diagonal forced to 1.0, off-diagonal allowed to be NaN
+- ✅ All edge cases tested: empty fields, NaN values, boundary conditions
+- ✅ Scientific formulas validated: Jaccard, Pearson correlation, threshold filtering
+
+**Scientific Validation** (Future):
+
+- [ ] Compare coverage with opexebo/neurocode on real hippocampal data
+- [ ] Validate Jaccard similarity against ecology packages (spatial overlap)
+- [ ] Cross-check correlation matrices with Wilson & McNaughton 1993 datasets
+
+**Next Steps**:
+
+Ready to move on to Milestone 3.3 - Boundary Cell Metrics
+
+---
+
 ## 2025-11-07: Milestone 3.1 - Place Field Metrics COMPLETED
 
 ### Task: Implement place field detection and single-cell spatial metrics

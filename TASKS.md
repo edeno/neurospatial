@@ -520,24 +520,24 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/metrics/population.py`
-- [ ] Implement `population_coverage(all_place_fields, n_bins)` - fraction covered
-- [ ] Implement `field_density_map(all_place_fields, n_bins)` - overlapping fields
-- [ ] Implement `count_place_cells(spatial_information, threshold=0.5)` - count exceeding threshold
-- [ ] Implement `field_overlap(field_bins_i, field_bins_j)` - Jaccard coefficient
-- [ ] Implement `population_vector_correlation(population_matrix)` - correlation matrix
+- [x] Create `src/neurospatial/metrics/population.py`
+- [x] Implement `population_coverage(all_place_fields, n_bins)` - fraction covered
+- [x] Implement `field_density_map(all_place_fields, n_bins)` - overlapping fields
+- [x] Implement `count_place_cells(spatial_information, threshold=0.5)` - count exceeding threshold
+- [x] Implement `field_overlap(field_bins_i, field_bins_j)` - Jaccard coefficient
+- [x] Implement `population_vector_correlation(population_matrix)` - correlation matrix
 
 **Testing**:
 
-- [ ] Create `tests/metrics/test_population.py`
-- [ ] Test: `test_population_coverage()` - verify fraction calculation
-- [ ] Test: `test_field_density_map()` - count overlaps correctly
-- [ ] Test: `test_count_place_cells()` - threshold filtering
-- [ ] Test: `test_field_overlap()` - Jaccard index
-- [ ] Test: `test_population_vector_correlation()` - correlation matrix shape
-- [ ] Run: `uv run pytest tests/metrics/test_population.py -v`
+- [x] Create `tests/metrics/test_population.py`
+- [x] Test: `test_population_coverage()` - verify fraction calculation
+- [x] Test: `test_field_density_map()` - count overlaps correctly
+- [x] Test: `test_count_place_cells()` - threshold filtering
+- [x] Test: `test_field_overlap()` - Jaccard index
+- [x] Test: `test_population_vector_correlation()` - correlation matrix shape
+- [x] Run: `uv run pytest tests/metrics/test_population.py -v`
 
-**Effort**: 2 days
+**Effort**: 2 days (COMPLETE)
 
 ---
 
