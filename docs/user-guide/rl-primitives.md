@@ -62,17 +62,20 @@ reward = region_reward_field(env, "goal", reward_value=1.0, decay="constant")
 ```
 
 Creates a binary reward field:
+
 - `reward_value` inside the region
 - `0.0` outside the region
 
 This is the **unbiased** approach - the agent receives reward only when reaching the goal. No gradient information is provided.
 
 **Pros:**
+
 - Guaranteed to preserve optimal policy
 - Clear success criterion
 - Standard for benchmark tasks
 
 **Cons:**
+
 - Can be very slow to learn in large environments
 - No guidance toward goal
 
@@ -85,16 +88,19 @@ reward = region_reward_field(env, "goal", reward_value=1.0, decay="linear")
 ```
 
 Provides linear decay from the region boundary:
+
 - Full `reward_value` inside the region
 - Linear decay outside: `reward = reward_value * (1 - distance/max_distance)`
 - Uses graph-based distance (respects walls and obstacles)
 
 **Pros:**
+
 - Provides gradient information
 - Constant gradient magnitude (predictable)
 - Decays to exactly zero at maximum distance
 
 **Cons:**
+
 - May inadvertently guide toward suboptimal paths (test against sparse baseline!)
 - Normalizes by global maximum distance (far regions get near-zero rewards)
 
@@ -111,16 +117,19 @@ reward = region_reward_field(
 ```
 
 Provides smooth Gaussian falloff using spatial smoothing:
+
 - Indicator field (1 inside, 0 outside) is smoothed with Gaussian kernel
 - **Critical:** Rescaled so maximum **within the region** equals `reward_value`
 - Bandwidth controls decay rate (larger = slower decay)
 
 **Pros:**
+
 - Smoothest gradients (good for gradient-based RL)
 - Tunable decay rate via `bandwidth`
 - Peak reward preserved in region (unlike naive smoothing)
 
 **Cons:**
+
 - Most likely to bias policies (use with caution!)
 - Requires tuning bandwidth parameter
 - Computationally more expensive (smoothing operation)
@@ -215,21 +224,25 @@ reward = goal_reward_field(env, goal_bins, decay="exponential", scale=10.0)
 Formula: `reward = scale * exp(-distance / scale)`
 
 **Pros:**
+
 - **Most common in RL literature** - well-studied properties
 - Smooth gradients everywhere
 - `scale` parameter controls both peak reward and decay rate
 - Never exactly zero (global gradient information)
 
 **Cons:**
+
 - May guide agents through walls if not careful (uses graph distance in neurospatial, so this is handled)
 - Requires tuning `scale` parameter
 
 **Scale parameter:**
+
 - Larger scale = slower decay, longer-range guidance
 - Smaller scale = faster decay, more local reward
-- At distance = scale, reward = scale * exp(-1) ≈ 0.37 * scale
+- At distance = scale, reward = scale *exp(-1) ≈ 0.37* scale
 
 **Validation:**
+
 ```python
 # Must have scale > 0
 goal_reward_field(env, goal_bins, decay="exponential", scale=0.0)
@@ -249,16 +262,19 @@ reward = goal_reward_field(
 Formula: `reward = scale * max(0, 1 - distance / max_distance)`
 
 **Pros:**
+
 - Reaches **exactly zero** at `max_distance`
 - Constant gradient magnitude within range
 - Easy to reason about (clear reward radius)
 
 **Cons:**
+
 - Requires specifying `max_distance` (extra hyperparameter)
 - No gradient information beyond cutoff
 - Abrupt transition at boundary
 
 **Required parameter:**
+
 ```python
 # max_distance is required
 goal_reward_field(env, goal_bins, decay="linear", scale=10.0)
@@ -276,11 +292,13 @@ reward = goal_reward_field(env, goal_bins, decay="inverse", scale=10.0)
 Formula: `reward = scale / (1 + distance)`
 
 **Pros:**
+
 - Simple formula
 - Never reaches zero (global gradients)
 - No hyperparameter tuning needed
 
 **Cons:**
+
 - **Most likely to bias policies** - use with extreme caution!
 - Very slow decay (can dominate learning signal far from goal)
 - Not commonly used in modern RL
@@ -356,6 +374,7 @@ goal_reward_field(env, goal_bins, decay="inverse")      # ✓
 ```
 
 This naming choice:
+
 - Matches common RL terminology ("reward decay")
 - Provides consistency across all reward field functions
 - Makes code more readable and predictable
@@ -428,6 +447,7 @@ From Ng et al. (1999):
 **Example:** In a maze with a shortcut, linear decay might guide the agent around obstacles instead of through a hidden passage.
 
 **Recommendation:**
+
 1. Start with sparse (constant) rewards
 2. Add shaping only if learning is too slow
 3. Always validate final policy against sparse baseline

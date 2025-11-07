@@ -117,6 +117,7 @@ occupancy_linear = env.occupancy(times, positions, time_allocation='linear')
 ```
 
 **Use Cases:**
+
 - Normalizing firing rates for place field analysis
 - Identifying under-sampled regions
 - Computing exploration metrics
@@ -228,6 +229,7 @@ print(f"Time outside environment: {time_outside:.1f} seconds")
 ```
 
 **Use Cases:**
+
 - Run detection and dwell time analysis
 - State change detection
 - Temporal ordering of spatial visits
@@ -393,6 +395,7 @@ plt.show()
 ```
 
 **Use Cases:**
+
 - Movement pattern analysis and behavioral stereotypy
 - Behavioral state transitions
 - Markov model estimation for trajectory prediction
@@ -484,6 +487,7 @@ plt.show()
 ```
 
 **Use Cases:**
+
 - Detecting disconnected maze regions
 - Identifying isolated bins (component size = 1)
 - Validating environment connectivity
@@ -540,6 +544,7 @@ if unreachable:
 ```
 
 **Use Cases:**
+
 - Accessibility analysis
 - Detecting barriers or walls
 - Goal reachability queries
@@ -645,6 +650,7 @@ plt.show()
 ```
 
 **Use Cases:**
+
 - Noise reduction in firing rate maps
 - Place field visualization
 - Spatial field preprocessing
@@ -735,6 +741,7 @@ rates_along_path = env.interpolate(firing_rate_field, trajectory_points, mode='l
 ```
 
 **Use Cases:**
+
 - Evaluating fields at arbitrary spatial locations
 - Computing values along continuous trajectories
 - Extracting field values at specific points of interest
@@ -855,6 +862,7 @@ firing_rate_coarse_alt = df.groupby('coarse_bin')['firing_rate'].mean().values
 ```
 
 **Use Cases:**
+
 - Multi-scale spatial analysis
 - Reducing computational cost for large environments
 - Creating visualization at different resolutions
@@ -912,6 +920,7 @@ occupancy_north = env_north.occupancy(timestamps, positions)
 ```
 
 **Use Cases:**
+
 - Region-specific analysis
 - Excluding walls or barriers
 - Multi-compartment experiments
@@ -1015,6 +1024,7 @@ plt.show()
 ```
 
 **Use Cases:**
+
 - Goal-directed behavior analysis
 - Distance-to-reward computations for reinforcement learning
 - Spatial gradients and value functions
@@ -1131,6 +1141,7 @@ plt.show()
 ```
 
 **Use Cases:**
+
 - Breadth-first search from landmarks
 - Analyzing spatial spread through connectivity
 - Local neighborhood analysis at different scales
@@ -1259,6 +1270,7 @@ for j in range(membership.shape[1]):
 ```
 
 **Use Cases:**
+
 - Multi-region spatial analysis
 - Region-specific firing rate computations
 - Compartment comparisons (maze arms, contexts)
@@ -1317,6 +1329,7 @@ assert not np.allclose(env_baseline.bin_centers[0], [999.0, 999.0])
 ```
 
 **Use Cases:**
+
 - Safe experimentation with deep copy
 - Creating environment variants
 - Before/after comparisons
@@ -1330,18 +1343,21 @@ assert not np.allclose(env_baseline.bin_centers[0], [999.0, 999.0])
 ### Choosing Parameters
 
 **bin_size:**
+
 - Start with 2-5 cm for rodent experiments
 - Ensure at least 10-20 samples per bin on average
 - Smaller bins = better resolution but more noise
 - Balance spatial precision vs statistical power
 
 **Smoothing (sigma):**
+
 - Express in spatial units (cm), then convert to bins: `sigma_bins = sigma_cm / bin_size`
 - Typical range: 5-10 cm smoothing for place fields
 - More smoothing for noisy data, less for high-quality data
 - Visualize raw and smoothed to verify appropriateness
 
 **Occupancy thresholds:**
+
 - Typical minimum: 0.1-1.0 seconds
 - Too low: noisy estimates in under-sampled bins
 - Too high: exclude potentially important regions
@@ -1350,6 +1366,7 @@ assert not np.allclose(env_baseline.bin_centers[0], [999.0, 999.0])
 ### Performance Considerations
 
 **Large environments:**
+
 ```python
 # Use sparse matrices for transitions
 T = env.transitions(positions, normalize=False)  # Sparse CSR format
@@ -1363,6 +1380,7 @@ env_region = env.subset(region_bins)
 ```
 
 **Vectorization:**
+
 ```python
 # GOOD: Vectorized operations
 distances = env.distance_to(target_bin)
@@ -1375,6 +1393,7 @@ distances = env.distance_to(target_bin)
 ### Common Pitfalls
 
 ❌ **Forgetting to filter low occupancy:**
+
 ```python
 # BAD: Division by tiny occupancy values
 firing_rate = spike_counts / occupancy  # Unstable!
@@ -1386,6 +1405,7 @@ firing_rate[valid] = spike_counts[valid] / occupancy[valid]
 ```
 
 ❌ **Ignoring NaN handling:**
+
 ```python
 # BAD: Operations propagate NaN unexpectedly
 mean_rate = firing_rate.mean()  # NaN if any NaN values
@@ -1396,6 +1416,7 @@ mean_rate = np.nanmean(firing_rate)
 ```
 
 ❌ **Confusing geodesic and Euclidean distance:**
+
 ```python
 # These can differ greatly in complex environments!
 dist_geodesic = env.distance_to(goal, metric='geodesic')  # Through maze
