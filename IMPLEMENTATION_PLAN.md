@@ -4,7 +4,7 @@
 
 This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 17 weeks (4.25 months) - UPDATED after trajectory metrics addition
+**Timeline**: 16 weeks (4 months) - UPDATED after trajectory metrics addition
 **Priority**: HIGH - Enables analyses not possible in any other package
 **Breaking Changes**: Minimal (one function rename required)
 **Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
@@ -1833,202 +1833,11 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ---
 
-## Phase 5: Code Quality & Infrastructure (Week 17)
-
-**NEW**: Adopt code patterns from movement package analysis
+## Phase 5: Polish & Release (Week 16-17)
 
 ### Components
 
-#### 5.1 Logging Infrastructure (Days 1-2) - NEW from movement package
-
-**Motivation**: movement package provides robust logging architecture that neurospatial should adopt for better debugging and user feedback.
-
-**Implementation**:
-
-**Create logging module** (`src/neurospatial/utils/logging.py`):
-```python
-import logging
-import sys
-from pathlib import Path
-
-# Create logger
-logger = logging.getLogger('neurospatial')
-logger.setLevel(logging.INFO)
-
-# Console handler (stderr)
-console_handler = logging.StreamHandler(sys.stderr)
-console_handler.setLevel(logging.INFO)
-console_formatter = logging.Formatter(
-    '%(levelname)s - %(name)s - %(message)s'
-)
-console_handler.setFormatter(console_formatter)
-logger.addHandler(console_handler)
-
-# File handler (optional, user can configure)
-def add_file_handler(log_file: Path):
-    """Add file handler for logging to file."""
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-    )
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-```
-
-**Usage throughout codebase**:
-```python
-from neurospatial.utils.logging import logger
-
-# In Environment.from_samples():
-if bin_size <= 0:
-    logger.error("bin_size must be positive")
-    raise ValueError(f"bin_size must be positive (got {bin_size})")
-
-if n_samples < 100:
-    logger.warning(
-        f"Only {n_samples} samples provided - consider collecting more data "
-        "for reliable spatial discretization"
-    )
-
-# In spatial_autocorrelation():
-if np.isnan(field).sum() > 0.5 * len(field):
-    logger.warning(
-        f"Field is {np.isnan(field).mean():.1%} NaN - "
-        "autocorrelation may be unreliable"
-    )
-```
-
-**Benefits**:
-- ✅ Dual output (console + optional file)
-- ✅ Structured error messages with context
-- ✅ Warning thresholds (inform, don't block)
-- ✅ Debugging support (file logs with timestamps)
-
-**Effort**: 2 days
-**Risk**: Low (well-established pattern)
-
----
-
-#### 5.2 Validation-First Refactoring (Days 3-4) - NEW from movement package
-
-**Motivation**: Centralize validation logic for reusability and clarity.
-
-**Pattern**: Extract validation into dedicated functions
-```python
-# Before (validation mixed with logic):
-def bin_at(self, points):
-    if points.ndim != 2:
-        raise ValueError("points must be 2D array")
-    if points.shape[1] != self.n_dim:
-        raise ValueError(f"Expected {self.n_dim}D points")
-    # ... processing logic ...
-
-# After (validation-first):
-def bin_at(self, points):
-    _validate_points_array(points, expected_dims=self.n_dim)
-    return self._map_points_to_bins_impl(points)
-
-def _validate_points_array(points, expected_dims):
-    """Centralized point validation."""
-    if not isinstance(points, np.ndarray):
-        raise TypeError(f"points must be ndarray, got {type(points)}")
-    if points.ndim != 2:
-        raise ValueError(f"points must be 2D array, got {points.ndim}D")
-    if points.shape[1] != expected_dims:
-        raise ValueError(
-            f"Expected {expected_dims}D points, got {points.shape[1]}D"
-        )
-```
-
-**Apply to critical functions**:
-- `Environment.from_samples()` - validate positions, bin_size
-- `map_points_to_bins()` - validate points array
-- `spatial_autocorrelation()` - validate field shape, NaN handling
-- `detect_runs_between_regions()` - validate region names exist
-
-**Benefits**:
-- ✅ Reusable validation logic
-- ✅ Consistent error messages
-- ✅ Easier to test validation separately
-- ✅ Cleaner main logic
-
-**Effort**: 2 days
-**Risk**: Low (refactoring, no behavior change)
-
----
-
-#### 5.3 attrs Library for New Data Classes (Days 5-6) - NEW from movement package
-
-**Motivation**: Use attrs for automatic validation in new modules (segmentation, metrics).
-
-**Add attrs dependency**:
-```toml
-# pyproject.toml
-dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib",
-    "networkx",
-    "scipy",
-    "scikit-learn",
-    "shapely",
-    "track-linearization",
-    "attrs>=23.0",  # NEW
-]
-```
-
-**Example usage in segmentation module**:
-```python
-from attrs import define, field, validators as v
-import numpy as np
-
-@define
-class Run:
-    """Behavioral run from source to target region."""
-    start_time: float = field(validator=v.instance_of(float))
-    end_time: float = field(validator=v.instance_of(float))
-    duration: float = field(init=False)
-    trajectory_bins: np.ndarray = field(validator=_validate_1d_array)
-    path_length: float = field(validator=[v.instance_of(float), v.gt(0)])
-    success: bool = field(default=False)
-
-    def __attrs_post_init__(self):
-        """Compute derived attributes."""
-        object.__setattr__(self, 'duration', self.end_time - self.start_time)
-
-        # Validate duration is positive
-        if self.duration <= 0:
-            raise ValueError(
-                f"end_time must be after start_time "
-                f"(got start={self.start_time}, end={self.end_time})"
-            )
-
-def _validate_1d_array(instance, attribute, value):
-    """Validator for 1D numpy arrays."""
-    if not isinstance(value, np.ndarray):
-        raise TypeError(f"{attribute.name} must be ndarray")
-    if value.ndim != 1:
-        raise ValueError(f"{attribute.name} must be 1D array")
-```
-
-**Apply to new modules**:
-- `segmentation/regions.py` - `Run`, `Crossing` classes
-- `segmentation/laps.py` - `Lap` class
-- `segmentation/trials.py` - `Trial` class
-
-**Benefits**:
-- ✅ Automatic validation on instantiation
-- ✅ Type conversion (converters)
-- ✅ Immutability (frozen=True)
-- ✅ Better error messages
-
-**Effort**: 2 days
-**Risk**: Low (well-established library)
-
----
-
-#### 5.4 Validation Against opexebo, neurocode, and RatInABox (Days 7-8)
+#### 5.1 Validation Against opexebo, neurocode, and RatInABox
 
 **Validation against analysis packages** (opexebo, neurocode):
 - Test grid score matches opexebo within 1%
@@ -2062,9 +1871,9 @@ def _validate_1d_array(instance, attribute, value):
 - ✅ Test edge cases (periodic boundaries, walls, holes)
 - ✅ Benchmark performance (continuous vs discretized)
 
-**Effort**: 4 days (increased from 3 to include RatInABox validation)
+**Effort**: 4 days
 
-#### 5.5 Performance Optimization (Days 9-10)
+#### 5.2 Performance Optimization
 - Profile critical paths
 - Optimize hot loops
 - Add caching where beneficial
@@ -2072,30 +1881,28 @@ def _validate_1d_array(instance, attribute, value):
 
 **Effort**: 2 days
 
-#### 5.6 Documentation Polish (Parallel with validation)
+#### 5.3 Documentation Polish
 - API reference generation
 - Cross-linking between docs
-- Cross-references to opexebo, neurocode, movement
+- Cross-references to opexebo, neurocode
 - Tutorial videos (optional)
 
-**Effort**: Ongoing throughout Phase 5
+**Effort**: 2 days
 
-#### 5.7 Migration Guide (Day 10)
+#### 5.4 Migration Guide
 - Breaking changes (divergence rename)
 - Upgrade instructions
 - Deprecation timeline
 - opexebo integration examples
-- Code quality improvements (logging, validation)
 
 **Effort**: 1 day
 
-#### 5.8 Release (Day 10)
+#### 5.5 Release
 - Version bump to 0.3.0
 - Changelog highlighting:
   - opexebo compatibility
   - Behavioral segmentation
   - Trajectory metrics
-  - Code quality improvements
 - Blog post / announcement
 - PyPI release
 
@@ -2190,7 +1997,7 @@ def _validate_1d_array(instance, attribute, value):
 
 ## Effort Estimation
 
-**UPDATED after ecology packages and movement code patterns analysis**:
+**UPDATED after ecology packages analysis**:
 
 | Phase | Duration | Person-Weeks | Risk Level |
 |-------|----------|--------------|------------|
@@ -2198,7 +2005,7 @@ def _validate_1d_array(instance, attribute, value):
 | 2. Signal Processing | 6 weeks | 6 | Medium (was HIGH) |
 | 3. Trajectory & Behavioral Segmentation | 2 weeks | 2 | Low |
 | 4. Metrics Module | 4 weeks | 4 | Low (was Medium) |
-| 5. Code Quality & Infrastructure | 2 weeks | 2 | Low |
+| 5. Polish & Release | 2 weeks | 2 | Low |
 | **Total** | **17 weeks** | **17** | **Medium overall** |
 
 **Phase 4 breakdown**:
@@ -2211,27 +2018,25 @@ def _validate_1d_array(instance, attribute, value):
 - 4.7 Documentation (Week 16): 4 days
 
 **Phase 5 breakdown**:
-- 5.1 Logging Infrastructure (Week 17, Days 1-2): 2 days
-- 5.2 Validation-First Refactoring (Week 17, Days 3-4): 2 days
-- 5.3 attrs Library Integration (Week 17, Days 5-6): 2 days
-- 5.4 Package Validation (Week 17, Days 7-8): 2 days
-- 5.5 Performance Optimization (Week 17, Days 9-10): 2 days
+- 5.1 Package Validation (Week 16-17): 4 days
+- 5.2 Performance Optimization (Week 17): 2 days
+- 5.3 Documentation Polish (Week 17): 2 days
+- 5.4 Migration Guide (Week 17): 1 day
+- 5.5 Release (Week 17): 1 day
 
 **Assumptions**:
 - One full-time developer
 - No major blockers
 - spatial_autocorrelation uses opexebo's FFT approach (validated algorithm)
-- Code quality improvements integrated throughout implementation
 
 **Changes from original plan**:
-- **Timeline**: 16 weeks → 17 weeks
+- **Timeline**: 14 weeks → 17 weeks
 - **Added Phase 3.3**: Behavioral segmentation (2 weeks)
 - **Added Phase 4.6**: Trajectory metrics from ecology packages (3 days)
-- **Expanded Phase 5**: Code quality improvements from movement package (6 days)
 - **Risk**: spatial_autocorrelation HIGH → MEDIUM (adopt opexebo's approach)
 
 **Optimistic**: 15 weeks (if all implementations straightforward)
-**Pessimistic**: 19 weeks (if graph-based autocorrelation needed + code quality delays)
+**Pessimistic**: 19 weeks (if graph-based autocorrelation needed for irregular grids)
 
 ---
 
@@ -2263,12 +2068,12 @@ Phase 4: Metrics Module
 ├── 4.6 trajectory_metrics (no blockers)
 └── 4.7 docs (needs 4.1-4.6)
 
-Phase 5: Code Quality & Infrastructure
-├── 5.1 logging (no blockers)
-├── 5.2 validation_refactoring (no blockers)
-├── 5.3 attrs_integration (no blockers)
-├── 5.4 package_validation (needs 4.3 for grid score validation)
-└── 5.5 performance (no blockers)
+Phase 5: Polish & Release
+├── 5.1 package_validation (needs 4.3 for grid score validation)
+├── 5.2 performance (no blockers)
+├── 5.3 documentation (no blockers)
+├── 5.4 migration_guide (no blockers)
+└── 5.5 release (needs all above)
 ```
 
 **Critical path**: spatial_autocorrelation (2.2) → grid_score (4.3)
@@ -2277,7 +2082,6 @@ Phase 5: Code Quality & Infrastructure
 - Phase 1 (differential operators) can run in parallel with Phase 2.1 (neighbor_reduce)
 - Phase 3 (behavioral segmentation) can run in parallel with Phase 2.2 (spatial_autocorrelation)
 - Phase 4.1, 4.2, 4.4, 4.5, 4.6 can run in parallel with Phase 2.2 and 4.3
-- Phase 5.1-5.3 (code quality) can be integrated throughout implementation
 
 ---
 
@@ -2412,24 +2216,21 @@ This implementation plan delivers **critical missing functionality** that:
 2. **Provides fundamental spatial primitives** for RL/replay/behavioral analysis
 3. **Adds behavioral segmentation** for automatic epoch detection (runs, laps, trials)
 4. **Adds trajectory metrics** from ecology/ethology (turn angles, home range, MSD)
-5. **Improves code quality** with logging, validation patterns, and attrs
-6. **Reduces code duplication** across labs with standard metrics
-7. **Maintains backward compatibility** except one well-managed breaking change
+5. **Reduces code duplication** across labs with standard metrics
+6. **Maintains backward compatibility** except one well-managed breaking change
 
-**Timeline**: 17 weeks (4.25 months)
+**Timeline**: 17 weeks (~4 months)
 **Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo, neurocode, and RatInABox)
 **Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience on irregular graphs
 
 **Key additions** (from ecosystem analysis):
 - ✅ **Phase 3.3**: Behavioral segmentation (detect_runs_between_regions, detect_laps, segment_trials)
 - ✅ **Phase 4.6**: Trajectory metrics (turn_angles, step_lengths, home_range, MSD)
-- ✅ **Phase 5**: Code quality improvements (logging, validation-first, attrs)
 
 **Validation strategy** (comprehensive cross-validation):
 - ✅ Cross-validate against analysis packages (opexebo, neurocode, vandermeerlab, buzcode)
 - ✅ Validate against simulation package (RatInABox - known ground truth)
 - ✅ Integration example showing simulation → discretization → analysis workflow
-- ✅ Code patterns validated from movement package (logging, validation, attrs)
 
 **Ecosystem context** (24 packages analyzed):
 - **Neuroscience** (16): pynapple, SpikeInterface, opexebo, neurocode, movement, etc.
@@ -2453,16 +2254,10 @@ src/neurospatial/
         boundary_cells.py  #   border_score (Solstad et al. 2008)
         circular.py        #   circular_mean, von_mises, rayleigh_test
         trajectory.py      #   turn_angles, step_lengths, home_range, MSD
-    utils/                 # Phase 5: infrastructure
-        logging.py         #   Logging infrastructure (movement pattern)
-        validation.py      #   Centralized validation (movement pattern)
 ```
 
 **Breaking changes**:
 - `divergence()` → `kl_divergence()` (alias provided in 0.3.x, removed in 0.4.0)
-
-**New dependencies**:
-- `attrs>=23.0` (automatic validation for new data classes)
 
 **Critical decision needed**: Approve breaking change (divergence rename) and migration strategy.
 
