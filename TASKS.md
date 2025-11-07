@@ -87,8 +87,8 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/reward.py` module
-- [ ] Implement `region_reward_field(env, region_name, *, reward_value=1.0, decay="constant", bandwidth=None)`
+- [x] Create `src/neurospatial/reward.py` module
+- [x] Implement `region_reward_field(env, region_name, *, reward_value=1.0, decay="constant", bandwidth=None)`
   - [ ] Validate region exists in `env.regions`
   - [ ] Get region mask: `region_mask = regions_to_mask(env, [region_name])`
   - [ ] If `decay == "constant"`: binary reward (reward_value inside, 0 outside)
@@ -116,26 +116,26 @@
 
 **Testing**:
 
-- [ ] Create `tests/test_reward.py`
-- [ ] Test: `test_region_reward_field_constant()` - binary reward in region
-- [ ] Test: `test_region_reward_field_linear()` - linear decay from boundary
-- [ ] Test: `test_region_reward_field_gaussian()` - smooth falloff, peak maintains value IN REGION (critical fix)
-- [ ] Test: `test_region_reward_field_validation()` - bandwidth required for Gaussian, region must exist
-- [ ] Test: `test_region_reward_field_parameter_naming()` - verify `decay` parameter (not `falloff`)
-- [ ] Test: `test_goal_reward_field_exponential()` - exponential decay from goal
-- [ ] Test: `test_goal_reward_field_linear()` - reaches zero at max distance
-- [ ] Test: `test_goal_reward_field_inverse()` - inverse distance formula
-- [ ] Test: `test_goal_reward_field_multiple_goals()` - nearest goal dominates
-- [ ] Test: `test_goal_reward_field_validation()` - invalid goal bins raise error, scale positive for exponential
-- [ ] Test: `test_goal_reward_field_parameter_naming()` - verify `decay` parameter (not `kind`)
-- [ ] Run: `uv run pytest tests/test_reward.py -v`
+- [x] Create `tests/test_reward.py`
+- [x] Test: `test_region_reward_field_constant()` - binary reward in region
+- [x] Test: `test_region_reward_field_linear()` - linear decay from boundary
+- [x] Test: `test_region_reward_field_gaussian()` - smooth falloff, peak maintains value IN REGION (critical fix)
+- [x] Test: `test_region_reward_field_validation()` - bandwidth required for Gaussian, region must exist
+- [x] Test: `test_region_reward_field_parameter_naming()` - verify `decay` parameter (not `falloff`)
+- [x] Test: `test_goal_reward_field_exponential()` - exponential decay from goal
+- [x] Test: `test_goal_reward_field_linear()` - reaches zero at max distance
+- [x] Test: `test_goal_reward_field_inverse()` - inverse distance formula
+- [x] Test: `test_goal_reward_field_multiple_goals()` - nearest goal dominates
+- [x] Test: `test_goal_reward_field_validation()` - invalid goal bins raise error, scale positive for exponential
+- [x] Test: `test_goal_reward_field_parameter_naming()` - verify `decay` parameter (not `kind`)
+- [x] Run: `uv run pytest tests/test_reward.py -v` (15/15 tests pass)
 
 **Type Checking**:
 
-- [ ] Add `TYPE_CHECKING` guard for Environment import
-- [ ] Use `Literal` types for decay parameters
-- [ ] Verify mypy passes: `uv run mypy src/neurospatial/reward.py`
-- [ ] No `type: ignore` comments allowed
+- [x] Add `TYPE_CHECKING` guard for Environment import
+- [x] Use `Literal` types for decay parameters
+- [x] Verify mypy passes: `uv run mypy src/neurospatial/reward.py` (zero errors)
+- [x] No `type: ignore` comments allowed
 
 **Effort**: 3 days
 

@@ -121,4 +121,93 @@ Ready to move on to implementing the `spikes_to_field()` and `compute_place_fiel
 - `neurospatial.spikes_to_field(env, spike_times, times, positions, *, min_occupancy_seconds=0.0)`
 - `neurospatial.compute_place_field(env, spike_times, times, positions, *, min_occupancy_seconds=0.0, smoothing_bandwidth=None)`
 
-**Next Task**: Move to Milestone 0.2 - Reward Field Primitives (`region_reward_field()`, `goal_reward_field()`)
+**Next Task**: Move to Milestone 0.3 - Documentation for Phase 0 primitives
+
+---
+
+## 2025-11-07: Milestone 0.2 - Reward Field Primitives COMPLETE
+
+### Task: Implement `region_reward_field()` and `goal_reward_field()` functions
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/reward.py` - Core implementation module (336 lines)
+2. `tests/test_reward.py` - Comprehensive test suite (15 tests, all pass)
+
+**Files Modified**:
+
+1. `src/neurospatial/__init__.py` - Added public API exports for new functions
+
+**Implementation Details**:
+
+**`region_reward_field()` function:**
+- Generates reward fields from named regions with three decay types:
+  - `decay="constant"` - Binary reward (reward_value inside region, 0 outside)
+  - `decay="linear"` - Linear decay from region boundary using distance field
+  - `decay="gaussian"` - Smooth Gaussian falloff (requires bandwidth parameter)
+- **Critical fix**: Gaussian decay rescales by max *within region* (not global max)
+- Full input validation: region existence, bandwidth requirement for Gaussian
+- Comprehensive NumPy-style docstring with RL references (Ng et al., 1999)
+- Uses `Literal["constant", "linear", "gaussian"]` for type-safe decay parameter
+
+**`goal_reward_field()` function:**
+- Generates distance-based reward fields from goal bins with three decay types:
+  - `decay="exponential"` - `scale * exp(-d/scale)` (most common in RL)
+  - `decay="linear"` - Linear decay reaching zero at max_distance
+  - `decay="inverse"` - Inverse distance `scale / (1 + d)`
+- Handles scalar or array goal_bins input (converts scalar to array)
+- Validates goal bin indices are in valid range
+- Validates scale > 0 for exponential decay
+- Multi-goal support: distance computed to nearest goal
+- Uses `Literal["linear", "exponential", "inverse"]` for type-safe decay parameter
+
+**Test Coverage**: 15 comprehensive tests (100% pass rate)
+- All decay types for both functions
+- Edge cases (multiple goals, scalar vs array, custom reward values)
+- Error paths (missing bandwidth, invalid regions, out-of-range bins, negative scale)
+- Parameter naming validation (ensures API stability)
+- Numerical correctness (comparing against expected formulas)
+
+**Type Safety**:
+- ✅ Mypy passes with zero errors
+- ✅ No `type: ignore` comments
+- ✅ Full type hints using `EnvironmentProtocol`
+- ✅ TYPE_CHECKING guards for imports
+
+**Code Quality**:
+- ✅ Ruff check passes (all linting rules satisfied)
+- ✅ Ruff format applied (consistent code style)
+- ✅ NumPy-style docstrings throughout
+- ✅ Comprehensive examples in docstrings
+
+**Code Review Findings** (all fixed):
+- ✅ Removed unused `type: ignore` comments (mypy compliance)
+- ✅ Fixed doctest failure (suppressed output from `regions.add()`)
+- ✅ Exported functions in public API `__init__.py`
+- ✅ All validation comprehensive and user-friendly
+
+**Public API Additions**:
+- `neurospatial.region_reward_field(env, region_name, *, reward_value=1.0, decay="constant", bandwidth=None)`
+- `neurospatial.goal_reward_field(env, goal_bins, *, decay="exponential", scale=1.0, max_distance=None)`
+
+**Design Decisions**:
+
+1. **Consistent parameter naming**: Used `decay` (not `falloff` or `kind`) across both functions
+2. **Environment-first order**: Matches project pattern (e.g., `spikes_to_field()`, `distance_field()`)
+3. **Gaussian rescaling**: Rescales by max IN REGION to preserve intended reward magnitude
+4. **Error messages**: Include diagnostic information (e.g., available regions, valid range)
+5. **Scalar handling**: `goal_reward_field()` accepts scalar or array goal_bins for convenience
+
+**Known Limitations** (documented):
+1. Linear decay in `region_reward_field()` normalizes by global max distance (may give non-zero rewards far from region)
+2. Could add optional `max_distance` parameter for local reward shaping (deferred as optional enhancement)
+
+**Scientific Correctness**:
+- ✅ Mathematically sound formulas validated against RL literature
+- ✅ Proper integration with graph-based distance fields
+- ✅ Boundary detection correct for region-based rewards
+- ✅ Potential-based reward shaping (Ng et al., 1999) properly referenced
+
+**Next Task**: Milestone 0.3 - Documentation for Phase 0 primitives (spike/field + reward functions)
