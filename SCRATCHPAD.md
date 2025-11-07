@@ -1037,4 +1037,48 @@ Used `systematic-debugging` skill to fix 3 test failures:
 - ✅ All docstrings follow NumPy style
 
 ### Next Task
-**Milestone 2.3**: Documentation for signal processing primitives
+**Milestone 3.1**: Place Field Metrics
+
+---
+
+## 2025-11-07: Milestone 2.3 - Documentation COMPLETE
+
+### Task: Create comprehensive documentation and example notebook for signal processing primitives
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `docs/user-guide/signal-processing-primitives.md` - Comprehensive user guide (27.1KB, 760 lines)
+2. `examples/11_signal_processing_primitives.ipynb` - Example notebook with 5 demonstrations (774KB, executed successfully)
+3. `examples/11_signal_processing_primitives.py` - Paired Python script via jupytext (17KB)
+
+**Documentation Coverage**:
+
+- Overview of spatial signal processing primitives
+- neighbor_reduce() for local aggregation (sum, mean, max, min, std)
+- convolve() for custom filtering (box, Mexican hat, Gaussian)
+- Comparison table: env.smooth() vs neighbor_reduce() vs convolve()
+- Spatial coherence example (Muller & Kubie 1989)
+- When to use which tool (decision guide)
+- Mathematical background (convolution on graphs)
+- Advanced topics (directional smoothing, multi-scale analysis)
+- Performance notes and optimization strategies
+
+**Example Notebook Coverage**:
+
+1. **Spatial Coherence**: neighbor_reduce() for correlation analysis
+2. **Local Field Variability**: Compute mean, std, max, CV
+3. **Box Filter**: Occupancy thresholding to remove noise
+4. **Mexican Hat Edge Detection**: Detect place field boundaries
+5. **Comparison**: convolve() vs env.smooth() equivalence
+
+**Validation**:
+
+- ✅ 16/16 tests pass (8 neighbor_reduce + 8 convolve)
+- ✅ Notebook executes successfully (774KB with outputs)
+- ✅ Jupytext pairing configured
+- ✅ All visualizations render correctly
+- ✅ Documentation cross-referenced with existing guides
+
+**Next Task**: Milestone 3.1 - Place Field Metrics
