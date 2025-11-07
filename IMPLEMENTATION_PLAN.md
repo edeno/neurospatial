@@ -16,8 +16,8 @@ This plan outlines the implementation of **core spatial primitives** and **found
 - **Place field metrics** - standard neuroscience analyses (detection, information, sparsity)
 - **Population metrics** - coverage, density, overlap
 - **Boundary cell metrics** - border score (wall-preferring cells)
-- **Trajectory metrics** - turn angles, step lengths, home range, MSD (from ecology)
-- **Behavioral segmentation** - automatic detection of runs, laps, trials
+- **Trajectory metrics** - turn angles, step lengths, home range, MSD (from ecology, in Phase 4)
+- **Behavioral segmentation** - automatic detection of runs, laps, trials (Phase 4)
 
 ### Deferred to Future Releases
 
@@ -500,10 +500,10 @@ def convolve(
 ---
 
 
-## Phase 3: Core Metrics Module (Weeks 7-9)
+## Phase 3: Core Metrics Module (Weeks 7-8)
 
 ### Goal
-Provide standard neuroscience and trajectory analysis metrics as convenience wrappers.
+Provide standard neuroscience metrics as convenience wrappers.
 
 ### Module Structure
 
@@ -513,7 +513,6 @@ src/neurospatial/metrics/
     place_fields.py      # Individual place field properties
     population.py        # Population-level metrics
     boundary_cells.py    # Border score, head direction
-    trajectory.py        # Trajectory metrics from ecology
 ```
 
 ### Components
@@ -739,48 +738,34 @@ def boundary_vector_tuning(
 
 ---
 
-#### 3.4 Trajectory Metrics (Week 9)
-
-**File**: `src/neurospatial/metrics/trajectory.py`
-
-**Motivation**: Animal movement ecology packages (Traja, yupi, adehabitatHR) provide trajectory characterization metrics that are broadly applicable to neuroscience.
-
-**Functions** (detailed implementations already in plan):
-- `compute_turn_angles()` - Path tortuosity
-- `compute_step_lengths()` - Graph distances
-- `compute_home_range()` - Bins containing X% of time
-- `mean_square_displacement()` - Diffusion classification
-
-**Effort**: 3 days
-**Risk**: Low
-**Blockers**: None
-
----
-
-#### 3.5 Documentation (Week 9)
+#### 3.4 Documentation (Week 8)
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
 **Example notebooks**:
 - `examples/10_place_field_analysis.ipynb` - Place field detection and metrics
 - `examples/11_boundary_cell_analysis.ipynb` - Border score
-- `examples/12_trajectory_analysis.ipynb` - Turn angles, MSD, home range
 
 **Effort**: 2 days
 
 ---
 
-## Phase 4: Behavioral Segmentation (Weeks 10-11)
+## Phase 4: Trajectory Metrics & Behavioral Segmentation (Weeks 9-11)
 
 ### Goal
-Implement automatic detection of behavioral epochs from continuous trajectories.
+Implement trajectory characterization metrics and automatic detection of behavioral epochs from continuous trajectories.
 
 ### Motivation
-Most packages require manual trial/epoch segmentation. neurospatial can provide spatial primitives for automatic detection of runs, laps, and trials based on spatial regions and trajectory patterns.
+**Trajectory metrics**: Animal movement ecology packages provide trajectory characterization metrics that are broadly applicable to neuroscience.
+
+**Behavioral segmentation**: Most packages require manual trial/epoch segmentation. neurospatial can provide spatial primitives for automatic detection of runs, laps, and trials based on spatial regions and trajectory patterns.
 
 ### Module Structure
 
 ```
+src/neurospatial/metrics/
+    trajectory.py        # Trajectory metrics from ecology
+
 src/neurospatial/segmentation/
     __init__.py
     regions.py       # Region-based segmentation
@@ -791,7 +776,33 @@ src/neurospatial/segmentation/
 
 ### Components
 
-#### 4.1 Region-Based Segmentation (Week 10, Days 1-3)
+#### 4.1 Trajectory Metrics (Week 9)
+
+**File**: `src/neurospatial/metrics/trajectory.py`
+
+**Motivation**: Animal movement ecology packages (Traja, yupi, adehabitatHR) provide trajectory characterization metrics that are broadly applicable to neuroscience. These metrics quantify movement patterns and spatial usage.
+
+**Functions** (detailed implementations in ECOLOGY_TRAJECTORY_PACKAGES.md):
+
+- **`compute_turn_angles()`** - Path tortuosity (exploration vs exploitation)
+- **`compute_step_lengths()`** - Graph distances between consecutive bins
+- **`compute_home_range()`** - Bins containing X% of time (95% standard)
+- **`mean_square_displacement()`** - Diffusion classification (MSD ~ t^α)
+
+**Authority**: Traja, yupi, adehabitatHR (ecology literature)
+
+**Integration with neurospatial**:
+- Uses existing `env.distance_between()` for graph distances
+- Uses existing `env.bin_centers` for angle computation
+- Complements behavioral segmentation (movement characterization)
+
+**Effort**: 3 days
+**Risk**: Low (well-defined algorithms)
+**Blockers**: None
+
+---
+
+#### 4.2 Region-Based Segmentation (Week 10, Days 1-3)
 
 **File**: `src/neurospatial/segmentation/regions.py`
 
@@ -842,7 +853,7 @@ def segment_by_velocity(
 
 ---
 
-#### 4.2 Lap Detection (Week 10, Days 4-5)
+#### 4.3 Lap Detection (Week 10, Days 4-5)
 
 **File**: `src/neurospatial/segmentation/laps.py`
 
@@ -875,7 +886,7 @@ def detect_laps(
 
 ---
 
-#### 4.3 Trial Segmentation (Week 10, Day 6)
+#### 4.4 Trial Segmentation (Week 10, Day 6)
 
 **File**: `src/neurospatial/segmentation/trials.py`
 
@@ -905,7 +916,7 @@ def segment_trials(
 
 ---
 
-#### 4.4 Trajectory Similarity (Week 11, Days 1-2)
+#### 4.5 Trajectory Similarity (Week 11, Days 1-2)
 
 **File**: `src/neurospatial/segmentation/similarity.py`
 
@@ -950,17 +961,20 @@ def detect_goal_directed_runs(
 
 ---
 
-#### 4.5 Tests & Documentation (Week 11, Days 3-5)
+#### 4.6 Tests & Documentation (Week 11, Days 3-5)
 
 **Tests**:
+- Test trajectory metrics on synthetic data (straight lines, circles)
 - Test region crossing detection on synthetic trajectories
 - Test lap detection on circular tracks (clockwise/counter-clockwise)
 - Test trial segmentation on T-maze data
 - Test trajectory similarity methods (Jaccard, DTW, etc.)
 
 **Documentation**:
-- User guide: `docs/user-guide/behavioral-segmentation.md`
-- Example notebook: `examples/13_behavioral_segmentation.ipynb`
+- User guide: `docs/user-guide/trajectory-and-behavioral-analysis.md`
+- Example notebooks:
+  - `examples/12_trajectory_analysis.ipynb` - Turn angles, MSD, home range
+  - `examples/13_behavioral_segmentation.ipynb` - Runs, laps, trials
 
 **Effort**: 3 days
 
