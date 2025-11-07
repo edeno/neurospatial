@@ -12,7 +12,7 @@ import pytest
 from neurospatial.field_ops import (
     clamp,
     combine_fields,
-    divergence,
+    kl_divergence,
     normalize_field,
 )
 
@@ -229,69 +229,69 @@ class TestCombineFields:
             combine_fields([], mode="mean")
 
 
-class TestDivergence:
-    """Test suite for divergence function."""
+class TestKLDivergence:
+    """Test suite for kl_divergence function (renamed from divergence in v0.3.0)."""
 
     def test_kl_divergence_self_is_zero(self):
         """KL divergence of distribution with itself is zero."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
-        div = divergence(p, p, kind="kl")
+        div = kl_divergence(p, p, kind="kl")
         assert np.isclose(div, 0.0, atol=1e-10)
 
     def test_js_divergence_self_is_zero(self):
         """JS divergence of distribution with itself is zero."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
-        div = divergence(p, p, kind="js")
+        div = kl_divergence(p, p, kind="js")
         assert np.isclose(div, 0.0, atol=1e-10)
 
     def test_cosine_distance_self_is_zero(self):
         """Cosine distance of distribution with itself is zero."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
-        dist = divergence(p, p, kind="cosine")
+        dist = kl_divergence(p, p, kind="cosine")
         assert np.isclose(dist, 0.0, atol=1e-10)
 
     def test_js_divergence_is_symmetric(self):
         """JS divergence is symmetric: D_JS(p||q) = D_JS(q||p)."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
         q = np.array([0.2, 0.2, 0.3, 0.3])
-        div_pq = divergence(p, q, kind="js")
-        div_qp = divergence(q, p, kind="js")
+        div_pq = kl_divergence(p, q, kind="js")
+        div_qp = kl_divergence(q, p, kind="js")
         assert np.isclose(div_pq, div_qp)
 
     def test_kl_divergence_is_asymmetric(self):
         """KL divergence is asymmetric: D_KL(p||q) ≠ D_KL(q||p)."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
         q = np.array([0.2, 0.2, 0.3, 0.3])
-        div_pq = divergence(p, q, kind="kl")
-        div_qp = divergence(q, p, kind="kl")
+        div_pq = kl_divergence(p, q, kind="kl")
+        div_qp = kl_divergence(q, p, kind="kl")
         assert not np.isclose(div_pq, div_qp)
 
     def test_js_divergence_bounded(self):
         """JS divergence is bounded: 0 ≤ D_JS ≤ 1."""
         p = np.array([1.0, 0.0, 0.0])
         q = np.array([0.0, 0.0, 1.0])
-        div = divergence(p, q, kind="js")
+        div = kl_divergence(p, q, kind="js")
         assert 0.0 <= div <= 1.0
 
     def test_cosine_distance_bounded(self):
         """Cosine distance is bounded: 0 ≤ d ≤ 2."""
         p = np.array([1.0, 0.0, 0.0])
         q = np.array([0.0, 0.0, 1.0])
-        dist = divergence(p, q, kind="cosine")
+        dist = kl_divergence(p, q, kind="cosine")
         assert 0.0 <= dist <= 2.0
 
     def test_kl_divergence_non_negative(self):
         """KL divergence is non-negative."""
         p = np.array([0.1, 0.3, 0.4, 0.2])
         q = np.array([0.2, 0.2, 0.3, 0.3])
-        div = divergence(p, q, kind="kl")
+        div = kl_divergence(p, q, kind="kl")
         assert div >= 0.0
 
     def test_kl_divergence_uniform_distributions(self):
         """KL divergence between two uniform distributions is zero."""
         p = np.ones(10) / 10
         q = np.ones(10) / 10
-        div = divergence(p, q, kind="kl")
+        div = kl_divergence(p, q, kind="kl")
         assert np.isclose(div, 0.0, atol=1e-10)
 
     def test_divergence_mismatched_shapes_raises(self):
@@ -299,49 +299,49 @@ class TestDivergence:
         p = np.array([0.5, 0.5])
         q = np.array([0.3, 0.3, 0.4])
         with pytest.raises(ValueError, match=r"p and q must have the same shape"):
-            divergence(p, q, kind="kl")
+            kl_divergence(p, q, kind="kl")
 
     def test_divergence_negative_values_raise(self):
         """Negative values raise ValueError."""
         p = np.array([0.5, -0.1, 0.6])
         q = np.array([0.3, 0.3, 0.4])
         with pytest.raises(ValueError, match=r"Distributions must be non-negative"):
-            divergence(p, q, kind="kl")
+            kl_divergence(p, q, kind="kl")
 
     def test_divergence_not_normalized_warns(self):
         """Non-normalized distributions issue warning."""
         p = np.array([1.0, 2.0, 3.0])  # Sums to 6.0
         q = np.array([1.0, 1.0, 1.0])  # Sums to 3.0
         with pytest.warns(UserWarning, match=r"Distribution p does not sum to 1"):
-            divergence(p, q, kind="kl")
+            kl_divergence(p, q, kind="kl")
 
     def test_divergence_nan_raises(self):
         """NaN values raise ValueError."""
         p = np.array([0.5, np.nan, 0.5])
         q = np.array([0.3, 0.3, 0.4])
         with pytest.raises(ValueError, match=r"Distributions contain NaN"):
-            divergence(p, q, kind="kl")
+            kl_divergence(p, q, kind="kl")
 
     def test_divergence_inf_raises(self):
         """Inf values raise ValueError."""
         p = np.array([0.5, np.inf, 0.5])
         q = np.array([0.3, 0.3, 0.4])
         with pytest.raises(ValueError, match=r"Distributions contain Inf"):
-            divergence(p, q, kind="kl")
+            kl_divergence(p, q, kind="kl")
 
     def test_divergence_unknown_kind_raises(self):
         """Unknown divergence kind raises ValueError."""
         p = np.array([0.5, 0.5])
         q = np.array([0.3, 0.7])
         with pytest.raises(ValueError, match=r"Unknown divergence kind"):
-            divergence(p, q, kind="hellinger")  # Not implemented
+            kl_divergence(p, q, kind="hellinger")  # Not implemented
 
     def test_divergence_with_zeros_uses_eps(self):
         """Zero values in distributions are handled with eps."""
         p = np.array([0.5, 0.5, 0.0])
         q = np.array([0.3, 0.3, 0.4])
         # Should not raise, uses eps to avoid log(0)
-        div = divergence(p, q, kind="kl", eps=1e-12)
+        div = kl_divergence(p, q, kind="kl", eps=1e-12)
         assert np.isfinite(div)
 
     def test_kl_divergence_known_value(self):
@@ -353,7 +353,7 @@ class TestDivergence:
         #            ≈ 0.144
         p = np.array([0.5, 0.5])
         q = np.array([0.25, 0.75])
-        div = divergence(p, q, kind="kl")
+        div = kl_divergence(p, q, kind="kl")
         expected = 0.5 * np.log(2) + 0.5 * np.log(2 / 3)
         assert np.isclose(div, expected, rtol=1e-6)
 
@@ -361,14 +361,14 @@ class TestDivergence:
         """Cosine distance between orthogonal vectors is 1.0."""
         p = np.array([1.0, 0.0, 0.0])
         q = np.array([0.0, 1.0, 0.0])
-        dist = divergence(p, q, kind="cosine")
+        dist = kl_divergence(p, q, kind="cosine")
         assert np.isclose(dist, 1.0, atol=1e-10)
 
     def test_cosine_distance_opposite_vectors(self):
         """Cosine distance between opposite vectors is 2.0."""
         p = np.array([1.0, 0.0])
         q = np.array([-1.0, 0.0])
-        dist = divergence(p, q, kind="cosine")
+        dist = kl_divergence(p, q, kind="cosine")
         assert np.isclose(dist, 2.0, atol=1e-10)
 
 
@@ -399,6 +399,6 @@ class TestFieldOpsIntegration:
         f2 = np.array([3.0, 2.0, 1.0])
         p = normalize_field(f1)
         q = normalize_field(f2)
-        div = divergence(p, q, kind="kl")
+        div = kl_divergence(p, q, kind="kl")
         assert np.isfinite(div)
         assert div >= 0.0

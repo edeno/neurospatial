@@ -575,3 +575,119 @@ All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
 **Next Task**: Milestone 1.3 - Divergence Operator (rename KL divergence, implement graph divergence)
 
 ---
+
+## 2025-11-07: Milestone 1.3 - Divergence Operator COMPLETE
+
+### Task: Rename KL divergence and implement graph divergence operator
+
+**Status**: ✅ COMPLETE
+
+**Files Modified**:
+
+1. `src/neurospatial/field_ops.py` - Renamed `divergence()` to `kl_divergence()` with v0.3.0 version note
+2. `src/neurospatial/differential.py` - Added `divergence(edge_field, env)` function (lines 256-379)
+3. `src/neurospatial/__init__.py` - Exported both `divergence` and `kl_divergence` in public API
+4. `tests/test_field_ops.py` - Updated all tests to use `kl_divergence()`, renamed class to `TestKLDivergence`
+5. `tests/test_differential.py` - Added `TestDivergenceOperator` class with 4 comprehensive tests
+
+**Implementation Details**:
+
+**Renamed `divergence()` to `kl_divergence()` (field_ops.py):**
+- Renamed to avoid naming conflict with graph signal processing divergence operator
+- Added note in docstring: "Renamed from `divergence()` in v0.3.0"
+- Updated all docstring examples to use new name
+- Function computes statistical divergences (KL, JS, cosine) between probability distributions
+- All 19 tests updated and passing
+
+**New `divergence(edge_field, env)` function (differential.py):**
+- Computes graph signal processing divergence operator: `divergence(g) = D @ g`
+- Transforms edge field (shape n_edges) → scalar field (shape n_bins)
+- Measures net outflow from each node
+- Validates edge_field shape matches connectivity graph
+- Comprehensive NumPy-style docstring with physical interpretation, applications, examples
+- Full type hints: `NDArray[np.float64]`
+- Returns dense array (not sparse) for user convenience
+
+**Mathematical Correctness**:
+- Verified fundamental relationship: `div(grad(f)) == Laplacian(f)`
+- Edge weights use `sqrt(distance)` following graph signal processing convention
+- Sparse matrix operations (CSC format) for efficiency
+- Adjoint relationship: gradient = D.T @ f, divergence = D @ g
+
+**Test Coverage**: 4 comprehensive tests (100% pass rate)
+- Shape verification (n_bins,)
+- div(grad(f)) == Laplacian(f) relationship
+- Zero edge field → zero divergence
+- Input validation (wrong shape raises ValueError with diagnostic message)
+
+**Type Safety**:
+- ✅ Mypy passes with zero errors
+- ✅ No `type: ignore` comments
+- ✅ Full type hints using `NDArray[np.float64]` and `EnvironmentProtocol`
+- ✅ Proper `Union[Environment | EnvironmentProtocol]` for flexibility
+
+**Code Quality**:
+- ✅ Ruff check passes (all linting rules satisfied)
+- ✅ Ruff format applied (consistent code style)
+- ✅ NumPy-style docstrings with Examples, Notes, References sections
+- ✅ Proper variable naming (diff_op, edge_field, divergence_field)
+
+**Code Review Findings** (code-reviewer agent):
+- ✅ **APPROVED** - Production ready
+- ✅ Mathematical correctness verified
+- ✅ Documentation excellent (physical interpretation, applications, references)
+- ✅ Test coverage thorough (72/72 tests pass, 100% success rate)
+- ✅ Type safety perfect (mypy zero errors)
+- ✅ Breaking change properly documented (version note in docstring)
+- ✅ No critical or blocking issues
+
+**TDD Workflow Followed**:
+1. ✅ Updated existing tests to use `kl_divergence()` (RED phase - ImportError)
+2. ✅ Renamed function in field_ops.py (GREEN phase - 19 tests pass)
+3. ✅ Created 4 new tests for graph divergence (RED phase - ImportError)
+4. ✅ Implemented divergence() function (GREEN phase - 4 tests pass)
+5. ✅ Applied code-reviewer agent (APPROVED)
+6. ✅ Verified mypy and ruff pass with zero errors
+
+**Public API Additions**:
+- `neurospatial.divergence(edge_field, env)` - Graph signal processing divergence operator
+- `neurospatial.kl_divergence(p, q, *, kind='kl', eps=1e-12)` - Statistical divergence (renamed)
+
+**Mathematical Foundation**:
+- Gradient: scalar field → edge field (D.T @ f)
+- **Divergence: edge field → scalar field (D @ g)** ← NEW
+- Laplacian: scalar field → scalar field (D @ D.T @ f = div(grad(f)))
+
+**Physical Interpretation**:
+- Positive divergence: source (net outflow from node)
+- Negative divergence: sink (net inflow to node)
+- Zero divergence: conservation (inflow = outflow)
+
+**Applications**:
+- Flow field analysis (successor representations in RL)
+- Source/sink detection in spatial trajectories
+- Laplacian smoothing via div(grad(·))
+- Graph-based diffusion processes
+
+**Breaking Changes**:
+- `divergence()` in `field_ops.py` renamed to `kl_divergence()`
+- Note added to docstring explaining rename in v0.3.0
+- No current users affected (pre-release version)
+- Clear semantic distinction now exists between:
+  - `kl_divergence()` - statistical divergence between distributions
+  - `divergence()` - graph signal processing divergence operator
+
+**Design Decisions**:
+1. **Rename over deprecation**: No current users, so direct rename is cleaner
+2. **Parameter order**: `divergence(edge_field, env)` matches `gradient(field, env)` pattern
+3. **Return type**: Dense `NDArray[np.float64]` (not sparse) for user convenience
+4. **Validation**: Clear error message showing expected vs actual shape
+5. **Type hints**: Precise `NDArray[np.float64]` annotations (not generic np.ndarray)
+6. **Documentation**: Full mathematical context with graph signal processing references
+
+**Known Limitations** (documented):
+- None - implementation is complete and production-ready
+
+**Next Task**: Update TASKS.md and commit changes
+
+---

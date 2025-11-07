@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 __all__ = [
     "clamp",
     "combine_fields",
-    "divergence",
+    "kl_divergence",
     "normalize_field",
 ]
 
@@ -264,7 +264,7 @@ def combine_fields(
         raise ValueError(f"Unknown mode '{mode}'. Valid modes: 'mean', 'max', 'min'.")
 
 
-def divergence(
+def kl_divergence(
     p: NDArray[np.float64],
     q: NDArray[np.float64],
     *,
@@ -273,6 +273,11 @@ def divergence(
 ) -> float:
     """
     Compute divergence between two probability distributions.
+
+    .. note::
+        Renamed from ``divergence()`` in v0.3.0 to avoid confusion with the
+        graph signal processing divergence operator. This function computes
+        statistical divergences (KL, JS, cosine) between probability distributions.
 
     Parameters
     ----------
@@ -310,20 +315,20 @@ def divergence(
     --------
     >>> p = np.array([0.5, 0.5])
     >>> q = np.array([0.25, 0.75])
-    >>> kl = divergence(p, q, kind="kl")
+    >>> kl = kl_divergence(p, q, kind="kl")
     >>> print(f"{kl:.3f}")
     0.144
 
     >>> # JS divergence is symmetric
-    >>> js_pq = divergence(p, q, kind="js")
-    >>> js_qp = divergence(q, p, kind="js")
+    >>> js_pq = kl_divergence(p, q, kind="js")
+    >>> js_qp = kl_divergence(q, p, kind="js")
     >>> print(np.isclose(js_pq, js_qp))
     True
 
     >>> # Cosine distance
     >>> p = np.array([1.0, 0.0, 0.0])
     >>> q = np.array([0.0, 1.0, 0.0])
-    >>> cos_dist = divergence(p, q, kind="cosine")
+    >>> cos_dist = kl_divergence(p, q, kind="cosine")
     >>> print(cos_dist)
     1.0
 

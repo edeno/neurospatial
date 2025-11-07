@@ -251,3 +251,129 @@ def gradient(
         result = np.asarray(gradient_field, dtype=np.float64).ravel()
 
     return result
+
+
+def divergence(
+    edge_field: NDArray[np.float64],
+    env: Environment | EnvironmentProtocol,
+) -> NDArray[np.float64]:
+    """Compute the divergence of an edge field on the graph.
+
+    The divergence operator transforms an edge field (vector field on edges) into
+    a scalar field defined on bins (nodes). It measures the net outflow from each
+    node. Mathematically, for an edge field g and differential operator D:
+
+        divergence(g) = D @ g
+
+    The divergence is the adjoint of the gradient operation, satisfying:
+    div(grad(f)) = D @ D.T @ f = Laplacian(f).
+
+    Parameters
+    ----------
+    edge_field : NDArray[np.float64], shape (n_edges,)
+        Edge field (vector field on edges). Each element corresponds to a value
+        assigned to one edge in the connectivity graph. Typically represents a
+        flow or gradient along edges.
+    env : EnvironmentProtocol
+        Environment with connectivity graph and differential operator. Must be
+        fitted (i.e., created via a factory method like `Environment.from_samples()`).
+
+    Returns
+    -------
+    divergence_field : NDArray[np.float64], shape (n_bins,)
+        Scalar field representing the divergence. Each element corresponds to the
+        net outflow at a bin (node). Positive values indicate sources (net outflow),
+        negative values indicate sinks (net inflow).
+
+    Raises
+    ------
+    ValueError
+        If edge_field shape does not match the number of edges in the environment.
+
+    Notes
+    -----
+    The divergence operation is the adjoint of the gradient operation:
+
+    - Gradient: scalar field → edge field (D.T @ f)
+    - Divergence: edge field → scalar field (D @ g)
+    - Laplacian: scalar field → scalar field (D @ D.T @ f = div(grad(f)))
+
+    **Physical Interpretation:**
+
+    - Positive divergence: source (net outflow from node)
+    - Negative divergence: sink (net inflow to node)
+    - Zero divergence: conservation (inflow = outflow)
+
+    **Applications:**
+
+    - Flow field analysis (e.g., successor representations in RL)
+    - Source/sink detection in spatial trajectories
+    - Laplacian smoothing via div(grad(·))
+    - Graph-based diffusion processes
+
+    Examples
+    --------
+    Compute divergence of a gradient field (equals Laplacian):
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.differential import gradient, divergence
+    >>> # Create 1D chain environment
+    >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+    >>> env = Environment.from_samples(data, bin_size=1.0)
+    >>> # Create test field
+    >>> field = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
+    >>> # Compute div(grad(f))
+    >>> grad_field = gradient(field, env)
+    >>> div_grad = divergence(grad_field, env)
+    >>> div_grad.shape
+    (5,)
+    >>> # Verify div(grad(f)) = Laplacian(f)
+    >>> import networkx as nx
+    >>> L = nx.laplacian_matrix(env.connectivity, weight="distance")
+    >>> laplacian = L @ field
+    >>> np.allclose(div_grad, laplacian, atol=1e-10)
+    True
+
+    Divergence of zero edge field is zero everywhere:
+
+    >>> n_edges = len(env.connectivity.edges)
+    >>> zero_field = np.zeros(n_edges)
+    >>> div_zero = divergence(zero_field, env)
+    >>> np.allclose(div_zero, 0.0, atol=1e-10)
+    True
+
+    See Also
+    --------
+    gradient : Compute gradient of a scalar field
+    compute_differential_operator : Construct the differential operator matrix
+    Environment.differential_operator : Cached differential operator property
+
+    References
+    ----------
+    .. [1] Shuman et al. (2013). "The emerging field of signal processing on graphs."
+           IEEE Signal Processing Magazine, 30(3), 83-98.
+    """
+    # Get number of edges
+    n_edges = len(env.connectivity.edges)
+
+    # Validate input shape
+    if edge_field.shape != (n_edges,):
+        msg = (
+            f"edge_field must have shape ({n_edges},) to match connectivity graph edges, "
+            f"but got shape {edge_field.shape}"
+        )
+        raise ValueError(msg)
+
+    # Compute divergence using differential operator
+    # divergence(g) = D @ g
+    diff_op = env.differential_operator  # Use cached property
+    divergence_field = diff_op @ edge_field
+
+    # Convert sparse result to dense array and ensure proper dtype
+    if sparse.issparse(divergence_field):
+        result: np.ndarray = np.asarray(divergence_field, dtype=np.float64).ravel()
+    else:
+        result = np.asarray(divergence_field, dtype=np.float64).ravel()
+
+    return result

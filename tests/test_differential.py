@@ -276,3 +276,92 @@ class TestGradientOperator:
 
         with pytest.raises(ValueError, match=r"field.*shape"):
             gradient(field_too_large, env)
+
+
+class TestDivergenceOperator:
+    """Test divergence() function for computing divergence on graph-discretized edge fields."""
+
+    def test_divergence_shape(self):
+        """Test that divergence output has shape (n_bins,)."""
+        # Create simple 2x2 grid environment
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create a test edge field (one value per edge)
+        n_edges = len(env.connectivity.edges)
+        edge_field = np.random.rand(n_edges)
+
+        # Import divergence function (will fail initially - this is TDD RED phase)
+        from neurospatial.differential import divergence
+
+        # Compute divergence
+        div_field = divergence(edge_field, env)
+
+        # Output should have shape (n_bins,)
+        assert div_field.shape == (env.n_bins,)
+        assert isinstance(div_field, np.ndarray)
+
+    def test_divergence_gradient_is_laplacian(self):
+        """Test that div(grad(f)) equals Laplacian(f) for scalar field f."""
+        # Create 1D chain environment
+        data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create test field
+        field = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
+
+        from neurospatial.differential import divergence, gradient
+
+        # Compute div(grad(f))
+        grad_field = gradient(field, env)
+        div_grad_field = divergence(grad_field, env)
+
+        # Compute Laplacian directly
+        L = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        laplacian_field = L @ field
+
+        # They should be equal (within numerical precision)
+        np.testing.assert_allclose(
+            div_grad_field, laplacian_field, rtol=1e-10, atol=1e-10
+        )
+
+    def test_divergence_zero_edge_field(self):
+        """Test that divergence of zero edge field is zero everywhere."""
+        # Create 2D grid environment
+        data = np.array([[i, j] for i in range(3) for j in range(3)])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create zero edge field
+        n_edges = len(env.connectivity.edges)
+        edge_field = np.zeros(n_edges)
+
+        from neurospatial.differential import divergence
+
+        # Divergence should be all zeros
+        div_field = divergence(edge_field, env)
+
+        np.testing.assert_allclose(div_field, 0.0, atol=1e-10)
+
+    def test_divergence_validation(self):
+        """Test that divergence validates input edge field shape."""
+        # Create environment
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        from neurospatial.differential import divergence
+
+        # Wrong shape: too few elements
+        edge_field_too_small = np.array([1.0, 2.0])
+
+        # Should raise ValueError
+        import pytest
+
+        with pytest.raises(ValueError, match=r"edge_field.*shape"):
+            divergence(edge_field_too_small, env)
+
+        # Wrong shape: too many elements
+        n_edges = len(env.connectivity.edges)
+        edge_field_too_large = np.random.rand(n_edges + 5)
+
+        with pytest.raises(ValueError, match=r"edge_field.*shape"):
+            divergence(edge_field_too_large, env)
