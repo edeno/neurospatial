@@ -165,26 +165,26 @@
 
 **Example Notebook**:
 
-- [ ] Create `examples/00_spike_field_basics.ipynb`
-  - [ ] Example 1: Convert spike train → firing rate map
-    - [ ] Generate synthetic data (trajectory + spike times)
-    - [ ] Create environment
-    - [ ] Compute firing rate with `spikes_to_field(env, spike_times, times, positions)` (correct order!)
-    - [ ] Show `compute_place_field()` convenience function
-    - [ ] Visualize: occupancy, spike counts, firing rate
-    - [ ] Demonstrate min occupancy threshold effect
-  - [ ] Example 2: Create reward field for RL
-    - [ ] Define goal region
-    - [ ] Create constant reward field (binary)
-    - [ ] Create linear decay reward (reaches zero at boundaries)
-    - [ ] Create Gaussian falloff reward (smooth potential field)
-    - [ ] Create exponential decay from goal bins
-    - [ ] Visualize all variations side-by-side
-    - [ ] Demonstrate consistent parameter naming (`decay` across all functions)
-  - [ ] Add explanatory markdown cells throughout
-  - [ ] Add best practices notes
-  - [ ] Add cautions about reward shaping
-  - [ ] Note: Batch operations examples will be added in v0.3.1
+- [x] Create `examples/09_spike_field_basics.ipynb`
+  - [x] Example 1: Convert spike train → firing rate map
+    - [x] Generate synthetic data (trajectory + spike times)
+    - [x] Create environment
+    - [x] Compute firing rate with `spikes_to_field(env, spike_times, times, positions)` (correct order!)
+    - [x] Show `compute_place_field()` convenience function
+    - [x] Visualize: occupancy, spike counts, firing rate
+    - [x] Demonstrate min occupancy threshold effect
+  - [x] Example 2: Create reward field for RL
+    - [x] Define goal region
+    - [x] Create constant reward field (binary)
+    - [x] Create linear decay reward (reaches zero at boundaries)
+    - [x] Create Gaussian falloff reward (smooth potential field)
+    - [x] Create exponential decay from goal bins
+    - [x] Visualize all variations side-by-side
+    - [x] Demonstrate consistent parameter naming (`decay` across all functions)
+  - [x] Add explanatory markdown cells throughout
+  - [x] Add best practices notes
+  - [x] Add cautions about reward shaping
+  - [x] Note: Batch operations examples will be added in v0.3.1
 
 **Testing**:
 
@@ -192,7 +192,7 @@
 - [ ] Verify coverage: >95% for new code
 - [ ] Run: `uv run pytest tests/test_spike_field.py tests/test_reward.py --cov=src/neurospatial --cov-report=term-missing`
 - [ ] Target: >95% coverage for new code
-- [ ] Run example notebook: `uv run jupyter nbconvert --execute examples/00_spike_field_basics.ipynb`
+- [ ] Run example notebook: `uv run jupyter nbconvert --execute examples/09_spike_field_basics.ipynb`
 - [ ] Verify all cells execute without errors
 - [ ] Verify visualizations render correctly
 

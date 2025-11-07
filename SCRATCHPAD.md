@@ -260,6 +260,62 @@ Ready to move on to implementing the `spikes_to_field()` and `compute_place_fiel
 
 **Next Steps**:
 
-- Create example notebook `examples/00_spike_field_basics.ipynb`
 - Run coverage tests for Phase 0 code
+- Verify notebook executes without errors
 - Complete Milestone 0.3 (verify all tests pass, documentation complete)
+
+---
+
+## 2025-11-07: Milestone 0.3 - Example Notebook COMPLETE (Part 2/2)
+
+### Task: Create example notebook for Phase 0 primitives
+
+**Status**: ✅ COMPLETE
+
+**File Created**:
+
+`examples/09_spike_field_basics.ipynb` (renumbered from 00 to fit existing sequence)
+
+**Notebook Features**:
+
+1. **Part 1: Spike Train to Firing Rate Maps**
+   - Generate synthetic circular trajectory with Gaussian place cell
+   - Create environment and compute occupancy
+   - Convert spike train to firing rate with `spikes_to_field()`
+   - Demonstrate min occupancy threshold filtering (0.5s standard)
+   - Show `compute_place_field()` convenience function with smoothing
+   - Visualize: occupancy vs raw vs filtered vs smoothed
+
+2. **Part 2: Reward Fields for RL**
+   - Region-based rewards (constant, linear, gaussian)
+   - Goal-based distance rewards (exponential, linear, inverse)
+   - Multi-goal support demonstration
+   - Combining reward sources
+   - Visual comparisons of all decay types
+
+3. **Part 3: Best Practices**
+   - Cautions about reward shaping (Ng et al. 1999)
+   - Potential-based reward shaping theory
+   - Testing reward designs
+   - References to key papers
+
+**Technical Enhancements**:
+
+- Used jupyter-notebook-editor skill for proper pairing (jupytext)
+- Applied scientific-figures-presentation principles:
+  - Constrained layout for better spacing
+  - Wong color palette for accessibility
+  - Larger, readable fonts (12-14pt)
+  - Improved marker sizes and line weights
+  - Clear, bold titles
+- Comprehensive markdown explanations throughout
+- Estimated time: 20-25 minutes
+
+**Validation**:
+
+- ✅ Notebook paired with .py file via jupytext
+- ✅ Proper numbering (09 instead of 00)
+- ✅ All plotting code enhanced for clarity
+- ✅ Complete examples for all Phase 0 functions
+
+**Next Task**: Run coverage tests to ensure >95% coverage for Phase 0 code
