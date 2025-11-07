@@ -1,5 +1,81 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 3.1 - Place Field Metrics COMPLETED
+
+### Task: Implement place field detection and single-cell spatial metrics
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/metrics/__init__.py` - Package initialization with public API exports
+2. `src/neurospatial/metrics/place_fields.py` - 6 metric functions (661 lines)
+3. `tests/metrics/test_place_fields.py` - Comprehensive test suite (22 tests, 468 lines)
+
+**Functions Implemented**:
+
+1. **`detect_place_fields()`** - Iterative peak-based detection (neurocode approach)
+   - Interneuron exclusion (10 Hz threshold)
+   - Subfield discrimination (recursive thresholding at 0.5×, 0.7× peak)
+   - Internal min peak rate filter (0.5 Hz) to prevent false positives
+   - NaN handling (all-NaN arrays gracefully handled)
+
+2. **`field_size()`** - Compute field area in physical units
+3. **`field_centroid()`** - Firing-rate-weighted center of mass
+4. **`skaggs_information()`** - Spatial information (bits/spike, Skaggs et al. 1993)
+5. **`sparsity()`** - Sparsity measure (Skaggs et al. 1996)
+6. **`field_stability()`** - Correlation between rate maps (Pearson/Spearman)
+   - Handles constant arrays (returns NaN when correlation undefined)
+
+**Implementation Details**:
+
+- **Algorithm**: Iterative peak detection with connected component extraction using graph connectivity
+- **Validation authority**: neurocode (AyA Lab), opexebo (Moser lab)
+- **Neuroscience correctness**: All defaults match field standards
+- **Mathematical correctness**: Formulas verified against literature
+- **Type safety**: Zero mypy errors, comprehensive type hints
+- **Documentation**: NumPy-style docstrings with citations (O'Keefe, Skaggs, Wilson & McNaughton)
+
+**Key Design Decisions**:
+
+1. **No min_peak_rate parameter** (per user feedback): Hardcoded internally at 0.5 Hz to filter false positives without API complexity
+2. **Constant array handling**: Returns NaN for undefined correlation (mathematically correct)
+3. **Connected components**: Uses graph connectivity from `env.connectivity` for irregular environments
+4. **Subfield detection**: Recursive thresholding at 0.5× and 0.7× peak (heuristic, works well in practice)
+
+**Test Coverage**:
+
+- 22/22 tests PASS, 0 warnings
+- Edge cases: empty fields, uniform firing, isolated nodes, NaN arrays, constant arrays
+- Integration test: complete workflow (detect → size/centroid → metrics)
+- All mathematical formulas verified with manual calculations
+
+**Code Quality**:
+
+- ✅ Mypy: 0 errors (strict type checking)
+- ✅ Ruff: 0 errors (linting and formatting)
+- ✅ Test coverage: Comprehensive (22 tests covering all functions and edge cases)
+- ✅ Documentation: Complete NumPy-style docstrings with examples and citations
+
+**Code Review Outcomes**:
+
+All critical issues addressed:
+- ✅ NaN input handling fixed (all-NaN arrays don't crash)
+- ✅ Public API exports added (`from neurospatial.metrics import detect_place_fields`)
+- ✅ Constant array warning eliminated (explicit check returns NaN)
+- ✅ min_peak_rate parameter removed (hardcoded internally)
+
+**Validation** (Deferred):
+
+- [ ] Compare with neurocode FindPlaceFields.m output (requires MATLAB reference data)
+- [ ] Verify spatial information matches opexebo/buzcode (requires installation)
+
+**Next Steps**:
+
+Ready to move on to Milestone 3.2 - Population Metrics
+
+---
+
 ## 2025-11-07: Milestone 0.1 - Prerequisites COMPLETED
 
 ### Task: Add `return_seconds` parameter to `env.occupancy()` method

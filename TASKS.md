@@ -465,33 +465,48 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/metrics/` package
-- [ ] Create `src/neurospatial/metrics/__init__.py`
-- [ ] Create `src/neurospatial/metrics/place_fields.py`
-- [ ] Implement `detect_place_fields(firing_rate, env, *, threshold=0.2, min_size=None, max_mean_rate=10.0, detect_subfields=True)`
-  - [ ] Iterative peak-based detection (neurocode approach)
-  - [ ] Interneuron exclusion (10 Hz threshold, vandermeerlab)
-  - [ ] Subfield discrimination (recursive threshold)
-  - [ ] Return list of NDArray[np.int64] (bin indices per field)
-  - [ ] Add comprehensive NumPy-style docstring with references
-- [ ] Implement `field_size(field_bins, env)` - area in physical units
-- [ ] Implement `field_centroid(firing_rate, field_bins, env)` - center of mass
-- [ ] Implement `skaggs_information(firing_rate, occupancy, *, base=2.0)` - bits/spike
-- [ ] Implement `sparsity(firing_rate, occupancy)` - Skaggs et al. 1996
-- [ ] Implement `field_stability(rate_map_1, rate_map_2, *, method='pearson')`
+- [x] Create `src/neurospatial/metrics/` package
+- [x] Create `src/neurospatial/metrics/__init__.py`
+- [x] Create `src/neurospatial/metrics/place_fields.py`
+- [x] Implement `detect_place_fields(firing_rate, env, *, threshold=0.2, min_size=None, max_mean_rate=10.0, detect_subfields=True)`
+  - [x] Iterative peak-based detection (neurocode approach)
+  - [x] Interneuron exclusion (10 Hz threshold, vandermeerlab)
+  - [x] Subfield discrimination (recursive threshold)
+  - [x] Return list of NDArray[np.int64] (bin indices per field)
+  - [x] Add comprehensive NumPy-style docstring with references
+  - [x] Internal min peak rate threshold (0.5 Hz) to filter false positives
+  - [x] NaN handling (all-NaN arrays gracefully handled)
+- [x] Implement `field_size(field_bins, env)` - area in physical units
+- [x] Implement `field_centroid(firing_rate, field_bins, env)` - center of mass
+- [x] Implement `skaggs_information(firing_rate, occupancy, *, base=2.0)` - bits/spike
+- [x] Implement `sparsity(firing_rate, occupancy)` - Skaggs et al. 1996
+- [x] Implement `field_stability(rate_map_1, rate_map_2, *, method='pearson')`
+  - [x] Handles constant arrays (returns NaN when correlation undefined)
+- [x] Export in public API: `src/neurospatial/metrics/__init__.py`
 
 **Testing**:
 
-- [ ] Create `tests/metrics/test_place_fields.py`
-- [ ] Test: `test_detect_place_fields_synthetic()` - known field positions
-- [ ] Test: `test_detect_place_fields_subfields()` - coalescent fields
-- [ ] Test: `test_detect_place_fields_interneuron_exclusion()` - high rate excluded
-- [ ] Test: `test_field_size()` - verify area calculation
-- [ ] Test: `test_field_centroid()` - weighted center of mass
-- [ ] Test: `test_skaggs_information()` - verify formula
-- [ ] Test: `test_sparsity()` - verify formula, range [0, 1]
-- [ ] Test: `test_field_stability()` - Pearson and Spearman
-- [ ] Run: `uv run pytest tests/metrics/test_place_fields.py -v`
+- [x] Create `tests/metrics/test_place_fields.py`
+- [x] Test: `test_detect_place_fields_synthetic()` - known field positions
+- [x] Test: `test_detect_place_fields_subfields()` - coalescent fields
+- [x] Test: `test_detect_place_fields_interneuron_exclusion()` - high rate excluded
+- [x] Test: `test_detect_place_fields_no_fields()` - uniform low firing
+- [x] Test: `test_field_size()` - verify area calculation
+- [x] Test: `test_field_size_single_bin()` - single bin edge case
+- [x] Test: `test_field_centroid()` - weighted center of mass
+- [x] Test: `test_field_centroid_asymmetric()` - asymmetric field
+- [x] Test: `test_skaggs_information()` - verify formula (3 tests)
+- [x] Test: `test_sparsity()` - verify formula, range [0, 1] (4 tests)
+- [x] Test: `test_field_stability()` - Pearson and Spearman (5 tests)
+- [x] Test: `test_field_stability_constant_arrays()` - edge case handling
+- [x] Test: `test_place_field_workflow_integration()` - complete workflow
+- [x] Run: `uv run pytest tests/metrics/test_place_fields.py -v` (22/22 PASS, 0 warnings)
+
+**Type Checking & Linting**:
+
+- [x] Run mypy: `uv run mypy src/neurospatial/metrics/place_fields.py` (PASS, 0 errors)
+- [x] Run ruff: `uv run ruff check src/neurospatial/metrics/ tests/metrics/` (PASS, 0 errors)
+- [x] Run ruff format: `uv run ruff format src/neurospatial/metrics/ tests/metrics/`
 
 **Validation**:
 
