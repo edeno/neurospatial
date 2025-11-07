@@ -40,6 +40,183 @@ This plan outlines the implementation of **core spatial primitives** and **found
 
 ---
 
+## Context for Implementation
+
+The following sections provide essential background for implementing this plan.
+
+### Current Codebase State (v0.2.1)
+
+This section clarifies what functionality **already exists** vs. what needs to be **created** in v0.3.0.
+
+#### Existing Core Infrastructure
+
+**Graph Structure** (`src/neurospatial/environment/core.py`):
+- `env.connectivity` - NetworkX graph with mandatory node/edge attributes
+- Node attributes: `'pos'`, `'source_grid_flat_index'`, `'original_grid_nd_index'`
+- Edge attributes: `'distance'`, `'vector'`, `'edge_id'`, `'angle_2d'` (optional)
+- All spatial operations operate on this graph structure
+
+**Spatial Query Methods** (`src/neurospatial/environment/queries.py`, 897 lines):
+- `bin_at(points)` - Map continuous coordinates to bin indices
+- `distance_between(bin_i, bin_j)` - Graph distance between two bins
+- `distance_to(target_bins)` - Distance field from target bins to all bins (uses Dijkstra)
+- `shortest_path(source, target)` - Shortest path between bins
+- `contains(points)` - Check if points are within environment bounds
+- `neighbors(bin_id)` - Get neighboring bin IDs
+
+**Spatial Field Operations** (`src/neurospatial/environment/fields.py`, 564 lines):
+- `smooth(field, bandwidth, *, kernel='gaussian')` - Gaussian smoothing using distance-based kernel
+- `compute_kernel(distances, bandwidth, *, kernel='gaussian')` - Compute smoothing kernel matrix
+- `interpolate(field, points)` - Interpolate field values at arbitrary points
+- All operations respect graph connectivity (not Euclidean smoothing)
+
+**Trajectory Analysis** (`src/neurospatial/environment/trajectory.py`, 1,222 lines):
+- `occupancy(trajectory, times=None)` - Time spent in each bin (seconds or frame counts)
+- `bin_sequence(trajectory)` - Convert continuous trajectory to sequence of bin indices
+- `transitions(trajectory)` - Transition matrix between bins (n_bins × n_bins)
+- These provide the foundation for behavioral segmentation in Phase 4
+
+**Existing KL Divergence** (`src/neurospatial/field_ops.py`):
+- `divergence(p, q, *, kind='kl', eps=1e-12)` - KL or JS divergence between probability distributions
+- **TO BE RENAMED** to `kl_divergence()` in Phase 1.3 to avoid confusion with vector field divergence
+- Used for comparing spatial distributions (e.g., place field remapping)
+
+**Distance Field Function** (Public API, `src/neurospatial/__init__.py`):
+- `distance_field(graph, sources, *, directed=False)` - Multi-source geodesic distances using Dijkstra
+- Used for computing distance maps from goal locations or boundaries
+- New gradient/divergence operators will complement this for RL analyses
+
+#### What's Being Added in v0.3.0
+
+**Phase 1**: New `differential.py` module with `gradient()`, `divergence()` (vector field), `compute_differential_operator()`
+
+**Phase 2**: New `primitives.py` module with `neighbor_reduce()`, `convolve()`
+
+**Phase 3**: New `metrics/` package with `place_fields.py`, `population.py`, `boundary_cells.py`, `trajectory.py`
+
+**Phase 4**: New `segmentation/` package with `regions.py`, `laps.py`, `trials.py`, `similarity.py`
+
+#### Key Integration Points
+
+- **Differential operators** will use existing `env.connectivity` graph
+- **Metrics** will use existing `smooth()` and `occupancy()` methods
+- **Behavioral segmentation** will use existing `bin_sequence()` and `transitions()` methods
+- **Place field detection** will use existing `distance_field()` for boundary detection
+- All new code follows existing mixin pattern with `self: "Environment"` type annotations
+
+---
+
+### Neuroscience Terminology
+
+Key neuroscience concepts used throughout this plan. Essential for understanding parameter choices and validation strategies.
+
+**Place field**: Spatial region where a hippocampal place cell fires preferentially. Place cells fire action potentials when an animal occupies specific locations in its environment. Key discovery: O'Keefe & Dostrovsky (1971), Nobel Prize in Physiology or Medicine (2014). Detected via firing rate maps normalized by occupancy.
+
+**Grid cell**: Hippocampal neuron with hexagonal periodic firing pattern covering the environment in a triangular lattice. Discovered by Moser lab (2005), Nobel Prize (2014). Detected via spatial autocorrelation producing hexagonal pattern with peaks at 60° intervals, quantified by grid score.
+
+**Firing rate map**: 2D array showing average firing rate (spikes/second) of a neuron in each spatial bin. Computed as spike_count / occupancy_time. Central representation for all spatial analyses. Typically smoothed (5 cm bandwidth) to reduce noise.
+
+**Occupancy**: Time spent in each spatial bin, measured in seconds or frame counts. Essential denominator for normalizing spike counts into firing rates. Low-occupancy bins (<0.5 seconds) often excluded as unreliable.
+
+**Border cell (Boundary vector cell)**: Neuron that fires when animal is near environmental boundaries (walls). Fires along one or more walls at specific distances. Quantified via border score (Solstad et al. 2008): `(cM - d) / (cM + d)` where cM = max wall contact ratio, d = distance from firing field to nearest wall.
+
+**Spatial information (Skaggs information)**: Bits per spike measuring how much spatial information a neuron conveys. Formula: `Σ pᵢ (rᵢ/r̄) log₂(rᵢ/r̄)` where pᵢ = occupancy probability, rᵢ = firing rate in bin i, r̄ = mean rate. Higher values indicate more spatially selective cells. Typical place cells: 1-3 bits/spike.
+
+**Sparsity**: Fraction of environment where cell is active, computed as `(Σ pᵢ rᵢ)² / Σ pᵢ rᵢ²`. Range [0, 1]. Lower values indicate sparser, more selective firing. Typical place cells: 0.1-0.3 (active in 10-30% of environment).
+
+**Field stability**: Spatial correlation between firing rate maps recorded in different sessions or trial halves. Pearson correlation typically used. High stability (r > 0.7) indicates reliable place field. Used to assess learning, memory consolidation.
+
+**Pyramidal cell vs Interneuron**: Two major neuron classes in hippocampus. Pyramidal cells (place cells) have low mean firing rates (0.5-5 Hz). Interneurons have high rates (10-50 Hz) and are typically excluded from place cell analyses using 10 Hz threshold (vandermeerlab convention).
+
+**Head direction cell**: Neuron that fires when animal's head points in a preferred allocentric direction, regardless of location. Tuning analyzed with circular statistics (von Mises distribution). Found in postsubiculum, anterodorsal thalamus.
+
+**Replay**: Rapid sequential reactivation of place cells during rest or sleep, representing spatial trajectories at compressed timescales (~20× faster than behavior). Analyzed using decoded position from population activity. Requires gradient-based methods for goal-directed replay detection.
+
+**Spatial autocorrelation**: 2D correlation of firing rate map with shifted versions of itself. Reveals periodic spatial structure. For grid cells, produces hexagonal pattern with peaks at 60° intervals. Computed via FFT for regular grids (opexebo method) or graph-based correlation for irregular grids.
+
+**Grid score (Gridness)**: Quantifies hexagonal periodicity of firing pattern. Computed from spatial autocorrelation map using annular rings approach (Sargolini et al. 2006): `min(r₆₀, r₁₂₀) - max(r₃₀, r₉₀, r₁₅₀)` where rᵢ = correlation at i° rotation. Range [-2, 2], typical good grids: ~1.3, threshold ~0.4.
+
+**Coherence**: Spatial correlation between firing rate and mean of neighboring bins. Measures smoothness of rate map (Muller & Kubie 1989). Computed via `neighbor_reduce()` primitive. High coherence (r > 0.7) indicates spatially organized firing.
+
+---
+
+### Validation Authority Packages
+
+Reference implementations that define gold standards for spatial neuroscience analyses. Our implementations will match these packages for regular grids and extend them to irregular graph structures.
+
+#### opexebo (Gold Standard)
+
+**Repository**: https://github.com/simon-ball/opexebo
+**Authority**: Developed by Moser laboratory (NTNU, Norway) - Nobel Prize in Physiology or Medicine (2014) for discovery of grid cells
+**Language**: Python
+**Purpose**: Reference implementation of spatial analyses for grid cells, place cells, and related metrics
+
+**Key Functions**:
+- `opexebo.analysis.grid_score()` - Grid score using annular rings approach (Sargolini et al. 2006)
+- `opexebo.analysis.autocorrelation()` - Spatial autocorrelation via FFT (fast, validated)
+- `opexebo.analysis.border_score()` - Border score (Solstad et al. 2008)
+- `opexebo.analysis.rate_map_coherence()` - Spatial coherence (Muller & Kubie 1989)
+- `opexebo.analysis.rate_map()` - Occupancy-normalized firing rate maps
+- `opexebo.analysis.spatial_information()` - Skaggs information content
+
+**Validation Strategy**: Our implementations will match opexebo outputs **within 1%** for regular grids. Test cases will use opexebo as ground truth where functionality overlaps. Our extensions (irregular grids, graph-based operations) will reduce to opexebo's results when applied to regular grids.
+
+**Why Authoritative**: Direct implementation of methods from Nobel Prize-winning laboratory. Extensively validated against published datasets. Field-standard for grid cell analysis.
+
+#### neurocode (Neuroscience Best Practices)
+
+**Repository**: https://github.com/ayalab1/neurocode
+**Authority**: AyA Laboratory (Cornell University) - Systems neuroscience and hippocampal function
+**Language**: MATLAB
+**Purpose**: Comprehensive toolkit for hippocampal data analysis with emphasis on place cells and population dynamics
+
+**Key Functions**:
+- `FindPlaceFields.m` - Place field detection with iterative peak-based approach
+- `MapStats.m` - Comprehensive rate map statistics (information, sparsity, coherence)
+- `NSMAFindGoodLaps.m` - Lap detection and quality assessment
+- Circular statistics (`circ_mean`, `circ_r`, `circ_rtest`) - Head direction analysis
+- Population vector analyses and remapping detection
+
+**Validation Strategy**: Cross-validate place field detection algorithm against neurocode's subfield discrimination approach. Verify spatial information and sparsity calculations match within numerical precision.
+
+**Why Authoritative**: Represents field best practices for hippocampal analyses. Actively maintained, widely used in systems neuroscience. Implements consensus algorithms from multiple labs.
+
+#### TSToolbox_Utils (Border Score Reference)
+
+**Authority**: Implementation of border score from Solstad et al. (2008) Neuron paper
+**Language**: MATLAB
+**Purpose**: Reference implementation for boundary vector cell (border cell) detection
+
+**Key Function**: `Compute_BorderScore.m` - Border score algorithm
+
+**Algorithm Details**:
+1. Segment place field at 30% of peak firing rate
+2. Compute wall contact ratio for each wall (N, S, E, W)
+3. Maximum wall contact ratio (cM)
+4. Firing-rate-weighted distance to walls (d, normalized 0-1)
+5. Border score: `(cM - d) / (cM + d)`
+
+**Validation Strategy**: Match TSToolbox_Utils and opexebo border score implementations exactly for test cases.
+
+**Why Authoritative**: Direct implementation from original Solstad et al. 2008 paper. Used by opexebo as reference.
+
+#### Other Reference Packages
+
+**buzcode** (MATLAB): Comprehensive rodent electrophysiology toolkit, cross-validation for place field metrics
+**pynapple** (Python): Time series and interval management, integration target for behavioral segmentation outputs
+**RatInABox** (Python): Simulation framework for generating ground-truth data (grid cells, place cells with known properties), validation in v0.4.0
+
+#### Ecology/Trajectory Authority
+
+**Traja** (Python): Trajectory analysis for animal movement, turn angle and step length algorithms
+**yupi** (Python): Trajectory classification, mean square displacement (MSD) implementations
+**adehabitatHR** (R): Home range estimation (95% kernel density), field standard in ecology
+**ctmm** (R): Continuous-time movement modeling, autocorrelation-based home range
+
+**Validation Strategy**: Cross-validate trajectory metrics (turn angles, step lengths, home range, MSD) against ecology package outputs on synthetic trajectories with known properties (straight lines, circles, random walks).
+
+---
+
 ## Phase 1: Core Differential Operators (Weeks 1-3)
 
 ### Goal
