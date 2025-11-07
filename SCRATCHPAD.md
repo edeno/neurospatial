@@ -832,3 +832,54 @@ All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
 **Next Task**: Begin Milestone 2.1 - `neighbor_reduce()` primitive
 
 ---
+
+## 2025-11-07: Critical Fix - Laplacian Verification Bug
+
+### Issue: Notebook verification showed mathematical mismatch
+
+**Status**: ✅ FIXED
+
+**Root Cause** (found via systematic debugging):
+- Notebook compared against **unweighted** NetworkX Laplacian (`nx.laplacian_matrix(G)` default)
+- Our implementation correctly computes **weighted** Laplacian (uses edge distances)
+- This caused max difference of ~49.0 instead of machine precision
+
+**Investigation Process**:
+1. Read error output: "Max difference: 4.90e+01" - too large
+2. Gathered evidence: Compared our values vs NetworkX at specific edges
+3. Found pattern: Ratio of differences matched edge distances exactly
+4. Formed hypothesis: NetworkX uses unweighted, we use weighted
+5. Tested: `nx.laplacian_matrix(G, weight='distance')` → max diff 2.842e-14 ✓
+
+**Fix Applied**:
+- Changed `nx.laplacian_matrix(env.connectivity)`
+- To: `nx.laplacian_matrix(env.connectivity, weight='distance')`
+- Added explanatory comment about weighted comparison
+
+**Architectural Clarification**:
+User asked: "Should we implement this given NetworkX has Laplacian?"
+
+**Answer**: YES - NetworkX provides Laplacian but NOT:
+- `gradient()` operator (scalar field → edge field) - essential for RL policy gradients
+- `divergence()` operator (edge field → scalar field) - essential for source/sink detection
+- These are the real value for RL and neuroscience analyses
+- Laplacian verification confirms gradient/divergence are mathematically correct
+
+**Added Context to Notebook**:
+- Clarified WHY we implement differential operators
+- Noted that gradient/divergence are the primary contribution
+- Laplacian is just verification, not duplication of NetworkX
+
+**Validation**:
+- ✅ Notebook re-executed successfully
+- ✅ Max difference now 1.07e-14 (machine precision)
+- ✅ Verification shows "✓ Verified: div(grad(f)) == NetworkX Laplacian"
+- ✅ All hooks pass (ruff, mypy)
+- ✅ Committed with fix(M1.4) message
+
+**Lessons Learned**:
+- ALWAYS specify `weight` parameter when comparing with NetworkX weighted graphs
+- Verification tests must match the implementation's assumptions (weighted vs unweighted)
+- Systematic debugging process (root cause → hypothesis → test → fix) prevented guessing
+
+---
