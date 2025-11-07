@@ -227,33 +227,33 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/differential.py` module
-- [ ] Implement `compute_differential_operator(env)` function
-  - [ ] Extract edge data from `env.connectivity` graph
-  - [ ] Compute sqrt of edge weights (distances)
-  - [ ] Build sparse CSC matrix (n_bins × n_edges)
-  - [ ] Add NumPy-style docstring with PyGSP reference
-  - [ ] Add type hints: `-> sparse.csc_matrix`
-- [ ] Add `differential_operator` cached property to Environment
-  - [ ] Location: `src/neurospatial/environment/core.py`
-  - [ ] Use `@cached_property` decorator
-  - [ ] Import from `neurospatial.differential`
-  - [ ] Add NumPy-style docstring
+- [x] Create `src/neurospatial/differential.py` module
+- [x] Implement `compute_differential_operator(env)` function
+  - [x] Extract edge data from `env.connectivity` graph
+  - [x] Compute sqrt of edge weights (distances)
+  - [x] Build sparse CSC matrix (n_bins × n_edges)
+  - [x] Add NumPy-style docstring with PyGSP reference
+  - [x] Add type hints: `-> sparse.csc_matrix`
+- [x] Add `differential_operator` cached property to Environment
+  - [x] Location: `src/neurospatial/environment/core.py`
+  - [x] Use `@cached_property` decorator
+  - [x] Import from `neurospatial.differential`
+  - [x] Add NumPy-style docstring
 
 **Testing**:
 
-- [ ] Create `tests/test_differential.py`
-- [ ] Test: `test_differential_operator_shape()` - verify (n_bins, n_edges)
-- [ ] Test: `test_laplacian_from_differential()` - D @ D.T == nx.laplacian_matrix()
-- [ ] Test: `test_differential_operator_caching()` - repeated calls return same object
-- [ ] Test: Edge cases (single node, disconnected graph)
-- [ ] Run: `uv run pytest tests/test_differential.py -v`
+- [x] Create `tests/test_differential.py`
+- [x] Test: `test_differential_operator_shape()` - verify (n_bins, n_edges)
+- [x] Test: `test_laplacian_from_differential()` - D @ D.T == nx.laplacian_matrix()
+- [x] Test: `test_differential_operator_caching()` - repeated calls return same object
+- [x] Test: Edge cases (single node, disconnected graph)
+- [x] Run: `uv run pytest tests/test_differential.py -v`
 
 **Type Checking**:
 
-- [ ] Add `TYPE_CHECKING` guard for Environment import
-- [ ] Verify mypy passes: `uv run mypy src/neurospatial/differential.py`
-- [ ] No `type: ignore` comments allowed
+- [x] Add `TYPE_CHECKING` guard for Environment import
+- [x] Verify mypy passes: `uv run mypy src/neurospatial/differential.py`
+- [x] No `type: ignore` comments allowed
 
 **Effort**: 3 days
 

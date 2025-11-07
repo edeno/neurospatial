@@ -402,3 +402,86 @@ All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
 **Next Task**: Begin Milestone 1.1 - Differential Operator Matrix
 
 ---
+
+## 2025-11-07: Milestone 1.1 - Differential Operator Matrix COMPLETE
+
+### Task: Implement differential operator infrastructure
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/differential.py` - Core differential operator module (145 lines)
+2. `tests/test_differential.py` - Comprehensive test suite (13 tests, all pass)
+
+**Files Modified**:
+
+1. `src/neurospatial/environment/core.py` - Added `differential_operator` cached property
+2. `src/neurospatial/environment/_protocols.py` - Updated Protocol with differential_operator property
+
+**Implementation Details**:
+
+**`compute_differential_operator(env)` function:**
+- Extracts edge data from `env.connectivity` graph
+- Computes sqrt of edge weights (distances) following PyGSP convention
+- Builds sparse CSC matrix (n_bins × n_edges) using COO → CSC conversion
+- Handles edge cases: empty graphs, disconnected components, single nodes
+- Comprehensive NumPy-style docstring with PyGSP references
+- Full type hints: `-> sparse.csc_matrix`
+- Uses `Union[Environment, EnvironmentProtocol]` to satisfy both mypy contexts
+
+**`Environment.differential_operator` cached property:**
+- Added to `src/neurospatial/environment/core.py` (line 922-986)
+- Uses `@cached_property` decorator for efficient reuse
+- Includes `@check_fitted` decorator for safety
+- Comprehensive NumPy-style docstring with examples
+- Proper return type annotation: `-> sparse.csc_matrix`
+
+**Mathematical Correctness:**
+- Sign convention correct: source node gets -sqrt(w), destination gets +sqrt(w)
+- Verified fundamental relationship: L = D @ D.T (Laplacian)
+- Edge weights use sqrt(distance) scaling per graph signal processing convention
+
+**Test Coverage**: 13 comprehensive tests (100% pass rate)
+- Shape verification (n_bins, n_edges)
+- Laplacian relationship: D @ D.T == nx.laplacian_matrix()
+- Sparse format (CSC)
+- Edge weight computation (sqrt scaling)
+- Caching behavior (same object returned)
+- Edge cases: single node, disconnected graph
+- Regular grids, irregular spacing
+- Symmetry preservation
+
+**Type Safety**:
+- ✅ Mypy passes with zero errors
+- ✅ No `type: ignore` comments
+- ✅ Full type hints using `EnvironmentProtocol` and `Environment`
+- ✅ Protocol updated with proper return type
+
+**Code Quality**:
+- ✅ Ruff check passes (all linting rules satisfied)
+- ✅ Ruff format applied (consistent code style)
+- ✅ NumPy-style docstrings throughout
+- ✅ Fixed variable naming to comply with PEP 8 (d_coo, d_csc)
+
+**Code Review Findings** (all fixed):
+- ✅ Added return type annotation to property
+- ✅ Removed forward references to non-existent gradient/divergence functions
+- ✅ Fixed Protocol return type (sparse.csc_matrix instead of Any)
+- ✅ Fixed Union type hint to satisfy mypy in both contexts
+
+**TDD Workflow Followed**:
+1. ✅ Created comprehensive tests first (RED phase)
+2. ✅ Verified tests failed (ModuleNotFoundError)
+3. ✅ Implemented functionality (GREEN phase)
+4. ✅ All 13 tests pass
+5. ✅ Code review applied
+6. ✅ Refactored based on feedback
+7. ✅ Mypy and ruff pass
+
+**Updated Files**:
+- `TASKS.md` - All Milestone 1.1 checkboxes marked complete [x]
+
+**Next Task**: Milestone 1.2 - Gradient Operator
+
+---

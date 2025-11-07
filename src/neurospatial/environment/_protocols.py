@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+from scipy import sparse
 
 if TYPE_CHECKING:
     from neurospatial.layout.base import LayoutEngine
@@ -64,6 +65,9 @@ class EnvironmentProtocol(Protocol):
 
     @property
     def layout_parameters(self) -> dict[str, Any] | None: ...
+
+    @property
+    def differential_operator(self) -> sparse.csc_matrix: ...
 
     # Methods that mixins call
     def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.int_]: ...

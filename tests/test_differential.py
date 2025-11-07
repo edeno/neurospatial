@@ -1,0 +1,192 @@
+"""Tests for differential operators on graph-discretized environments.
+
+This module tests the computation of the differential operator D and its
+relationship to the graph Laplacian L = D @ D.T.
+"""
+
+import networkx as nx
+import numpy as np
+from scipy import sparse
+
+from neurospatial import Environment
+from neurospatial.differential import compute_differential_operator
+
+
+class TestDifferentialOperatorComputation:
+    """Test compute_differential_operator() function."""
+
+    def test_differential_operator_shape(self):
+        """Test that differential operator has shape (n_bins, n_edges)."""
+        # Create simple 2x2 grid environment
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D = compute_differential_operator(env)
+
+        n_bins = env.n_bins
+        n_edges = len(env.connectivity.edges)
+
+        assert D.shape == (n_bins, n_edges)
+        assert isinstance(D, sparse.csc_matrix)
+
+    def test_laplacian_from_differential(self):
+        """Test that D @ D.T equals the graph Laplacian matrix."""
+        # Create simple 1D chain environment
+        data = np.array([[0.0], [1.0], [2.0], [3.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D = compute_differential_operator(env)
+
+        # Compute Laplacian from differential operator
+        L_from_D = (D @ D.T).toarray()
+
+        # Get networkx Laplacian (unnormalized)
+        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+
+        # They should be equal (within numerical precision)
+        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+
+    def test_differential_operator_sparse(self):
+        """Test that differential operator is sparse (CSC format)."""
+        data = np.random.rand(100, 2) * 10
+        env = Environment.from_samples(data, bin_size=2.0)
+
+        D = compute_differential_operator(env)
+
+        assert sparse.issparse(D)
+        assert isinstance(D, sparse.csc_matrix)
+
+    def test_differential_operator_edge_weights(self):
+        """Test that differential operator uses sqrt of edge distances."""
+        # Simple 1D chain with known distances
+        data = np.array([[0.0], [1.0], [2.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D = compute_differential_operator(env)
+
+        # For a 1D chain, edge distances should be 1.0
+        # D should contain +/-sqrt(1) = +/-1
+        D_dense = D.toarray()
+
+        # Non-zero elements should be +1 or -1
+        nonzero_values = D_dense[D_dense != 0]
+        np.testing.assert_allclose(np.abs(nonzero_values), 1.0, atol=1e-10)
+
+    def test_differential_operator_single_node(self):
+        """Test edge case: single node (no edges)."""
+        data = np.array([[0.0, 0.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D = compute_differential_operator(env)
+
+        # Single node should have shape (1, 0) - no edges
+        assert D.shape == (1, 0)
+
+    def test_differential_operator_disconnected_graph(self):
+        """Test differential operator on disconnected graph."""
+        # Create environment with disconnected components
+        # Two separate 1D chains
+        data = np.array([[0.0, 0.0], [1.0, 0.0], [5.0, 5.0], [6.0, 5.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # This should work even with disconnected components
+        D = compute_differential_operator(env)
+
+        n_bins = env.n_bins
+        n_edges = len(env.connectivity.edges)
+        assert D.shape == (n_bins, n_edges)
+
+        # Laplacian relationship should still hold
+        L_from_D = (D @ D.T).toarray()
+        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+
+
+class TestEnvironmentCachedProperty:
+    """Test differential_operator cached property on Environment."""
+
+    def test_differential_operator_property_exists(self):
+        """Test that Environment has differential_operator property."""
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        assert hasattr(env, "differential_operator")
+
+    def test_differential_operator_caching(self):
+        """Test that differential_operator is cached (same object on repeated access)."""
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Access twice
+        D1 = env.differential_operator
+        D2 = env.differential_operator
+
+        # Should be the same object (cached)
+        assert D1 is D2
+
+    def test_differential_operator_correct_shape(self):
+        """Test that cached property returns correct shape."""
+        data = np.random.rand(50, 2) * 10
+        env = Environment.from_samples(data, bin_size=2.0)
+
+        D = env.differential_operator
+
+        n_bins = env.n_bins
+        n_edges = len(env.connectivity.edges)
+        assert D.shape == (n_bins, n_edges)
+
+    def test_differential_operator_matches_function(self):
+        """Test that property returns same result as direct function call."""
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D_property = env.differential_operator
+        D_function = compute_differential_operator(env)
+
+        # Should produce identical matrices
+        np.testing.assert_array_equal(D_property.toarray(), D_function.toarray())
+
+
+class TestDifferentialOperatorEdgeCases:
+    """Test edge cases and special graph structures."""
+
+    def test_differential_operator_regular_grid(self):
+        """Test on regular 2D grid."""
+        data = np.array([[i, j] for i in range(5) for j in range(5)])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        D = env.differential_operator
+
+        # Should have correct shape
+        n_bins = env.n_bins
+        n_edges = len(env.connectivity.edges)
+        assert D.shape == (n_bins, n_edges)
+
+        # Laplacian relationship should hold
+        L_from_D = (D @ D.T).toarray()
+        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+
+    def test_differential_operator_irregular_spacing(self):
+        """Test on irregularly spaced points."""
+        np.random.seed(42)
+        data = np.random.rand(20, 2) * 10
+        env = Environment.from_samples(data, bin_size=2.0)
+
+        D = env.differential_operator
+
+        # Should still satisfy Laplacian relationship
+        L_from_D = (D @ D.T).toarray()
+        L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
+        np.testing.assert_allclose(L_from_D, L_nx, rtol=1e-10, atol=1e-10)
+
+    def test_differential_operator_preserves_symmetry(self):
+        """Test that D @ D.T produces symmetric Laplacian."""
+        data = np.random.rand(30, 2) * 10
+        env = Environment.from_samples(data, bin_size=2.0)
+
+        D = env.differential_operator
+        L = (D @ D.T).toarray()
+
+        # Laplacian should be symmetric
+        np.testing.assert_allclose(L, L.T, rtol=1e-10, atol=1e-10)
