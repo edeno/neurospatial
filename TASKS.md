@@ -610,12 +610,15 @@
 
 **Example Notebooks**:
 
-- [ ] Create `examples/10_place_field_analysis.ipynb` (deferred to next session)
-  - [ ] Load example data (generate synthetic or use real)
-  - [ ] Compute firing rate map with occupancy
-  - [ ] Detect place fields
-  - [ ] Compute Skaggs information, sparsity
-  - [ ] Visualize fields on environment
+- [x] Create `examples/12_place_field_analysis.ipynb` (renumbered from 10)
+  - [x] Load example data (generate synthetic trajectory with Gaussian place cell)
+  - [x] Compute firing rate map with occupancy
+  - [x] Detect place fields
+  - [x] Compute Skaggs information, sparsity
+  - [x] Compute field size, centroid
+  - [x] Assess field stability (split-half correlation)
+  - [x] Visualize fields on environment
+  - [x] Complete workflow function demonstrating end-to-end analysis
 - [ ] Create `examples/11_boundary_cell_analysis.ipynb` (deferred to next session)
   - [ ] Generate synthetic border cell
   - [ ] Compute border score
@@ -628,7 +631,7 @@
 - [x] Verify all place field tests pass (22/22 PASS)
 - [x] Verify all population metrics tests pass (28/28 PASS)
 - [ ] Verify coverage: `uv run pytest tests/metrics/ --cov=src/neurospatial/metrics/` (deferred)
-- [ ] Run notebooks: verify all cells execute (deferred - notebooks not yet created)
+- [x] Run place field notebook: `examples/12_place_field_analysis.ipynb` executes successfully (263KB with outputs)
 
 **Notes**:
 

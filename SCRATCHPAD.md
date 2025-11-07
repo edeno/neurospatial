@@ -1,5 +1,103 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 3.4 - Place Field Analysis Notebook COMPLETE
+
+### Task: Create example notebook demonstrating place field analysis workflow
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `examples/12_place_field_analysis.ipynb` - Complete place field analysis notebook (263KB with outputs)
+2. `examples/12_place_field_analysis.py` - Paired Python script via jupytext (16KB)
+
+**Notebook Coverage**:
+
+**Part 1: Generate Synthetic Data**
+- Circular trajectory (5000 samples, 100 seconds at 50 Hz)
+- Gaussian place cell (center at (60, 50) cm, σ = 10 cm, peak = 10 Hz)
+- Environment: 3cm bins, ~385 bins total
+- Generated ~1000 spikes using Poisson process
+
+**Part 2: Compute Firing Rate Map**
+- Used `compute_place_field()` with min_occupancy_seconds=0.5
+- Gaussian smoothing with 5cm bandwidth
+- Visualization with hot colormap and field center marker
+
+**Part 3: Detect Place Fields**
+- Used `detect_place_fields()` with threshold=0.2, max_mean_rate=10.0
+- Successfully detected 1 place field
+- Visualization showing detected field overlaid on firing rate
+
+**Part 4: Compute Field Properties**
+- Field size (area in cm²) using `field_size()`
+- Field centroid (center of mass) using `field_centroid()`
+- Verified centroid close to true field center
+
+**Part 5: Compute Spatial Metrics**
+- Skaggs spatial information (bits/spike)
+- Sparsity score [0, 1]
+- Interpretation thresholds documented (info > 1.0, sparsity > 0.2)
+
+**Part 6: Field Stability**
+- Split-half correlation analysis
+- Computed firing rates for first and second halves separately
+- Pearson and Spearman correlations
+- Three-panel visualization: first half, second half, absolute difference
+- Interpretation: correlation > 0.7 indicates stable field
+
+**Part 7: Complete Workflow Summary**
+- End-to-end `analyze_place_cell()` function
+- Returns comprehensive results dictionary
+- Demonstrates full workflow from spike train to classification
+- Summary classification: "PLACE CELL" or "NOT A PLACE CELL"
+
+**Technical Implementation**:
+
+- Used jupytext paired mode (`.ipynb` + `.py`) for reliable editing
+- Applied scientific presentation principles:
+  - Constrained layout for better spacing
+  - Bold, large fonts (12-14pt) for readability
+  - Hot colormap for firing rates, viridis for differences
+  - Clear, descriptive titles and labels
+  - Marker sizes optimized for presentations
+- Comprehensive markdown explanations in every section
+- Estimated time: 15 minutes
+- All mathematical concepts explained with neuroscience context
+
+**Validation**:
+
+- ✅ Notebook executes successfully (263KB with outputs)
+- ✅ All visualizations render correctly
+- ✅ Jupytext pairing configured (both .ipynb and .py files)
+- ✅ All 7 parts demonstrate correct functionality
+- ✅ Synthetic data produces expected results (1 field, high spatial info, stable)
+
+**Key Functions Demonstrated**:
+
+1. `compute_place_field()` - Spike train → firing rate map with smoothing
+2. `detect_place_fields()` - Automatic field detection with subfield discrimination
+3. `field_size()` - Field area in physical units
+4. `field_centroid()` - Firing-rate-weighted center of mass
+5. `skaggs_information()` - Spatial information metric (bits/spike)
+6. `sparsity()` - Sparsity metric [0, 1]
+7. `field_stability()` - Split-half correlation (Pearson/Spearman)
+
+**Scientific References Included**:
+
+- O'Keefe & Dostrovsky (1971): Discovery of place cells
+- Skaggs et al. (1993): Spatial information metric
+- Skaggs et al. (1996): Sparsity metric
+- Muller & Kubie (1987, 1989): Place field characterization
+- Wilson & McNaughton (1993): Population dynamics
+
+**Next Steps**:
+
+- Create boundary cell analysis notebook (`examples/13_boundary_cell_analysis.ipynb`)
+- Or move to Milestone 4 (Trajectory Metrics & Behavioral Segmentation)
+
+---
+
 ## 2025-11-07: Milestone 3.2 - Population Metrics COMPLETED
 
 ### Task: Implement population-level place field metrics
