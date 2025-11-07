@@ -691,3 +691,144 @@ All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
 **Next Task**: Update TASKS.md and commit changes
 
 ---
+
+## 2025-11-07: Milestone 1.4 - Documentation & Examples COMPLETE
+
+### Task: Create comprehensive documentation and example notebook for differential operators
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `docs/user-guide/differential-operators.md` - Comprehensive user guide (23.7KB, 660 lines)
+2. `examples/10_differential_operators.ipynb` - Example notebook with 4 demonstrations (507KB, executed successfully)
+3. `examples/10_differential_operators.py` - Paired Python script via jupytext (633 lines)
+
+**Documentation Coverage** (`differential-operators.md`):
+
+1. **Overview Section** - Introduction to differential operators on spatial graphs
+   - Gradient, divergence, Laplacian operators
+   - Graph signal processing foundation
+   - Applications in neuroscience and RL
+
+2. **The Differential Operator Matrix D** - Mathematical foundation
+   - Matrix structure (n_bins × n_edges)
+   - Square root weighting ($\sqrt{w_e}$) convention
+   - Accessing via `env.differential_operator` cached property
+   - Performance: 50x speedup from caching
+
+3. **Gradient Operator** - Scalar field → edge field transformation
+   - Mathematical definition: $\nabla f = D^T f$
+   - Physical interpretation (uphill/downhill/flat)
+   - Example: Distance field gradient for goal-directed navigation
+   - Example: Constant field has zero gradient
+
+4. **Divergence Operator** - Edge field → scalar field transformation
+   - Mathematical definition: $\text{div}(g) = D \cdot g$
+   - Physical interpretation (source/sink/conservation)
+   - Example: Flow field from successor representation
+   - Relationship to Laplacian: $L f = \text{div}(\text{grad}(f))$
+
+5. **Laplacian Smoothing** - Composition of operators
+   - Smoothness measure (difference from neighbors)
+   - Iterative heat diffusion implementation
+   - Comparison with Gaussian smoothing
+   - Verification against NetworkX Laplacian
+
+6. **Complete Example** - Goal-directed flow analysis
+   - Combines distance field, gradient, divergence
+   - Three-panel visualization (distance, gradient magnitude, divergence)
+   - Physical interpretation of sources and sinks
+
+7. **Mathematical Background** - Graph signal processing theory
+   - Comparison table: classical calculus vs. graph signal processing
+   - Weighted vs. unweighted graphs
+   - Sign convention (source negative, destination positive)
+
+8. **Advanced Topics** - Implementation details
+   - Computing Laplacian smoothing (iterative diffusion)
+   - Edge field visualization (plotting values along edges)
+
+9. **Comparison Tables** - When to use which tool
+   - `gradient()` vs. `env.smooth()`
+   - `divergence()` vs. `kl_divergence()` (renamed in v0.3.0)
+
+10. **References** - Scientific literature
+    - Shuman et al. (2013): Graph signal processing foundations
+    - Stachenfeld et al. (2017): Successor representations
+    - Pfeiffer & Foster (2013): Replay analysis applications
+
+**Example Notebook Coverage** (`10_differential_operators.ipynb`):
+
+**Part 1: Gradient of Distance Fields**
+- Create 2D environment from synthetic meandering trajectory
+- Compute distance field from goal bin (center of environment)
+- Compute gradient (edge field showing rate of change)
+- Two-panel visualization: distance field + gradient magnitude
+- Interpretation: Near goal shows high gradient (steep), far shows uniform gradient
+
+**Part 2: Divergence of Flow Fields**
+- Create goal-directed flow field (negative gradient points toward goal)
+- Compute divergence to identify sources and sinks
+- Single-panel visualization with symmetric RdBu_r colormap
+- Goal bin is strong sink (negative divergence)
+- Distant bins are sources (positive divergence)
+
+**Part 3: Laplacian Smoothing**
+- Create noisy random field
+- Implement iterative Laplacian smoothing (heat diffusion)
+- Compare with Gaussian smoothing (`env.smooth()`)
+- Three-panel visualization: noisy → Laplacian → Gaussian
+- Verify `div(grad(f)) == NetworkX Laplacian` (mathematical correctness)
+
+**Part 4: RL Successor Representation Analysis**
+- Define start and goal bins in opposite corners
+- Create goal-directed policy (biased transitions toward goal)
+- Compute edge weights favoring distance-reducing moves
+- Normalize to create flow field (transition probabilities)
+- Compute divergence to identify policy structure
+- Visualization: start bin (source) and goal bin (sink) clearly identified
+- Applications: replay analysis, policy learning, spatial navigation
+
+**Technical Enhancements**:
+
+- Used jupytext paired mode (`.ipynb` + `.py`) for reliable editing
+- Applied scientific presentation principles:
+  - Constrained layout for better spacing
+  - Bold, large fonts (12-14pt) for readability
+  - Marker sizes and line weights optimized for presentations
+  - Clear, descriptive titles and labels
+  - Colorblind-friendly colormaps (viridis, RdBu_r, hot)
+- Comprehensive markdown explanations in every section
+- Estimated time: 15-20 minutes
+- All mathematical formulas in LaTeX notation
+
+**Validation**:
+
+- ✅ Notebook paired successfully with jupytext
+- ✅ All 4 demonstrations execute without errors
+- ✅ Notebook file size: 507KB (with outputs)
+- ✅ Exit code: 0 (success)
+- ✅ All visualizations render correctly
+- ✅ Mathematical relationships verified (Laplacian matches NetworkX)
+
+**Key Fixes Applied**:
+
+1. **Attribute naming**: Changed `env.ndim` to `env.n_dims` (correct attribute)
+2. **Goal bin selection**: Use actual bin centers instead of hardcoded coordinates
+   - Find bin closest to center of `env.bin_centers`
+   - Ensures goal bin is always valid (no out-of-bounds errors)
+3. **Start/goal bins in Part 4**: Use bins in opposite corners
+   - Calculate positions at 20% and 80% of environment extent
+   - Find closest bins to these positions (guaranteed valid)
+
+**Integration with Existing Documentation**:
+
+- Cross-referenced to `spike-field-primitives.md`, `rl-primitives.md`, `spatial-analysis.md`
+- Comparison tables link gradient/divergence to existing functions
+- API reference section links to all related functions
+- Maintains consistent style with existing user guides
+
+**Next Task**: Begin Milestone 2.1 - `neighbor_reduce()` primitive
+
+---

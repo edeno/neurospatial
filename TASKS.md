@@ -327,31 +327,31 @@
 
 **Documentation**:
 
-- [ ] Create `docs/user-guide/differential-operators.md`
-  - [ ] Section: What are differential operators?
-  - [ ] Section: Gradient (scalar field → edge field)
-  - [ ] Section: Divergence (edge field → scalar field)
-  - [ ] Section: Laplacian (composition: div ∘ grad)
-  - [ ] Section: Mathematical background (graph signal processing)
-  - [ ] Section: When to use (RL value gradients, flow fields)
-  - [ ] Include formulas with LaTeX notation
+- [x] Create `docs/user-guide/differential-operators.md`
+  - [x] Section: What are differential operators?
+  - [x] Section: Gradient (scalar field → edge field)
+  - [x] Section: Divergence (edge field → scalar field)
+  - [x] Section: Laplacian (composition: div ∘ grad)
+  - [x] Section: Mathematical background (graph signal processing)
+  - [x] Section: When to use (RL value gradients, flow fields)
+  - [x] Include formulas with LaTeX notation
 
 **Example Notebook**:
 
-- [ ] Create `examples/09_differential_operators.ipynb`
-  - [ ] Example 1: Gradient of distance field (goal-directed navigation)
-  - [ ] Example 2: Divergence of flow field (source/sink detection)
-  - [ ] Example 3: Laplacian smoothing (compare to env.smooth())
-  - [ ] Example 4: RL successor representation (replay analysis)
-  - [ ] Add visualizations with matplotlib
-  - [ ] Add explanatory markdown cells
+- [x] Create `examples/10_differential_operators.ipynb` (numbering: 10, not 09)
+  - [x] Example 1: Gradient of distance field (goal-directed navigation)
+  - [x] Example 2: Divergence of flow field (source/sink detection)
+  - [x] Example 3: Laplacian smoothing (compare to env.smooth())
+  - [x] Example 4: RL successor representation (replay analysis)
+  - [x] Add visualizations with matplotlib
+  - [x] Add explanatory markdown cells
 
 **Testing**:
 
-- [ ] Run notebook: `uv run jupyter nbconvert --execute examples/09_differential_operators.ipynb`
-- [ ] Verify all cells execute without errors
+- [x] Run notebook: `uv run jupyter nbconvert --execute examples/10_differential_operators.ipynb`
+- [x] Verify all cells execute without errors
 
-**Effort**: 5 days
+**Effort**: 5 days (COMPLETE)
 
 ---
 
