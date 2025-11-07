@@ -202,18 +202,18 @@
 
 ### Milestone 0 Success Criteria
 
-- [ ] `spikes_to_field()` uses correct parameter order (env first, times/positions match existing API)
-- [ ] `compute_place_field()` convenience function works for one-liner workflows
-- [ ] Min occupancy threshold correctly filters unreliable bins (→ NaN)
-- [ ] Spike interpolation handles 1D and multi-dimensional trajectories correctly
-- [ ] Input validation comprehensive (empty spikes, out-of-range, NaN handling)
-- [ ] `region_reward_field()` supports all three decay types with correct parameter name (`decay`)
-- [ ] `goal_reward_field()` supports all three decay functions with consistent naming (`decay`)
-- [ ] Gaussian falloff rescaling uses max IN REGION (not global max)
-- [ ] All tests pass with >95% coverage for new code
-- [ ] Zero mypy errors (no `type: ignore` comments)
-- [ ] Example notebook demonstrates all primitives with clear visualizations
-- [ ] Documentation complete and cross-referenced
+- [x] `spikes_to_field()` uses correct parameter order (env first, times/positions match existing API)
+- [x] `compute_place_field()` convenience function works for one-liner workflows
+- [x] Min occupancy threshold correctly filters unreliable bins (→ NaN)
+- [x] Spike interpolation handles 1D and multi-dimensional trajectories correctly
+- [x] Input validation comprehensive (empty spikes, out-of-range, NaN handling)
+- [x] `region_reward_field()` supports all three decay types with correct parameter name (`decay`)
+- [x] `goal_reward_field()` supports all three decay functions with consistent naming (`decay`)
+- [x] Gaussian falloff rescaling uses max IN REGION (not global max)
+- [x] All tests pass with >95% coverage for new code
+- [x] Zero mypy errors (no `type: ignore` comments)
+- [x] Example notebook demonstrates all primitives with clear visualizations
+- [x] Documentation complete and cross-referenced
 
 **Deferred to v0.3.1**: Batch operations (`smooth_batch()`, `normalize_fields()`)
 
