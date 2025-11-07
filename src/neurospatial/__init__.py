@@ -26,6 +26,7 @@ from neurospatial.spatial import (
     regions_to_mask,
     resample_field,
 )
+from neurospatial.spike_field import compute_place_field, spikes_to_field
 from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
@@ -44,6 +45,7 @@ __all__ = [
     "clamp",
     "combine_fields",
     "compute_diffusion_kernels",
+    "compute_place_field",
     "distance_field",
     "divergence",
     "estimate_transform",
@@ -57,5 +59,6 @@ __all__ = [
     "pairwise_distances",
     "regions_to_mask",
     "resample_field",
+    "spikes_to_field",
     "validate_environment",
 ]

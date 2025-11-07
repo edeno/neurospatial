@@ -95,6 +95,27 @@ class EnvironmentProtocol(Protocol):
         cache: bool = True,
     ) -> NDArray[np.float64]: ...
 
+    def smooth(
+        self,
+        field: NDArray[np.float64],
+        bandwidth: float,
+        *,
+        mode: Literal["transition", "density"] = "density",
+    ) -> NDArray[np.float64]: ...
+
+    def occupancy(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        speed: NDArray[np.float64] | None = None,
+        min_speed: float | None = None,
+        max_gap: float | None = None,
+        kernel_bandwidth: float | None = None,
+        time_allocation: Literal["start", "linear"] = "start",
+        return_seconds: bool = True,
+    ) -> NDArray[np.float64]: ...
+
     # Layout-specific attributes and methods (may be None if not applicable)
     active_mask: NDArray[np.bool_] | None
     grid_shape: tuple[int, ...] | None
@@ -119,6 +140,7 @@ class EnvironmentProtocol(Protocol):
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
         bin_indices: NDArray[np.int64],
+        return_seconds: bool,
     ) -> NDArray[np.float64]: ...
 
     def _empirical_transitions(

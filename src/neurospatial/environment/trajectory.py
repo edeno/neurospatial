@@ -53,6 +53,7 @@ class EnvironmentTrajectory:
         max_gap: float | None = 0.5,
         kernel_bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
+        return_seconds: bool = True,
     ) -> NDArray[np.float64]:
         """Compute occupancy (time spent in each bin).
 
@@ -85,12 +86,19 @@ class EnvironmentTrajectory:
             - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
             - 'linear': Split Δt proportionally across bins traversed by
               straight-line path (more accurate, RegularGridLayout only).
+        return_seconds : bool, default=True
+            If True, return time in seconds (time-weighted occupancy).
+            If False, return sample counts (unweighted, counts number of
+            intervals starting in each bin). Use True for rate calculations
+            (e.g., firing rates), False for presence/absence analyses.
 
         Returns
         -------
         occupancy : NDArray[np.float64], shape (n_bins,)
-            Time in seconds spent in each bin. The sum of occupancy equals
-            the total valid time (within numerical precision), excluding
+            If return_seconds=True: Time in seconds spent in each bin.
+            If return_seconds=False: Count of intervals starting in each bin.
+            The sum equals total valid time (when return_seconds=True) or
+            total number of intervals (when return_seconds=False), excluding
             filtered periods and large gaps.
 
         Raises
@@ -284,15 +292,16 @@ class EnvironmentTrajectory:
 
             # Use np.bincount for efficient accumulation
             if len(valid_bins) > 0:
-                counts = np.bincount(
-                    valid_bins, weights=valid_dt, minlength=self.n_bins
-                )
+                # Choose weights based on return_seconds parameter
+                weights = valid_dt if return_seconds else np.ones_like(valid_dt)
+
+                counts = np.bincount(valid_bins, weights=weights, minlength=self.n_bins)
                 occupancy[:] = counts[: self.n_bins]
 
         elif time_allocation == "linear":
             # Linear allocation: split time across bins traversed by ray
             occupancy = self._allocate_time_linear(
-                positions, dt, valid_mask, bin_indices
+                positions, dt, valid_mask, bin_indices, return_seconds
             )
 
         # Apply kernel smoothing if requested
@@ -1004,6 +1013,7 @@ class EnvironmentTrajectory:
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
         bin_indices: NDArray[np.int64],
+        return_seconds: bool,
     ) -> NDArray[np.float64]:
         """Allocate time intervals linearly across traversed bins (helper for occupancy).
 
@@ -1021,11 +1031,14 @@ class EnvironmentTrajectory:
             Boolean mask indicating which intervals are valid (pass filtering).
         bin_indices : NDArray[np.int64], shape (n_samples,)
             Bin indices for each position (-1 if outside environment).
+        return_seconds : bool
+            If True, return time in seconds. If False, return sample counts.
 
         Returns
         -------
         occupancy : NDArray[np.float64], shape (n_bins,)
-            Time allocated to each bin via linear interpolation.
+            If return_seconds=True: Time in seconds allocated to each bin.
+            If return_seconds=False: Count allocated to each bin (proportional).
 
         """
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
@@ -1050,24 +1063,41 @@ class EnvironmentTrajectory:
             end_pos = positions[i + 1]
             interval_time = dt[i]
 
+            # Choose weight based on return_seconds parameter
+            weight = interval_time if return_seconds else 1.0
+
             # Get starting and ending bin indices
             start_bin = bin_indices[i]
             end_bin = bin_indices[i + 1]
 
             # If both points are in same bin, simple allocation
             if start_bin == end_bin and start_bin >= 0:
-                occupancy[start_bin] += interval_time
+                occupancy[start_bin] += weight
                 continue
 
             # Compute ray-grid intersections
+            # Still use interval_time for proportional splitting, then scale by weight
             bin_times = self._compute_ray_grid_intersections(
                 start_pos, end_pos, list(grid_edges), grid_shape, interval_time
             )
 
-            # Accumulate time to each bin
-            for bin_idx, time_in_bin in bin_times:
-                if 0 <= bin_idx < self.n_bins:
-                    occupancy[bin_idx] += time_in_bin
+            # Accumulate to each bin
+            # Scale the time allocations proportionally to maintain total weight
+            if return_seconds:
+                # Already in seconds from ray-grid intersection
+                for bin_idx, time_in_bin in bin_times:
+                    if 0 <= bin_idx < self.n_bins:
+                        occupancy[bin_idx] += time_in_bin
+            else:
+                # Convert time proportions to count proportions (sum to 1.0)
+                total_allocated = sum(time for _, time in bin_times)
+                if total_allocated > 0:
+                    for bin_idx, time_in_bin in bin_times:
+                        if 0 <= bin_idx < self.n_bins:
+                            # Proportional allocation that sums to 1.0
+                            occupancy[bin_idx] += (
+                                time_in_bin / total_allocated
+                            ) * weight
 
         return occupancy
 

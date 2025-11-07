@@ -15,60 +15,69 @@
 ### 0.1 Spike → Field Conversion + Convenience Function (Week 1, Days 1-4)
 
 **Prerequisites**:
-- [ ] Add `return_seconds` parameter to `env.occupancy()` method
-  - [ ] Location: `src/neurospatial/environment/trajectory.py`
-  - [ ] Add boolean parameter `return_seconds: bool = False`
-  - [ ] If True, weight bins by time differences (`np.diff(times)`)
-  - [ ] If False, return sample counts (existing behavior)
-  - [ ] Update docstring with new parameter
-  - [ ] Add test: `test_occupancy_return_seconds()` in `tests/test_trajectory.py`
+
+- [x] Add `return_seconds` parameter to `env.occupancy()` method
+  - [x] Location: `src/neurospatial/environment/trajectory.py`
+  - [x] Add boolean parameter `return_seconds: bool = True` (default True for backward compatibility)
+  - [x] If True, weight bins by time differences (`np.diff(times)`)
+  - [x] If False, return sample counts (unweighted, each interval = 1)
+  - [x] Update docstring with new parameter
+  - [x] Add tests: 5 comprehensive tests in `tests/test_occupancy.py::TestOccupancyReturnSeconds`
+  - [x] Update `_protocols.py` to include parameter in Protocol definition
+  - [x] Verify mypy passes (zero errors)
 
 **Implementation**:
-- [ ] Create `src/neurospatial/spike_field.py` module
-- [ ] Implement `spikes_to_field(env, spike_times, times, positions, *, min_occupancy_seconds=0.5)`
-  - [ ] Step 0: Validate inputs (times/positions same length, handle empty spikes)
-  - [ ] Step 1: Filter spikes to valid time range with warning
-  - [ ] Step 2: Compute occupancy using `env.occupancy(times, positions, return_seconds=True)`
-  - [ ] Step 3: Interpolate spike positions (handle 1D correctly!)
-    - [ ] Check `positions.ndim == 1` or `positions.shape[1] == 1`
-    - [ ] For 1D: `np.interp(spike_times, times, positions)[:, None]`
-    - [ ] For multi-D: `np.column_stack([np.interp(...) for dim in ...])`
-  - [ ] Step 4: Assign spikes to bins using `env.bin_at(spike_positions)`
-  - [ ] Step 5: Filter out-of-bounds spikes with warning
-  - [ ] Step 6: Count spikes per bin with `np.bincount()`
-  - [ ] Step 7: Normalize by occupancy where valid
-  - [ ] Step 8: Set low-occupancy bins to NaN
-  - [ ] Add comprehensive NumPy-style docstring with examples
-  - [ ] Add type hints: `NDArray[np.float64]`
-  - [ ] Handle edge cases: empty spikes, all spikes out-of-bounds, zero occupancy
-- [ ] Implement `compute_place_field()` convenience function
-  - [ ] Combine `spikes_to_field()` + `env.smooth()`
-  - [ ] Parameters: same as `spikes_to_field` + `smoothing_bandwidth: float | None`
-  - [ ] If `smoothing_bandwidth` is None, skip smoothing
-  - [ ] Add docstring showing equivalence to two-step workflow
-- [ ] Export in public API: `src/neurospatial/__init__.py`
-  - [ ] Add: `from neurospatial.spike_field import spikes_to_field, compute_place_field`
-  - [ ] Update `__all__` list
+
+- [x] Create `src/neurospatial/spike_field.py` module
+- [x] Implement `spikes_to_field(env, spike_times, times, positions, *, min_occupancy_seconds=0.0)`
+  - [x] Step 0: Validate inputs (times/positions same length, handle empty spikes)
+  - [x] Step 1: Filter spikes to valid time range with warning
+  - [x] Step 2: Compute occupancy using `env.occupancy(times, positions, return_seconds=True)`
+  - [x] Step 3: Interpolate spike positions (handle 1D correctly!)
+    - [x] Check `positions.ndim == 1` or `positions.shape[1] == 1`
+    - [x] For 1D: `np.interp(spike_times, times, positions)[:, None]`
+    - [x] For multi-D: `np.column_stack([np.interp(...) for dim in ...])`
+  - [x] Step 4: Assign spikes to bins using `env.bin_at(spike_positions)`
+  - [x] Step 5: Filter out-of-bounds spikes with warning
+  - [x] Step 6: Count spikes per bin with `np.bincount()`
+  - [x] Step 7: Normalize by occupancy where valid
+  - [x] Step 8: Set low-occupancy bins to NaN (optional, default min_occupancy_seconds=0.0)
+  - [x] Add comprehensive NumPy-style docstring with examples
+  - [x] Add type hints: `NDArray[np.float64]`
+  - [x] Handle edge cases: empty spikes, all spikes out-of-bounds, zero occupancy
+- [x] Implement `compute_place_field()` convenience function
+  - [x] Combine `spikes_to_field()` + `env.smooth()`
+  - [x] Parameters: same as `spikes_to_field` + `smoothing_bandwidth: float | None`
+  - [x] If `smoothing_bandwidth` is None, skip smoothing
+  - [x] Add docstring showing equivalence to two-step workflow
+- [x] Export in public API: `src/neurospatial/__init__.py`
+  - [x] Add: `from neurospatial.spike_field import spikes_to_field, compute_place_field`
+  - [x] Update `__all__` list
 
 **Testing**:
-- [ ] Create `tests/test_spike_field.py`
-- [ ] Test: `test_spikes_to_field_synthetic()` - known spike rate → expected field
-- [ ] Test: `test_spikes_to_field_min_occupancy()` - low occupancy bins → NaN
-- [ ] Test: `test_spikes_to_field_empty_spikes()` - empty spike train → all zeros
-- [ ] Test: `test_spikes_to_field_out_of_bounds_time()` - spikes outside time range → warning + filtered
-- [ ] Test: `test_spikes_to_field_out_of_bounds_space()` - spikes outside environment → warning + filtered
-- [ ] Test: `test_spikes_to_field_1d_trajectory()` - handles 1D positions correctly
-- [ ] Test: `test_spikes_to_field_nan_occupancy()` - all zero occupancy → all NaN with warning
-- [ ] Test: `test_spikes_to_field_matches_manual()` - compare with manual computation
-- [ ] Test: `test_spikes_to_field_parameter_order()` - verify env comes first
-- [ ] Test: `test_compute_place_field_with_smoothing()` - matches spikes_to_field + smooth
-- [ ] Test: `test_compute_place_field_no_smoothing()` - matches spikes_to_field when bandwidth=None
-- [ ] Run: `uv run pytest tests/test_spike_field.py -v`
+
+- [x] Create `tests/test_spike_field.py`
+- [x] Test: `test_spikes_to_field_synthetic()` - known spike rate → expected field
+- [x] Test: `test_spikes_to_field_min_occupancy()` - low occupancy bins → NaN
+- [x] Test: `test_spikes_to_field_empty_spikes()` - empty spike train → all zeros
+- [x] Test: `test_spikes_to_field_out_of_bounds_time()` - spikes outside time range → warning + filtered
+- [x] Test: `test_spikes_to_field_out_of_bounds_space()` - spikes outside environment → warning + filtered
+- [x] Test: `test_spikes_to_field_1d_trajectory()` - handles 1D positions correctly
+- [x] Test: `test_spikes_to_field_1d_no_column_dimension()` - handles bare 1D arrays (n,)
+- [x] Test: `test_spikes_to_field_nan_occupancy()` - all zero occupancy → all NaN with warning
+- [x] Test: `test_spikes_to_field_matches_manual()` - compare with manual computation
+- [x] Test: `test_spikes_to_field_parameter_order()` - verify env comes first
+- [x] Test: `test_spikes_to_field_validation()` - negative min_occupancy, mismatched lengths
+- [x] Test: `test_compute_place_field_with_smoothing()` - matches spikes_to_field + smooth
+- [x] Test: `test_compute_place_field_no_smoothing()` - matches spikes_to_field when bandwidth=None
+- [x] Test: `test_compute_place_field_parameter_order()` - verify parameter consistency
+- [x] Run: `uv run pytest tests/test_spike_field.py -v` (14 tests passed)
 
 **Type Checking**:
-- [ ] Add `TYPE_CHECKING` guard for Environment import
-- [ ] Verify mypy passes: `uv run mypy src/neurospatial/spike_field.py`
-- [ ] No `type: ignore` comments allowed
+
+- [x] Add `TYPE_CHECKING` guard for Environment import
+- [x] Verify mypy passes: `uv run mypy src/neurospatial/spike_field.py`
+- [x] No `type: ignore` comments allowed
 
 **Effort**: 4 days (+1 day for prerequisite, fixes, and convenience function)
 
@@ -77,6 +86,7 @@
 ### 0.2 Reward Field Primitives (Week 1, Days 5-6 + Week 2, Day 1)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/reward.py` module
 - [ ] Implement `region_reward_field(env, region_name, *, reward_value=1.0, decay="constant", bandwidth=None)`
   - [ ] Validate region exists in `env.regions`
@@ -105,6 +115,7 @@
   - [ ] Update `__all__` list
 
 **Testing**:
+
 - [ ] Create `tests/test_reward.py`
 - [ ] Test: `test_region_reward_field_constant()` - binary reward in region
 - [ ] Test: `test_region_reward_field_linear()` - linear decay from boundary
@@ -120,6 +131,7 @@
 - [ ] Run: `uv run pytest tests/test_reward.py -v`
 
 **Type Checking**:
+
 - [ ] Add `TYPE_CHECKING` guard for Environment import
 - [ ] Use `Literal` types for decay parameters
 - [ ] Verify mypy passes: `uv run mypy src/neurospatial/reward.py`
@@ -132,6 +144,7 @@
 ### 0.3 Documentation (Week 2, Days 2-3)
 
 **Documentation**:
+
 - [ ] Create `docs/user-guide/spike-field-primitives.md`
   - [ ] Section: Converting spike trains to spatial fields
   - [ ] Section: Why occupancy normalization matters (place field analysis standard)
@@ -151,6 +164,7 @@
   - [ ] Include RL-specific examples (goal-directed navigation)
 
 **Example Notebook**:
+
 - [ ] Create `examples/00_spike_field_basics.ipynb`
   - [ ] Example 1: Convert spike train → firing rate map
     - [ ] Generate synthetic data (trajectory + spike times)
@@ -173,6 +187,7 @@
   - [ ] Note: Batch operations examples will be added in v0.3.1
 
 **Testing**:
+
 - [ ] Run all Phase 0 tests with updated signatures
 - [ ] Verify coverage: >95% for new code
 - [ ] Run: `uv run pytest tests/test_spike_field.py tests/test_reward.py --cov=src/neurospatial --cov-report=term-missing`
@@ -211,6 +226,7 @@
 ### 1.1 Differential Operator Matrix (Week 1)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/differential.py` module
 - [ ] Implement `compute_differential_operator(env)` function
   - [ ] Extract edge data from `env.connectivity` graph
@@ -225,6 +241,7 @@
   - [ ] Add NumPy-style docstring
 
 **Testing**:
+
 - [ ] Create `tests/test_differential.py`
 - [ ] Test: `test_differential_operator_shape()` - verify (n_bins, n_edges)
 - [ ] Test: `test_laplacian_from_differential()` - D @ D.T == nx.laplacian_matrix()
@@ -233,6 +250,7 @@
 - [ ] Run: `uv run pytest tests/test_differential.py -v`
 
 **Type Checking**:
+
 - [ ] Add `TYPE_CHECKING` guard for Environment import
 - [ ] Verify mypy passes: `uv run mypy src/neurospatial/differential.py`
 - [ ] No `type: ignore` comments allowed
@@ -244,6 +262,7 @@
 ### 1.2 Gradient Operator (Week 2)
 
 **Implementation**:
+
 - [ ] Add `gradient(field, env)` function to `differential.py`
   - [ ] Implement: `return env.differential_operator.T @ field`
   - [ ] Add validation: check `field.shape == (env.n_bins,)`
@@ -254,6 +273,7 @@
   - [ ] Update `__all__` list
 
 **Testing**:
+
 - [ ] Test: `test_gradient_shape()` - output shape (n_edges,)
 - [ ] Test: `test_gradient_constant_field()` - gradient of constant = 0
 - [ ] Test: `test_gradient_linear_field_regular_grid()` - constant gradient for linear field
@@ -261,6 +281,7 @@
 - [ ] Run: `uv run pytest tests/test_differential.py::test_gradient -v`
 
 **Documentation**:
+
 - [ ] Add example in docstring: distance field gradient
 - [ ] Cross-reference to `divergence()` function
 
@@ -271,6 +292,7 @@
 ### 1.3 Divergence Operator (Week 2)
 
 **Implementation**:
+
 - [ ] Rename existing `divergence()` to `kl_divergence()` in `field_ops.py`
   - [ ] Update function name and docstring
   - [ ] Add note: "Renamed from divergence() in v0.3.0"
@@ -285,6 +307,7 @@
   - [ ] Add: `from neurospatial.field_ops import kl_divergence`
 
 **Testing**:
+
 - [ ] Test: `test_divergence_gradient_is_laplacian()` - div(grad(f)) == Laplacian(f)
 - [ ] Test: `test_divergence_shape()` - output shape (n_bins,)
 - [ ] Test: `test_kl_divergence_renamed()` - old function still works
@@ -292,6 +315,7 @@
 - [ ] Run: `uv run pytest tests/test_field_ops.py -v` (ensure kl_divergence tests pass)
 
 **Breaking Changes**:
+
 - [ ] Update CHANGELOG.md: note divergence → kl_divergence rename
 - [ ] No migration guide needed (no current users)
 
@@ -302,6 +326,7 @@
 ### 1.4 Documentation & Examples (Week 3)
 
 **Documentation**:
+
 - [ ] Create `docs/user-guide/differential-operators.md`
   - [ ] Section: What are differential operators?
   - [ ] Section: Gradient (scalar field → edge field)
@@ -312,6 +337,7 @@
   - [ ] Include formulas with LaTeX notation
 
 **Example Notebook**:
+
 - [ ] Create `examples/09_differential_operators.ipynb`
   - [ ] Example 1: Gradient of distance field (goal-directed navigation)
   - [ ] Example 2: Divergence of flow field (source/sink detection)
@@ -321,6 +347,7 @@
   - [ ] Add explanatory markdown cells
 
 **Testing**:
+
 - [ ] Run notebook: `uv run jupyter nbconvert --execute examples/09_differential_operators.ipynb`
 - [ ] Verify all cells execute without errors
 
@@ -335,6 +362,7 @@
 ### 2.1 neighbor_reduce (Week 4)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/primitives.py` module
 - [ ] Implement `neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)`
   - [ ] Support ops: 'sum', 'mean', 'max', 'min', 'std'
@@ -346,6 +374,7 @@
 - [ ] Export in public API: `src/neurospatial/__init__.py`
 
 **Testing**:
+
 - [ ] Create `tests/test_primitives.py`
 - [ ] Test: `test_neighbor_reduce_mean_regular_grid()` - verify neighbor averaging
 - [ ] Test: `test_neighbor_reduce_include_self()` - verify self-inclusion changes result
@@ -355,6 +384,7 @@
 - [ ] Run: `uv run pytest tests/test_primitives.py::test_neighbor_reduce -v`
 
 **Type Checking**:
+
 - [ ] Use `Literal['sum', 'mean', 'max', 'min', 'std']` for op parameter
 - [ ] Verify mypy: `uv run mypy src/neurospatial/primitives.py`
 
@@ -365,6 +395,7 @@
 ### 2.2 convolve (Week 5-6)
 
 **Implementation**:
+
 - [ ] Add `convolve(field, kernel, env, *, normalize=True)` to `primitives.py`
   - [ ] Support callable kernel: `distance -> weight`
   - [ ] Support precomputed kernel matrix (n_bins × n_bins)
@@ -374,6 +405,7 @@
   - [ ] Add type hints: `Callable[[NDArray], float] | NDArray`
 
 **Testing**:
+
 - [ ] Test: `test_convolve_box_kernel()` - uniform kernel within radius
 - [ ] Test: `test_convolve_mexican_hat()` - difference of Gaussians
 - [ ] Test: `test_convolve_precomputed_kernel()` - pass kernel matrix directly
@@ -383,6 +415,7 @@
 - [ ] Run: `uv run pytest tests/test_primitives.py::test_convolve -v`
 
 **Documentation**:
+
 - [ ] Add examples in docstring: box kernel, Mexican hat, custom kernels
 - [ ] Cross-reference to `env.smooth()` and `env.compute_kernel()`
 
@@ -393,6 +426,7 @@
 ### 2.3 Documentation (Week 6)
 
 **Documentation**:
+
 - [ ] Create `docs/user-guide/signal-processing-primitives.md`
   - [ ] Section: neighbor_reduce for local aggregation
   - [ ] Section: convolve for custom filtering
@@ -400,12 +434,14 @@
   - [ ] Section: Use cases (coherence, custom kernels)
 
 **Example Notebook**:
+
 - [ ] Add examples to `examples/09_differential_operators.ipynb` or create new notebook
   - [ ] Example: Compute coherence using neighbor_reduce
   - [ ] Example: Box filter for occupancy thresholding
   - [ ] Example: Mexican hat edge detection
 
 **Testing**:
+
 - [ ] Run all primitives tests: `uv run pytest tests/test_primitives.py -v`
 - [ ] Verify coverage: `uv run pytest tests/test_primitives.py --cov=src/neurospatial/primitives.py`
 
@@ -420,6 +456,7 @@
 ### 3.1 Place Field Metrics (Week 7)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/metrics/` package
 - [ ] Create `src/neurospatial/metrics/__init__.py`
 - [ ] Create `src/neurospatial/metrics/place_fields.py`
@@ -436,6 +473,7 @@
 - [ ] Implement `field_stability(rate_map_1, rate_map_2, *, method='pearson')`
 
 **Testing**:
+
 - [ ] Create `tests/metrics/test_place_fields.py`
 - [ ] Test: `test_detect_place_fields_synthetic()` - known field positions
 - [ ] Test: `test_detect_place_fields_subfields()` - coalescent fields
@@ -448,6 +486,7 @@
 - [ ] Run: `uv run pytest tests/metrics/test_place_fields.py -v`
 
 **Validation**:
+
 - [ ] Compare with neurocode FindPlaceFields.m output (if available)
 - [ ] Verify spatial information matches opexebo/buzcode
 
@@ -458,6 +497,7 @@
 ### 3.2 Population Metrics (Week 7)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/metrics/population.py`
 - [ ] Implement `population_coverage(all_place_fields, n_bins)` - fraction covered
 - [ ] Implement `field_density_map(all_place_fields, n_bins)` - overlapping fields
@@ -466,6 +506,7 @@
 - [ ] Implement `population_vector_correlation(population_matrix)` - correlation matrix
 
 **Testing**:
+
 - [ ] Create `tests/metrics/test_population.py`
 - [ ] Test: `test_population_coverage()` - verify fraction calculation
 - [ ] Test: `test_field_density_map()` - count overlaps correctly
@@ -481,6 +522,7 @@
 ### 3.3 Boundary Cell Metrics (Week 8)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/metrics/boundary_cells.py`
 - [ ] Implement `border_score(firing_rate, env, *, threshold=0.3, min_area=200)`
   - [ ] Segment field at 30% of peak (Solstad et al. 2008)
@@ -494,6 +536,7 @@
   - [ ] Preferred allocentric direction to boundary
 
 **Testing**:
+
 - [ ] Create `tests/metrics/test_boundary_cells.py`
 - [ ] Test: `test_border_score_synthetic()` - known border cell
 - [ ] Test: `test_border_score_non_border()` - central field returns low score
@@ -502,6 +545,7 @@
 - [ ] Run: `uv run pytest tests/metrics/test_boundary_cells.py -v`
 
 **Validation**:
+
 - [ ] Match TSToolbox_Utils Compute_BorderScore.m output
 - [ ] Match opexebo.analysis.border_score() output
 
@@ -512,6 +556,7 @@
 ### 3.4 Documentation (Week 8)
 
 **Documentation**:
+
 - [ ] Create `docs/user-guide/neuroscience-metrics.md`
   - [ ] Section: Place field detection and metrics
   - [ ] Section: Population-level analyses
@@ -520,6 +565,7 @@
   - [ ] Cross-reference to opexebo, neurocode
 
 **Example Notebooks**:
+
 - [ ] Create `examples/10_place_field_analysis.ipynb`
   - [ ] Load example data (generate synthetic or use real)
   - [ ] Compute firing rate map with occupancy
@@ -532,6 +578,7 @@
   - [ ] Visualize wall contact ratios
 
 **Testing**:
+
 - [ ] Run all metrics tests: `uv run pytest tests/metrics/ -v`
 - [ ] Verify coverage: `uv run pytest tests/metrics/ --cov=src/neurospatial/metrics/`
 - [ ] Run notebooks: verify all cells execute
@@ -547,6 +594,7 @@
 ### 4.1 Trajectory Metrics (Week 9)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/metrics/trajectory.py`
 - [ ] Implement `compute_turn_angles(trajectory_bins, env)`
   - [ ] Compute angles between consecutive movement vectors
@@ -570,6 +618,7 @@
   - [ ] Add docstring explaining MSD ~ τ^α classification
 
 **Testing**:
+
 - [ ] Create `tests/metrics/test_trajectory.py`
 - [ ] Test: `test_turn_angles_straight_line()` - angles ~ 0
 - [ ] Test: `test_turn_angles_circle()` - constant turning
@@ -579,6 +628,7 @@
 - [ ] Run: `uv run pytest tests/metrics/test_trajectory.py -v`
 
 **Validation**:
+
 - [ ] Compare turn angles with Traja output on synthetic trajectory
 - [ ] Compare MSD with yupi output on random walk
 
@@ -589,6 +639,7 @@
 ### 4.2 Region-Based Segmentation (Week 10, Days 1-3)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/segmentation/` package
 - [ ] Create `src/neurospatial/segmentation/__init__.py`
 - [ ] Create `src/neurospatial/segmentation/regions.py`
@@ -608,6 +659,7 @@
   - [ ] Return IntervalSet (or list of tuples if pynapple unavailable)
 
 **Testing**:
+
 - [ ] Create `tests/segmentation/test_regions.py`
 - [ ] Test: `test_detect_region_crossings()` - synthetic trajectory with known crossings
 - [ ] Test: `test_detect_runs_between_regions_success()` - successful runs
@@ -622,6 +674,7 @@
 ### 4.3 Lap Detection (Week 10, Days 4-5)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/segmentation/laps.py`
 - [ ] Implement `detect_laps(trajectory_bins, times, env, *, method='auto', min_overlap=0.8, direction='both')`
   - [ ] Method 'auto': detect template from first 10% of trajectory
@@ -632,6 +685,7 @@
   - [ ] Return list of Lap objects (start_time, end_time, direction, overlap_score)
 
 **Testing**:
+
 - [ ] Create `tests/segmentation/test_laps.py`
 - [ ] Test: `test_detect_laps_circular_track()` - synthetic circular trajectory
 - [ ] Test: `test_detect_laps_direction()` - clockwise vs counter-clockwise
@@ -640,6 +694,7 @@
 - [ ] Run: `uv run pytest tests/segmentation/test_laps.py -v`
 
 **Validation**:
+
 - [ ] Compare with neurocode NSMAFindGoodLaps.m if available
 
 **Effort**: 2 days
@@ -649,6 +704,7 @@
 ### 4.4 Trial Segmentation (Week 10, Day 6)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/segmentation/trials.py`
 - [ ] Implement `segment_trials(trajectory_bins, times, env, *, trial_type, start_region, end_regions, min_duration=1.0, max_duration=15.0)`
   - [ ] Detect start region entries
@@ -658,6 +714,7 @@
   - [ ] Return list of Trial objects (start_time, end_time, outcome, success)
 
 **Testing**:
+
 - [ ] Create `tests/segmentation/test_trials.py`
 - [ ] Test: `test_segment_trials_tmaze()` - T-maze left/right trials
 - [ ] Test: `test_segment_trials_duration_filter()` - min/max duration
@@ -670,6 +727,7 @@
 ### 4.5 Trajectory Similarity (Week 11, Days 1-2)
 
 **Implementation**:
+
 - [ ] Create `src/neurospatial/segmentation/similarity.py`
 - [ ] Implement `trajectory_similarity(trajectory1_bins, trajectory2_bins, env, *, method='jaccard')`
   - [ ] Method 'jaccard': spatial overlap (set intersection / union)
@@ -685,6 +743,7 @@
   - [ ] Return list of Run objects
 
 **Testing**:
+
 - [ ] Create `tests/segmentation/test_similarity.py`
 - [ ] Test: `test_trajectory_similarity_identical()` - same trajectory = 1.0
 - [ ] Test: `test_trajectory_similarity_disjoint()` - no overlap = 0.0
@@ -699,11 +758,13 @@
 ### 4.6 Tests & Documentation (Week 11, Days 3-5)
 
 **Testing**:
+
 - [ ] Run all segmentation tests: `uv run pytest tests/segmentation/ -v`
 - [ ] Verify coverage: `uv run pytest tests/segmentation/ --cov=src/neurospatial/segmentation/`
 - [ ] Integration test: full workflow (trajectory → runs → laps → trials)
 
 **Documentation**:
+
 - [ ] Create `docs/user-guide/trajectory-and-behavioral-analysis.md`
   - [ ] Section: Trajectory characterization metrics
   - [ ] Section: Region-based segmentation
@@ -712,6 +773,7 @@
   - [ ] Section: Use cases (goal-directed replay, learning dynamics)
 
 **Example Notebooks**:
+
 - [ ] Create `examples/12_trajectory_analysis.ipynb`
   - [ ] Compute turn angles, step lengths
   - [ ] Compute home range (95%)
@@ -725,6 +787,7 @@
   - [ ] Use cases: lap-by-lap learning, trial-type selectivity
 
 **pynapple Integration**:
+
 - [ ] Verify IntervalSet return when pynapple installed
 - [ ] Add fallback to list of tuples when unavailable
 
@@ -739,6 +802,7 @@
 ### 5.1 Validation Against Authority Packages (Week 12, Days 1-2)
 
 **opexebo Validation**:
+
 - [ ] Create `tests/validation/test_opexebo_comparison.py`
 - [ ] Test: Place field detection matches neurocode subfield approach
 - [ ] Test: Spatial information matches opexebo/neurocode/buzcode (if available)
@@ -747,12 +811,14 @@
 - [ ] Run: `uv run pytest tests/validation/ -v --run-validation` (optional marker)
 
 **Ecology Validation**:
+
 - [ ] Test: Turn angles match Traja on synthetic trajectory
 - [ ] Test: Step lengths correct on known path
 - [ ] Test: Home range matches adehabitatHR concept (95% KDE)
 - [ ] Test: MSD exponent correct for random walk (α ≈ 1)
 
 **Document Differences**:
+
 - [ ] Create `docs/validation-notes.md`
   - [ ] Intentional differences (irregular graph support)
   - [ ] Extensions beyond reference packages
@@ -765,6 +831,7 @@
 ### 5.2 Performance Optimization (Week 12, Days 3-4)
 
 **Profiling**:
+
 - [ ] Create `benchmarks/bench_differential.py`
   - [ ] Benchmark: differential_operator construction
   - [ ] Benchmark: gradient computation
@@ -777,12 +844,14 @@
   - [ ] Benchmark: border_score
 
 **Optimization**:
+
 - [ ] Profile critical paths: `uv run python -m cProfile script.py`
 - [ ] Optimize hot loops (vectorize where possible)
 - [ ] Add caching where beneficial (beyond differential_operator)
 - [ ] Target: No operation >10% slower than baseline
 
 **Testing**:
+
 - [ ] Add performance regression tests to CI/CD
 - [ ] Verify no slowdowns: `uv run pytest benchmarks/ -v`
 
@@ -793,6 +862,7 @@
 ### 5.3 Documentation Polish (Week 12-13, Days 5-9)
 
 **API Documentation**:
+
 - [ ] Verify all functions have NumPy-style docstrings
 - [ ] Verify all type hints present
 - [ ] Verify all examples in docstrings work
@@ -800,6 +870,7 @@
 - [ ] Generate API docs (if using Sphinx/mkdocs)
 
 **User Guides**:
+
 - [ ] Review `differential-operators.md` for completeness
 - [ ] Review `signal-processing-primitives.md` (if created)
 - [ ] Review `neuroscience-metrics.md` for accuracy
@@ -808,12 +879,14 @@
 - [ ] Add "See Also" sections
 
 **Example Notebooks**:
+
 - [ ] Review all notebooks for clarity
 - [ ] Add explanatory markdown cells
 - [ ] Add visualizations where helpful
 - [ ] Test all notebooks execute: `uv run jupyter nbconvert --execute examples/*.ipynb`
 
 **README Updates**:
+
 - [ ] Update README.md with v0.3.0 features
 - [ ] Add installation instructions
 - [ ] Add quick start example
@@ -826,6 +899,7 @@
 ### 5.4 Release (Week 13, Days 10-13)
 
 **Pre-Release Checks**:
+
 - [ ] Run full test suite: `uv run pytest --cov=src/neurospatial`
 - [ ] Verify coverage >95%
 - [ ] Run mypy on all modules: `uv run mypy src/neurospatial/`
@@ -835,11 +909,13 @@
 - [ ] Fix any linting issues
 
 **Version Bump**:
+
 - [ ] Update version in `pyproject.toml` to `0.3.0`
 - [ ] Update version in `src/neurospatial/__init__.py` (if present)
 - [ ] Update `__version__` string
 
 **Changelog**:
+
 - [ ] Create/update `CHANGELOG.md` for v0.3.0
   - [ ] Section: Breaking Changes (divergence → kl_divergence)
   - [ ] Section: New Features
@@ -856,6 +932,7 @@
   - [ ] Section: Migration Guide (minimal - just divergence rename)
 
 **Release Artifacts**:
+
 - [ ] Tag release: `git tag -a v0.3.0 -m "Release v0.3.0"`
 - [ ] Push tag: `git push origin v0.3.0`
 - [ ] Build package: `uv build`
@@ -863,6 +940,7 @@
 - [ ] Publish to PyPI: `uv publish` (or `twine upload dist/*`)
 
 **Announcement**:
+
 - [ ] Write blog post / release notes highlighting:
   - [ ] Core spatial primitives now available
   - [ ] Validated against opexebo, neurocode
@@ -872,6 +950,7 @@
 - [ ] Announce on relevant channels (if any)
 
 **Post-Release**:
+
 - [ ] Verify PyPI package installs correctly
 - [ ] Update documentation site (if hosted)
 - [ ] Close milestone in project tracker
@@ -884,6 +963,7 @@
 ## Success Criteria (Final Checklist)
 
 ### Phase 1: Differential Operators
+
 - [ ] D matrix construction passes all tests
 - [ ] gradient(), divergence() work on all layout types (regular, hex, irregular)
 - [ ] div(grad(f)) == Laplacian(f) validated
@@ -891,11 +971,13 @@
 - [ ] divergence() renamed to kl_divergence()
 
 ### Phase 2: Signal Processing Primitives
+
 - [ ] neighbor_reduce() works on all layout types
 - [ ] convolve() supports arbitrary kernels (callable and matrix)
 - [ ] All tests pass for all layouts
 
 ### Phase 3: Core Metrics Module
+
 - [ ] Place field detection matches neurocode's subfield discrimination
 - [ ] Spatial information matches opexebo/neurocode/buzcode
 - [ ] Sparsity calculation matches opexebo
@@ -903,6 +985,7 @@
 - [ ] All metrics have NumPy docstrings, examples, and citations
 
 ### Phase 4: Trajectory & Behavioral Segmentation
+
 - [ ] Trajectory metrics validated on synthetic data (turn angles, MSD)
 - [ ] Region crossing detection works on synthetic trajectories
 - [ ] Lap detection handles clockwise/counter-clockwise
@@ -911,6 +994,7 @@
 - [ ] pynapple IntervalSet integration works when available
 
 ### Phase 5: Release
+
 - [ ] All tests pass: `uv run pytest` (>95% coverage)
 - [ ] Zero mypy errors: `uv run mypy src/neurospatial/`
 - [ ] Documentation complete (user guides + examples)
@@ -922,27 +1006,32 @@
 ## Development Workflow Reminders
 
 **Always Use uv**:
+
 - [ ] All commands prefixed with `uv run`: `uv run pytest`, `uv run mypy`, etc.
 - [ ] Never use bare `python`, `pip`, or `pytest`
 
 **Type Checking**:
+
 - [ ] Mypy is mandatory - zero errors required
 - [ ] No `type: ignore` comments allowed
 - [ ] Use `TYPE_CHECKING` guards for Environment imports in mixins
 - [ ] Use `self: "Environment"` annotations in mixin methods
 
 **Documentation**:
+
 - [ ] All docstrings use NumPy format (not Google or RST)
 - [ ] All functions have examples in docstrings
 - [ ] All examples use `>>>` prompt and show expected output
 
 **Testing**:
+
 - [ ] Tests mirror source structure (tests/metrics/, tests/segmentation/)
 - [ ] Use fixtures from conftest.py for common environments
 - [ ] Test edge cases (empty, single node, disconnected graphs)
 - [ ] Target >95% coverage
 
 **Commit Messages**:
+
 - [ ] Use Conventional Commits format
 - [ ] Examples: `feat(metrics): add place field detection`, `fix(differential): correct gradient sign`
 - [ ] Reference issues if applicable
@@ -966,14 +1055,17 @@
 ## Risk Mitigation
 
 **Medium Risk**: Performance regressions
+
 - **Mitigation**: Benchmark suite in CI/CD, monitor key operations
 - **Fallback**: Optimize hot paths, add optional Numba compilation
 
 **Low Risk**: API design conflicts
+
 - **Mitigation**: Match opexebo signatures where possible
 - **Fallback**: User feedback before finalizing
 
 **Low Risk**: Validation mismatches
+
 - **Mitigation**: Test against opexebo/neurocode outputs
 - **Fallback**: Document intentional differences (irregular graph support)
 

@@ -404,3 +404,162 @@ class TestOccupancyMultipleLayouts:
         # Use max_gap=None to count the full interval
         occ = env.occupancy(times, positions, max_gap=None)
         assert occ.shape == (env.n_bins,)
+
+
+class TestOccupancyReturnSeconds:
+    """Test return_seconds parameter for time-weighted vs sample count occupancy."""
+
+    def test_occupancy_return_seconds_true(self):
+        """Test that return_seconds=True returns time in seconds (time-weighted)."""
+        # Create proper 2D grid environment with multiple bins
+        np.random.seed(42)
+        grid_samples = np.random.uniform(0, 20, size=(100, 2))
+        env = Environment.from_samples(grid_samples, bin_size=5.0)
+
+        # Create trajectory with varying time intervals at two distinct bins
+        # Occupancy is assigned to the STARTING bin of each interval
+        # So we need: [bin_a, bin_a, bin_b, bin_b] to get intervals starting at both bins
+        bin_centers = env.bin_centers
+        bin_a_pos = bin_centers[0]  # First bin
+        bin_b_pos = bin_centers[-1] if env.n_bins > 1 else bin_centers[0]  # Last bin
+
+        # 4 samples means 3 intervals:
+        # Interval 0: starts at bin A (2 seconds)
+        # Interval 1: starts at bin A (3 seconds)
+        # Interval 2: starts at bin B (2 seconds)
+        times = np.array([0.0, 2.0, 5.0, 7.0])
+        positions = np.array([bin_a_pos, bin_a_pos, bin_b_pos, bin_b_pos])
+
+        # With return_seconds=True, weight by time differences
+        occ = env.occupancy(times, positions, return_seconds=True, max_gap=None)
+
+        # Total time should be 2.0 + 3.0 + 2.0 = 7.0 seconds
+        assert_allclose(occ.sum(), 7.0, rtol=1e-6)
+
+        # Verify that bins have expected occupancy
+        bin_a_idx = env.bin_at(np.array([bin_a_pos]))[0]
+        bin_b_idx = env.bin_at(np.array([bin_b_pos]))[0]
+        # Bin A has 2 intervals: 2 + 3 = 5 seconds
+        # Bin B has 1 interval: 2 seconds
+        assert_allclose(occ[bin_a_idx], 5.0, rtol=1e-6)
+        assert_allclose(occ[bin_b_idx], 2.0, rtol=1e-6)
+
+    def test_occupancy_return_seconds_false(self):
+        """Test that return_seconds=False returns sample counts (unweighted)."""
+        # Create proper 2D grid environment with multiple bins
+        np.random.seed(42)
+        grid_samples = np.random.uniform(0, 20, size=(100, 2))
+        env = Environment.from_samples(grid_samples, bin_size=5.0)
+
+        # Create trajectory at two distinct bins (same structure as previous test)
+        bin_centers = env.bin_centers
+        bin_a_pos = bin_centers[0]
+        bin_b_pos = bin_centers[-1] if env.n_bins > 1 else bin_centers[0]
+
+        # Same trajectory structure as previous test
+        # 4 samples means 3 intervals:
+        # Interval 0: starts at bin A (count = 1)
+        # Interval 1: starts at bin A (count = 1)
+        # Interval 2: starts at bin B (count = 1)
+        times = np.array([0.0, 2.0, 5.0, 7.0])
+        positions = np.array([bin_a_pos, bin_a_pos, bin_b_pos, bin_b_pos])
+
+        # With return_seconds=False, just count intervals starting at each bin
+        occ = env.occupancy(times, positions, return_seconds=False, max_gap=None)
+
+        # Total count should be 3 (number of intervals = n_samples - 1)
+        assert_allclose(occ.sum(), 3.0, rtol=1e-6)
+
+        # Verify counts per bin
+        bin_a_idx = env.bin_at(np.array([bin_a_pos]))[0]
+        bin_b_idx = env.bin_at(np.array([bin_b_pos]))[0]
+        # Bin A has 2 intervals starting there
+        # Bin B has 1 interval starting there
+        assert_allclose(occ[bin_a_idx], 2.0, rtol=1e-6)
+        assert_allclose(occ[bin_b_idx], 1.0, rtol=1e-6)
+
+    def test_occupancy_return_seconds_stationary(self):
+        """Test return_seconds parameter with stationary samples."""
+        data = np.array([[0, 0], [20, 20]])
+        env = Environment.from_samples(data, bin_size=5.0)
+
+        # Stationary for 10 seconds with 5 samples
+        times = np.array([0.0, 2.0, 4.0, 6.0, 10.0])
+        positions = np.array(
+            [[5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0], [5.0, 5.0]]
+        )
+
+        # With return_seconds=True: should be 10.0 seconds total
+        occ_seconds = env.occupancy(times, positions, return_seconds=True, max_gap=None)
+        assert_allclose(occ_seconds.sum(), 10.0, rtol=1e-6)
+
+        # With return_seconds=False: should be 4.0 intervals total (n_samples - 1)
+        occ_counts = env.occupancy(times, positions, return_seconds=False, max_gap=None)
+        assert_allclose(occ_counts.sum(), 4.0, rtol=1e-6)
+
+        # Ratio should be 10.0 / 4.0 = 2.5 (average time per interval)
+        assert_allclose(occ_seconds.sum() / occ_counts.sum(), 2.5, rtol=1e-6)
+
+    def test_occupancy_return_seconds_multiple_bins(self):
+        """Test return_seconds with trajectory visiting multiple bins."""
+        data = np.array([[0, 0], [20, 20]])
+        env = Environment.from_samples(data, bin_size=5.0)
+
+        # Visit 3 different bins with different durations
+        times = np.array([0.0, 1.0, 4.0, 10.0])
+        positions = np.array(
+            [
+                [5.0, 5.0],  # Bin A: 1 second
+                [10.0, 10.0],  # Bin B: 3 seconds
+                [15.0, 15.0],  # Bin C: 6 seconds
+                [5.0, 5.0],  # Back to bin A (but this is last sample, no interval)
+            ]
+        )
+
+        # With return_seconds=True: total = 1 + 3 + 6 = 10 seconds
+        occ_seconds = env.occupancy(times, positions, return_seconds=True, max_gap=None)
+        assert_allclose(occ_seconds.sum(), 10.0, rtol=1e-6)
+
+        # With return_seconds=False: total = 3 intervals
+        occ_counts = env.occupancy(times, positions, return_seconds=False, max_gap=None)
+        assert_allclose(occ_counts.sum(), 3.0, rtol=1e-6)
+
+    def test_occupancy_return_seconds_with_speed_filter(self):
+        """Test that return_seconds works correctly with speed filtering."""
+        data = np.array([[0, 0], [20, 20]])
+        env = Environment.from_samples(data, bin_size=5.0)
+
+        times = np.array([0.0, 1.0, 2.0, 5.0])
+        positions = np.array([[5.0, 5.0], [5.0, 5.0], [10.0, 10.0], [10.0, 10.0]])
+
+        # Speed: slow, slow, fast
+        speeds = np.array([0.5, 0.5, 10.0, 5.0])
+
+        # Filter out slow periods (speed < 2.0)
+        # Only the interval [2.0, 5.0] should be counted (3 seconds at bin B)
+
+        # With return_seconds=True and speed filter
+        occ_seconds = env.occupancy(
+            times,
+            positions,
+            speed=speeds,
+            min_speed=2.0,
+            return_seconds=True,
+            max_gap=None,
+        )
+
+        # Should have 3 seconds total (only the fast interval)
+        assert_allclose(occ_seconds.sum(), 3.0, rtol=1e-6)
+
+        # With return_seconds=False and speed filter
+        occ_counts = env.occupancy(
+            times,
+            positions,
+            speed=speeds,
+            min_speed=2.0,
+            return_seconds=False,
+            max_gap=None,
+        )
+
+        # Should have 1 interval counted
+        assert_allclose(occ_counts.sum(), 1.0, rtol=1e-6)
