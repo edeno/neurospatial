@@ -545,31 +545,51 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/metrics/boundary_cells.py`
-- [ ] Implement `border_score(firing_rate, env, *, threshold=0.3, min_area=200)`
-  - [ ] Segment field at 30% of peak (Solstad et al. 2008)
-  - [ ] Compute wall contact ratio for each wall
-  - [ ] Compute max contact ratio (cM)
-  - [ ] Compute firing-rate-weighted distance to walls (d)
-  - [ ] Border score: (cM - d) / (cM + d)
-  - [ ] Add comprehensive NumPy docstring with TSToolbox_Utils reference
-- [ ] Implement `boundary_vector_tuning(firing_rate, env, positions)` (optional)
+- [x] Create `src/neurospatial/metrics/boundary_cells.py`
+- [x] Implement `border_score(firing_rate, env, *, threshold=0.3, min_area=0.0)`
+  - [x] Segment field at 30% of peak (Solstad et al. 2008)
+  - [x] Compute boundary coverage (fraction of boundary bins in field)
+  - [x] Compute mean distance from field bins to nearest boundary
+  - [x] Normalize distance by environment extent
+  - [x] Border score: (cM - d) / (cM + d)
+  - [x] Add comprehensive NumPy docstring with Solstad et al. reference
+  - [x] Adapted for irregular graphs (not just rectangular arenas)
+  - [x] Use multi-source Dijkstra for efficient distance computation
+- [ ] Implement `boundary_vector_tuning(firing_rate, env, positions)` (deferred - optional feature)
   - [ ] Preferred distance to boundary
   - [ ] Preferred allocentric direction to boundary
 
 **Testing**:
 
-- [ ] Create `tests/metrics/test_boundary_cells.py`
-- [ ] Test: `test_border_score_synthetic()` - known border cell
-- [ ] Test: `test_border_score_non_border()` - central field returns low score
-- [ ] Test: `test_border_score_match_opexebo()` - compare with opexebo if available
-- [ ] Test: `test_border_score_match_tstoolbox()` - compare with MATLAB if possible
-- [ ] Run: `uv run pytest tests/metrics/test_boundary_cells.py -v`
+- [x] Create `tests/metrics/test_boundary_cells.py`
+- [x] Test: `test_border_score_perfect_border_cell()` - field along wall (high score)
+- [x] Test: `test_border_score_central_field()` - central field (low score)
+- [x] Test: `test_border_score_corner_field()` - corner field (high score)
+- [x] Test: `test_border_score_uniform_firing()` - uniform firing (positive score)
+- [x] Test: `test_border_score_threshold_parameter()` - threshold effects
+- [x] Test: `test_border_score_all_nan()` - NaN inputs
+- [x] Test: `test_border_score_all_zeros()` - zero firing
+- [x] Test: `test_border_score_shape_validation()` - input validation
+- [x] Test: `test_border_score_threshold_validation()` - parameter validation
+- [x] Test: `test_border_score_min_area_validation()` - min_area validation
+- [x] Test: `test_border_score_parameter_order()` - API consistency
+- [x] Test: `test_border_score_returns_float()` - return type check
+- [x] Test: `test_border_score_range()` - score in [-1, 1]
+- [x] Run: `uv run pytest tests/metrics/test_boundary_cells.py -v` (13/13 PASS)
+- [x] Run: `uv run mypy src/neurospatial/metrics/boundary_cells.py` (0 errors)
+- [x] Run: `uv run ruff check ...` (all checks passed)
 
 **Validation**:
 
-- [ ] Match TSToolbox_Utils Compute_BorderScore.m output
-- [ ] Match opexebo.analysis.border_score() output
+- [ ] Match TSToolbox_Utils Compute_BorderScore.m output (deferred - different algorithm adaptation)
+- [ ] Match opexebo.analysis.border_score() output (deferred - different algorithm adaptation)
+
+**Notes**:
+
+- Implementation generalizes Solstad et al. (2008) to arbitrary graph-based environments
+- Uses graph geodesic distances instead of Euclidean (appropriate for irregular layouts)
+- Boundary coverage computed over all boundary bins (not per-wall like original)
+- Validation against reference implementations deferred due to algorithmic differences
 
 **Effort**: 2 days
 

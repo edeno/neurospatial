@@ -11,11 +11,14 @@ place_fields
     Place field detection and single-cell spatial metrics.
 population
     Population-level metrics for analyzing spatial representations.
+boundary_cells
+    Boundary cell metrics including border score.
 
 """
 
 from __future__ import annotations
 
+from neurospatial.metrics.boundary_cells import border_score
 from neurospatial.metrics.place_fields import (
     detect_place_fields,
     field_centroid,
@@ -33,6 +36,7 @@ from neurospatial.metrics.population import (
 )
 
 __all__ = [
+    "border_score",
     "count_place_cells",
     "detect_place_fields",
     "field_centroid",

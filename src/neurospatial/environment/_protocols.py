@@ -69,6 +69,9 @@ class EnvironmentProtocol(Protocol):
     @property
     def differential_operator(self) -> sparse.csc_matrix: ...
 
+    @property
+    def boundary_bins(self) -> NDArray[np.int_]: ...
+
     # Methods that mixins call
     def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.int_]: ...
 

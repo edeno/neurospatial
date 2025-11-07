@@ -32,6 +32,7 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def detect_place_fields(
@@ -316,7 +317,7 @@ def _detect_subfields(
 
 def field_size(
     field_bins: NDArray[np.int64],
-    env: Environment,
+    env: EnvironmentProtocol,
 ) -> float:
     """
     Compute field size (area) in physical units.
@@ -325,7 +326,7 @@ def field_size(
     ----------
     field_bins : array
         Bin indices comprising the field.
-    env : Environment
+    env : EnvironmentProtocol
         Spatial environment.
 
     Returns
@@ -364,7 +365,7 @@ def field_size(
 def field_centroid(
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
-    env: Environment,
+    env: EnvironmentProtocol,
 ) -> NDArray[np.float64]:
     """
     Compute firing-rate-weighted centroid of place field.
@@ -375,7 +376,7 @@ def field_centroid(
         Firing rate map (Hz).
     field_bins : array
         Bin indices comprising the field.
-    env : Environment
+    env : EnvironmentProtocol
         Spatial environment.
 
     Returns
