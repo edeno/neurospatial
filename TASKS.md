@@ -89,30 +89,30 @@
 
 - [x] Create `src/neurospatial/reward.py` module
 - [x] Implement `region_reward_field(env, region_name, *, reward_value=1.0, decay="constant", bandwidth=None)`
-  - [ ] Validate region exists in `env.regions`
-  - [ ] Get region mask: `region_mask = regions_to_mask(env, [region_name])`
-  - [ ] If `decay == "constant"`: binary reward (reward_value inside, 0 outside)
-  - [ ] If `decay == "linear"`: linear decay from boundary using `distance_field()`
-  - [ ] If `decay == "gaussian"`:
-    - [ ] Validate `bandwidth` is provided (raise ValueError if None)
-    - [ ] Create indicator field: `indicator = np.where(region_mask, 1.0, 0.0)`
-    - [ ] Smooth: `smoothed = env.smooth(indicator, bandwidth)`
-    - [ ] CRITICAL FIX: Scale by max IN REGION: `max_in_region = smoothed[region_mask].max()`
-    - [ ] Return: `smoothed / max_in_region * reward_value`
-  - [ ] Add comprehensive NumPy-style docstring with RL references
-  - [ ] Type hints: `Literal["constant", "linear", "gaussian"]` for decay
-- [ ] Implement `goal_reward_field(env, goal_bins, *, decay="exponential", scale=1.0, max_distance=None)`
-  - [ ] Validate goal_bins are valid indices
-  - [ ] Convert scalar to 1D array: `goal_bins = np.asarray(goal_bins); if goal_bins.ndim == 0: goal_bins = goal_bins[None]`
-  - [ ] Compute distances: `distances = distance_field(env.connectivity, sources=goal_bins.tolist())`
-  - [ ] If `decay == "linear"`: `reward = scale * np.maximum(0, 1 - distances / max_distance)`
-  - [ ] If `decay == "exponential"`: validate `scale > 0`, then `reward = scale * np.exp(-distances / scale)`
-  - [ ] If `decay == "inverse"`: `reward = scale / (1 + distances)`
-  - [ ] Add comprehensive NumPy-style docstring with RL references
-  - [ ] Type hints: `Literal["linear", "exponential", "inverse"]` for decay
-- [ ] Export in public API: `src/neurospatial/__init__.py`
-  - [ ] Add: `from neurospatial.reward import region_reward_field, goal_reward_field`
-  - [ ] Update `__all__` list
+  - [x] Validate region exists in `env.regions`
+  - [x] Get region mask: `region_mask = regions_to_mask(env, [region_name])`
+  - [x] If `decay == "constant"`: binary reward (reward_value inside, 0 outside)
+  - [x] If `decay == "linear"`: linear decay from boundary using `distance_field()`
+  - [x] If `decay == "gaussian"`:
+    - [x] Validate `bandwidth` is provided (raise ValueError if None)
+    - [x] Create indicator field: `indicator = np.where(region_mask, 1.0, 0.0)`
+    - [x] Smooth: `smoothed = env.smooth(indicator, bandwidth)`
+    - [x] CRITICAL FIX: Scale by max IN REGION: `max_in_region = smoothed[region_mask].max()`
+    - [x] Return: `smoothed / max_in_region * reward_value`
+  - [x] Add comprehensive NumPy-style docstring with RL references
+  - [x] Type hints: `Literal["constant", "linear", "gaussian"]` for decay
+- [x] Implement `goal_reward_field(env, goal_bins, *, decay="exponential", scale=1.0, max_distance=None)`
+  - [x] Validate goal_bins are valid indices
+  - [x] Convert scalar to 1D array: `goal_bins = np.asarray(goal_bins); if goal_bins.ndim == 0: goal_bins = goal_bins[None]`
+  - [x] Compute distances: `distances = distance_field(env.connectivity, sources=goal_bins.tolist())`
+  - [x] If `decay == "linear"`: `reward = scale * np.maximum(0, 1 - distances / max_distance)`
+  - [x] If `decay == "exponential"`: validate `scale > 0`, then `reward = scale * np.exp(-distances / scale)`
+  - [x] If `decay == "inverse"`: `reward = scale / (1 + distances)`
+  - [x] Add comprehensive NumPy-style docstring with RL references
+  - [x] Type hints: `Literal["linear", "exponential", "inverse"]` for decay
+- [x] Export in public API: `src/neurospatial/__init__.py`
+  - [x] Add: `from neurospatial.reward import region_reward_field, goal_reward_field`
+  - [x] Update `__all__` list
 
 **Testing**:
 
