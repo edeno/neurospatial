@@ -8,7 +8,7 @@ Your workflow MUST be:
         CLAUDE.md (implementation guide)
         SCRATCHPAD.md (notes and current status)
         TASKS.md (current tasks)
-        REFACTORING_PLAN.md (overall project plan)
+        IMPLEMENTATION_PLAN.md (overall project plan for specific context)
 
     Find the FIRST unchecked [ ] task in TASKS.md
 
@@ -27,8 +27,6 @@ Your workflow MUST be:
 
     Commit frequently with messages like "feat(F24): implement error handling"
 
-Do not change tests or skip tests to match broken code. Ask permission to change requirements if needed.
-
 ## Remember
 
 - **Read before you code** - Use Read tool to understand context
@@ -36,6 +34,7 @@ Do not change tests or skip tests to match broken code. Ask permission to change
 - **Verify before you claim completion** - Use verification-before-completion skill
 - **Ask when uncertain** - Better to ask than assume
 - **Document as you go** - Update SCRATCHPAD.md with decisions/blockers
+- **Test thoroughly** - Ensure all tests pass before marking tasks complete. There are no exceptions (no flaky tests or pre-existing failures). You MUST use systematic-debugging skill for failures.
 
 ---
 
@@ -50,8 +49,6 @@ If you encounter any of these, STOP and document in SCRATCHPAD.md:
 5. **Missing dependencies** - Document and ask for help
 
 **Never proceed with assumptions** - this is critical scientific infrastructure.
-
-You MUST investigate any test failures using the systematic debugging skill. Flaky tests are not an acceptable reason to skip or ignore tests.
 
 ---
 
