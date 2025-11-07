@@ -474,7 +474,6 @@
   - [x] Subfield discrimination (recursive threshold)
   - [x] Return list of NDArray[np.int64] (bin indices per field)
   - [x] Add comprehensive NumPy-style docstring with references
-  - [x] Internal min peak rate threshold (0.5 Hz) to filter false positives
   - [x] NaN handling (all-NaN arrays gracefully handled)
 - [x] Implement `field_size(field_bins, env)` - area in physical units
 - [x] Implement `field_centroid(firing_rate, field_bins, env)` - center of mass

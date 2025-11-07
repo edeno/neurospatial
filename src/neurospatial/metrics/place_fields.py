@@ -147,10 +147,6 @@ def detect_place_fields(
     rate_map = firing_rate.copy()
     fields = []
 
-    # Hardcoded minimum peak rate (0.5 Hz) to filter false positives
-    # Place cells typically fire at 0.5-5 Hz mean rate
-    min_peak_rate_threshold = 0.5
-
     # Iteratively find fields
     while True:
         # Handle all-NaN case
@@ -164,10 +160,6 @@ def detect_place_fields(
         # Check if peak is meaningful
         if peak_rate <= 0 or not np.isfinite(peak_rate):
             break
-
-        # Check if peak meets minimum threshold (hardcoded to filter false positives)
-        if peak_rate < min_peak_rate_threshold:
-            break  # No more meaningful peaks
 
         # Threshold at fraction of peak
         threshold_rate = peak_rate * threshold

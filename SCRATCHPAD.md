@@ -17,7 +17,6 @@
 1. **`detect_place_fields()`** - Iterative peak-based detection (neurocode approach)
    - Interneuron exclusion (10 Hz threshold)
    - Subfield discrimination (recursive thresholding at 0.5×, 0.7× peak)
-   - Internal min peak rate filter (0.5 Hz) to prevent false positives
    - NaN handling (all-NaN arrays gracefully handled)
 
 2. **`field_size()`** - Compute field area in physical units
@@ -38,10 +37,9 @@
 
 **Key Design Decisions**:
 
-1. **No min_peak_rate parameter** (per user feedback): Hardcoded internally at 0.5 Hz to filter false positives without API complexity
-2. **Constant array handling**: Returns NaN for undefined correlation (mathematically correct)
-3. **Connected components**: Uses graph connectivity from `env.connectivity` for irregular environments
-4. **Subfield detection**: Recursive thresholding at 0.5× and 0.7× peak (heuristic, works well in practice)
+1. **Constant array handling**: Returns NaN for undefined correlation (mathematically correct)
+2. **Connected components**: Uses graph connectivity from `env.connectivity` for irregular environments
+3. **Subfield detection**: Recursive thresholding at 0.5× and 0.7× peak (heuristic, works well in practice)
 
 **Test Coverage**:
 
@@ -63,7 +61,6 @@ All critical issues addressed:
 - ✅ NaN input handling fixed (all-NaN arrays don't crash)
 - ✅ Public API exports added (`from neurospatial.metrics import detect_place_fields`)
 - ✅ Constant array warning eliminated (explicit check returns NaN)
-- ✅ min_peak_rate parameter removed (hardcoded internally)
 
 **Validation** (Deferred):
 
