@@ -21,7 +21,7 @@ from neurospatial.layout.factories import (
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
-from neurospatial.primitives import neighbor_reduce
+from neurospatial.primitives import convolve, neighbor_reduce
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.spatial import (
     TieBreakStrategy,
@@ -49,6 +49,7 @@ __all__ = [
     "combine_fields",
     "compute_diffusion_kernels",
     "compute_place_field",
+    "convolve",
     "distance_field",
     "divergence",
     "estimate_transform",

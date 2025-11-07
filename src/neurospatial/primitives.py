@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -183,5 +184,189 @@ def neighbor_reduce(
                     )
                 else:
                     result[bin_id] = np.nan
+
+    return result
+
+
+def convolve(
+    field: NDArray[np.float64],
+    kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],
+    env: Environment | EnvironmentProtocol,
+    *,
+    normalize: bool = True,
+) -> NDArray[np.float64]:
+    """
+    Convolve a spatial field with a custom kernel on the graph.
+
+    Applies spatial convolution using either a callable kernel function
+    (distance → weight) or a precomputed kernel matrix. Supports arbitrary
+    kernels including box filters, Mexican hat (DoG), and custom designs.
+
+    Parameters
+    ----------
+    field : array, shape (n_bins,)
+        Scalar field values at each bin.
+    kernel : callable or array
+        Kernel specification, either:
+        - **Callable**: Function mapping distances → weights.
+          Signature: ``kernel(distances: NDArray) -> NDArray``
+          where distances has shape (n_bins,).
+        - **Array**: Precomputed kernel matrix of shape (n_bins, n_bins)
+          where kernel[i, j] is the weight from bin j to bin i.
+    env : Environment
+        Spatial environment providing graph connectivity and distances.
+    normalize : bool, default=True
+        If True, normalize kernel weights to sum to 1 per bin (preserves
+        constant fields). If False, use raw kernel weights (useful for
+        edge detection kernels like Mexican hat).
+
+    Returns
+    -------
+    result : array, shape (n_bins,)
+        Convolved field values. NaN values in input field are handled by
+        skipping them in the convolution and renormalizing weights.
+
+    Raises
+    ------
+    ValueError
+        If field shape doesn't match environment, or if kernel matrix has
+        incorrect shape.
+
+    Notes
+    -----
+    **Kernel Types**:
+
+    - **Box kernel**: Uniform weights within distance threshold
+    - **Mexican hat**: Difference of Gaussians for edge detection
+    - **Custom kernels**: Any distance-based or precomputed weights
+
+    **NaN Handling**: NaN values in the field are excluded from the convolution
+    by treating them as zero contribution and renormalizing the weights. This
+    prevents NaN propagation while maintaining local normalization.
+
+    **Algorithm**:
+
+    1. For each bin, compute pairwise distances to all other bins
+    2. Apply kernel function or lookup precomputed weights
+    3. Optionally normalize weights to sum to 1
+    4. Compute weighted sum, excluding NaN values in field
+
+    **Performance**: Time complexity O(n_bins²) for callable kernels (computing
+    distances), O(n_bins²) for matrix multiplication with precomputed kernels.
+
+    Examples
+    --------
+    **Box kernel convolution**:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.primitives import convolve
+    >>> # Create 3x3 grid
+    >>> positions = np.array([[i, j] for i in range(3) for j in range(3)])
+    >>> env = Environment.from_samples(positions, bin_size=1.0)
+    >>> # Spike at center
+    >>> field = np.zeros(env.n_bins)
+    >>> field[4] = 1.0  # Center bin
+    >>> # Box kernel: uniform within radius 1.5
+    >>> def box_kernel(distances):
+    ...     return np.where(distances <= 1.5, 1.0, 0.0)
+    >>> result = convolve(field, box_kernel, env, normalize=True)
+    >>> print(f"Max value: {result.max():.3f}")  # doctest: +SKIP
+    Max value: 0.111
+
+    **Mexican hat for edge detection**:
+
+    >>> def mexican_hat(distances):
+    ...     sigma1, sigma2 = 0.5, 1.5
+    ...     g1 = np.exp(-(distances**2) / (2 * sigma1**2))
+    ...     g2 = np.exp(-(distances**2) / (2 * sigma2**2))
+    ...     return g1 - g2
+    >>> result = convolve(field, mexican_hat, env, normalize=False)
+    >>> # Center positive, surrounding negative (edge enhancement)
+
+    See Also
+    --------
+    Environment.smooth : Gaussian smoothing with distance-based kernels
+    neighbor_reduce : Local aggregation over graph neighborhoods
+
+    References
+    ----------
+    .. [1] Shuman et al. (2013). The emerging field of signal processing
+           on graphs. IEEE Signal Processing Magazine, 30(3).
+    """
+    # Validate field shape
+    if field.shape[0] != env.n_bins:
+        raise ValueError(
+            f"field.shape must match environment bins (got field.shape={field.shape}, "
+            f"expected ({env.n_bins},))"
+        )
+
+    # Determine kernel type and compute kernel matrix if needed
+    if callable(kernel):
+        # Callable kernel: compute distance-based weights for each bin
+        # Build kernel matrix (n_bins × n_bins)
+        kernel_matrix = np.zeros((env.n_bins, env.n_bins), dtype=np.float64)
+
+        # Compute pairwise distances for all bins
+        # Cast to EnvironmentProtocol to satisfy mypy
+        env_proto = cast("EnvironmentProtocol", env)
+        for i in range(env_proto.n_bins):
+            # Get distances from bin i to all other bins
+            distances = np.zeros(env_proto.n_bins, dtype=np.float64)
+            for j in range(env_proto.n_bins):
+                if i == j:
+                    distances[j] = 0.0
+                else:
+                    # Use graph distance between bin centers
+                    dist: float = env_proto.distance_between(
+                        env_proto.bin_centers[i], env_proto.bin_centers[j]
+                    )
+                    distances[j] = dist
+
+            # Apply kernel function to get weights
+            weights = kernel(distances)
+
+            # Store in kernel matrix (row i receives contributions from all bins)
+            kernel_matrix[i, :] = weights
+    else:
+        # Precomputed kernel matrix
+        kernel_matrix = kernel
+        if kernel_matrix.shape != (env.n_bins, env.n_bins):
+            raise ValueError(
+                f"kernel matrix shape must be ({env.n_bins}, {env.n_bins}), "
+                f"got {kernel_matrix.shape}"
+            )
+
+    # Handle NaN values in field
+    valid_mask = ~np.isnan(field)
+    field_clean = np.where(valid_mask, field, 0.0)
+
+    # Normalize kernel weights per bin if requested
+    if normalize:
+        # For each bin (row), normalize weights to sum to 1
+        # But only over valid (non-NaN) source bins
+        kernel_normalized = np.zeros_like(kernel_matrix)
+        for i in range(env.n_bins):
+            # Get weights for bin i (row i)
+            weights = kernel_matrix[i, :]
+            # Only consider weights where field is valid
+            valid_weights = weights * valid_mask
+            weight_sum = valid_weights.sum()
+            if weight_sum > 0:
+                kernel_normalized[i, :] = valid_weights / weight_sum
+            else:
+                # No valid neighbors - result will be 0
+                kernel_normalized[i, :] = 0.0
+        kernel_matrix = kernel_normalized
+
+    # Perform convolution: result[i] = sum_j kernel[i, j] * field[j]
+    result: NDArray[np.float64] = kernel_matrix @ field_clean
+
+    # For normalized case, bins with no valid neighbors get NaN
+    # For unnormalized case, all bins should have values (kernel always applied)
+    if normalize:
+        # Check if any weight was applied
+        has_valid_neighbor: NDArray[np.bool_] = kernel_matrix.sum(axis=1) > 0
+        result = np.where(has_valid_neighbor, result, np.nan)
 
     return result

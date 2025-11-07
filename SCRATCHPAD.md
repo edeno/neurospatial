@@ -988,3 +988,53 @@ User asked: "Should we implement this given NetworkX has Laplacian?"
 **Next Task**: Milestone 2.2 - `convolve()` function
 
 ---
+
+## 2025-11-07: Milestone 2.2 - convolve() Implementation (COMPLETE)
+
+### Implementation Summary
+
+Successfully implemented `convolve(field, kernel, env, *, normalize=True)` with:
+- ✅ Callable kernel support (distance → weight functions)
+- ✅ Precomputed kernel matrix support (n_bins × n_bins)
+- ✅ Normalization (per-bin weight normalization)
+- ✅ NaN handling (excludes NaN from convolution, prevents propagation)
+- ✅ Comprehensive NumPy-style docstring with examples
+- ✅ Full type hints with mypy compliance
+
+### Test Results
+- **8/8 convolve tests pass**
+- **16/16 total primitives tests pass** (neighbor_reduce + convolve)
+- All tests use TDD: wrote tests first, watched them fail, then implemented
+- Test types: box kernel, Mexican hat, precomputed matrix, normalization, NaN handling, validation, parameter order, comparison with env.smooth()
+
+### Systematic Debugging Applied
+
+Used `systematic-debugging` skill to fix 3 test failures:
+
+**Root Cause 1:** Passing bin indices to `distance_between()` instead of bin center coordinates
+- **Fix:** Use `env.bin_centers[i]` instead of scalar `i`
+
+**Root Cause 2:** Test expectations were incorrect
+- Box kernel test expected mass conservation (wrong - normalized convolution does local averaging)
+- Mexican hat test expected positive center value (wrong - kernel is 0 at distance 0)
+- **Fix:** Corrected test expectations to match actual convolution behavior
+
+**Root Cause 3:** Mypy Protocol errors
+- **Fix:** Added `distance_between()` to EnvironmentProtocol
+- Used `cast()` to satisfy mypy's union type checking
+
+### Key Implementation Details
+
+1. **Callable Kernels**: Compute full distance matrix by calling `env.distance_between()` for all bin pairs
+2. **Normalization**: Per-bin normalization (not global) - preserves field scale
+3. **NaN Handling**: Excludes NaN values from convolution, renormalizes weights per bin
+4. **Unnormalized Mode**: For kernels like Mexican hat where normalization breaks edge detection properties
+
+### Code Quality
+- ✅ Mypy: 0 errors (strict mode)
+- ✅ Ruff: All checks pass
+- ✅ Formatted with ruff
+- ✅ All docstrings follow NumPy style
+
+### Next Task
+**Milestone 2.3**: Documentation for signal processing primitives

@@ -120,6 +120,13 @@ class EnvironmentProtocol(Protocol):
         return_seconds: bool = True,
     ) -> NDArray[np.float64]: ...
 
+    def distance_between(
+        self,
+        point1: NDArray[np.float64],
+        point2: NDArray[np.float64],
+        edge_weight: str = "distance",
+    ) -> float: ...
+
     # Layout-specific attributes and methods (may be None if not applicable)
     active_mask: NDArray[np.bool_] | None
     grid_shape: tuple[int, ...] | None

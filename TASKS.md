@@ -396,30 +396,36 @@
 
 **Implementation**:
 
-- [ ] Add `convolve(field, kernel, env, *, normalize=True)` to `primitives.py`
-  - [ ] Support callable kernel: `distance -> weight`
-  - [ ] Support precomputed kernel matrix (n_bins × n_bins)
-  - [ ] Implement normalization (weights sum to 1)
-  - [ ] Handle NaN values in field
-  - [ ] Add NumPy-style docstring with examples
-  - [ ] Add type hints: `Callable[[NDArray], float] | NDArray`
+- [x] Add `convolve(field, kernel, env, *, normalize=True)` to `primitives.py`
+  - [x] Support callable kernel: `distance -> weight`
+  - [x] Support precomputed kernel matrix (n_bins × n_bins)
+  - [x] Implement normalization (weights sum to 1)
+  - [x] Handle NaN values in field
+  - [x] Add NumPy-style docstring with examples
+  - [x] Add type hints: `Callable[[NDArray], float] | NDArray`
 
 **Testing**:
 
-- [ ] Test: `test_convolve_box_kernel()` - uniform kernel within radius
-- [ ] Test: `test_convolve_mexican_hat()` - difference of Gaussians
-- [ ] Test: `test_convolve_precomputed_kernel()` - pass kernel matrix directly
-- [ ] Test: `test_convolve_normalize()` - verify normalization
-- [ ] Test: `test_convolve_nan_handling()` - NaN values don't propagate
-- [ ] Test: Compare with env.smooth() for Gaussian kernel
-- [ ] Run: `uv run pytest tests/test_primitives.py::test_convolve -v`
+- [x] Test: `test_convolve_box_kernel()` - uniform kernel within radius
+- [x] Test: `test_convolve_mexican_hat()` - difference of Gaussians
+- [x] Test: `test_convolve_precomputed_kernel()` - pass kernel matrix directly
+- [x] Test: `test_convolve_normalize()` - verify normalization
+- [x] Test: `test_convolve_nan_handling()` - NaN values don't propagate
+- [x] Test: Compare with env.smooth() for Gaussian kernel (correlation test)
+- [x] Run: `uv run pytest tests/test_primitives.py::test_convolve -v` (8 tests pass)
 
 **Documentation**:
 
-- [ ] Add examples in docstring: box kernel, Mexican hat, custom kernels
-- [ ] Cross-reference to `env.smooth()` and `env.compute_kernel()`
+- [x] Add examples in docstring: box kernel, Mexican hat, custom kernels
+- [x] Cross-reference to `env.smooth()` and `env.compute_kernel()`
 
-**Effort**: 3 days
+**Type Checking**:
+
+- [x] Add `distance_between()` to EnvironmentProtocol
+- [x] Use `cast` to satisfy mypy for Protocol usage
+- [x] Verify mypy passes: `uv run mypy src/neurospatial/primitives.py` (zero errors)
+
+**Effort**: 3 days (COMPLETE)
 
 ---
 
