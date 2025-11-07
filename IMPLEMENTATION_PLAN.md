@@ -2,19 +2,41 @@
 
 ## Executive Summary
 
-This plan outlines the implementation of **missing spatial primitives** and **convenience metrics** for neurospatial, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
+This plan outlines the implementation of **core spatial primitives** and **foundational metrics** for neurospatial v0.3.0, based on comprehensive investigation of capabilities, existing packages, and neuroscience requirements.
 
-**Timeline**: 16 weeks (4 months) - UPDATED after trajectory metrics addition
-**Priority**: HIGH - Enables analyses not possible in any other package
+**Timeline**: 13 weeks (~3 months)
+**Priority**: HIGH - Foundational infrastructure for spatial analysis
 **Breaking Changes**: None (no current users - can rename directly)
-**Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
+**Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014), neurocode (AyA Lab, Cornell), and ecology literature
 
-### What This Enables
+### What This Release Enables
 
-- **Grid cell analysis** (Nobel Prize 2014) - currently impossible without spatial autocorrelation
-- **RL/replay analyses** - value iteration, successor representation, Bellman backups
-- **Standard place field metrics** - convenience wrappers for common analyses
-- **Differential operators** - gradient, divergence, Laplacian on irregular graphs
+- **Differential operators** - gradient, divergence, Laplacian on irregular graphs (RL/replay analyses)
+- **Signal processing primitives** - neighbor operations, custom convolutions
+- **Place field metrics** - standard neuroscience analyses (detection, information, sparsity)
+- **Population metrics** - coverage, density, overlap
+- **Boundary cell metrics** - border score (wall-preferring cells)
+- **Trajectory metrics** - turn angles, step lengths, home range, MSD (from ecology)
+- **Behavioral segmentation** - automatic detection of runs, laps, trials
+
+### Deferred to Future Releases
+
+**v0.4.0 - Grid Cell Analysis:**
+- `spatial_autocorrelation()` - 2D correlation for periodic pattern detection
+- `grid_score()` - Grid cell detection (Nobel Prize 2014)
+- `grid_spacing()`, `grid_orientation()`
+- `coherence()` - Spatial smoothness metric
+
+**v0.4.0+ - Circular Statistics:**
+- `circular_mean()`, `circular_variance()`, `resultant_vector_length()`
+- `fit_von_mises()` - Head direction cell analysis
+- `rayleigh_test()` - Uniformity testing
+
+**Later - Integration Examples:**
+- RatInABox simulation examples
+- pynapple IntervalSet integration examples
+
+**Rationale**: Spatial autocorrelation is complex (FFT for regular grids, graph-based for irregular), grid cells require it, circular stats are specialized. Deferring these reduces scope by ~30% while delivering core functionality.
 
 ---
 
@@ -335,10 +357,10 @@ def test_divergence_gradient_is_laplacian(env_regular_grid_2d):
 
 ---
 
-## Phase 2: Spatial Signal Processing Primitives (Weeks 4-9)
+## Phase 2: Basic Signal Processing Primitives (Weeks 4-6)
 
 ### Goal
-Implement primitives for neuroscience-specific spatial analyses.
+Implement foundational spatial signal processing operations.
 
 ### Components
 
@@ -419,155 +441,7 @@ def test_neighbor_reduce_weights():
 
 ---
 
-#### 2.2 spatial_autocorrelation (Weeks 5-8)
-
-**THIS IS THE CRITICAL PRIMITIVE** - Enables grid cell analysis.
-
-**UPDATED AFTER OPEXEBO ANALYSIS**: Risk reduced from HIGH → MEDIUM
-
-**Key insight from opexebo** (Moser lab, Nobel Prize 2014):
-- They use normalized 2D cross-correlation via FFT (fast, validated)
-- Assumes regular rectangular grids
-- Crops 20% of edges to reduce boundary artifacts
-- This is the field-standard approach
-
-**Proposed approach** (UPDATED):
-
-**Step 1: Adopt opexebo's FFT approach** (Week 5-6) - **RISK: LOW**
-- For regular grids: Use FFT-based 2D cross-correlation (opexebo method)
-- Fast, validated, matches field standard
-- Authority: Nobel Prize-winning lab
-
-**Step 2: Extend to irregular graphs** (Week 7-8) - **RISK: MEDIUM** (optional)
-
-**Implementation** (UPDATED - adopts opexebo approach):
-```python
-def spatial_autocorrelation(
-    field: NDArray[np.float64],
-    env: Environment,
-    *,
-    method: Literal['auto', 'fft', 'graph'] = 'auto',
-    overlap_amount: float = 0.8,
-) -> NDArray[np.float64]:
-    """
-    Compute 2D spatial autocorrelation map.
-
-    Parameters
-    ----------
-    field : array, shape (n_bins,)
-        Spatial field (e.g., firing rate map)
-    env : Environment
-        Spatial environment
-    method : {'auto', 'fft', 'graph'}, default='auto'
-        - 'auto': Use FFT for regular grids, graph-based for irregular
-        - 'fft': FFT-based (opexebo method, fast, regular grids only)
-        - 'graph': Graph-based correlation (slower, works on any connectivity)
-    overlap_amount : float, default=0.8
-        Fraction of map to retain after edge cropping (reduces boundary noise)
-
-    Returns
-    -------
-    autocorr_map : array, shape (height, width)
-        2D autocorrelation map (for grid score computation)
-
-    Notes
-    -----
-    **FFT method** (from opexebo, Moser lab):
-    1. Replace NaNs with zeros
-    2. Compute normalized cross-correlation via FFT
-    3. Crop edges (default: keep central 80%)
-
-    **Graph method** (neurospatial extension for irregular grids):
-    1. Interpolate to regular grid
-    2. Apply FFT method
-    3. Or: compute pairwise correlations at each distance (slower but exact)
-
-    References
-    ----------
-    .. [1] opexebo: https://github.com/simon-ball/opexebo
-    .. [2] Sargolini et al. (2006). Science 312(5774).
-
-    Examples
-    --------
-    >>> firing_rate_smooth = env.smooth(firing_rate, bandwidth=5.0)
-    >>> autocorr_map = spatial_autocorrelation(firing_rate_smooth, env)
-    >>> # Use for grid score computation
-    >>> gs = grid_score(autocorr_map, env)
-
-    See Also
-    --------
-    grid_score : Compute grid score from autocorrelation map
-    opexebo.analysis.autocorrelation : Reference implementation
-    """
-    if method == 'auto':
-        # Choose based on layout type
-        if env.layout._layout_type_tag == 'RegularGridLayout':
-            method = 'fft'
-        else:
-            method = 'fft'  # Interpolate irregular → regular grid
-
-    if method == 'fft':
-        # Adopt opexebo's FFT approach
-        # Step 1: Reshape to 2D if regular grid (or interpolate if irregular)
-        # Step 2: Replace NaNs with zeros
-        # Step 3: normxcorr2_general() via FFT
-        # Step 4: Crop edges
-        pass  # Implementation details
-
-    elif method == 'graph':
-        # Graph-based approach for irregular grids
-        # More principled but slower
-        pass  # Implementation details
-```
-
-**Decision**: Start with FFT method (opexebo approach), add graph-based if users need it.
-
-**Step 3: Validation** (Week 8)
-- Test on synthetic hexagonal grid data
-- **Compare with opexebo outputs** (should match within 1%)
-- Validate rotation sensitivity
-
-**Tests** (UPDATED):
-```python
-def test_autocorr_matches_opexebo():
-    """Autocorrelation should match opexebo for regular grids"""
-    # Create regular grid environment
-    env = Environment.from_samples(positions, bin_size=2.5)
-    firing_rate = create_hexagonal_pattern()
-
-    # Compute with neurospatial
-    autocorr_ns = spatial_autocorrelation(firing_rate, env)
-
-    # Compute with opexebo (if installed)
-    try:
-        import opexebo
-        rate_map_2d = firing_rate.reshape(env.layout.grid_shape)
-        autocorr_opexebo = opexebo.analysis.autocorrelation(rate_map_2d)
-        np.testing.assert_allclose(autocorr_ns, autocorr_opexebo, rtol=0.01)
-    except ImportError:
-        pytest.skip("opexebo not installed")
-
-def test_autocorr_hexagonal_field():
-    """Hexagonal field should show peaks at 60° multiples"""
-    # Create synthetic grid cell firing pattern
-    # Compute autocorrelation
-    # Verify peaks at correct angles
-
-def test_autocorr_constant_field():
-    """Constant field should have autocorr = 1 everywhere"""
-    field = np.ones(env.n_bins)
-    autocorr = spatial_autocorrelation(field, env)
-    np.testing.assert_allclose(autocorr.max(), 1.0)
-```
-
-**Effort**: 16-20 days (4 weeks) - UNCHANGED
-**Risk**: MEDIUM (reduced from HIGH) - opexebo provides validated algorithm
-**Blockers**: None (can implement independently)
-**Mitigation**: Adopt opexebo's FFT approach (low risk), defer graph-based (optional)
-
----
-
-#### 2.3 convolve (Week 9)
+#### 2.2 convolve (Week 5-6)
 
 **Add to**: `src/neurospatial/primitives.py`
 
@@ -625,341 +499,11 @@ def convolve(
 
 ---
 
-## Phase 3: Trajectory & Behavioral Segmentation (Weeks 10-11)
+
+## Phase 3: Core Metrics Module (Weeks 7-9)
 
 ### Goal
-Implement trajectory primitives and behavioral epoch segmentation (runs, laps, trials).
-
-### Components
-
-#### 3.1 accumulate_along_path
-
-**Add to**: `src/neurospatial/primitives.py`
-
-**Implementation from**: `primitives_poc.py`
-
-**Effort**: 3 days
-**Risk**: Low (prototype exists)
-
----
-
-#### 3.2 propagate
-
-**Add to**: `src/neurospatial/primitives.py`
-
-**Implementation from**: `primitives_poc.py`
-
-**Note**: Evaluate if this is redundant with `distance_field` - may defer or remove.
-
-**Effort**: 2 days
-**Risk**: Low
-**Decision**: Defer pending user feedback
-
----
-
-#### 3.3 Behavioral Segmentation (NEW)
-
-**New module**: `src/neurospatial/segmentation/`
-
-**Motivation**: Identify discrete behavioral epochs from continuous trajectories (e.g., "runs from nest to goal", "laps", "trials"). Most packages require manual segmentation - neurospatial can provide spatial primitives for automatic detection.
-
-**Module structure**:
-```python
-src/neurospatial/segmentation/
-    __init__.py
-    regions.py       # Region-based segmentation
-    laps.py          # Lap detection
-    trials.py        # Trial segmentation
-    similarity.py    # Trajectory similarity
-```
-
-**Core primitives**:
-
-```python
-# src/neurospatial/segmentation/regions.py
-
-def detect_region_crossings(
-    trajectory_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
-    region: str,
-    env: Environment,
-    direction: Literal['entry', 'exit', 'both'] = 'both',
-) -> list[Crossing]:
-    """
-    Detect when trajectory enters/exits a spatial region.
-
-    Returns
-    -------
-    crossings : List[Crossing]
-        Crossing(time, bin_index, direction='entry'/'exit')
-    """
-
-def detect_runs_between_regions(
-    trajectory_positions: NDArray[np.float64],
-    times: NDArray[np.float64],
-    env: Environment,
-    *,
-    source: str,
-    target: str,
-    min_duration: float = 0.5,
-    max_duration: float = 10.0,
-    velocity_threshold: float | None = None,
-) -> list[Run]:
-    """
-    Identify trajectory segments from source region to target region.
-
-    Parameters
-    ----------
-    source : str
-        Name of source region (e.g., 'nest')
-    target : str
-        Name of target region (e.g., 'goal')
-    min_duration : float
-        Minimum run duration (seconds)
-    max_duration : float
-        Maximum run duration (seconds)
-    velocity_threshold : float, optional
-        Minimum velocity to count as movement (cm/s)
-
-    Returns
-    -------
-    runs : List[Run]
-        Run(start_time, end_time, duration, trajectory_bins,
-            path_length, success=True/False)
-
-    Examples
-    --------
-    >>> # Detect goal-directed runs
-    >>> runs = detect_runs_between_regions(
-    ...     positions, times, env,
-    ...     source='nest', target='goal'
-    ... )
-    >>> success_rate = sum(r.success for r in runs) / len(runs)
-    """
-
-def segment_by_velocity(
-    trajectory_positions: NDArray[np.float64],
-    times: NDArray[np.float64],
-    threshold: float,
-    *,
-    min_duration: float = 0.5,
-    hysteresis: float = 2.0,
-    smooth_window: float = 0.2,
-) -> IntervalSet:
-    """
-    Segment trajectory into movement vs. rest periods.
-
-    Returns pynapple IntervalSet if available, otherwise list of tuples.
-    """
-```
-
-```python
-# src/neurospatial/segmentation/laps.py
-
-def detect_laps(
-    trajectory_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
-    env: Environment,
-    *,
-    method: Literal['auto', 'reference', 'region'] = 'auto',
-    min_overlap: float = 0.8,
-    direction: Literal['clockwise', 'counter', 'both'] = 'both',
-) -> list[Lap]:
-    """
-    Detect complete loops/laps in circular or figure-8 tracks.
-
-    Parameters
-    ----------
-    method : {'auto', 'reference', 'region'}
-        - 'auto': Automatically detect lap template from data
-        - 'reference': User provides reference lap
-        - 'region': Detect crossings of lap start region
-    min_overlap : float
-        Minimum spatial overlap with reference lap [0, 1]
-
-    Returns
-    -------
-    laps : List[Lap]
-        Lap(start_time, end_time, duration, trajectory_bins,
-            direction='clockwise'/'counter', overlap_score)
-
-    Examples
-    --------
-    >>> # Auto-detect laps
-    >>> laps = detect_laps(trajectory_bins, times, env)
-    >>> for i, lap in enumerate(laps):
-    ...     print(f"Lap {i}: {lap.duration:.2f}s, overlap={lap.overlap_score:.2f}")
-    """
-```
-
-```python
-# src/neurospatial/segmentation/trials.py
-
-def segment_trials(
-    trajectory_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
-    env: Environment,
-    *,
-    trial_type: Literal['tmaze', 'ymaze', 'radial_arm', 'custom'],
-    start_region: str,
-    end_regions: dict[str, str],
-    min_duration: float = 1.0,
-    max_duration: float = 15.0,
-) -> list[Trial]:
-    """
-    Detect trials based on task structure (e.g., T-maze left/right).
-
-    Parameters
-    ----------
-    trial_type : str
-        Task structure type
-    start_region : str
-        Region name where trials start
-    end_regions : dict
-        Mapping from outcome name to region name
-        Example: {'left': 'left_arm', 'right': 'right_arm'}
-
-    Returns
-    -------
-    trials : List[Trial]
-        Trial(start_time, end_time, duration, trajectory_bins,
-              outcome='left'/'right'/..., success=True/False)
-
-    Examples
-    --------
-    >>> # T-maze trials
-    >>> trials = segment_trials(
-    ...     trajectory_bins, times, env,
-    ...     trial_type='tmaze',
-    ...     start_region='center',
-    ...     end_regions={'left': 'left_arm', 'right': 'right_arm'},
-    ... )
-    >>> left_trials = [t for t in trials if t.outcome == 'left']
-    >>> right_trials = [t for t in trials if t.outcome == 'right']
-    """
-```
-
-```python
-# src/neurospatial/segmentation/similarity.py
-
-def trajectory_similarity(
-    trajectory1_bins: NDArray[np.int64],
-    trajectory2_bins: NDArray[np.int64],
-    env: Environment,
-    *,
-    method: Literal['jaccard', 'correlation', 'hausdorff', 'dtw'] = 'jaccard',
-) -> float:
-    """
-    Compute similarity between two trajectory segments.
-
-    Parameters
-    ----------
-    method : {'jaccard', 'correlation', 'hausdorff', 'dtw'}
-        - 'jaccard': Spatial overlap (Jaccard index)
-        - 'correlation': Sequential correlation
-        - 'hausdorff': Maximum deviation
-        - 'dtw': Dynamic time warping
-
-    Returns
-    -------
-    similarity : float
-        Similarity score [0, 1] (1 = identical, 0 = no overlap)
-
-    Examples
-    --------
-    >>> # Compare decoded replay to behavioral run
-    >>> similarity = trajectory_similarity(
-    ...     decoded_bins, run.trajectory_bins, env
-    ... )
-    >>> if similarity > 0.8:
-    ...     print("High similarity - likely replay of this run")
-    """
-
-def detect_goal_directed_runs(
-    trajectory_bins: NDArray[np.int64],
-    times: NDArray[np.float64],
-    env: Environment,
-    *,
-    goal_region: str,
-    directedness_threshold: float = 0.7,
-    min_progress: float = 20.0,
-) -> list[Run]:
-    """
-    Identify runs where trajectory moves toward a goal.
-
-    Parameters
-    ----------
-    directedness_threshold : float
-        Minimum directedness score [0, 1]
-        (0 = random walk, 1 = straight line to goal)
-    min_progress : float
-        Minimum distance traveled toward goal (cm)
-
-    Returns
-    -------
-    runs : List[Run]
-        Run(start_time, end_time, directedness, progress, reached_goal)
-
-    Metrics
-    -------
-    directedness = (dist_start_to_goal - dist_end_to_goal) / path_length
-    progress = dist_start_to_goal - dist_end_to_goal
-
-    Examples
-    --------
-    >>> # Find goal-directed runs
-    >>> runs = detect_goal_directed_runs(
-    ...     trajectory_bins, times, env, goal_region='goal'
-    ... )
-    >>> for run in runs:
-    ...     if run.reached_goal:
-    ...         print(f"Directedness: {run.directedness:.2f}")
-    """
-```
-
-**Implementation timeline**:
-- **Days 1-3**: Region-based segmentation (detect_region_crossings, detect_runs_between_regions, segment_by_velocity)
-- **Days 4-5**: Lap detection (detect_laps with 3 methods)
-- **Day 6**: Trial segmentation (segment_trials for common task types)
-- **Days 7-8**: Trajectory similarity and goal-directedness
-- **Days 9-10**: Tests, documentation, pynapple integration
-
-**Effort**: 2 weeks (10 days)
-**Risk**: Low - Well-defined algorithms, no complex mathematics
-
-**Integration with pynapple**:
-All functions return `pynapple.IntervalSet` when pynapple is available:
-```python
-try:
-    import pynapple as nap
-    return nap.IntervalSet(start=starts, end=ends)
-except ImportError:
-    return [(start, end) for start, end in zip(starts, ends)]
-```
-
-**Validation**:
-- Compare lap detection with neurocode NSMAFindGoodLaps.m
-- Test on RatInABox simulated trajectories
-- Cross-validate region crossing times
-
-**Use cases**:
-1. **Goal-directed runs**: Analyze place fields during nest→goal runs
-2. **Lap-by-lap learning**: Track place field stability across laps
-3. **Trial-type selectivity**: Compare left vs. right trial firing
-4. **Replay analysis**: Match decoded trajectories to behavioral runs
-5. **Learning dynamics**: Performance/stability over trials
-
-**Authority**:
-- neurocode: NSMAFindGoodLaps.m, MovementPeriods.m, IsInZone.m
-- vandermeerlab: Task-specific segmentation scripts
-- Novel contribution: General-purpose spatial segmentation primitives
-
----
-
-## Phase 4: Convenience Metrics Module (Weeks 12-15)
-
-### Goal
-Provide standard neuroscience metrics as convenience wrappers.
+Provide standard neuroscience and trajectory analysis metrics as convenience wrappers.
 
 ### Module Structure
 
@@ -968,14 +512,13 @@ src/neurospatial/metrics/
     __init__.py
     place_fields.py      # Individual place field properties
     population.py        # Population-level metrics
-    remapping.py         # Stability and remapping
-    grid_cells.py        # Grid score (needs spatial_autocorrelation)
     boundary_cells.py    # Border score, head direction
+    trajectory.py        # Trajectory metrics from ecology
 ```
 
 ### Components
 
-#### 4.1 Place Field Metrics (Week 11)
+#### 3.1 Place Field Metrics (Week 7)
 
 **File**: `src/neurospatial/metrics/place_fields.py`
 
@@ -1059,7 +602,7 @@ def field_stability(
 
 ---
 
-#### 4.2 Population Metrics (Week 12)
+#### 3.2 Population Metrics (Week 7)
 
 **File**: `src/neurospatial/metrics/population.py`
 
@@ -1100,109 +643,7 @@ def population_vector_correlation(
 
 ---
 
-#### 4.3 Grid Cell Metrics (Week 13-14)
-
-**File**: `src/neurospatial/metrics/grid_cells.py`
-
-**UPDATED**: Adopt opexebo's sophisticated algorithm
-
-**Functions**:
-```python
-def grid_score(
-    firing_rate: NDArray,
-    env: Environment,
-    *,
-    method: Literal['sargolini', 'langston'] = 'sargolini',
-    num_gridness_radii: int = 3,
-) -> float:
-    """
-    Compute grid score (gridness) using annular rings approach.
-
-    This implementation matches opexebo's algorithm (Moser lab, Nobel Prize 2014):
-    1. Compute spatial autocorrelation map
-    2. Automatically detect central field radius
-    3. For expanding radii, extract annular rings (donut shapes)
-    4. Rotate autocorr at 30°, 60°, 90°, 120°, 150°
-    5. Compute Pearson correlation between rings
-    6. Grid score = min(corr[60°, 120°]) - max(corr[30°, 90°, 150°])
-    7. Apply sliding window smoothing (3 radii default)
-    8. Return maximum grid score
-
-    Parameters
-    ----------
-    firing_rate : array, shape (n_bins,)
-        Firing rate map (should be smoothed, 5 cm bandwidth recommended)
-    env : Environment
-        Spatial environment
-    method : {'sargolini', 'langston'}, default='sargolini'
-        Grid score formula variant
-    num_gridness_radii : int, default=3
-        Sliding window width for smoothing
-
-    Returns
-    -------
-    grid_score : float
-        Grid score. Range: [-2, 2]. Typical good grids: ~1.3
-
-    References
-    ----------
-    .. [1] Sargolini et al. (2006). Science 312(5774).
-    .. [2] opexebo.analysis.grid_score: Reference implementation
-
-    See Also
-    --------
-    spatial_autocorrelation : Compute autocorrelation map
-    opexebo.analysis.grid_score : Reference implementation
-    """
-    # Step 1: Compute autocorrelation
-    autocorr_map = spatial_autocorrelation(firing_rate, env)
-
-    # Step 2: Detect central field radius (automatic)
-    # Step 3: For expanding radii, compute correlations with rotations
-    # Step 4: Apply sliding window smoothing
-    # Step 5: Return maximum
-    pass  # Implementation follows opexebo exactly
-
-def grid_spacing(autocorr_map: NDArray, env: Environment) -> float:
-    """Estimate grid spacing from autocorrelation map."""
-
-def grid_orientation(autocorr_map: NDArray, env: Environment) -> float:
-    """Estimate grid orientation (degrees)."""
-
-def coherence(
-    firing_rate: NDArray,
-    env: Environment,
-    *,
-    op: str = 'mean',
-) -> float:
-    """
-    Spatial coherence (Muller & Kubie 1989).
-
-    Correlation between firing rate and mean of neighbors.
-    Uses neighbor_reduce primitive (generalizes opexebo's 3x3 convolution).
-
-    References
-    ----------
-    .. [1] Muller & Kubie (1989). J Neurosci 9(12).
-    .. [2] opexebo.analysis.rate_map_coherence: Reference implementation
-    """
-    neighbor_avg = neighbor_reduce(firing_rate, env, op=op)
-    return np.corrcoef(firing_rate, neighbor_avg)[0, 1]
-```
-
-**Key updates**:
-- ✅ Adopt opexebo's annular rings approach
-- ✅ Automatic radius detection
-- ✅ Sliding window smoothing (3 radii)
-- ✅ Cross-reference opexebo as authority
-
-**Effort**: 3 days (reduced from 5) - well-defined algorithm
-**Risk**: Low (reduced from Medium) - opexebo provides exact specification
-**Blockers**: Phase 2.2 (spatial_autocorrelation)
-
----
-
-#### 4.4 Boundary Cell Metrics (Week 14) - NEW from TSToolbox_Utils
+#### 3.3 Boundary Cell Metrics (Week 8)
 
 **File**: `src/neurospatial/metrics/boundary_cells.py`
 
@@ -1267,18 +708,6 @@ def border_score(
     >>> if score > 0.5:
     ...     print("Strong border cell!")
     """
-    # Implementation follows TSToolbox_Utils approach:
-    # 1. Compute distance to boundaries
-    boundary_bins = env.boundary_bins
-    dist_to_boundary = compute_distance_to_boundaries(env)
-
-    # 2. Segment field
-    peak = np.max(firing_rate)
-    field_mask = firing_rate > (threshold * peak)
-
-    # 3. Compute wall contact ratio
-    # ...
-
     pass
 
 def boundary_vector_tuning(
@@ -1308,563 +737,279 @@ def boundary_vector_tuning(
 **Risk**: Low (well-documented algorithm in TSToolbox_Utils and opexebo)
 **Blockers**: None
 
-**Key insights from TSToolbox_Utils**:
-- ✅ Border score uses wall contact ratio + distance metric
-- ✅ Threshold at 30% of peak (standard)
-- ✅ Filter by minimum area (200 pixels)
-- ✅ Cross-validate with opexebo
-
 ---
 
-#### 4.5 Circular Statistics (Week 15) - NEW from neurocode
-
-**File**: `src/neurospatial/metrics/circular.py`
-
-**Motivation**: neurocode provides von Mises fitting and circular statistics for 1D circular tracks (e.g., circular mazes). This is important for:
-- Head direction cells
-- Circular track place fields
-- Angular tuning curves
-
-**Functions**:
-```python
-def circular_mean(
-    angles: NDArray,
-    weights: NDArray | None = None,
-) -> float:
-    """
-    Compute circular mean angle.
-
-    Parameters
-    ----------
-    angles : array
-        Angles in radians
-    weights : array, optional
-        Weights for each angle (e.g., occupancy)
-
-    Returns
-    -------
-    mean_angle : float
-        Circular mean in radians [-π, π]
-    """
-    if weights is None:
-        weights = np.ones_like(angles)
-
-    # Compute mean resultant vector
-    C = np.sum(weights * np.cos(angles))
-    S = np.sum(weights * np.sin(angles))
-
-    return np.arctan2(S, C)
-
-def circular_variance(
-    angles: NDArray,
-    weights: NDArray | None = None,
-) -> float:
-    """
-    Compute circular variance (1 - r).
-
-    Parameters
-    ----------
-    angles : array
-        Angles in radians
-    weights : array, optional
-        Weights for each angle
-
-    Returns
-    -------
-    variance : float
-        Circular variance [0, 1]
-    """
-    r = resultant_vector_length(angles, weights)
-    return 1 - r
-
-def resultant_vector_length(
-    angles: NDArray,
-    weights: NDArray | None = None,
-) -> float:
-    """
-    Compute mean resultant length (concentration measure).
-
-    Parameters
-    ----------
-    angles : array
-        Angles in radians
-    weights : array, optional
-        Weights for each angle
-
-    Returns
-    -------
-    r : float
-        Mean resultant length [0, 1]
-        - r ≈ 0: Uniform distribution
-        - r ≈ 1: Highly concentrated
-    """
-    if weights is None:
-        weights = np.ones_like(angles)
-
-    C = np.sum(weights * np.cos(angles))
-    S = np.sum(weights * np.sin(angles))
-    R = np.sqrt(C**2 + S**2)
-
-    return R / np.sum(weights)
-
-def fit_von_mises(
-    angles: NDArray,
-    weights: NDArray | None = None,
-) -> tuple[float, float]:
-    """
-    Fit von Mises distribution to circular data.
-
-    The von Mises distribution is the circular analog of the Gaussian.
-
-    Parameters
-    ----------
-    angles : array
-        Angles in radians
-    weights : array, optional
-        Weights for each angle
-
-    Returns
-    -------
-    mu : float
-        Mean direction (radians)
-    kappa : float
-        Concentration parameter
-        - kappa ≈ 0: Uniform distribution
-        - kappa >> 1: Highly concentrated
-
-    References
-    ----------
-    .. [1] neurocode MapStats.m (circular statistics)
-    .. [2] Fisher (1993). Statistical Analysis of Circular Data.
-
-    Examples
-    --------
-    >>> # Head direction cell
-    >>> angles = np.linspace(0, 2*np.pi, 100)
-    >>> firing_rate = np.exp(kappa * np.cos(angles - preferred_direction))
-    >>> mu, kappa = fit_von_mises(angles, weights=firing_rate)
-    """
-    # Circular mean
-    mu = circular_mean(angles, weights)
-
-    # Mean resultant length
-    r = resultant_vector_length(angles, weights)
-
-    # Estimate kappa from r (approximate MLE)
-    # For small r: kappa ≈ 2*r
-    # For large r: kappa ≈ 1 / (1 - r)
-    if r < 0.53:
-        kappa = 2 * r + r**3 + 5 * r**5 / 6
-    elif r < 0.85:
-        kappa = -0.4 + 1.39 * r + 0.43 / (1 - r)
-    else:
-        kappa = 1 / (2 * (1 - r))
-
-    return mu, kappa
-
-def rayleigh_test(
-    angles: NDArray,
-    weights: NDArray | None = None,
-) -> tuple[float, float]:
-    """
-    Rayleigh test for uniformity of circular data.
-
-    Tests null hypothesis: angles are uniformly distributed.
-
-    Parameters
-    ----------
-    angles : array
-        Angles in radians
-    weights : array, optional
-        Weights for each angle
-
-    Returns
-    -------
-    z : float
-        Rayleigh Z statistic
-    p_value : float
-        P-value for uniformity test
-
-    Notes
-    -----
-    Small p-value (< 0.05) indicates non-uniform distribution
-    (e.g., significant head direction tuning).
-    """
-    n = len(angles)
-    r = resultant_vector_length(angles, weights)
-
-    # Rayleigh Z statistic
-    z = n * r**2
-
-    # Approximate p-value (valid for n > 10)
-    p_value = np.exp(-z) * (1 + (2*z - z**2) / (4*n) -
-                             (24*z - 132*z**2 + 76*z**3 - 9*z**4) / (288*n**2))
-
-    return z, p_value
-```
-
-**Tests**: Comprehensive unit tests for each function
-**Effort**: 3 days
-**Risk**: Low (well-established circular statistics)
-**Blockers**: None
-
-**Key insights from neurocode**:
-- ✅ Circular statistics essential for head direction cells
-- ✅ Von Mises is circular analog of Gaussian
-- ✅ Concentration parameter κ measures tuning sharpness
-- ✅ Rayleigh test for significance testing
-
----
-
-#### 4.6 Trajectory Metrics (Week 15) - NEW from Ecology Packages
+#### 3.4 Trajectory Metrics (Week 9)
 
 **File**: `src/neurospatial/metrics/trajectory.py`
 
-**Motivation**: Animal movement ecology packages (Traja, yupi, adehabitatHR) provide trajectory characterization metrics that are broadly applicable to neuroscience. These metrics quantify movement patterns and spatial usage.
+**Motivation**: Animal movement ecology packages (Traja, yupi, adehabitatHR) provide trajectory characterization metrics that are broadly applicable to neuroscience.
 
-**Functions**:
-```python
-def compute_turn_angles(
-    trajectory_bins: NDArray[np.int64],
-    env: Environment,
-) -> NDArray[np.float64]:
-    """
-    Compute turn angles between consecutive trajectory segments.
-
-    For each triplet of bins (i, j, k), computes the angle between
-    vectors (i→j) and (j→k).
-
-    Parameters
-    ----------
-    trajectory_bins : array, shape (n_timepoints,)
-        Sequence of bin indices
-    env : Environment
-        Spatial environment
-
-    Returns
-    -------
-    turn_angles : array, shape (n_timepoints - 2,)
-        Turn angles in radians [0, π]
-        - 0: Straight ahead
-        - π/2: 90° turn
-        - π: 180° reversal
-
-    Examples
-    --------
-    >>> # Characterize exploration behavior
-    >>> angles = compute_turn_angles(trajectory_bins, env)
-    >>> mean_turn = np.mean(angles)
-    >>> if mean_turn > np.pi/2:
-    ...     print("Highly tortuous path (high exploration)")
-
-    Notes
-    -----
-    For bin centers p1, p2, p3:
-    - v1 = p2 - p1
-    - v2 = p3 - p2
-    - angle = arccos(v1·v2 / |v1||v2|)
-
-    References
-    ----------
-    .. [1] Traja: trajectory statistics package
-    .. [2] Benhamou (2004). Animal Behaviour 68(5).
-    """
-    angles = []
-    for i in range(len(trajectory_bins) - 2):
-        b1, b2, b3 = trajectory_bins[i:i+3]
-        p1, p2, p3 = env.bin_centers[[b1, b2, b3]]
-
-        v1 = p2 - p1
-        v2 = p3 - p2
-
-        # Compute angle between vectors
-        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        # Clamp to [-1, 1] to handle numerical errors
-        cos_angle = np.clip(cos_angle, -1.0, 1.0)
-        angle = np.arccos(cos_angle)
-        angles.append(angle)
-
-    return np.array(angles)
-
-def compute_step_lengths(
-    trajectory_bins: NDArray[np.int64],
-    env: Environment,
-) -> NDArray[np.float64]:
-    """
-    Compute graph distances between consecutive trajectory bins.
-
-    Parameters
-    ----------
-    trajectory_bins : array, shape (n_timepoints,)
-        Sequence of bin indices
-    env : Environment
-        Spatial environment
-
-    Returns
-    -------
-    step_lengths : array, shape (n_timepoints - 1,)
-        Graph distance for each step
-
-    Examples
-    --------
-    >>> # Detect movement bouts
-    >>> steps = compute_step_lengths(trajectory_bins, env)
-    >>> movement_mask = steps > 5.0  # cm
-    >>> rest_mask = steps < 2.0
-
-    Notes
-    -----
-    Uses graph distance (shortest path), not Euclidean distance.
-    For Euclidean distance, use:
-        np.linalg.norm(np.diff(env.bin_centers[trajectory_bins], axis=0), axis=1)
-    """
-    step_lengths = []
-    for i in range(len(trajectory_bins) - 1):
-        b1, b2 = trajectory_bins[i], trajectory_bins[i+1]
-        if b1 == b2:
-            step_lengths.append(0.0)
-        else:
-            dist = env.distance_between(b1, b2)
-            step_lengths.append(dist)
-
-    return np.array(step_lengths)
-
-def compute_home_range(
-    occupancy: NDArray[np.float64],
-    threshold: float = 0.95,
-) -> NDArray[np.int64]:
-    """
-    Identify home range bins (containing X% of time).
-
-    Parameters
-    ----------
-    occupancy : array, shape (n_bins,)
-        Time spent in each bin (seconds)
-    threshold : float, default=0.95
-        Fraction of time to include [0, 1]
-        Standard: 95% (adehabitatHR)
-
-    Returns
-    -------
-    home_range_bins : array, shape (n_home_bins,)
-        Bin indices in home range (sorted by occupancy, descending)
-
-    Examples
-    --------
-    >>> # Compute 95% home range
-    >>> home_bins = compute_home_range(occupancy, threshold=0.95)
-    >>> home_area = len(home_bins) * env.bin_sizes().mean()
-    >>> print(f"95% home range: {home_area:.1f} cm²")
-
-    >>> # Visualize home range
-    >>> home_mask = np.isin(np.arange(env.n_bins), home_bins)
-    >>> env.plot(home_mask.astype(float))
-
-    References
-    ----------
-    .. [1] adehabitatHR: Home range estimation (R package)
-    .. [2] Worton (1989). Ecology 70(1).
-    """
-    # Normalize to probability
-    occ_prob = occupancy / occupancy.sum()
-
-    # Sort bins by descending occupancy
-    sorted_bins = np.argsort(occ_prob)[::-1]
-
-    # Accumulate until threshold reached
-    cumsum = np.cumsum(occ_prob[sorted_bins])
-    n_bins_to_include = np.searchsorted(cumsum, threshold) + 1
-
-    home_range_bins = sorted_bins[:n_bins_to_include]
-
-    return home_range_bins
-
-def mean_square_displacement(
-    trajectory_bins: NDArray[np.int64],
-    env: Environment,
-    *,
-    max_lag: int = 100,
-) -> NDArray[np.float64]:
-    """
-    Compute mean square displacement (MSD) on graph.
-
-    MSD characterizes diffusion properties:
-    - MSD ~ t^α
-    - α = 1: Normal diffusion (random walk)
-    - α < 1: Subdiffusion (constrained movement)
-    - α > 1: Superdiffusion (Lévy walk, ballistic)
-
-    Parameters
-    ----------
-    trajectory_bins : array, shape (n_timepoints,)
-        Sequence of bin indices
-    env : Environment
-        Spatial environment
-    max_lag : int, default=100
-        Maximum time lag to compute
-
-    Returns
-    -------
-    msd : array, shape (max_lag,)
-        Mean square displacement at each lag
-
-    Examples
-    --------
-    >>> # Characterize diffusion
-    >>> msd = mean_square_displacement(trajectory_bins, env)
-    >>>
-    >>> # Fit power law: MSD ~ t^α
-    >>> import numpy as np
-    >>> lags = np.arange(1, len(msd)+1)
-    >>> log_msd = np.log(msd)
-    >>> log_lag = np.log(lags)
-    >>> alpha = np.polyfit(log_lag, log_msd, deg=1)[0]
-    >>>
-    >>> if alpha < 0.9:
-    ...     print("Subdiffusion (constrained)")
-    >>> elif alpha > 1.1:
-    ...     print("Superdiffusion (ballistic)")
-    >>> else:
-    ...     print("Normal diffusion (random walk)")
-
-    Notes
-    -----
-    Uses graph distance (shortest path on connectivity graph).
-    For large environments, this can be slow - consider sampling lags.
-
-    References
-    ----------
-    .. [1] yupi: Trajectory analysis with MSD
-    .. [2] Saxton (1997). Biophys J 72(4).
-    """
-    msd = []
-
-    for lag in range(1, min(max_lag + 1, len(trajectory_bins))):
-        squared_displacements = []
-
-        for t in range(len(trajectory_bins) - lag):
-            b_start = trajectory_bins[t]
-            b_end = trajectory_bins[t + lag]
-
-            # Graph distance
-            dist = env.distance_between(b_start, b_end)
-            squared_displacements.append(dist ** 2)
-
-        msd.append(np.mean(squared_displacements))
-
-    return np.array(msd)
-```
-
-**Tests**: Comprehensive unit tests
-- Test turn angles on synthetic trajectories (straight, circular)
-- Test step lengths match graph distances
-- Test home range includes highest occupancy bins
-- Test MSD power law on simulated random walk
+**Functions** (detailed implementations already in plan):
+- `compute_turn_angles()` - Path tortuosity
+- `compute_step_lengths()` - Graph distances
+- `compute_home_range()` - Bins containing X% of time
+- `mean_square_displacement()` - Diffusion classification
 
 **Effort**: 3 days
-**Risk**: Low (well-defined algorithms from ecology literature)
+**Risk**: Low
 **Blockers**: None
-
-**Key insights from ecology packages**:
-- ✅ Turn angles quantify path tortuosity (exploration vs exploitation)
-- ✅ Home range standard: 95% of time (adehabitatHR)
-- ✅ MSD power law exponent classifies diffusion type
-- ✅ Step lengths useful for velocity-based segmentation
-
-**Integration with neurospatial**:
-- Uses existing `env.distance_between()` for graph distances
-- Uses existing `env.bin_centers` for angle computation
-- Complements `segment_by_velocity()` from Phase 3.3
-- Provides quantitative metrics for trajectory characterization
 
 ---
 
-#### 4.7 Documentation (Week 16)
+#### 3.5 Documentation (Week 9)
 
 **New user guide**: `docs/user-guide/neuroscience-metrics.md`
 
 **Example notebooks**:
 - `examples/10_place_field_analysis.ipynb` - Place field detection and metrics
-- `examples/11_grid_cell_detection.ipynb` - Grid score and spatial autocorrelation
-- `examples/12_boundary_cell_analysis.ipynb` - Border score (NEW from TSToolbox_Utils)
-- `examples/13_head_direction_analysis.ipynb` - Circular statistics (NEW from neurocode)
-- `examples/14_ratinabox_integration.ipynb` - Simulation + analysis workflow (NEW from RatInABox)
+- `examples/11_boundary_cell_analysis.ipynb` - Border score
+- `examples/12_trajectory_analysis.ipynb` - Turn angles, MSD, home range
 
-**RatInABox integration example** (NEW):
-```python
-# examples/13_ratinabox_integration.ipynb
-
-# 1. Generate synthetic data with RatInABox
-from ratinabox import Environment, Agent
-from ratinabox.Neurons import PlaceCells, GridCells
-
-Env = Environment(params={'scale': 1.0})
-Ag = Agent(Env)
-# ... simulate 5 minutes ...
-
-PCs = PlaceCells(Ag, params={'n': 50})
-GCs = GridCells(Ag, params={'n': 20, 'gridscale': 0.3})
-
-# 2. Discretize with neurospatial
-from neurospatial import Environment as NSEnv
-
-env = NSEnv.from_samples(Ag.history['pos'], bin_size=0.05)
-
-# 3. Analyze with neurospatial metrics
-from neurospatial.metrics import grid_score, detect_place_fields
-
-# Compute grid score
-score = grid_score(GCs.history['firingrate'], env)
-
-# 4. Validate against ground truth
-true_spacing = 0.3  # Known from simulation!
-estimated_spacing = estimate_grid_spacing(autocorr)
-print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
-```
-
-**Effort**: 4 days (increased from 3 to include RatInABox integration)
+**Effort**: 2 days
 
 ---
 
-## Phase 5: Polish & Release (Week 16-17)
+## Phase 4: Behavioral Segmentation (Weeks 10-11)
+
+### Goal
+Implement automatic detection of behavioral epochs from continuous trajectories.
+
+### Motivation
+Most packages require manual trial/epoch segmentation. neurospatial can provide spatial primitives for automatic detection of runs, laps, and trials based on spatial regions and trajectory patterns.
+
+### Module Structure
+
+```
+src/neurospatial/segmentation/
+    __init__.py
+    regions.py       # Region-based segmentation
+    laps.py          # Lap detection
+    trials.py        # Trial segmentation
+    similarity.py    # Trajectory similarity
+```
 
 ### Components
 
-#### 5.1 Validation Against opexebo, neurocode, and RatInABox
+#### 4.1 Region-Based Segmentation (Week 10, Days 1-3)
 
-**Validation against analysis packages** (opexebo, neurocode):
-- Test grid score matches opexebo within 1%
-- Test coherence matches exactly (opexebo)
-- Test spatial information matches exactly (opexebo, neurocode, buzcode)
-- Test autocorrelation matches exactly (opexebo)
-- Test circular statistics match neurocode (von Mises fitting)
+**File**: `src/neurospatial/segmentation/regions.py`
+
+**Functions**:
+
+```python
+def detect_region_crossings(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    region: str,
+    env: Environment,
+    direction: Literal['entry', 'exit', 'both'] = 'both',
+) -> list[Crossing]:
+    """Detect when trajectory enters/exits a spatial region."""
+
+def detect_runs_between_regions(
+    trajectory_positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    source: str,
+    target: str,
+    min_duration: float = 0.5,
+    max_duration: float = 10.0,
+    velocity_threshold: float | None = None,
+) -> list[Run]:
+    """
+    Identify trajectory segments from source region to target region.
+    
+    Returns Run objects with start_time, end_time, trajectory_bins,
+    path_length, success (reached target).
+    """
+
+def segment_by_velocity(
+    trajectory_positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    threshold: float,
+    *,
+    min_duration: float = 0.5,
+    hysteresis: float = 2.0,
+    smooth_window: float = 0.2,
+) -> IntervalSet:
+    """Segment trajectory into movement vs. rest periods."""
+```
+
+**Effort**: 3 days
+**Risk**: Low
+
+---
+
+#### 4.2 Lap Detection (Week 10, Days 4-5)
+
+**File**: `src/neurospatial/segmentation/laps.py`
+
+**Functions**:
+
+```python
+def detect_laps(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    method: Literal['auto', 'reference', 'region'] = 'auto',
+    min_overlap: float = 0.8,
+    direction: Literal['clockwise', 'counter', 'both'] = 'both',
+) -> list[Lap]:
+    """
+    Detect complete loops/laps in circular or figure-8 tracks.
+
+    Three methods:
+    - 'auto': Detect lap template from first 10% of trajectory
+    - 'reference': User provides reference lap
+    - 'region': Detect crossings of lap start region
+    
+    Returns Lap objects with direction, overlap_score.
+    """
+```
+
+**Effort**: 2 days
+**Risk**: Low
+
+---
+
+#### 4.3 Trial Segmentation (Week 10, Day 6)
+
+**File**: `src/neurospatial/segmentation/trials.py`
+
+**Functions**:
+
+```python
+def segment_trials(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    trial_type: Literal['tmaze', 'ymaze', 'radial_arm', 'custom'],
+    start_region: str,
+    end_regions: dict[str, str],
+    min_duration: float = 1.0,
+    max_duration: float = 15.0,
+) -> list[Trial]:
+    """
+    Detect trials based on task structure (e.g., T-maze left/right).
+    
+    Returns Trial objects with outcome ('left'/'right'/etc.), success.
+    """
+```
+
+**Effort**: 1 day
+**Risk**: Low
+
+---
+
+#### 4.4 Trajectory Similarity (Week 11, Days 1-2)
+
+**File**: `src/neurospatial/segmentation/similarity.py`
+
+**Functions**:
+
+```python
+def trajectory_similarity(
+    trajectory1_bins: NDArray[np.int64],
+    trajectory2_bins: NDArray[np.int64],
+    env: Environment,
+    *,
+    method: Literal['jaccard', 'correlation', 'hausdorff', 'dtw'] = 'jaccard',
+) -> float:
+    """
+    Compute similarity between two trajectory segments.
+    
+    Methods:
+    - 'jaccard': Spatial overlap (Jaccard index)
+    - 'correlation': Sequential correlation
+    - 'hausdorff': Maximum deviation
+    - 'dtw': Dynamic time warping
+    """
+
+def detect_goal_directed_runs(
+    trajectory_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    goal_region: str,
+    directedness_threshold: float = 0.7,
+    min_progress: float = 20.0,
+) -> list[Run]:
+    """
+    Identify runs where trajectory moves toward a goal.
+    
+    Computes directedness = (dist_start_to_goal - dist_end_to_goal) / path_length
+    """
+```
+
+**Effort**: 2 days
+**Risk**: Low
+
+---
+
+#### 4.5 Tests & Documentation (Week 11, Days 3-5)
+
+**Tests**:
+- Test region crossing detection on synthetic trajectories
+- Test lap detection on circular tracks (clockwise/counter-clockwise)
+- Test trial segmentation on T-maze data
+- Test trajectory similarity methods (Jaccard, DTW, etc.)
+
+**Documentation**:
+- User guide: `docs/user-guide/behavioral-segmentation.md`
+- Example notebook: `examples/13_behavioral_segmentation.ipynb`
+
+**Effort**: 3 days
+
+---
+
+### Integration with pynapple
+
+All functions return `pynapple.IntervalSet` when available:
+
+```python
+try:
+    import pynapple as nap
+    return nap.IntervalSet(start=starts, end=ends)
+except ImportError:
+    return [(start, end) for start, end in zip(starts, ends)]
+```
+
+### Use Cases
+
+1. **Goal-directed runs**: Analyze place fields during nest→goal runs
+2. **Lap-by-lap learning**: Track place field stability across laps
+3. **Trial-type selectivity**: Compare left vs. right trial firing
+4. **Replay analysis**: Match decoded trajectories to behavioral runs
+5. **Learning dynamics**: Performance/stability over trials
+
+### Validation
+
+- Compare lap detection with neurocode NSMAFindGoodLaps.m
+- Test on simulated trajectories
+- Cross-validate region crossing times
+
+---
+## Phase 5: Polish & Release (Weeks 12-13)
+
+### Components
+
+#### 5.1 Validation Against opexebo and neurocode
+
+**Validation against analysis packages**:
 - Test place field detection matches neurocode's subfield discrimination
+- Test spatial information matches opexebo/neurocode/buzcode
+- Test sparsity calculation matches opexebo
+- Test border score matches TSToolbox_Utils/opexebo
+- Test trajectory metrics on synthetic data (straight lines, circles)
 - Document any intentional differences
 
-**NEW: Validation against simulation package** (RatInABox):
-- Test grid score on RatInABox GridCells with known grid spacing
-  - Generate GridCells with gridscale=0.3m
-  - Compute spatial autocorrelation
-  - Estimate grid spacing from autocorr
-  - Error should be < 5% of true spacing
-- Test place field detection on RatInABox PlaceCells with known field centers
-  - Generate PlaceCells with known centers
-  - Detect fields from discretized firing rates
-  - Detection error should be < 1 bin
-- Test spatial autocorrelation accuracy
-  - Compare discretized autocorr vs RatInABox continuous
-  - Correlation should be > 0.95
-- Benchmark successor representation
-  - Compare analytical SR vs RatInABox TD-learned SR
-  - Document convergence properties
+**Authority**: opexebo (Moser lab), neurocode (AyA Lab), TSToolbox_Utils
 
-**Why RatInABox validation is valuable**:
-- ✅ Known ground truth (grid spacing, field centers)
-- ✅ Biologically-realistic synthetic data
-- ✅ Test edge cases (periodic boundaries, walls, holes)
-- ✅ Benchmark performance (continuous vs discretized)
-
-**Effort**: 4 days
+**Effort**: 2 days
 
 #### 5.2 Performance Optimization
 - Profile critical paths
@@ -1880,19 +1025,21 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 - Cross-references to opexebo, neurocode
 - Tutorial videos (optional)
 
-**Effort**: 2 days
+**Effort**: 3 days
 
 #### 5.4 Release
 - Version bump to 0.3.0
 - Changelog highlighting:
-  - opexebo compatibility
-  - Behavioral segmentation
-  - Trajectory metrics
+  - Differential operators (gradient, divergence, Laplacian)
+  - Place field & population metrics
+  - Boundary cell metrics (border score)
+  - Trajectory metrics (turn angles, home range, MSD)
+  - Behavioral segmentation (runs, laps, trials)
   - Function rename (divergence → kl_divergence)
-- Blog post / announcement
+- Blog post / announcement mentioning deferred features (grid cells in v0.4.0)
 - PyPI release
 
-**Effort**: 1 day
+**Effort**: 2 days
 
 ---
 
@@ -1907,24 +1054,23 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ### Phase 2 (Signal Processing Primitives)
 - [ ] neighbor_reduce() works on all layout types
-- [ ] spatial_autocorrelation() produces hexagonal peaks for grid cells
-- [ ] **Autocorrelation matches opexebo within 1%** (for regular grids) ← NEW
-- [ ] Grid score matches published values (±0.05)
 - [ ] convolve() supports arbitrary kernels
+- [ ] Tests pass for all layout types
 
-### Phase 3 (Path Operations)
-- [ ] accumulate_along_path() supports discount factors
-- [ ] Value iteration converges (validated in POC)
-
-### Phase 4 (Metrics Module)
-- [ ] Place field metrics match manual calculations
-- [ ] **Grid score matches opexebo within 1%** (for regular grids) ← NEW
-- [ ] **Coherence matches opexebo exactly** (for regular grids) ← NEW
-- [ ] **Spatial information matches opexebo exactly** ← NEW
-- [ ] Grid score detects known grid cells
-- [ ] Coherence correlates with place field quality
+### Phase 3 (Core Metrics Module)
+- [ ] Place field detection matches neurocode's subfield discrimination
+- [ ] Spatial information matches opexebo/neurocode/buzcode
+- [ ] Sparsity calculation matches opexebo
+- [ ] Border score matches TSToolbox_Utils/opexebo
+- [ ] Trajectory metrics validated on synthetic data
 - [ ] All metrics have examples and citations
-- [ ] All metrics cross-reference opexebo in documentation
+
+### Phase 4 (Behavioral Segmentation)
+- [ ] Region crossing detection works on synthetic trajectories
+- [ ] Lap detection handles clockwise/counter-clockwise
+- [ ] Trial segmentation works for T-maze, Y-maze
+- [ ] Trajectory similarity methods validated
+- [ ] pynapple IntervalSet integration works when available
 
 ### Phase 5 (Release)
 - [ ] All tests pass (>95% coverage)
@@ -1982,45 +1128,37 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 ## Effort Estimation
 
-**UPDATED after ecology packages analysis**:
+**UPDATED after scope reduction (deferred grid cells, circular stats, RatInABox)**:
 
 | Phase | Duration | Person-Weeks | Risk Level |
 |-------|----------|--------------|------------|
 | 1. Differential Operators | 3 weeks | 3 | Low |
-| 2. Signal Processing | 6 weeks | 6 | Medium (was HIGH) |
-| 3. Trajectory & Behavioral Segmentation | 2 weeks | 2 | Low |
-| 4. Metrics Module | 4 weeks | 4 | Low (was Medium) |
+| 2. Basic Signal Processing | 3 weeks | 3 | Low |
+| 3. Core Metrics Module | 3 weeks | 3 | Low |
+| 4. Behavioral Segmentation | 2 weeks | 2 | Low |
 | 5. Polish & Release | 2 weeks | 2 | Low |
-| **Total** | **17 weeks** | **17** | **Medium overall** |
+| **Total** | **13 weeks** | **13** | **Low overall** |
 
-**Phase 4 breakdown**:
-- 4.1 Place Field Metrics (Week 12): 3 days
-- 4.2 Population Metrics (Week 12): 2 days
-- 4.3 Grid Cell Metrics (Weeks 13-14): 3 days
-- 4.4 Boundary Cell Metrics (Week 14): 2 days
-- 4.5 Circular Statistics (Week 15): 3 days
-- 4.6 Trajectory Metrics (Week 15): 3 days
-- 4.7 Documentation (Week 16): 4 days
-
-**Phase 5 breakdown**:
-- 5.1 Package Validation (Week 16-17): 4 days
-- 5.2 Performance Optimization (Week 17): 2 days
-- 5.3 Documentation Polish (Week 17): 2 days
-- 5.4 Release (Week 17): 1 day
+**Phase breakdown**:
+- **Phase 1** (3 weeks): Differential operator, gradient, divergence, docs
+- **Phase 2** (3 weeks): neighbor_reduce, convolve
+- **Phase 3** (3 weeks): Place fields, population, boundary cells, trajectory metrics, docs
+- **Phase 4** (2 weeks): Region-based segmentation, laps, trials, similarity, docs
+- **Phase 5** (2 weeks): Validation (2 days), performance (2 days), docs (3 days), release (2 days)
 
 **Assumptions**:
 - One full-time developer
 - No major blockers
-- spatial_autocorrelation uses opexebo's FFT approach (validated algorithm)
+- Deferred complex features to v0.4.0 (spatial_autocorrelation, grid cells, circular stats)
 
-**Changes from original plan**:
-- **Timeline**: 14 weeks → 17 weeks
-- **Added Phase 3.3**: Behavioral segmentation (2 weeks)
-- **Added Phase 4.6**: Trajectory metrics from ecology packages (3 days)
-- **Risk**: spatial_autocorrelation HIGH → MEDIUM (adopt opexebo's approach)
+**Changes from v17 plan**:
+- **Timeline**: 17 weeks → 13 weeks (**24% reduction**)
+- **Deferred to v0.4.0**: spatial_autocorrelation, grid cells, coherence, circular statistics
+- **Deferred examples**: RatInABox integration
+- **Risk**: MEDIUM → LOW (removed most complex feature)
 
-**Optimistic**: 15 weeks (if all implementations straightforward)
-**Pessimistic**: 19 weeks (if graph-based autocorrelation needed for irregular grids)
+**Optimistic**: 12 weeks (if all implementations straightforward)
+**Pessimistic**: 15 weeks (if behavioral segmentation needs iteration)
 
 ---
 
@@ -2033,38 +1171,37 @@ Phase 1: Differential Operators
 ├── 1.3 divergence (needs 1.1) ───┤
 └── 1.4 docs (needs 1.2, 1.3) ────┘
 
-Phase 2: Signal Processing
-├── 2.1 neighbor_reduce (no blockers, LOW RISK)
-├── 2.2 spatial_autocorrelation (no blockers, MEDIUM RISK - opexebo FFT approach)
-└── 2.3 convolve (no blockers, LOW RISK)
+Phase 2: Basic Signal Processing
+├── 2.1 neighbor_reduce (no blockers)
+└── 2.2 convolve (no blockers)
 
-Phase 3: Trajectory & Behavioral Segmentation
-├── 3.1 accumulate (no blockers)
-├── 3.2 propagate (optional, defer)
-└── 3.3 behavioral segmentation (no blockers)
+Phase 3: Core Metrics Module
+├── 3.1 place_fields (no blockers)
+├── 3.2 population (no blockers)
+├── 3.3 boundary_cells (no blockers)
+├── 3.4 trajectory_metrics (no blockers)
+└── 3.5 docs (needs 3.1-3.4)
 
-Phase 4: Metrics Module
-├── 4.1 place_fields (no blockers)
-├── 4.2 population (no blockers)
-├── 4.3 grid_cells (needs 2.2 spatial_autocorrelation) ← BLOCKER
-├── 4.4 boundary_cells (no blockers)
-├── 4.5 circular_statistics (no blockers)
-├── 4.6 trajectory_metrics (no blockers)
-└── 4.7 docs (needs 4.1-4.6)
+Phase 4: Behavioral Segmentation
+├── 4.1 region_segmentation (no blockers)
+├── 4.2 lap_detection (no blockers)
+├── 4.3 trial_segmentation (no blockers)
+├── 4.4 trajectory_similarity (no blockers)
+└── 4.5 tests & docs (needs 4.1-4.4)
 
 Phase 5: Polish & Release
-├── 5.1 package_validation (needs 4.3 for grid score validation)
+├── 5.1 package_validation (no blockers)
 ├── 5.2 performance (no blockers)
 ├── 5.3 documentation (no blockers)
 └── 5.4 release (needs all above)
 ```
 
-**Critical path**: spatial_autocorrelation (2.2) → grid_score (4.3)
+**Critical path**: None - all phases are independent
 
 **Parallelization opportunities**:
-- Phase 1 (differential operators) can run in parallel with Phase 2.1 (neighbor_reduce)
-- Phase 3 (behavioral segmentation) can run in parallel with Phase 2.2 (spatial_autocorrelation)
-- Phase 4.1, 4.2, 4.4, 4.5, 4.6 can run in parallel with Phase 2.2 and 4.3
+- Phase 1, 2, 3 have no dependencies and can run in parallel
+- Phase 4 can start as soon as Phase 3 complete (for test data)
+- Phase 5 requires all phases complete
 
 ---
 
@@ -2081,12 +1218,11 @@ Phase 5: Polish & Release
 - Cross-layout validation (regular, hex, irregular)
 - Performance regression tests
 
-### Validation Tests (UPDATED)
+### Validation Tests
 - Compare with NetworkX (Laplacian)
 - Compare with PyGSP (gradient, divergence)
-- **Compare with opexebo** (autocorrelation, grid score, coherence, spatial info) ← NEW
-- Validate grid scores match opexebo within 1%
-- Validate on synthetic data with known properties (hexagonal patterns)
+- Compare with opexebo/neurocode (place fields, spatial info, border score)
+- Validate on synthetic data with known properties
 
 ### Benchmark Suite
 ```python
@@ -2193,52 +1329,71 @@ def bench_cached_vs_uncached(env):
 
 ## Summary
 
-This implementation plan delivers **critical missing functionality** that:
+This implementation plan delivers **foundational spatial infrastructure** for neurospatial v0.3.0:
 
-1. **Enables Nobel Prize-winning analyses** (grid cells) not possible in any other package
-2. **Provides fundamental spatial primitives** for RL/replay/behavioral analysis
-3. **Adds behavioral segmentation** for automatic epoch detection (runs, laps, trials)
-4. **Adds trajectory metrics** from ecology/ethology (turn angles, home range, MSD)
-5. **Reduces code duplication** across labs with standard metrics
+### What's Included (v0.3.0)
 
-**Timeline**: 17 weeks (~4 months)
-**Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo, neurocode, and RatInABox)
-**Impact**: HIGH - Positions neurospatial as THE package for spatial neuroscience on irregular graphs
+1. **Differential operators** - gradient, divergence, Laplacian on irregular graphs (RL/replay)
+2. **Signal processing primitives** - neighbor_reduce, custom convolutions
+3. **Place field metrics** - detection, information, sparsity, stability
+4. **Population metrics** - coverage, density, overlap
+5. **Boundary cell metrics** - border score (wall-preferring cells)
+6. **Trajectory metrics** - turn angles, step lengths, home range, MSD (from ecology)
+7. **Behavioral segmentation** - automatic detection of runs, laps, trials
 
-**Key additions** (from ecosystem analysis):
-- ✅ **Phase 3.3**: Behavioral segmentation (detect_runs_between_regions, detect_laps, segment_trials)
-- ✅ **Phase 4.6**: Trajectory metrics (turn_angles, step_lengths, home_range, MSD)
+### Deferred to v0.4.0+
 
-**Validation strategy** (comprehensive cross-validation):
-- ✅ Cross-validate against analysis packages (opexebo, neurocode, vandermeerlab, buzcode)
-- ✅ Validate against simulation package (RatInABox - known ground truth)
-- ✅ Integration example showing simulation → discretization → analysis workflow
+**Grid Cell Analysis** (complex - FFT for regular, graph-based for irregular):
+- `spatial_autocorrelation()` - 2D correlation for periodic pattern detection
+- `grid_score()` - Grid cell detection (Nobel Prize 2014)
+- `grid_spacing()`, `grid_orientation()`, `coherence()`
+
+**Circular Statistics** (specialized for head direction cells):
+- `circular_mean()`, `circular_variance()`, `fit_von_mises()`, `rayleigh_test()`
+
+**Integration Examples**:
+- RatInABox simulation examples
+- pynapple IntervalSet integration (basic integration included in v0.3.0)
+
+**Rationale**: Deferring spatial autocorrelation (most complex feature) reduces scope by 24% while delivering core functionality. Grid cell analysis requires it, so both deferred together.
+
+---
+
+**Timeline**: 13 weeks (~3 months) - **24% reduction from 17 weeks**
+**Risk**: LOW (removed most complex feature)
+**Impact**: HIGH - Delivers foundational infrastructure for spatial analysis
+
+**Validation strategy**:
+- ✅ Cross-validate against opexebo, neurocode, TSToolbox_Utils
+- ✅ Test on synthetic trajectories
+- ❌ RatInABox validation deferred to v0.4.0
 
 **Ecosystem context** (24 packages analyzed):
-- **Neuroscience** (16): pynapple, SpikeInterface, opexebo, neurocode, movement, etc.
-- **Ecology/Trajectory** (8): Traja, yupi, PyRAT, adehabitatHR, ctmm, moveHMM, etc.
-- **Authority**: Algorithms from Nobel Prize labs (opexebo), AyA Lab (neurocode), and established ecology methods
+- **Neuroscience** (16): pynapple, SpikeInterface, opexebo, neurocode, movement
+- **Ecology/Trajectory** (8): Traja, yupi, PyRAT, adehabitatHR, ctmm, moveHMM
+- **Authority**: opexebo (Moser lab), neurocode (AyA Lab), ecology literature
 
-**Module structure** (final):
+**Module structure** (v0.3.0):
 ```
 src/neurospatial/
     differential.py        # Phase 1: gradient, divergence, differential_operator
-    primitives.py          # Phase 2: neighbor_reduce, spatial_autocorrelation, convolve
-    segmentation/          # Phase 3.3: behavioral epoch segmentation
+    primitives.py          # Phase 2: neighbor_reduce, convolve
+    metrics/               # Phase 3: core metrics
+        place_fields.py    #   detect_place_fields, skaggs_information, sparsity
+        population.py      #   population_coverage, field_density_map
+        boundary_cells.py  #   border_score (Solstad et al. 2008)
+        trajectory.py      #   turn_angles, step_lengths, home_range, MSD
+    segmentation/          # Phase 4: behavioral epoch segmentation
         regions.py         #   detect_runs_between_regions, detect_region_crossings
         laps.py            #   detect_laps (3 methods)
         trials.py          #   segment_trials (task-specific)
         similarity.py      #   trajectory_similarity, detect_goal_directed_runs
-    metrics/               # Phase 4: neuroscience metrics
-        place_fields.py    #   detect_place_fields, skaggs_information, sparsity
-        population.py      #   population_coverage, field_density_map
-        grid_cells.py      #   grid_score, coherence (Nobel Prize methods)
-        boundary_cells.py  #   border_score (Solstad et al. 2008)
-        circular.py        #   circular_mean, von_mises, rayleigh_test
-        trajectory.py      #   turn_angles, step_lengths, home_range, MSD
 ```
 
 **Function rename** (no users affected):
 - `divergence()` → `kl_divergence()` (direct rename, no migration needed)
 
-**Next step**: Review with maintainers and get approval to proceed with Phase 1.
+**Next steps**:
+1. Review with maintainers
+2. Get approval for scope (v0.3.0 focused)
+3. Proceed with Phase 1 implementation
