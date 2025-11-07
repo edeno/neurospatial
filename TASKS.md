@@ -599,33 +599,46 @@
 
 **Documentation**:
 
-- [ ] Create `docs/user-guide/neuroscience-metrics.md`
-  - [ ] Section: Place field detection and metrics
-  - [ ] Section: Population-level analyses
-  - [ ] Section: Boundary cell metrics
-  - [ ] Include formulas and references
-  - [ ] Cross-reference to opexebo, neurocode
+- [x] Create `docs/user-guide/neuroscience-metrics.md` (736 lines)
+  - [x] Section: Place field detection and metrics
+  - [x] Section: Population-level analyses
+  - [x] Section: Boundary cell metrics
+  - [x] Include formulas and references (LaTeX notation)
+  - [x] Cross-reference to opexebo, neurocode, buzcode
+  - [x] Common workflows section with complete examples
+  - [x] Validation notes documenting algorithm adaptations
 
 **Example Notebooks**:
 
-- [ ] Create `examples/10_place_field_analysis.ipynb`
+- [ ] Create `examples/10_place_field_analysis.ipynb` (deferred to next session)
   - [ ] Load example data (generate synthetic or use real)
   - [ ] Compute firing rate map with occupancy
   - [ ] Detect place fields
   - [ ] Compute Skaggs information, sparsity
   - [ ] Visualize fields on environment
-- [ ] Create `examples/11_boundary_cell_analysis.ipynb`
+- [ ] Create `examples/11_boundary_cell_analysis.ipynb` (deferred to next session)
   - [ ] Generate synthetic border cell
   - [ ] Compute border score
   - [ ] Visualize wall contact ratios
 
 **Testing**:
 
-- [ ] Run all metrics tests: `uv run pytest tests/metrics/ -v`
-- [ ] Verify coverage: `uv run pytest tests/metrics/ --cov=src/neurospatial/metrics/`
-- [ ] Run notebooks: verify all cells execute
+- [x] Run all metrics tests: `uv run pytest tests/metrics/ -v` (63/63 PASS)
+- [x] Verify all boundary cell tests pass (13/13 PASS)
+- [x] Verify all place field tests pass (22/22 PASS)
+- [x] Verify all population metrics tests pass (28/28 PASS)
+- [ ] Verify coverage: `uv run pytest tests/metrics/ --cov=src/neurospatial/metrics/` (deferred)
+- [ ] Run notebooks: verify all cells execute (deferred - notebooks not yet created)
 
-**Effort**: 2 days
+**Notes**:
+
+- Documentation is complete and comprehensive (736 lines)
+- Covers all three metric categories with scientific references
+- Includes complete workflow examples
+- Example notebooks deferred to allow focus on implementation quality
+- All 63 tests pass with 2 harmless warnings (NaN in correlation)
+
+**Effort**: 2 days (documentation complete, notebooks deferred)
 
 ---
 
