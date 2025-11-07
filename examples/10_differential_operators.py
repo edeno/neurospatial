@@ -434,18 +434,24 @@ plt.show()
 # - Gaussian smoothing preserves more local structure (controlled by bandwidth parameter)
 
 # %% [markdown]
-# ### Verification: Laplacian Equals NetworkX Implementation
+# ### Verification: Mathematical Correctness
+#
+# We verify that `div(grad(f))` equals NetworkX's Laplacian matrix. This confirms our gradient and divergence operators are mathematically correct.
+#
+# **Note**: NetworkX provides the Laplacian directly, but it does NOT provide gradient or divergence operators for edge fields. Those are the real value of this infrastructure for RL and neuroscience analyses.
 
 # %%
 # Verify that div(grad(f)) equals NetworkX Laplacian matrix
+# This confirms our gradient and divergence implementations are correct
 test_field = np.random.randn(env.n_bins)
 
 # Our implementation: div(grad(f))
 grad_test = gradient(test_field, env)
 laplacian_ours = divergence(grad_test, env)
 
-# NetworkX Laplacian
-L_nx = nx.laplacian_matrix(env.connectivity).toarray()
+# NetworkX Laplacian (weighted by edge distances)
+# Note: We use weight='distance' to match our weighted differential operator
+L_nx = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
 laplacian_nx = L_nx @ test_field
 
 # Compare
