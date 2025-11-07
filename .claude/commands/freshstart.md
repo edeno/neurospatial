@@ -20,6 +20,7 @@ Your workflow MUST be:
       e. Apply review agents (code-reviewer, other relevant agents)
       f. Refactor for clarity and efficiency based on feedback
       g. Add/Update docstrings and types.
+      h. Run ruff and mypy and fix any issues
 
     Update TASKS.md checkboxes as you complete items.
 
