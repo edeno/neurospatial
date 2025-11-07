@@ -21,6 +21,7 @@ from neurospatial.layout.factories import (
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
+from neurospatial.primitives import neighbor_reduce
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.spatial import (
     TieBreakStrategy,
@@ -59,6 +60,7 @@ __all__ = [
     "list_available_layouts",
     "map_points_to_bins",
     "map_probabilities_to_nearest_target_bin",
+    "neighbor_reduce",
     "neighbors_within",
     "normalize_field",
     "pairwise_distances",

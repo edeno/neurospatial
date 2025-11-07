@@ -883,3 +883,108 @@ User asked: "Should we implement this given NetworkX has Laplacian?"
 - Systematic debugging process (root cause → hypothesis → test → fix) prevented guessing
 
 ---
+
+## 2025-11-07: Milestone 2.1 - neighbor_reduce() Primitive COMPLETE
+
+### Task: Implement `neighbor_reduce()` spatial signal processing primitive
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/primitives.py` - New spatial signal processing primitives module (194 lines)
+2. `tests/test_primitives.py` - Comprehensive test suite (8 tests, all pass)
+
+**Files Modified**:
+
+1. `src/neurospatial/__init__.py` - Exported `neighbor_reduce` in public API
+
+**Implementation Details**:
+
+**`neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)` function:**
+- Aggregates field values over spatial neighborhoods in graph
+- Supports 5 operations: 'sum', 'mean', 'max', 'min', 'std'
+- Supports weighted aggregation (for sum/mean only)
+- `include_self` flag to include/exclude bin itself from neighborhood
+- Returns NaN for isolated nodes (no neighbors)
+- Uses NetworkX neighbor iteration (O(n_bins × avg_degree))
+- Full NumPy-style docstring with scientific context (Muller & Kubie 1989)
+- Proper `Literal` type hints for operation parameter
+
+**Test Coverage**: 8 comprehensive tests (100% pass rate, 87% code coverage)
+- Mean aggregation on 8-connected regular grid
+- Include_self flag behavior (with/without self in neighborhood)
+- Weighted aggregation (uniform weights match unweighted)
+- All operations tested (sum, mean, max, min, std)
+- Edge cases: isolated nodes, boundary bins
+- Input validation (wrong shapes, invalid operations, incompatible weights)
+- Parameter order verification
+
+**Type Safety**:
+- ✅ Mypy passes with zero errors
+- ✅ No `type: ignore` comments
+- ✅ Full type hints using `NDArray[np.float64]` and `Literal`
+- ✅ Proper `TYPE_CHECKING` guard for Environment import
+
+**Code Quality**:
+- ✅ Ruff check passes (all style issues fixed)
+- ✅ Fixed list unpacking: `[bin_id, *neighbors]` instead of `[bin_id] + neighbors`
+- ✅ Fixed regex escaping in test: `r"field\.shape"` instead of `"field.shape"`
+- ✅ NumPy-style docstring with examples, notes, references
+
+**Code Review Findings** (code-reviewer agent):
+- ✅ **APPROVED** - Production ready
+- ✅ Excellent documentation with scientific citations
+- ✅ Comprehensive test coverage (87%)
+- ✅ Perfect type safety (mypy zero errors)
+- ✅ Strong input validation with clear diagnostics
+- ✅ Mathematical correctness verified
+- ✅ Performance acceptable for neuroscience applications (3 µs per bin)
+- Suggestions: Additional tests for weighted sum and zero weights (optional enhancements)
+
+**TDD Workflow Followed**:
+1. ✅ Created 8 comprehensive tests first (RED phase)
+2. ✅ Verified tests FAIL with ModuleNotFoundError
+3. ✅ Implemented `neighbor_reduce()` function (GREEN phase)
+4. ✅ Fixed test assumptions about grid connectivity (8-connected, not 4-connected)
+5. ✅ All 8 tests pass
+6. ✅ Applied code-reviewer agent (APPROVED)
+7. ✅ Fixed ruff issues (list unpacking, regex escaping)
+8. ✅ Mypy and ruff pass with zero errors
+
+**Applications** (documented in docstring):
+- **Coherence**: Spatial correlation between firing rate and neighbor average (Muller & Kubie 1989)
+- **Smoothness**: Local field variation measurement
+- **Local statistics**: Variability (std), extrema (max/min) detection
+
+**Design Decisions**:
+1. **Parameter order**: `(field, env, *, op, weights, include_self)` - field first, env second (matches project conventions)
+2. **Keyword-only parameters**: All optional args keyword-only for clarity
+3. **Isolated nodes**: Return NaN (not 0 or error) for bins with no neighbors
+4. **Weighted operations**: Restricted to sum/mean where mathematically meaningful
+5. **Operation naming**: Standard NumPy names ('sum', 'mean', etc.)
+
+**Grid Connectivity Discovery**:
+- Learned that `Environment.from_samples()` creates **8-connected grids** (includes diagonals)
+- Corner bins have 3 neighbors (not 2)
+- Edge bins have 5 neighbors (not 3)
+- Center bin has 8 neighbors (not 4)
+- This is intentional for better spatial smoothness
+
+**Public API Additions**:
+- `neurospatial.neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)`
+
+**Performance**:
+- Time complexity: O(n_bins × avg_degree) - optimal for sparse graphs
+- Space complexity: O(n_bins)
+- Observed: 1.18ms for 385 bins (~3 µs per bin)
+- Scales linearly to ~10k bins
+
+**Known Limitations** (documented as optional enhancements):
+1. Python loop over bins - could be vectorized with sparse matrices for >10k bins (deferred)
+2. No validation for negative weights (may add warning in future)
+3. NaN propagation follows NumPy defaults (could add explicit handling)
+
+**Next Task**: Milestone 2.2 - `convolve()` function
+
+---

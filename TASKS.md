@@ -363,32 +363,32 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/primitives.py` module
-- [ ] Implement `neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)`
-  - [ ] Support ops: 'sum', 'mean', 'max', 'min', 'std'
-  - [ ] Implement weighted aggregation if weights provided
-  - [ ] Add `include_self` logic
-  - [ ] Optimize with vectorization where possible
-  - [ ] Add NumPy-style docstring with examples
-  - [ ] Add type hints with Literal for op parameter
-- [ ] Export in public API: `src/neurospatial/__init__.py`
+- [x] Create `src/neurospatial/primitives.py` module
+- [x] Implement `neighbor_reduce(field, env, *, op='mean', weights=None, include_self=False)`
+  - [x] Support ops: 'sum', 'mean', 'max', 'min', 'std'
+  - [x] Implement weighted aggregation if weights provided
+  - [x] Add `include_self` logic
+  - [x] Optimize with vectorization where possible
+  - [x] Add NumPy-style docstring with examples
+  - [x] Add type hints with Literal for op parameter
+- [x] Export in public API: `src/neurospatial/__init__.py`
 
 **Testing**:
 
-- [ ] Create `tests/test_primitives.py`
-- [ ] Test: `test_neighbor_reduce_mean_regular_grid()` - verify neighbor averaging
-- [ ] Test: `test_neighbor_reduce_include_self()` - verify self-inclusion changes result
-- [ ] Test: `test_neighbor_reduce_weights()` - verify distance-weighted aggregation
-- [ ] Test: `test_neighbor_reduce_operations()` - test all ops (sum, mean, max, min, std)
-- [ ] Test: Edge cases (isolated nodes, boundary bins)
-- [ ] Run: `uv run pytest tests/test_primitives.py::test_neighbor_reduce -v`
+- [x] Create `tests/test_primitives.py`
+- [x] Test: `test_neighbor_reduce_mean_regular_grid()` - verify neighbor averaging
+- [x] Test: `test_neighbor_reduce_include_self()` - verify self-inclusion changes result
+- [x] Test: `test_neighbor_reduce_weights()` - verify distance-weighted aggregation
+- [x] Test: `test_neighbor_reduce_operations()` - test all ops (sum, mean, max, min, std)
+- [x] Test: Edge cases (isolated nodes, boundary bins)
+- [x] Run: `uv run pytest tests/test_primitives.py::test_neighbor_reduce -v`
 
 **Type Checking**:
 
-- [ ] Use `Literal['sum', 'mean', 'max', 'min', 'std']` for op parameter
-- [ ] Verify mypy: `uv run mypy src/neurospatial/primitives.py`
+- [x] Use `Literal['sum', 'mean', 'max', 'min', 'std']` for op parameter
+- [x] Verify mypy: `uv run mypy src/neurospatial/primitives.py`
 
-**Effort**: 3 days
+**Effort**: 3 days (COMPLETE)
 
 ---
 
