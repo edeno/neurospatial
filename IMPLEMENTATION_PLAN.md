@@ -1327,6 +1327,483 @@ def bench_cached_vs_uncached(env):
 
 ---
 
+
+---
+
+## Future Implementations (v0.4.0+)
+
+The following features are **deferred to future releases** but have detailed implementation plans ready.
+
+---
+
+### v0.4.0: Grid Cell Analysis
+
+#### Spatial Autocorrelation
+
+**Priority**: HIGH (enables grid cell detection)
+**Complexity**: MEDIUM-HIGH (FFT for regular grids, graph-based for irregular)
+**Estimated Effort**: 4 weeks
+
+**Implementation**:
+
+```python
+def spatial_autocorrelation(
+    field: NDArray[np.float64],
+    env: Environment,
+    *,
+    method: Literal['auto', 'fft', 'graph'] = 'auto',
+    overlap_amount: float = 0.8,
+) -> NDArray[np.float64]:
+    """
+    Compute 2D spatial autocorrelation map.
+
+    Parameters
+    ----------
+    field : array, shape (n_bins,)
+        Spatial field (e.g., firing rate map)
+    env : Environment
+        Spatial environment
+    method : {'auto', 'fft', 'graph'}, default='auto'
+        - 'auto': Use FFT for regular grids, graph-based for irregular
+        - 'fft': FFT-based (opexebo method, fast, regular grids only)
+        - 'graph': Graph-based correlation (slower, works on any connectivity)
+    overlap_amount : float, default=0.8
+        Fraction of map to retain after edge cropping (reduces boundary noise)
+
+    Returns
+    -------
+    autocorr_map : array, shape (height, width)
+        2D autocorrelation map (for grid score computation)
+
+    Notes
+    -----
+    **FFT method** (from opexebo, Moser lab):
+    1. Replace NaNs with zeros
+    2. Compute normalized cross-correlation via FFT
+    3. Crop edges (default: keep central 80%)
+
+    **Graph method** (neurospatial extension for irregular grids):
+    1. Interpolate to regular grid
+    2. Apply FFT method
+    3. Or: compute pairwise correlations at each distance (slower but exact)
+
+    References
+    ----------
+    .. [1] opexebo: https://github.com/simon-ball/opexebo
+    .. [2] Sargolini et al. (2006). Science 312(5774).
+
+    Examples
+    --------
+    >>> firing_rate_smooth = env.smooth(firing_rate, bandwidth=5.0)
+    >>> autocorr_map = spatial_autocorrelation(firing_rate_smooth, env)
+    >>> # Use for grid score computation
+    >>> gs = grid_score(autocorr_map, env)
+
+    See Also
+    --------
+    grid_score : Compute grid score from autocorrelation map
+    opexebo.analysis.autocorrelation : Reference implementation
+    """
+    if method == 'auto':
+        # Choose based on layout type
+        if env.layout._layout_type_tag == 'RegularGridLayout':
+            method = 'fft'
+        else:
+            method = 'fft'  # Interpolate irregular → regular grid
+
+    if method == 'fft':
+        # Adopt opexebo's FFT approach
+        # Step 1: Reshape to 2D if regular grid (or interpolate if irregular)
+        # Step 2: Replace NaNs with zeros
+        # Step 3: normxcorr2_general() via FFT
+        # Step 4: Crop edges
+        pass  # Implementation details
+
+    elif method == 'graph':
+        # Graph-based approach for irregular grids
+        # More principled but slower
+        pass  # Implementation details
+```
+
+**Validation**:
+- Test on synthetic hexagonal grid data
+- Compare with opexebo outputs (should match within 1%)
+- Validate rotation sensitivity
+
+**Tests**:
+```python
+def test_autocorr_matches_opexebo():
+    """Autocorrelation should match opexebo for regular grids"""
+    env = Environment.from_samples(positions, bin_size=2.5)
+    firing_rate = create_hexagonal_pattern()
+    
+    autocorr_ns = spatial_autocorrelation(firing_rate, env)
+    
+    try:
+        import opexebo
+        rate_map_2d = firing_rate.reshape(env.layout.grid_shape)
+        autocorr_opexebo = opexebo.analysis.autocorrelation(rate_map_2d)
+        np.testing.assert_allclose(autocorr_ns, autocorr_opexebo, rtol=0.01)
+    except ImportError:
+        pytest.skip("opexebo not installed")
+
+def test_autocorr_hexagonal_field():
+    """Hexagonal field should show peaks at 60° multiples"""
+    # Create synthetic grid cell firing pattern
+    # Compute autocorrelation
+    # Verify peaks at correct angles
+
+def test_autocorr_constant_field():
+    """Constant field should have autocorr = 1 everywhere"""
+    field = np.ones(env.n_bins)
+    autocorr = spatial_autocorrelation(field, env)
+    np.testing.assert_allclose(autocorr.max(), 1.0)
+```
+
+**Risk**: MEDIUM
+- FFT approach validated (opexebo)
+- Graph-based approach needs research (if irregular grids critical)
+
+---
+
+#### Grid Score
+
+**File**: `src/neurospatial/metrics/grid_cells.py`
+
+**Implementation**:
+
+```python
+def grid_score(
+    firing_rate: NDArray,
+    env: Environment,
+    *,
+    method: Literal['sargolini', 'langston'] = 'sargolini',
+    num_gridness_radii: int = 3,
+) -> float:
+    """
+    Compute grid score (gridness) using annular rings approach.
+
+    This implementation matches opexebo's algorithm (Moser lab, Nobel Prize 2014):
+    1. Compute spatial autocorrelation map
+    2. Automatically detect central field radius
+    3. For expanding radii, extract annular rings (donut shapes)
+    4. Rotate autocorr at 30°, 60°, 90°, 120°, 150°
+    5. Compute Pearson correlation between rings
+    6. Grid score = min(corr[60°, 120°]) - max(corr[30°, 90°, 150°])
+    7. Apply sliding window smoothing (3 radii default)
+    8. Return maximum grid score
+
+    Parameters
+    ----------
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (should be smoothed, 5 cm bandwidth recommended)
+    env : Environment
+        Spatial environment
+    method : {'sargolini', 'langston'}, default='sargolini'
+        Grid score formula variant
+    num_gridness_radii : int, default=3
+        Sliding window width for smoothing
+
+    Returns
+    -------
+    grid_score : float
+        Grid score. Range: [-2, 2]. Typical good grids: ~1.3
+
+    References
+    ----------
+    .. [1] Sargolini et al. (2006). Science 312(5774).
+    .. [2] opexebo.analysis.grid_score: Reference implementation
+
+    See Also
+    --------
+    spatial_autocorrelation : Compute autocorrelation map
+    opexebo.analysis.grid_score : Reference implementation
+    """
+    # Step 1: Compute autocorrelation
+    autocorr_map = spatial_autocorrelation(firing_rate, env)
+
+    # Step 2: Detect central field radius (automatic)
+    # Step 3: For expanding radii, compute correlations with rotations
+    # Step 4: Apply sliding window smoothing
+    # Step 5: Return maximum
+    pass  # Implementation follows opexebo exactly
+
+def grid_spacing(autocorr_map: NDArray, env: Environment) -> float:
+    """Estimate grid spacing from autocorrelation map."""
+    pass
+
+def grid_orientation(autocorr_map: NDArray, env: Environment) -> float:
+    """Estimate grid orientation (degrees)."""
+    pass
+
+def coherence(
+    firing_rate: NDArray,
+    env: Environment,
+    *,
+    op: str = 'mean',
+) -> float:
+    """
+    Spatial coherence (Muller & Kubie 1989).
+
+    Correlation between firing rate and mean of neighbors.
+    Uses neighbor_reduce primitive (generalizes opexebo's 3x3 convolution).
+
+    References
+    ----------
+    .. [1] Muller & Kubie (1989). J Neurosci 9(12).
+    .. [2] opexebo.analysis.rate_map_coherence: Reference implementation
+    """
+    neighbor_avg = neighbor_reduce(firing_rate, env, op=op)
+    return np.corrcoef(firing_rate, neighbor_avg)[0, 1]
+```
+
+**Validation**:
+- Test grid score matches opexebo within 1%
+- Test coherence matches opexebo exactly
+- Test on known grid cell data
+
+**Authority**: opexebo (Moser lab, Nobel Prize 2014)
+
+---
+
+### v0.4.0+: Circular Statistics
+
+**Priority**: MEDIUM (specialized for head direction cells)
+**Complexity**: LOW (well-established algorithms)
+**Estimated Effort**: 1 week
+
+**File**: `src/neurospatial/metrics/circular.py`
+
+**Functions**:
+
+```python
+def circular_mean(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute circular mean angle.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle (e.g., occupancy)
+
+    Returns
+    -------
+    mean_angle : float
+        Circular mean in radians [-π, π]
+    """
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    # Compute mean resultant vector
+    C = np.sum(weights * np.cos(angles))
+    S = np.sum(weights * np.sin(angles))
+
+    return np.arctan2(S, C)
+
+def circular_variance(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute circular variance (1 - r).
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    variance : float
+        Circular variance [0, 1]
+    """
+    r = resultant_vector_length(angles, weights)
+    return 1 - r
+
+def resultant_vector_length(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> float:
+    """
+    Compute mean resultant length (concentration measure).
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    r : float
+        Mean resultant length [0, 1]
+        - r ≈ 0: Uniform distribution
+        - r ≈ 1: Highly concentrated
+    """
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    C = np.sum(weights * np.cos(angles))
+    S = np.sum(weights * np.sin(angles))
+    R = np.sqrt(C**2 + S**2)
+
+    return R / np.sum(weights)
+
+def fit_von_mises(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> tuple[float, float]:
+    """
+    Fit von Mises distribution to circular data.
+
+    The von Mises distribution is the circular analog of the Gaussian.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    mu : float
+        Mean direction (radians)
+    kappa : float
+        Concentration parameter
+        - kappa ≈ 0: Uniform distribution
+        - kappa >> 1: Highly concentrated
+
+    References
+    ----------
+    .. [1] neurocode MapStats.m (circular statistics)
+    .. [2] Fisher (1993). Statistical Analysis of Circular Data.
+
+    Examples
+    --------
+    >>> # Head direction cell
+    >>> angles = np.linspace(0, 2*np.pi, 100)
+    >>> firing_rate = np.exp(kappa * np.cos(angles - preferred_direction))
+    >>> mu, kappa = fit_von_mises(angles, weights=firing_rate)
+    """
+    # Circular mean
+    mu = circular_mean(angles, weights)
+
+    # Mean resultant length
+    r = resultant_vector_length(angles, weights)
+
+    # Estimate kappa from r (approximate MLE)
+    if r < 0.53:
+        kappa = 2 * r + r**3 + 5 * r**5 / 6
+    elif r < 0.85:
+        kappa = -0.4 + 1.39 * r + 0.43 / (1 - r)
+    else:
+        kappa = 1 / (2 * (1 - r))
+
+    return mu, kappa
+
+def rayleigh_test(
+    angles: NDArray,
+    weights: NDArray | None = None,
+) -> tuple[float, float]:
+    """
+    Rayleigh test for uniformity of circular data.
+
+    Tests null hypothesis: angles are uniformly distributed.
+
+    Parameters
+    ----------
+    angles : array
+        Angles in radians
+    weights : array, optional
+        Weights for each angle
+
+    Returns
+    -------
+    z : float
+        Rayleigh Z statistic
+    p_value : float
+        P-value for uniformity test
+
+    Notes
+    -----
+    Small p-value (< 0.05) indicates non-uniform distribution
+    (e.g., significant head direction tuning).
+    """
+    n = len(angles)
+    r = resultant_vector_length(angles, weights)
+
+    # Rayleigh Z statistic
+    z = n * r**2
+
+    # Approximate p-value (valid for n > 10)
+    p_value = np.exp(-z) * (1 + (2*z - z**2) / (4*n) -
+                             (24*z - 132*z**2 + 76*z**3 - 9*z**4) / (288*n**2))
+
+    return z, p_value
+```
+
+**Validation**:
+- Test against neurocode MapStats.m
+- Test on synthetic von Mises distributions
+- Test Rayleigh test p-values
+
+**Authority**: neurocode (AyA Lab, Cornell), Fisher (1993)
+
+---
+
+### Integration Examples (Later)
+
+#### RatInABox Validation
+
+**Priority**: MEDIUM (nice-to-have for validation)
+**Estimated Effort**: 1 week
+
+**Example**: `examples/XX_ratinabox_integration.ipynb`
+
+```python
+# 1. Generate synthetic data with RatInABox
+from ratinabox import Environment, Agent
+from ratinabox.Neurons import PlaceCells, GridCells
+
+Env = Environment(params={'scale': 1.0})
+Ag = Agent(Env)
+# ... simulate 5 minutes ...
+
+PCs = PlaceCells(Ag, params={'n': 50})
+GCs = GridCells(Ag, params={'n': 20, 'gridscale': 0.3})
+
+# 2. Discretize with neurospatial
+from neurospatial import Environment as NSEnv
+
+env = NSEnv.from_samples(Ag.history['pos'], bin_size=0.05)
+
+# 3. Analyze with neurospatial metrics
+from neurospatial.metrics import grid_score, detect_place_fields
+
+# Compute grid score
+score = grid_score(GCs.history['firingrate'], env)
+
+# 4. Validate against ground truth
+true_spacing = 0.3  # Known from simulation!
+estimated_spacing = estimate_grid_spacing(autocorr)
+print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
+```
+
+**Validation tests**:
+- Grid score on synthetic GridCells with known spacing
+- Place field detection on PlaceCells with known centers
+- Spatial autocorrelation accuracy (correlation > 0.95)
+
+---
 ## Summary
 
 This implementation plan delivers **foundational spatial infrastructure** for neurospatial v0.3.0:
