@@ -6,7 +6,7 @@ This plan outlines the implementation of **missing spatial primitives** and **co
 
 **Timeline**: 16 weeks (4 months) - UPDATED after trajectory metrics addition
 **Priority**: HIGH - Enables analyses not possible in any other package
-**Breaking Changes**: Minimal (one function rename required)
+**Breaking Changes**: None (no current users - can rename directly)
 **Authority**: Algorithms validated against opexebo (Moser lab, Nobel Prize 2014) and neurocode (AyA Lab, Cornell)
 
 ### What This Enables
@@ -234,24 +234,17 @@ def test_gradient_linear_field_regular_grid():
 
 #### 1.3 Divergence Operator (Week 2)
 
-**BREAKING CHANGE**: Current `divergence()` is KL/JS divergence, needs renaming!
+**Note**: Current `divergence()` is KL/JS divergence - will be renamed to `kl_divergence()`.
 
-**Migration strategy**:
+**Rename existing function** (`src/neurospatial/field_ops.py`):
 ```python
-# Rename existing function
-# In src/neurospatial/field_ops.py
 def kl_divergence(p, q, *, kind='kl', eps=1e-12):
     """
-    Compute divergence between probability distributions.
+    Compute KL or JS divergence between probability distributions.
 
-    .. deprecated:: 0.3.0
-        Use `kl_divergence` instead. The name `divergence` is reserved
-        for the vector field divergence operator.
+    Renamed from `divergence()` to avoid confusion with vector field divergence.
     """
-    # Existing implementation
-
-# Add alias for backward compatibility
-divergence = kl_divergence  # Deprecated alias
+    # Existing implementation (unchanged)
 ```
 
 **New implementation** (`src/neurospatial/differential.py`):
@@ -318,8 +311,8 @@ def test_divergence_gradient_is_laplacian(env_regular_grid_2d):
     np.testing.assert_allclose(div_grad, laplacian_field, atol=1e-10)
 ```
 
-**Effort**: 2 days (including migration plan)
-**Risk**: Medium (breaking change, need migration guide)
+**Effort**: 2 days (including renaming existing function)
+**Risk**: Low (no users to migrate)
 **Blockers**: Differential operator (1.1)
 
 ---
@@ -1889,20 +1882,13 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 
 **Effort**: 2 days
 
-#### 5.4 Migration Guide
-- Breaking changes (divergence rename)
-- Upgrade instructions
-- Deprecation timeline
-- opexebo integration examples
-
-**Effort**: 1 day
-
-#### 5.5 Release
+#### 5.4 Release
 - Version bump to 0.3.0
 - Changelog highlighting:
   - opexebo compatibility
   - Behavioral segmentation
   - Trajectory metrics
+  - Function rename (divergence → kl_divergence)
 - Blog post / announcement
 - PyPI release
 
@@ -1917,7 +1903,7 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 - [ ] gradient(), divergence() work on all layout types
 - [ ] div(grad(f)) == Laplacian(f) validated
 - [ ] 50x caching speedup confirmed
-- [ ] Breaking change migration guide published
+- [ ] Existing divergence() renamed to kl_divergence()
 
 ### Phase 2 (Signal Processing Primitives)
 - [ ] neighbor_reduce() works on all layout types
@@ -1962,19 +1948,18 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 - **Timeline buffer**: 4 weeks allocated (validated algorithm reduces uncertainty)
 - **Validation**: Test against opexebo outputs, should match within 1%
 
-**2. Breaking change (divergence rename)**
-- **Mitigation**: Deprecation warnings, clear migration guide
-- **Fallback**: Keep alias for 1 version, remove in 0.4.0
-- **User communication**: Announce early, provide examples
-- **Documentation**: Show opexebo integration patterns
+**2. Function rename (divergence → kl_divergence)**
+- **Status**: LOW RISK - no current users
+- **Action**: Direct rename, update internal uses
+- **Documentation**: Note rename in changelog
+
+### Low-Risk Items
 
 **3. Performance regressions**
 - **Mitigation**: Benchmark suite in CI/CD
 - **Monitoring**: Track key operations (smooth, distance_field, gradient)
 - **Target**: No operation >10% slower than baseline
 - **Baseline**: opexebo performance for regular grids
-
-### Low-Risk Items
 
 **4. API design conflicts**
 - **Status**: LOW RISK - opexebo provides reference APIs
@@ -1987,7 +1972,7 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 - **Resources**: opexebo test cases provide validation data
 - **Authority**: Nobel Prize-winning lab implementation
 
-**6. Algorithm correctness** (NEW)
+**6. Algorithm correctness**
 - **Status**: LOW RISK - adopting validated algorithms
 - **Mitigation**: Cross-reference opexebo for all overlapping metrics
 - **Testing**: Validate outputs match opexebo exactly for regular grids
@@ -2021,8 +2006,7 @@ print(f"Error: {abs(estimated_spacing - true_spacing):.3f} m")
 - 5.1 Package Validation (Week 16-17): 4 days
 - 5.2 Performance Optimization (Week 17): 2 days
 - 5.3 Documentation Polish (Week 17): 2 days
-- 5.4 Migration Guide (Week 17): 1 day
-- 5.5 Release (Week 17): 1 day
+- 5.4 Release (Week 17): 1 day
 
 **Assumptions**:
 - One full-time developer
@@ -2072,8 +2056,7 @@ Phase 5: Polish & Release
 ├── 5.1 package_validation (needs 4.3 for grid score validation)
 ├── 5.2 performance (no blockers)
 ├── 5.3 documentation (no blockers)
-├── 5.4 migration_guide (no blockers)
-└── 5.5 release (needs all above)
+└── 5.4 release (needs all above)
 ```
 
 **Critical path**: spatial_autocorrelation (2.2) → grid_score (4.3)
@@ -2217,7 +2200,6 @@ This implementation plan delivers **critical missing functionality** that:
 3. **Adds behavioral segmentation** for automatic epoch detection (runs, laps, trials)
 4. **Adds trajectory metrics** from ecology/ethology (turn angles, home range, MSD)
 5. **Reduces code duplication** across labs with standard metrics
-6. **Maintains backward compatibility** except one well-managed breaking change
 
 **Timeline**: 17 weeks (~4 months)
 **Risk**: Manageable (MEDIUM risk - validated algorithms from opexebo, neurocode, and RatInABox)
@@ -2256,9 +2238,7 @@ src/neurospatial/
         trajectory.py      #   turn_angles, step_lengths, home_range, MSD
 ```
 
-**Breaking changes**:
-- `divergence()` → `kl_divergence()` (alias provided in 0.3.x, removed in 0.4.0)
-
-**Critical decision needed**: Approve breaking change (divergence rename) and migration strategy.
+**Function rename** (no users affected):
+- `divergence()` → `kl_divergence()` (direct rename, no migration needed)
 
 **Next step**: Review with maintainers and get approval to proceed with Phase 1.
