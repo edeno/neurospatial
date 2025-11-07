@@ -190,3 +190,89 @@ class TestDifferentialOperatorEdgeCases:
 
         # Laplacian should be symmetric
         np.testing.assert_allclose(L, L.T, rtol=1e-10, atol=1e-10)
+
+
+class TestGradientOperator:
+    """Test gradient() function for computing gradients on graph-discretized fields."""
+
+    def test_gradient_shape(self):
+        """Test that gradient output has shape (n_edges,)."""
+        # Create simple 2x2 grid environment
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create a test field (one value per bin)
+        field = np.random.rand(env.n_bins)
+
+        # Import gradient function (will fail initially - this is TDD RED phase)
+        from neurospatial.differential import gradient
+
+        # Compute gradient
+        grad_field = gradient(field, env)
+
+        # Output should have shape (n_edges,)
+        n_edges = len(env.connectivity.edges)
+        assert grad_field.shape == (n_edges,)
+        assert isinstance(grad_field, np.ndarray)
+
+    def test_gradient_constant_field(self):
+        """Test that gradient of a constant field is zero everywhere."""
+        # Create 1D chain environment
+        data = np.array([[0.0], [1.0], [2.0], [3.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create constant field
+        field = np.ones(env.n_bins) * 5.0
+
+        from neurospatial.differential import gradient
+
+        # Gradient should be all zeros
+        grad_field = gradient(field, env)
+
+        np.testing.assert_allclose(grad_field, 0.0, atol=1e-10)
+
+    def test_gradient_linear_field_regular_grid(self):
+        """Test that gradient of linear field is constant on regular grid."""
+        # Create 1D chain with uniform spacing
+        data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Create linear field: f(x) = 2*x
+        # Bins at x = 0, 1, 2, 3, 4
+        field = np.array([0.0, 2.0, 4.0, 6.0, 8.0])
+
+        from neurospatial.differential import gradient
+
+        # Compute gradient
+        grad_field = gradient(field, env)
+
+        # For uniform grid with spacing 1.0 and slope 2.0,
+        # gradient should be constant (approximately 2.0 * sqrt(1.0) = 2.0)
+        # The differential operator uses sqrt(distance), so we expect consistent values
+        grad_values = np.abs(grad_field)
+
+        # All gradient magnitudes should be similar (constant gradient)
+        assert np.allclose(grad_values, grad_values[0], rtol=0.1)
+
+    def test_gradient_validation(self):
+        """Test that gradient validates input field shape."""
+        # Create environment
+        data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        from neurospatial.differential import gradient
+
+        # Wrong shape: too few elements
+        field_too_small = np.array([1.0, 2.0])
+
+        # Should raise ValueError
+        import pytest
+
+        with pytest.raises(ValueError, match=r"field.*shape"):
+            gradient(field_too_small, env)
+
+        # Wrong shape: too many elements
+        field_too_large = np.random.rand(env.n_bins + 5)
+
+        with pytest.raises(ValueError, match=r"field.*shape"):
+            gradient(field_too_large, env)

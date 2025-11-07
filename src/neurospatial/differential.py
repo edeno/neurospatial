@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
@@ -142,3 +143,111 @@ def compute_differential_operator(
     d_csc = d_coo.tocsc()
 
     return d_csc
+
+
+def gradient(
+    field: NDArray[np.float64],
+    env: Environment | EnvironmentProtocol,
+) -> NDArray[np.float64]:
+    """Compute the gradient of a scalar field on the graph.
+
+    The gradient operator transforms a scalar field defined on bins (nodes) into
+    an edge field that represents the directional derivative along each edge.
+    Mathematically, for a scalar field f and differential operator D:
+
+        gradient(f) = D.T @ f
+
+    Each edge's gradient value represents the change in the field value from the
+    source node to the destination node, weighted by the square root of the edge
+    distance (following graph signal processing convention).
+
+    Parameters
+    ----------
+    field : NDArray[np.float64], shape (n_bins,)
+        Scalar field defined on the environment's bins. Each element corresponds
+        to a field value at a bin center.
+    env : EnvironmentProtocol
+        Environment with connectivity graph and differential operator. Must be
+        fitted (i.e., created via a factory method like `Environment.from_samples()`).
+
+    Returns
+    -------
+    gradient_field : NDArray[np.float64], shape (n_edges,)
+        Edge field representing the gradient. Each element corresponds to the
+        directional derivative along one edge in the connectivity graph.
+
+    Raises
+    ------
+    ValueError
+        If field shape does not match the number of bins in the environment.
+
+    Notes
+    -----
+    The gradient operation is the adjoint of the divergence operation:
+
+    - Gradient: scalar field → edge field (D.T @ f)
+    - Divergence: edge field → scalar field (D @ g)
+    - Laplacian: scalar field → scalar field (D @ D.T @ f = div(grad(f)))
+
+    For regular grids, the gradient approximates the continuous spatial gradient
+    via finite differences. For irregular graphs, the gradient follows the graph
+    connectivity structure.
+
+    Examples
+    --------
+    Compute gradient of a distance field (useful for goal-directed navigation):
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.differential import gradient
+    >>> # Create 1D chain environment
+    >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+    >>> env = Environment.from_samples(data, bin_size=1.0)
+    >>> # Create distance field (distance from left end)
+    >>> field = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    >>> # Compute gradient
+    >>> grad = gradient(field, env)
+    >>> grad.shape
+    (4,)
+    >>> # For uniform spacing and linear field, gradient should be constant
+    >>> np.allclose(np.abs(grad), np.abs(grad[0]), rtol=0.1)
+    True
+
+    Gradient of a constant field is zero:
+
+    >>> const_field = np.ones(env.n_bins) * 5.0
+    >>> grad_const = gradient(const_field, env)
+    >>> np.allclose(grad_const, 0.0, atol=1e-10)
+    True
+
+    See Also
+    --------
+    divergence : Compute divergence of an edge field
+    compute_differential_operator : Construct the differential operator matrix
+    Environment.differential_operator : Cached differential operator property
+
+    References
+    ----------
+    .. [1] Shuman et al. (2013). "The emerging field of signal processing on graphs."
+           IEEE Signal Processing Magazine, 30(3), 83-98.
+    """
+    # Validate input shape
+    if field.shape != (env.n_bins,):
+        msg = (
+            f"field must have shape ({env.n_bins},) to match environment bins, "
+            f"but got shape {field.shape}"
+        )
+        raise ValueError(msg)
+
+    # Compute gradient using differential operator transpose
+    # gradient(f) = D.T @ f
+    diff_op = env.differential_operator  # Use cached property
+    gradient_field = diff_op.T @ field
+
+    # Convert sparse result to dense array and ensure proper dtype
+    if sparse.issparse(gradient_field):
+        result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
+    else:
+        result = np.asarray(gradient_field, dtype=np.float64).ravel()
+
+    return result

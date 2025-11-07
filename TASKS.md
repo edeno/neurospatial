@@ -263,27 +263,27 @@
 
 **Implementation**:
 
-- [ ] Add `gradient(field, env)` function to `differential.py`
-  - [ ] Implement: `return env.differential_operator.T @ field`
-  - [ ] Add validation: check `field.shape == (env.n_bins,)`
-  - [ ] Add NumPy-style docstring with examples
-  - [ ] Add type hints: `NDArray[np.float64]`
-- [ ] Export in public API: `src/neurospatial/__init__.py`
-  - [ ] Add: `from neurospatial.differential import gradient`
-  - [ ] Update `__all__` list
+- [x] Add `gradient(field, env)` function to `differential.py`
+  - [x] Implement: `return env.differential_operator.T @ field`
+  - [x] Add validation: check `field.shape == (env.n_bins,)`
+  - [x] Add NumPy-style docstring with examples
+  - [x] Add type hints: `NDArray[np.float64]`
+- [x] Export in public API: `src/neurospatial/__init__.py`
+  - [x] Add: `from neurospatial.differential import gradient`
+  - [x] Update `__all__` list
 
 **Testing**:
 
-- [ ] Test: `test_gradient_shape()` - output shape (n_edges,)
-- [ ] Test: `test_gradient_constant_field()` - gradient of constant = 0
-- [ ] Test: `test_gradient_linear_field_regular_grid()` - constant gradient for linear field
-- [ ] Test: `test_gradient_validation()` - wrong shape raises ValueError
-- [ ] Run: `uv run pytest tests/test_differential.py::test_gradient -v`
+- [x] Test: `test_gradient_shape()` - output shape (n_edges,)
+- [x] Test: `test_gradient_constant_field()` - gradient of constant = 0
+- [x] Test: `test_gradient_linear_field_regular_grid()` - constant gradient for linear field
+- [x] Test: `test_gradient_validation()` - wrong shape raises ValueError
+- [x] Run: `uv run pytest tests/test_differential.py::test_gradient -v`
 
 **Documentation**:
 
-- [ ] Add example in docstring: distance field gradient
-- [ ] Cross-reference to `divergence()` function
+- [x] Add example in docstring: distance field gradient
+- [x] Cross-reference to `divergence()` function
 
 **Effort**: 2 days
 

@@ -5,6 +5,7 @@ from neurospatial.alignment import (
     map_probabilities_to_nearest_target_bin,
 )
 from neurospatial.composite import CompositeEnvironment
+from neurospatial.differential import gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
 from neurospatial.environment import Environment
 from neurospatial.field_ops import (
@@ -53,6 +54,7 @@ __all__ = [
     "get_2d_rotation_matrix",
     "get_layout_parameters",
     "goal_reward_field",
+    "gradient",
     "list_available_layouts",
     "map_points_to_bins",
     "map_probabilities_to_nearest_target_bin",

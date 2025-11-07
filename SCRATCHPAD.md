@@ -482,6 +482,96 @@ All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
 **Updated Files**:
 - `TASKS.md` - All Milestone 1.1 checkboxes marked complete [x]
 
-**Next Task**: Milestone 1.2 - Gradient Operator
+**Next Task**: Milestone 1.3 - Divergence Operator
+
+---
+
+## 2025-11-07: Milestone 1.2 - Gradient Operator COMPLETE
+
+### Task: Implement `gradient(field, env)` function
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. Tests added to `tests/test_differential.py` - New `TestGradientOperator` class (4 tests, all pass)
+
+**Files Modified**:
+
+1. `src/neurospatial/differential.py` - Added `gradient()` function (lines 148-253)
+2. `src/neurospatial/__init__.py` - Exported gradient in public API
+
+**Implementation Details**:
+
+**`gradient(field, env)` function:**
+- Computes gradient of scalar field: `gradient(f) = D.T @ f`
+- Input validation: checks `field.shape == (env.n_bins,)`
+- Returns edge field with shape `(n_edges,)`
+- Uses cached `env.differential_operator` property for efficiency
+- Handles sparse matrix result conversion to dense NDArray[np.float64]
+- Comprehensive NumPy-style docstring with graph signal processing references (Shuman et al., 2013)
+- Two working docstring examples (constant field, linear field)
+- Cross-references to divergence (future), compute_differential_operator, Environment.differential_operator
+
+**Test Coverage**: 4 comprehensive tests (100% pass rate)
+- Shape validation (n_edges,)
+- Constant field gradient = 0
+- Linear field gradient is constant on regular grid
+- Input validation (wrong shape raises ValueError with diagnostic message)
+
+**Type Safety**:
+- ✅ Mypy passes with zero errors
+- ✅ No `type: ignore` comments
+- ✅ Full type hints using `NDArray[np.float64]` (precise type annotation)
+- ✅ Union type `Environment | EnvironmentProtocol` for flexibility
+
+**Code Quality**:
+- ✅ Ruff check passes (all linting rules satisfied)
+- ✅ Ruff format applied (consistent code style)
+- ✅ NumPy-style docstring with Examples, Notes, References sections
+- ✅ Proper variable naming (diff_op instead of D to comply with PEP 8)
+
+**Code Review Findings** (code-reviewer agent):
+- ✅ **APPROVED** - Production ready
+- ✅ Mathematical correctness verified
+- ✅ Input validation comprehensive
+- ✅ Documentation excellent (references graph signal processing theory)
+- ✅ Test coverage thorough
+- ✅ Type safety perfect (NDArray type annotations added per review suggestion)
+- ✅ No critical or blocking issues
+
+**TDD Workflow Followed**:
+1. ✅ Created 4 tests first in TestGradientOperator class
+2. ✅ Verified tests FAIL with ImportError (RED phase)
+3. ✅ Implemented gradient() function (GREEN phase)
+4. ✅ All 4 tests pass
+5. ✅ Applied code-reviewer agent
+6. ✅ Fixed NDArray type annotation per review suggestion
+7. ✅ Mypy and ruff pass with zero errors
+
+**Public API Additions**:
+- `neurospatial.gradient(field, env)` - Compute gradient of scalar field on graph
+
+**Mathematical Foundation**:
+- Gradient: scalar field → edge field (D.T @ f)
+- Foundation for Laplacian: D @ D.T @ f = div(grad(f))
+- Adjoint of divergence operation (to be implemented in M1.3)
+
+**Performance**:
+- Uses cached differential_operator for efficiency
+- Sparse matrix operations for large graphs
+- Result converted to dense array for user convenience
+
+**Design Decisions**:
+1. **Parameter order**: `gradient(field, env)` - field first, consistent with numpy conventions
+2. **Return type**: Always dense NDArray[np.float64], never sparse (user-friendly)
+3. **Validation**: Clear error message showing expected vs actual shape
+4. **Type hints**: Precise NDArray[np.float64] annotations (not generic np.ndarray)
+5. **Documentation**: Full mathematical context with graph signal processing references
+
+**Known Limitations** (documented):
+- None - implementation is complete and production-ready
+
+**Next Task**: Milestone 1.3 - Divergence Operator (rename KL divergence, implement graph divergence)
 
 ---
