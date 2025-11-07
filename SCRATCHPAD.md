@@ -210,4 +210,56 @@ Ready to move on to implementing the `spikes_to_field()` and `compute_place_fiel
 - ✅ Boundary detection correct for region-based rewards
 - ✅ Potential-based reward shaping (Ng et al., 1999) properly referenced
 
-**Next Task**: Milestone 0.3 - Documentation for Phase 0 primitives (spike/field + reward functions)
+**Next Task**: Milestone 0.3 - Example notebook creation
+
+---
+
+## 2025-11-07: Milestone 0.3 - Documentation COMPLETE (Part 1/2)
+
+### Task: Create user guide documentation for Phase 0 primitives
+
+**Status**: ✅ COMPLETE (Documentation files created)
+
+**Files Created**:
+
+1. `docs/user-guide/spike-field-primitives.md` - Comprehensive spike-to-field conversion guide (260 lines)
+2. `docs/user-guide/rl-primitives.md` - Complete RL reward field guide (490 lines)
+
+**Documentation Coverage**:
+
+**spike-field-primitives.md:**
+- Converting spike trains to spatial fields
+- Why occupancy normalization matters (neuroscience standard)
+- Parameter order (env first, consistent API)
+- `compute_place_field()` convenience function
+- Min occupancy threshold best practices (0.5 seconds standard)
+- Edge case handling (empty spikes, out-of-bounds, NaN, 1D trajectories)
+- Complete code examples with visualizations
+- Note about deferred batch operations (v0.3.1)
+
+**rl-primitives.md:**
+- Region-based reward field generation (constant, linear, gaussian decay)
+- Goal-based reward field generation (exponential, linear, inverse decay)
+- Reward shaping strategies and best practices
+- Consistent `decay` parameter naming across functions
+- Gaussian falloff rescaling (uses max IN REGION - critical fix documented)
+- Cautions about reward shaping (Ng et al. 1999 reference)
+- Potential-based reward shaping theory
+- Combining reward sources
+- Multiple goals support (Voronoi partitioning)
+- Complete RL-specific examples
+
+**Design Highlights**:
+
+1. **Consistent Style**: Matches existing neurospatial documentation format
+2. **Practical Examples**: Every concept has runnable code examples
+3. **Best Practices**: Clear recommendations based on neuroscience/RL literature
+4. **Warnings**: Explicit cautions about when shaping can hurt (Ng et al.)
+5. **API References**: Cross-linked to related functions and concepts
+6. **Mathematical Rigor**: Formulas and references for all decay functions
+
+**Next Steps**:
+
+- Create example notebook `examples/00_spike_field_basics.ipynb`
+- Run coverage tests for Phase 0 code
+- Complete Milestone 0.3 (verify all tests pass, documentation complete)

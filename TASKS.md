@@ -145,23 +145,23 @@
 
 **Documentation**:
 
-- [ ] Create `docs/user-guide/spike-field-primitives.md`
-  - [ ] Section: Converting spike trains to spatial fields
-  - [ ] Section: Why occupancy normalization matters (place field analysis standard)
-  - [ ] Section: Parameter order (env first, matches existing API)
-  - [ ] Section: `compute_place_field()` convenience function for one-liner workflows
-  - [ ] Section: Min occupancy threshold (best practices: 0.5 seconds typical)
-  - [ ] Section: Edge case handling (empty spikes, out-of-bounds, NaN)
-  - [ ] Include code examples and visualizations
-  - [ ] Note: Batch operations deferred to v0.3.1
-- [ ] Create or update `docs/user-guide/rl-primitives.md`
-  - [ ] Section: Reward field generation from regions
-  - [ ] Section: Reward shaping strategies (potential-based, distance-based)
-  - [ ] Section: Decay parameter naming (consistent across functions)
-  - [ ] Section: Distance-based rewards (exponential, linear, inverse)
-  - [ ] Section: Gaussian falloff rescaling (uses max IN REGION)
-  - [ ] Section: Cautions about reward shaping (Ng et al. 1999 reference)
-  - [ ] Include RL-specific examples (goal-directed navigation)
+- [x] Create `docs/user-guide/spike-field-primitives.md`
+  - [x] Section: Converting spike trains to spatial fields
+  - [x] Section: Why occupancy normalization matters (place field analysis standard)
+  - [x] Section: Parameter order (env first, matches existing API)
+  - [x] Section: `compute_place_field()` convenience function for one-liner workflows
+  - [x] Section: Min occupancy threshold (best practices: 0.5 seconds typical)
+  - [x] Section: Edge case handling (empty spikes, out-of-bounds, NaN)
+  - [x] Include code examples and visualizations
+  - [x] Note: Batch operations deferred to v0.3.1
+- [x] Create or update `docs/user-guide/rl-primitives.md`
+  - [x] Section: Reward field generation from regions
+  - [x] Section: Reward shaping strategies (potential-based, distance-based)
+  - [x] Section: Decay parameter naming (consistent across functions)
+  - [x] Section: Distance-based rewards (exponential, linear, inverse)
+  - [x] Section: Gaussian falloff rescaling (uses max IN REGION)
+  - [x] Section: Cautions about reward shaping (Ng et al. 1999 reference)
+  - [x] Include RL-specific examples (goal-directed navigation)
 
 **Example Notebook**:
 
