@@ -37,6 +37,7 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
+from shapely.geometry import Point
 
 from neurospatial import (
     Environment,
@@ -188,24 +189,53 @@ print(
 fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
 
 # Plot occupancy
-env.plot(occupancy, ax=axes[0], cmap="viridis")
+scatter0 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=occupancy,
+    cmap="viridis",
+    s=100,
+    edgecolors="none",
+)
 axes[0].set_title("Occupancy (seconds)", fontsize=14, fontweight="bold", pad=10)
 axes[0].set_xlabel("X (cm)", fontsize=12)
 axes[0].set_ylabel("Y (cm)", fontsize=12)
+axes[0].set_aspect("equal")
+plt.colorbar(scatter0, ax=axes[0], label="Seconds")
 
 # Plot raw firing rate
-env.plot(firing_rate_raw, ax=axes[1], cmap="hot", vmin=0)
+scatter1 = axes[1].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=firing_rate_raw,
+    cmap="hot",
+    s=100,
+    vmin=0,
+    edgecolors="none",
+)
 axes[1].set_title("Firing Rate (raw)", fontsize=14, fontweight="bold", pad=10)
 axes[1].set_xlabel("X (cm)", fontsize=12)
 axes[1].set_ylabel("Y (cm)", fontsize=12)
+axes[1].set_aspect("equal")
+plt.colorbar(scatter1, ax=axes[1], label="Hz")
 
 # Plot filtered firing rate
-env.plot(firing_rate_filtered, ax=axes[2], cmap="hot", vmin=0)
+scatter2 = axes[2].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=firing_rate_filtered,
+    cmap="hot",
+    s=100,
+    vmin=0,
+    edgecolors="none",
+)
 axes[2].set_title(
     "Firing Rate (filtered, min_occ=0.5s)", fontsize=14, fontweight="bold", pad=10
 )
 axes[2].set_xlabel("X (cm)", fontsize=12)
 axes[2].set_ylabel("Y (cm)", fontsize=12)
+axes[2].set_aspect("equal")
+plt.colorbar(scatter2, ax=axes[2], label="Hz")
 
 # Mark preferred location
 for ax in axes[1:]:
@@ -248,23 +278,31 @@ place_field = compute_place_field(
     smoothing_bandwidth=8.0,  # Gaussian kernel bandwidth (cm)
 )
 
-# Compare with two-step approach (equivalent)
-firing_rate_manual = spikes_to_field(
-    env, spike_times, times, positions, min_occupancy_seconds=0.5
-)
-place_field_manual = env.smooth(firing_rate_manual, bandwidth=8.0)
-
 print(f"Place field peak: {np.nanmax(place_field):.2f} Hz")
-print(
-    f"Place field matches manual: {np.allclose(place_field, place_field_manual, equal_nan=True)}"
-)
+print(f"Number of valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
+
+# Note: compute_place_field() handles NaN values automatically during smoothing
+# by temporarily filling them with 0, smoothing, then restoring NaN.
+# This prevents smoothing errors but can reduce firing rates near boundaries.
 
 # %%
 # Visualize: raw vs smoothed
 fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
 
-env.plot(firing_rate_filtered, ax=axes[0], cmap="hot", vmin=0)
+scatter0 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=firing_rate_filtered,
+    cmap="hot",
+    s=100,
+    vmin=0,
+    edgecolors="none",
+)
 axes[0].set_title("Raw Firing Rate", fontsize=14, fontweight="bold", pad=10)
+axes[0].set_xlabel("X (cm)", fontsize=12)
+axes[0].set_ylabel("Y (cm)", fontsize=12)
+axes[0].set_aspect("equal")
+plt.colorbar(scatter0, ax=axes[0], label="Hz")
 axes[0].plot(
     preferred_location[0],
     preferred_location[1],
@@ -275,10 +313,22 @@ axes[0].plot(
     markeredgewidth=2,
 )
 
-env.plot(place_field, ax=axes[1], cmap="hot", vmin=0)
+scatter1 = axes[1].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=place_field,
+    cmap="hot",
+    s=100,
+    vmin=0,
+    edgecolors="none",
+)
 axes[1].set_title(
     "Smoothed Place Field (bandwidth=8 cm)", fontsize=14, fontweight="bold", pad=10
 )
+axes[1].set_xlabel("X (cm)", fontsize=12)
+axes[1].set_ylabel("Y (cm)", fontsize=12)
+axes[1].set_aspect("equal")
+plt.colorbar(scatter1, ax=axes[1], label="Hz")
 axes[1].plot(
     preferred_location[0],
     preferred_location[1],
@@ -303,11 +353,17 @@ plt.show()
 # Let's create a goal region and explore different decay profiles:
 
 # %%
-# Define goal region at top-right
-goal_location = np.array([25.0, 25.0])
-env.regions.add("goal", point=goal_location)
+# Define goal region at a bin center to ensure it's within the environment
+# Pick a bin in the upper-right quadrant of the trajectory
+goal_bin_idx = env.n_bins // 2 + env.n_bins // 4  # Approximately 3/4 through bins
+goal_location = env.bin_centers[goal_bin_idx]
+goal_circle = Point(goal_location).buffer(
+    12.0
+)  # 12 cm radius circle (covers ~4-5 bins)
+env.regions.add("goal", polygon=goal_circle)
 
-print(f"Goal region added at {goal_location}")
+print(f"Goal region added at bin {goal_bin_idx}, location {goal_location}")
+print(f"Goal region area: {env.regions.area('goal'):.1f} cm²")
 print(f"Available regions: {list(env.regions.keys())}")
 
 # %%
@@ -333,10 +389,22 @@ print(
 
 # %%
 # Visualize region-based rewards
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-env.plot(reward_constant, ax=axes[0], cmap="viridis", vmin=0, vmax=10)
+scatter0 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_constant,
+    cmap="viridis",
+    s=100,
+    vmin=0,
+    vmax=10,
+    edgecolors="none",
+)
 axes[0].set_title("Constant (Sparse RL)", fontsize=12, fontweight="bold")
+axes[0].set_xlabel("X (cm)", fontsize=12)
+axes[0].set_ylabel("Y (cm)", fontsize=12)
+axes[0].set_aspect("equal")
 axes[0].plot(
     goal_location[0],
     goal_location[1],
@@ -347,9 +415,22 @@ axes[0].plot(
     label="Goal",
 )
 axes[0].legend()
+plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-env.plot(reward_linear, ax=axes[1], cmap="viridis", vmin=0, vmax=10)
+scatter1 = axes[1].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_linear,
+    cmap="viridis",
+    s=100,
+    vmin=0,
+    vmax=10,
+    edgecolors="none",
+)
 axes[1].set_title("Linear Decay", fontsize=12, fontweight="bold")
+axes[1].set_xlabel("X (cm)", fontsize=12)
+axes[1].set_ylabel("Y (cm)", fontsize=12)
+axes[1].set_aspect("equal")
 axes[1].plot(
     goal_location[0],
     goal_location[1],
@@ -360,9 +441,22 @@ axes[1].plot(
     label="Goal",
 )
 axes[1].legend()
+plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-env.plot(reward_gaussian, ax=axes[2], cmap="viridis", vmin=0, vmax=10)
+scatter2 = axes[2].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_gaussian,
+    cmap="viridis",
+    s=100,
+    vmin=0,
+    vmax=10,
+    edgecolors="none",
+)
 axes[2].set_title("Gaussian Falloff (bandwidth=12 cm)", fontsize=12, fontweight="bold")
+axes[2].set_xlabel("X (cm)", fontsize=12)
+axes[2].set_ylabel("Y (cm)", fontsize=12)
+axes[2].set_aspect("equal")
 axes[2].plot(
     goal_location[0],
     goal_location[1],
@@ -373,8 +467,8 @@ axes[2].plot(
     label="Goal",
 )
 axes[2].legend()
+plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
-plt.tight_layout()
 plt.show()
 
 # %% [markdown]
@@ -416,10 +510,20 @@ print(f"  Inverse: max={np.max(reward_inverse):.2f}, min={np.min(reward_inverse)
 
 # %%
 # Visualize goal-based rewards
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-env.plot(reward_exponential, ax=axes[0], cmap="plasma")
+scatter0 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_exponential,
+    cmap="plasma",
+    s=100,
+    edgecolors="none",
+)
 axes[0].set_title("Exponential Decay (scale=15)", fontsize=12, fontweight="bold")
+axes[0].set_xlabel("X (cm)", fontsize=12)
+axes[0].set_ylabel("Y (cm)", fontsize=12)
+axes[0].set_aspect("equal")
 axes[0].plot(
     goal_location[0],
     goal_location[1],
@@ -430,9 +534,20 @@ axes[0].plot(
     label="Goal",
 )
 axes[0].legend()
+plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-env.plot(reward_linear_cutoff, ax=axes[1], cmap="plasma")
+scatter1 = axes[1].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_linear_cutoff,
+    cmap="plasma",
+    s=100,
+    edgecolors="none",
+)
 axes[1].set_title("Linear Decay (cutoff=50 cm)", fontsize=12, fontweight="bold")
+axes[1].set_xlabel("X (cm)", fontsize=12)
+axes[1].set_ylabel("Y (cm)", fontsize=12)
+axes[1].set_aspect("equal")
 axes[1].plot(
     goal_location[0],
     goal_location[1],
@@ -443,9 +558,20 @@ axes[1].plot(
     label="Goal",
 )
 axes[1].legend()
+plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-env.plot(reward_inverse, ax=axes[2], cmap="plasma")
+scatter2 = axes[2].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=reward_inverse,
+    cmap="plasma",
+    s=100,
+    edgecolors="none",
+)
 axes[2].set_title("Inverse Distance", fontsize=12, fontweight="bold")
+axes[2].set_xlabel("X (cm)", fontsize=12)
+axes[2].set_ylabel("Y (cm)", fontsize=12)
+axes[2].set_aspect("equal")
 axes[2].plot(
     goal_location[0],
     goal_location[1],
@@ -456,8 +582,8 @@ axes[2].plot(
     label="Goal",
 )
 axes[2].legend()
+plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
-plt.tight_layout()
 plt.show()
 
 # %% [markdown]
@@ -475,12 +601,13 @@ plt.show()
 # The goal-based rewards support multiple goal locations:
 
 # %%
-# Define two goals (top-right and bottom-left)
-goal_loc_1 = np.array([25.0, 25.0])
-goal_loc_2 = np.array([-25.0, -25.0])
+# Define two goals using bin centers to ensure they're within the environment
+# Pick bins from opposite quadrants of the circular trajectory
+goal_bin_1 = env.n_bins // 3  # Early bin (around 120 degrees)
+goal_bin_2 = 2 * env.n_bins // 3  # Later bin (around 240 degrees)
 
-goal_bin_1 = env.bin_at(np.array([goal_loc_1]))[0]
-goal_bin_2 = env.bin_at(np.array([goal_loc_2]))[0]
+goal_loc_1 = env.bin_centers[goal_bin_1]
+goal_loc_2 = env.bin_centers[goal_bin_2]
 
 # Create multi-goal reward field
 multi_goal_reward = goal_reward_field(
@@ -488,14 +615,25 @@ multi_goal_reward = goal_reward_field(
 )
 
 print("Multi-goal reward field created")
-print(f"Goal 1 bin: {goal_bin_1}, Goal 2 bin: {goal_bin_2}")
+print(f"Goal 1: bin {goal_bin_1} at {goal_loc_1}")
+print(f"Goal 2: bin {goal_bin_2} at {goal_loc_2}")
 
 # %%
 # Visualize multi-goal reward
-fig, ax = plt.subplots(figsize=(8, 6))
+fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
 
-env.plot(multi_goal_reward, ax=ax, cmap="plasma")
+scatter = ax.scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=multi_goal_reward,
+    cmap="plasma",
+    s=100,
+    edgecolors="none",
+)
 ax.set_title("Multi-Goal Reward Field (Exponential)", fontsize=12, fontweight="bold")
+ax.set_xlabel("X (cm)", fontsize=12)
+ax.set_ylabel("Y (cm)", fontsize=12)
+ax.set_aspect("equal")
 ax.plot(
     goal_loc_1[0],
     goal_loc_1[1],
@@ -515,8 +653,8 @@ ax.plot(
     label="Goal 2",
 )
 ax.legend(loc="upper left")
+plt.colorbar(scatter, ax=ax, label="Reward")
 
-plt.tight_layout()
 plt.show()
 
 # %% [markdown]
@@ -561,16 +699,49 @@ print(f"Combined reward max: {np.max(combined_reward):.1f}")
 
 # %%
 # Visualize combined rewards
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-env.plot(primary_reward, ax=axes[0], cmap="viridis")
+scatter0 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=primary_reward,
+    cmap="viridis",
+    s=100,
+    edgecolors="none",
+)
 axes[0].set_title("Primary (Sparse)", fontsize=12, fontweight="bold")
+axes[0].set_xlabel("X (cm)", fontsize=12)
+axes[0].set_ylabel("Y (cm)", fontsize=12)
+axes[0].set_aspect("equal")
+plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-env.plot(shaping_reward * 0.1, ax=axes[1], cmap="viridis")
+scatter1 = axes[1].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=shaping_reward * 0.1,
+    cmap="viridis",
+    s=100,
+    edgecolors="none",
+)
 axes[1].set_title("Shaping (Weighted 0.1x)", fontsize=12, fontweight="bold")
+axes[1].set_xlabel("X (cm)", fontsize=12)
+axes[1].set_ylabel("Y (cm)", fontsize=12)
+axes[1].set_aspect("equal")
+plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-env.plot(combined_reward, ax=axes[2], cmap="viridis")
+scatter2 = axes[2].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=combined_reward,
+    cmap="viridis",
+    s=100,
+    edgecolors="none",
+)
 axes[2].set_title("Combined Reward", fontsize=12, fontweight="bold")
+axes[2].set_xlabel("X (cm)", fontsize=12)
+axes[2].set_ylabel("Y (cm)", fontsize=12)
+axes[2].set_aspect("equal")
+plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
 for ax in axes:
     ax.plot(
@@ -582,7 +753,6 @@ for ax in axes:
         markeredgewidth=1.5,
     )
 
-plt.tight_layout()
 plt.show()
 
 # %% [markdown]

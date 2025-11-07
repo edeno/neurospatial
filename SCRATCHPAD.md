@@ -318,4 +318,41 @@ Ready to move on to implementing the `spikes_to_field()` and `compute_place_fiel
 - ✅ All plotting code enhanced for clarity
 - ✅ Complete examples for all Phase 0 functions
 
-**Next Task**: Run coverage tests to ensure >95% coverage for Phase 0 code
+**Notebook Execution Fixes** (2025-11-07):
+
+All plotting errors fixed and notebook executes successfully:
+
+1. **Plotting API Fix** (10 sections fixed):
+   - Replaced incorrect `env.plot(field, ax=axes[i])` calls
+   - Used correct pattern: `ax.scatter(env.bin_centers[:, 0], env.bin_centers[:, 1], c=field)`
+   - Added colorbars, axis labels, and aspect ratio settings
+   - Applied to: occupancy/firing rate comparison, raw vs smoothed, region rewards (3 plots), goal rewards (3 plots), multi-goal reward, combined rewards (3 plots)
+
+2. **NaN Handling Fix**:
+   - Removed manual `env.smooth()` call that failed on NaN values
+   - Kept only `compute_place_field()` which handles NaN properly
+   - Added explanatory comment about NaN handling in smoothing
+
+3. **Region Definition Fix**:
+   - Changed from point region to circular polygon (12 cm radius)
+   - Used `shapely.geometry.Point(goal_location).buffer(12.0)`
+   - Ensures region has area and contains bin centers
+   - Fixed goal_location to use existing bin center instead of hardcoded coordinates
+
+4. **Goal Bin Selection Fix**:
+   - Used `env.bin_centers[idx]` instead of hardcoded coordinates
+   - Ensures goal locations are within environment bounds
+   - Multi-goal example uses bins at 1/3 and 2/3 positions (opposite quadrants)
+
+**Execution Result**:
+
+```
+SUCCESS: Notebook executed without errors
+[NbConvertApp] Writing 655232 bytes to examples/09_spike_field_basics.ipynb
+```
+
+All 29 Phase 0 tests pass, notebook executes cleanly with all visualizations.
+
+**Milestone 0.3 Status**: ✅ **COMPLETE**
+
+---
