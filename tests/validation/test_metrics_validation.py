@@ -905,6 +905,163 @@ class TestOpexeboComparison:
             f"difference={abs(our_sparsity - neurocode_sparsity):.2e}"
         )
 
+    def test_information_per_spike_matches_neurocode_formula(self):
+        """Compare skaggs_information with neurocode's informationPerSpike formula.
+
+        neurocode's MapStats1D.m (line 103) computes:
+            logArg = map.z./meanFiringRate;
+            logArg(logArg == 0) = 1;
+            stats.informationPerSpike = sum(sum(p_i.*logArg.*log2(logArg)));
+
+        This should match both stats.specificity (line 101) and our skaggs_information.
+
+        Reference: https://github.com/ayalab1/neurocode/blob/master/tutorials/pipelineFiringMaps/MapStats1D.m
+        """
+        # Create test environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create Gaussian place field
+        center = np.array([0.0, 0.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 15.0 * np.exp(-(distances**2) / (2 * 8.0**2))
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Compute with neurospatial
+        our_info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        # Manually implement neurocode's informationPerSpike formula
+        map_time = occupancy
+        map_z = firing_rate
+
+        T = np.sum(map_time)
+        p_i = map_time / (T + np.finfo(float).eps)
+
+        # Compute mean firing rate
+        meanFiringRate = np.sum(map_z * map_time) / T
+
+        # Compute logArg = firing_rate / mean_rate
+        logArg = map_z / meanFiringRate
+        logArg[logArg == 0] = 1  # Avoid log(0)
+
+        # informationPerSpike formula
+        neurocode_info_per_spike = np.sum(p_i * logArg * np.log2(logArg))
+
+        # Should match exactly
+        assert np.abs(our_info - neurocode_info_per_spike) < 1e-10, (
+            f"Information per spike should exactly match neurocode's MapStats1D.m formula: "
+            f"neurospatial={our_info:.10f}, neurocode={neurocode_info_per_spike:.10f}, "
+            f"difference={abs(our_info - neurocode_info_per_spike):.2e}"
+        )
+
+    def test_selectivity_matches_neurocode_formula(self):
+        """Validate selectivity metric against neurocode's MapStats1D.m formula.
+
+        neurocode's MapStats1D.m (line 106) computes:
+            stats.selectivity = max(max(map.z))./meanFiringRate;
+
+        Selectivity is the ratio of peak firing rate to mean firing rate.
+        Higher values indicate more spatially selective firing.
+
+        Reference: https://github.com/ayalab1/neurocode/blob/master/tutorials/pipelineFiringMaps/MapStats1D.m
+        """
+        # Create test environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create Gaussian place field with known peak
+        center = np.array([0.0, 0.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        peak_rate = 25.0
+        firing_rate = peak_rate * np.exp(-(distances**2) / (2 * 10.0**2))
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Manually implement neurocode's selectivity formula
+        map_time = occupancy
+        map_z = firing_rate
+
+        T = np.sum(map_time)
+        meanFiringRate = np.sum(map_z * map_time) / T
+        max_rate = np.max(map_z)
+
+        neurocode_selectivity = max_rate / meanFiringRate
+
+        # Compute using direct formula
+        # (We don't have this implemented yet, so compute it here)
+        computed_selectivity = np.max(firing_rate) / np.mean(firing_rate)
+
+        # Should match exactly
+        assert np.abs(computed_selectivity - neurocode_selectivity) < 1e-10, (
+            f"Selectivity should match neurocode's formula: "
+            f"computed={computed_selectivity:.10f}, neurocode={neurocode_selectivity:.10f}, "
+            f"difference={abs(computed_selectivity - neurocode_selectivity):.2e}"
+        )
+
+        # Verify selectivity is > 1 for place field (concentrated firing)
+        assert neurocode_selectivity > 1.0, "Selectivity should be > 1 for place field"
+
+    def test_information_per_sec_matches_neurocode_formula(self):
+        """Validate information rate (bits/sec) against neurocode's MapStats1D.m formula.
+
+        neurocode's MapStats1D.m (line 104) computes:
+            logArg = map.z./meanFiringRate;
+            logArg(logArg == 0) = 1;
+            stats.informationPerSec = sum(sum(p_i.*map.z.*log2(logArg)));
+
+        This is the information rate in bits per second (not bits per spike).
+
+        Reference: https://github.com/ayalab1/neurocode/blob/master/tutorials/pipelineFiringMaps/MapStats1D.m
+        """
+        # Create test environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create Gaussian place field
+        center = np.array([0.0, 0.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 20.0 * np.exp(-(distances**2) / (2 * 8.0**2))
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Manually implement neurocode's informationPerSec formula
+        map_time = occupancy
+        map_z = firing_rate
+
+        T = np.sum(map_time)
+        p_i = map_time / (T + np.finfo(float).eps)
+
+        # Compute mean firing rate
+        meanFiringRate = np.sum(map_z * map_time) / T
+
+        # Compute logArg = firing_rate / mean_rate
+        logArg = map_z / meanFiringRate
+        logArg[logArg == 0] = 1  # Avoid log(0)
+
+        # informationPerSec formula: Σ p_i × firing_rate × log2(firing_rate/mean_rate)
+        neurocode_info_per_sec = np.sum(p_i * map_z * np.log2(logArg))
+
+        # Compute using direct formula
+        # (We don't have this implemented yet, so compute it here)
+        # This is: mean_rate × information_per_spike
+        info_per_spike = skaggs_information(firing_rate, occupancy, base=2.0)
+        computed_info_per_sec = meanFiringRate * info_per_spike
+
+        # Should match exactly
+        assert np.abs(computed_info_per_sec - neurocode_info_per_sec) < 1e-9, (
+            f"Information per second should match neurocode's formula: "
+            f"computed={computed_info_per_sec:.10f}, neurocode={neurocode_info_per_sec:.10f}, "
+            f"difference={abs(computed_info_per_sec - neurocode_info_per_sec):.2e}"
+        )
+
+        # Verify relationship: info_per_sec = mean_rate × info_per_spike
+        expected = meanFiringRate * info_per_spike
+        assert np.abs(neurocode_info_per_sec - expected) < 1e-9
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
