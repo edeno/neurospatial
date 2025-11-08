@@ -858,6 +858,53 @@ class TestOpexeboComparison:
             f"difference={abs(our_info - neurocode_specificity):.2e}"
         )
 
+    def test_sparsity_matches_neurocode_formula(self):
+        """Compare our sparsity implementation with neurocode's MapStats1D.m formula.
+
+        neurocode's MapStats1D.m (line 105) computes:
+            stats.sparsity = ((sum(sum(p_i.*map.z))).^2)/sum(sum(p_i.*(map.z.^2)));
+
+        This is the Skaggs et al. (1996) sparsity formula.
+
+        Reference: https://github.com/ayalab1/neurocode/blob/master/tutorials/pipelineFiringMaps/MapStats1D.m
+        """
+        # Create test environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create Gaussian place field
+        center = np.array([0.0, 0.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 15.0 * np.exp(-(distances**2) / (2 * 8.0**2))
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Compute with neurospatial
+        our_sparsity = sparsity(firing_rate, occupancy)
+
+        # Manually implement neurocode's exact formula
+        # (from MapStats1D.m line 105)
+        map_time = occupancy  # Occupancy time in each bin
+        map_z = firing_rate   # Firing rate (lambda_i)
+
+        T = np.sum(map_time)  # Total time
+        p_i = map_time / (T + np.finfo(float).eps)  # Probability of occupying bin i
+
+        # Compute sparsity
+        # neurocode formula: ((Σ p_i × firing_rate)²) / (Σ p_i × firing_rate²)
+        numerator = (np.sum(p_i * map_z)) ** 2
+        denominator = np.sum(p_i * (map_z ** 2))
+
+        neurocode_sparsity = numerator / denominator
+
+        # Should match exactly (same formula)
+        assert np.abs(our_sparsity - neurocode_sparsity) < 1e-10, (
+            f"Sparsity should exactly match neurocode's MapStats1D.m formula: "
+            f"neurospatial={our_sparsity:.10f}, neurocode={neurocode_sparsity:.10f}, "
+            f"difference={abs(our_sparsity - neurocode_sparsity):.2e}"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
