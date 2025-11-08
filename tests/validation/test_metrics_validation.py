@@ -702,6 +702,107 @@ class TestOpexeboComparison:
                 f"ratio={ratio:.2f}"
             )
 
+    def test_border_score_euclidean_closer_to_opexebo(self):
+        """Verify that Euclidean distance mode gives closer match to opexebo.
+
+        This test demonstrates that using distance_method='euclidean' produces
+        scores much closer to opexebo's implementation, since both use
+        Euclidean distances in physical space rather than graph geodesics.
+        """
+        import opexebo
+        import numpy.ma as ma
+
+        # Create rectangular arena
+        nx_bins = 40
+        ny_bins = 40
+        arena_size = 100.0
+        bin_size = arena_size / nx_bins
+
+        positions = []
+        for i in range(nx_bins):
+            for j in range(ny_bins):
+                x = (i + 0.5) * bin_size
+                y = (j + 0.5) * bin_size
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=bin_size)
+        grid_shape = env.layout.grid_shape
+
+        # Create border cell pattern
+        firing_rate_2d = np.zeros(grid_shape)
+
+        for y_idx in range(ny_bins - 3, ny_bins):
+            for x_idx in range(nx_bins // 4, 3 * nx_bins // 4):
+                if y_idx == ny_bins - 1:
+                    firing_rate_2d[y_idx, x_idx] = 50.0
+                else:
+                    distance_from_wall = (ny_bins - 1) - y_idx
+                    firing_rate_2d[y_idx, x_idx] = 50.0 * np.exp(-distance_from_wall)
+
+        firing_rate_1d = firing_rate_2d.flatten()
+
+        # Compute with neurospatial using BOTH methods
+        score_geodesic = border_score(firing_rate_1d, env, threshold=0.3, distance_method="geodesic")
+        score_euclidean = border_score(firing_rate_1d, env, threshold=0.3, distance_method="euclidean")
+
+        # Compute with opexebo
+        firing_rate_2d_masked = ma.masked_array(
+            firing_rate_2d,
+            mask=np.zeros_like(firing_rate_2d, dtype=bool)
+        )
+
+        peak_y_grid = ny_bins - 1
+        peak_x_grid = nx_bins // 2
+        peak_coords = np.array([[peak_y_grid, peak_x_grid]])
+
+        fields, fields_map = opexebo.analysis.place_field(
+            firing_rate_2d_masked,
+            min_bins=5,
+            min_peak=1.0,
+            peak_coords=peak_coords
+        )
+
+        if len(fields) == 0:
+            pytest.skip("opexebo did not detect any fields")
+
+        for field in fields:
+            if 'map' in field and 'field_map' not in field:
+                field['field_map'] = field['map']
+
+        opexebo_score, _ = opexebo.analysis.border_score(
+            firing_rate_2d_masked,
+            fields_map,
+            fields,
+            arena_shape="rect"
+        )
+
+        # Euclidean should be closer to opexebo than geodesic
+        # (Since opexebo uses Euclidean distances)
+        error_geodesic = abs(score_geodesic - opexebo_score)
+        error_euclidean = abs(score_euclidean - opexebo_score)
+
+        # Print for debugging
+        print(f"\nopexebo score: {opexebo_score:.4f}")
+        print(f"neurospatial (geodesic): {score_geodesic:.4f} (error: {error_geodesic:.4f})")
+        print(f"neurospatial (euclidean): {score_euclidean:.4f} (error: {error_euclidean:.4f})")
+
+        # Euclidean mode should have smaller error
+        assert error_euclidean <= error_geodesic, (
+            f"Euclidean distance mode should be closer to opexebo than geodesic mode. "
+            f"opexebo={opexebo_score:.4f}, "
+            f"geodesic={score_geodesic:.4f} (error={error_geodesic:.4f}), "
+            f"euclidean={score_euclidean:.4f} (error={error_euclidean:.4f})"
+        )
+
+        # Euclidean should match within 30% (still some difference due to coverage computation)
+        relative_error = error_euclidean / max(abs(opexebo_score), 1e-10)
+        assert relative_error < 0.3, (
+            f"Euclidean mode should match opexebo within 30%: "
+            f"neurospatial={score_euclidean:.4f}, opexebo={opexebo_score:.4f}, "
+            f"relative_error={relative_error * 100:.1f}%"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

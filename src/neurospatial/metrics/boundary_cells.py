@@ -28,6 +28,7 @@ def border_score(
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
+    distance_method: str = "geodesic",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.
@@ -50,6 +51,16 @@ def border_score(
         smaller than this return NaN. Default is 0.0 (no filtering). For rat
         hippocampal data, Solstad et al. (2008) used 200 cm². Adjust based on
         your bin size and environment scale.
+    distance_method : {"geodesic", "euclidean"}, optional
+        Method for computing distances from field bins to boundaries:
+
+        - "geodesic" (default): Graph shortest path distances through
+          connectivity. Handles irregular environments correctly.
+        - "euclidean": Straight-line distances in physical space. Matches
+          opexebo and original Solstad et al. (2008) for rectangular arenas.
+
+        Use "euclidean" for direct comparison with opexebo/BNT implementations.
+        Use "geodesic" for irregular environments with obstacles.
 
     Returns
     -------
@@ -81,7 +92,8 @@ def border_score(
     - Original algorithm uses rectangular arenas with 4 discrete walls
     - This implementation generalizes to irregular graph-based environments
     - Boundary coverage computed over all boundary bins (not per-wall)
-    - Distance computed using graph shortest paths (not Euclidean)
+    - Distance computed using graph shortest paths (geodesic, default) or
+      Euclidean distances (when distance_method="euclidean")
 
     References
     ----------
@@ -127,6 +139,11 @@ def border_score(
     if min_area < 0:
         raise ValueError(f"min_area must be non-negative, got {min_area}")
 
+    if distance_method not in ("geodesic", "euclidean"):
+        raise ValueError(
+            f"distance_method must be 'geodesic' or 'euclidean', got '{distance_method}'"
+        )
+
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
         return np.nan
@@ -163,27 +180,49 @@ def border_score(
     coverage = np.sum(boundary_in_field) / len(boundary_bins)
 
     # Compute mean distance from field bins to nearest boundary bin
-    # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
-    try:
-        # Compute shortest distances from ALL boundary bins to all reachable nodes
-        distances_from_boundary = nx.multi_source_dijkstra_path_length(
-            env.connectivity,
-            sources=boundary_bins.tolist(),
-            weight="distance",
-        )
-    except Exception:
-        return np.nan
+    if distance_method == "geodesic":
+        # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
+        try:
+            # Compute shortest distances from ALL boundary bins to all reachable nodes
+            distances_from_boundary = nx.multi_source_dijkstra_path_length(
+                env.connectivity,
+                sources=boundary_bins.tolist(),
+                weight="distance",
+            )
+        except Exception:
+            return np.nan
 
-    # For each field bin, get distance to nearest boundary (already computed above)
-    distances_to_boundary = []
-    for field_bin in field_bins:
-        if int(field_bin) in distances_from_boundary:
-            distances_to_boundary.append(distances_from_boundary[int(field_bin)])
+        # For each field bin, get distance to nearest boundary (already computed above)
+        distances_to_boundary = []
+        for field_bin in field_bins:
+            if int(field_bin) in distances_from_boundary:
+                distances_to_boundary.append(distances_from_boundary[int(field_bin)])
 
-    if len(distances_to_boundary) == 0:
-        return np.nan
+        if len(distances_to_boundary) == 0:
+            return np.nan
 
-    mean_distance = np.mean(distances_to_boundary)
+        mean_distance = np.mean(distances_to_boundary)
+
+    else:  # distance_method == "euclidean"
+        # Compute Euclidean distances in physical space
+        # For each field bin, find minimum Euclidean distance to any boundary bin
+        field_centers = env.bin_centers[field_bins]  # shape (n_field_bins, n_dims)
+        boundary_centers = env.bin_centers[boundary_bins]  # shape (n_boundary_bins, n_dims)
+
+        # For each field bin, compute distance to all boundary bins
+        # and take the minimum
+        distances_to_boundary = []
+        for field_center in field_centers:
+            # Compute distances to all boundary bins
+            dists = np.linalg.norm(boundary_centers - field_center, axis=1)
+            # Take minimum distance
+            min_dist = np.min(dists)
+            distances_to_boundary.append(min_dist)
+
+        if len(distances_to_boundary) == 0:
+            return np.nan
+
+        mean_distance = np.mean(distances_to_boundary)
 
     # Normalize distance by environment extent (maximum spatial extent)
     # Compute extent as the diagonal of the bounding box
