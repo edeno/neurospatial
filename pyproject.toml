@@ -253,3 +253,12 @@ allow_incomplete_defs = true
 [[tool.mypy.overrides]]
 module = "docs.examples.*"
 ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "opexebo>=0.7.2",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "traja>=25.0.1",
+    "yupi>=1.0.2",
+]

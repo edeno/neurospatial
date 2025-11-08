@@ -1,0 +1,504 @@
+"""
+Validation tests for neurospatial metrics against published algorithms.
+
+These tests validate our implementations against:
+1. Known mathematical properties (ground truth)
+2. Published formulas from reference papers
+3. Synthetic data with expected outcomes
+
+External package comparisons (opexebo, neurocode) are marked as optional
+and only run if those packages are installed.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from numpy.typing import NDArray
+
+from neurospatial import Environment
+from neurospatial.metrics import (
+    border_score,
+    detect_place_fields,
+    skaggs_information,
+    sparsity,
+)
+
+
+class TestSpatialInformationValidation:
+    """Validate Skaggs spatial information against published formula.
+
+    Reference: Skaggs et al. (1993) "An Information-Theoretic Approach to
+    Deciphering the Hippocampal Code"
+
+    Formula: I = Σ pᵢ (rᵢ/r̄) log₂(rᵢ/r̄)
+    where pᵢ = occupancy probability, rᵢ = firing rate, r̄ = mean rate
+    """
+
+    def test_spatial_information_perfect_localization(self):
+        """Cell firing in single bin has maximum information content."""
+        # Create 10x10 environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Fire only in one bin (perfect place cell)
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[50] = 10.0  # Single bin fires at 10 Hz
+
+        info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        # Expected: log2(n_bins) = log2(100) ≈ 6.64 bits/spike
+        expected = np.log2(env.n_bins)
+
+        # Allow small numerical error
+        assert np.abs(info - expected) < 0.01, (
+            f"Perfect localization should give ~{expected:.2f} bits/spike, "
+            f"got {info:.2f}"
+        )
+
+    def test_spatial_information_uniform_firing(self):
+        """Uniform firing has zero information content."""
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Uniform occupancy and firing
+        occupancy = np.ones(env.n_bins)
+        firing_rate = np.ones(env.n_bins) * 5.0  # Uniform 5 Hz everywhere
+
+        info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        # Expected: 0 bits/spike (no spatial information)
+        assert np.abs(info) < 0.01, (
+            f"Uniform firing should give ~0 bits/spike, got {info:.2f}"
+        )
+
+    def test_spatial_information_formula_validation(self):
+        """Validate against manual calculation of Skaggs formula."""
+        positions = np.random.randn(100, 2) * 20
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create simple test case with correct size
+        occupancy = np.ones(env.n_bins)
+        occupancy[:min(4, env.n_bins)] = np.array([10.0, 20.0, 30.0, 40.0])[:min(4, env.n_bins)]
+        occupancy = occupancy / occupancy.sum()  # Normalize to probabilities
+
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[:min(4, env.n_bins)] = np.array([0.0, 5.0, 10.0, 15.0])[:min(4, env.n_bins)]
+
+        # Manual calculation
+        mean_rate = np.sum(occupancy * firing_rate)
+
+        # Only include bins with firing
+        mask = firing_rate > 0
+        expected_info = 0.0
+        for i in range(len(firing_rate)):
+            if mask[i]:
+                log_term = np.log2(firing_rate[i] / mean_rate)
+                expected_info += occupancy[i] * (firing_rate[i] / mean_rate) * log_term
+
+        # Compare with implementation
+        computed_info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        assert np.abs(computed_info - expected_info) < 1e-10, (
+            f"Manual calculation: {expected_info:.10f}, "
+            f"Implementation: {computed_info:.10f}"
+        )
+
+    def test_spatial_information_range_validation(self):
+        """Spatial information should be non-negative."""
+        positions = np.random.randn(500, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Random realistic firing pattern
+        np.random.seed(42)
+        occupancy = np.random.rand(env.n_bins)
+        occupancy = occupancy / occupancy.sum()
+
+        firing_rate = np.random.rand(env.n_bins) * 10.0
+
+        info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        assert info >= 0, f"Information content must be non-negative, got {info:.2f}"
+        assert info <= np.log2(env.n_bins), (
+            f"Information content must be ≤ log2(n_bins)={np.log2(env.n_bins):.2f}, "
+            f"got {info:.2f}"
+        )
+
+
+class TestSparsityValidation:
+    """Validate sparsity measure against published formula.
+
+    Reference: Skaggs et al. (1996)
+    Formula: S = (Σ pᵢ rᵢ)² / Σ pᵢ rᵢ²
+
+    Range: [0, 1], where 0 = fires everywhere equally, 1 = fires in single bin
+    """
+
+    def test_sparsity_perfect_place_cell(self):
+        """Cell firing in single bin has sparsity = 1/n_bins."""
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+        occupancy = occupancy / occupancy.sum()
+
+        # Fire only in one bin
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[50] = 10.0
+
+        s = sparsity(firing_rate, occupancy)
+
+        # Expected: 1/n_bins for perfect localization
+        expected = 1.0 / env.n_bins
+
+        assert np.abs(s - expected) < 0.01, (
+            f"Single-bin firing should give sparsity={expected:.4f}, got {s:.4f}"
+        )
+
+    def test_sparsity_uniform_firing(self):
+        """Uniform firing has sparsity = 1.0 (maximal sparsity)."""
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Uniform occupancy and firing
+        occupancy = np.ones(env.n_bins) / env.n_bins
+        firing_rate = np.ones(env.n_bins) * 5.0
+
+        s = sparsity(firing_rate, occupancy)
+
+        # Expected: 1.0 for uniform firing
+        assert np.abs(s - 1.0) < 0.01, (
+            f"Uniform firing should give sparsity=1.0, got {s:.4f}"
+        )
+
+    def test_sparsity_formula_validation(self):
+        """Validate against manual calculation."""
+        positions = np.random.randn(100, 2) * 20
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Simple test case
+        occupancy = np.array([0.1, 0.2, 0.3, 0.4])[:env.n_bins]
+        firing_rate = np.array([1.0, 2.0, 3.0, 4.0])[:env.n_bins]
+
+        # Manual calculation: (Σ pᵢ rᵢ)² / Σ pᵢ rᵢ²
+        numerator = np.sum(occupancy * firing_rate) ** 2
+        denominator = np.sum(occupancy * firing_rate**2)
+        expected_sparsity = numerator / denominator
+
+        computed_sparsity = sparsity(firing_rate, occupancy)
+
+        assert np.abs(computed_sparsity - expected_sparsity) < 1e-10, (
+            f"Manual: {expected_sparsity:.10f}, Implementation: {computed_sparsity:.10f}"
+        )
+
+    def test_sparsity_range_validation(self):
+        """Sparsity should be in range [1/n_bins, 1.0]."""
+        positions = np.random.randn(500, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        np.random.seed(42)
+        occupancy = np.random.rand(env.n_bins)
+        occupancy = occupancy / occupancy.sum()
+
+        firing_rate = np.random.rand(env.n_bins) * 10.0
+
+        s = sparsity(firing_rate, occupancy)
+
+        min_sparsity = 1.0 / env.n_bins
+        assert min_sparsity <= s <= 1.0, (
+            f"Sparsity must be in [{min_sparsity:.4f}, 1.0], got {s:.4f}"
+        )
+
+
+class TestBorderScoreValidation:
+    """Validate border score implementation.
+
+    Reference: Solstad et al. (2008) "Representation of Geometric Borders in
+    the Entorhinal Cortex"
+
+    Formula: border_score = (cM - d) / (cM + d)
+    where cM = max boundary coverage, d = normalized mean distance to boundary
+
+    Note: Our implementation generalizes to irregular graphs using geodesic
+    distances instead of Euclidean distances.
+    """
+
+    def test_border_score_perfect_border_cell(self):
+        """Cell firing along entire boundary has high border score."""
+        # Create rectangular environment
+        positions = []
+        for x in np.linspace(0, 100, 50):
+            for y in np.linspace(0, 100, 50):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Get boundary bins
+        boundary_bins = env.boundary_bins
+
+        # Create firing rate with high firing at boundary
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[boundary_bins] = 10.0  # Fire at 10 Hz at boundary
+
+        score = border_score(firing_rate, env, threshold=0.3)
+
+        # Perfect border cell should have high positive score
+        assert score > 0.5, (
+            f"Perfect border cell should have score > 0.5, got {score:.3f}"
+        )
+
+    def test_border_score_central_field(self):
+        """Cell firing in center has negative or low border score."""
+        positions = []
+        for x in np.linspace(0, 100, 50):
+            for y in np.linspace(0, 100, 50):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Find central bin
+        center = env.bin_centers.mean(axis=0)
+        distances_to_center = np.linalg.norm(
+            env.bin_centers - center, axis=1
+        )
+        central_bins = np.argsort(distances_to_center)[:5]  # 5 central bins
+
+        # Fire only in center
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[central_bins] = 10.0
+
+        score = border_score(firing_rate, env, threshold=0.3)
+
+        # Central field should have low or negative score
+        assert score < 0.5, (
+            f"Central field should have score < 0.5, got {score:.3f}"
+        )
+
+    def test_border_score_range_validation(self):
+        """Border score should be in range [-1, 1]."""
+        positions = np.random.randn(500, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Random firing pattern
+        np.random.seed(42)
+        firing_rate = np.random.rand(env.n_bins) * 10.0
+
+        score = border_score(firing_rate, env, threshold=0.3)
+
+        assert -1.0 <= score <= 1.0, (
+            f"Border score must be in [-1, 1], got {score:.3f}"
+        )
+
+    def test_border_score_formula_components(self):
+        """Validate formula components (coverage and distance)."""
+        positions = []
+        for x in np.linspace(0, 100, 30):
+            for y in np.linspace(0, 100, 30):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=12.0)
+
+        # Fire along one wall
+        boundary_bins = env.boundary_bins
+        # Select bins on left wall (x ~ 0)
+        left_wall_bins = [
+            b for b in boundary_bins
+            if env.bin_centers[b, 0] < 20
+        ]
+
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[left_wall_bins] = 10.0
+
+        score = border_score(firing_rate, env, threshold=0.3)
+
+        # Wall-firing cell should have positive score
+        # (high coverage, low distance)
+        assert score > 0, (
+            f"Wall-firing cell should have positive score, got {score:.3f}"
+        )
+
+
+class TestPlaceFieldDetectionValidation:
+    """Validate place field detection algorithm.
+
+    Reference: Our algorithm follows neurocode's iterative peak-based approach
+    with subfield discrimination.
+
+    Key features:
+    1. Iterative peak detection at threshold * peak_rate
+    2. Connected component analysis
+    3. Subfield discrimination (recursive threshold)
+    4. Interneuron exclusion (mean rate > 10 Hz)
+    """
+
+    def test_place_field_detection_single_field(self):
+        """Single Gaussian field should be detected correctly."""
+        # Create environment
+        positions = []
+        for x in np.linspace(0, 100, 50):
+            for y in np.linspace(0, 100, 50):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create Gaussian field centered at (50, 50)
+        center = np.array([50.0, 50.0])
+        sigma = 15.0
+
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 10.0 * np.exp(-(distances**2) / (2 * sigma**2))
+
+        fields = detect_place_fields(
+            firing_rate, env, threshold=0.2, min_size=None
+        )
+
+        # Should detect exactly one field
+        assert len(fields) == 1, (
+            f"Should detect 1 field, got {len(fields)}"
+        )
+
+        # Field should contain center bin
+        center_bin = env.bin_at(center.reshape(1, -1))[0]
+        assert center_bin in fields[0], (
+            f"Field should contain center bin {center_bin}"
+        )
+
+    def test_place_field_detection_multiple_fields(self):
+        """Multiple separate fields should be detected."""
+        positions = []
+        for x in np.linspace(0, 100, 50):
+            for y in np.linspace(0, 100, 50):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create two Gaussian fields
+        center1 = np.array([25.0, 25.0])
+        center2 = np.array([75.0, 75.0])
+        sigma = 12.0
+
+        dist1 = np.linalg.norm(env.bin_centers - center1, axis=1)
+        dist2 = np.linalg.norm(env.bin_centers - center2, axis=1)
+
+        firing_rate = (
+            8.0 * np.exp(-(dist1**2) / (2 * sigma**2))
+            + 8.0 * np.exp(-(dist2**2) / (2 * sigma**2))
+        )
+
+        fields = detect_place_fields(
+            firing_rate, env, threshold=0.2, min_size=None
+        )
+
+        # Should detect two fields
+        assert len(fields) >= 2, (
+            f"Should detect at least 2 fields, got {len(fields)}"
+        )
+
+    def test_place_field_interneuron_exclusion(self):
+        """High firing rate cells should be excluded as interneurons."""
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Very high uniform firing (interneuron-like)
+        firing_rate = np.ones(env.n_bins) * 50.0  # 50 Hz mean
+
+        fields = detect_place_fields(
+            firing_rate, env, threshold=0.2, max_mean_rate=10.0
+        )
+
+        # Should detect no fields (excluded as interneuron)
+        assert len(fields) == 0, (
+            f"High firing rate cell should be excluded, got {len(fields)} fields"
+        )
+
+    def test_place_field_threshold_parameter(self):
+        """Threshold parameter should control field boundary."""
+        positions = []
+        for x in np.linspace(0, 100, 40):
+            for y in np.linspace(0, 100, 40):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Gaussian field
+        center = np.array([50.0, 50.0])
+        sigma = 15.0
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 10.0 * np.exp(-(distances**2) / (2 * sigma**2))
+
+        # Detect with different thresholds
+        fields_20pct = detect_place_fields(firing_rate, env, threshold=0.2)
+        fields_50pct = detect_place_fields(firing_rate, env, threshold=0.5)
+
+        # Higher threshold should give smaller field
+        if len(fields_20pct) > 0 and len(fields_50pct) > 0:
+            size_20 = len(fields_20pct[0])
+            size_50 = len(fields_50pct[0])
+
+            assert size_50 < size_20, (
+                f"Higher threshold should give smaller field: "
+                f"20%={size_20} bins, 50%={size_50} bins"
+            )
+
+
+try:
+    import opexebo
+    OPEXEBO_AVAILABLE = True
+except ImportError:
+    OPEXEBO_AVAILABLE = False
+
+
+@pytest.mark.skipif(not OPEXEBO_AVAILABLE, reason="opexebo not available")
+class TestOpexeboComparison:
+    """Direct comparison with opexebo (if installed).
+
+    These tests are skipped if opexebo is not installed.
+    """
+
+    def test_spatial_information_matches_opexebo(self):
+        """Compare our Skaggs information with opexebo."""
+        import opexebo
+
+        # Create simple test case
+        positions = []
+        for x in np.linspace(0, 100, 20):
+            for y in np.linspace(0, 100, 20):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Gaussian place field
+        center = np.array([50.0, 50.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate_1d = 10.0 * np.exp(-(distances**2) / (2 * 15.0**2))
+
+        # Reshape to 2D grid for opexebo
+        grid_shape = env.layout.grid_shape
+        firing_rate_2d = firing_rate_1d.reshape(grid_shape)
+
+        # Compute with both methods
+        occupancy = np.ones_like(firing_rate_1d)
+        our_info = skaggs_information(firing_rate_1d, occupancy, base=2.0)
+
+        # opexebo expects 2D array
+        opexebo_info = opexebo.analysis.spatial_information(
+            firing_rate_2d, np.ones(grid_shape)
+        )
+
+        # Should match within 1%
+        assert np.abs(our_info - opexebo_info) / opexebo_info < 0.01
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
