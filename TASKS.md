@@ -740,52 +740,63 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/segmentation/laps.py`
-- [ ] Implement `detect_laps(trajectory_bins, times, env, *, method='auto', min_overlap=0.8, direction='both')`
-  - [ ] Method 'auto': detect template from first 10% of trajectory
-  - [ ] Method 'reference': user provides reference lap
-  - [ ] Method 'region': detect crossings of start region
-  - [ ] Compute overlap with template (Jaccard index)
-  - [ ] Detect direction (clockwise/counter-clockwise)
-  - [ ] Return list of Lap objects (start_time, end_time, direction, overlap_score)
+- [x] Create `src/neurospatial/segmentation/laps.py`
+- [x] Implement `detect_laps(trajectory_bins, times, env, *, method='auto', min_overlap=0.8, direction='both')`
+  - [x] Method 'auto': detect template from first 10% of trajectory
+  - [x] Method 'reference': user provides reference lap
+  - [x] Method 'region': detect crossings of start region
+  - [x] Compute overlap with template (Jaccard index)
+  - [x] Detect direction (clockwise/counter-clockwise)
+  - [x] Return list of Lap objects (start_time, end_time, direction, overlap_score)
 
 **Testing**:
 
-- [ ] Create `tests/segmentation/test_laps.py`
-- [ ] Test: `test_detect_laps_circular_track()` - synthetic circular trajectory
-- [ ] Test: `test_detect_laps_direction()` - clockwise vs counter-clockwise
-- [ ] Test: `test_detect_laps_auto_template()` - template detection
-- [ ] Test: `test_detect_laps_overlap_threshold()` - min_overlap filtering
-- [ ] Run: `uv run pytest tests/segmentation/test_laps.py -v`
+- [x] Create `tests/segmentation/test_laps.py`
+- [x] Test: `test_detect_laps_circular_track()` - synthetic circular trajectory
+- [x] Test: `test_detect_laps_direction()` - clockwise vs counter-clockwise
+- [x] Test: `test_detect_laps_auto_template()` - template detection
+- [x] Test: `test_detect_laps_overlap_threshold()` - min_overlap filtering
+- [x] Run: `uv run pytest tests/segmentation/test_laps.py -v` (12/12 tests pass)
 
 **Validation**:
 
-- [ ] Compare with neurocode NSMAFindGoodLaps.m if available
+- [ ] Compare with neurocode NSMAFindGoodLaps.m if available (deferred)
 
-**Effort**: 2 days
+**Effort**: 2 days (COMPLETE)
 
 ---
 
-### 4.4 Trial Segmentation (Week 10, Day 6)
+### 4.4 Trial Segmentation (Week 10, Day 6) ✅ COMPLETE
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/segmentation/trials.py`
-- [ ] Implement `segment_trials(trajectory_bins, times, env, *, trial_type, start_region, end_regions, min_duration=1.0, max_duration=15.0)`
-  - [ ] Detect start region entries
-  - [ ] Track trajectory to end regions
-  - [ ] Determine outcome (which end region reached)
-  - [ ] Filter by duration
-  - [ ] Return list of Trial objects (start_time, end_time, outcome, success)
+- [x] Create `src/neurospatial/segmentation/trials.py`
+- [x] Implement `segment_trials(trajectory_bins, times, env, *, start_region, end_regions, min_duration=1.0, max_duration=15.0)`
+  - [x] Detect start region entries
+  - [x] Track trajectory to end regions
+  - [x] Determine outcome (which end region reached)
+  - [x] Filter by duration
+  - [x] Return list of Trial objects (start_time, end_time, outcome, success)
+  - [x] Export Trial and segment_trials in segmentation package
 
 **Testing**:
 
-- [ ] Create `tests/segmentation/test_trials.py`
-- [ ] Test: `test_segment_trials_tmaze()` - T-maze left/right trials
-- [ ] Test: `test_segment_trials_duration_filter()` - min/max duration
-- [ ] Run: `uv run pytest tests/segmentation/test_trials.py -v`
+- [x] Create `tests/segmentation/test_trials.py` (9 comprehensive tests)
+- [x] Test: `test_segment_trials_tmaze_left_right()` - T-maze left/right trials
+- [x] Test: `test_segment_trials_duration_filter_min()` - min duration filter
+- [x] Test: `test_segment_trials_duration_filter_max()` - max duration timeout
+- [x] Test: `test_segment_trials_successful_completion()` - successful trial
+- [x] Test: `test_segment_trials_empty_trajectory()` - edge case handling
+- [x] Test: `test_segment_trials_no_end_region_reached()` - timeout handling
+- [x] Test: `test_segment_trials_parameter_validation()` - comprehensive validation
+- [x] Test: `test_segment_trials_parameter_order()` - API consistency
+- [x] Test: `test_segment_trials_multiple_starts()` - complex behavior
+- [x] Run: `uv run pytest tests/segmentation/test_trials.py -v` (9/9 PASS)
+- [x] Code review: Applied code-reviewer agent, fixed 2 issues
+- [x] Type safety: `uv run mypy` (0 errors)
+- [x] Code quality: `uv run ruff check` (all checks pass)
 
-**Effort**: 1 day
+**Effort**: 1 day (as planned)
 
 ---
 

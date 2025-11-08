@@ -1,5 +1,211 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.4 - Trial Segmentation COMPLETE
+
+### Task: Implement trial segmentation for behavioral task analysis
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/segmentation/trials.py` - Trial segmentation implementation (349 lines)
+2. `tests/segmentation/test_trials.py` - Comprehensive test suite (447 lines, 9 tests)
+
+**Files Modified**:
+
+1. `src/neurospatial/segmentation/__init__.py` - Added `Trial` and `segment_trials` exports
+
+**Implementation**:
+
+**`segment_trials(trajectory_bins, times, env, *, start_region, end_regions, min_duration=1.0, max_duration=15.0)`**
+
+**Core Algorithm**:
+1. Detect start region entries (trial initiation)
+2. Track trajectory until one of the end regions is reached
+3. Mark as success if end region reached within max_duration
+4. Mark as failure/timeout if max_duration exceeded
+5. Filter by min_duration (exclude very brief entries)
+6. Handle multiple start entries (previous trial discarded if incomplete)
+
+**Data Structure**:
+- `Trial` dataclass (frozen=True) with start_time, end_time, outcome, success
+- outcome: str (name of end region) or None (timeout)
+- success: bool (True if reached end region, False if timeout)
+
+**Key Features**:
+- **Scientific correctness**: Follows typical neuroscience maze task conventions
+- **Comprehensive validation**: All parameter combinations validated
+- **Clear error messages**: Include available regions and diagnostic info
+- **Edge case handling**: Empty trajectories, multiple starts, no end reached
+- **Type safety**: Full type hints with EnvironmentProtocol
+
+**Test Coverage** (9 tests, all pass):
+- T-maze left/right trials with multiple outcomes
+- Duration filtering (min and max)
+- Successful trial completion
+- Empty trajectory handling
+- Timeout handling (no end region reached)
+- Parameter validation (8 error conditions)
+- Parameter order consistency
+- Multiple start entries handling
+
+**TDD Workflow Applied**:
+1. ✅ Wrote 9 comprehensive tests FIRST
+2. ✅ Ran tests - verified FAIL (RED phase - ModuleNotFoundError)
+3. ✅ Implemented `segment_trials()` and `Trial` dataclass (GREEN phase)
+4. ✅ All 9 tests passed on first implementation attempt
+5. ✅ Applied code-reviewer agent - found 2 medium-priority issues
+6. ✅ Fixed both issues:
+   - Changed `duration > max_duration` to `>= max_duration` for consistency
+   - Added validation to prevent start_region from being in end_regions
+7. ✅ Updated tests to handle new validation
+8. ✅ Ran mypy (0 errors), ruff (all checks pass), tests (9/9 pass)
+
+**Code Review Findings** (all fixed):
+1. ✅ **Quality Issue #3**: Fixed `>` to `>=` at line 317 for timeout consistency
+2. ✅ **Quality Issue #4**: Added validation preventing start_region in end_regions (typical neuroscience practice)
+3. ✅ Added test for new validation
+4. ✅ All other aspects approved (type safety, documentation, algorithm correctness)
+
+**Scientific Applications**:
+- **T-maze**: Spatial alternation, working memory, choice behavior
+- **Y-maze**: Spontaneous alternation, exploration strategies
+- **Radial arm maze**: Reference/working memory, optimal foraging
+- Learning curves: trial-by-trial performance analysis
+- Strategy analysis: choice patterns and stereotypy
+
+**Key Design Decisions**:
+
+1. **Start/end regions must be distinct**: Added validation to prevent overlap (matches typical maze tasks)
+2. **Timeout consistency**: Used `>= max_duration` throughout (not `>`)
+3. **Multiple start handling**: Re-entry to start region discards previous incomplete trial
+4. **Immutable dataclass**: `Trial` is frozen for scientific data integrity
+5. **NumPy docstring**: Comprehensive documentation with scientific references (Olton & Samuelson 1976, Wood et al. 2000)
+
+**Type Safety**:
+- Literal types for string parameters
+- EnvironmentProtocol for type checking
+- TYPE_CHECKING guards for imports
+- Zero mypy errors (strict type checking)
+
+**Effort**: ~1 hour (as planned in TASKS.md)
+
+**Next Steps**: Milestone 4.5 - Trajectory Similarity (optional, may defer)
+
+---
+
+## 2025-11-07: Milestone 4.3 - Lap Detection COMPLETE
+
+### Task: Implement lap detection for circular track analysis
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/segmentation/laps.py` - Lap detection implementation (369 lines)
+2. `tests/segmentation/test_laps.py` - Comprehensive test suite (295 lines, 12 tests)
+
+**Files Modified**:
+
+1. `src/neurospatial/segmentation/__init__.py` - Added `Lap` and `detect_laps` exports
+
+**Implementation**:
+
+**`detect_laps(trajectory_bins, times, env, *, method='auto', min_overlap=0.8, direction='both', reference_lap=None, start_region=None)`**
+
+**Three Detection Methods:**
+
+1. **'auto'**: Automatically extracts template from first 10% of trajectory
+   - Sliding window search for repeating patterns
+   - Jaccard overlap computation for similarity matching
+
+2. **'reference'**: Uses user-provided reference lap as template
+   - Allows comparison to canonical lap pattern
+   - Useful when first lap is atypical
+
+3. **'region'**: Defines laps as segments between start region crossings
+   - Uses `detect_region_crossings()` internally
+   - Suitable for well-controlled tasks with clear start zones
+
+**Direction Detection:**
+- Uses signed area via shoelace formula for 2D trajectories
+- Positive area = counter-clockwise, negative = clockwise
+- Returns 'unknown' for non-2D or degenerate cases
+
+**Overlap Computation:**
+- Jaccard coefficient: |intersection| / |union|
+- Handles empty sequences gracefully
+- Range [0, 1] where 1.0 = perfect overlap
+
+**Data Structures:**
+- `Lap` dataclass (frozen=True) with start_time, end_time, direction, overlap_score
+- Immutable for scientific data integrity
+
+**Test Coverage** (12 tests, all pass):
+- Circular track with auto template detection
+- Direction filtering (clockwise, counter-clockwise, both)
+- Reference method with user-provided template
+- Region method using start zone crossings
+- Overlap threshold filtering
+- Edge cases (empty trajectory, no laps, straight line)
+- Parameter validation (invalid method, missing params)
+- Integration workflow combining all three methods
+
+**TDD Workflow Applied**:
+1. ✅ Wrote 12 comprehensive tests FIRST
+2. ✅ Ran tests - verified FAIL (RED phase - ModuleNotFoundError)
+3. ✅ Implemented `detect_laps()` and helper functions (GREEN phase)
+4. ✅ All 12 tests passed on first implementation attempt
+5. ✅ Applied code-reviewer agent - found 5 mypy type errors
+6. ✅ Fixed all type errors:
+   - Added assertion for type narrowing (start_region)
+   - Moved laps list declaration to single location
+   - Converted np.searchsorted() and min() results to int
+7. ✅ Removed unused variable (template_set)
+8. ✅ Fixed test regex patterns (raw strings)
+9. ✅ Ran mypy (0 errors), ruff (all checks pass), tests (12/12 pass)
+
+**Code Review Findings** (all fixed):
+- ✅ Fixed 5 mypy type errors (incompatible types, variable redefinition)
+- ✅ Removed unused `template_set` variable
+- ✅ Fixed test regex patterns to use raw strings
+- ✅ All edge cases handled properly
+- ✅ NumPy-style docstrings with scientific references (Barnes et al. 1997, Dupret et al. 2010)
+- ✅ Excellent algorithm correctness (Jaccard, shoelace formula)
+
+**Key Algorithm Details**:
+
+**Sliding Window Search (auto/reference methods):**
+- Variable window sizes: 70% to 130% of template length
+- Accounts for speed variations during laps
+- Finds best overlap in each window
+- Complexity: O(n * template_length) where n = trajectory length
+
+**Shoelace Formula for Direction:**
+```python
+area = 0.5 * sum(x[i] * y[i+1] - x[i+1] * y[i])
+if area > 0: counter-clockwise
+if area < 0: clockwise
+```
+
+**Scientific Applications:**
+- Lap-by-lap learning curves (Barnes et al., 1997)
+- Trajectory stereotypy quantification
+- Performance variability analysis
+- Spatial strategy consistency
+
+**Type Safety:**
+- Literal types for method and direction parameters
+- Explicit int conversions for numpy operations
+- TYPE_CHECKING guards for Protocol imports
+- Zero mypy errors (strict type checking)
+
+**Effort**: ~2 hours (as planned in TASKS.md)
+
+**Next Steps**: Milestone 4.4 - Trial Segmentation
+
+---
+
 ## 2025-11-07: Milestone 4.2 - Region-Based Segmentation COMPLETE
 
 ### Task: Implement region-based trajectory segmentation functions
