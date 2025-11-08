@@ -803,6 +803,61 @@ class TestOpexeboComparison:
             f"relative_error={relative_error * 100:.1f}%"
         )
 
+    def test_spatial_information_matches_neurocode_formula(self):
+        """Compare our implementation with neurocode's MapStats.m formula.
+
+        neurocode's MapStats.m (lines 170-180) computes:
+            T = sum(map.time(:))
+            p_i = map.time/(T+eps)
+            lambda_i = map.z
+            lambda = lambda_i(:)'*p_i(:)
+            specificity = sum(sum(p_i(ok).*lambda_i(ok)/lambda.*log2(lambda_i(ok)/lambda)))
+
+        This is mathematically identical to Skaggs et al. (1993).
+
+        Reference: https://github.com/ayalab1/neurocode/blob/master/PlaceCells/MapStats.m
+        """
+        # Create test environment
+        positions = np.random.randn(1000, 2) * 20
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create Gaussian place field
+        center = np.array([0.0, 0.0])
+        distances = np.linalg.norm(env.bin_centers - center, axis=1)
+        firing_rate = 15.0 * np.exp(-(distances**2) / (2 * 8.0**2))
+
+        # Uniform occupancy
+        occupancy = np.ones(env.n_bins)
+
+        # Compute with neurospatial
+        our_info = skaggs_information(firing_rate, occupancy, base=2.0)
+
+        # Manually implement neurocode's exact formula
+        # (from MapStats.m lines 172-180)
+        map_time = occupancy  # Occupancy time in each bin
+        map_z = firing_rate   # Firing rate (lambda_i)
+
+        T = np.sum(map_time)  # Total time
+        p_i = map_time / (T + np.finfo(float).eps)  # Probability of occupying bin i
+
+        lambda_i = map_z  # Firing rate in bin i
+        lambda_mean = np.dot(lambda_i.flatten(), p_i.flatten())  # Mean firing rate
+
+        # neurocode filters bins with time > minTime (default minTime=0)
+        ok = map_time > 0
+
+        # Compute specificity (neurocode's name for spatial information)
+        neurocode_specificity = np.sum(
+            p_i[ok] * (lambda_i[ok] / lambda_mean) * np.log2(lambda_i[ok] / lambda_mean)
+        )
+
+        # Should match exactly (same formula)
+        assert np.abs(our_info - neurocode_specificity) < 1e-10, (
+            f"Spatial information should exactly match neurocode's MapStats.m formula: "
+            f"neurospatial={our_info:.10f}, neurocode={neurocode_specificity:.10f}, "
+            f"difference={abs(our_info - neurocode_specificity):.2e}"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
