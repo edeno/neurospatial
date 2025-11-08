@@ -479,3 +479,163 @@ def test_place_field_workflow_integration():
     # Test stability with itself
     stability = field_stability(firing_rate, firing_rate)
     assert_allclose(stability, 1.0, atol=1e-6)
+
+
+# =============================================================================
+# Test rate_map_coherence
+# =============================================================================
+
+
+def test_rate_map_coherence_perfectly_smooth():
+    """Test coherence on perfectly smooth (constant) rate map."""
+    # Create environment
+    positions = np.random.randn(2000, 2) * 20
+    env = Environment.from_samples(positions, bin_size=4.0)
+
+    # Uniform firing rate (constant - no variance)
+    firing_rate = np.ones(env.n_bins) * 5.0
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Constant map has no variance - coherence undefined (NaN)
+    assert np.isnan(coherence), f"Expected NaN for constant map, got {coherence}"
+
+
+def test_rate_map_coherence_random_noise():
+    """Test coherence on random noise (no spatial structure)."""
+    positions = np.random.randn(2000, 2) * 20
+    env = Environment.from_samples(positions, bin_size=4.0)
+
+    # Random firing rates (no spatial structure)
+    np.random.seed(42)
+    firing_rate = np.random.rand(env.n_bins) * 5.0
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Random noise should have low coherence
+    assert coherence < 0.5, (
+        f"Expected coherence < 0.5 for random noise, got {coherence}"
+    )
+
+
+def test_rate_map_coherence_gaussian_field():
+    """Test coherence on smooth Gaussian field."""
+    # Create environment
+    positions = []
+    for x in np.linspace(0, 40, 400):
+        for y in np.linspace(0, 40, 400):
+            positions.append([x, y])
+    positions = np.array(positions)
+    env = Environment.from_samples(positions, bin_size=4.0)
+
+    # Smooth Gaussian field
+    firing_rate = np.zeros(env.n_bins)
+    for i in range(env.n_bins):
+        center = env.bin_centers[i]
+        distance = np.sqrt((center[0] - 20) ** 2 + (center[1] - 20) ** 2)
+        firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 8.0**2))
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Smooth field should have high coherence
+    assert coherence > 0.7, (
+        f"Expected coherence > 0.7 for smooth field, got {coherence}"
+    )
+
+
+def test_rate_map_coherence_all_zeros():
+    """Test coherence with zero firing everywhere."""
+    positions = np.random.randn(1000, 2) * 10
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # All zeros
+    firing_rate = np.zeros(env.n_bins)
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Should return NaN (no variance)
+    assert np.isnan(coherence), f"Expected NaN for zero firing, got {coherence}"
+
+
+def test_rate_map_coherence_with_nans():
+    """Test coherence handles NaN values correctly."""
+    positions = np.random.randn(2000, 2) * 20
+    env = Environment.from_samples(positions, bin_size=4.0)
+
+    # Firing rate with some NaNs and varying values
+    np.random.seed(42)
+    firing_rate = np.random.rand(env.n_bins) * 5.0
+    firing_rate[::5] = np.nan  # 20% NaN
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Should handle NaNs gracefully (compute coherence on valid bins only)
+    assert not np.isnan(coherence) or np.all(np.isnan(firing_rate)), (
+        "Coherence should handle NaNs unless all values are NaN"
+    )
+
+
+def test_rate_map_coherence_method_parameter():
+    """Test that method parameter works (pearson vs spearman)."""
+    positions = np.random.randn(2000, 2) * 20
+    env = Environment.from_samples(positions, bin_size=4.0)
+
+    # Smooth field
+    firing_rate = np.ones(env.n_bins) * 5.0
+    firing_rate[: len(firing_rate) // 2] = 3.0
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence_pearson = rate_map_coherence(firing_rate, env, method="pearson")
+    coherence_spearman = rate_map_coherence(firing_rate, env, method="spearman")
+
+    # Both should be valid
+    assert -1.0 <= coherence_pearson <= 1.0
+    assert -1.0 <= coherence_spearman <= 1.0
+
+
+def test_rate_map_coherence_return_type():
+    """Test that coherence returns scalar float."""
+    positions = np.random.randn(1000, 2) * 10
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    firing_rate = np.random.rand(env.n_bins) * 5.0
+
+    from neurospatial.metrics.place_fields import rate_map_coherence
+
+    coherence = rate_map_coherence(firing_rate, env)
+
+    # Should return scalar
+    assert np.ndim(coherence) == 0, "Coherence should be scalar"
+    assert isinstance(coherence, (float, np.floating)) or np.isnan(coherence)
+
+
+def test_rate_map_coherence_range():
+    """Test that coherence is always in [-1, 1]."""
+    # Test multiple random environments
+    for _ in range(5):
+        positions = np.random.randn(2000, 2) * 15
+        env = Environment.from_samples(positions, bin_size=3.0)
+
+        # Random firing rate
+        firing_rate = np.random.rand(env.n_bins) * 5.0
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        coherence = rate_map_coherence(firing_rate, env)
+
+        # Coherence should be in valid range or NaN
+        if not np.isnan(coherence):
+            assert -1.0 <= coherence <= 1.0, (
+                f"Coherence {coherence} out of range [-1, 1]"
+            )

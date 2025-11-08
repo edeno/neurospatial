@@ -651,3 +651,153 @@ def field_stability(
         raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
 
     return float(correlation)
+
+
+def rate_map_coherence(
+    firing_rate: NDArray[np.float64],
+    env: EnvironmentProtocol,
+    *,
+    method: Literal["pearson", "spearman"] = "pearson",
+) -> float:
+    """
+    Compute spatial coherence of a firing rate map.
+
+    Spatial coherence measures the smoothness of spatial firing patterns by
+    computing the correlation between each bin's firing rate and the mean rate
+    of its spatial neighbors. High coherence indicates smooth, spatially
+    structured firing. Low coherence indicates noisy or scattered firing.
+
+    This metric was introduced by Muller & Kubie (1989) to assess the quality
+    of place field representations.
+
+    Parameters
+    ----------
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
+    env : EnvironmentProtocol
+        Spatial environment containing bin centers and connectivity.
+    method : {'pearson', 'spearman'}, optional
+        Correlation method. Default is 'pearson'.
+        - 'pearson': Pearson correlation (linear relationship)
+        - 'spearman': Spearman correlation (monotonic relationship)
+
+    Returns
+    -------
+    float
+        Spatial coherence in range [-1, 1]. Returns NaN if:
+        - All firing rates are zero or constant (no variance)
+        - All rates are NaN
+        - Insufficient valid bins after NaN removal
+
+    Notes
+    -----
+    **Algorithm**:
+
+    1. For each bin i, compute mean firing rate of neighbors: m_i = mean(r_j) for j in neighbors(i)
+    2. Compute correlation between bin rates r_i and neighbor means m_i
+    3. Coherence = corr(r, m)
+
+    **Interpretation**:
+
+    - **High coherence (> 0.7)**: Smooth, spatially structured firing (good place field)
+    - **Medium coherence (0.3-0.7)**: Some spatial structure but with noise
+    - **Low coherence (< 0.3)**: Noisy, poorly defined spatial firing
+
+    **Graph-based approach**:
+
+    This implementation uses `env.connectivity` to determine spatial neighbors,
+    making it applicable to irregular environments and graphs with obstacles.
+    For regular grids, results should match Muller & Kubie (1989) approach.
+
+    References
+    ----------
+    Muller, R. U., & Kubie, J. L. (1989). The firing of hippocampal place cells
+        predicts the future position of freely moving rats. Journal of Neuroscience,
+        9(12), 4101-4110.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.metrics import rate_map_coherence
+    >>>
+    >>> # Create environment
+    >>> positions = np.random.randn(5000, 2) * 20
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>>
+    >>> # Smooth Gaussian field (high coherence)
+    >>> firing_rate_smooth = np.zeros(env.n_bins)
+    >>> for i in range(env.n_bins):
+    ...     center = env.bin_centers[i]
+    ...     dist = np.linalg.norm(center - np.array([0, 0]))
+    ...     firing_rate_smooth[i] = 5.0 * np.exp(-(dist**2) / (2 * 8**2))
+    >>>
+    >>> coherence_smooth = rate_map_coherence(firing_rate_smooth, env)
+    >>> print(f"Smooth field coherence: {coherence_smooth:.3f}")  # doctest: +SKIP
+    Smooth field coherence: 0.850
+    >>>
+    >>> # Random noise (low coherence)
+    >>> firing_rate_noisy = np.random.rand(env.n_bins) * 5.0
+    >>> coherence_noisy = rate_map_coherence(firing_rate_noisy, env)
+    >>> print(f"Noisy field coherence: {coherence_noisy:.3f}")  # doctest: +SKIP
+    Noisy field coherence: 0.120
+
+    See Also
+    --------
+    skaggs_information : Spatial information (bits/spike)
+    sparsity : Spatial sparsity
+    field_stability : Temporal stability of firing rate maps
+    """
+    # Validate inputs
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        )
+
+    # Remove NaN values for computing neighbor means
+    # But track which bins are valid for final correlation
+    valid_bins = np.isfinite(firing_rate)
+
+    if not np.any(valid_bins):
+        # All NaN
+        return np.nan
+
+    if np.all(firing_rate[valid_bins] == firing_rate[valid_bins][0]):
+        # All values are identical (constant map, no variance)
+        return np.nan
+
+    # Compute mean of neighbors for each bin using neighbor_reduce
+    # Use nanmean to handle NaN values in neighbors
+    from neurospatial.primitives import neighbor_reduce
+
+    neighbor_means = neighbor_reduce(
+        firing_rate,
+        env,
+        op="mean",
+        include_self=False,
+    )
+
+    # Now compute correlation between bin rates and their neighbor means
+    # Only use bins where both the bin and its neighbor mean are valid
+    valid_for_corr = valid_bins & np.isfinite(neighbor_means)
+
+    if np.sum(valid_for_corr) < 2:
+        # Need at least 2 points for correlation
+        return np.nan
+
+    bin_rates = firing_rate[valid_for_corr]
+    neighbor_rate_means = neighbor_means[valid_for_corr]
+
+    # Check for zero variance (would cause correlation to fail)
+    if np.std(bin_rates) == 0 or np.std(neighbor_rate_means) == 0:
+        return np.nan
+
+    # Compute correlation
+    if method == "pearson":
+        coherence, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
+    elif method == "spearman":
+        coherence, _ = stats.spearmanr(bin_rates, neighbor_rate_means)
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
+
+    return float(coherence)
