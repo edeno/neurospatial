@@ -11,8 +11,8 @@ This document summarizes the validation of neurospatial v0.3.0 against authorita
 
 **Validation Status**: ✅ **VALIDATED**
 
-- **31 tests passed** validating against mathematical properties and published formulas
-- **2 external package comparisons** show expected differences due to architectural choices
+- **35 tests passed** validating against mathematical properties and published formulas
+- **5 external package comparisons** (opexebo, Traja, yupi) show expected differences due to architectural choices
 - **Core algorithms validated** against ground truth and synthetic data with known properties
 
 ### Test Results
@@ -27,9 +27,11 @@ This document summarizes the validation of neurospatial v0.3.0 against authorita
 | Step Lengths | 3 | ✅ PASS | Graph geodesic distances |
 | Home Range | 3 | ✅ PASS | Matches percentile definition |
 | Mean Square Displacement | 4 | ✅ PASS | Positive for movement, zero for stationary |
-| opexebo comparison | 1 | ⚠️ DIFFER | See notes below |
-| Traja comparison | 1 | ⚠️ DIFFER | See notes below |
-| yupi comparison | 1 | - | Placeholder (no implementation) |
+| opexebo: Spatial Info | 1 | ✅ PASS | Matches within 15% (algorithmic difference) |
+| opexebo: Sparsity | 1 | ✅ PASS | Matches within 1% |
+| opexebo: Border Score | 1 | ✅ PASS | Both detect border cells correctly |
+| Traja: Turn Angles | 1 | ✅ PASS | Convention conversion validated |
+| yupi: Displacement | 1 | ✅ PASS | Both detect movement correctly |
 
 ---
 
@@ -306,7 +308,10 @@ traja_angles = np.degrees(neurospatial_angles) % 360
 - Compute geodesic distances to boundaries
 - Aggregate coverage across all boundaries (not per-wall)
 
-**Validation**: Cannot directly match TSToolbox_Utils (MATLAB) due to different geometric assumptions, but formula structure preserved.
+**Validation**: Compared with opexebo on rectangular arena. Both implementations correctly identify border cells (positive scores) and detect center-preferring cells (low scores). Scores are within same order of magnitude (factor of 3), with differences due to:
+- opexebo computes per-wall coverage and selects highest-scoring wall
+- neurospatial aggregates coverage across all boundary bins
+- Different distance computation methods (Euclidean vs graph geodesic)
 
 ---
 
@@ -356,14 +361,17 @@ uv run pytest tests/validation/ -v -m "not validation"
 
 ```
 tests/validation/
-├── test_metrics_validation.py      (15 tests)
+├── test_metrics_validation.py      (19 tests)
 │   ├── Spatial Information (4 tests)
 │   ├── Sparsity (4 tests)
 │   ├── Border Score (4 tests)
 │   ├── Place Field Detection (4 tests)
-│   └── opexebo Comparison (1 test) [requires opexebo]
+│   └── opexebo Comparison (3 tests) [requires opexebo]
+│       ├── Spatial Information
+│       ├── Sparsity
+│       └── Border Score
 │
-└── test_trajectory_validation.py   (18 tests)
+└── test_trajectory_validation.py   (16 tests)
     ├── Turn Angles (4 tests)
     ├── Step Lengths (3 tests)
     ├── Home Range (3 tests)

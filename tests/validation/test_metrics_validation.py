@@ -582,6 +582,126 @@ class TestOpexeboComparison:
             f"relative_error={relative_error * 100:.2f}%"
         )
 
+    def test_border_score_matches_opexebo(self):
+        """Compare our border score with opexebo on rectangular arena.
+
+        Creates rectangular arena with border cell firing pattern and compares
+        border score computation with opexebo's implementation.
+        """
+        import opexebo
+
+        # Create rectangular arena with regular grid
+        nx_bins = 40
+        ny_bins = 40
+        arena_size = 100.0
+        bin_size = arena_size / nx_bins
+
+        # Create complete grid coverage
+        positions = []
+        for i in range(nx_bins):
+            for j in range(ny_bins):
+                x = (i + 0.5) * bin_size
+                y = (j + 0.5) * bin_size
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=bin_size)
+        grid_shape = env.layout.grid_shape
+
+        # Create border cell: rectangular strip along top wall
+        # This ensures both:
+        # 1. opexebo detects a clear field with peak
+        # 2. The field actually touches boundary bins (for high border score)
+
+        firing_rate_2d = np.zeros(grid_shape)
+
+        # Create strip along top wall (last 3 rows)
+        # Width: central 50% of arena
+        # Depth: 3 bins from top (ensures it touches boundary)
+        for y_idx in range(ny_bins - 3, ny_bins):  # Last 3 rows
+            for x_idx in range(nx_bins // 4, 3 * nx_bins // 4):  # Central 50%
+                # Highest firing at the actual boundary (last row)
+                if y_idx == ny_bins - 1:
+                    firing_rate_2d[y_idx, x_idx] = 50.0
+                else:
+                    # Decay away from wall
+                    distance_from_wall = (ny_bins - 1) - y_idx
+                    firing_rate_2d[y_idx, x_idx] = 50.0 * np.exp(-distance_from_wall)
+
+        # Convert to 1D for neurospatial
+        firing_rate_1d = firing_rate_2d.flatten()
+
+        # Compute with neurospatial
+        our_score = border_score(firing_rate_1d, env, threshold=0.3)
+
+        # Create masked array for opexebo
+        import numpy.ma as ma
+        firing_rate_2d_masked = ma.masked_array(
+            firing_rate_2d,
+            mask=np.zeros_like(firing_rate_2d, dtype=bool)
+        )
+
+        # Detect fields with opexebo - provide peak coordinates explicitly
+        # opexebo expects [y, x] format
+        # Peak is at top center of arena
+        peak_y_grid = ny_bins - 1  # Top row
+        peak_x_grid = nx_bins // 2  # Center column
+        peak_coords = np.array([[peak_y_grid, peak_x_grid]])
+
+        fields, fields_map = opexebo.analysis.place_field(
+            firing_rate_2d_masked,
+            min_bins=5,
+            min_peak=1.0,
+            peak_coords=peak_coords
+        )
+
+        if len(fields) == 0:
+            pytest.skip("opexebo did not detect any fields for this pattern")
+
+        # opexebo.analysis.border_coverage expects key 'field_map' but
+        # opexebo.analysis.place_field returns key 'map' - rename it
+        for field in fields:
+            if 'map' in field and 'field_map' not in field:
+                field['field_map'] = field['map']
+
+        # Compute border score with opexebo
+        opexebo_score, opexebo_coverage = opexebo.analysis.border_score(
+            firing_rate_2d_masked,
+            fields_map,
+            fields,
+            arena_shape="rect"
+        )
+
+        # Scores should be in similar range (both positive for border cells)
+        # Allow larger tolerance due to algorithmic differences:
+        # - opexebo computes per-wall coverage, we aggregate all boundaries
+        # - Different distance computation methods
+        # - Different field detection approaches
+        assert our_score > 0, (
+            f"neurospatial should detect border cell (positive score), got {our_score:.3f}"
+        )
+        assert opexebo_score > 0, (
+            f"opexebo should detect border cell (positive score), got {opexebo_score:.3f}"
+        )
+
+        # Both should be reasonably high (> 0.3) for clear border cell
+        assert our_score > 0.3, (
+            f"neurospatial border score should be >0.3 for border cell, got {our_score:.3f}"
+        )
+        assert opexebo_score > 0.3, (
+            f"opexebo border score should be >0.3 for border cell, got {opexebo_score:.3f}"
+        )
+
+        # Scores should be within same order of magnitude (within factor of 3)
+        # This is lenient but validates we're computing something similar
+        if opexebo_score > 0.01:  # Avoid division by tiny numbers
+            ratio = max(our_score, opexebo_score) / min(our_score, opexebo_score)
+            assert ratio < 3.0, (
+                f"Border scores should be similar order of magnitude: "
+                f"neurospatial={our_score:.3f}, opexebo={opexebo_score:.3f}, "
+                f"ratio={ratio:.2f}"
+            )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
