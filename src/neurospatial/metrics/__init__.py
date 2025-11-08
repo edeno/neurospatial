@@ -22,12 +22,18 @@ trajectory
 from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
+from neurospatial.metrics.grid_cells import (
+    grid_score,
+    periodicity_score,
+    spatial_autocorrelation,
+)
 from neurospatial.metrics.place_fields import (
     detect_place_fields,
     field_centroid,
     field_size,
     field_stability,
     rate_map_coherence,
+    selectivity,
     skaggs_information,
     sparsity,
 )
@@ -58,10 +64,14 @@ __all__ = [
     "field_overlap",
     "field_size",
     "field_stability",
+    "grid_score",
     "mean_square_displacement",
+    "periodicity_score",
     "population_coverage",
     "population_vector_correlation",
     "rate_map_coherence",
+    "selectivity",
     "skaggs_information",
     "sparsity",
+    "spatial_autocorrelation",
 ]

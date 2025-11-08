@@ -20,18 +20,14 @@ class TestComputeTurnAngles:
 
     def test_straight_line_trajectory(self):
         """Test that straight line movement has near-zero turn angles."""
-        # Create 1D linear environment (straight track)
-        positions = np.linspace(0, 100, 20)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
+        # Create straight line trajectory (continuous positions)
+        positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
 
-        # Create straight trajectory (sequential bins)
-        trajectory_bins = np.arange(10)
-
-        # Compute turn angles
-        angles = compute_turn_angles(trajectory_bins, env)
+        # Compute turn angles (continuous API)
+        angles = compute_turn_angles(positions)
 
         # Should have n-2 angles (first and last transitions)
-        assert angles.shape == (8,)
+        assert angles.shape == (18,)
 
         # All angles should be near zero (straight line)
         assert_allclose(angles, 0.0, atol=0.1)
@@ -45,17 +41,10 @@ class TestComputeTurnAngles:
         y = 50 + 40 * np.sin(theta)
         positions = np.column_stack([x, y])
 
-        env = Environment.from_samples(positions, bin_size=3.0)
-
-        # Map positions to bins
-        trajectory_bins = env.bin_at(positions)
-
-        # Compute turn angles
-        angles = compute_turn_angles(trajectory_bins, env)
+        # Compute turn angles (continuous API - no env needed!)
+        angles = compute_turn_angles(positions)
 
         # Should have some non-zero angles (circular motion produces turns)
-        # Note: On discretized grids, circular motion creates zig-zag patterns,
-        # so angles won't be perfectly constant or all the same sign
         assert len(angles) > 0
         non_zero_angles = angles[np.abs(angles) > 0.01]
         # At least some turning should occur
@@ -70,10 +59,8 @@ class TestComputeTurnAngles:
         y = 20 * np.cos(t)
         positions = np.column_stack([x, y])
 
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
-
-        angles = compute_turn_angles(trajectory_bins, env)
+        # Continuous API
+        angles = compute_turn_angles(positions)
 
         # All angles should be in [-π, π]
         assert np.all(angles >= -np.pi)
@@ -81,27 +68,35 @@ class TestComputeTurnAngles:
 
     def test_stationary_trajectory(self):
         """Test that stationary periods are skipped."""
-        # Create trajectory with repeated bins (stationary periods)
-        trajectory_bins = np.array([0, 0, 0, 1, 2, 2, 3, 4, 4, 4, 5])
+        # Create trajectory with repeated positions (stationary periods)
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],  # Duplicate
+                [0.0, 0.0],  # Duplicate
+                [10.0, 0.0],
+                [20.0, 0.0],
+                [20.0, 0.0],  # Duplicate
+                [30.0, 0.0],
+                [40.0, 0.0],
+                [40.0, 0.0],  # Duplicate
+                [40.0, 0.0],  # Duplicate
+                [50.0, 0.0],
+            ]
+        )
 
-        # Create simple grid environment
-        positions = np.array([[0, 0], [10, 0], [20, 0], [30, 0], [40, 0], [50, 0]])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        angles = compute_turn_angles(trajectory_bins, env)
+        angles = compute_turn_angles(positions)
 
         # Should only compute angles for actual movements
         # Consecutive duplicates should be filtered out
         assert len(angles) >= 0  # At least some angles computed
 
     def test_parameter_order(self):
-        """Test that parameter order is (trajectory_bins, env)."""
-        positions = np.linspace(0, 100, 20)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = np.arange(10)
+        """Test that parameter is just positions (continuous API)."""
+        positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
 
         # This should work without error
-        angles = compute_turn_angles(trajectory_bins, env)
+        angles = compute_turn_angles(positions)
         assert isinstance(angles, np.ndarray)
 
 
@@ -109,59 +104,63 @@ class TestComputeStepLengths:
     """Test compute_step_lengths function."""
 
     def test_step_lengths_straight_line(self):
-        """Test step lengths on a straight 1D trajectory."""
-        # Create 1D linear environment
-        positions = np.linspace(0, 100, 21)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
+        """Test step lengths on a straight 1D trajectory with Euclidean distance."""
+        # Create straight line trajectory (continuous positions)
+        positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
-        # Sequential bins (moving forward one bin at a time)
-        trajectory_bins = np.arange(10)
-
-        step_lengths = compute_step_lengths(trajectory_bins, env)
+        # Euclidean distance (default)
+        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
 
         # Should have n-1 step lengths
-        assert step_lengths.shape == (9,)
+        assert step_lengths.shape == (20,)
 
-        # All steps should be positive (moving forward)
-        # and roughly equal on a regular grid
+        # All steps should be positive and roughly equal
         assert np.all(step_lengths >= 0)
-        # For sequential bins on a grid, expect uniform step lengths
-        # Allow for some variation due to grid structure
-        unique_lengths = np.unique(step_lengths[step_lengths > 0])
-        assert len(unique_lengths) <= 2  # At most 2 different step sizes
+        # For uniform spacing, expect uniform step lengths
+        assert_allclose(step_lengths, step_lengths[0], rtol=0.01)
 
     def test_step_lengths_with_duplicates(self):
         """Test that consecutive duplicates have zero step length."""
-        # Create simple environment
-        positions = np.array([[0, 0], [10, 0], [20, 0], [30, 0]])
-        env = Environment.from_samples(positions, bin_size=5.0)
+        # Trajectory with stationary periods (duplicates)
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],  # Duplicate
+                [10.0, 0.0],
+                [20.0, 0.0],
+                [20.0, 0.0],  # Duplicate
+                [20.0, 0.0],  # Duplicate
+                [30.0, 0.0],
+            ]
+        )
 
-        # Trajectory with stationary periods
-        trajectory_bins = np.array([0, 0, 1, 2, 2, 2, 3])
-
-        step_lengths = compute_step_lengths(trajectory_bins, env)
+        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
 
         # Should have n-1 step lengths
         assert step_lengths.shape == (6,)
 
         # Consecutive duplicates should have zero distance
-        assert step_lengths[0] == 0.0  # 0 -> 0
-        assert step_lengths[3] == 0.0  # 2 -> 2
-        assert step_lengths[4] == 0.0  # 2 -> 2
+        assert step_lengths[0] == 0.0  # [0,0] -> [0,0]
+        assert step_lengths[3] == 0.0  # [20,0] -> [20,0]
+        assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
 
     def test_step_lengths_uses_graph_distance(self):
-        """Test that step lengths use graph geodesic distances."""
+        """Test that step lengths with distance_type='geodesic' use graph distances."""
         # Create 2D grid environment
         x = np.linspace(0, 40, 100)
         y = np.linspace(0, 40, 100)
         xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
+        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(sample_positions, bin_size=5.0)
 
-        # Create trajectory
+        # Create trajectory on bin centers (for geodesic distance to work)
         trajectory_bins = np.arange(5)
+        positions = env.bin_centers[trajectory_bins]
 
-        step_lengths = compute_step_lengths(trajectory_bins, env)
+        # Use geodesic distance
+        step_lengths = compute_step_lengths(
+            positions, distance_type="geodesic", env=env
+        )
 
         # Verify each step length matches nx.shortest_path_length
         import networkx as nx
@@ -177,14 +176,20 @@ class TestComputeStepLengths:
             assert_allclose(step_lengths[i], expected, rtol=1e-5)
 
     def test_parameter_order(self):
-        """Test that parameter order is (trajectory_bins, env)."""
-        positions = np.linspace(0, 100, 20)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = np.arange(10)
+        """Test new continuous API signature."""
+        positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
 
-        # This should work without error
-        step_lengths = compute_step_lengths(trajectory_bins, env)
+        # Euclidean (default)
+        step_lengths = compute_step_lengths(positions)
         assert isinstance(step_lengths, np.ndarray)
+
+        # Geodesic requires env
+        env = Environment.from_samples(positions, bin_size=5.0)
+        bin_positions = env.bin_centers[env.bin_at(positions)]
+        step_lengths_geo = compute_step_lengths(
+            bin_positions, distance_type="geodesic", env=env
+        )
+        assert isinstance(step_lengths_geo, np.ndarray)
 
 
 class TestComputeHomeRange:
@@ -253,14 +258,13 @@ class TestMeanSquareDisplacement:
 
     def test_msd_shape(self):
         """Test that MSD returns two arrays (tau, msd)."""
-        # Create simple 1D trajectory
-        positions = np.linspace(0, 100, 50)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
+        # Create simple trajectory (continuous positions)
+        positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         times = np.linspace(0, 10, 50)
 
+        # Continuous API with Euclidean distance (default)
         tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
+            positions, times, distance_type="euclidean", max_tau=5.0
         )
 
         # Both should be 1D arrays
@@ -270,23 +274,16 @@ class TestMeanSquareDisplacement:
 
     def test_msd_monotonic_increase(self):
         """Test that MSD generally increases with tau (for diffusive motion)."""
-        # Create 1D random walk trajectory (guaranteed connected)
+        # Create 2D random walk trajectory
         np.random.seed(42)
         n_steps = 100
-        steps = np.random.randn(n_steps) * 2  # 1D random steps
-        trajectory = np.cumsum(steps)
-        trajectory += 50  # Center around 50
-        trajectory = trajectory[:, None]  # Make 2D array (n, 1)
-
-        # Create 1D environment from dense grid
-        positions = np.linspace(0, 100, 200)[:, None]
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        trajectory_bins = env.bin_at(trajectory)
+        steps = np.random.randn(n_steps, 2) * 2  # 2D random steps
+        positions = np.cumsum(steps, axis=0)
         times = np.arange(n_steps) * 0.1
 
+        # Continuous API with Euclidean distance
         _tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
+            positions, times, distance_type="euclidean", max_tau=5.0
         )
 
         # MSD should generally increase with tau (monotonic for diffusion)
@@ -296,16 +293,13 @@ class TestMeanSquareDisplacement:
 
     def test_msd_stationary_is_zero(self):
         """Test that MSD is near zero for stationary trajectory."""
-        # Stationary trajectory (all same bin)
-        trajectory_bins = np.zeros(50, dtype=int)
+        # Stationary trajectory (all same position)
+        positions = np.tile([0.0, 0.0], (50, 1))  # 50 identical positions
         times = np.linspace(0, 10, 50)
 
-        # Create environment
-        positions = np.array([[0, 0], [10, 0], [20, 0]])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
+        # Continuous API
         _tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
+            positions, times, distance_type="euclidean", max_tau=5.0
         )
 
         # All MSD values should be zero (no displacement)
@@ -313,13 +307,11 @@ class TestMeanSquareDisplacement:
 
     def test_msd_max_tau_parameter(self):
         """Test that max_tau limits the lag times."""
-        positions = np.linspace(0, 100, 50)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
+        positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         times = np.linspace(0, 10, 50)
 
         tau_values, _ = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=3.0
+            positions, times, distance_type="euclidean", max_tau=3.0
         )
 
         # All tau values should be <= max_tau
@@ -327,56 +319,61 @@ class TestMeanSquareDisplacement:
 
     def test_msd_returns_floats(self):
         """Test that MSD values are float64."""
-        positions = np.linspace(0, 100, 50)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
+        positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         times = np.linspace(0, 10, 50)
 
         tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
+            positions, times, distance_type="euclidean", max_tau=5.0
         )
 
         assert tau_values.dtype == np.float64
         assert msd_values.dtype == np.float64
 
     def test_parameter_order(self):
-        """Test that parameter order is (trajectory_bins, times, env, *, max_tau)."""
-        positions = np.linspace(0, 100, 50)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
+        """Test new continuous API signature."""
+        positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         times = np.linspace(0, 10, 50)
 
-        # This should work without error
-        tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
-        )
+        # Euclidean (default)
+        tau_values, msd_values = mean_square_displacement(positions, times, max_tau=5.0)
         assert isinstance(tau_values, np.ndarray)
         assert isinstance(msd_values, np.ndarray)
+
+        # Geodesic requires env
+        env = Environment.from_samples(positions, bin_size=5.0)
+        bin_positions = env.bin_centers[env.bin_at(positions)]
+        tau_geo, msd_geo = mean_square_displacement(
+            bin_positions, times, distance_type="geodesic", env=env, max_tau=5.0
+        )
+        assert isinstance(tau_geo, np.ndarray)
+        assert isinstance(msd_geo, np.ndarray)
 
 
 class TestTrajectoryMetricsIntegration:
     """Test integration of all trajectory metrics."""
 
     def test_complete_workflow(self):
-        """Test complete trajectory analysis workflow."""
-        # Generate synthetic meandering trajectory
+        """Test complete trajectory analysis workflow with continuous API."""
+        # Generate synthetic meandering trajectory (continuous positions)
         np.random.seed(42)
         t = np.linspace(0, 4 * np.pi, 200)
         x = t * 5 + 20 * np.sin(t)
         y = 20 * np.cos(t)
         positions = np.column_stack([x, y])
-
-        # Create environment and map trajectory
-        env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 20, len(positions))
 
-        # Compute all metrics
-        turn_angles = compute_turn_angles(trajectory_bins, env)
-        step_lengths = compute_step_lengths(trajectory_bins, env)
+        # Continuous API: all metrics work directly on positions!
+        turn_angles = compute_turn_angles(positions)
+        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+
+        # Home range still uses bins (makes sense for occupancy-based metrics)
+        env = Environment.from_samples(positions, bin_size=5.0)
+        trajectory_bins = env.bin_at(positions)
         home_range = compute_home_range(trajectory_bins, percentile=95.0)
+
+        # MSD uses continuous positions
         tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=10.0
+            positions, times, distance_type="euclidean", max_tau=10.0
         )
 
         # All metrics should be computed successfully

@@ -18,7 +18,7 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
 import numpy as np
@@ -29,29 +29,31 @@ if TYPE_CHECKING:
 
 
 def compute_turn_angles(
-    trajectory_bins: NDArray[np.int_],
-    env: Environment,
+    positions: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
-    Compute turn angles between consecutive movement vectors.
+    Compute turn angles between consecutive movement vectors from continuous positions.
 
     Turn angles quantify changes in movement direction at each position along
     the trajectory. A turn angle of 0 indicates straight movement, positive
     angles indicate left turns, and negative angles indicate right turns.
 
+    This function operates on continuous position data, preserving sub-bin spatial
+    precision for accurate directional analysis. This is the ecology-standard
+    approach and is more accurate than bin-based computation.
+
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
-    env : Environment
-        Environment instance containing bin positions.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space. Each row is a position vector.
+        For 2D trajectories, shape is (n_samples, 2). For 1D, shape is (n_samples, 1).
 
     Returns
     -------
     NDArray[np.float64], shape (n_angles,)
         Turn angles in radians, in the range [-π, π]. Length is the number
-        of non-stationary transitions minus 1. Consecutive duplicate bins
-        (stationary periods) are filtered out before computing angles.
+        of movement transitions minus 1 (n_samples - 2). Consecutive duplicate
+        positions (stationary periods) are filtered out before computing angles.
 
     Notes
     -----
@@ -61,13 +63,20 @@ def compute_turn_angles(
 
         \\theta_i = \\text{atan2}(v_{i+1} \\times v_i, v_{i+1} \\cdot v_i)
 
-    where :math:`v_i` is the movement vector from bin i-1 to bin i.
+    where :math:`v_i` is the movement vector from position i-1 to position i.
 
     For 2D trajectories, this uses the 2D cross product (scalar). For higher
     dimensions, the function uses the first two dimensions only.
 
-    Stationary periods (consecutive duplicate bins) are removed before computing
-    turn angles to avoid undefined angles from zero-length vectors.
+    Stationary periods (consecutive duplicate positions) are removed before
+    computing turn angles to avoid undefined angles from zero-length vectors.
+
+    **Why continuous positions?**
+
+    Using continuous positions instead of discretized bins preserves directional
+    precision. For example, a gradual turn from [0,0]→[1,0.1]→[2,0.3] would all
+    map to the same bins on a coarse grid, giving zero turn angle (incorrect),
+    whereas continuous computation correctly captures the subtle turning.
 
     See Also
     --------
@@ -77,15 +86,19 @@ def compute_turn_angles(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.metrics.trajectory import compute_turn_angles
-    >>> # Create straight line trajectory
-    >>> positions = np.linspace(0, 100, 20)[:, None]
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> trajectory_bins = np.arange(10)
-    >>> angles = compute_turn_angles(trajectory_bins, env)
-    >>> np.allclose(angles, 0.0, atol=0.1)  # Straight = no turning
+    >>> from neurospatial.metrics import compute_turn_angles
+    >>>
+    >>> # Straight line trajectory
+    >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
+    >>> angles = compute_turn_angles(positions)
+    >>> np.allclose(angles, 0.0, atol=0.01)  # Straight = no turning
     True
+    >>>
+    >>> # Right-angle turn: [0,0] → [10,0] → [10,10]
+    >>> positions = np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]])
+    >>> angles = compute_turn_angles(positions)
+    >>> angles[0]  # doctest: +SKIP
+    1.5707963267948966  # ≈ π/2 (90° left turn)
 
     References
     ----------
@@ -93,20 +106,31 @@ def compute_turn_angles(
            Academic Press.
     .. [2] Muller, M., & Wehner, R. (1988). "Path integration in desert ants."
            PNAS, 85(14), 5287-5290.
+    .. [3] Traja documentation: https://traja.readthedocs.io/
     """
-    # Remove consecutive duplicates (stationary periods) using vectorized operations
-    mask = np.concatenate([[True], trajectory_bins[1:] != trajectory_bins[:-1]])
-    unique_bins = trajectory_bins[mask]
+    # Input validation
+    if positions.ndim != 2:
+        raise ValueError(
+            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
+        )
 
-    # Need at least 3 unique positions to compute turn angles
-    if len(unique_bins) < 3:
+    if len(positions) < 3:
+        # Need at least 3 positions to compute turn angles
         return np.array([], dtype=np.float64)
 
-    # Get bin centers
-    positions = env.bin_centers[unique_bins]
+    # Remove consecutive duplicates (stationary periods)
+    # Compare all dimensions for exact equality
+    is_different = np.any(positions[1:] != positions[:-1], axis=1)
+    # Keep first position and all positions that differ from previous
+    mask = np.concatenate([[True], is_different])
+    unique_positions = positions[mask]
+
+    # Need at least 3 unique positions to compute turn angles
+    if len(unique_positions) < 3:
+        return np.array([], dtype=np.float64)
 
     # Compute movement vectors (differences between consecutive positions)
-    vectors = np.diff(positions, axis=0)  # shape (n_unique-1, n_dims)
+    vectors = np.diff(unique_positions, axis=0)  # shape (n_unique-1, n_dims)
 
     # Compute turn angles from consecutive vectors
     # For each pair of consecutive vectors, compute the angle between them
@@ -116,6 +140,11 @@ def compute_turn_angles(
     for i in range(n_angles):
         v1 = vectors[i]
         v2 = vectors[i + 1]
+
+        # Check for zero-length vectors (should not occur after duplicate removal, but be safe)
+        if np.linalg.norm(v1) == 0 or np.linalg.norm(v2) == 0:
+            angles[i] = 0.0
+            continue
 
         # Use atan2 for proper quadrant handling
         # For 2D: angle = atan2(cross product, dot product)
@@ -137,35 +166,68 @@ def compute_turn_angles(
 
 
 def compute_step_lengths(
-    trajectory_bins: NDArray[np.int_],
-    env: Environment,
+    positions: NDArray[np.float64],
+    *,
+    distance_type: Literal["euclidean", "geodesic"] = "euclidean",
+    env: Environment | None = None,
 ) -> NDArray[np.float64]:
     """
     Compute step lengths (distances) between consecutive positions.
 
     Step lengths quantify the spatial displacement at each step of the trajectory.
-    Distances are computed using the graph geodesic distances, accounting for
-    connectivity constraints.
+    This function supports both Euclidean (straight-line) and geodesic (graph
+    shortest-path) distance metrics for different use cases.
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
-    env : Environment
-        Environment instance for computing distances between bins.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space. Each row is a position vector.
+    distance_type : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric to use:
+        - "euclidean": Straight-line distance in physical space (ecology standard).
+          Fast and appropriate for open environments without obstacles.
+        - "geodesic": Graph shortest-path distance respecting environment topology.
+          Requires `env` parameter. Appropriate for constrained navigation
+          (walls, obstacles, tracks).
+    env : Environment, optional
+        Environment instance for computing geodesic distances. Required if
+        distance_type="geodesic", ignored otherwise.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples - 1,)
-        Step lengths in the same units as the environment. Consecutive duplicate
-        bins have step length 0.
+        Step lengths in the same units as the position coordinates.
+
+    Raises
+    ------
+    ValueError
+        If distance_type="geodesic" but env is None.
+        If positions is not a 2D array.
+        If distance_type is not "euclidean" or "geodesic".
 
     Notes
     -----
-    Step lengths are computed using graph geodesic distances via
-    `env.distance_between()`, which accounts for the connectivity structure
-    of the environment. For regular grids with 8-connectivity, diagonal steps
-    are longer than cardinal steps by a factor of √2.
+    **Euclidean distance** (default):
+
+    .. math::
+
+        d_i = ||r_{i+1} - r_i||_2 = \\sqrt{\\sum_j (r_{i+1,j} - r_{i,j})^2}
+
+    This is the straight-line distance in physical space, matching ecology
+    literature standards (Kays et al. 2015, Traja).
+
+    **Geodesic distance** (graph-based):
+
+    Uses NetworkX shortest_path_length on env.connectivity graph with edge
+    weights. This respects environmental constraints (walls, obstacles) and is
+    appropriate for neuroscience applications with constrained environments.
+
+    **When to use each**:
+
+    - **Euclidean**: Open-field recordings, ecology studies, comparisons to
+      movement ecology literature, maximum precision
+    - **Geodesic**: Linear tracks, T-mazes, environments with barriers,
+      neuroscience-specific analyses
 
     See Also
     --------
@@ -175,47 +237,85 @@ def compute_step_lengths(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.metrics.trajectory import compute_step_lengths
-    >>> # Create 1D trajectory
-    >>> positions = np.linspace(0, 100, 21)[:, None]
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> trajectory_bins = np.arange(10)
-    >>> step_lengths = compute_step_lengths(trajectory_bins, env)
+    >>> from neurospatial.metrics import compute_step_lengths
+    >>>
+    >>> # Straight line trajectory with Euclidean distance
+    >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
+    >>> step_lengths = compute_step_lengths(positions, distance_type="euclidean")
     >>> len(step_lengths)
-    9
-    >>> np.allclose(step_lengths, step_lengths[0], rtol=0.1)  # Uniform steps
+    19
+    >>> np.allclose(step_lengths, step_lengths[0], rtol=0.01)  # Uniform steps
     True
+    >>>
+    >>> # Geodesic distance on graph (requires env)
+    >>> from neurospatial import Environment
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> # Map positions to bins for geodesic
+    >>> bins = env.bin_at(positions)
+    >>> # Use bin centers as proxy positions for geodesic
+    >>> bin_positions = env.bin_centers[bins]
+    >>> step_lengths_geo = compute_step_lengths(
+    ...     bin_positions, distance_type="geodesic", env=env
+    ... )  # doctest: +SKIP
 
     References
     ----------
     .. [1] Kays, R., et al. (2015). "Terrestrial animal tracking as an eye
            on life and planet." Science, 348(6240), aaa2478.
+    .. [2] Traja documentation: https://traja.readthedocs.io/
     """
-    n_steps = len(trajectory_bins) - 1
+    # Input validation
+    if positions.ndim != 2:
+        raise ValueError(
+            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
+        )
+
+    if distance_type not in ("euclidean", "geodesic"):
+        raise ValueError(
+            f"distance_type must be 'euclidean' or 'geodesic', got '{distance_type}'"
+        )
+
+    if distance_type == "geodesic" and env is None:
+        raise ValueError(
+            "distance_type='geodesic' requires env parameter. "
+            "Use distance_type='euclidean' if env is not available."
+        )
+
+    n_steps = len(positions) - 1
     step_lengths = np.zeros(n_steps, dtype=np.float64)
 
-    for i in range(n_steps):
-        bin_i = trajectory_bins[i]
-        bin_j = trajectory_bins[i + 1]
+    if distance_type == "euclidean":
+        # Vectorized Euclidean distance computation
+        displacements = np.diff(positions, axis=0)
+        step_lengths = np.linalg.norm(displacements, axis=1)
 
-        # Handle same bin (stationary) case
-        if bin_i == bin_j:
-            step_lengths[i] = 0.0
-        else:
-            # Compute graph geodesic distance between bins
-            try:
-                step_lengths[i] = float(
-                    nx.shortest_path_length(
-                        env.connectivity,
-                        source=int(bin_i),
-                        target=int(bin_j),
-                        weight="distance",
+    else:  # distance_type == "geodesic"
+        # Map positions to bins
+        assert env is not None  # Already checked above, but satisfy type checker
+        trajectory_bins = env.bin_at(positions)
+
+        # Compute geodesic distances between consecutive bins
+        for i in range(n_steps):
+            bin_i = trajectory_bins[i]
+            bin_j = trajectory_bins[i + 1]
+
+            # Handle same bin (stationary) case
+            if bin_i == bin_j:
+                step_lengths[i] = 0.0
+            else:
+                # Compute graph geodesic distance between bins
+                try:
+                    step_lengths[i] = float(
+                        nx.shortest_path_length(
+                            env.connectivity,
+                            source=int(bin_i),
+                            target=int(bin_j),
+                            weight="distance",
+                        )
                     )
-                )
-            except (nx.NetworkXNoPath, nx.NodeNotFound):
-                # Bins are disconnected - distance is infinite
-                step_lengths[i] = np.inf
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
+                    # Bins are disconnected - distance is infinite
+                    step_lengths[i] = np.inf
 
     return step_lengths
 
@@ -313,27 +413,37 @@ def compute_home_range(
 
 
 def mean_square_displacement(
-    trajectory_bins: NDArray[np.int_],
+    positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    env: Environment,
     *,
+    distance_type: Literal["euclidean", "geodesic"] = "euclidean",
+    env: Environment | None = None,
     max_tau: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
-    Compute mean square displacement (MSD) as a function of lag time.
+    Compute mean square displacement (MSD) from continuous trajectory positions.
 
-    Mean square displacement quantifies how the spatial displacement grows
-    with time lag, which is useful for characterizing diffusive motion and
-    classifying movement patterns (e.g., random walk, directed motion, confined).
+    Mean square displacement quantifies how spatial displacement grows with time
+    lag, which is critical for characterizing diffusive motion and classifying
+    movement patterns (ballistic, diffusive, subdiffusive, confined). This function
+    operates on continuous position data for maximum accuracy.
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Trajectory positions in continuous space.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps corresponding to each sample in the trajectory.
-    env : Environment
-        Environment instance for computing distances between bins.
+    distance_type : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing displacements:
+        - "euclidean": Straight-line distance (ecology standard, most accurate).
+          Use for diffusion analysis, comparing to ecology literature, and
+          classification of movement types (ballistic vs. diffusive).
+        - "geodesic": Graph shortest-path distance (neuroscience-specific).
+          Requires `env` parameter. Use for constrained navigation analysis.
+    env : Environment, optional
+        Environment instance for computing geodesic distances. Required if
+        distance_type="geodesic", ignored otherwise.
     max_tau : float, optional
         Maximum lag time to compute. If None, uses half the total duration.
         Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
@@ -346,6 +456,13 @@ def mean_square_displacement(
     msd_values : NDArray[np.float64], shape (n_lags,)
         Mean square displacement values at each lag time.
 
+    Raises
+    ------
+    ValueError
+        If distance_type="geodesic" but env is None.
+        If positions and times have different lengths.
+        If positions is not a 2D array.
+
     Notes
     -----
     The mean square displacement is defined as:
@@ -357,13 +474,31 @@ def mean_square_displacement(
     where :math:`r(t)` is the position at time t, and the angle brackets denote
     averaging over all time points t.
 
-    MSD scales with time lag τ according to the movement pattern:
-    - **Ballistic motion**: :math:`MSD \\sim \\tau^2` (directed, constant velocity)
-    - **Diffusive motion**: :math:`MSD \\sim \\tau^1` (random walk)
-    - **Confined motion**: :math:`MSD \\sim \\tau^0` (bounded, plateau)
+    **Movement classification from scaling exponent**:
 
-    The exponent α in :math:`MSD \\sim \\tau^\\alpha` can be estimated from
-    log-log regression to classify movement types.
+    MSD scales with time lag τ as :math:`MSD \\sim \\tau^\\alpha`:
+
+    - **α ≈ 2**: Ballistic motion (directed, constant velocity)
+    - **α ≈ 1**: Diffusive motion (random walk, Brownian motion)
+    - **α < 1**: Subdiffusive motion (obstructed, confined)
+    - **α > 2**: Superdiffusive motion (Lévy flight)
+    - **α ≈ 0**: Confined motion (bounded, plateau)
+
+    The exponent α can be estimated from log-log regression: log(MSD) ~ α·log(τ).
+
+    **Why continuous positions?**
+
+    Using continuous positions (not bins) is critical for MSD accuracy because:
+
+    1. **Precision**: Bin discretization introduces a "floor" on displacements
+       equal to the bin size, artificially inflating MSD for small displacements.
+    2. **Scaling exponent**: Discretization can bias the diffusion exponent α,
+       making diffusive motion appear more subdiffusive.
+    3. **Ecology standard**: All movement ecology literature uses continuous MSD
+       (Saxton 1997, Ferrari 2001, Kepten 2015).
+
+    Example: Movement [0,0]→[0.1,0.1]→[0.2,0.2] maps to the same bin, giving
+    MSD=0 (incorrect), whereas continuous gives MSD ∝ t (correct diffusive).
 
     See Also
     --------
@@ -373,23 +508,30 @@ def mean_square_displacement(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.metrics.trajectory import mean_square_displacement
-    >>> # Create random walk trajectory (diffusive motion)
+    >>> from neurospatial.metrics import mean_square_displacement
+    >>>
+    >>> # Random walk trajectory (diffusive motion, α ≈ 1)
     >>> np.random.seed(42)
     >>> n_steps = 100
     >>> steps = np.random.randn(n_steps, 2) * 5
-    >>> trajectory = np.cumsum(steps, axis=0) + 50
-    >>> env = Environment.from_samples(trajectory, bin_size=3.0)
-    >>> trajectory_bins = env.bin_at(trajectory)
+    >>> positions = np.cumsum(steps, axis=0)
     >>> times = np.arange(n_steps) * 0.1
+    >>>
+    >>> # Compute MSD with Euclidean distance (default)
     >>> tau_values, msd_values = mean_square_displacement(
-    ...     trajectory_bins, times, env, max_tau=5.0
+    ...     positions, times, distance_type="euclidean", max_tau=5.0
     ... )
     >>> len(tau_values) > 0
     True
     >>> msd_values[-1] > msd_values[0]  # MSD increases with lag
     True
+    >>>
+    >>> # Estimate diffusion exponent from log-log fit
+    >>> log_tau = np.log(tau_values)
+    >>> log_msd = np.log(msd_values + 1e-10)  # Add small constant to avoid log(0)
+    >>> alpha = np.polyfit(log_tau, log_msd, 1)[0]  # doctest: +SKIP
+    >>> print(f"Diffusion exponent: {alpha:.2f}")  # doctest: +SKIP
+    Diffusion exponent: 1.02  # ≈ 1.0 (diffusive motion)
 
     References
     ----------
@@ -400,8 +542,32 @@ def mean_square_displacement(
     .. [3] Kepten, E., et al. (2015). "Improved estimation of anomalous
            diffusion exponents in single-particle tracking experiments."
            Physical Review E, 87(5), 052713.
+    .. [4] Traja documentation: https://traja.readthedocs.io/
     """
-    n_samples = len(trajectory_bins)
+    # Input validation
+    if positions.ndim != 2:
+        raise ValueError(
+            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
+        )
+
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have same length, "
+            f"got {len(positions)} and {len(times)}"
+        )
+
+    if distance_type not in ("euclidean", "geodesic"):
+        raise ValueError(
+            f"distance_type must be 'euclidean' or 'geodesic', got '{distance_type}'"
+        )
+
+    if distance_type == "geodesic" and env is None:
+        raise ValueError(
+            "distance_type='geodesic' requires env parameter. "
+            "Use distance_type='euclidean' if env is not available."
+        )
+
+    n_samples = len(positions)
 
     # Determine lag times to compute
     if max_tau is None:
@@ -419,46 +585,78 @@ def mean_square_displacement(
     tau_values = np.linspace(dt, max_tau, n_lags)
     msd_values = np.zeros(n_lags, dtype=np.float64)
 
-    # Compute MSD for each lag time
-    for i, tau in enumerate(tau_values):
-        # Find all pairs of time points separated by approximately tau
-        displacements = []
+    if distance_type == "euclidean":
+        # Vectorized Euclidean MSD computation (fast)
+        for i, tau in enumerate(tau_values):
+            # Find all pairs of time points separated by approximately tau
+            # For each starting time t_idx, find future indices at t + tau
+            squared_displacements = []
 
-        for t_idx in range(n_samples):
-            t = times[t_idx]
-            # Find indices where times are approximately t + tau
-            future_idx = np.where(np.abs(times - (t + tau)) < dt / 2)[0]
+            for t_idx in range(n_samples):
+                t = times[t_idx]
+                # Find indices where times are approximately t + tau
+                future_idx = np.where(np.abs(times - (t + tau)) < dt / 2)[0]
 
-            for f_idx in future_idx:
-                if f_idx < n_samples:
-                    # Compute squared displacement
-                    bin_i = trajectory_bins[t_idx]
-                    bin_j = trajectory_bins[f_idx]
+                if len(future_idx) > 0:
+                    # Compute squared Euclidean distance to all matching future positions
+                    pos_current = positions[t_idx]
+                    pos_future = positions[future_idx]
+                    # Vectorized distance computation
+                    displacements = pos_future - pos_current
+                    sq_dists = np.sum(displacements**2, axis=1)
+                    squared_displacements.extend(sq_dists)
 
-                    # Handle same bin case (stationary)
-                    if bin_i == bin_j:
-                        distance = 0.0
-                    else:
-                        # Compute graph geodesic distance between bins
-                        try:
-                            distance = float(
-                                nx.shortest_path_length(
-                                    env.connectivity,
-                                    source=int(bin_i),
-                                    target=int(bin_j),
-                                    weight="distance",
+            # Average squared displacements
+            if len(squared_displacements) > 0:
+                msd_values[i] = np.mean(squared_displacements)
+            else:
+                msd_values[i] = 0.0
+
+    else:  # distance_type == "geodesic"
+        # Map positions to bins for geodesic distance
+        assert env is not None  # Already checked above
+        trajectory_bins = env.bin_at(positions)
+
+        # Compute MSD for each lag time using graph distances
+        for i, tau in enumerate(tau_values):
+            # Find all pairs of time points separated by approximately tau
+            squared_displacements = []
+
+            for t_idx in range(n_samples):
+                t = times[t_idx]
+                # Find indices where times are approximately t + tau
+                future_idx = np.where(np.abs(times - (t + tau)) < dt / 2)[0]
+
+                for f_idx in future_idx:
+                    if f_idx < n_samples:
+                        # Compute squared displacement
+                        bin_i = trajectory_bins[t_idx]
+                        bin_j = trajectory_bins[f_idx]
+
+                        # Handle same bin case (stationary)
+                        if bin_i == bin_j:
+                            distance = 0.0
+                        else:
+                            # Compute graph geodesic distance between bins
+                            try:
+                                distance = float(
+                                    nx.shortest_path_length(
+                                        env.connectivity,
+                                        source=int(bin_i),
+                                        target=int(bin_j),
+                                        weight="distance",
+                                    )
                                 )
-                            )
-                        except (nx.NetworkXNoPath, nx.NodeNotFound):
-                            # Bins are disconnected - skip this pair
-                            continue
+                            except (nx.NetworkXNoPath, nx.NodeNotFound):
+                                # Bins are disconnected - skip this pair
+                                continue
 
-                    displacements.append(distance**2)
+                        squared_displacements.append(distance**2)
 
-        # Average squared displacements
-        if len(displacements) > 0:
-            msd_values[i] = np.mean(displacements)
-        else:
-            msd_values[i] = 0.0
+            # Average squared displacements
+            if len(squared_displacements) > 0:
+                msd_values[i] = np.mean(squared_displacements)
+            else:
+                msd_values[i] = 0.0
 
     return tau_values, msd_values

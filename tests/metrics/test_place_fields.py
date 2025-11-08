@@ -453,6 +453,7 @@ def test_place_field_workflow_integration():
         field_centroid,
         field_size,
         field_stability,
+        selectivity,
         skaggs_information,
         sparsity,
     )
@@ -472,9 +473,11 @@ def test_place_field_workflow_integration():
     # Compute metrics
     info = skaggs_information(firing_rate, occupancy)
     spars = sparsity(firing_rate, occupancy)
+    select = selectivity(firing_rate, occupancy)
 
     assert info > 0
     assert 0 <= spars <= 1
+    assert select >= 1.0
 
     # Test stability with itself
     stability = field_stability(firing_rate, firing_rate)
@@ -639,3 +642,150 @@ def test_rate_map_coherence_range():
             assert -1.0 <= coherence <= 1.0, (
                 f"Coherence {coherence} out of range [-1, 1]"
             )
+
+
+# =============================================================================
+# Test selectivity
+# =============================================================================
+
+
+def test_selectivity_formula():
+    """Test selectivity calculation (peak rate / mean rate)."""
+    # Create simple scenario with known values
+    firing_rate = np.array([0.0, 2.0, 8.0, 2.0])  # Peak = 8.0
+    occupancy = np.array([0.25, 0.25, 0.25, 0.25])  # Equal occupancy
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Mean rate: 0.25*0 + 0.25*2 + 0.25*8 + 0.25*2 = 3.0 Hz
+    # Peak rate: 8.0 Hz
+    # Expected selectivity: 8.0 / 3.0 = 2.667
+
+    assert select >= 1.0  # Selectivity always >= 1 (peak >= mean)
+    assert_allclose(select, 8.0 / 3.0, rtol=0.01)
+
+
+def test_selectivity_uniform():
+    """Test that uniform firing gives selectivity = 1.0."""
+    # Uniform firing: peak = mean
+    firing_rate = np.ones(100) * 5.0
+    occupancy = np.ones(100) / 100
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Uniform → selectivity = 1.0
+    assert_allclose(select, 1.0, atol=1e-6)
+
+
+def test_selectivity_highly_selective():
+    """Test that highly selective cell has high selectivity."""
+    # Fires in only one bin at high rate
+    firing_rate = np.zeros(100)
+    firing_rate[50] = 100.0  # Very high rate in one bin
+    occupancy = np.ones(100) / 100
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Peak = 100.0, Mean = 100.0 / 100 = 1.0
+    # Selectivity = 100.0
+    assert_allclose(select, 100.0, rtol=0.01)
+
+
+def test_selectivity_with_nonuniform_occupancy():
+    """Test selectivity with non-uniform occupancy."""
+    # More time spent in low-firing bins
+    firing_rate = np.array([1.0, 1.0, 1.0, 10.0])
+    occupancy = np.array([0.4, 0.3, 0.2, 0.1])  # Less time at peak
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Mean rate: 0.4*1 + 0.3*1 + 0.2*1 + 0.1*10 = 1.9
+    # Peak rate: 10.0
+    # Selectivity: 10.0 / 1.9 ≈ 5.26
+
+    assert select > 5.0
+    assert select < 6.0
+
+
+def test_selectivity_zero_mean():
+    """Test selectivity returns infinity when mean rate is zero."""
+    # All zeros except one bin with NaN
+    firing_rate = np.zeros(100)
+    firing_rate[50] = 0.0
+    occupancy = np.ones(100) / 100
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Mean rate is zero → selectivity undefined
+    assert np.isnan(select) or np.isinf(select)
+
+
+def test_selectivity_all_nan():
+    """Test selectivity handles all NaN values."""
+    firing_rate = np.full(100, np.nan)
+    occupancy = np.ones(100) / 100
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Should return NaN
+    assert np.isnan(select)
+
+
+def test_selectivity_with_some_nan():
+    """Test selectivity handles some NaN values correctly."""
+    firing_rate = np.array([1.0, 2.0, np.nan, 8.0, 3.0])
+    occupancy = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Should compute on valid values only
+    # Valid: [1.0, 2.0, 8.0, 3.0] with occupancy renormalized
+    # Peak = 8.0, Mean ≈ 3.5 (weighted)
+    # Selectivity ≈ 2.29
+
+    assert not np.isnan(select)
+    assert select >= 1.0
+
+
+def test_selectivity_range():
+    """Test that selectivity is always >= 1.0."""
+    # Test various firing patterns
+    for _ in range(10):
+        firing_rate = np.random.rand(50) * 10
+        occupancy = np.ones(50) / 50
+
+        from neurospatial.metrics.place_fields import selectivity
+
+        select = selectivity(firing_rate, occupancy)
+
+        # Selectivity always >= 1.0 (peak >= mean)
+        if not np.isnan(select) and not np.isinf(select):
+            assert select >= 1.0, f"Selectivity {select} < 1.0"
+
+
+def test_selectivity_return_type():
+    """Test that selectivity returns scalar float."""
+    firing_rate = np.random.rand(100) * 5.0
+    occupancy = np.ones(100) / 100
+
+    from neurospatial.metrics.place_fields import selectivity
+
+    select = selectivity(firing_rate, occupancy)
+
+    # Should return scalar
+    assert np.ndim(select) == 0
+    assert isinstance(select, (float, np.floating)) or np.isnan(select)

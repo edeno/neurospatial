@@ -801,3 +801,116 @@ def rate_map_coherence(
         raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
 
     return float(coherence)
+
+
+def selectivity(
+    firing_rate: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+) -> float:
+    """
+    Compute spatial selectivity (peak rate / mean rate).
+
+    Selectivity measures how spatially selective a cell's firing is. Higher
+    values indicate the cell fires strongly in a small region and weakly
+    elsewhere. A value of 1.0 indicates uniform firing throughout the
+    environment.
+
+    This metric is used in opexebo and provides a simple, interpretable measure
+    of place field quality.
+
+    Parameters
+    ----------
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Firing rate map (Hz or spikes/second).
+    occupancy : NDArray[np.float64], shape (n_bins,)
+        Occupancy probability (normalized to sum to 1).
+
+    Returns
+    -------
+    float
+        Selectivity value, always >= 1.0. Returns NaN if:
+        - Mean rate is zero (division by zero)
+        - All firing rates are NaN
+        Returns infinity if peak rate is positive but mean rate is zero.
+
+    Notes
+    -----
+    **Formula**:
+
+    .. math::
+
+        S = \\frac{r_{\\text{peak}}}{\\bar{r}}
+
+    where :math:`r_{\\text{peak}}` is the maximum firing rate and
+    :math:`\\bar{r}` is the occupancy-weighted mean firing rate.
+
+    **Interpretation**:
+
+    - **Selectivity = 1.0**: Uniform firing (peak equals mean)
+    - **Selectivity = 2-5**: Moderately selective place field
+    - **Selectivity > 10**: Highly selective place field (fires in small region)
+
+    **NaN handling**: NaN values in firing_rate are excluded from peak and mean
+    calculations. Occupancy is renormalized to valid bins.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import selectivity
+    >>>
+    >>> # Uniform firing → selectivity = 1.0
+    >>> firing_rate = np.ones(100) * 5.0
+    >>> occupancy = np.ones(100) / 100
+    >>> select = selectivity(firing_rate, occupancy)
+    >>> print(f"Uniform: {select:.2f}")  # doctest: +SKIP
+    Uniform: 1.00
+    >>>
+    >>> # Highly selective cell (fires in one bin)
+    >>> firing_rate_selective = np.zeros(100)
+    >>> firing_rate_selective[50] = 100.0
+    >>> select_high = selectivity(firing_rate_selective, occupancy)
+    >>> print(f"Selective: {select_high:.1f}")  # doctest: +SKIP
+    Selective: 100.0
+
+    See Also
+    --------
+    skaggs_information : Spatial information (bits/spike)
+    sparsity : Spatial sparsity
+    rate_map_coherence : Spatial coherence
+
+    References
+    ----------
+    .. [1] opexebo package (Moser Lab):
+           https://github.com/kavli-ntnu/opexebo
+    """
+    # Handle NaN values
+    valid_mask = np.isfinite(firing_rate) & np.isfinite(occupancy)
+
+    if not np.any(valid_mask):
+        # All NaN
+        return np.nan
+
+    # Get valid values
+    firing_rate_valid = firing_rate[valid_mask]
+    occupancy_valid = occupancy[valid_mask]
+
+    # Normalize occupancy to probability
+    occupancy_prob = occupancy_valid / np.sum(occupancy_valid)
+
+    # Peak firing rate
+    peak_rate = np.max(firing_rate_valid)
+
+    # Mean firing rate (occupancy-weighted)
+    mean_rate = np.sum(occupancy_prob * firing_rate_valid)
+
+    # Compute selectivity
+    if mean_rate == 0:
+        # Division by zero
+        if peak_rate > 0:
+            return np.inf
+        else:
+            return np.nan
+
+    selectivity_value = peak_rate / mean_rate
+
+    return float(selectivity_value)
