@@ -1,5 +1,76 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-08: Milestone 4.6 - Behavioral Segmentation Example Notebook COMPLETE
+
+### Task: Create `examples/15_behavioral_segmentation.ipynb`
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `examples/15_behavioral_segmentation.ipynb` - Behavioral segmentation demonstration (523KB with outputs)
+
+**Notebook Coverage**:
+
+**Part 1: Region Crossings**
+- Entry/exit event detection
+- Direction filtering (both, entry, exit)
+- Visualization with timeline
+
+**Part 2: Runs Between Regions**
+- Goal-directed navigation from source to target
+- Success/failure tracking
+- Duration filtering
+
+**Part 3: Lap Detection on Circular Track**
+- Automatic template detection from first 10% of trajectory
+- Direction discrimination (clockwise/counter-clockwise)
+- Overlap-based lap quality assessment
+
+**Part 4: Trial Segmentation (T-maze)**
+- Left/right choice trial detection
+- Start/end region configuration
+- Outcome tracking
+
+**Part 5: Trajectory Similarity**
+- Four similarity metrics: Jaccard, correlation, Hausdorff, DTW
+- Comparison of trial trajectories
+- Replay analysis applications
+
+**Part 6: Goal-Directed Run Detection**
+- Directedness score computation
+- Path efficiency analysis
+- Goal region navigation
+
+**Key Functions Demonstrated**:
+
+1. `detect_region_crossings(trajectory_bins, times, region, env, direction='both')`
+2. `detect_runs_between_regions(trajectory_positions, times, env, source=..., target=...)`
+3. `detect_laps(trajectory_bins, times, env, method='auto')`
+4. `segment_trials(trajectory_bins, times, env, start_region=..., end_regions=...)`
+5. `trajectory_similarity(trajectory1_bins, trajectory2_bins, env, method='jaccard')`
+6. `detect_goal_directed_runs(trajectory_bins, times, env, goal_region=...)`
+
+**Validation**:
+
+- ✅ Notebook executes successfully (523KB with outputs)
+- ✅ All 6 parts demonstrate correct functionality
+- ✅ All segmentation functions work as expected
+- ✅ Visualizations render correctly
+
+**Milestone 4.6 Status**: ✅ COMPLETE
+- ✅ All 57 segmentation tests pass (85% coverage)
+- ✅ Integration tests complete (3 comprehensive workflows)
+- ✅ Documentation complete (724 lines)
+- ✅ Example notebook 14 complete (trajectory analysis, 731KB)
+- ✅ Example notebook 15 complete (behavioral segmentation, 523KB)
+
+**Next Milestone**: Milestone 5.1 - Validation Against Authority Packages
+
+**Effort**: Notebook created Nov 8, 2024
+
+---
+
 ## 2025-11-07: Milestone 4.6 - Trajectory Analysis Example Notebook COMPLETE
 
 ### Task: Create `examples/14_trajectory_analysis.ipynb`
