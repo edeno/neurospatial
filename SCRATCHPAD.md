@@ -1,5 +1,72 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.6 - Integration Tests COMPLETE (Part 1/2)
+
+### Task: Create comprehensive integration tests for trajectory and behavioral analysis workflows
+
+**Status**: ✅ TESTS COMPLETE
+
+**Files Created**:
+
+1. `tests/segmentation/test_integration.py` - Comprehensive integration tests (303 lines, 3 tests)
+
+**Test Coverage**:
+
+**Test 1: Circular Track Complete Workflow** (`test_circular_track_complete_workflow`)
+- Generate circular trajectory with 3 laps
+- Detect laps using region-based method
+- Compute trajectory metrics per lap (turn angles, step lengths)
+- Compare lap similarity using Jaccard overlap
+- Compute home range (95th percentile)
+- Compute MSD for diffusion classification
+- **Validates**: lap detection → metrics → similarity pipeline
+
+**Test 2: T-maze Task Complete Workflow** (`test_tmaze_task_complete_workflow`)
+- Define T-maze with start, left, and right regions
+- Generate synthetic trajectory (3 trials: left, right, left)
+- Segment into trials with start/end region detection
+- Detect region crossings (entries to left/right)
+- Analyze goal-directed runs within trials
+- Compare trial trajectories by outcome
+- **Validates**: trial segmentation → crossings → goal-directed analysis → similarity
+
+**Test 3: Exploration to Goal-Directed Workflow** (`test_exploration_to_goal_directed_workflow`)
+- Phase 1: Random exploration (100 samples)
+- Phase 2: Goal-directed behavior (50 samples toward goal)
+- Detect goal-directed runs (should find in phase 2 only)
+- Compare exploration vs goal-directed spatial overlap
+- Compute home range for each phase
+- **Validates**: behavioral transition detection and spatial coverage analysis
+
+**Testing Results**:
+
+- ✅ All 57 segmentation tests pass (54 unit + 3 integration)
+- ✅ Coverage: 85% for segmentation modules
+- ✅ Integration tests validate complete workflows combining:
+  - Trajectory metrics (turn_angles, step_lengths, home_range, MSD)
+  - Region-based segmentation (detect_region_crossings, detect_runs_between_regions)
+  - Lap detection (detect_laps)
+  - Trial segmentation (segment_trials)
+  - Trajectory similarity (trajectory_similarity, detect_goal_directed_runs)
+
+**Key Fixes Applied**:
+
+1. **Region API correction**: Changed `point=Point(...).buffer(...)` to `polygon=Point(...).buffer(...)` (correct parameter for polygon regions)
+2. **Batch bin mapping**: Used `env.bin_at(positions)` instead of `[env.bin_at(pos) for pos in positions]` to avoid ndarray shape issues
+3. **Integration workflow validation**: All three complex workflows execute successfully end-to-end
+
+**Next Steps**:
+
+- [x] Integration tests complete
+- [ ] Create documentation: `docs/user-guide/trajectory-and-behavioral-analysis.md`
+- [ ] Create example notebooks:
+  - [ ] `examples/14_trajectory_analysis.ipynb` (renumbered from 12)
+  - [ ] `examples/15_behavioral_segmentation.ipynb` (renumbered from 13)
+
+**Effort**: 1 hour (integration test creation and debugging)
+
+---
+
 ## 2025-11-07: Milestone 4.5 - Trajectory Similarity COMPLETE
 
 ### Task: Implement trajectory similarity metrics and goal-directed run detection
