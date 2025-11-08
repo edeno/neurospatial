@@ -900,8 +900,9 @@
 - [x] Test: Place field detection matches neurocode subfield approach
 - [x] Test: Spatial information matches opexebo (with environment structure matching)
 - [x] Test: Sparsity calculation matches opexebo
-- [x] Test: Border score validation against Solstad et al. 2008 formula
-- [x] Run: `uv run pytest tests/validation/ -v` (34 tests, all passing)
+- [x] Test: Border score validation against Solstad et al. 2008 formula (actual comparison)
+- [x] Test: Border score with Euclidean distances (opexebo comparison mode)
+- [x] Run: `uv run pytest tests/validation/ -v` (36 tests, all passing)
 
 **Ecology Validation**:
 
@@ -911,12 +912,19 @@
 - [x] Test: MSD exponent correct for random walk (α ≈ 1)
 - [x] Test: Displacement comparison with yupi package
 
+**neurocode Validation** (algorithmic comparison):
+
+- [x] Document: Spatial information identical to neurocode's MapStats.m (Skaggs et al. 1993)
+- [x] Document: Place field detection similar to findPlaceFieldsAvg1D.m (iterative peaks)
+- [x] Note: MATLAB-only package (no executable comparison possible)
+
 **Document Differences**:
 
 - [x] Create `docs/validation-notes.md`
   - [x] Intentional differences (irregular graph support vs grid-only)
   - [x] Extensions beyond reference packages (graph-based metrics)
   - [x] Validation results and algorithmic differences (discretization effects)
+  - [x] neurocode algorithmic comparison with detailed comparison tables
 
 **Effort**: 2 days
 
