@@ -847,9 +847,9 @@
 
 **Testing**:
 
-- [ ] Run all segmentation tests: `uv run pytest tests/segmentation/ -v`
-- [ ] Verify coverage: `uv run pytest tests/segmentation/ --cov=src/neurospatial/segmentation/`
-- [ ] Integration test: full workflow (trajectory → runs → laps → trials)
+- [x] Run all segmentation tests: `uv run pytest tests/segmentation/ -v` (57/57 PASS)
+- [x] Verify coverage: `uv run pytest tests/segmentation/ --cov=src/neurospatial/segmentation/` (85% coverage)
+- [x] Integration test: full workflow (trajectory → runs → laps → trials) (3 comprehensive tests)
 
 **Documentation**:
 
