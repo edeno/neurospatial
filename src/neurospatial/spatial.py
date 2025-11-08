@@ -322,3 +322,424 @@ def clear_kdtree_cache(env: EnvironmentProtocol) -> None:
     """
     if hasattr(env, "_kdtree_cache"):
         env._kdtree_cache = None
+
+
+def regions_to_mask(
+    env: EnvironmentProtocol,
+    regions: str | list[str] | object,  # Will be Region | Regions after import
+    *,
+    include_boundary: bool = True,
+) -> NDArray[np.bool_]:
+    """Rasterize continuous regions onto discrete environment bins.
+
+    This function converts continuous polygon regions into a discrete boolean
+    mask over environment bins. It is the dual operation of mask_to_polygon,
+    completing the round-trip between continuous and discrete representations.
+
+    Parameters
+    ----------
+    env : EnvironmentProtocol
+        Environment with bin centers defining the discrete grid.
+    regions : str, list[str], Region, or Regions
+        Region(s) to rasterize. Can be:
+        - A single region name (str) from env.regions
+        - A list of region names (list[str]) from env.regions
+        - A single Region object
+        - A Regions collection
+    include_boundary : bool, default=True
+        Whether to include bins whose centers lie on region boundaries:
+        - True: Include boundary bins (uses shapely.covers)
+        - False: Exclude boundary bins (uses shapely.contains)
+
+    Returns
+    -------
+    mask : NDArray[np.bool_], shape (n_bins,)
+        Boolean mask where True indicates bin center is inside region(s).
+        For multiple regions, returns the union (logical OR).
+        Point regions always return all False (points have no area).
+
+    Raises
+    ------
+    KeyError
+        If a region name is not found in env.regions.
+    TypeError
+        If regions parameter has invalid type or include_boundary is not bool.
+
+    Notes
+    -----
+    **Region Types**:
+    - Polygon regions: Rasterized using Shapely containment checks
+    - Point regions: Always return all False (points have no area)
+
+    **Multiple Regions**:
+
+    When multiple regions are provided, the result is their **union** (logical OR).
+    Bins are included if they fall inside ANY of the regions. Overlapping
+    regions are counted only once.
+
+    For intersection or difference, use boolean operations on separate masks:
+
+    >>> mask_a = regions_to_mask(env, "region_a")  # doctest: +SKIP
+    >>> mask_b = regions_to_mask(env, "region_b")  # doctest: +SKIP
+    >>> intersection = mask_a & mask_b  # doctest: +SKIP
+    >>> difference = mask_a & ~mask_b  # doctest: +SKIP
+
+    **Boundary Semantics**:
+
+    - include_boundary=True: Uses shapely.covers (includes boundary)
+    - include_boundary=False: Uses shapely.contains (excludes boundary)
+
+    **Duality with Continuous Representations**:
+
+    This function is the approximate inverse of mask_to_region in regions.io.
+    The round-trip mask → polygon → mask preserves spatial structure but may
+    differ in fine details due to contour approximation.
+
+    This function completes the "dual operations" framework for spatial discretization,
+    pairing with apply_kernel (forward/adjoint diffusion) and resample_field
+    (layout-to-layout resampling).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.spatial import regions_to_mask
+    >>> from neurospatial.regions import Regions
+
+    Create environment and regions:
+
+    >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
+    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> regions = Regions()
+    >>> regions.add("center", polygon=box(3, 3, 7, 7))
+
+    Rasterize onto bins:
+
+    >>> mask = regions_to_mask(env, regions)
+    >>> mask.shape
+    (36,)
+    >>> np.any(mask)  # Some bins inside
+    True
+
+    Use region names from environment:
+
+    >>> env.regions.add("test", polygon=box(3, 3, 7, 7))
+    >>> mask = regions_to_mask(env, "test")
+    >>> mask.shape
+    (36,)
+
+    Multiple regions (union):
+
+    >>> env.regions.add("left", polygon=box(0, 0, 4, 10))
+    >>> env.regions.add("right", polygon=box(6, 0, 10, 10))
+    >>> mask = regions_to_mask(env, ["left", "right"])
+    >>> np.any(mask)
+    True
+
+    See Also
+    --------
+    neurospatial.regions.io.mask_to_region : Convert mask to polygon (inverse operation)
+    Environment.region_membership : 2D membership array for all regions
+    apply_kernel : Apply forward/adjoint diffusion operations on fields
+    resample_field : Resample fields between different discretizations
+
+    """
+    # Import here to avoid circular dependency
+    from neurospatial.regions import Region, Regions
+
+    # Input validation for include_boundary
+    if not isinstance(include_boundary, bool):
+        raise TypeError(
+            f"include_boundary must be a bool, got {type(include_boundary).__name__}"
+        )
+
+    # Normalize regions parameter to Regions object
+    regions_obj: Regions
+    if isinstance(regions, str):
+        # Single region name from env.regions
+        if regions not in env.regions:
+            available = list(env.regions.keys())
+            raise KeyError(
+                f"Region '{regions}' not found in environment. "
+                f"Available regions: {available}. "
+                f"Use env.regions.add('{regions}', polygon=...) to create this region first."
+            )
+        regions_obj = Regions([env.regions[regions]])
+    elif isinstance(regions, list):
+        # List of region names from env.regions
+        region_list = []
+        for name in regions:
+            if name not in env.regions:
+                available = list(env.regions.keys())
+                raise KeyError(
+                    f"Region '{name}' not found in environment. "
+                    f"Available regions: {available}. "
+                    f"Use env.regions.add('{name}', polygon=...) to create this region first."
+                )
+            region_list.append(env.regions[name])
+        regions_obj = Regions(region_list)
+    elif isinstance(regions, Region):
+        # Single Region object
+        regions_obj = Regions([regions])
+    elif isinstance(regions, Regions):
+        # Regions collection
+        regions_obj = regions
+    else:
+        raise TypeError(
+            f"regions must be str, list[str], Region, or Regions, "
+            f"got {type(regions).__name__}"
+        )
+
+    # Handle empty regions
+    if len(regions_obj) == 0:
+        return np.zeros(env.n_bins, dtype=bool)
+
+    # Get bin centers
+    bin_centers = env.bin_centers
+
+    # Initialize mask (union across all regions)
+    mask = np.zeros(env.n_bins, dtype=bool)
+
+    # Import shapely functions for vectorized operations
+    from shapely import contains, covers
+    from shapely import points as shapely_points
+
+    # Check if we have any polygon regions (to avoid unnecessary computation)
+    has_polygon_regions = any(r.kind == "polygon" for r in regions_obj.values())
+
+    # Pre-compute shapely Points array once for all polygon regions
+    points = None
+    if has_polygon_regions:
+        # Currently only supports 2D
+        if bin_centers.shape[1] != 2:
+            raise NotImplementedError(
+                f"regions_to_mask currently only supports 2D environments "
+                f"for polygon regions. Environment has {bin_centers.shape[1]} dimensions."
+            )
+        # Create shapely Points array from bin centers (computed once)
+        points = shapely_points(bin_centers[:, 0], bin_centers[:, 1])
+
+    # Iterate over regions and update mask
+    for region in regions_obj.values():
+        # Point regions have no area, skip them with warning
+        if region.kind == "point":
+            import warnings
+
+            warnings.warn(
+                f"Region '{region.name}' is a point region and has no area. "
+                f"Point regions always return empty masks (no bins selected). "
+                f"Consider using env.regions.buffer('{region.name}', distance=...) "
+                f"to create a small polygon around the point if you want to select nearby bins.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+
+        # Handle polygon regions (points already computed above)
+        if region.kind == "polygon":
+            # Vectorized containment check using pre-computed points
+            if include_boundary:
+                # covers: True if point is inside or on boundary
+                region_mask = covers(region.data, points)
+            else:
+                # contains: True only if strictly inside
+                region_mask = contains(region.data, points)
+
+            # Union with existing mask
+            mask |= region_mask
+
+    return mask
+
+
+def resample_field(
+    field: NDArray[np.float64],
+    src_env: EnvironmentProtocol,
+    dst_env: EnvironmentProtocol,
+    *,
+    method: Literal["nearest", "diffuse"] = "nearest",
+    bandwidth: float | None = None,
+) -> NDArray[np.float64]:
+    """
+    Resample field from source to destination environment.
+
+    This function enables moving fields between different discretizations,
+    supporting multi-resolution analysis and cross-session alignment.
+
+    Parameters
+    ----------
+    field : NDArray[np.float64], shape (src_env.n_bins,)
+        Field defined on source environment
+    src_env : Environment
+        Source environment where field is defined
+    dst_env : Environment
+        Destination environment to resample onto
+    method : {"nearest", "diffuse"}, optional
+        Resampling method. Default is "nearest".
+
+        - "nearest": KD-tree nearest-neighbor lookup (fast, preserves values)
+        - "diffuse": Nearest-neighbor followed by Gaussian smoothing (regularized)
+    bandwidth : float, optional
+        Smoothing bandwidth for diffuse method (in spatial units).
+        Required when method="diffuse", ignored for method="nearest".
+
+    Returns
+    -------
+    resampled : NDArray[np.float64], shape (dst_env.n_bins,)
+        Field resampled onto destination environment bins
+
+    Raises
+    ------
+    ValueError
+        If field size doesn't match source environment,
+        if method is invalid,
+        if bandwidth is missing/invalid for diffuse method,
+        or if environments have different dimensions.
+
+    See Also
+    --------
+    map_points_to_bins : Low-level point-to-bin mapping
+    apply_kernel : Apply diffusion kernels to fields
+    regions_to_mask : Convert regions to bin masks (spatial discretization)
+
+    Notes
+    -----
+    **Choosing a Method**:
+
+    **Use "nearest" when:**
+
+    - You want exact field values preserved (no smoothing)
+    - You're resampling between similar resolutions
+    - You need maximum speed
+    - Example: Aligning same-session data with slightly different bin sizes
+
+    **Use "diffuse" when:**
+
+    - You're changing resolution significantly (>2× bin size ratio)
+    - You want to reduce aliasing artifacts
+    - You need spatially smooth results
+    - Example: Comparing place fields across different grid resolutions
+
+    **Rule of thumb**: Use "nearest" by default. Use "diffuse" when resampling
+    across large resolution changes or when visual smoothness matters.
+
+    **Method Details**:
+
+    **Nearest method**: Uses KD-tree to find nearest source bin for each
+    destination bin center. Fast and preserves exact field values from source.
+    No interpolation or smoothing is applied.
+
+    **Diffuse method**: Applies nearest-neighbor mapping followed by Gaussian
+    smoothing with bandwidth parameter. This regularizes the resampled field
+    and can reduce aliasing artifacts when downsampling.
+
+    **Dimension requirements**: Both environments must have the same number
+    of dimensions (e.g., both 2D).
+
+    **Mass and Values**:
+
+    - **Nearest method**: Preserves exact field values from source bins.
+      Total integrated mass (sum(field * bin_sizes)) changes if bin sizes differ
+      between source and destination—this is expected and correct.
+
+    - **Diffuse method**: Applies smoothing after resampling, so values are
+      interpolated and mass is approximate. Use nearest method if exact value
+      preservation is critical.
+
+    **Use cases**:
+
+    - Align fields from different sessions with different bin sizes
+    - Compare fields at multiple resolutions
+    - Transfer learned representations between environments
+    - Upsample/downsample spatial fields
+
+    Examples
+    --------
+    Basic nearest-neighbor resampling:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment, resample_field
+    >>> # Source: coarse resolution
+    >>> src_data = np.array([[i, j] for i in range(21) for j in range(21)])
+    >>> src_env = Environment.from_samples(src_data, bin_size=4.0)
+    >>> # Destination: fine resolution
+    >>> dst_data = np.array([[i, j] for i in range(21) for j in range(21)])
+    >>> dst_env = Environment.from_samples(dst_data, bin_size=2.0)
+    >>> # Create field on source
+    >>> field = np.random.rand(src_env.n_bins)
+    >>> # Resample to destination
+    >>> resampled = resample_field(field, src_env, dst_env, method="nearest")
+    >>> resampled.shape == (dst_env.n_bins,)
+    True
+
+    Diffuse method with smoothing:
+
+    >>> # Create spike field
+    >>> field_spike = np.zeros(src_env.n_bins)
+    >>> field_spike[src_env.n_bins // 2] = 1.0
+    >>> # Resample with smoothing
+    >>> resampled_smooth = resample_field(
+    ...     field_spike, src_env, dst_env, method="diffuse", bandwidth=2.0
+    ... )
+    >>> resampled_smooth.shape == (dst_env.n_bins,)
+    True
+
+    Identity resampling (same environment):
+
+    >>> resampled_identity = resample_field(field, src_env, src_env)
+    >>> np.allclose(resampled_identity, field)
+    True
+    """
+    # Validate inputs
+    if field.shape[0] != src_env.n_bins:
+        raise ValueError(
+            f"Field size {field.shape[0]} does not match source environment "
+            f"n_bins ({src_env.n_bins})"
+        )
+
+    if method not in ("nearest", "diffuse"):
+        raise ValueError(f"method must be 'nearest' or 'diffuse' (got '{method}')")
+
+    if method == "diffuse":
+        if bandwidth is None:
+            raise ValueError(
+                "bandwidth must be provided when method='diffuse'. "
+                "Specify bandwidth parameter (in spatial units)."
+            )
+        if bandwidth <= 0:
+            raise ValueError(f"bandwidth must be positive (got {bandwidth})")
+
+    # Check dimension compatibility
+    if src_env.bin_centers.shape[1] != dst_env.bin_centers.shape[1]:
+        raise ValueError(
+            f"Source and destination environments must have same number of dimensions. "
+            f"Source has {src_env.bin_centers.shape[1]}D, "
+            f"destination has {dst_env.bin_centers.shape[1]}D."
+        )
+
+    # Step 1: Map each destination bin center to nearest source bin
+    # Use map_points_to_bins for KD-tree cached nearest-neighbor lookup
+    dst_to_src_indices = map_points_to_bins(
+        dst_env.bin_centers,
+        src_env,
+        tie_break=TieBreakStrategy.LOWEST_INDEX,
+    )
+
+    # Step 2: Pullback field values via nearest neighbor
+    resampled = field[dst_to_src_indices]
+
+    # Step 3: Optionally apply smoothing for diffuse method
+    if method == "diffuse":
+        # Import here to avoid circular dependency
+        from neurospatial.kernels import apply_kernel
+
+        # Type narrowing: bandwidth is guaranteed to be float at this point
+        assert bandwidth is not None  # Already validated above
+
+        # Compute diffusion kernel on destination environment
+        kernel = dst_env.compute_kernel(bandwidth=bandwidth, mode="transition")
+
+        # Apply forward smoothing
+        resampled = apply_kernel(resampled, kernel, mode="forward")
+
+    return resampled

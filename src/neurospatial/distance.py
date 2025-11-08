@@ -100,10 +100,73 @@ def geodesic_distance_between_points(
         return default
 
 
+def _validate_source_nodes(
+    sources: NDArray[np.int_],
+    G: nx.Graph,
+) -> list[int]:
+    """Validate source nodes and return list of valid sources.
+
+    Parameters
+    ----------
+    sources : NDArray[np.int_]
+        Array of source node indices to validate.
+    G : nx.Graph
+        Graph to check nodes against.
+
+    Returns
+    -------
+    list[int]
+        List of valid source node indices that exist in the graph.
+
+    Raises
+    ------
+    ValueError
+        If no valid source nodes are found after validation. Error message
+        includes the invalid indices and suggests checking node IDs.
+
+    Warnings
+    --------
+    UserWarning
+        Issued for each source node that is not found in the graph, with
+        the invalid node ID.
+
+    """
+    import warnings
+
+    valid_sources = []
+    invalid_sources = []
+
+    for src in sources:
+        if src not in G.nodes:
+            invalid_sources.append(int(src))
+            warnings.warn(
+                f"Source node {src} not in graph (valid node IDs: "
+                f"{min(G.nodes) if G.nodes else 'none'} to "
+                f"{max(G.nodes) if G.nodes else 'none'}), skipping",
+                stacklevel=3,
+            )
+        else:
+            valid_sources.append(int(src))
+
+    if len(valid_sources) == 0:
+        raise ValueError(
+            f"No valid source nodes found in graph. Invalid nodes: {invalid_sources}. "
+            f"Valid node IDs range from {min(G.nodes) if G.nodes else 'none'} "
+            f"to {max(G.nodes) if G.nodes else 'none'}. "
+            f"Check that source indices match actual graph node IDs."
+        )
+
+    return valid_sources
+
+
 def distance_field(
     G: nx.Graph,
     sources: list[int] | NDArray[np.int_],
+    *,
+    metric: str = "geodesic",
+    bin_centers: NDArray[np.float64] | None = None,
     weight: str = "distance",
+    cutoff: float | None = None,
 ) -> NDArray[np.float64]:
     """Compute distance field: distance from each node to nearest source node.
 
@@ -118,14 +181,49 @@ def distance_field(
     sources : list[int] or NDArray[np.int_]
         List of source node indices. Distance field measures distance to
         nearest node in this set.
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance metric to use:
+
+        - 'geodesic': Shortest-path length on graph using edge weights.
+          Respects graph connectivity.
+        - 'euclidean': Straight-line L2 distance in coordinate space.
+          Requires ``bin_centers`` parameter.
+    bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
+        Node coordinates in N-dimensional space. Required when
+        ``metric='euclidean'``. Ignored for geodesic metric.
     weight : str, default="distance"
         Edge attribute to use as weight for path length calculation.
+        Only used when ``metric='geodesic'``.
+    cutoff : float, optional
+        Maximum distance threshold. Nodes farther than ``cutoff`` from
+        all sources will have distance ``np.inf``. Interpretation:
+
+        - Geodesic: Path length limit (uses Dijkstra cutoff)
+        - Euclidean: Coordinate distance limit (post-computed clipping)
 
     Returns
     -------
     NDArray[np.float64], shape (n_nodes,)
         For each node i, the distance to the nearest source node.
-        Nodes unreachable from all sources have distance np.inf.
+        Nodes unreachable from all sources (or beyond cutoff) have
+        distance ``np.inf``.
+
+    Raises
+    ------
+    ValueError
+        If metric is not 'geodesic' or 'euclidean'. Valid options: 'geodesic', 'euclidean'.
+    ValueError
+        If cutoff is negative. Must be non-negative or None.
+    ValueError
+        If sources list is empty. Provide at least one source node.
+    ValueError
+        If metric='euclidean' but bin_centers is None. Provide bin_centers array.
+    ValueError
+        If bin_centers shape doesn't match number of graph nodes. Ensure
+        bin_centers.shape[0] == G.number_of_nodes().
+    ValueError
+        If no valid source nodes found after validation. Check that source
+        indices match actual graph node IDs.
 
     Examples
     --------
@@ -137,56 +235,116 @@ def distance_field(
     >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
     >>> for u, v in G.edges:
     ...     G.edges[u, v]["distance"] = 1.0
-    >>> # Compute distance field from node 2
+    >>> # Geodesic distance field from node 2
     >>> dists = distance_field(G, sources=[2])
     >>> dists
     array([2., 1., 0., 1., 2.])
+    >>> # With cutoff
+    >>> dists = distance_field(G, sources=[2], cutoff=1.5)
+    >>> dists
+    array([inf, 1., 0., 1., inf])
 
     Notes
     -----
-    This function uses Dijkstra's algorithm with multiple sources, which is
-    O((V + E) log V) where V is number of nodes and E is number of edges.
+    **Geodesic mode**: Uses Dijkstra's algorithm with multiple sources,
+    which is O((V + E) log V) where V is number of nodes and E is number
+    of edges. The ``cutoff`` parameter is passed directly to Dijkstra
+    for efficiency.
+
+    **Euclidean mode**: Computes L2 distances from node coordinates.
+    For small numbers of sources (< sqrt(n_nodes)), uses KD-tree query.
+    For many sources, uses broadcasted pairwise distance computation.
 
     For large graphs or repeated queries, consider caching the result.
 
     See Also
     --------
-    geodesic_distance_matrix : Compute all-pairs distances
+    geodesic_distance_matrix : Compute all-pairs geodesic distances
     pairwise_distances : Compute distances between specific node pairs
+    neighbors_within : Find all neighbors within radius
 
     """
-    sources_array = np.asarray(sources, dtype=int)
+    from scipy.spatial import cKDTree
+
+    # Validate inputs
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(
+            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
+            f"Use metric='geodesic' for graph-based distances or "
+            f"metric='euclidean' for coordinate-based distances."
+        )
+
+    if cutoff is not None and cutoff < 0:
+        raise ValueError(
+            f"cutoff must be non-negative, got {cutoff}. "
+            f"Use cutoff=None for no distance limit, or provide a positive value."
+        )
+
+    sources_array = np.asarray(sources, dtype=int).ravel()
 
     n_nodes = G.number_of_nodes()
     if n_nodes == 0:
         return np.empty(0, dtype=np.float64)
 
     if len(sources_array) == 0:
-        raise ValueError("sources must contain at least one node")
+        raise ValueError(
+            "sources must contain at least one node. "
+            "Provide a non-empty list or array of source node indices."
+        )
 
-    # Initialize distance array
-    distances = np.full(n_nodes, np.inf, dtype=np.float64)
+    # Euclidean metric requires bin_centers
+    if metric == "euclidean":
+        if bin_centers is None:
+            raise ValueError(
+                "bin_centers parameter is required when metric='euclidean'. "
+                "Provide an array of node coordinates with shape (n_nodes, n_dims)."
+            )
+        if bin_centers.shape[0] != n_nodes:
+            raise ValueError(
+                f"bin_centers size {bin_centers.shape[0]} must match "
+                f"number of nodes in graph ({n_nodes}). "
+                f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
+            )
 
-    # Check that all source nodes are valid
-    valid_sources = []
-    for src in sources_array:
-        if src in G.nodes:
-            valid_sources.append(int(src))
+        # Validate sources exist in graph (use consistent validation)
+        valid_sources = _validate_source_nodes(sources_array, G)
+
+        # Compute Euclidean distances
+        src_centers = bin_centers[valid_sources]
+
+        # Choose strategy based on number of sources
+        if len(valid_sources) < max(32, int(np.sqrt(n_nodes))):
+            # KD-tree for few sources
+            tree = cKDTree(src_centers)
+            distances, _ = tree.query(bin_centers, k=1)
         else:
-            import warnings
+            # Broadcasted pairwise for many sources
+            # Shape: (n_nodes, n_sources, n_dims)
+            diff = bin_centers[:, np.newaxis, :] - src_centers[np.newaxis, :, :]
+            # Shape: (n_nodes, n_sources)
+            dists_to_all = np.sqrt(np.sum(diff**2, axis=2))
+            # Shape: (n_nodes,)
+            distances = np.min(dists_to_all, axis=1)
 
-            warnings.warn(f"Source node {src} not in graph, skipping", stacklevel=2)
+        # Apply cutoff
+        if cutoff is not None:
+            distances = np.where(distances <= cutoff, distances, np.inf)
 
-    if len(valid_sources) == 0:
-        raise ValueError("No valid source nodes found in graph")
+        return np.asarray(distances, dtype=np.float64)
+
+    # Geodesic metric - use consistent validation
+    distances = np.full(n_nodes, np.inf, dtype=np.float64)
+    valid_sources = _validate_source_nodes(sources_array, G)
 
     # Run Dijkstra from each source and keep minimum distance
     for src in valid_sources:
-        lengths = nx.single_source_dijkstra_path_length(G, src, weight=weight)
+        lengths = nx.single_source_dijkstra_path_length(
+            G, src, weight=weight, cutoff=cutoff
+        )
         for node, length in lengths.items():
             distances[node] = min(distances[node], float(length))
 
-    return distances
+    return np.asarray(distances, dtype=np.float64)
 
 
 def pairwise_distances(
@@ -256,3 +414,173 @@ def pairwise_distances(
                 dist_matrix[i, j] = float(lengths[dst])
 
     return dist_matrix
+
+
+def neighbors_within(
+    G: nx.Graph,
+    centers: list[int] | NDArray[np.int_],
+    radius: float,
+    *,
+    metric: str = "geodesic",
+    bin_centers: NDArray[np.float64] | None = None,
+    weight: str = "distance",
+    include_center: bool = True,
+) -> list[NDArray[np.int_]]:
+    """Return bins within radius of each center bin.
+
+    For each center bin, find all bins whose distance (geodesic or Euclidean)
+    is within the specified radius.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        NetworkX graph representing spatial connectivity.
+    centers : list[int] or NDArray[np.int_]
+        Center bin indices to query around.
+    radius : float
+        Neighborhood radius. Interpreted in:
+
+        - Geodesic: Graph path length units (using edge ``weight`` attribute)
+        - Euclidean: Coordinate units (L2 distance in ``bin_centers``)
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance metric to use:
+
+        - 'geodesic': Shortest-path length on graph
+        - 'euclidean': Straight-line L2 distance
+    bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
+        Node coordinates. Required when ``metric='euclidean'``.
+    weight : str, default="distance"
+        Edge attribute to use for geodesic distances.
+    include_center : bool, default=True
+        Whether to include the center bin itself in each neighborhood.
+
+    Returns
+    -------
+    list[NDArray[np.int_]]
+        For each center, a 1-D array of bin indices within ``radius``.
+        Order of bins within each array is unspecified. Arrays contain
+        unique indices (no duplicates).
+
+    Raises
+    ------
+    ValueError
+        If metric is not 'geodesic' or 'euclidean'. Valid options: 'geodesic', 'euclidean'.
+    ValueError
+        If radius is negative. Must be non-negative.
+    ValueError
+        If metric='euclidean' but bin_centers is None. Provide bin_centers array.
+    ValueError
+        If bin_centers shape doesn't match number of graph nodes. Ensure
+        bin_centers.shape[0] == G.number_of_nodes().
+    nx.NodeNotFound
+        If a center node is not in the graph. Raised with context about valid
+        node ID range.
+
+    Examples
+    --------
+    >>> import networkx as nx
+    >>> from neurospatial.distance import neighbors_within
+    >>> # Create line graph
+    >>> G = nx.Graph()
+    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
+    >>> for u, v in G.edges:
+    ...     G.edges[u, v]["distance"] = 1.0
+    >>> # Find neighbors within distance 1.5 of node 2
+    >>> neighborhoods = neighbors_within(G, centers=[2], radius=1.5, metric="geodesic")
+    >>> sorted(neighborhoods[0])
+    [1, 2, 3]
+
+    Notes
+    -----
+    **Geodesic mode**: Uses single-source Dijkstra per center with
+    ``cutoff=radius`` for efficiency. Complexity per center is
+    O((V + E) log V) but early termination typically makes it faster.
+
+    **Euclidean mode**: Uses KD-tree ball query over ``bin_centers``.
+    Complexity is O(log V) per center on average.
+
+    See Also
+    --------
+    distance_field : Compute distance to nearest source
+    pairwise_distances : Compute distances between specific pairs
+
+    """
+    from scipy.spatial import cKDTree
+
+    # Validate inputs
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(
+            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
+            f"Use metric='geodesic' for graph-based distances or "
+            f"metric='euclidean' for coordinate-based distances."
+        )
+
+    if radius < 0:
+        raise ValueError(
+            f"radius must be non-negative, got {radius}. "
+            f"Provide a positive radius value or 0 for only center nodes."
+        )
+
+    centers_array = np.asarray(centers, dtype=int).ravel()
+
+    if len(centers_array) == 0:
+        return []
+
+    n_nodes = G.number_of_nodes()
+
+    # Euclidean metric
+    if metric == "euclidean":
+        if bin_centers is None:
+            raise ValueError(
+                "bin_centers parameter is required when metric='euclidean'. "
+                "Provide an array of node coordinates with shape (n_nodes, n_dims)."
+            )
+        if bin_centers.shape[0] != n_nodes:
+            raise ValueError(
+                f"bin_centers size {bin_centers.shape[0]} must match "
+                f"number of nodes in graph ({n_nodes}). "
+                f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
+            )
+
+        # Build KD-tree once
+        tree = cKDTree(bin_centers)
+
+        # Query neighborhoods
+        center_coords = bin_centers[centers_array]
+        neighborhoods_list = tree.query_ball_point(center_coords, r=radius)
+
+        # Convert to numpy arrays and optionally exclude centers
+        result = []
+        for c, neigh_list in zip(centers_array, neighborhoods_list, strict=True):
+            arr = np.asarray(neigh_list, dtype=np.int_)
+            if not include_center:
+                arr = arr[arr != c]
+            result.append(arr)
+
+        return result
+
+    # Geodesic metric - validate centers and provide helpful errors
+    result = []
+    for c in centers_array:
+        if c not in G.nodes:
+            node_range = (
+                f"{min(G.nodes)} to {max(G.nodes)}" if G.nodes else "no nodes in graph"
+            )
+            raise nx.NodeNotFound(
+                f"Center node {c} not in graph. Valid node IDs range from {node_range}. "
+                f"Check that center index matches an actual graph node ID."
+            )
+
+        # Dijkstra from center with cutoff
+        lengths = nx.single_source_dijkstra_path_length(
+            G, source=int(c), cutoff=radius, weight=weight
+        )
+
+        neigh = np.fromiter(lengths.keys(), dtype=np.int_, count=len(lengths))
+
+        if not include_center:
+            neigh = neigh[neigh != c]
+
+        result.append(neigh)
+
+    return result

@@ -29,8 +29,10 @@ from typing import Any, Literal
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+from scipy import sparse
 
 from neurospatial._logging import log_environment_created, log_graph_validation
+from neurospatial.differential import compute_differential_operator
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.fields import EnvironmentFields
@@ -916,6 +918,71 @@ class Environment(
 
         """
         return int(self.bin_centers.shape[0])
+
+    @cached_property
+    @check_fitted
+    def differential_operator(self) -> sparse.csc_matrix:
+        """Compute and cache the differential operator matrix for graph signal processing.
+
+        The differential operator D is a sparse matrix of shape (n_bins, n_edges)
+        that encodes the oriented edge structure of the connectivity graph. It
+        provides the foundation for gradient, divergence, and Laplacian operations
+        on spatial fields.
+
+        Returns
+        -------
+        D : scipy.sparse.csc_matrix
+            Sparse differential operator matrix of shape (n_bins, n_edges).
+            The matrix is cached after first computation for efficiency.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+
+        Notes
+        -----
+        The differential operator satisfies the fundamental relationship:
+        L = D @ D.T, where L is the graph Laplacian matrix.
+
+        This property is cached using ``@cached_property``, meaning the matrix
+        is computed only once and reused on subsequent accesses. The cache is
+        cleared when the environment is copied or modified.
+
+        The differential operator enables efficient graph signal processing:
+
+        - Gradient: grad(f) = D.T @ f  (scalar field → edge field)
+        - Divergence: div(g) = D @ g   (edge field → scalar field)
+        - Laplacian: lap(f) = D @ D.T @ f = div(grad(f))
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> # Create a simple 1D chain
+        >>> data = np.array([[0.0], [1.0], [2.0], [3.0]])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> # Access differential operator (computed and cached)
+        >>> D = env.differential_operator
+        >>> D.shape
+        (4, 3)
+        >>> # Subsequent access reuses cached matrix
+        >>> D2 = env.differential_operator
+        >>> D is D2
+        True
+
+        See Also
+        --------
+        neurospatial.differential.compute_differential_operator : Underlying computation
+
+        References
+        ----------
+        .. [1] PyGSP: Graph Signal Processing in Python
+               https://pygsp.readthedocs.io/
+        .. [2] Shuman et al. (2013). "The emerging field of signal processing on graphs."
+               IEEE Signal Processing Magazine, 30(3), 83-98.
+        """
+        return compute_differential_operator(self)
 
     def copy(self, *, deep: bool = True) -> Environment:
         """Create a copy of the environment.
