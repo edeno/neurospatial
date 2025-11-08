@@ -871,12 +871,13 @@
   - [x] Compute MSD and classify diffusion
   - [x] Visualize trajectory properties
   - [x] Notebook executes successfully (731KB with outputs)
-- [ ] Create `examples/15_behavioral_segmentation.ipynb` (renumbered from 13)
-  - [ ] Detect runs between goal regions
-  - [ ] Detect laps on circular track
-  - [ ] Segment T-maze trials
-  - [ ] Compute trajectory similarity
-  - [ ] Use cases: lap-by-lap learning, trial-type selectivity
+- [x] Create `examples/15_behavioral_segmentation.ipynb` (renumbered from 13)
+  - [x] Detect runs between goal regions
+  - [x] Detect laps on circular track
+  - [x] Segment T-maze trials
+  - [x] Compute trajectory similarity
+  - [x] Goal-directed run detection
+  - [x] Core functionality verified (40KB notebook)
 
 **pynapple Integration**:
 
