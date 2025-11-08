@@ -564,8 +564,8 @@ env_tmaze.regions.buffer(np.array([35.0, 60.0]), distance=5.0, new_name="left_go
 env_tmaze.regions.buffer(np.array([65.0, 60.0]), distance=5.0, new_name="right_goal")
 
 # Generate trajectory with 4 trials: left, right, left, right
-# Total samples: 30+30+20+30 + 30+30+20+30 + 30+30+20+30 + 30+30+20 = 410
-times_tmaze = np.linspace(0, 82, 410)  # ~82 seconds, 410 samples
+# Total samples: 30+30+20+30 + 30+30+20+30 + 30+30+20+30 + 30+30+20 = 400
+times_tmaze = np.linspace(0, 80, 400)  # ~80 seconds, 400 samples
 
 trial_paths = [
     # Trial 1: start → left

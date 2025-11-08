@@ -185,8 +185,8 @@ plt.show()
 # Map trajectory to bins
 trajectory_bins = env.bin_at(positions)
 
-# Compute turn angles
-turn_angles = compute_turn_angles(trajectory_bins, env)
+# Compute turn angles from continuous positions
+turn_angles = compute_turn_angles(positions)
 
 print(f"Computed {len(turn_angles)} turn angles")
 print(

@@ -7,12 +7,13 @@ and goal locations. These are essential primitives for reinforcement learning
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 from neurospatial.distance import distance_field
@@ -20,7 +21,7 @@ from neurospatial.spatial import regions_to_mask
 
 
 def region_reward_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     region_name: str,
     *,
     reward_value: float = 1.0,
@@ -179,7 +180,7 @@ def region_reward_field(
         indicator = np.where(region_mask, 1.0, 0.0)
 
         # Smooth the indicator field
-        smoothed = env.smooth(indicator, bandwidth)
+        smoothed = cast("EnvironmentProtocol", env).smooth(indicator, bandwidth)
 
         # CRITICAL FIX: Scale by max IN REGION (not global max)
         # This ensures the peak reward within the actual region equals reward_value
@@ -201,7 +202,7 @@ def region_reward_field(
 
 
 def goal_reward_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     goal_bins: int | list[int] | NDArray[np.int_],
     *,
     decay: Literal["linear", "exponential", "inverse"] = "exponential",

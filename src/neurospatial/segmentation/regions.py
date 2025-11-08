@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ def detect_region_crossings(
     trajectory_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     region_name: str,
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     direction: Literal["both", "entry", "exit"] = "both",
 ) -> list[Crossing]:
@@ -181,7 +181,7 @@ def detect_region_crossings(
 def detect_runs_between_regions(
     trajectory_positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     source: str,
     target: str,

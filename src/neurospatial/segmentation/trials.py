@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class Trial:
 def segment_trials(
     trajectory_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     start_region: str | None = None,
     end_regions: list[str] | None = None,

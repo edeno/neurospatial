@@ -20,12 +20,11 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def border_score(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,

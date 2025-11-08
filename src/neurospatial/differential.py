@@ -25,12 +25,11 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
-    from neurospatial.environment.core import Environment
+    from neurospatial import Environment
 
 
 def compute_differential_operator(
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
 ) -> sparse.csc_matrix:
     """Compute the differential operator matrix for graph signal processing.
 
@@ -46,7 +45,7 @@ def compute_differential_operator(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment with a connectivity graph. Must have a `connectivity`
         attribute containing a NetworkX graph with 'distance' edge attributes.
 
@@ -147,7 +146,7 @@ def compute_differential_operator(
 
 def gradient(
     field: NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
 ) -> NDArray[np.float64]:
     """Compute the gradient of a scalar field on the graph.
 
@@ -166,7 +165,7 @@ def gradient(
     field : NDArray[np.float64], shape (n_bins,)
         Scalar field defined on the environment's bins. Each element corresponds
         to a field value at a bin center.
-    env : EnvironmentProtocol
+    env : Environment
         Environment with connectivity graph and differential operator. Must be
         fitted (i.e., created via a factory method like `Environment.from_samples()`).
 
@@ -255,7 +254,7 @@ def gradient(
 
 def divergence(
     edge_field: NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
 ) -> NDArray[np.float64]:
     """Compute the divergence of an edge field on the graph.
 
@@ -274,7 +273,7 @@ def divergence(
         Edge field (vector field on edges). Each element corresponds to a value
         assigned to one edge in the connectivity graph. Typically represents a
         flow or gradient along edges.
-    env : EnvironmentProtocol
+    env : Environment
         Environment with connectivity graph and differential operator. Must be
         fitted (i.e., created via a factory method like `Environment.from_samples()`).
 

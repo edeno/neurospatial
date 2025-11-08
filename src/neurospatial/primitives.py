@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 def neighbor_reduce(
     field: NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
     *,
     op: Literal["sum", "mean", "max", "min", "std"] = "mean",
     weights: NDArray[np.float64] | None = None,
@@ -80,6 +80,7 @@ def neighbor_reduce(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
     >>> from neurospatial.primitives import neighbor_reduce
     >>> # Create 3x3 grid
     >>> positions = np.array(
@@ -191,7 +192,7 @@ def neighbor_reduce(
 def convolve(
     field: NDArray[np.float64],
     kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
     *,
     normalize: bool = True,
 ) -> NDArray[np.float64]:
@@ -260,6 +261,7 @@ def convolve(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
     >>> from neurospatial.primitives import convolve
     >>> # Create 3x3 grid
     >>> positions = np.array([[i, j] for i in range(3) for j in range(3)])
@@ -308,18 +310,16 @@ def convolve(
         kernel_matrix = np.zeros((env.n_bins, env.n_bins), dtype=np.float64)
 
         # Compute pairwise distances for all bins
-        # Cast to EnvironmentProtocol to satisfy mypy
-        env_proto = cast("EnvironmentProtocol", env)
-        for i in range(env_proto.n_bins):
+        for i in range(env.n_bins):
             # Get distances from bin i to all other bins
-            distances = np.zeros(env_proto.n_bins, dtype=np.float64)
-            for j in range(env_proto.n_bins):
+            distances = np.zeros(env.n_bins, dtype=np.float64)
+            for j in range(env.n_bins):
                 if i == j:
                     distances[j] = 0.0
                 else:
                     # Use graph distance between bin centers
-                    dist: float = env_proto.distance_between(
-                        env_proto.bin_centers[i], env_proto.bin_centers[j]
+                    dist: float = cast("EnvironmentProtocol", env).distance_between(
+                        env.bin_centers[i], env.bin_centers[j]
                     )
                     distances[j] = dist
 

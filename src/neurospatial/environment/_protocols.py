@@ -87,6 +87,8 @@ class EnvironmentProtocol(Protocol):
 
     def bins_in_region(self, region_name: str) -> NDArray[np.int_]: ...
 
+    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]: ...
+
     def region_membership(
         self,
         regions: Regions | None = None,

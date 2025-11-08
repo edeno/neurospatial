@@ -60,7 +60,7 @@ bin_indices = map_points_to_bins(points, env, tie_break="lowest_index")
 
 # Estimate transform from corresponding points (v0.1.0+)
 from neurospatial import estimate_transform, apply_transform_to_environment
-T = estimate_transform(src_landmarks, dst_landmarks, kind="rigid")
+transform = estimate_transform(src_landmarks, dst_landmarks, kind="rigid")
 aligned_env = apply_transform_to_environment(env, T)
 
 # Compute distance fields (v0.1.0+)

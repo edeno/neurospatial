@@ -4,7 +4,10 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment, apply_transform_to_environment, estimate_transform
-from neurospatial.transforms import Affine2D, translate
+from neurospatial.transforms import (
+    Affine2D,
+    translate,
+)
 
 
 class TestEstimateTransform:
@@ -15,8 +18,8 @@ class TestEstimateTransform:
         src = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=float)
         dst = src.copy()
 
-        T = estimate_transform(src, dst, kind="rigid")
-        transformed = T(src)
+        transform = estimate_transform(src, dst, kind="rigid")
+        transformed = transform(src)
 
         assert np.allclose(transformed, dst, atol=1e-10)
 
@@ -25,8 +28,8 @@ class TestEstimateTransform:
         src = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=float)
         dst = src + np.array([5, 10])
 
-        T = estimate_transform(src, dst, kind="rigid")
-        transformed = T(src)
+        transform = estimate_transform(src, dst, kind="rigid")
+        transformed = transform(src)
 
         assert np.allclose(transformed, dst, atol=1e-10)
 
@@ -37,8 +40,8 @@ class TestEstimateTransform:
         R = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
         dst = src @ R.T
 
-        T = estimate_transform(src, dst, kind="rigid")
-        transformed = T(src)
+        transform = estimate_transform(src, dst, kind="rigid")
+        transformed = transform(src)
 
         assert np.allclose(transformed, dst, atol=1e-10)
 
@@ -48,8 +51,8 @@ class TestEstimateTransform:
         scale = 2.5
         dst = src * scale
 
-        T = estimate_transform(src, dst, kind="similarity")
-        transformed = T(src)
+        transform = estimate_transform(src, dst, kind="similarity")
+        transformed = transform(src)
 
         assert np.allclose(transformed, dst, atol=1e-10)
 
@@ -60,8 +63,8 @@ class TestEstimateTransform:
         A_affine = np.array([[1.5, 0.3], [0.2, 2.0]])
         dst = src @ A_affine.T + np.array([1, 2])
 
-        T = estimate_transform(src, dst, kind="affine")
-        transformed = T(src)
+        transform = estimate_transform(src, dst, kind="affine")
+        transformed = transform(src)
 
         assert np.allclose(transformed, dst, atol=1e-10)
 
@@ -113,16 +116,16 @@ class TestApplyTransformToEnvironment:
 
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""
-        T = Affine2D(np.eye(3))
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = Affine2D(np.eye(3))
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert np.allclose(transformed_env.bin_centers, simple_2d_env.bin_centers)
         assert transformed_env.n_bins == simple_2d_env.n_bins
 
     def test_apply_translation(self, simple_2d_env):
         """Test applying translation transform."""
-        T = translate(10, 20)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(10, 20)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         # Centers should be translated
         expected = simple_2d_env.bin_centers + np.array([10, 20])
@@ -130,15 +133,15 @@ class TestApplyTransformToEnvironment:
 
     def test_transform_preserves_n_bins(self, simple_2d_env):
         """Test that transformation preserves number of bins."""
-        T = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(5, 5)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert transformed_env.n_bins == simple_2d_env.n_bins
 
     def test_transform_preserves_connectivity(self, simple_2d_env):
         """Test that transformation preserves connectivity structure."""
-        T = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(5, 5)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert (
             transformed_env.connectivity.number_of_edges()
@@ -156,9 +159,9 @@ class TestApplyTransformToEnvironment:
                 [0, 0, 1],
             ]
         )
-        T = Affine2D(R)
+        transform = Affine2D(R)
 
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         # Get edge distances from original
         orig_dists = [
@@ -175,23 +178,23 @@ class TestApplyTransformToEnvironment:
 
     def test_transform_copies_units(self, simple_2d_env):
         """Test that units are preserved."""
-        T = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(5, 5)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert transformed_env.units == simple_2d_env.units
 
     def test_transform_updates_frame(self, simple_2d_env):
         """Test that frame name is updated."""
-        T = translate(5, 5)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(5, 5)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert "transformed" in transformed_env.frame
 
     def test_transform_with_custom_name(self, simple_2d_env):
         """Test custom name for transformed environment."""
-        T = translate(5, 5)
+        transform = translate(5, 5)
         transformed_env = apply_transform_to_environment(
-            simple_2d_env, T, name="aligned"
+            simple_2d_env, transform, name="aligned"
         )
 
         assert transformed_env.name == "aligned"
@@ -200,22 +203,23 @@ class TestApplyTransformToEnvironment:
         """Test that regions are transformed."""
         simple_2d_env.regions.add("goal", point=np.array([5.0, 5.0]))
 
-        T = translate(10, 20)
-        transformed_env = apply_transform_to_environment(simple_2d_env, T)
+        transform = translate(10, 20)
+        transformed_env = apply_transform_to_environment(simple_2d_env, transform)
 
         assert "goal" in transformed_env.regions
         expected_point = np.array([15.0, 25.0])
         assert np.allclose(transformed_env.regions["goal"].data, expected_point)
 
-    def test_3d_environment_raises_error(self):
-        """Test that 3D environments raise error."""
+    def test_3d_environment_dimension_mismatch_raises_error(self):
+        """Test that 3D environment with 2D transform raises error."""
         np.random.seed(42)
         data = np.random.randn(100, 3) * 5
         env_3d = Environment.from_samples(data, bin_size=2.0)
 
-        T = translate(5, 5)
-        with pytest.raises(ValueError, match="only supports 2D"):
-            apply_transform_to_environment(env_3d, T)
+        # 2D transform on 3D environment should raise error
+        transform = translate(5, 5)
+        with pytest.raises(ValueError, match="dimensionality"):
+            apply_transform_to_environment(env_3d, transform)
 
     def test_unfitted_environment_raises_error(self):
         """Test that unfitted environment raises error."""
@@ -225,7 +229,7 @@ class TestApplyTransformToEnvironment:
         layout = RegularGridLayout()
         # Don't call build(), so it remains unfitted
         env = Environment(name="unfitted", layout=layout)
-        T = translate(5, 5)
+        transform = translate(5, 5)
 
         with pytest.raises(RuntimeError, match="must be fitted"):
-            apply_transform_to_environment(env, T)
+            apply_transform_to_environment(env, transform)

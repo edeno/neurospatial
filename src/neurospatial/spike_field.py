@@ -7,17 +7,18 @@ into occupancy-normalized spatial fields (firing rate maps).
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def spikes_to_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -144,7 +145,9 @@ def spikes_to_field(
     # Handle empty spikes
     if len(spike_times) == 0:
         # Compute occupancy to determine which bins to set to NaN
-        occupancy = env.occupancy(times, positions, return_seconds=True)
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times, positions, return_seconds=True
+        )
         field = np.zeros(env.n_bins, dtype=np.float64)
         field[occupancy < min_occupancy_seconds] = np.nan
         return field
@@ -164,13 +167,17 @@ def spikes_to_field(
 
         # If no valid spikes remain, return zeros
         if len(spike_times) == 0:
-            occupancy = env.occupancy(times, positions, return_seconds=True)
+            occupancy = cast("EnvironmentProtocol", env).occupancy(
+                times, positions, return_seconds=True
+            )
             field = np.zeros(env.n_bins, dtype=np.float64)
             field[occupancy < min_occupancy_seconds] = np.nan
             return field
 
     # Step 2: Compute occupancy using return_seconds=True
-    occupancy = env.occupancy(times, positions, return_seconds=True)
+    occupancy = cast("EnvironmentProtocol", env).occupancy(
+        times, positions, return_seconds=True
+    )
 
     # Step 3: Interpolate spike positions
     # positions is now guaranteed to be 2D (n_timepoints, n_dims)
@@ -238,7 +245,7 @@ def spikes_to_field(
 
 
 def compute_place_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -248,7 +255,7 @@ def compute_place_field(
 ) -> NDArray[np.float64]:
     """Compute smoothed place field from spike train (convenience function).
 
-    This function combines `spikes_to_field()` and `env.smooth()` into a
+    This function combines `spikes_to_field()` and `cast("EnvironmentProtocol", env).smooth()` into a
     single convenient call for typical place field analysis workflows.
 
     Equivalent to::
@@ -261,7 +268,9 @@ def compute_place_field(
             min_occupancy_seconds=min_occupancy_seconds,
         )
         if smoothing_bandwidth is not None:
-            field = env.smooth(field, bandwidth=smoothing_bandwidth)
+            field = cast("EnvironmentProtocol", env).smooth(
+                field, bandwidth=smoothing_bandwidth
+            )
 
     Parameters
     ----------
@@ -297,7 +306,7 @@ def compute_place_field(
     This is a convenience wrapper for the common workflow of computing a
     firing rate map and then smoothing it. For more control over the
     smoothing parameters or to skip smoothing entirely, use
-    `spikes_to_field()` directly followed by `env.smooth()`.
+    `spikes_to_field()` directly followed by `cast("EnvironmentProtocol", env).smooth()`.
 
     Typical smoothing bandwidths for place field analysis are 5-10 cm
     for small environments or 20-50 cm for large open fields.
@@ -339,7 +348,7 @@ def compute_place_field(
 
     # Apply smoothing if requested
     if smoothing_bandwidth is not None:
-        # Handle NaN values: env.smooth() doesn't accept NaN
+        # Handle NaN values: cast("EnvironmentProtocol", env).smooth() doesn't accept NaN
         # Standard approach: fill NaN with 0, smooth, then restore NaN
         nan_mask = np.isnan(field)
 
@@ -349,13 +358,17 @@ def compute_place_field(
             field_filled[nan_mask] = 0.0
 
             # Smooth the filled field
-            field_smoothed = env.smooth(field_filled, bandwidth=smoothing_bandwidth)
+            field_smoothed = cast("EnvironmentProtocol", env).smooth(
+                field_filled, bandwidth=smoothing_bandwidth
+            )
 
             # Restore NaN in original low-occupancy bins
             field_smoothed[nan_mask] = np.nan
             field = field_smoothed
         else:
             # No NaN values, smooth directly
-            field = env.smooth(field, bandwidth=smoothing_bandwidth)
+            field = cast("EnvironmentProtocol", env).smooth(
+                field, bandwidth=smoothing_bandwidth
+            )
 
     return field

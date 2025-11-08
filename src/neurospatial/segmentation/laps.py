@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 @dataclass(frozen=True)
@@ -115,7 +115,7 @@ def _detect_lap_direction(
 def detect_laps(
     trajectory_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     method: Literal["auto", "reference", "region"] = "auto",
     min_overlap: float = 0.8,

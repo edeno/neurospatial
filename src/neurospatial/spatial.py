@@ -12,13 +12,14 @@ These are core primitives used throughout neurospatial and by downstream package
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
@@ -87,7 +88,7 @@ def _estimate_typical_bin_spacing(
 
 def map_points_to_bins(
     points: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     tie_break: TieBreakStrategy
     | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
@@ -303,7 +304,7 @@ def map_points_to_bins(
     return bin_indices
 
 
-def clear_kdtree_cache(env: EnvironmentProtocol) -> None:
+def clear_kdtree_cache(env: Environment) -> None:
     """Clear the cached KD-tree for an environment.
 
     This is useful if bin_centers have been modified (not recommended) or
@@ -325,7 +326,7 @@ def clear_kdtree_cache(env: EnvironmentProtocol) -> None:
 
 
 def regions_to_mask(
-    env: EnvironmentProtocol,
+    env: Environment,
     regions: str | list[str] | object,  # Will be Region | Regions after import
     *,
     include_boundary: bool = True,
@@ -554,8 +555,8 @@ def regions_to_mask(
 
 def resample_field(
     field: NDArray[np.float64],
-    src_env: EnvironmentProtocol,
-    dst_env: EnvironmentProtocol,
+    src_env: Environment,
+    dst_env: Environment,
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
     bandwidth: float | None = None,
@@ -737,7 +738,9 @@ def resample_field(
         assert bandwidth is not None  # Already validated above
 
         # Compute diffusion kernel on destination environment
-        kernel = dst_env.compute_kernel(bandwidth=bandwidth, mode="transition")
+        kernel = cast("EnvironmentProtocol", dst_env).compute_kernel(
+            bandwidth=bandwidth, mode="transition"
+        )
 
         # Apply forward smoothing
         resampled = apply_kernel(resampled, kernel, mode="forward")

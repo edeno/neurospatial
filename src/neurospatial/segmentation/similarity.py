@@ -18,13 +18,13 @@ from neurospatial.segmentation.regions import Run
 from neurospatial.spatial import regions_to_mask
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 def trajectory_similarity(
     trajectory1_bins: NDArray[np.int64],
     trajectory2_bins: NDArray[np.int64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     method: Literal["jaccard", "correlation", "hausdorff", "dtw"] = "jaccard",
 ) -> float:
@@ -251,7 +251,7 @@ def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float
 def detect_goal_directed_runs(
     trajectory_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     goal_region: str,
     directedness_threshold: float = 0.7,

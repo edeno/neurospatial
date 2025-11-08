@@ -23,12 +23,12 @@ from numpy.typing import NDArray
 from scipy import fft, ndimage, stats
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 def spatial_autocorrelation(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     method: Literal["auto", "fft", "graph"] = "auto",
     max_distance: float | None = None,
@@ -190,7 +190,7 @@ def spatial_autocorrelation(
         )
 
 
-def _detect_grid_method(env: EnvironmentProtocol) -> Literal["fft", "graph"]:
+def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     """
     Detect whether environment supports FFT-based autocorrelation.
 
@@ -229,7 +229,7 @@ def _detect_grid_method(env: EnvironmentProtocol) -> Literal["fft", "graph"]:
 
 def _spatial_autocorrelation_fft(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
 ) -> NDArray[np.float64]:
     """
     Compute 2D spatial autocorrelation using FFT (for regular grids).
@@ -327,7 +327,7 @@ def _spatial_autocorrelation_fft(
 
 def _spatial_autocorrelation_graph(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     max_distance: float | None = None,
     n_distance_bins: int = 50,

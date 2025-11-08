@@ -34,6 +34,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     import scipy.sparse
 
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
@@ -260,7 +261,9 @@ class EnvironmentTrajectory:
         # Map positions to bin indices
         bin_indices = cast(
             "NDArray[np.int64]",
-            map_points_to_bins(positions, self, tie_break="lowest_index"),
+            map_points_to_bins(
+                positions, cast("Environment", self), tie_break="lowest_index"
+            ),
         )
 
         # Compute time intervals

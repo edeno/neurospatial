@@ -29,6 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
@@ -465,7 +466,10 @@ class EnvironmentFields:
         bin_indices = cast(
             "NDArray[np.int64]",
             map_points_to_bins(
-                points, self, tie_break="lowest_index", return_dist=False
+                points,
+                cast("Environment", self),
+                tie_break="lowest_index",
+                return_dist=False,
             ),
         )
 

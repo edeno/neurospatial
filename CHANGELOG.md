@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- **3D Transform Support (v0.3.0)**: Full N-dimensional affine transformation capabilities
+  - New `AffineND` class for N-dimensional affine transforms using (N+1)×(N+1) homogeneous matrices
+  - `Affine3D` type alias for convenience (equivalent to `AffineND` with n_dims=3)
+  - 3D factory functions: `translate_3d()`, `scale_3d()`, `from_rotation_matrix()`
+  - Integration with `scipy.spatial.transform.Rotation` for 3D rotations
+  - `estimate_transform()` now auto-detects dimensionality (2D or 3D) from input points
+  - `apply_transform_to_environment()` supports N-dimensional environments with validation
+  - 45 new tests for 3D transforms including scipy integration
+  - Backward compatible: `Affine2D` unchanged for existing 2D workflows
+
+- **N-D Probability Mapping**: `alignment.py` now accepts N×N rotation matrices
+  - `map_probabilities_to_nearest_target_bin()` supports 3D environments
+  - Updated `_transform_source_bin_centers()` validates rotation matrix dimensionality
+  - For 2D: Use `get_2d_rotation_matrix(angle_degrees)`
+  - For 3D: Use `scipy.spatial.transform.Rotation.as_matrix()`
+
 ### Changed
 
 - **Internal**: Refactored `environment.py` (5,335 lines) into modular package structure for improved maintainability
@@ -11,6 +29,14 @@
   - All 1,076 tests passing (100% success rate)
   - Improved code organization for easier contribution and maintenance
   - Largest module is trajectory.py at 1,222 lines (down from original analysis.py at 2,104 lines)
+
+### Documentation
+
+- **3D Support**: Updated dimensionality support documentation to reflect 3D transforms availability
+  - Updated `docs/dimensionality_support.md` with 3D transform examples and feature matrix
+  - Updated `docs/user-guide/alignment.md` with comprehensive 3D transformation examples
+  - Added complete 3D alignment workflow example
+  - Updated compatibility matrix: ~75% of neurospatial now works in 3D (up from 70%)
 
 ## [v0.2.0] - 2025-11-04
 

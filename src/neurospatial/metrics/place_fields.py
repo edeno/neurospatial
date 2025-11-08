@@ -32,7 +32,6 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def detect_place_fields(
@@ -317,7 +316,7 @@ def _detect_subfields(
 
 def field_size(
     field_bins: NDArray[np.int64],
-    env: EnvironmentProtocol,
+    env: Environment,
 ) -> float:
     """
     Compute field size (area) in physical units.
@@ -365,7 +364,7 @@ def field_size(
 def field_centroid(
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
-    env: EnvironmentProtocol,
+    env: Environment,
 ) -> NDArray[np.float64]:
     """
     Compute firing-rate-weighted centroid of place field.
@@ -655,7 +654,7 @@ def field_stability(
 
 def rate_map_coherence(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     method: Literal["pearson", "spearman"] = "pearson",
 ) -> float:

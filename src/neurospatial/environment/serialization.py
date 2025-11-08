@@ -123,7 +123,7 @@ class EnvironmentSerialization:
         """
         from neurospatial.io import to_file as _to_file
 
-        _to_file(self, path)
+        _to_file(cast("Environment", self), path)
 
     @classmethod
     def from_file(cls: type[EnvironmentProtocol], path: str | Path) -> Environment:
@@ -199,7 +199,7 @@ class EnvironmentSerialization:
         """
         from neurospatial.io import to_dict as _to_dict
 
-        return _to_dict(self)
+        return _to_dict(cast("Environment", self))
 
     @classmethod
     def from_dict(cls: type[EnvironmentProtocol], data: dict[str, Any]) -> Environment:
