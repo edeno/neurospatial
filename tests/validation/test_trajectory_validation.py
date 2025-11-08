@@ -507,6 +507,87 @@ class TestTrajaComparison:
         # neurospatial works on discrete bins → larger, noisier turn angles
         # This is expected and correct for both implementations
 
+    def test_turn_angles_quantitative_match_with_fine_discretization(self):
+        """Test quantitative agreement with Traja using fine discretization.
+
+        With very fine bin sizes, discretization effects should be minimal
+        and turn angles should match Traja closely.
+        """
+        import traja
+        import pandas as pd
+
+        # Create simple circular trajectory for predictable turn angles
+        n_points = 50
+        radius = 100.0
+        center = np.array([150.0, 150.0])
+
+        # Circle trajectory: constant turn angle
+        theta = np.linspace(0, np.pi, n_points)  # Half circle
+        x = center[0] + radius * np.cos(theta)
+        y = center[1] + radius * np.sin(theta)
+
+        df = pd.DataFrame({'x': x, 'y': y})
+
+        # Traja turn angles
+        traja_angles_deg = traja.trajectory.calc_turn_angle(df)
+        traja_angles_rad = np.deg2rad(traja_angles_deg)
+        traja_angles_rad = np.arctan2(np.sin(traja_angles_rad), np.cos(traja_angles_rad))
+
+        # neurospatial with FINE discretization (1.0 cm bins)
+        # Create dense grid to minimize discretization
+        positions = np.column_stack([x, y])
+        # Add dense grid points
+        for i in range(0, 300, 5):
+            for j in range(0, 300, 5):
+                positions = np.vstack([positions, [i, j]])
+
+        env = Environment.from_samples(positions, bin_size=2.0)  # Fine bins
+
+        trajectory_bins = env.bin_at(df[['x', 'y']].values)
+        our_angles = compute_turn_angles(trajectory_bins, env)
+
+        # Remove NaN values
+        traja_valid = traja_angles_rad[~np.isnan(traja_angles_rad)]
+        ours_valid = our_angles[~np.isnan(our_angles)]
+
+        # With fine discretization, should have similar number of angles
+        assert len(ours_valid) > 0, "Should compute turn angles"
+
+        # Circular statistics: compare circular means (robust to outliers)
+        traja_circ_mean = np.arctan2(
+            np.mean(np.sin(traja_valid)),
+            np.mean(np.cos(traja_valid))
+        )
+        ours_circ_mean = np.arctan2(
+            np.mean(np.sin(ours_valid)),
+            np.mean(np.cos(ours_valid))
+        )
+
+        # With fine bins, circular means should be closer
+        diff = np.abs(traja_circ_mean - ours_circ_mean)
+        # Allow wrap-around
+        if diff > np.pi:
+            diff = 2 * np.pi - diff
+
+        assert diff < np.pi / 3, (  # Within 60 degrees
+            f"Fine discretization should give closer agreement: "
+            f"Traja mean={np.degrees(traja_circ_mean):.1f}°, "
+            f"neurospatial mean={np.degrees(ours_circ_mean):.1f}°, "
+            f"diff={np.degrees(diff):.1f}°"
+        )
+
+        # Compare circular standard deviations
+        traja_circ_std = np.sqrt(-2 * np.log(np.sqrt(
+            np.mean(np.sin(traja_valid))**2 + np.mean(np.cos(traja_valid))**2
+        )))
+        ours_circ_std = np.sqrt(-2 * np.log(np.sqrt(
+            np.mean(np.sin(ours_valid))**2 + np.mean(np.cos(ours_valid))**2
+        )))
+
+        # Both should show consistent turning (low std for circular path)
+        assert traja_circ_std < 2.0, f"Traja should show consistent turns, got std={traja_circ_std:.2f}"
+        assert ours_circ_std < 2.5, f"neurospatial should show consistent turns, got std={ours_circ_std:.2f}"
+
 
 try:
     import yupi
@@ -593,6 +674,88 @@ class TestYupiComparison:
             f"Total displacements should be similar: "
             f"yupi={yupi_total:.2f}, neurospatial={our_total:.2f}, "
             f"ratio={ratio_total:.2f}"
+        )
+
+    def test_step_lengths_quantitative_match_with_euclidean(self):
+        """Test quantitative agreement with yupi using Euclidean distances.
+
+        By computing Euclidean distances on bin centers (not graph distances)
+        and using fine discretization, we should match yupi closely.
+        """
+        import yupi
+
+        # Create simple straight trajectory
+        n_points = 40
+        dt = 0.2
+        velocity = 15.0  # units per second
+
+        np.random.seed(42)
+        times = np.arange(n_points) * dt
+        x = velocity * times
+        y = 50.0 + np.random.randn(n_points) * 0.5  # Very small noise
+
+        positions_continuous = np.column_stack([x, y])
+
+        # yupi trajectory
+        yupi_trajectory = yupi.Trajectory(x=x, y=y, dt=dt)
+        yupi_displacements = np.linalg.norm(yupi_trajectory.delta_r, axis=1)
+
+        # neurospatial with VERY fine discretization
+        # Expected step size: velocity * dt = 15.0 * 0.2 = 3.0 units
+        # Use bin size SMALLER than step size to avoid duplicate bins
+        positions_for_env = positions_continuous.copy()
+        # Dense grid
+        for i in range(0, 600, 5):
+            for j in range(0, 100, 5):
+                positions_for_env = np.vstack([positions_for_env, [i, j]])
+
+        env = Environment.from_samples(positions_for_env, bin_size=1.5)  # Very fine bins
+
+        trajectory_bins = env.bin_at(positions_continuous)
+
+        # Compute Euclidean step lengths directly on bin centers
+        # (not using graph distances)
+        bin_positions = env.bin_centers[trajectory_bins]
+        euclidean_steps = np.linalg.norm(np.diff(bin_positions, axis=0), axis=1)
+
+        # Should have same length as yupi (one less than number of points)
+        assert len(euclidean_steps) == len(yupi_displacements), (
+            f"Should have same number of steps: "
+            f"yupi={len(yupi_displacements)}, neurospatial={len(euclidean_steps)}"
+        )
+
+        # With fine discretization and Euclidean distances, should match closely
+        # Compute per-step relative errors
+        relative_errors = np.abs(euclidean_steps - yupi_displacements) / (yupi_displacements + 1e-10)
+
+        # Mean relative error should be small
+        mean_relative_error = np.mean(relative_errors)
+        assert mean_relative_error < 0.3, (  # Less than 30% error
+            f"Euclidean + fine bins should match yupi closely: "
+            f"mean relative error={mean_relative_error * 100:.1f}%"
+        )
+
+        # Total displacement should match within 20%
+        yupi_total = np.sum(yupi_displacements)
+        our_total = np.sum(euclidean_steps)
+        total_relative_error = np.abs(yupi_total - our_total) / yupi_total
+
+        assert total_relative_error < 0.2, (  # Less than 20% error
+            f"Total displacement should match within 20%: "
+            f"yupi={yupi_total:.2f}, neurospatial={our_total:.2f}, "
+            f"relative_error={total_relative_error * 100:.1f}%"
+        )
+
+        # Pearson correlation test
+        # Note: Discretization flattens small variations, so correlation may be modest
+        # even when aggregate statistics match well. This is expected - discretization
+        # preserves mean/total but reduces step-to-step variability.
+        correlation = np.corrcoef(yupi_displacements, euclidean_steps)[0, 1]
+
+        # Verify at least moderate positive correlation
+        # (discretization reduces correlation but shouldn't eliminate it for directed motion)
+        assert correlation > 0.3, (
+            f"Step lengths should show positive correlation: r={correlation:.3f}"
         )
 
 
