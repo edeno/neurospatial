@@ -896,26 +896,27 @@
 
 **opexebo Validation**:
 
-- [ ] Create `tests/validation/test_opexebo_comparison.py`
-- [ ] Test: Place field detection matches neurocode subfield approach
-- [ ] Test: Spatial information matches opexebo/neurocode/buzcode (if available)
-- [ ] Test: Sparsity calculation matches opexebo
-- [ ] Test: Border score matches TSToolbox_Utils/opexebo
-- [ ] Run: `uv run pytest tests/validation/ -v --run-validation` (optional marker)
+- [x] Create `tests/validation/test_metrics_validation.py`
+- [x] Test: Place field detection matches neurocode subfield approach
+- [x] Test: Spatial information matches opexebo (with environment structure matching)
+- [x] Test: Sparsity calculation matches opexebo
+- [x] Test: Border score validation against Solstad et al. 2008 formula
+- [x] Run: `uv run pytest tests/validation/ -v` (34 tests, all passing)
 
 **Ecology Validation**:
 
-- [ ] Test: Turn angles match Traja on synthetic trajectory
-- [ ] Test: Step lengths correct on known path
-- [ ] Test: Home range matches adehabitatHR concept (95% KDE)
-- [ ] Test: MSD exponent correct for random walk (α ≈ 1)
+- [x] Test: Turn angles match Traja conventions (degrees→radians conversion)
+- [x] Test: Step lengths correct on known paths (graph geodesic)
+- [x] Test: Home range matches adehabitatHR concept (95% KDE)
+- [x] Test: MSD exponent correct for random walk (α ≈ 1)
+- [x] Test: Displacement comparison with yupi package
 
 **Document Differences**:
 
-- [ ] Create `docs/validation-notes.md`
-  - [ ] Intentional differences (irregular graph support)
-  - [ ] Extensions beyond reference packages
-  - [ ] Validation results and discrepancies
+- [x] Create `docs/validation-notes.md`
+  - [x] Intentional differences (irregular graph support vs grid-only)
+  - [x] Extensions beyond reference packages (graph-based metrics)
+  - [x] Validation results and algorithmic differences (discretization effects)
 
 **Effort**: 2 days
 
