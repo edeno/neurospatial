@@ -1,5 +1,75 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.6 - Tests & Documentation COMPLETE (Part 2/2)
+
+### Task: Create documentation for trajectory and behavioral analysis
+
+**Status**: ✅ DOCUMENTATION COMPLETE
+
+**Files Created**:
+
+1. `docs/user-guide/trajectory-and-behavioral-analysis.md` - Comprehensive user guide (724 lines)
+
+**Documentation Coverage**:
+
+**Section 1: Trajectory Characterization**
+- Turn angles: Movement direction changes with NumPy examples
+- Step lengths: Graph geodesic distances
+- Home range: Core territory estimation (50%, 95% percentiles)
+- Mean square displacement: Diffusion classification (α exponent)
+
+**Section 2: Region-Based Segmentation**
+- detect_region_crossings: Entry/exit event detection
+- detect_runs_between_regions: Success/failure tracking
+- segment_by_velocity: Movement vs rest with hysteresis thresholding
+
+**Section 3: Lap Detection**
+- Auto template detection: First 10% extraction algorithm
+- Reference method: User-provided canonical lap
+- Region method: Inter-crossing intervals
+- Direction detection: Shoelace formula for clockwise/counter-clockwise
+
+**Section 4: Trial Segmentation**
+- T-maze trials: Left/right choice analysis
+- Y-maze: Spontaneous alternation scoring
+- Radial arm maze: Working memory error detection
+
+**Section 5: Trajectory Similarity**
+- Jaccard: Spatial overlap (replay analysis)
+- Correlation: Sequential pattern matching
+- Hausdorff: Maximum deviation metric
+- DTW: Dynamic time warping (timing-invariant)
+
+**Section 6: Goal-Directed Behavior**
+- Directedness score: Efficiency formula (Pfeiffer & Foster 2013)
+- Replay analysis: Memory consolidation detection workflow
+
+**Section 7: Complete Workflows**
+- Circular track lap-by-lap learning analysis (4 steps)
+- T-maze trial analysis with path stereotypy (4 steps)
+- Exploration to goal-directed transition (MSD sliding window)
+
+**Documentation Features**:
+- 17 scientific references (Barnes 1997, Pfeiffer 2013, Olton 1976, etc.)
+- LaTeX mathematical formulas for all metrics
+- Code examples for every function
+- Best practices sections (choosing similarity metrics, duration filters, thresholds)
+- Decision guides for method selection
+- Cross-references to other user guides
+
+**Effort**: 1 hour (documentation creation)
+
+**Next Steps**:
+
+- [x] Integration tests complete
+- [x] Documentation complete
+- [ ] Example notebooks:
+  - [ ] `examples/14_trajectory_analysis.ipynb` (renumbered from 12)
+  - [ ] `examples/15_behavioral_segmentation.ipynb` (renumbered from 13)
+- [ ] pynapple integration (optional, deferred)
+
+---
+
 ## 2025-11-07: Milestone 4.6 - Integration Tests COMPLETE (Part 1/2)
 
 ### Task: Create comprehensive integration tests for trajectory and behavioral analysis workflows

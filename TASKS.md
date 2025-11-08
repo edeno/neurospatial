@@ -853,12 +853,15 @@
 
 **Documentation**:
 
-- [ ] Create `docs/user-guide/trajectory-and-behavioral-analysis.md`
-  - [ ] Section: Trajectory characterization metrics
-  - [ ] Section: Region-based segmentation
-  - [ ] Section: Lap detection strategies
-  - [ ] Section: Trial segmentation for tasks
-  - [ ] Section: Use cases (goal-directed replay, learning dynamics)
+- [x] Create `docs/user-guide/trajectory-and-behavioral-analysis.md` (724 lines)
+  - [x] Section: Trajectory characterization metrics (turn angles, step lengths, home range, MSD)
+  - [x] Section: Region-based segmentation (crossings, runs, velocity)
+  - [x] Section: Lap detection strategies (auto, reference, region methods)
+  - [x] Section: Trial segmentation for tasks (T-maze, Y-maze, radial arm)
+  - [x] Section: Trajectory similarity (Jaccard, correlation, Hausdorff, DTW)
+  - [x] Section: Goal-directed behavior (directedness score, replay analysis)
+  - [x] Section: Complete workflows (circular track, T-maze, exploration transition)
+  - [x] Best practices, decision guides, 17 scientific references
 
 **Example Notebooks**:
 
