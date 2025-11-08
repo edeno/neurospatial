@@ -1,5 +1,87 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.2 - Region-Based Segmentation COMPLETE
+
+### Task: Implement region-based trajectory segmentation functions
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/segmentation/__init__.py` - Package initialization with exports
+2. `src/neurospatial/segmentation/regions.py` - Core implementation (565 lines)
+3. `tests/segmentation/test_regions.py` - Comprehensive test suite (461 lines, 15 tests)
+
+**Implementation**:
+
+**1. `detect_region_crossings(trajectory_bins, times, region_name, env, *, direction='both')`**
+- Detects entry and exit events for a named region
+- Supports filtering by direction: 'both', 'entry', or 'exit'
+- Returns list of `Crossing` dataclass instances (time, direction, bin_index)
+- Uses `regions_to_mask` for efficient region membership testing
+- Handles edge cases: empty trajectories, no crossings
+
+**2. `detect_runs_between_regions(trajectory_positions, times, env, *, source, target, min_duration, max_duration, velocity_threshold)`**
+- Detects runs from source region to target region
+- Tracks success (reached target) vs. timeout (failed runs)
+- Filters by duration (min/max) and optional velocity threshold
+- Returns list of `Run` dataclass instances (start_time, end_time, bins, success)
+- Use cases: T-maze alternation, goal-directed navigation, replay analysis
+
+**3. `segment_by_velocity(trajectory_positions, times, threshold, *, min_duration, hysteresis, smooth_window)`**
+- Segments trajectory into movement vs. rest periods
+- Hysteresis thresholding prevents rapid state switching (threshold/hysteresis for exit)
+- Velocity smoothing with moving average (configurable window)
+- Filters brief segments (min_duration)
+- Returns list of (start_time, end_time) tuples
+
+**Dataclasses**:
+- `Crossing`: Immutable record of region crossing (time, direction, bin_index)
+- `Run`: Immutable record of run between regions (start_time, end_time, bins, success)
+
+**Test Coverage** (15 tests, 100% pass):
+- Entry/exit detection with direction filtering
+- Successful and failed (timeout) runs
+- Duration filtering (min/max)
+- Velocity-based segmentation with hysteresis
+- Empty trajectories and no-crossing cases
+- Parameter order validation
+- Integration workflow (all three functions together)
+
+**TDD Workflow Applied**:
+1. ✅ Wrote tests FIRST (15 tests covering all functions and edge cases)
+2. ✅ Ran tests - verified FAIL (RED phase)
+3. ✅ Implemented functions (GREEN phase)
+4. ✅ Applied code-reviewer agent - found 4 mypy errors
+5. ✅ Fixed critical issues (EnvironmentProtocol, type narrowing)
+6. ✅ Ran mypy (0 errors), ruff (auto-fixed), tests (15/15 pass)
+
+**Technical Decisions**:
+
+**Issue 1: 1D vs 2D environments**
+- Initial tests used 1D environments (`positions.shape = (n, 1)`)
+- Hit `NotImplementedError`: `regions_to_mask` only supports 2D polygon regions
+- **Solution**: Changed all tests to use 2D environments (meshgrid patterns)
+- Applied systematic-debugging skill to identify root cause before fixing
+
+**Issue 2: Type safety (mypy errors)**
+- Code reviewer found 4 mypy errors
+- **Critical Fix 1**: Changed `env: Environment` → `env: EnvironmentProtocol` in all functions
+- **Critical Fix 2**: Added `assert segment_start is not None` for type narrowing in `segment_by_velocity`
+- Follows project pattern from `spike_field.py`, `reward.py`, `boundary_cells.py`
+
+**NumPy Docstrings**:
+- All functions have comprehensive NumPy-style docstrings
+- Parameters, Returns, Raises, See Also, Notes, Examples sections
+- Scientific references (ecology, behavioral neuroscience)
+- Executable docstring examples
+
+**Effort**: 3 hours (as planned in TASKS.md)
+
+**Next Steps**: Create example notebook and documentation (M4.6)
+
+---
+
 ## 2025-11-07: Milestone 3.4 - Boundary Cell Analysis Notebook COMPLETE
 
 ### Task: Create example notebook demonstrating border score analysis workflow

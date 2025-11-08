@@ -702,34 +702,37 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/segmentation/` package
-- [ ] Create `src/neurospatial/segmentation/__init__.py`
-- [ ] Create `src/neurospatial/segmentation/regions.py`
-- [ ] Implement `detect_region_crossings(trajectory_bins, times, region, env, direction='both')`
-  - [ ] Check which bins are in region
-  - [ ] Detect entry/exit transitions
-  - [ ] Return list of Crossing objects (time, direction)
-- [ ] Implement `detect_runs_between_regions(trajectory_positions, times, env, *, source, target, min_duration=0.5, max_duration=10.0, velocity_threshold=None)`
-  - [ ] Detect source region exits
-  - [ ] Track trajectory until target entry or timeout
-  - [ ] Filter by duration and velocity
-  - [ ] Return list of Run objects (start_time, end_time, bins, success)
-- [ ] Implement `segment_by_velocity(trajectory_positions, times, threshold, *, min_duration=0.5, hysteresis=2.0, smooth_window=0.2)`
-  - [ ] Compute velocity from positions
-  - [ ] Apply hysteresis thresholding
-  - [ ] Filter by minimum duration
-  - [ ] Return IntervalSet (or list of tuples if pynapple unavailable)
+- [x] Create `src/neurospatial/segmentation/` package
+- [x] Create `src/neurospatial/segmentation/__init__.py`
+- [x] Create `src/neurospatial/segmentation/regions.py`
+- [x] Implement `detect_region_crossings(trajectory_bins, times, region, env, direction='both')`
+  - [x] Check which bins are in region
+  - [x] Detect entry/exit transitions
+  - [x] Return list of Crossing objects (time, direction)
+- [x] Implement `detect_runs_between_regions(trajectory_positions, times, env, *, source, target, min_duration=0.5, max_duration=10.0, velocity_threshold=None)`
+  - [x] Detect source region exits
+  - [x] Track trajectory until target entry or timeout
+  - [x] Filter by duration and velocity
+  - [x] Return list of Run objects (start_time, end_time, bins, success)
+- [x] Implement `segment_by_velocity(trajectory_positions, times, threshold, *, min_duration=0.5, hysteresis=2.0, smooth_window=0.2)`
+  - [x] Compute velocity from positions
+  - [x] Apply hysteresis thresholding
+  - [x] Filter by minimum duration
+  - [x] Return list of tuples (start_time, end_time)
 
 **Testing**:
 
-- [ ] Create `tests/segmentation/test_regions.py`
-- [ ] Test: `test_detect_region_crossings()` - synthetic trajectory with known crossings
-- [ ] Test: `test_detect_runs_between_regions_success()` - successful runs
-- [ ] Test: `test_detect_runs_between_regions_timeout()` - failed runs
-- [ ] Test: `test_segment_by_velocity()` - movement vs rest
-- [ ] Run: `uv run pytest tests/segmentation/test_regions.py -v`
+- [x] Create `tests/segmentation/test_regions.py`
+- [x] Test: `test_detect_region_crossings()` - synthetic trajectory with known crossings (5 tests)
+- [x] Test: `test_detect_runs_between_regions_success()` - successful runs (4 tests)
+- [x] Test: `test_detect_runs_between_regions_timeout()` - failed runs (included)
+- [x] Test: `test_segment_by_velocity()` - movement vs rest (5 tests)
+- [x] Test: Integration test combining all functions
+- [x] Run: `uv run pytest tests/segmentation/test_regions.py -v` (15/15 PASS)
+- [x] Run: `uv run mypy src/neurospatial/segmentation/regions.py` (0 errors)
+- [x] Run: `uv run ruff check/format` (all checks passed)
 
-**Effort**: 3 days
+**Effort**: 3 days (COMPLETE)
 
 ---
 
