@@ -800,34 +800,46 @@
 
 ---
 
-### 4.5 Trajectory Similarity (Week 11, Days 1-2)
+### 4.5 Trajectory Similarity (Week 11, Days 1-2) ✅ COMPLETE
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/segmentation/similarity.py`
-- [ ] Implement `trajectory_similarity(trajectory1_bins, trajectory2_bins, env, *, method='jaccard')`
-  - [ ] Method 'jaccard': spatial overlap (set intersection / union)
-  - [ ] Method 'correlation': sequential correlation
-  - [ ] Method 'hausdorff': maximum deviation
-  - [ ] Method 'dtw': dynamic time warping
-  - [ ] Return similarity score [0, 1]
-- [ ] Implement `detect_goal_directed_runs(trajectory_bins, times, env, *, goal_region, directedness_threshold=0.7, min_progress=20.0)`
-  - [ ] Compute distance to goal at start and end
-  - [ ] Compute path length
-  - [ ] Directedness = (d_start - d_end) / path_length
-  - [ ] Filter by threshold and minimum progress
-  - [ ] Return list of Run objects
+- [x] Create `src/neurospatial/segmentation/similarity.py`
+- [x] Implement `trajectory_similarity(trajectory1_bins, trajectory2_bins, env, *, method='jaccard')`
+  - [x] Method 'jaccard': spatial overlap (set intersection / union)
+  - [x] Method 'correlation': sequential correlation
+  - [x] Method 'hausdorff': maximum deviation
+  - [x] Method 'dtw': dynamic time warping
+  - [x] Return similarity score [0, 1]
+- [x] Implement `detect_goal_directed_runs(trajectory_bins, times, env, *, goal_region, directedness_threshold=0.7, min_progress=20.0)`
+  - [x] Compute distance to goal at start and end
+  - [x] Compute path length
+  - [x] Directedness = (d_start - d_end) / path_length
+  - [x] Filter by threshold and minimum progress
+  - [x] Return list of Run objects
+- [x] Export in segmentation package __init__.py
 
 **Testing**:
 
-- [ ] Create `tests/segmentation/test_similarity.py`
-- [ ] Test: `test_trajectory_similarity_identical()` - same trajectory = 1.0
-- [ ] Test: `test_trajectory_similarity_disjoint()` - no overlap = 0.0
-- [ ] Test: `test_trajectory_similarity_methods()` - all methods
-- [ ] Test: `test_detect_goal_directed_runs()` - straight path high directedness
-- [ ] Run: `uv run pytest tests/segmentation/test_similarity.py -v`
+- [x] Create `tests/segmentation/test_similarity.py` (18 comprehensive tests)
+- [x] Test: `test_trajectory_similarity_identical()` - same trajectory = 1.0
+- [x] Test: `test_trajectory_similarity_disjoint()` - no overlap = 0.0
+- [x] Test: `test_trajectory_similarity_methods()` - all 4 methods tested
+- [x] Test: `test_detect_goal_directed_runs()` - efficient path detection
+- [x] Test: Edge cases (empty trajectories, validation, parameter order)
+- [x] Run: `uv run pytest tests/segmentation/test_similarity.py -v` (18/18 PASS, 0 warnings)
 
-**Effort**: 2 days
+**Type Checking & Code Quality**:
+
+- [x] Run mypy: `uv run mypy src/neurospatial/segmentation/similarity.py` (0 errors)
+- [x] Run ruff check: all checks passed
+- [x] Run ruff format: code formatted
+- [x] Code review: Applied code-reviewer agent, fixed 3 critical issues:
+  - [x] Fixed mypy type errors (cast NumPy scalars to float)
+  - [x] Removed unreachable code
+  - [x] Added np.inf checks to prevent NaN propagation
+
+**Effort**: 1 day (actual)
 
 ---
 

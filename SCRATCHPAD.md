@@ -1,5 +1,129 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.5 - Trajectory Similarity COMPLETE
+
+### Task: Implement trajectory similarity metrics and goal-directed run detection
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `src/neurospatial/segmentation/similarity.py` - Similarity metrics and goal detection (447 lines)
+2. `tests/segmentation/test_similarity.py` - Comprehensive test suite (439 lines, 18 tests)
+
+**Files Modified**:
+
+1. `src/neurospatial/segmentation/__init__.py` - Added `trajectory_similarity` and `detect_goal_directed_runs` exports
+
+**Implementation**:
+
+**`trajectory_similarity(trajectory1_bins, trajectory2_bins, env, *, method='jaccard')`**
+
+**Four Similarity Methods**:
+1. **Jaccard**: Spatial overlap (set intersection / union) - replay analysis
+2. **Correlation**: Sequential correlation - temporal pattern matching
+3. **Hausdorff**: Maximum deviation between paths - path comparison
+4. **DTW**: Dynamic time warping - timing-invariant similarity
+
+**`detect_goal_directed_runs(trajectory_bins, times, env, *, goal_region, directedness_threshold=0.7, min_progress=20.0)`**
+
+**Core Algorithm**:
+1. Compute distances from all bins to goal region (using networkx shortest paths)
+2. Check if start/end bins can reach goal (filter out np.inf distances)
+3. Calculate directedness: (d_start - d_end) / path_length
+4. Calculate progress: d_start - d_end
+5. Filter by directedness_threshold and min_progress
+6. Return list of Run objects
+
+**Key Features**:
+- **Scientific correctness**: Directedness formula from Pfeiffer & Foster (2013)
+- **Type safety**: Full mypy compliance (0 errors)
+- **NaN safety**: Explicit checks for np.inf to prevent NaN propagation
+- **Comprehensive validation**: All parameters validated with clear error messages
+- **Complete documentation**: NumPy docstrings with LaTeX math and neuroscience citations
+
+**Test Coverage** (18 tests, all pass, 0 warnings):
+
+**Trajectory Similarity (10 tests)**:
+- Jaccard: identical (1.0), disjoint (0.0), partial overlap
+- Correlation: sequential matching with different lengths
+- Hausdorff: maximum deviation metric
+- DTW: timing-invariant path comparison
+- All methods return values in [0, 1]
+- Empty trajectory validation
+- Invalid method validation
+- Parameter order consistency
+
+**Goal-Directed Runs (6 tests)**:
+- Efficient path detection (greedy toward goal)
+- Wandering path filtering (low directedness)
+- Min progress threshold filtering
+- Validation (missing region, invalid threshold, negative progress)
+- Parameter order consistency
+- Empty trajectory handling
+
+**Integration Tests (2 tests)**:
+- Similarity workflow (comparing multiple trajectories)
+- Combined goal-directed + similarity analysis
+
+**TDD Workflow Applied**:
+1. ✅ Wrote 18 comprehensive tests FIRST
+2. ✅ Ran tests - verified FAIL (RED phase - ModuleNotFoundError)
+3. ✅ Implemented both functions + helper `_dtw_distance()` (GREEN phase)
+4. ✅ All 18 tests passed after fixing test setup (1D vs 2D Point creation)
+5. ✅ Applied code-reviewer agent - found 3 CRITICAL issues
+6. ✅ Fixed all critical issues:
+   - Cast NumPy scalars to float for mypy (lines 169, 192, 213)
+   - Removed unreachable code (line 215 → raise ValueError)
+   - Added np.inf checks to prevent NaN propagation (lines 406-410)
+7. ✅ Re-ran tests: 18/18 pass with ZERO warnings (NaN warnings eliminated!)
+8. ✅ Ran mypy (0 errors), ruff (all checks pass)
+
+**Code Review Findings** (all fixed):
+
+**Critical Issues** (blocking - all fixed):
+1. ✅ **Mypy type errors**: Cast `np.float64` to `float` (mandatory per CLAUDE.md)
+2. ✅ **Unreachable code**: Changed to `raise ValueError` for mypy exhaustiveness
+3. ✅ **NaN propagation**: Added explicit `np.isinf(d_start) or np.isinf(d_end)` check
+
+**Quality Improvements**:
+- All tests now pass with zero warnings
+- Scientific correctness verified for all 4 similarity methods
+- Excellent NumPy docstrings with LaTeX math and citations
+- Complete parameter validation with clear error messages
+
+**Scientific Applications**:
+- **Replay analysis**: Detecting reactivation sequences (Pfeiffer & Foster 2013)
+- **Goal-directed navigation**: Identifying efficient paths toward goals
+- **Learning dynamics**: Comparing trial trajectories over sessions
+- **Stereotypy detection**: Finding repeated behavioral patterns
+
+**Key Design Decisions**:
+
+1. **Four methods, not one**: Different use cases require different metrics
+2. **NaN safety**: Explicit inf checks prevent silent failures
+3. **Directedness formula**: Scientifically validated (hippocampal replay literature)
+4. **DTW implementation**: Standard O(n²) algorithm with documented complexity
+5. **Type safety**: Strict mypy compliance (zero errors, no suppressions)
+
+**Type Safety**:
+- Literal types for method parameter
+- EnvironmentProtocol for type hints
+- TYPE_CHECKING guards for imports
+- Explicit float() casts for NumPy scalars
+- Zero mypy errors (mandatory requirement)
+
+**Performance Notes**:
+- DTW: O(n1 × n2) time and space - acceptable for typical trajectory lengths
+- Goal detection: Could optimize with `distance_field()` public API (future refactor)
+- Hausdorff: Uses scipy optimized implementation
+
+**Effort**: ~1 day (as planned in TASKS.md)
+
+**Next Steps**: Milestone 4.6 - Tests & Documentation (create example notebooks)
+
+---
+
 ## 2025-11-07: Milestone 4.4 - Trial Segmentation COMPLETE
 
 ### Task: Implement trial segmentation for behavioral task analysis
