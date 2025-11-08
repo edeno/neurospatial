@@ -619,10 +619,11 @@
   - [x] Assess field stability (split-half correlation)
   - [x] Visualize fields on environment
   - [x] Complete workflow function demonstrating end-to-end analysis
-- [ ] Create `examples/11_boundary_cell_analysis.ipynb` (deferred to next session)
-  - [ ] Generate synthetic border cell
-  - [ ] Compute border score
-  - [ ] Visualize wall contact ratios
+- [x] Create `examples/13_boundary_cell_analysis.ipynb` (renumbered from 11)
+  - [x] Generate synthetic border cell
+  - [x] Compute border score
+  - [x] Visualize boundary coverage and distance components
+  - [x] Compare border cell vs place cell
 
 **Testing**:
 

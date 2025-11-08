@@ -1,5 +1,86 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 3.4 - Boundary Cell Analysis Notebook COMPLETE
+
+### Task: Create example notebook demonstrating border score analysis workflow
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `examples/13_boundary_cell_analysis.ipynb` - Complete boundary cell analysis notebook (565KB with outputs)
+2. `examples/13_boundary_cell_analysis.py` - Paired Python script via jupytext (15KB)
+
+**Notebook Coverage**:
+
+**Part 1: Generate Synthetic Border Cell**
+- Circular trajectory (5000 samples, 100 seconds at 50 Hz)
+- Border cell firing pattern: exponential decay from boundaries (scale = 10 cm, peak = 8 Hz)
+- Environment: 3cm bins, 108 bins total
+- Visualizations: Firing rate map + distance to boundary
+
+**Part 2: Compute Border Score**
+- Used `border_score()` with default threshold (30% of peak rate)
+- Score: Positive value indicating border cell classification
+- Threshold sensitivity analysis (0.1 to 0.5)
+- Formula explanation: (boundary_coverage - normalized_distance) / (boundary_coverage + normalized_distance)
+
+**Part 3: Visualize Components**
+- Field segmentation at threshold
+- Boundary coverage (fraction of boundary bins in field)
+- Mean distance to boundary (normalized by environment extent)
+- Three-panel visualization showing all components
+
+**Part 4: Compare Border vs Place Cell**
+- Generated place cell for comparison (Gaussian in center)
+- Computed border scores for both cell types
+- Four-panel visualization: firing rates + field segmentation with boundary overlay
+- Comparison summary table
+
+**Technical Implementation**:
+
+- Used jupytext paired mode (`.ipynb` + `.py`) for reliable editing
+- Applied scientific presentation principles:
+  - Constrained layout for better spacing
+  - Bold, large fonts (12-14pt) for readability
+  - Hot colormap for firing rates, viridis for distances
+  - Clear, descriptive titles and labels
+  - Set1 colormap for categorical boundary/field visualization
+- Comprehensive markdown explanations in every section
+- Estimated time: 15-20 minutes
+- All mathematical formulas explained with references
+
+**Critical Fixes Applied**:
+
+1. **Attribute naming**: Changed `env.extent` to manual computation from `env.dimension_ranges` (extent is not an Environment attribute)
+2. **Property vs method**: Changed `env.boundary_bins()` to `env.boundary_bins` (property, not callable)
+3. **Center bin selection**: Used `np.argmax(boundary_distances)` to find the most central bin (furthest from boundaries) instead of using out-of-bounds hardcoded coordinates
+
+**Validation**:
+
+- ✅ Notebook executes successfully (565KB with outputs)
+- ✅ All visualizations render correctly
+- ✅ Jupytext pairing configured (both .ipynb and .py files)
+- ✅ All 4 parts demonstrate correct functionality
+- ✅ Synthetic data produces expected results (high border score for border cell, low score for place cell)
+
+**Key Functions Demonstrated**:
+
+1. `border_score()` - Quantifies boundary preference (Solstad et al. 2008)
+2. `env.boundary_bins` - Get boundary bins property
+3. `env.distance_to()` - Compute distances from bins to targets
+
+**Scientific References Included**:
+
+- Solstad, T., Boccara, C. N., Kropff, E., Moser, M.-B., & Moser, E. I. (2008). Representation of geometric borders in the entorhinal cortex. *Science*, 322(5909), 1865-1868.
+
+**Next Steps**:
+
+Milestone 3.4 is now COMPLETE. Ready to move to:
+- Milestone 4.1: Trajectory Metrics (turn angles, step lengths, home range, MSD)
+
+---
+
 ## 2025-11-07: Milestone 3.4 - Place Field Analysis Notebook COMPLETE
 
 ### Task: Create example notebook demonstrating place field analysis workflow
