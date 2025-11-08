@@ -1,5 +1,87 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-07: Milestone 4.6 - Trajectory Analysis Example Notebook COMPLETE
+
+### Task: Create `examples/14_trajectory_analysis.ipynb`
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `examples/14_trajectory_analysis.ipynb` - Trajectory analysis demonstration (731KB with outputs)
+2. `examples/14_trajectory_analysis.py` - Paired Python script via jupytext (550 lines)
+
+**Notebook Coverage**:
+
+**Part 1: Synthetic Trajectory Generation**
+- Two-phase trajectory: exploration (50%) → goal-directed (50%)
+- 500 samples over 100 seconds at 5 Hz
+- Visualization with color gradient showing temporal progression
+
+**Part 2: Turn Angles**
+- Computes direction changes between consecutive movement vectors
+- Range: [-π, π] radians
+- Visualizations: histogram + time series split by behavioral phase
+- Observation: Goal-directed phase shows smaller turn angles (straighter paths)
+
+**Part 3: Step Lengths**
+- Graph geodesic distances between consecutive positions
+- Cumulative distance tracking
+- Path efficiency metric (straight-line / total distance)
+- Visualizations: distribution + cumulative distance over time
+- Observation: Goal-directed phase shows faster movement
+
+**Part 4: Home Range**
+- Three percentiles: 50% (core area), 95% (full range), 100% (total)
+- Occupancy-based bin selection (ecology standard)
+- Three-panel visualization showing spatial coverage at each percentile
+- Observation: Core area concentrates around exploration region
+
+**Part 5: Mean Square Displacement (MSD)**
+- Power law fit: MSD(τ) ~ τ^α
+- Diffusion classification (α < 1: subdiffusion, α = 1: normal, α > 1: superdiffusion)
+- Log-log visualization with fitted slope
+- Observation: α > 1 indicates superdiffusion (consistent with goal-directed movement)
+
+**Technical Implementation**:
+
+- Used jupytext paired mode for reliable editing
+- Applied scientific presentation principles (constrained layout, large fonts)
+- Fixed edge case: infinite step lengths from disconnected bins (filtered for plotting)
+- Comprehensive markdown explanations with LaTeX formulas
+- Scientific references (Einstein 1905, Powell & Mitchell 2012, Signer et al. 2019)
+
+**Key Functions Demonstrated**:
+
+1. `compute_turn_angles(trajectory_bins, env)` - Direction changes
+2. `compute_step_lengths(trajectory_bins, env)` - Graph distances
+3. `compute_home_range(trajectory_bins, percentile=95.0)` - Spatial coverage
+4. `mean_square_displacement(trajectory_bins, times, env, max_tau=None)` - Diffusion analysis
+
+**Validation**:
+
+- ✅ Notebook executes successfully (731KB with outputs)
+- ✅ All 5 parts demonstrate correct functionality
+- ✅ Jupytext pairing configured (both .ipynb and .py files)
+- ✅ All trajectory metrics (21/21 tests pass) work as expected
+- ✅ Visualizations render correctly with clear scientific interpretation
+
+**Critical Fix Applied**:
+
+- **Step lengths filtering**: Added filtering for `np.inf` values (disconnected bins)
+  - Used `finite_step_lengths = step_lengths[np.isfinite(step_lengths)]`
+  - Prevents histogram error: "supplied range of [0.0, inf] is not finite"
+  - Fixed statistics and cumulative distance calculations
+
+**Next Steps**:
+
+- [ ] Create `examples/15_behavioral_segmentation.ipynb` (remaining M4.6 task)
+- [ ] Demonstrate: region crossings, lap detection, trial segmentation, trajectory similarity
+
+**Effort**: ~1 hour (notebook creation, execution, debugging)
+
+---
+
 ## 2025-11-07: Milestone 4.6 - Tests & Documentation COMPLETE (Part 2/2)
 
 ### Task: Create documentation for trajectory and behavioral analysis

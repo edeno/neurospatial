@@ -865,12 +865,13 @@
 
 **Example Notebooks**:
 
-- [ ] Create `examples/12_trajectory_analysis.ipynb`
-  - [ ] Compute turn angles, step lengths
-  - [ ] Compute home range (95%)
-  - [ ] Compute MSD and classify diffusion
-  - [ ] Visualize trajectory properties
-- [ ] Create `examples/13_behavioral_segmentation.ipynb`
+- [x] Create `examples/14_trajectory_analysis.ipynb` (renumbered from 12)
+  - [x] Compute turn angles, step lengths
+  - [x] Compute home range (95%)
+  - [x] Compute MSD and classify diffusion
+  - [x] Visualize trajectory properties
+  - [x] Notebook executes successfully (731KB with outputs)
+- [ ] Create `examples/15_behavioral_segmentation.ipynb` (renumbered from 13)
   - [ ] Detect runs between goal regions
   - [ ] Detect laps on circular track
   - [ ] Segment T-maze trials
