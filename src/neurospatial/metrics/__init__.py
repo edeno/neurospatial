@@ -2,8 +2,9 @@
 Neuroscience metrics for spatial analysis.
 
 This module provides standard neuroscience metrics for place cells, boundary
-cells, and population-level analyses validated against field-standard packages
-(opexebo, neurocode, buzcode).
+cells, population-level analyses, and trajectory characterization validated
+against field-standard packages (opexebo, neurocode, buzcode) and ecology
+literature (Traja, adehabitatHR).
 
 Modules
 -------
@@ -13,6 +14,8 @@ population
     Population-level metrics for analyzing spatial representations.
 boundary_cells
     Boundary cell metrics including border score.
+trajectory
+    Trajectory characterization metrics (turn angles, step lengths, home range, MSD).
 
 """
 
@@ -34,9 +37,18 @@ from neurospatial.metrics.population import (
     population_coverage,
     population_vector_correlation,
 )
+from neurospatial.metrics.trajectory import (
+    compute_home_range,
+    compute_step_lengths,
+    compute_turn_angles,
+    mean_square_displacement,
+)
 
 __all__ = [
     "border_score",
+    "compute_home_range",
+    "compute_step_lengths",
+    "compute_turn_angles",
     "count_place_cells",
     "detect_place_fields",
     "field_centroid",
@@ -44,6 +56,7 @@ __all__ = [
     "field_overlap",
     "field_size",
     "field_stability",
+    "mean_square_displacement",
     "population_coverage",
     "population_vector_correlation",
     "skaggs_information",

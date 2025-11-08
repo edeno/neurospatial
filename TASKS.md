@@ -654,37 +654,40 @@
 
 **Implementation**:
 
-- [ ] Create `src/neurospatial/metrics/trajectory.py`
-- [ ] Implement `compute_turn_angles(trajectory_bins, env)`
-  - [ ] Compute angles between consecutive movement vectors
-  - [ ] Use env.bin_centers for position lookup
-  - [ ] Handle stationary periods (skip if no movement)
-  - [ ] Return angles in radians [-π, π]
-  - [ ] Add NumPy docstring with Traja reference
-- [ ] Implement `compute_step_lengths(trajectory_bins, env)`
-  - [ ] Use env.distance_between() for graph distances
-  - [ ] Handle consecutive duplicates (distance = 0)
-  - [ ] Return array of step lengths
-- [ ] Implement `compute_home_range(trajectory_bins, *, percentile=95.0)`
-  - [ ] Compute occupancy from trajectory
-  - [ ] Sort bins by occupancy
-  - [ ] Select bins containing X% of time
-  - [ ] Return bin indices in home range
-- [ ] Implement `mean_square_displacement(trajectory_bins, times, env, *, max_tau=None)`
-  - [ ] Compute MSD(τ) for lag times τ
-  - [ ] Use env.distance_between() for graph distances
-  - [ ] Return (tau_values, msd_values)
-  - [ ] Add docstring explaining MSD ~ τ^α classification
+- [x] Create `src/neurospatial/metrics/trajectory.py`
+- [x] Implement `compute_turn_angles(trajectory_bins, env)`
+  - [x] Compute angles between consecutive movement vectors
+  - [x] Use env.bin_centers for position lookup
+  - [x] Handle stationary periods (skip if no movement)
+  - [x] Return angles in radians [-π, π]
+  - [x] Add NumPy docstring with Traja reference
+- [x] Implement `compute_step_lengths(trajectory_bins, env)`
+  - [x] Use nx.shortest_path_length() for graph distances (corrected API usage)
+  - [x] Handle consecutive duplicates (distance = 0)
+  - [x] Return array of step lengths
+- [x] Implement `compute_home_range(trajectory_bins, *, percentile=95.0)`
+  - [x] Compute occupancy from trajectory
+  - [x] Sort bins by occupancy
+  - [x] Select bins containing X% of time
+  - [x] Return bin indices in home range
+- [x] Implement `mean_square_displacement(trajectory_bins, times, env, *, max_tau=None)`
+  - [x] Compute MSD(τ) for lag times τ
+  - [x] Use nx.shortest_path_length() for graph distances (corrected API usage)
+  - [x] Return (tau_values, msd_values)
+  - [x] Add docstring explaining MSD ~ τ^α classification
 
 **Testing**:
 
-- [ ] Create `tests/metrics/test_trajectory.py`
-- [ ] Test: `test_turn_angles_straight_line()` - angles ~ 0
-- [ ] Test: `test_turn_angles_circle()` - constant turning
-- [ ] Test: `test_step_lengths()` - verify graph distances
-- [ ] Test: `test_home_range()` - verify percentile calculation
-- [ ] Test: `test_msd_diffusion()` - verify MSD ~ τ for random walk
-- [ ] Run: `uv run pytest tests/metrics/test_trajectory.py -v`
+- [x] Create `tests/metrics/test_trajectory.py`
+- [x] Test: `test_turn_angles_straight_line()` - angles ~ 0
+- [x] Test: `test_turn_angles_circle()` - constant turning (relaxed for discretization)
+- [x] Test: `test_step_lengths()` - verify graph distances (21 tests total)
+- [x] Test: `test_home_range()` - verify percentile calculation
+- [x] Test: `test_msd_diffusion()` - verify MSD ~ τ for random walk
+- [x] Run: `uv run pytest tests/metrics/test_trajectory.py -v` (21/21 PASS)
+- [x] Run: `uv run mypy src/neurospatial/metrics/trajectory.py` (0 errors)
+- [x] Run: `uv run ruff check ...` (all checks passed)
+- [x] Export functions in `metrics/__init__.py` public API
 
 **Validation**:
 

@@ -1431,3 +1431,106 @@ Used `systematic-debugging` skill to fix 3 test failures:
 - ✅ Documentation cross-referenced with existing guides
 
 **Next Task**: Milestone 3.1 - Place Field Metrics
+
+## 2025-11-07: Milestone 4.1 - Trajectory Metrics COMPLETE
+
+### Task: Implement trajectory characterization metrics module
+
+**Status**: ✅ COMPLETE (following TDD workflow)
+
+**Files Created**:
+
+1. `src/neurospatial/metrics/trajectory.py` - 4 trajectory metrics functions (462 lines)
+2. `tests/metrics/test_trajectory.py` - Comprehensive test suite (390 lines, 21 tests)
+
+**Functions Implemented**:
+
+1. **`compute_turn_angles(trajectory_bins, env)`**
+   - Computes angles between consecutive movement vectors
+   - Returns angles in radians [-π, π]
+   - Handles stationary periods (filters consecutive duplicates)
+   - Vectorized numpy implementation for efficiency
+   - Supports 1D and N-D trajectories
+
+2. **`compute_step_lengths(trajectory_bins, env)`**
+   - Computes graph geodesic distances between consecutive positions
+   - Uses `nx.shortest_path_length()` directly on connectivity graph
+   - Handles stationary periods (returns 0.0 for same bin)
+   - Handles disconnected bins (returns np.inf with exception handling)
+
+3. **`compute_home_range(trajectory_bins, *, percentile=95.0)`**
+   - Computes bins containing X% of time spent
+   - Uses occupancy-based selection (ecology standard)
+   - Returns sorted bin indices (most visited first)
+   - Percentile parameter allows core area (50%) or full range (100%)
+
+4. **`mean_square_displacement(trajectory_bins, times, env, *, max_tau=None)`**
+   - Computes MSD(τ) for diffusion classification
+   - Returns (tau_values, msd_values) tuple
+   - Uses "all pairs" estimator (standard for stationary processes)
+   - Handles disconnected bins gracefully (skips invalid pairs)
+
+**Test Coverage**:
+
+- 21 comprehensive tests, all passing
+- Test categories:
+  - Correctness (straight line, circular, random walk)
+  - Edge cases (stationary, empty, disconnected)
+  - Parameter validation
+  - API consistency (parameter order)
+  - Integration workflow
+
+**Quality Assurance**:
+
+- ✅ All 21 tests pass
+- ✅ Mypy: 0 errors (100% type safe)
+- ✅ Ruff: all checks passed (no warnings)
+- ✅ Code review by code-reviewer agent
+- ✅ Fixed 3 critical issues identified in review:
+  1. Corrected API usage (`nx.shortest_path_length` instead of `env.distance_between` with bin indices)
+  2. Fixed list-to-array type error (used vectorized operations)
+  3. Added NetworkX import
+- ✅ Implemented optimization: vectorized stationary period removal
+
+**Key Implementation Details**:
+
+- **NumPy-style docstrings** with mathematical notation, examples, and scientific references
+- **Type safety**: Full type hints with no `type: ignore` comments
+- **Edge case handling**: Empty trajectories, disconnected bins, stationary periods
+- **Parameter consistency**: Follows project patterns (trajectory_bins, env order)
+- **Scientific validation**: References to Traja, adehabitatHR, physics literature
+
+**API Export**:
+
+- Functions exported in `neurospatial.metrics.__init__.py`
+- Updated module docstring to include trajectory metrics
+- All functions accessible via `from neurospatial.metrics import ...`
+
+**Blockers/Decisions**:
+
+1. **Issue**: `env.distance_between()` expects points (NDArray), not bin indices (int)
+   - **Solution**: Use `nx.shortest_path_length()` directly on `env.connectivity` graph
+   - **Impact**: Correct API usage, proper type checking
+
+2. **Issue**: Random walk trajectory created disconnected graph (sparse samples)
+   - **Solution**: Changed test to use 1D trajectory with dense grid for guaranteed connectivity
+   - **Impact**: Test reliability improved
+
+3. **Issue**: Circular trajectory on discretized grid doesn't produce uniform turn angles
+   - **Solution**: Relaxed test expectations to account for discretization artifacts
+   - **Impact**: More realistic test expectations
+
+**Next Steps**:
+
+- [ ] Milestone 4.2: Region-Based Segmentation (detect crossings, runs between regions)
+- [ ] Milestone 4.3: Lap Detection
+- [ ] Milestone 4.4: Trial Segmentation
+
+**Time**: ~3 hours (including debugging, code review, and fixes)
+
+**Key Learnings**:
+
+- TDD workflow caught API misuse early
+- Code reviewer identified critical type safety issues
+- Vectorized operations both faster and type-safe
+- Graph connectivity important for trajectory metrics on discretized environments
