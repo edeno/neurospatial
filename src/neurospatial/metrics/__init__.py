@@ -28,14 +28,21 @@ from neurospatial.metrics.grid_cells import (
     spatial_autocorrelation,
 )
 from neurospatial.metrics.place_fields import (
+    compute_field_emd,
     detect_place_fields,
     field_centroid,
+    field_shape_metrics,
+    field_shift_distance,
     field_size,
     field_stability,
+    in_out_field_ratio,
+    information_per_second,
+    mutual_information,
     rate_map_coherence,
     selectivity,
     skaggs_information,
     sparsity,
+    spatial_coverage_single_cell,
 )
 from neurospatial.metrics.population import (
     count_place_cells,
@@ -53,6 +60,7 @@ from neurospatial.metrics.trajectory import (
 
 __all__ = [
     "border_score",
+    "compute_field_emd",
     "compute_home_range",
     "compute_region_coverage",
     "compute_step_lengths",
@@ -62,10 +70,15 @@ __all__ = [
     "field_centroid",
     "field_density_map",
     "field_overlap",
+    "field_shape_metrics",
+    "field_shift_distance",
     "field_size",
     "field_stability",
     "grid_score",
+    "in_out_field_ratio",
+    "information_per_second",
     "mean_square_displacement",
+    "mutual_information",
     "periodicity_score",
     "population_coverage",
     "population_vector_correlation",
@@ -74,4 +87,5 @@ __all__ = [
     "skaggs_information",
     "sparsity",
     "spatial_autocorrelation",
+    "spatial_coverage_single_cell",
 ]
