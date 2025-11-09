@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 
 
 def neighbor_reduce(
-    field: NDArray[np.float64],
     env: Environment,
+    field: NDArray[np.float64],
     *,
     op: Literal["sum", "mean", "max", "min", "std"] = "mean",
     weights: NDArray[np.float64] | None = None,
@@ -30,10 +30,10 @@ def neighbor_reduce(
 
     Parameters
     ----------
-    field : array, shape (n_bins,)
-        Scalar field values at each bin.
     env : Environment
         Spatial environment providing graph connectivity.
+    field : array, shape (n_bins,)
+        Scalar field values at each bin.
     op : {'sum', 'mean', 'max', 'min', 'std'}, default='mean'
         Reduction operation to apply over neighbors.
     weights : array, shape (n_bins,), optional
@@ -100,7 +100,7 @@ def neighbor_reduce(
     >>> # Field with bin indices
     >>> field = np.arange(env.n_bins, dtype=float)
     >>> # Mean of neighbors
-    >>> neighbor_mean = neighbor_reduce(field, env, op="mean")
+    >>> neighbor_mean = neighbor_reduce(env, field, op="mean")
     >>> # Center bin (4) has neighbors [1, 3, 5, 7]
     >>> # Mean = (1 + 3 + 5 + 7) / 4 = 4.0
     >>> print(f"Center neighbor mean: {neighbor_mean[4]:.1f}")  # doctest: +SKIP
@@ -190,9 +190,9 @@ def neighbor_reduce(
 
 
 def convolve(
+    env: Environment,
     field: NDArray[np.float64],
     kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],
-    env: Environment,
     *,
     normalize: bool = True,
 ) -> NDArray[np.float64]:
@@ -205,6 +205,8 @@ def convolve(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment providing graph connectivity and distances.
     field : array, shape (n_bins,)
         Scalar field values at each bin.
     kernel : callable or array
@@ -214,8 +216,6 @@ def convolve(
           where distances has shape (n_bins,).
         - **Array**: Precomputed kernel matrix of shape (n_bins, n_bins)
           where kernel[i, j] is the weight from bin j to bin i.
-    env : Environment
-        Spatial environment providing graph connectivity and distances.
     normalize : bool, default=True
         If True, normalize kernel weights to sum to 1 per bin (preserves
         constant fields). If False, use raw kernel weights (useful for
@@ -272,7 +272,7 @@ def convolve(
     >>> # Box kernel: uniform within radius 1.5
     >>> def box_kernel(distances):
     ...     return np.where(distances <= 1.5, 1.0, 0.0)
-    >>> result = convolve(field, box_kernel, env, normalize=True)
+    >>> result = convolve(env, field, box_kernel, normalize=True)
     >>> print(f"Max value: {result.max():.3f}")  # doctest: +SKIP
     Max value: 0.111
 
@@ -283,7 +283,7 @@ def convolve(
     ...     g1 = np.exp(-(distances**2) / (2 * sigma1**2))
     ...     g2 = np.exp(-(distances**2) / (2 * sigma2**2))
     ...     return g1 - g2
-    >>> result = convolve(field, mexican_hat, env, normalize=False)
+    >>> result = convolve(env, field, mexican_hat, normalize=False)
     >>> # Center positive, surrounding negative (edge enhancement)
 
     See Also

@@ -1,5 +1,65 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-08: API Refactoring - Parameter Order Consistency COMPLETE
+
+### Task: Make `env` always the first parameter in environment-dependent functions
+
+**Status**: ✅ COMPLETE
+
+**Motivation**: Following Raymond Hettinger code review feedback to improve API consistency. Since neurospatial has no external users yet (pre-v1.0), this is the right time to make breaking changes for long-term API quality.
+
+**Functions Modified** (4 total):
+
+1. **src/neurospatial/differential.py**:
+   - `gradient(field, env)` → `gradient(env, field)` (line 147)
+   - `divergence(edge_field, env)` → `divergence(env, edge_field)` (line 255)
+
+2. **src/neurospatial/primitives.py**:
+   - `neighbor_reduce(field, env, ...)` → `neighbor_reduce(env, field, ...)` (line 16)
+   - `convolve(field, kernel, env, ...)` → `convolve(env, field, kernel, ...)` (line 192)
+
+**Additional Changes**:
+- Removed 1 remaining `cast()` call in primitives.py (line 321)
+- Removed unused imports: `cast`, `EnvironmentProtocol` from primitives.py
+- Updated all docstring examples to use new parameter order
+- Updated NumPy-style parameter documentation sections
+
+**Call Sites Updated**:
+
+**Source Files** (1 change):
+- `src/neurospatial/metrics/place_fields.py`: 1 call to `neighbor_reduce()`
+
+**Test Files** (30+ changes):
+- `tests/test_differential.py`: 10 calls to `gradient()` and `divergence()`
+- `tests/test_primitives.py`: 28 calls to `neighbor_reduce()` and `convolve()`
+- `tests/test_field_ops.py`: No changes needed (uses different `kl_divergence()`)
+
+**Verification**:
+- ✅ All 1533 tests pass
+- ✅ No mypy errors
+- ✅ No ruff errors
+- ✅ All docstring examples updated
+- ✅ Consistent parameter order across all environment-dependent functions
+
+**API Impact**: Breaking change for 4 functions. Users (if any) would need to swap parameter order in calls to `gradient()`, `divergence()`, `neighbor_reduce()`, and `convolve()`.
+
+**Consistency Achieved**:
+```python
+# Before (INCONSISTENT):
+spikes_to_field(env, ...)      # env first ✓
+gradient(field, env)            # field first ✗
+neighbor_reduce(field, env, ...)  # field first ✗
+
+# After (CONSISTENT):
+spikes_to_field(env, ...)      # env first ✓
+gradient(env, field)            # env first ✓
+neighbor_reduce(env, field, ...)  # env first ✓
+```
+
+**Effort**: ~2 hours (Nov 8, 2025)
+
+---
+
 ## 2025-11-08: Milestone 4.6 - Behavioral Segmentation Example Notebook COMPLETE
 
 ### Task: Create `examples/15_behavioral_segmentation.ipynb`

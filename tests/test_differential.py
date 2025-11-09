@@ -208,7 +208,7 @@ class TestGradientOperator:
         from neurospatial.differential import gradient
 
         # Compute gradient
-        grad_field = gradient(field, env)
+        grad_field = gradient(env, field)
 
         # Output should have shape (n_edges,)
         n_edges = len(env.connectivity.edges)
@@ -227,7 +227,7 @@ class TestGradientOperator:
         from neurospatial.differential import gradient
 
         # Gradient should be all zeros
-        grad_field = gradient(field, env)
+        grad_field = gradient(env, field)
 
         np.testing.assert_allclose(grad_field, 0.0, atol=1e-10)
 
@@ -244,7 +244,7 @@ class TestGradientOperator:
         from neurospatial.differential import gradient
 
         # Compute gradient
-        grad_field = gradient(field, env)
+        grad_field = gradient(env, field)
 
         # For uniform grid with spacing 1.0 and slope 2.0,
         # gradient should be constant (approximately 2.0 * sqrt(1.0) = 2.0)
@@ -269,13 +269,13 @@ class TestGradientOperator:
         import pytest
 
         with pytest.raises(ValueError, match=r"field.*shape"):
-            gradient(field_too_small, env)
+            gradient(env, field_too_small)
 
         # Wrong shape: too many elements
         field_too_large = np.random.rand(env.n_bins + 5)
 
         with pytest.raises(ValueError, match=r"field.*shape"):
-            gradient(field_too_large, env)
+            gradient(env, field_too_large)
 
 
 class TestDivergenceOperator:
@@ -295,7 +295,7 @@ class TestDivergenceOperator:
         from neurospatial.differential import divergence
 
         # Compute divergence
-        div_field = divergence(edge_field, env)
+        div_field = divergence(env, edge_field)
 
         # Output should have shape (n_bins,)
         assert div_field.shape == (env.n_bins,)
@@ -313,8 +313,8 @@ class TestDivergenceOperator:
         from neurospatial.differential import divergence, gradient
 
         # Compute div(grad(f))
-        grad_field = gradient(field, env)
-        div_grad_field = divergence(grad_field, env)
+        grad_field = gradient(env, field)
+        div_grad_field = divergence(env, grad_field)
 
         # Compute Laplacian directly
         L = nx.laplacian_matrix(env.connectivity, weight="distance").toarray()
@@ -338,7 +338,7 @@ class TestDivergenceOperator:
         from neurospatial.differential import divergence
 
         # Divergence should be all zeros
-        div_field = divergence(edge_field, env)
+        div_field = divergence(env, edge_field)
 
         np.testing.assert_allclose(div_field, 0.0, atol=1e-10)
 
@@ -357,11 +357,11 @@ class TestDivergenceOperator:
         import pytest
 
         with pytest.raises(ValueError, match=r"edge_field.*shape"):
-            divergence(edge_field_too_small, env)
+            divergence(env, edge_field_too_small)
 
         # Wrong shape: too many elements
         n_edges = len(env.connectivity.edges)
         edge_field_too_large = np.random.rand(n_edges + 5)
 
         with pytest.raises(ValueError, match=r"edge_field.*shape"):
-            divergence(edge_field_too_large, env)
+            divergence(env, edge_field_too_large)

@@ -35,7 +35,7 @@ class TestNeighborReduce:
         field = np.arange(env.n_bins, dtype=np.float64)
 
         # Compute neighbor mean
-        result = neighbor_reduce(field, env, op="mean", include_self=False)
+        result = neighbor_reduce(env, field, op="mean", include_self=False)
 
         # Center bin (4) has 8 neighbors: [0, 1, 2, 3, 5, 6, 7, 8]
         # Mean = (0 + 1 + 2 + 3 + 5 + 6 + 7 + 8) / 8 = 32/8 = 4.0
@@ -69,10 +69,10 @@ class TestNeighborReduce:
         field = np.ones(env.n_bins, dtype=np.float64)
 
         # Without self
-        result_no_self = neighbor_reduce(field, env, op="mean", include_self=False)
+        result_no_self = neighbor_reduce(env, field, op="mean", include_self=False)
 
         # With self
-        result_with_self = neighbor_reduce(field, env, op="mean", include_self=True)
+        result_with_self = neighbor_reduce(env, field, op="mean", include_self=True)
 
         # For constant field, both should be 1.0
         assert np.allclose(result_no_self, 1.0)
@@ -80,8 +80,8 @@ class TestNeighborReduce:
 
         # Try non-constant field
         field = np.arange(env.n_bins, dtype=np.float64)
-        result_no_self = neighbor_reduce(field, env, op="mean", include_self=False)
-        result_with_self = neighbor_reduce(field, env, op="mean", include_self=True)
+        result_no_self = neighbor_reduce(env, field, op="mean", include_self=False)
+        result_with_self = neighbor_reduce(env, field, op="mean", include_self=True)
 
         # Center bin (4) neighbors: [0, 1, 2, 3, 5, 6, 7, 8]
         # Without self: mean([0, 1, 2, 3, 5, 6, 7, 8]) = 32/8 = 4.0
@@ -120,9 +120,9 @@ class TestNeighborReduce:
         # Uniform weights (should match unweighted mean)
         weights = np.ones(env.n_bins, dtype=np.float64)
         result_uniform = neighbor_reduce(
-            field, env, op="mean", weights=weights, include_self=False
+            env, field, op="mean", weights=weights, include_self=False
         )
-        result_no_weights = neighbor_reduce(field, env, op="mean", include_self=False)
+        result_no_weights = neighbor_reduce(env, field, op="mean", include_self=False)
         assert np.allclose(result_uniform, result_no_weights)
 
         # Distance-based weights (closer neighbors weighted more)
@@ -131,7 +131,7 @@ class TestNeighborReduce:
         # But if we weight by 1/distance^2, all still have same weight
         # Let's just verify it computes weighted mean correctly
         result_weighted = neighbor_reduce(
-            field, env, op="mean", weights=weights, include_self=False
+            env, field, op="mean", weights=weights, include_self=False
         )
         assert result_weighted.shape == (env.n_bins,)
 
@@ -158,28 +158,28 @@ class TestNeighborReduce:
         field = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=np.float64)
 
         # Test sum
-        result_sum = neighbor_reduce(field, env, op="sum", include_self=False)
+        result_sum = neighbor_reduce(env, field, op="sum", include_self=False)
         assert result_sum.shape == (env.n_bins,)
         # Center (4): 8 neighbors [0,1,2,3,5,6,7,8] → values [1,2,3,4,6,7,8,9] → sum = 40
         assert np.isclose(result_sum[4], 40.0)
 
         # Test mean
-        result_mean = neighbor_reduce(field, env, op="mean", include_self=False)
+        result_mean = neighbor_reduce(env, field, op="mean", include_self=False)
         # Center: mean([1,2,3,4,6,7,8,9]) = 40/8 = 5.0
         assert np.isclose(result_mean[4], 5.0)
 
         # Test max
-        result_max = neighbor_reduce(field, env, op="max", include_self=False)
+        result_max = neighbor_reduce(env, field, op="max", include_self=False)
         # Center: max([1,2,3,4,6,7,8,9]) = 9
         assert np.isclose(result_max[4], 9.0)
 
         # Test min
-        result_min = neighbor_reduce(field, env, op="min", include_self=False)
+        result_min = neighbor_reduce(env, field, op="min", include_self=False)
         # Center: min([1,2,3,4,6,7,8,9]) = 1
         assert np.isclose(result_min[4], 1.0)
 
         # Test std
-        result_std = neighbor_reduce(field, env, op="std", include_self=False)
+        result_std = neighbor_reduce(env, field, op="std", include_self=False)
         # Center: std([1,2,3,4,6,7,8,9])
         expected_std = np.std([1.0, 2.0, 3.0, 4.0, 6.0, 7.0, 8.0, 9.0])
         assert np.isclose(result_std[4], expected_std)
@@ -198,7 +198,7 @@ class TestNeighborReduce:
         # All bins should have at least 1 neighbor in this case
         # Let's verify the edge cases work correctly
         field = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-        result = neighbor_reduce(field, env, op="mean", include_self=False)
+        result = neighbor_reduce(env, field, op="mean", include_self=False)
 
         # End bins have neighbors
         assert result.shape == (3,)
@@ -231,7 +231,7 @@ class TestNeighborReduce:
 
         field = np.ones(env.n_bins, dtype=np.float64)
 
-        result = neighbor_reduce(field, env, op="mean", include_self=False)
+        result = neighbor_reduce(env, field, op="mean", include_self=False)
 
         # All should be 1.0 for constant field
         assert np.allclose(result, 1.0)
@@ -239,7 +239,7 @@ class TestNeighborReduce:
         # Now try field where we can verify counts
         # Set field to neighbor count (should get back same if mean of 1s)
         # Let's use sum instead to verify total
-        result_sum = neighbor_reduce(field, env, op="sum", include_self=False)
+        result_sum = neighbor_reduce(env, field, op="sum", include_self=False)
 
         # Corner bins have 3 neighbors (8-connected grid)
         # Edge bins have 5 neighbors
@@ -258,17 +258,17 @@ class TestNeighborReduce:
 
         # Invalid operation
         with pytest.raises(ValueError, match="op must be one of"):
-            neighbor_reduce(field, env, op="invalid")
+            neighbor_reduce(env, field, op="invalid")
 
         # Wrong field shape
         wrong_field = np.ones(env.n_bins + 1, dtype=np.float64)
         with pytest.raises(ValueError, match=r"field\.shape"):
-            neighbor_reduce(wrong_field, env, op="mean")
+            neighbor_reduce(env, wrong_field, op="mean")
 
         # Wrong weights shape
         wrong_weights = np.ones(env.n_bins + 1, dtype=np.float64)
         with pytest.raises(ValueError, match=r"weights\.shape"):
-            neighbor_reduce(field, env, op="mean", weights=wrong_weights)
+            neighbor_reduce(env, field, op="mean", weights=wrong_weights)
 
     def test_neighbor_reduce_parameter_order(self) -> None:
         """Test that parameter order is (field, env, ...)."""
@@ -277,11 +277,11 @@ class TestNeighborReduce:
         field = np.ones(env.n_bins, dtype=np.float64)
 
         # This should work (correct order)
-        result = neighbor_reduce(field, env, op="mean")
+        result = neighbor_reduce(env, field, op="mean")
         assert result.shape == (env.n_bins,)
 
         # Verify keyword arguments work
-        result = neighbor_reduce(field, env, op="mean", include_self=True, weights=None)
+        result = neighbor_reduce(env, field, op="mean", include_self=True, weights=None)
         assert result.shape == (env.n_bins,)
 
 
@@ -317,7 +317,7 @@ class TestConvolve:
             return np.where(distances <= 1.5, 1.0, 0.0)
 
         # Convolve with normalization
-        result = convolve(field, box_kernel, env, normalize=True)
+        result = convolve(env, field, box_kernel, normalize=True)
 
         # Center bin (4) should have non-zero value
         # Bins within radius 1.5 should also have non-zero values
@@ -352,7 +352,7 @@ class TestConvolve:
             return g1 - g2
 
         # Convolve (without normalization to preserve Mexican hat properties)
-        result = convolve(field, mexican_hat, env, normalize=False)
+        result = convolve(env, field, mexican_hat, normalize=False)
 
         # Mexican hat kernel is 0 at distance 0, so center gets 0
         assert result[center_idx] == 0.0
@@ -393,7 +393,7 @@ class TestConvolve:
         kernel_matrix = np.eye(env.n_bins, dtype=np.float64)
 
         # Convolve with identity kernel (should return original field)
-        result = convolve(field, kernel_matrix, env, normalize=False)
+        result = convolve(env, field, kernel_matrix, normalize=False)
 
         assert np.allclose(result, field)
 
@@ -424,7 +424,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / 2.0)
 
         # Convolve with normalization
-        result_normalized = convolve(field, gaussian_kernel, env, normalize=True)
+        result_normalized = convolve(env, field, gaussian_kernel, normalize=True)
 
         # For constant field, normalized convolution should preserve constant
         assert np.allclose(result_normalized, 5.0), (
@@ -433,7 +433,7 @@ class TestConvolve:
         )
 
         # Without normalization, values will be larger
-        result_unnormalized = convolve(field, gaussian_kernel, env, normalize=False)
+        result_unnormalized = convolve(env, field, gaussian_kernel, normalize=False)
         assert np.all(result_unnormalized > result_normalized)
 
     def test_convolve_nan_handling(self) -> None:
@@ -464,7 +464,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / 2.0)
 
         # Convolve (should handle NaN by skipping)
-        result = convolve(field, gaussian_kernel, env, normalize=True)
+        result = convolve(env, field, gaussian_kernel, normalize=True)
 
         # Bins neighboring center should not be NaN (NaN doesn't propagate)
         neighbors = list(env.connectivity.neighbors(4))
@@ -496,7 +496,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / (2 * bandwidth**2))
 
         # Convolve with normalization
-        result_convolve = convolve(field, gaussian_kernel, env, normalize=True)
+        result_convolve = convolve(env, field, gaussian_kernel, normalize=True)
 
         # Use env.smooth() with same bandwidth (mode='density' is default Gaussian)
         result_smooth = env.smooth(field, bandwidth, mode="density")
@@ -525,18 +525,18 @@ class TestConvolve:
             return np.ones_like(distances)
 
         # This should work
-        result = convolve(field, valid_kernel, env)
+        result = convolve(env, field, valid_kernel)
         assert result.shape == (env.n_bins,)
 
         # Wrong field shape
         wrong_field = np.ones(env.n_bins + 1, dtype=np.float64)
         with pytest.raises(ValueError, match=r"field\.shape"):
-            convolve(wrong_field, valid_kernel, env)
+            convolve(env, wrong_field, valid_kernel)
 
         # Wrong kernel matrix shape
         wrong_kernel = np.ones((env.n_bins + 1, env.n_bins), dtype=np.float64)
         with pytest.raises(ValueError, match=r"kernel.*shape"):
-            convolve(field, wrong_kernel, env)
+            convolve(env, field, wrong_kernel)
 
     def test_convolve_parameter_order(self) -> None:
         """Test that parameter order is (field, kernel, env, ...)."""
@@ -548,9 +548,9 @@ class TestConvolve:
             return np.ones_like(distances)
 
         # This should work (correct order)
-        result = convolve(field, kernel_fn, env)
+        result = convolve(env, field, kernel_fn)
         assert result.shape == (env.n_bins,)
 
         # Verify keyword arguments work
-        result = convolve(field, kernel_fn, env, normalize=True)
+        result = convolve(env, field, kernel_fn, normalize=True)
         assert result.shape == (env.n_bins,)

@@ -771,8 +771,8 @@ def rate_map_coherence(
     from neurospatial.primitives import neighbor_reduce
 
     neighbor_means = neighbor_reduce(
-        firing_rate,
         env,
+        firing_rate,
         op="mean",
         include_self=False,
     )
