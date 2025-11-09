@@ -514,7 +514,7 @@ class EnvironmentFields:
         if self.layout._layout_type_tag != "RegularGrid":
             raise NotImplementedError(
                 f"Linear interpolation (mode='linear') is only supported for "
-                f"RegularGridLayout. Current layout type: {type(self.layout).__name__}. "
+                f"RegularGridLayout. Current layout type: {self.layout._layout_type_tag}. "
                 f"Use mode='nearest' for non-grid layouts, or create a regular grid "
                 f"environment with Environment.from_samples()."
             )

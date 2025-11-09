@@ -241,13 +241,14 @@ class EnvironmentTrajectory:
             )
 
         # Check layout compatibility for linear allocation
+        # Use _layout_type_tag for robust type checking (Protocol-safe)
         if (
             time_allocation == "linear"
-            and type(self.layout).__name__ != "RegularGridLayout"
+            and self.layout._layout_type_tag != "RegularGrid"
         ):
             raise NotImplementedError(
                 "time_allocation='linear' is only supported for RegularGridLayout. "
-                f"Current layout type: {type(self.layout).__name__}. "
+                f"Current layout type: {self.layout._layout_type_tag}. "
                 "Use time_allocation='start' for other layout types."
             )
 
