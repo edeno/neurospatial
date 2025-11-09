@@ -354,7 +354,7 @@ def env_hexagonal() -> Environment:
     data = np.random.rand(100, 2) * 5  # 100 points in a 5x5 area
     return Environment.from_samples(
         data_samples=data,
-        layout_kind="Hexagonal",
+        layout="Hexagonal",
         bin_size=1.0,
         name="HexTestEnv",
     )

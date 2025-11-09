@@ -81,11 +81,11 @@ class RegularGridLayout(_GridMixin):
         infer_active_bins : bool, default=True
             If True and `data_samples` are provided, infers active bins based
             on occupancy and morphological operations.
-        dilate : bool, default=False
+        dilate : bool, default=True
             If `infer_active_bins` is True, dilates the inferred active area.
-        fill_holes : bool, default=False
+        fill_holes : bool, default=True
             If `infer_active_bins` is True, fills holes in the inferred active area.
-        close_gaps : bool, default=False
+        close_gaps : bool, default=True
             If `infer_active_bins` is True, closes gaps in the inferred active area.
         bin_count_threshold : int, default=0
             If `infer_active_bins` is True, minimum samples in a bin to be

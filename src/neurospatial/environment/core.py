@@ -1091,3 +1091,44 @@ class Environment(
         env_copy._kernel_cache = {}
 
         return env_copy
+
+    def clear_caches(self) -> None:
+        """Clear all transient caches (KDTree and kernel caches).
+
+        This method invalidates cached data structures that are built on-demand
+        for performance optimization. Caches will be automatically rebuilt the
+        next time they are needed.
+
+        Caches cleared:
+            - KDTree cache: Used by spatial query methods like `bin_at()`
+            - Kernel cache: Used by `smooth()` and `occupancy()`
+
+        Notes
+        -----
+        This method is typically not needed in normal usage since caches are
+        automatically managed. However, it can be useful when:
+
+        - You want to free memory after intensive spatial queries
+        - You're profiling cache rebuild performance
+        - You need to ensure a clean state for testing
+
+        The `copy()` method automatically clears caches on the new instance.
+
+        See Also
+        --------
+        copy : Create a copy of the environment (also clears caches).
+        neurospatial.spatial.clear_kdtree_cache : Clear global KDTree cache.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> data = np.random.rand(1000, 2) * 100
+        >>> env = Environment.from_samples(data, bin_size=5.0)
+        >>> # Perform some spatial queries (builds caches)
+        >>> _ = env.bin_at(np.array([[10.0, 20.0]]))
+        >>> # Clear caches to free memory
+        >>> env.clear_caches()
+        """
+        self._kdtree_cache = None
+        self._kernel_cache = {}

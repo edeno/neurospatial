@@ -130,7 +130,7 @@ def simple_hex_env(plus_maze_data_samples) -> Environment:
     """Basic hexagonal environment for mask testing."""
     return Environment.from_samples(
         data_samples=plus_maze_data_samples,  # Use existing samples
-        layout_kind="Hexagonal",
+        layout="Hexagonal",
         bin_size=2.0,  # Reasonably large hexes
         name="SimpleHexEnvForMask",
         infer_active_bins=True,  # Important for source_flat_to_active_node_id_map

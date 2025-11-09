@@ -1,3 +1,212 @@
+# Architecture & UX Simplification Plan (v0.3.0)
+
+This plan reshapes neurospatial’s API and internals for a simpler, more discoverable user experience while improving maintainability. Backwards compatibility is not required.
+
+Goals
+-----
+
+- Flat, memorable verbs (no deep namespaces) for 8–10 common tasks.
+- Small, immutable `Environment` (data + introspection only).
+- Functional modules for heavy logic; `Environment` provides thin wrappers.
+- Invisible caches managed outside objects; great diagnostics retained.
+
+Public API (target)
+-------------------
+
+- Builders (functional): `from_samples`, `from_polygon`, `from_graph`, `from_mask`.
+- Primary verbs (function + method):
+  - Spatial: `bin_at`, `neighbors`, `distance_between`
+  - Trajectory: `occupancy`, `transitions`, `bin_sequence`
+  - Fields: `smooth`, `interpolate`
+  - Transforms: `rebin`, `subset`
+  - Distances: `distance_field`, `pairwise_distances`
+  - Viz: `plot`, `plot_field`
+- Metrics & Linearization: `boundary_bins`, `bin_attributes`, `to_linear` (1D), `linear_to_nd` (1D)
+- Convenience: `clear_cache(env)`; optional alias `to_bins` → `bin_at`.
+
+Phased Plan for Claude Code
+---------------------------
+
+Phase 0 — Preparation
+
+- Decide final signatures and defaults for primary verbs (times, positions, speed, min_speed, bandwidth, normalize, method="nearest").
+- Update README with a one-page “Primary Verbs” section.
+
+Phase 1 — Functional modules + wrappers
+
+- Add modules:
+  - `src/neurospatial/trajectory.py` → `occupancy`, `transitions`, `bin_sequence`.
+  - `src/neurospatial/fields.py` → `smooth`, `interpolate`.
+  - `src/neurospatial/transforms_api.py` → `rebin`, `subset` (return new Environment).
+  - `src/neurospatial/spatial_api.py` → `bin_at`, `neighbors`, `distance_between`.
+  - `src/neurospatial/plot.py` → `plot`, `plot_field`.
+- In `Environment`:
+  - Add thin method wrappers delegating to the functions above.
+  - Add `help()` listing primary verbs with one‑line summaries.
+- Re-export builders + primary verbs in `src/neurospatial/__init__.py`.
+
+Phase 2 — Builders & layout normalization
+
+- Create `src/neurospatial/build.py` with `from_samples`, `from_polygon`, `from_graph`, `from_mask`:
+  - Require `bin_size` where applicable; accept `units`/`frame` and set on the returned `Environment`.
+  - Accept `LayoutType | str` for layout; reuse normalization used by `layout/factories.create_layout`.
+- Adjust examples/notebooks to import builders from `neurospatial`.
+
+Phase 3 — SpatialIndex & caching
+
+- Add `src/neurospatial/_index.py`:
+  - `get_index(env)` builds KDTree and typical spacing, cached in `weakref.WeakKeyDictionary`.
+  - `clear_cache(env=None)` clears one/all indices.
+- Refactor `map_points_to_bins`/`bin_at` to use `SpatialIndex`.
+
+Phase 4 — Slim `Environment`
+
+- Make arrays read‑only after construction (`setflags(write=False)`).
+- Remove private caches from `Environment` (KDTree/kernel); retain pure cached properties only.
+- Keep introspection: `info()`, `_repr_html_()`, `validate()`.
+
+Phase 5 — Consistency & cleanups
+
+- Fix doc/default mismatches in `layout/engines/regular_grid.py` (`dilate`, `fill_holes`, `close_gaps`).
+- Ensure builders accept `LayoutType | str` consistently; keep excellent diagnostic messages.
+
+Phase 6 — Tests & notebooks
+
+- Update tests to use builders + primary verbs (either method or function style).
+- Refresh notebooks to demonstrate the primary verbs and units/frame use.
+
+Advanced Utilities (kept, re‑exported)
+--------------------------------------
+These remain available as flat functions and are documented as advanced tools. They are not “primary verbs” but are part of the public API.
+
+- Differential operators: `gradient`, `divergence`
+- Spike‑field analysis: `spikes_to_field`, `compute_place_field`
+- Reward fields: `goal_reward_field`, `region_reward_field`
+- Alignment & transforms: `estimate_transform`, `apply_transform_to_environment`, `get_2d_rotation_matrix` (plus `Affine2D/translate/rotate/scale` in `neurospatial.transforms`)
+- Kernels & primitives: `apply_kernel`, `compute_diffusion_kernels`, `convolve`, `neighbor_reduce`
+- Spatial utilities: `map_points_to_bins` (alias/complement to `bin_at`), `neighbors_within`, `resample_field`, `regions_to_mask`
+- Layout utilities: `list_available_layouts`, `get_layout_parameters`
+- Validation: `validate_environment`
+- Composition & alignment helpers: `CompositeEnvironment`, `map_probabilities_to_nearest_target_bin`
+
+Acceptance Criteria
+-------------------
+
+- Common tasks achievable with primary verbs only; discoverable via autocompletion.
+- `Environment` is effectively immutable; heavy logic lives in functional modules.
+- Caches invisible to users and clearable with `clear_cache`.
+- Builders set `units`/`frame`; layout selection normalizes names robustly.
+- Tests pass via `uv run pytest`; examples run end‑to‑end with new API.
+
+Developer Checklist
+-------------------
+
+- Commands: `uv run pytest`, `uv run ruff check . && uv run ruff format .`, `uv run mypy src/neurospatial/`.
+- New files to add:
+  - `src/neurospatial/build.py`
+  - `src/neurospatial/spatial_api.py`
+  - `src/neurospatial/trajectory.py`
+  - `src/neurospatial/fields.py`
+  - `src/neurospatial/transforms_api.py`
+  - `src/neurospatial/plot.py`
+  - `src/neurospatial/_index.py`
+
+Risks & Mitigations
+-------------------
+
+- Large surface change → stage PRs narrowly; update docs alongside code.
+- Cache regressions → add focused tests for KDTree behavior and cache invalidation.
+- Doc drift → include a “Primary Verbs” quick reference in README/examples.
+
+Module Organization & Call Paths
+--------------------------------
+
+Ownership and where things live (authoritative sources):
+
+- `src/neurospatial/build.py`
+  - Owns: `from_samples`, `from_polygon`, `from_graph`, `from_mask` (functional builders)
+  - Calls: `layout.factories.create_layout`, layout engines’ `build`, `layout.validation.validate_connectivity_graph`
+  - Produces: fully fitted, validated `Environment` (sets `units`/`frame` if provided)
+
+- `src/neurospatial/spatial_api.py`
+  - Owns: `bin_at`, `neighbors`, `distance_between`
+  - Calls: `_index.get_index(env)` for KDTree (when beneficial), or `env.layout.point_to_bin_index` for direct mapping; uses `env.connectivity` for neighbors and shortest paths
+  - Notes: `bin_at` is the single entry-point for point→bin; `map_points_to_bins` remains as an advanced alias
+
+- `src/neurospatial/trajectory.py`
+  - Owns: `occupancy`, `transitions`, `bin_sequence`
+  - Calls: `spatial_api.bin_at`, `env.connectivity` (graph ops), may use kernels for optional smoothing
+  - Returns: ndarrays; never mutates `Environment`
+
+- `src/neurospatial/fields.py`
+  - Owns: `smooth`, `interpolate`
+  - Calls: `kernels.apply_kernel`/`compute_diffusion_kernels`, `distance_field`, grid metadata for interpolation
+  - Returns: ndarrays; read-only input fields preserved
+
+- `src/neurospatial/transforms_api.py`
+  - Owns: `rebin`, `subset` (return new `Environment`)
+  - Calls: existing layout engines or light wrappers around `environment/transforms.py` during transition
+  - Contract: never mutate incoming `Environment`; always return a new one with caches cold
+
+- `src/neurospatial/plot.py`
+  - Owns: `plot`, `plot_field`
+  - Calls: `env.layout.plot`, `regions.plot` (overlay), Matplotlib utilities
+
+- `src/neurospatial/_index.py`
+  - Owns: `SpatialIndex` (KDTree + spacing), `get_index(env)`, `clear_cache(env=None)`
+  - Calls: SciPy cKDTree; caches in `weakref.WeakKeyDictionary`
+
+Method wrappers & where they call:
+
+- `src/neurospatial/environment/core.py`
+  - Each method wrapper calls the corresponding function module:
+    - `Environment.bin_at` → `spatial_api.bin_at(self, ...)`
+    - `Environment.neighbors` → `spatial_api.neighbors(self, ...)`
+    - `Environment.distance_between` → `spatial_api.distance_between(self, ...)`
+    - `Environment.occupancy` → `trajectory.occupancy(self, ...)`
+    - `Environment.transitions` → `trajectory.transitions(self, ...)`
+    - `Environment.bin_sequence` → `trajectory.bin_sequence(self, ...)`
+    - `Environment.smooth` → `fields.smooth(self, ...)`
+    - `Environment.interpolate` → `fields.interpolate(self, ...)`
+    - `Environment.rebin` → `transforms_api.rebin(self, ...)`
+    - `Environment.subset` → `transforms_api.subset(self, ...)`
+    - `Environment.plot` → `plot.plot(self, ...)`
+    - `Environment.plot_field` → `plot.plot_field(self, ...)`
+    - `Environment.to_linear`/`linear_to_nd` (1D only) remain in metrics or call layout directly
+  - Adds `Environment.help()` printing the list above with one‑line summaries
+
+Re‑exports & Namespacing
+------------------------
+
+- `src/neurospatial/__init__.py` re‑exports:
+  - Builders: `from_samples`, `from_polygon`, `from_graph`, `from_mask`
+  - Primary verbs: `bin_at`, `neighbors`, `distance_between`, `occupancy`, `transitions`, `bin_sequence`, `smooth`, `interpolate`, `rebin`, `subset`, `distance_field`, `pairwise_distances`, `plot`, `plot_field`
+  - Metrics & linearization: `boundary_bins`, `bin_attributes`, `to_linear` (1D), `linear_to_nd` (1D)
+  - Enums/utilities: `LayoutType`, `TieBreakStrategy`
+  - Advanced utilities (kept): differential/operator, spikes/fields, reward, alignment, kernels/primitives, spatial utils, layout utils, validation, composition (see list below)
+
+Import Rules (to avoid cycles)
+------------------------------
+
+- Function modules (`spatial_api.py`, `trajectory.py`, `fields.py`, `transforms_api.py`, `plot.py`) must not import `Environment` at runtime. Use `typing.TYPE_CHECKING` and `EnvironmentProtocol` for hints.
+- `environment/core.py` is allowed to import function modules to provide wrappers (one‑way dependency).
+- Builders in `build.py` may import `Environment` and layout engines.
+- `_index.py` imports only NumPy/SciPy and `EnvironmentProtocol` (TYPE_CHECKING), not `environment.core`.
+
+Calling Conventions (docs & examples)
+-------------------------------------
+
+- Recommend method form in tutorials for discoverability:
+  - `occ = env.occupancy(times, positions, min_speed=2.5, bandwidth=10)`
+  - `T = env.transitions(times, positions, normalize=True)`
+  - `sm = env.smooth(field, bandwidth=10)`
+- Show functional form in API reference for testability/composability:
+  - `from neurospatial import occupancy, smooth`
+  - `occ = occupancy(env, times, positions, min_speed=2.5, bandwidth=10)`
+- Keep parameter names uniform across verbs: `(env|self, data…, *, tuning…)`.
+
+---
+
 # Spatial Operators Enhancement Plan
 
 ## Overview

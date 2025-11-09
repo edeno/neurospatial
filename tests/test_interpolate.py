@@ -323,7 +323,7 @@ class TestInterpolateMultipleLayouts:
         env = Environment.from_samples(
             data_samples=data_points,
             bin_size=2.0,
-            layout_kind="Hexagonal",
+            layout="Hexagonal",
         )
 
         # Create a simple field (e.g., distance from origin)

@@ -30,7 +30,11 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.layout.factories import create_layout
+from neurospatial.layout.factories import (
+    LayoutType,
+    create_layout,
+    list_available_layouts,
+)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -52,6 +56,27 @@ except ModuleNotFoundError:
 
 
 PolygonType = type[_shp.Polygon]
+
+
+def _normalize_layout_name(name: str) -> str:
+    """Normalize a layout name by removing non-alphanumeric characters and converting
+    to lowercase.
+
+    This uses the same normalization logic as neurospatial.layout.factories to ensure
+    consistent layout name matching.
+
+    Parameters
+    ----------
+    name : str
+        The layout name to normalize.
+
+    Returns
+    -------
+    str
+        The normalized name (lowercase, alphanumeric only).
+
+    """
+    return "".join(filter(str.isalnum, name)).lower()
 
 
 class EnvironmentFactories:
@@ -113,7 +138,7 @@ class EnvironmentFactories:
         data_samples: NDArray[np.float64],
         bin_size: float | Sequence[float],
         name: str = "",
-        layout_kind: str = "RegularGrid",
+        layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
         dilate: bool = False,
@@ -136,9 +161,12 @@ class EnvironmentFactories:
             If your data is in centimeters, bin_size=5.0 creates 5cm bins.
         name : str, default ""
             Optional name for the resulting Environment.
-        layout_kind : str, default "RegularGrid"
-            Either "RegularGrid" or "Hexagonal" (case-insensitive). Determines
-            bin shape. For "Hexagonal", `bin_size` is interpreted as `hexagon_width`.
+        layout : LayoutType | str, default LayoutType.REGULAR_GRID
+            Layout engine type to use. Can be a LayoutType enum member (recommended
+            for IDE autocomplete) or a case-insensitive string. For RegularGrid and
+            Hexagonal layouts, `bin_size` is supported. For "Hexagonal", `bin_size`
+            is interpreted as `hexagon_width`. See `list_available_layouts()` for
+            all options and `get_layout_parameters()` for layout-specific parameters.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are "active."
         bin_count_threshold : int, default 0
@@ -164,7 +192,7 @@ class EnvironmentFactories:
         ValueError
             If `data_samples` is not 2D or contains invalid coordinates.
         NotImplementedError
-            If `layout_kind` is neither "RegularGrid" nor "Hexagonal".
+            If `layout` is neither "RegularGrid" nor "Hexagonal".
 
         See Also
         --------
@@ -173,6 +201,8 @@ class EnvironmentFactories:
         from_image : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
         from_layout : Create environment with custom LayoutEngine.
+        neurospatial.layout.factories.list_available_layouts : Get all available layout types.
+        neurospatial.layout.factories.get_layout_parameters : Get parameters for a layout type.
 
         Examples
         --------
@@ -208,7 +238,7 @@ class EnvironmentFactories:
 
         >>> env = Environment.from_samples(
         ...     data_samples=positions,
-        ...     layout_kind="Hexagonal",
+        ...     layout=LayoutType.HEXAGONAL,  # or layout="Hexagonal"
         ...     bin_size=5.0,  # 5cm hexagon width
         ... )
 
@@ -265,12 +295,18 @@ class EnvironmentFactories:
                 f"Got {actual_type}: {bin_size!r}"
             )
 
-        # Standardize layout_kind to lowercase for comparison
-        kind_lower = layout_kind.lower()
-        if kind_lower not in ("regulargrid", "hexagonal"):
+        # Convert LayoutType enum to string if needed, then normalize
+        layout_str = layout.value if isinstance(layout, LayoutType) else layout
+        layout_normalized = _normalize_layout_name(layout_str)
+
+        # Check if this is a RegularGrid or Hexagonal layout (the only ones supporting from_samples)
+        if layout_normalized not in ("regulargrid", "hexagonal"):
+            available = list_available_layouts()
             raise NotImplementedError(
-                f"Layout kind '{layout_kind}' is not supported. "
-                "Use 'RegularGrid' or 'Hexagonal'.",
+                f"Layout '{layout_str}' (normalized: '{layout_normalized}') is not supported "
+                f"by from_samples(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
+                f"For other layouts, use from_layout() or from_mask(). "
+                f"Available layouts: {', '.join(available)}"
             )
 
         # Build the dict of layout parameters
@@ -296,20 +332,14 @@ class EnvironmentFactories:
             },
         }
 
-        if kind_lower not in specific_params:
-            raise NotImplementedError(
-                f"Layout kind '{layout_kind}' is not supported. "
-                "Use 'RegularGrid' or 'Hexagonal'.",
-            )
-
-        # Build final params dict
+        # Build final params dict (validation already done above)
         layout_params = {
             **common_params,
-            **specific_params[kind_lower],
+            **specific_params[layout_normalized],
             **layout_specific_kwargs,
         }
 
-        return cls.from_layout(kind=layout_kind, layout_params=layout_params, name=name)
+        return cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
 
     @classmethod
     def from_graph(
@@ -591,7 +621,7 @@ class EnvironmentFactories:
     @classmethod
     def from_layout(
         cls,
-        kind: str,
+        kind: LayoutType | str,
         layout_params: dict[str, Any],
         name: str = "",
         regions: Regions | None = None,
@@ -600,8 +630,9 @@ class EnvironmentFactories:
 
         Parameters
         ----------
-        kind : str
-            The string identifier of the `LayoutEngine` to use
+        kind : LayoutType | str
+            The layout engine type to use. Can be a LayoutType enum member (recommended
+            for IDE autocomplete) or a case-insensitive string name
             (e.g., "RegularGrid", "Hexagonal").
         layout_params : Dict[str, Any]
             A dictionary of parameters that will be passed to the `build`

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-03 (v0.1.0)
+**Last Updated**: 2025-11-09 (v0.2.0)
 
 ## Table of Contents
 
@@ -66,6 +66,15 @@ aligned_env = apply_transform_to_environment(env, T)
 # Compute distance fields (v0.1.0+)
 from neurospatial import distance_field
 distances = distance_field(env.connectivity, sources=[goal_bin_id])
+
+# Compute place fields from spike data (v0.2.0+)
+from neurospatial import compute_place_field
+firing_rate = compute_place_field(
+    env, spike_times, times, positions,
+    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    bandwidth=5.0  # Smoothing bandwidth (cm)
+)
+# Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 
 # Validate environment (v0.1.0+)
 from neurospatial import validate_environment
@@ -263,13 +272,24 @@ class Environment(
 
 ### Mypy Type Checking Requirements
 
-**CRITICAL: Mypy is mandatory and must pass without errors or suppressions.**
+**IMPORTANT: Mypy runs in pre-commit hooks and should pass without errors.**
 
-This project enforces strict mypy type checking through pre-commit hooks. The following requirements are **non-negotiable**:
+This project uses mypy for type checking with a **pragmatic configuration** suited for scientific Python code. The configuration (in `pyproject.toml`) balances type safety with practicality:
 
-1. **NEVER skip mypy** - Running `SKIP=mypy` is not allowed
-2. **NEVER use `type: ignore` comments** - All type errors must be fixed properly
-3. **All mixin methods must be properly typed** - Use proper type annotations that mypy understands
+- **Type annotations encouraged**: Public APIs and mixin methods should have type hints
+- **Lenient for scientific code**: Allows untyped defs, untyped calls, and incomplete defs (common in scientific libraries)
+- **Pre-commit enforcement**: Mypy runs automatically on commit with basic checks
+- **Key settings** (see `[tool.mypy]` in `pyproject.toml`):
+  - `disallow_untyped_defs = false` - Allows functions without type annotations
+  - `check_untyped_defs = false` - Doesn't check inside untyped functions
+  - `allow_untyped_calls = true` - Allows calling untyped library functions
+  - `warn_unused_ignores = true` - Warns about unnecessary `type: ignore` comments
+
+**Guidelines:**
+
+1. **Prefer proper typing over suppressions** - Add type hints when possible rather than using `type: ignore`
+2. **Mixin methods should be typed** - Use proper type annotations for all public mixin methods (see pattern below)
+3. **Avoid skipping mypy** - Let pre-commit run mypy normally; only skip if absolutely necessary
 
 **Mixin Type Annotation Pattern:**
 

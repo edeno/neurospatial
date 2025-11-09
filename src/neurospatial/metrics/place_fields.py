@@ -488,16 +488,21 @@ def skaggs_information(
     # Normalize occupancy to probability
     occupancy_prob = occupancy / np.sum(occupancy)
 
-    # Mean firing rate
-    mean_rate = np.sum(occupancy_prob * firing_rate)
+    # Mean firing rate (use nansum to ignore NaN bins)
+    mean_rate = np.nansum(occupancy_prob * firing_rate)
 
-    if mean_rate == 0:
+    if mean_rate == 0 or np.isnan(mean_rate):
         return 0.0
 
     # Compute information
     information = 0.0
     for i in range(len(firing_rate)):
-        if occupancy_prob[i] > 0 and firing_rate[i] > 0:
+        # Skip NaN bins
+        if (
+            occupancy_prob[i] > 0
+            and firing_rate[i] > 0
+            and not np.isnan(firing_rate[i])
+        ):
             ratio = firing_rate[i] / mean_rate
             information += occupancy_prob[i] * ratio * np.log(ratio) / np.log(base)
 
@@ -562,11 +567,11 @@ def sparsity(
     # Normalize occupancy to probability
     occupancy_prob = occupancy / np.sum(occupancy)
 
-    # Compute sparsity
-    numerator = np.sum(occupancy_prob * firing_rate) ** 2
-    denominator = np.sum(occupancy_prob * firing_rate**2)
+    # Compute sparsity (use nansum to ignore NaN bins)
+    numerator = np.nansum(occupancy_prob * firing_rate) ** 2
+    denominator = np.nansum(occupancy_prob * firing_rate**2)
 
-    if denominator == 0:
+    if denominator == 0 or np.isnan(denominator):
         return 0.0
 
     return float(numerator / denominator)
