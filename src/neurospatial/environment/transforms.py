@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
+
 if TYPE_CHECKING:
+    pass
     import shapely
 
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import Environment
 
 from neurospatial.regions import Regions
@@ -26,7 +28,7 @@ class EnvironmentTransforms:
     """Mixin providing environment transformation methods."""
 
     def rebin(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         factor: int | tuple[int, ...],
     ) -> Environment:
         """Coarsen regular grid by integer factor (geometry-only operation).
@@ -316,7 +318,7 @@ class EnvironmentTransforms:
         return coarse_env
 
     def subset(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         *,
         bins: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
@@ -561,7 +563,7 @@ class EnvironmentTransforms:
             """Minimal layout for subset environment."""
 
             def __init__(
-                self, bin_centers, connectivity, dimension_ranges, build_params
+                self: SelfEnv, bin_centers, connectivity, dimension_ranges, build_params
             ):
                 self.bin_centers = bin_centers
                 self.connectivity = connectivity
@@ -570,10 +572,10 @@ class EnvironmentTransforms:
                 self._build_params_used = build_params
                 self.is_1d = False
 
-            def build(self):
+            def build(self: SelfEnv):
                 pass  # Already built
 
-            def point_to_bin_index(self, point):
+            def point_to_bin_index(self: SelfEnv, point):
                 # Use KDTree for nearest neighbor
                 from scipy.spatial import cKDTree
 
@@ -581,7 +583,7 @@ class EnvironmentTransforms:
                 _, idx = tree.query(point)
                 return int(idx)
 
-            def bin_sizes(self):
+            def bin_sizes(self: SelfEnv):
                 # Estimate from connectivity graph
                 # Use edge distances to estimate bin sizes
                 sizes = np.ones(len(self.bin_centers))
@@ -594,7 +596,7 @@ class EnvironmentTransforms:
                         sizes[node] = np.mean(distances)
                 return sizes
 
-            def plot(self, ax=None, **kwargs):
+            def plot(self: SelfEnv, ax=None, **kwargs):
                 import matplotlib.pyplot as plt
 
                 if ax is None:

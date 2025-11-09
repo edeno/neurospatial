@@ -79,10 +79,11 @@ class TestFullTrajectoryAnalysisWorkflow:
             # Get lap segment
             lap_mask = (times >= lap.start_time) & (times <= lap.end_time)
             lap_bins = trajectory_bins[lap_mask]
+            lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
-            # Compute metrics
-            turn_angles = compute_turn_angles(lap_bins, env)
-            step_lengths = compute_step_lengths(lap_bins, env)
+            # Compute metrics (both functions expect continuous positions, not bins)
+            turn_angles = compute_turn_angles(lap_positions)
+            step_lengths = compute_step_lengths(lap_positions)
 
             lap_metrics.append(
                 {
@@ -107,7 +108,7 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 5: Compute MSD (should show ballistic movement within laps)
         tau_values, msd_values = mean_square_displacement(
-            trajectory_bins, times, env, max_tau=5.0
+            traj_positions, times, max_tau=5.0
         )
         assert len(tau_values) > 0
         assert len(msd_values) == len(tau_values)

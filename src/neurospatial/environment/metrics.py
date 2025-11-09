@@ -21,9 +21,9 @@ TYPE_CHECKING Pattern
 ---------------------
 To avoid circular imports, we import Environment only for type checking:
 
-    from typing import TYPE_CHECKING
+    from typing import TYPE_CHECKING, Protocol
     if TYPE_CHECKING:
-        from neurospatial.environment._protocols import EnvironmentProtocol
+        from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 
 Then use string annotations in method signatures: `self: "Environment"`
 
@@ -51,17 +51,15 @@ This class is not used directly. Instead, it's mixed into Environment:
 from __future__ import annotations
 
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.layout.helpers.utils import find_boundary_nodes
-
-if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class EnvironmentMetrics:
@@ -87,7 +85,7 @@ class EnvironmentMetrics:
 
     @cached_property
     @check_fitted  # Check only on first access, then value is cached
-    def boundary_bins(self: EnvironmentProtocol) -> NDArray[np.int_]:
+    def boundary_bins(self: SelfEnv) -> NDArray[np.int_]:
         """
         Identify boundary bins (bins on the edge of the active region).
 
@@ -131,7 +129,7 @@ class EnvironmentMetrics:
     @cached_property
     @check_fitted  # Check only on first access, then value is cached
     def linearization_properties(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
     ) -> dict[str, Any]:
         """
         Get linearization metadata for 1D environments.
@@ -194,7 +192,7 @@ class EnvironmentMetrics:
 
     @cached_property
     @check_fitted  # Check only on first access, then value is cached
-    def bin_attributes(self: EnvironmentProtocol) -> pd.DataFrame:
+    def bin_attributes(self: SelfEnv) -> pd.DataFrame:
         """
         Extract bin (node) attributes as a pandas DataFrame.
 
@@ -253,7 +251,7 @@ class EnvironmentMetrics:
 
     @cached_property
     @check_fitted  # Check only on first access, then value is cached
-    def edge_attributes(self: EnvironmentProtocol) -> pd.DataFrame:
+    def edge_attributes(self: SelfEnv) -> pd.DataFrame:
         """
         Extract edge attributes as a pandas DataFrame.
 
@@ -317,9 +315,9 @@ class EnvironmentMetrics:
 
     @check_fitted
     def to_linear(
-        self: EnvironmentProtocol,
-        nd_position: NDArray[np.floating],
-    ) -> NDArray[np.floating]:
+        self: SelfEnv,
+        nd_position: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
         """
         Convert N-D positions to 1D linear coordinates.
 
@@ -394,14 +392,14 @@ class EnvironmentMetrics:
 
         # Cast to Any to work around Protocol limitation (GraphLayout has this method)
         return cast(
-            "NDArray[np.floating]", cast("Any", self.layout).to_linear(nd_position)
+            "NDArray[np.float64]", cast("Any", self.layout).to_linear(nd_position)
         )
 
     @check_fitted
     def linear_to_nd(
-        self: EnvironmentProtocol,
-        linear_position: NDArray[np.floating],
-    ) -> NDArray[np.floating]:
+        self: SelfEnv,
+        linear_position: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
         """
         Convert 1D linear coordinates to N-D positions.
 
@@ -476,6 +474,6 @@ class EnvironmentMetrics:
 
         # Cast to Any to work around Protocol limitation (GraphLayout has this method)
         return cast(
-            "NDArray[np.floating]",
+            "NDArray[np.float64]",
             cast("Any", self.layout).linear_to_nd(linear_position),
         )

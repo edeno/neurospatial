@@ -28,9 +28,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
+
 if TYPE_CHECKING:
+    pass
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class EnvironmentFields:
@@ -40,7 +42,7 @@ class EnvironmentFields:
     """
 
     def compute_kernel(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         bandwidth: float,
         *,
         mode: Literal["transition", "density"] = "density",
@@ -136,7 +138,7 @@ class EnvironmentFields:
         return kernel
 
     def smooth(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         bandwidth: float,
         *,
@@ -279,7 +281,7 @@ class EnvironmentFields:
         return smoothed
 
     def interpolate(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
         *,
@@ -438,7 +440,7 @@ class EnvironmentFields:
             return self._interpolate_linear(field, points)
 
     def _interpolate_nearest(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -483,7 +485,7 @@ class EnvironmentFields:
         return result
 
     def _interpolate_linear(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]:

@@ -34,6 +34,7 @@ from neurospatial.layout.factories import create_layout
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
+    pass
     from neurospatial.environment.core import Environment
 
 try:

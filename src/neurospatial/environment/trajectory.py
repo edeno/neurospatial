@@ -31,11 +31,12 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
+
 if TYPE_CHECKING:
     import scipy.sparse
 
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 class EnvironmentTrajectory:
@@ -45,7 +46,7 @@ class EnvironmentTrajectory:
     """
 
     def occupancy(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -319,7 +320,7 @@ class EnvironmentTrajectory:
         return occupancy
 
     def bin_sequence(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -550,7 +551,7 @@ class EnvironmentTrajectory:
         return deduplicated_bins, run_starts, run_ends
 
     def transitions(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         bins: NDArray[np.int32] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
@@ -732,7 +733,7 @@ class EnvironmentTrajectory:
             )
 
     def _empirical_transitions(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         bins: NDArray[np.int32] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
@@ -948,7 +949,7 @@ class EnvironmentTrajectory:
         return transition_matrix
 
     def _random_walk_transitions(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         *,
         normalize: bool = True,
     ) -> scipy.sparse.csr_matrix:
@@ -981,7 +982,7 @@ class EnvironmentTrajectory:
         return transition_matrix
 
     def _diffusion_transitions(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         bandwidth: float,
         *,
         normalize: bool = True,
@@ -1011,7 +1012,7 @@ class EnvironmentTrajectory:
         return kernel
 
     def _allocate_time_linear(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         positions: NDArray[np.float64],
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
@@ -1105,7 +1106,7 @@ class EnvironmentTrajectory:
         return occupancy
 
     def _compute_ray_grid_intersections(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         start_pos: NDArray[np.float64],
         end_pos: NDArray[np.float64],
         grid_edges: list[NDArray[np.float64]],
@@ -1197,7 +1198,7 @@ class EnvironmentTrajectory:
         return bin_times
 
     def _position_to_flat_index(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         pos: NDArray[np.float64],
         grid_edges: list[NDArray[np.float64]],
         grid_shape: tuple[int, ...],

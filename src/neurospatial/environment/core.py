@@ -67,6 +67,9 @@ class Environment(
 ):
     """Represents a discretized N-dimensional space with connectivity.
 
+    Note: This class satisfies the EnvironmentProtocol interface through
+    its mixin inheritance and dataclass fields.
+
     This class serves as a comprehensive model of a spatial environment,
     discretized into bins or nodes. It stores the geometric properties of these
     bins (e.g., centers, areas), their connectivity, and provides methods for

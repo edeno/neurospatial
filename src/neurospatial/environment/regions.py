@@ -8,16 +8,12 @@ container.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.regions import Regions
-
-if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 # Conditional import for shapely (optional dependency)
 try:
@@ -55,7 +51,7 @@ class EnvironmentRegions:
     """
 
     @check_fitted
-    def bins_in_region(self: EnvironmentProtocol, region_name: str) -> NDArray[np.int_]:
+    def bins_in_region(self: SelfEnv, region_name: str) -> NDArray[np.int_]:
         """Get active bin indices that fall within a specified named region.
 
         This method identifies all active bins whose centers fall within the
@@ -157,9 +153,7 @@ class EnvironmentRegions:
         raise ValueError(f"Unsupported region kind: {region.kind}")
 
     @check_fitted
-    def mask_for_region(
-        self: EnvironmentProtocol, region_name: str
-    ) -> NDArray[np.bool_]:
+    def mask_for_region(self: SelfEnv, region_name: str) -> NDArray[np.bool_]:
         """Get a boolean mask over active bins indicating membership in a region.
 
         This method creates a boolean array of length n_active_bins where True
@@ -230,7 +224,7 @@ class EnvironmentRegions:
         return mask
 
     def region_membership(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         regions: Regions | None = None,
         *,
         include_boundary: bool = True,

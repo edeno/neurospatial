@@ -9,7 +9,7 @@ See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -211,3 +211,9 @@ class EnvironmentProtocol(Protocol):
         field: NDArray[np.float64],
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]: ...
+
+
+# TypeVar bound to EnvironmentProtocol for use in mixin self annotations
+# This allows mixins to access Protocol attributes while still accepting
+# concrete Environment instances without "Invalid self argument" errors.
+SelfEnv = TypeVar("SelfEnv", bound=EnvironmentProtocol)
