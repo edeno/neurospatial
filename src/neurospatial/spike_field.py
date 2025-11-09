@@ -156,6 +156,7 @@ def spikes_to_field(
     time_min, time_max = times[0], times[-1]
     valid_spike_mask = (spike_times >= time_min) & (spike_times <= time_max)
 
+    # Filter out-of-range spikes if any
     if not np.all(valid_spike_mask):
         n_filtered = np.sum(~valid_spike_mask)
         warnings.warn(
@@ -165,14 +166,14 @@ def spikes_to_field(
         )
         spike_times = spike_times[valid_spike_mask]
 
-        # If no valid spikes remain, return zeros
-        if len(spike_times) == 0:
-            occupancy = cast("EnvironmentProtocol", env).occupancy(
-                times, positions, return_seconds=True
-            )
-            field = np.zeros(env.n_bins, dtype=np.float64)
-            field[occupancy < min_occupancy_seconds] = np.nan
-            return field
+    # Guard clause: handle empty spikes after time filtering
+    if len(spike_times) == 0:
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times, positions, return_seconds=True
+        )
+        field = np.zeros(env.n_bins, dtype=np.float64)
+        field[occupancy < min_occupancy_seconds] = np.nan
+        return field
 
     # Step 2: Compute occupancy using return_seconds=True
     occupancy = cast("EnvironmentProtocol", env).occupancy(
@@ -200,6 +201,7 @@ def spikes_to_field(
     # Step 5: Filter out-of-bounds spikes (bin_at returns -1 for out-of-bounds)
     valid_bins_mask = spike_bins >= 0
 
+    # Filter out-of-bounds spikes if any
     if not np.all(valid_bins_mask):
         n_filtered = np.sum(~valid_bins_mask)
         warnings.warn(
@@ -209,11 +211,11 @@ def spikes_to_field(
         )
         spike_bins = spike_bins[valid_bins_mask]
 
-        # If no valid spikes remain, return zeros
-        if len(spike_bins) == 0:
-            field = np.zeros(env.n_bins, dtype=np.float64)
-            field[occupancy < min_occupancy_seconds] = np.nan
-            return field
+    # Guard clause: handle empty spikes after spatial filtering
+    if len(spike_bins) == 0:
+        field = np.zeros(env.n_bins, dtype=np.float64)
+        field[occupancy < min_occupancy_seconds] = np.nan
+        return field
 
     # Step 6: Count spikes per bin
     spike_counts = np.bincount(spike_bins, minlength=env.n_bins)
@@ -347,28 +349,28 @@ def compute_place_field(
     )
 
     # Apply smoothing if requested
-    if smoothing_bandwidth is not None:
-        # Handle NaN values: cast("EnvironmentProtocol", env).smooth() doesn't accept NaN
-        # Standard approach: fill NaN with 0, smooth, then restore NaN
-        nan_mask = np.isnan(field)
+    if smoothing_bandwidth is None:
+        return field
 
-        if np.any(nan_mask):
-            # Fill NaN with 0 for smoothing
-            field_filled = field.copy()
-            field_filled[nan_mask] = 0.0
+    # Handle NaN values: cast("EnvironmentProtocol", env).smooth() doesn't accept NaN
+    # Standard approach: fill NaN with 0, smooth, then restore NaN
+    nan_mask = np.isnan(field)
 
-            # Smooth the filled field
-            field_smoothed = cast("EnvironmentProtocol", env).smooth(
-                field_filled, bandwidth=smoothing_bandwidth
-            )
+    # No NaN values - smooth directly
+    if not np.any(nan_mask):
+        return cast("EnvironmentProtocol", env).smooth(
+            field, bandwidth=smoothing_bandwidth
+        )
 
-            # Restore NaN in original low-occupancy bins
-            field_smoothed[nan_mask] = np.nan
-            field = field_smoothed
-        else:
-            # No NaN values, smooth directly
-            field = cast("EnvironmentProtocol", env).smooth(
-                field, bandwidth=smoothing_bandwidth
-            )
+    # Has NaN values - fill, smooth, then restore NaN
+    field_filled = field.copy()
+    field_filled[nan_mask] = 0.0
 
-    return field
+    # Smooth the filled field
+    field_smoothed = cast("EnvironmentProtocol", env).smooth(
+        field_filled, bandwidth=smoothing_bandwidth
+    )
+
+    # Restore NaN in original low-occupancy bins
+    field_smoothed[nan_mask] = np.nan
+    return field_smoothed

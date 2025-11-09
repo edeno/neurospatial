@@ -1,5 +1,69 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-08: Code Quality - Refactor Nested Conditionals COMPLETE
+
+### Task: Refactor nested conditionals using guard clauses and early returns
+
+**Status**: ✅ COMPLETE
+
+**Motivation**: Following Raymond Hettinger code review feedback to improve code readability by reducing nesting depth. Guard clauses (early returns) make code more linear and easier to follow.
+
+**Files Modified**:
+
+1. **src/neurospatial/spike_field.py**:
+   - `spikes_to_field()` function (3 nested conditionals refactored)
+   - `compute_place_field()` function (1 nested conditional refactored)
+
+**Specific Refactorings**:
+
+**1. Time filtering with empty check (lines 159-176)**
+- **Before**: Nested if checking for empty spikes inside time filtering block
+- **After**: Separate filter step + guard clause for empty spikes
+- **Impact**: Reduced nesting from 2 levels to 1 level
+
+**2. Spatial filtering with empty check (lines 204-218)**
+- **Before**: Nested if checking for empty spikes inside spatial filtering block
+- **After**: Separate filter step + guard clause for empty spikes
+- **Impact**: Reduced nesting from 2 levels to 1 level
+
+**3. Smoothing with NaN handling (lines 351-376)**
+- **Before**: Nested if/else for NaN handling inside smoothing block
+- **After**: Early return for no smoothing, early return for no NaN, linear NaN handling
+- **Impact**: Eliminated if/else nesting, made happy path more linear
+
+**Pattern Applied**:
+```python
+# Before (NESTED):
+if condition:
+    do_something()
+    if nested_condition:
+        return early_result
+
+# After (GUARD CLAUSE):
+if condition:
+    do_something()
+
+# Guard clause at top level
+if nested_condition:
+    return early_result
+```
+
+**Verification**:
+- ✅ All 14 spike_field tests pass
+- ✅ All warnings still properly raised
+- ✅ Behavior unchanged (just readability improvement)
+- ✅ No mypy errors
+- ✅ No ruff errors
+
+**Readability Impact**:
+- Reduced maximum nesting depth from 3 to 2 levels
+- Made control flow more linear and easier to trace
+- Separated concerns (filtering vs empty checks)
+
+**Effort**: ~30 minutes (Nov 8, 2025)
+
+---
+
 ## 2025-11-08: API Refactoring - Parameter Order Consistency COMPLETE
 
 ### Task: Make `env` always the first parameter in environment-dependent functions
