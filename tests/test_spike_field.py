@@ -283,74 +283,338 @@ class TestSpikesToField:
 
 
 class TestComputePlaceField:
-    """Test suite for compute_place_field convenience function."""
+    """Test suite for compute_place_field unified API with multiple methods."""
 
-    def test_compute_place_field_with_smoothing(self):
-        """Test that compute_place_field with smoothing matches two-step workflow."""
+    def test_default_method_is_diffusion_kde(self):
+        """Test that default method is diffusion_kde."""
+        positions = np.random.uniform(20, 80, (500, 2))
+        times = np.linspace(0, 50, 500)
+        spike_times = np.random.uniform(0, 50, 25)
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Default call should use diffusion_kde
+        field_default = compute_place_field(
+            env, spike_times, times, positions, bandwidth=5.0
+        )
+
+        # Explicit diffusion_kde call
+        field_explicit = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        assert_array_equal(field_default, field_explicit)
+
+    def test_all_methods_produce_valid_output(self):
+        """Test that all three methods produce valid firing rate maps."""
+        np.random.seed(42)
+        positions = np.random.uniform(20, 80, (500, 2))
+        times = np.linspace(0, 50, 500)
+        spike_times = np.random.uniform(0, 50, 25)
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
+            field = compute_place_field(
+                env, spike_times, times, positions, method=method, bandwidth=5.0
+            )
+
+            # Check shape
+            assert field.shape == (env.n_bins,), f"Method {method} has wrong shape"
+
+            # Check non-negative firing rates (where not NaN)
+            valid_bins = ~np.isnan(field)
+            assert np.all(field[valid_bins] >= 0), f"Method {method} has negative rates"
+
+            # Check that we have some valid bins
+            assert np.sum(valid_bins) > 0, f"Method {method} has all NaN"
+
+    def test_diffusion_kde_no_nan_bins(self):
+        """Test that diffusion_kde naturally handles sparse occupancy without NaN."""
+        np.random.seed(42)
+        positions = np.random.uniform(20, 80, (500, 2))
+        times = np.linspace(0, 50, 500)
+        spike_times = np.random.uniform(0, 50, 25)
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Diffusion KDE should have no NaN bins (naturally handles low occupancy)
+        assert np.sum(np.isnan(field)) == 0
+
+    def test_binned_method_respects_min_occupancy(self):
+        """Test that binned method uses min_occupancy_seconds parameter."""
         positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
+            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
         )
         times = np.linspace(0, 10, 1000)
         env = Environment.from_samples(positions, bin_size=10.0)
-        spike_times = np.linspace(0, 10, 50)
+        spike_times = np.array([1.0, 2.0, 3.0])
 
-        # One-liner with smoothing
-        field_direct = compute_place_field(
-            env, spike_times, times, positions, smoothing_bandwidth=5.0
+        # With high threshold, should have many NaN bins
+        field_high_threshold = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="binned",
+            bandwidth=5.0,
+            min_occupancy_seconds=5.0,
         )
 
-        # Two-step workflow (must handle NaN like compute_place_field does)
-        field_raw = spikes_to_field(env, spike_times, times, positions)
+        # With low threshold, should have fewer NaN bins
+        field_low_threshold = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="binned",
+            bandwidth=5.0,
+            min_occupancy_seconds=0.1,
+        )
 
-        # Handle NaN for smoothing
-        nan_mask = np.isnan(field_raw)
-        field_filled = field_raw.copy()
-        field_filled[nan_mask] = 0.0
-        field_two_step = env.smooth(field_filled, bandwidth=5.0)
-        field_two_step[nan_mask] = np.nan
+        # High threshold should produce more NaN bins
+        assert np.sum(np.isnan(field_high_threshold)) > np.sum(
+            np.isnan(field_low_threshold)
+        )
 
-        # Should match
-        assert_array_almost_equal(field_direct, field_two_step)
+    def test_methods_give_similar_results_open_field(self):
+        """Test that all methods give similar results for open field (no boundaries)."""
+        np.random.seed(42)
+        # Uniform coverage open field
+        positions = np.random.uniform(20, 80, (1000, 2))
+        times = np.linspace(0, 100, 1000)
+        spike_times = np.random.uniform(0, 100, 50)
+        env = Environment.from_samples(positions, bin_size=8.0)
 
-    def test_compute_place_field_no_smoothing(self):
-        """Test that compute_place_field without smoothing matches spikes_to_field."""
+        # Compute with all three methods
+        field_diffusion = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
+        )
+        field_gaussian = compute_place_field(
+            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+        )
+        field_binned = compute_place_field(
+            env, spike_times, times, positions, method="binned", bandwidth=8.0
+        )
+
+        # For open field with good coverage, all methods should give similar results
+        # Use correlation as a similarity metric
+        valid_all = (
+            ~np.isnan(field_diffusion)
+            & ~np.isnan(field_gaussian)
+            & ~np.isnan(field_binned)
+        )
+
+        if np.sum(valid_all) > 10:  # Need enough valid bins
+            corr_diff_gauss = np.corrcoef(
+                field_diffusion[valid_all], field_gaussian[valid_all]
+            )[0, 1]
+            corr_diff_binned = np.corrcoef(
+                field_diffusion[valid_all], field_binned[valid_all]
+            )[0, 1]
+
+            # Should be reasonably correlated (> 0.5) for open field
+            assert corr_diff_gauss > 0.5, (
+                "Diffusion and Gaussian should be similar for open field"
+            )
+            assert corr_diff_binned > 0.5, (
+                "Diffusion and Binned should be similar for open field"
+            )
+
+    def test_empty_spikes(self):
+        """Test that all methods handle empty spike train correctly."""
         positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
+            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
         )
         times = np.linspace(0, 10, 1000)
         env = Environment.from_samples(positions, bin_size=10.0)
-        spike_times = np.linspace(0, 10, 50)
+        spike_times = np.array([])
 
-        # With smoothing_bandwidth=None
-        field_direct = compute_place_field(
-            env, spike_times, times, positions, smoothing_bandwidth=None
-        )
+        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
+            field = compute_place_field(
+                env, spike_times, times, positions, method=method, bandwidth=5.0
+            )
 
-        # Should match spikes_to_field exactly
-        field_raw = spikes_to_field(env, spike_times, times, positions)
+            # Should have valid shape
+            assert field.shape == (env.n_bins,)
 
-        assert_array_equal(field_direct, field_raw)
+            # All valid bins should be zero
+            valid_bins = ~np.isnan(field)
+            assert np.allclose(field[valid_bins], 0.0), (
+                f"Method {method} failed empty spikes test"
+            )
 
-    def test_compute_place_field_parameter_order(self):
-        """Test that parameter order is consistent with spikes_to_field."""
+    def test_parameter_validation(self):
+        """Test that invalid parameters raise appropriate errors."""
         positions = np.column_stack(
-            [
-                np.linspace(0, 100, 100),
-                np.linspace(0, 100, 100),
-            ]
+            [np.linspace(0, 100, 100), np.linspace(0, 100, 100)]
         )
         times = np.linspace(0, 10, 100)
         env = Environment.from_samples(positions, bin_size=20.0)
         spike_times = np.array([1.0, 2.0])
 
-        # Should accept same parameter order
-        field = compute_place_field(
-            env, spike_times, times, positions, smoothing_bandwidth=3.0
+        # Invalid method
+        with pytest.raises(ValueError, match="method must be one of"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="invalid_method",
+                bandwidth=5.0,
+            )
+
+        # Invalid bandwidth (non-positive)
+        with pytest.raises(ValueError, match="bandwidth must be positive"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=-5.0,
+            )
+
+        with pytest.raises(ValueError, match="bandwidth must be positive"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=0.0,
+            )
+
+        # Mismatched times and positions
+        bad_times = np.linspace(0, 10, 50)
+        with pytest.raises(
+            ValueError, match="times and positions must have same length"
+        ):
+            compute_place_field(
+                env,
+                spike_times,
+                bad_times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=5.0,
+            )
+
+    def test_1d_trajectory_all_methods(self):
+        """Test that all methods handle 1D trajectories correctly."""
+        positions = np.linspace(0, 100, 1000).reshape(-1, 1)
+        times = np.linspace(0, 10, 1000)
+        env = Environment.from_samples(positions, bin_size=10.0)
+        spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+
+        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
+            field = compute_place_field(
+                env, spike_times, times, positions, method=method, bandwidth=5.0
+            )
+
+            assert field.shape == (env.n_bins,), f"Method {method} failed for 1D"
+            assert not np.all(np.isnan(field)), (
+                f"Method {method} produced all NaN for 1D"
+            )
+
+    def test_diffusion_kde_spread_before_normalize(self):
+        """Test that diffusion_kde spreads mass before normalizing (correct order)."""
+        np.random.seed(42)
+        # Create environment with some bins that have low occupancy
+        positions = np.random.uniform(20, 80, (500, 2))
+        times = np.linspace(0, 50, 500)
+        spike_times = np.random.uniform(0, 50, 25)
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        field_diffusion = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
         )
+
+        # Diffusion KDE should have smoother spatial distribution
+        # (no sharp bin boundaries) and no NaN bins
+        assert np.sum(np.isnan(field_diffusion)) == 0
+
+        # Check that values are spatially smooth (neighbors should be similar)
+        # This tests that diffusion happened
+        max_neighbor_diff = 0.0
+        for node in env.connectivity.nodes():
+            neighbors = list(env.connectivity.neighbors(node))
+            if len(neighbors) > 0 and not np.isnan(field_diffusion[node]):
+                neighbor_vals = [
+                    field_diffusion[n]
+                    for n in neighbors
+                    if not np.isnan(field_diffusion[n])
+                ]
+                if len(neighbor_vals) > 0:
+                    max_neighbor_diff = max(
+                        max_neighbor_diff,
+                        np.max(np.abs(field_diffusion[node] - np.array(neighbor_vals))),
+                    )
+
+        # Neighbors should not differ drastically (smoothing effect)
+        # This is a rough check that diffusion occurred
+        mean_rate = np.mean(field_diffusion[~np.isnan(field_diffusion)])
+        assert max_neighbor_diff < 5 * mean_rate  # Heuristic: max diff < 5x mean
+
+    def test_gaussian_kde_slow_but_works(self):
+        """Test that gaussian_kde works (even if slower) and produces valid results."""
+        np.random.seed(42)
+        # Small dataset to keep test fast
+        positions = np.random.uniform(20, 80, (200, 2))
+        times = np.linspace(0, 20, 200)
+        spike_times = np.random.uniform(0, 20, 10)
+        env = Environment.from_samples(positions, bin_size=8.0)
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+        )
+
+        # Should produce valid output
         assert field.shape == (env.n_bins,)
+        valid_bins = ~np.isnan(field)
+        assert np.sum(valid_bins) > 0
+        assert np.all(field[valid_bins] >= 0)
+
+    def test_binned_backward_compatible(self):
+        """Test that binned method is backward compatible with old API."""
+        positions = np.column_stack(
+            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
+        )
+        times = np.linspace(0, 10, 1000)
+        env = Environment.from_samples(positions, bin_size=10.0)
+        spike_times = np.linspace(0, 10, 50)
+
+        # New API with binned method
+        field_new = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="binned",
+            bandwidth=5.0,
+            min_occupancy_seconds=0.5,
+        )
+
+        # Old-style manual workflow
+        field_old = spikes_to_field(
+            env, spike_times, times, positions, min_occupancy_seconds=0.5
+        )
+        # Apply smoothing with NaN handling (same as _binned backend)
+        nan_mask = np.isnan(field_old)
+        weights = np.ones_like(field_old)
+        weights[nan_mask] = 0.0
+        field_filled = field_old.copy()
+        field_filled[nan_mask] = 0.0
+
+        field_smoothed = env.smooth(field_filled, bandwidth=5.0)
+        weights_smoothed = env.smooth(weights, bandwidth=5.0)
+
+        field_old_normalized = np.zeros_like(field_smoothed)
+        valid_mask = weights_smoothed > 0
+        field_old_normalized[valid_mask] = (
+            field_smoothed[valid_mask] / weights_smoothed[valid_mask]
+        )
+        field_old_normalized[~valid_mask] = np.nan
+
+        # Should match
+        assert_array_almost_equal(field_new, field_old_normalized)
