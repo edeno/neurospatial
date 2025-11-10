@@ -324,10 +324,10 @@ print(f"Spatial information: {np.sum(place_field > 0.5 * np.nanmax(place_field))
 
 For complete parameter descriptions and examples, see:
 
-- [`spikes_to_field()`](../api/spike_field.md#spikes_to_field) - Core spike conversion function
-- [`compute_place_field()`](../api/spike_field.md#compute_place_field) - Convenience function with smoothing
-- [`Environment.occupancy()`](../api/environment.md#occupancy) - Occupancy computation
-- [`Environment.smooth()`](../api/environment.md#smooth) - Spatial field smoothing
+- [`spikes_to_field()`](../api/neurospatial/spike_field.md#spikes_to_field) - Core spike conversion function
+- [`compute_place_field()`](../api/neurospatial/spike_field.md#compute_place_field) - Convenience function with smoothing
+- [`Environment.occupancy()`](../api/neurospatial/environment/index.md#occupancy) - Occupancy computation
+- [`Environment.smooth()`](../api/neurospatial/environment/index.md#smooth) - Spatial field smoothing
 
 ## Related Topics
 

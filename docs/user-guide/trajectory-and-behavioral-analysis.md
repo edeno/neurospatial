@@ -6,13 +6,13 @@ This guide covers trajectory characterization metrics and automatic behavioral e
 
 Neurospatial provides a comprehensive suite of tools for analyzing animal trajectories and automatically detecting behavioral epochs:
 
-**Trajectory Metrics** ([Milestone 4.1](../../TASKS.md#41-trajectory-metrics-week-9)):
+**Trajectory Metrics**:
 - Turn angles between movement vectors
 - Step lengths along the path
 - Home range estimation (core territory)
 - Mean square displacement (diffusion classification)
 
-**Behavioral Segmentation** ([Milestones 4.2-4.5](../../TASKS.md#42-region-based-segmentation-week-10-days-1-3)):
+**Behavioral Segmentation**:
 - Region-based segmentation (crossings, runs between regions)
 - Lap detection (circular track analysis)
 - Trial segmentation (task-based epochs)
