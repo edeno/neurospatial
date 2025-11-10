@@ -295,6 +295,8 @@ class EnvironmentVisualization:
 
         - ``nan_color=None``: NaN bins are skipped (not rendered)
         - ``nan_color="lightgray"``: NaN bins rendered with specified color
+        - If all field values are NaN and ``nan_color=None``, an empty plot is
+          produced (no colorbar will be added).
 
         **Performance:**
 
@@ -375,15 +377,44 @@ class EnvironmentVisualization:
 
         grid_layouts = ("RegularGrid", "MaskedGrid", "ImageMask", "ShapelyPolygon")
 
+        # Validate layout-specific requirements before dispatch
         if layout_tag in grid_layouts:
+            if not (
+                hasattr(self.layout, "grid_shape")
+                and hasattr(self.layout, "grid_edges")
+                and hasattr(self.layout, "active_mask")
+            ):
+                raise RuntimeError(
+                    f"Layout '{layout_tag}' missing required grid attributes "
+                    "(grid_shape, grid_edges, active_mask). "
+                    "This indicates a malformed layout engine."
+                )
             mappable = _plot_grid_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
         elif layout_tag == "Hexagonal":
+            if not (
+                hasattr(self.layout, "hex_radius_")
+                and hasattr(self.layout, "hex_orientation_")
+            ):
+                raise RuntimeError(
+                    "Hexagonal layout missing required attributes "
+                    "(hex_radius_, hex_orientation_). "
+                    "This indicates a malformed layout engine."
+                )
             mappable = _plot_hex_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
         elif layout_tag == "TriangularMesh":
+            if not (
+                hasattr(self.layout, "_full_delaunay_tri")
+                and hasattr(self.layout, "_active_original_simplex_indices")
+            ):
+                raise RuntimeError(
+                    "TriangularMesh layout missing required attributes "
+                    "(_full_delaunay_tri, _active_original_simplex_indices). "
+                    "This indicates a malformed layout engine."
+                )
             mappable = _plot_trimesh_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
@@ -395,6 +426,7 @@ class EnvironmentVisualization:
             )
 
         # Add colorbar (not for 1D)
+        # Note: mappable can be None if all field values are NaN and nan_color=None
         if colorbar and mappable is not None and not self.layout.is_1d:
             cbar = plt.colorbar(mappable, ax=ax)
             if colorbar_label:

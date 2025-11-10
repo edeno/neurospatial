@@ -125,37 +125,23 @@ fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
 
 # Left: Firing rate
 ax = axes[0]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=border_cell_rate,
+env.plot_field(
+    border_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Border Cell Firing Rate", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Firing Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Right: Distance to boundary
 ax = axes[1]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=boundary_distances,
+env.plot_field(
+    boundary_distances,
+    ax=ax,
     cmap="viridis",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Distance (cm)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Distance to Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Distance (cm)", fontsize=11, fontweight="bold")
 
 plt.show()
 
@@ -277,22 +263,15 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 # Panel 1: Field segmentation
 ax = axes[0]
 colors = np.where(field_mask, border_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Field Segmentation (>{threshold * 100:.0f}% peak)", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Firing Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Panel 2: Boundary bins
 ax = axes[1]
@@ -300,20 +279,15 @@ colors = np.full(env.n_bins, np.nan)
 colors[boundary_bins] = 1.0  # Boundary bins
 colors[field_bins] = 2.0  # Field bins
 colors[np.where(boundary_in_field)[0]] = 3.0  # Overlap
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="Set1",
-    s=50,
-    edgecolors="none",
     vmin=0,
     vmax=4,
+    colorbar=False,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Boundary Coverage", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
 # Manual legend
 legend_elements = [
     Patch(facecolor="#e41a1c", label="Boundary bins"),
@@ -326,24 +300,17 @@ ax.legend(handles=legend_elements, fontsize=10, loc="upper right")
 ax = axes[2]
 colors = np.full(env.n_bins, np.nan)
 colors[field_bins] = field_distances
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="viridis",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Distance (cm)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Field Distance to Boundary\n(mean = {mean_distance:.1f} cm)",
     fontsize=14,
     fontweight="bold",
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Distance (cm)", fontsize=11, fontweight="bold")
 
 plt.show()
 
@@ -369,53 +336,37 @@ fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
 
 # Row 1: Border cell
 ax = axes[0, 0]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=border_cell_rate,
+env.plot_field(
+    border_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Border Cell\nScore = {border_score_border:.3f}", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 1: Place cell
 ax = axes[0, 1]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=place_cell_rate,
+env.plot_field(
+    place_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Place Cell\nScore = {border_score_place:.3f}", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 2: Border cell field
 ax = axes[1, 0]
 field_mask_border = border_cell_rate >= (0.3 * border_cell_rate.max())
 colors = np.where(field_mask_border, border_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
 # Highlight boundary bins
 boundary_x = env.bin_centers[boundary_bins, 0]
@@ -429,24 +380,17 @@ ax.scatter(
     linewidths=2,
     alpha=0.5,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Field Overlaps Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 2: Place cell field
 ax = axes[1, 1]
 field_mask_place = place_cell_rate >= (0.3 * place_cell_rate.max())
 colors = np.where(field_mask_place, place_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
 # Highlight boundary bins
 ax.scatter(
@@ -458,12 +402,7 @@ ax.scatter(
     linewidths=2,
     alpha=0.5,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Field Away from Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 plt.show()
 

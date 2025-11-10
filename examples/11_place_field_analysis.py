@@ -159,24 +159,17 @@ print(
 )
 print(f"Mean firing rate: {np.nanmean(firing_rate[~np.isnan(firing_rate)]):.2f} Hz")
 
-# Visualize firing rate map
+# Visualize firing rate map using plot_field()
 fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
 
-# Plot firing rate
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=100,
+# Plot firing rate with env.plot_field()
+env.plot_field(
+    firing_rate,
+    ax=ax,
     cmap="hot",
     vmin=0,
-    vmax=np.nanmax(firing_rate),
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-
-# Add colorbar
-cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-cbar.ax.tick_params(labelsize=12)
 
 # Add field center marker
 ax.scatter(
@@ -191,10 +184,7 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel("X Position (cm)", fontsize=14, fontweight="bold")
-ax.set_ylabel("Y Position (cm)", fontsize=14, fontweight="bold")
 ax.set_title("Firing Rate Map", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12)
 ax.tick_params(labelsize=12)
 
@@ -238,17 +228,13 @@ for i, field_bins in enumerate(place_fields):
 # %%
 fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
 
-# Plot firing rate (background)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=100,
+# Plot firing rate (background) using plot_field()
+env.plot_field(
+    firing_rate,
+    ax=ax,
     cmap="hot",
     vmin=0,
-    vmax=np.nanmax(firing_rate),
-    edgecolors="none",
-    alpha=0.6,
+    colorbar_label="Firing Rate (Hz)",
 )
 
 # Plot detected place field bins
@@ -264,10 +250,6 @@ if len(place_fields) > 0:
             label=f"Field {i + 1}" if i == 0 else "",
         )
 
-# Add colorbar
-cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-cbar.ax.tick_params(labelsize=12)
-
 # Add true field center
 ax.scatter(
     field_center[0],
@@ -281,10 +263,7 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel("X Position (cm)", fontsize=14, fontweight="bold")
-ax.set_ylabel("Y Position (cm)", fontsize=14, fontweight="bold")
 ax.set_title("Detected Place Fields", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12)
 ax.tick_params(labelsize=12)
 
@@ -410,24 +389,16 @@ for ax, rate_map, title in zip(
     ["First Half", "Second Half", "Absolute Difference"],
     strict=True,
 ):
-    scatter = ax.scatter(
-        env.bin_centers[:, 0],
-        env.bin_centers[:, 1],
-        c=rate_map,
-        s=100,
+    env.plot_field(
+        rate_map,
+        ax=ax,
         cmap="hot" if "Difference" not in title else "viridis",
         vmin=0,
         vmax=np.nanmax(firing_rate),
-        edgecolors="none",
+        colorbar_label="Firing Rate (Hz)",
     )
 
-    cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-    cbar.ax.tick_params(labelsize=11)
-
-    ax.set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-    ax.set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
     ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.set_aspect("equal")
     ax.tick_params(labelsize=11)
 
 plt.show()
@@ -736,15 +707,12 @@ tmaze_firing_rate = compute_place_field(
 fig, axes = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
 
 # Open field place field
-scatter1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=120,
+env.plot_field(
+    firing_rate,
+    ax=axes[0],
     cmap="hot",
     vmin=0,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="Firing Rate (Hz)",
 )
 axes[0].scatter(
     field_center[0],
@@ -757,23 +725,16 @@ axes[0].scatter(
     label="Field Center",
     zorder=10,
 )
-axes[0].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-axes[0].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
 axes[0].set_title("Open Field Place Field", fontsize=15, fontweight="bold")
-axes[0].set_aspect("equal")
 axes[0].legend(fontsize=11)
-cbar1 = plt.colorbar(scatter1, ax=axes[0], label="Firing Rate (Hz)")
 
 # T-maze place field
-scatter2 = axes[1].scatter(
-    tmaze_env.bin_centers[:, 0],
-    tmaze_env.bin_centers[:, 1],
-    c=tmaze_firing_rate,
-    s=120,
+tmaze_env.plot_field(
+    tmaze_firing_rate,
+    ax=axes[1],
     cmap="hot",
     vmin=0,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
     tmaze_field_center[0],
@@ -786,12 +747,8 @@ axes[1].scatter(
     label="Field Center",
     zorder=10,
 )
-axes[1].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-axes[1].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
 axes[1].set_title("T-Maze Place Field (REMAPPED)", fontsize=15, fontweight="bold")
-axes[1].set_aspect("equal")
 axes[1].legend(fontsize=11)
-cbar2 = plt.colorbar(scatter2, ax=axes[1], label="Firing Rate (Hz)")
 
 plt.show()
 
