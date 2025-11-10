@@ -472,3 +472,38 @@ def test_layout_engine_protocol_adherence(
                 f"{layout_kind} edge 'distance' not float"
             )
             assert "edge_id" in edge_data  # Usually present
+
+
+def test_normalize_layout_name_consistency():
+    """Ensure environment.factories._normalize_layout_name matches layout.factories._normalize_name.
+
+    This test prevents drift between the two normalization implementations.
+    Both functions should produce identical output for the same input.
+    """
+    from neurospatial.environment.factories import _normalize_layout_name
+    from neurospatial.layout.factories import _normalize_name
+
+    test_cases = [
+        "RegularGrid",
+        "regular_grid",
+        "REGULAR_GRID",
+        "Regular-Grid",
+        "regular__grid",
+        "Hexagonal",
+        "hexagonal",
+        "HEXAGONAL",
+        "Hex-agonal",
+        "Graph",
+        "GRAPH",
+        "MaskedGrid",
+        "masked_grid",
+        "ImageMask",
+        "image_mask",
+    ]
+
+    for name in test_cases:
+        assert _normalize_layout_name(name) == _normalize_name(name), (
+            f"Normalization mismatch for '{name}': "
+            f"_normalize_layout_name={_normalize_layout_name(name)}, "
+            f"_normalize_name={_normalize_name(name)}"
+        )

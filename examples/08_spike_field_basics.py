@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: neurospatial
 #     language: python
 #     name: python3
 # ---
@@ -92,18 +92,46 @@ WONG_COLORS = {
 # Let's create a simulated trajectory and spike train for a place cell:
 
 # %%
-# 1. Generate circular trajectory (60 seconds at 30 Hz)
-times = np.linspace(0, 60, 1800)
-radius = 40
-positions = np.column_stack(
-    [
-        radius * np.cos(0.5 * times),  # X coordinate
-        radius * np.sin(0.5 * times),  # Y coordinate
-    ]
-)
+# 1. Generate 2D random walk in open field arena (60 seconds at 30 Hz)
+sampling_rate = 30.0  # Hz
+duration = 60.0  # seconds
+n_samples = int(duration * sampling_rate)
+times = np.linspace(0, duration, n_samples)
+
+# Arena size: 80x80 cm open field
+arena_size = 80.0  # cm
+arena_center = arena_size / 2
+
+# Random walk parameters
+step_size = 2.5  # cm per step (realistic rat movement ~7.5 cm/s at 30 Hz)
+boundary_margin = 5.0  # cm from walls
+
+# Initialize trajectory
+positions = np.zeros((n_samples, 2))
+positions[0] = [arena_center, arena_center]  # Start at center
+
+# Generate random walk with wall reflection
+for i in range(1, n_samples):
+    # Random step direction
+    angle = np.random.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+
+    # Propose new position
+    new_pos = positions[i - 1] + step
+
+    # Reflect at boundaries (with margin)
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    positions[i] = new_pos
 
 # 2. Simulate place cell with Gaussian tuning
-preferred_location = np.array([20.0, 20.0])  # Top-right quadrant
+preferred_location = np.array([60.0, 30.0])  # Right-bottom quadrant
 tuning_width = 10.0  # cm
 
 # Compute distance to preferred location
@@ -114,16 +142,20 @@ peak_rate = 15.0  # Hz
 instantaneous_rate = peak_rate * np.exp(-(distances**2) / (2 * tuning_width**2))
 
 # Generate spikes using Poisson process
-dt = np.mean(np.diff(times))  # ~0.033 seconds
+dt = 1.0 / sampling_rate
 spike_prob = instantaneous_rate * dt
 spike_mask = np.random.rand(len(times)) < spike_prob
 spike_times = times[spike_mask]
 
-print(f"Generated trajectory: {len(times)} samples over {times[-1]:.1f} seconds")
+print(f"Generated 2D random walk: {len(times)} samples over {times[-1]:.1f} seconds")
+print(f"Arena size: {arena_size:.0f}x{arena_size:.0f} cm")
+print(
+    f"Spatial coverage: X=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], Y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
+)
 print(
     f"Generated spikes: {len(spike_times)} spikes (mean rate: {len(spike_times) / times[-1]:.2f} Hz)"
 )
-print(f"Preferred location: {preferred_location}")
+print(f"Place field center: {preferred_location}")
 
 # %% [markdown]
 # ### Create Environment
@@ -179,6 +211,35 @@ print(
 print(
     f"Number of NaN bins (filtered): {np.sum(np.isnan(firing_rate_filtered))} / {env.n_bins}"
 )
+
+# Quantitative validation checks
+print("\n✓ Validation Checks:")
+
+# Check 1: All raw firing rates should be non-negative
+assert np.all(firing_rate_raw >= 0), "ERROR: Negative firing rates detected!"
+print("  ✓ All raw firing rates are non-negative")
+
+# Check 2: Valid firing rates should be in reasonable range (0-50 Hz typical for place cells)
+valid_rates = firing_rate_filtered[~np.isnan(firing_rate_filtered)]
+if len(valid_rates) > 0:
+    if np.max(valid_rates) > 50:
+        print(
+            f"  ⚠ Warning: Peak firing rate {np.max(valid_rates):.1f} Hz is unusually high (>50 Hz)"
+        )
+    else:
+        print(f"  ✓ Peak firing rate {np.max(valid_rates):.1f} Hz is in expected range")
+
+# Check 3: NaN bins should correspond to low occupancy
+low_occ_bins = np.sum(occupancy < 0.5)
+nan_bins = np.sum(np.isnan(firing_rate_filtered))
+if nan_bins == low_occ_bins:
+    print(f"  ✓ NaN bins ({nan_bins}) match low occupancy bins ({low_occ_bins})")
+else:
+    print(f"  ⚠ Warning: NaN bins ({nan_bins}) ≠ low occupancy bins ({low_occ_bins})")
+
+# Check 4: Mean firing rate should be reasonable
+mean_rate = np.nanmean(valid_rates)
+print(f"  ✓ Mean firing rate: {mean_rate:.2f} Hz (across visited bins)")
 
 # %% [markdown]
 # ### Visualize: Occupancy vs Firing Rate
@@ -256,7 +317,7 @@ plt.show()
 # %% [markdown]
 # **Observations:**
 #
-# - **Occupancy**: Shows the circular trajectory (uniform along the circle)
+# - **Occupancy**: Shows spatial coverage from random walk exploration
 # - **Raw firing rate**: Includes all bins, even those with very brief visits (can be noisy)
 # - **Filtered firing rate**: Excludes unreliable bins (< 0.5 seconds), cleaner place field
 #

@@ -52,26 +52,56 @@ np.random.seed(42)
 # We'll create a rectangular environment for our demonstrations.
 
 # %%
-# Generate synthetic 2D trajectory
-n_points = 1000
-t = np.linspace(0, 4 * np.pi, n_points)
+# Generate 2D random walk in open field arena
+sampling_rate = 30.0  # Hz
+duration = 60.0  # seconds
+n_samples = int(duration * sampling_rate)
 
-# Create a meandering trajectory
-x = 50 * np.cos(t) + 50 + 10 * np.cos(5 * t)
-y = 50 * np.sin(t) + 50 + 10 * np.sin(5 * t)
+# Arena size: 100x100 cm open field
+arena_size = 100.0  # cm
+arena_center = arena_size / 2
 
-trajectory = np.column_stack([x, y])
+# Random walk parameters
+step_size = 2.5  # cm per step
+boundary_margin = 5.0  # cm from walls
 
-# Create environment
+# Initialize trajectory
+trajectory = np.zeros((n_samples, 2))
+trajectory[0] = [arena_center, arena_center]  # Start at center
+
+# Generate random walk with wall reflection
+for i in range(1, n_samples):
+    # Random step direction
+    angle = np.random.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+
+    # Propose new position
+    new_pos = trajectory[i - 1] + step
+
+    # Reflect at boundaries (with margin)
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    trajectory[i] = new_pos
+
+# Create environment with 5 cm bins
 env = Environment.from_samples(trajectory, bin_size=5.0)
 env.units = "cm"
 env.frame = "arena"
 
 print("Environment created:")
+print(f"  Arena: {arena_size:.0f}x{arena_size:.0f} cm open field")
 print(f"  Bins: {env.n_bins}")
 print(f"  Edges: {env.connectivity.number_of_edges()}")
 print(f"  Dimensions: {env.n_dims}D")
-print(f"  Extent: {env.dimension_ranges}")
+print(
+    f"  Spatial coverage: X=[{trajectory[:, 0].min():.1f}, {trajectory[:, 0].max():.1f}], Y=[{trajectory[:, 1].min():.1f}, {trajectory[:, 1].max():.1f}] cm"
+)
 
 # %% [markdown]
 # ## Part 1: Gradient of Distance Fields
@@ -109,7 +139,7 @@ print(f"Goal bin position: {env.bin_centers[goal_bin]}")
 distances = distance_field(env.connectivity, sources=[goal_bin])
 
 # Compute gradient (edge field)
-grad_distances = gradient(distances, env)
+grad_distances = gradient(env, distances)
 
 print(f"Distance field shape: {distances.shape}  (scalar field, n_bins)")
 print(f"Gradient shape: {grad_distances.shape}  (edge field, n_edges)")
@@ -237,7 +267,7 @@ plt.show()
 goal_directed_flow = -grad_distances
 
 # Compute divergence (net outflow from each bin)
-div_flow = divergence(goal_directed_flow, env)
+div_flow = divergence(env, goal_directed_flow)
 
 print(f"Flow field shape: {goal_directed_flow.shape}  (edge field)")
 print(f"Divergence shape: {div_flow.shape}  (scalar field)")
@@ -332,8 +362,8 @@ def laplacian_smooth(field, env, alpha=0.05, n_iterations=20):
 
     for _ in range(n_iterations):
         # Compute Laplacian: L(f) = div(grad(f))
-        grad_field = gradient(smoothed, env)
-        laplacian = divergence(grad_field, env)
+        grad_field = gradient(env, smoothed)
+        laplacian = divergence(env, grad_field)
 
         # Heat equation: f_new = f - alpha * L(f)
         smoothed = smoothed - alpha * laplacian
@@ -446,8 +476,8 @@ plt.show()
 test_field = np.random.randn(env.n_bins)
 
 # Our implementation: div(grad(f))
-grad_test = gradient(test_field, env)
-laplacian_ours = divergence(grad_test, env)
+grad_test = gradient(env, test_field)
+laplacian_ours = divergence(env, grad_test)
 
 # NetworkX Laplacian (weighted by edge distances)
 # Note: We use weight='distance' to match our weighted differential operator
@@ -540,7 +570,7 @@ print(f"Flow field range: [{normalized_flow.min():.3f}, {normalized_flow.max():.
 
 # %%
 # Compute divergence of goal-directed flow
-div_policy = divergence(normalized_flow, env)
+div_policy = divergence(env, normalized_flow)
 
 print(
     f"Divergence at start bin: {div_policy[start_bin]:.3f}  (should be positive - source)"

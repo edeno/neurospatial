@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: neurospatial
 #     language: python
 #     name: python3
 # ---
@@ -56,44 +56,72 @@ np.random.seed(42)
 # - Directed movement to goal (last 50%)
 
 # %%
-# Generate meandering trajectory (exploration + goal-directed)
-n_samples = 500
-times = np.linspace(0, 100, n_samples)  # 100 seconds at 5 Hz
+# Generate realistic foraging trajectory in 2D arena
+n_samples = 800
+times = np.linspace(0, 100, n_samples)  # 100 seconds at 8 Hz
 
-# Phase 1: Random walk exploration (first 50%)
-exploration_samples = n_samples // 2
-theta = np.cumsum(np.random.randn(exploration_samples) * 0.3)
-r = np.cumsum(np.abs(np.random.randn(exploration_samples)) * 2)
-x_explore = 50 + r * np.cos(theta)
-y_explore = 50 + r * np.sin(theta)
+# Arena: 100x100 cm square
+arena_size = 100.0
+arena_center = arena_size / 2
 
-# Phase 2: Directed movement toward goal (last 50%)
-goal = np.array([80.0, 80.0])
-current_pos = np.array([x_explore[-1], y_explore[-1]])
+# Phase 1: Random walk exploration (first 60% - 480 samples)
+exploration_samples = int(n_samples * 0.6)
+positions = np.zeros((n_samples, 2))
+positions[0] = [arena_center, arena_center]  # Start at center
+
+# Random walk with wall reflection
+step_size = 2.5  # cm per step
+boundary_margin = 5.0
+
+for i in range(1, exploration_samples):
+    # Random step
+    angle = np.random.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+    new_pos = positions[i - 1] + step
+
+    # Reflect at boundaries
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    positions[i] = new_pos
+
+# Phase 2: Goal-directed movement to goal location (last 40%)
+goal = np.array([85.0, 85.0])  # Top-right corner
 directed_samples = n_samples - exploration_samples
+current_pos = positions[exploration_samples - 1]
 
-x_directed = np.linspace(current_pos[0], goal[0], directed_samples)
-y_directed = np.linspace(current_pos[1], goal[1], directed_samples)
+# Gradually move toward goal with some variability
+for i in range(directed_samples):
+    idx = exploration_samples + i
+    progress = (i + 1) / directed_samples
 
-# Add noise to directed phase
-x_directed += np.random.randn(directed_samples) * 1.5
-y_directed += np.random.randn(directed_samples) * 1.5
+    # Interpolate toward goal with noise
+    target = current_pos + progress * (goal - current_pos)
+    noise = (
+        np.random.randn(2) * 2.0 * (1 - progress * 0.7)
+    )  # Reduce noise as we approach
+    positions[idx] = target + noise
 
-# Combine phases
-positions = np.column_stack(
-    [
-        np.concatenate([x_explore, x_directed]),
-        np.concatenate([y_explore, y_directed]),
-    ]
-)
+    # Keep within bounds
+    positions[idx] = np.clip(
+        positions[idx], boundary_margin, arena_size - boundary_margin
+    )
 
 # Create environment from trajectory
 env = Environment.from_samples(positions, bin_size=3.0)
 env.units = "cm"
 env.frame = "behavior_session_1"
 
-print(f"Environment: {env.n_bins} bins, {env.n_dims}D")
+print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm arena")
+print(f"  {env.n_bins} bins, {env.n_dims}D")
 print(f"Trajectory: {n_samples} samples over {times[-1]:.1f} seconds")
+print(f"  Exploration phase: {exploration_samples} samples")
+print(f"  Goal-directed phase: {directed_samples} samples")
 
 # %% [markdown]
 # Visualize the trajectory with both phases:
@@ -181,12 +209,114 @@ plt.show()
 # - Detect behavioral state changes (exploration vs exploitation)
 # - Quantify path tortuosity
 
+# %% [markdown]
+# ### Single Example: Visualize One Turn Angle
+#
+# Before computing all turn angles, let's visualize a single example to understand the calculation:
+
+# %%
+# Pick a section of trajectory to demonstrate (samples 100-103)
+demo_idx = 100
+demo_positions = positions[demo_idx : demo_idx + 3]
+
+# Compute vectors
+v1 = demo_positions[1] - demo_positions[0]  # First velocity vector
+v2 = demo_positions[2] - demo_positions[1]  # Second velocity vector
+
+# Compute turn angle manually
+angle = np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0])
+# Wrap to [-π, π]
+if angle > np.pi:
+    angle -= 2 * np.pi
+elif angle < -np.pi:
+    angle += 2 * np.pi
+
+# Visualize the turn
+fig, ax = plt.subplots(figsize=(8, 6), layout="constrained")
+
+# Plot the three positions
+ax.plot(
+    demo_positions[:, 0],
+    demo_positions[:, 1],
+    "ko-",
+    markersize=12,
+    linewidth=2,
+    label="Path",
+)
+
+# Label positions
+for i, pos in enumerate(demo_positions):
+    ax.text(
+        pos[0] + 1,
+        pos[1] + 1,
+        f"P{i + 1}",
+        fontsize=16,
+        fontweight="bold",
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
+    )
+
+# Draw velocity vectors
+arrow_scale = 3.0
+ax.arrow(
+    demo_positions[0, 0],
+    demo_positions[0, 1],
+    v1[0] * arrow_scale,
+    v1[1] * arrow_scale,
+    head_width=1.5,
+    head_length=1.0,
+    fc="blue",
+    ec="blue",
+    linewidth=2,
+    label="v₁",
+)
+ax.arrow(
+    demo_positions[1, 0],
+    demo_positions[1, 1],
+    v2[0] * arrow_scale,
+    v2[1] * arrow_scale,
+    head_width=1.5,
+    head_length=1.0,
+    fc="orange",
+    ec="orange",
+    linewidth=2,
+    label="v₂",
+)
+
+ax.set_xlabel("X position (cm)", fontsize=14, fontweight="bold")
+ax.set_ylabel("Y position (cm)", fontsize=14, fontweight="bold")
+ax.set_title(
+    f"Single Turn Angle Example\nAngle = {np.degrees(angle):.1f}°",
+    fontsize=16,
+    fontweight="bold",
+)
+ax.legend(fontsize=12, loc="upper left")
+ax.set_aspect("equal")
+ax.grid(True, alpha=0.3)
+
+plt.show()
+
+print("\n✓ Single Turn Angle Validation:")
+print(f"  Position P1: {demo_positions[0]}")
+print(f"  Position P2: {demo_positions[1]}")
+print(f"  Position P3: {demo_positions[2]}")
+print(f"  Velocity v1: {v1}")
+print(f"  Velocity v2: {v2}")
+print(f"  Turn angle: {np.degrees(angle):.2f}° ({angle:.3f} rad)")
+print(
+    f"  Interpretation: {'Left turn' if angle > 0 else 'Right turn' if angle < 0 else 'Straight'}"
+)
+
+# %% [markdown]
+# ### Compute All Turn Angles
+#
+# Now that we understand how a single turn angle is calculated, let's compute all turn angles across the trajectory:
+
 # %%
 # Map trajectory to bins
 trajectory_bins = env.bin_at(positions)
 
-# Compute turn angles
-turn_angles = compute_turn_angles(trajectory_bins, env)
+# Compute turn angles from continuous positions
+turn_angles = compute_turn_angles(positions)
 
 print(f"Computed {len(turn_angles)} turn angles")
 print(
@@ -195,6 +325,27 @@ print(
 print(
     f"Median turn angle: {np.median(turn_angles):.2f} rad ({np.degrees(np.median(turn_angles)):.1f}°)"
 )
+
+# Validation checks
+print("\n✓ Validation Checks:")
+assert len(turn_angles) == len(positions) - 2, "ERROR: Unexpected number of turn angles"
+print(f"  ✓ Correct number of turn angles: {len(turn_angles)} (n_positions - 2)")
+
+assert np.all(np.abs(turn_angles) <= np.pi), "ERROR: Turn angles outside [-π, π]"
+print(
+    f"  ✓ All turn angles in valid range: [{np.degrees(-np.pi):.0f}°, {np.degrees(np.pi):.0f}°]"
+)
+
+# Check that our manual calculation matches
+computed_angle = turn_angles[demo_idx]
+if np.abs(computed_angle - angle) < 0.01:
+    print(
+        f"  ✓ Manual calculation matches compute_turn_angles(): {np.degrees(computed_angle):.1f}°"
+    )
+else:
+    print(
+        f"  ⚠ Warning: Manual calculation ({np.degrees(angle):.1f}°) differs from computed ({np.degrees(computed_angle):.1f}°)"
+    )
 
 # %% [markdown]
 # Visualize turn angle distribution:
@@ -264,10 +415,11 @@ plt.show()
 # - Compute travel distance and speed
 
 # %%
-# Compute step lengths (graph distances)
-step_lengths = compute_step_lengths(trajectory_bins, env)
+# Compute step lengths using geodesic (graph) distances
+# This respects the environment topology rather than using straight-line distance
+step_lengths = compute_step_lengths(positions, distance_type="geodesic", env=env)
 
-# Filter out infinite values (disconnected bins)
+# Note: geodesic distances may be infinite for disconnected bins
 finite_step_lengths = step_lengths[np.isfinite(step_lengths)]
 
 # Compute cumulative distance (use finite values)
@@ -468,9 +620,9 @@ plt.show()
 # - Identify directed vs random search
 
 # %%
-# Compute MSD for different time lags
+# Compute MSD for different time lags using geodesic distances
 tau_values, msd_values = mean_square_displacement(
-    trajectory_bins, times, env, max_tau=30.0
+    positions, times, distance_type="geodesic", env=env, max_tau=30.0
 )
 
 # Fit power law: MSD ~ tau^alpha

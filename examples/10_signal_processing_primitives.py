@@ -8,6 +8,10 @@
 #       format_name: percent
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
+#   kernelspec:
+#     display_name: neurospatial
+#     language: python
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -57,16 +61,47 @@ plt.rcParams.update(
 # Spatial coherence measures how well firing rate predicts neighbor firing rate (Muller & Kubie 1989). High coherence indicates a smooth, well-defined place field.
 
 # %%
-# Create synthetic trajectory (meandering path)
-n_samples = 2000
-t = np.linspace(0, 10 * np.pi, n_samples)
-x = 50 + 40 * np.sin(t) + 10 * np.sin(3 * t)
-y = 50 + 40 * np.cos(t) + 10 * np.cos(2 * t)
-positions = np.column_stack([x, y])
-times = np.linspace(0, 100, n_samples)  # 100 seconds
+# Generate 2D random walk in open field arena
+sampling_rate = 20.0  # Hz
+duration = 100.0  # seconds
+n_samples = int(duration * sampling_rate)
+times = np.linspace(0, duration, n_samples)
+
+# Arena size: 100x100 cm open field
+arena_size = 100.0  # cm
+arena_center = arena_size / 2
+
+# Random walk parameters
+step_size = 2.5  # cm per step
+boundary_margin = 5.0  # cm from walls
+
+# Initialize trajectory
+positions = np.zeros((n_samples, 2))
+positions[0] = [arena_center, arena_center]  # Start at center
+
+# Generate random walk with wall reflection
+for i in range(1, n_samples):
+    # Random step direction
+    angle = rng.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+
+    # Propose new position
+    new_pos = positions[i - 1] + step
+
+    # Reflect at boundaries (with margin)
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    positions[i] = new_pos
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.5)
+print(f"Arena: {arena_size:.0f}x{arena_size:.0f} cm open field")
 
 # Generate synthetic spike train with Gaussian place field
 center = np.array([50.0, 50.0])
@@ -94,7 +129,7 @@ firing_rate = spikes_to_field(
 )
 
 # Compute neighbor average (for coherence)
-neighbor_avg = neighbor_reduce(firing_rate, env, op="mean", include_self=False)
+neighbor_avg = neighbor_reduce(env, firing_rate, op="mean", include_self=False)
 
 # Compute spatial coherence (Pearson correlation)
 valid = ~np.isnan(firing_rate) & ~np.isnan(neighbor_avg)
@@ -156,12 +191,13 @@ axes[2].set_ylabel("Neighbor Average (Hz)", fontsize=12, weight="bold")
 axes[2].set_title(f"Spatial Coherence: {coherence:.3f}", fontsize=14, weight="bold")
 axes[2].grid(True, alpha=0.3)
 
-# Add diagonal reference line
-max_val = max(firing_rate[valid].max(), neighbor_avg[valid].max())
-axes[2].plot(
-    [0, max_val], [0, max_val], "r--", linewidth=2, label="Perfect correlation"
-)
-axes[2].legend()
+# Add diagonal reference line (if we have valid data)
+if valid.sum() > 0:
+    max_val = max(firing_rate[valid].max(), neighbor_avg[valid].max())
+    axes[2].plot(
+        [0, max_val], [0, max_val], "r--", linewidth=2, label="Perfect correlation"
+    )
+    axes[2].legend()
 
 plt.show()
 
@@ -175,9 +211,9 @@ plt.show()
 
 # %%
 # Compute local statistics using neighbor_reduce
-neighbor_mean = neighbor_reduce(firing_rate, env, op="mean", include_self=False)
-neighbor_std = neighbor_reduce(firing_rate, env, op="std", include_self=False)
-neighbor_max = neighbor_reduce(firing_rate, env, op="max", include_self=False)
+neighbor_mean = neighbor_reduce(env, firing_rate, op="mean", include_self=False)
+neighbor_std = neighbor_reduce(env, firing_rate, op="std", include_self=False)
+neighbor_max = neighbor_reduce(env, firing_rate, op="max", include_self=False)
 
 # Coefficient of variation (normalized variability)
 epsilon = 1e-6
@@ -279,7 +315,7 @@ def box_kernel(distances):
 
 
 # Apply box filter
-smoothed_occupancy = convolve(binary_occupancy, box_kernel, env, normalize=True)
+smoothed_occupancy = convolve(env, binary_occupancy, box_kernel, normalize=True)
 
 # Threshold: keep bins with >50% neighbors visited
 reliable_visited = smoothed_occupancy > 0.5
@@ -380,7 +416,7 @@ def mexican_hat(distances):
 
 
 # Apply Mexican hat (DON'T normalize - breaks edge detection)
-edges = convolve(firing_rate_smooth, mexican_hat, env, normalize=False)
+edges = convolve(env, firing_rate_smooth, mexican_hat, normalize=False)
 
 # Detect place field centers (strong positive responses)
 threshold_high = np.nanpercentile(edges, 95)
@@ -473,7 +509,7 @@ def gaussian_kernel(distances):
     return np.exp(-(distances**2) / (2 * bandwidth**2))
 
 
-result_convolve = convolve(random_field, gaussian_kernel, env, normalize=True)
+result_convolve = convolve(env, random_field, gaussian_kernel, normalize=True)
 
 # Method 2: Built-in smoothing
 result_smooth = env.smooth(random_field, bandwidth, mode="density")

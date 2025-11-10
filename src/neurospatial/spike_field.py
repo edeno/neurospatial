@@ -7,17 +7,18 @@ into occupancy-normalized spatial fields (firing rate maps).
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def spikes_to_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -144,7 +145,9 @@ def spikes_to_field(
     # Handle empty spikes
     if len(spike_times) == 0:
         # Compute occupancy to determine which bins to set to NaN
-        occupancy = env.occupancy(times, positions, return_seconds=True)
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times, positions, return_seconds=True
+        )
         field = np.zeros(env.n_bins, dtype=np.float64)
         field[occupancy < min_occupancy_seconds] = np.nan
         return field
@@ -153,6 +156,7 @@ def spikes_to_field(
     time_min, time_max = times[0], times[-1]
     valid_spike_mask = (spike_times >= time_min) & (spike_times <= time_max)
 
+    # Filter out-of-range spikes if any
     if not np.all(valid_spike_mask):
         n_filtered = np.sum(~valid_spike_mask)
         warnings.warn(
@@ -162,15 +166,19 @@ def spikes_to_field(
         )
         spike_times = spike_times[valid_spike_mask]
 
-        # If no valid spikes remain, return zeros
-        if len(spike_times) == 0:
-            occupancy = env.occupancy(times, positions, return_seconds=True)
-            field = np.zeros(env.n_bins, dtype=np.float64)
-            field[occupancy < min_occupancy_seconds] = np.nan
-            return field
+    # Guard clause: handle empty spikes after time filtering
+    if len(spike_times) == 0:
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times, positions, return_seconds=True
+        )
+        field = np.zeros(env.n_bins, dtype=np.float64)
+        field[occupancy < min_occupancy_seconds] = np.nan
+        return field
 
     # Step 2: Compute occupancy using return_seconds=True
-    occupancy = env.occupancy(times, positions, return_seconds=True)
+    occupancy = cast("EnvironmentProtocol", env).occupancy(
+        times, positions, return_seconds=True
+    )
 
     # Step 3: Interpolate spike positions
     # positions is now guaranteed to be 2D (n_timepoints, n_dims)
@@ -193,6 +201,7 @@ def spikes_to_field(
     # Step 5: Filter out-of-bounds spikes (bin_at returns -1 for out-of-bounds)
     valid_bins_mask = spike_bins >= 0
 
+    # Filter out-of-bounds spikes if any
     if not np.all(valid_bins_mask):
         n_filtered = np.sum(~valid_bins_mask)
         warnings.warn(
@@ -202,11 +211,11 @@ def spikes_to_field(
         )
         spike_bins = spike_bins[valid_bins_mask]
 
-        # If no valid spikes remain, return zeros
-        if len(spike_bins) == 0:
-            field = np.zeros(env.n_bins, dtype=np.float64)
-            field[occupancy < min_occupancy_seconds] = np.nan
-            return field
+    # Guard clause: handle empty spikes after spatial filtering
+    if len(spike_bins) == 0:
+        field = np.zeros(env.n_bins, dtype=np.float64)
+        field[occupancy < min_occupancy_seconds] = np.nan
+        return field
 
     # Step 6: Count spikes per bin
     spike_counts = np.bincount(spike_bins, minlength=env.n_bins)
@@ -237,31 +246,239 @@ def spikes_to_field(
     return field
 
 
+def _diffusion_kde(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    bandwidth: float,
+) -> NDArray[np.float64]:
+    """Compute place field using graph-based diffusion KDE.
+
+    This method spreads spike and occupancy mass using diffusion kernels
+    BEFORE normalization, which is mathematically more principled than
+    binning first. Respects environment boundaries via graph connectivity.
+
+    Algorithm:
+    1. Count spikes and occupancy per bin
+    2. Spread both using diffusion kernel (respects walls/boundaries)
+    3. Normalize: firing_rate = spike_density / occupancy_density
+    """
+    # Normalize positions to 2D
+    if positions.ndim == 1:
+        positions = positions[:, np.newaxis]
+
+    # Get diffusion kernel (respects boundaries via graph)
+    kernel = cast("EnvironmentProtocol", env).compute_kernel(
+        bandwidth, mode="density", cache=True
+    )
+
+    # === SPIKE DENSITY ===
+    # Filter spikes to valid time range
+    time_min, time_max = times[0], times[-1]
+    valid_spike_mask = (spike_times >= time_min) & (spike_times <= time_max)
+    spike_times_valid = spike_times[valid_spike_mask]
+
+    if len(spike_times_valid) > 0:
+        # Interpolate spike positions
+        if positions.shape[1] == 1:
+            spike_x = np.interp(spike_times_valid, times, positions[:, 0])
+            spike_positions = spike_x[:, np.newaxis]
+        else:
+            spike_positions = np.column_stack(
+                [
+                    np.interp(spike_times_valid, times, positions[:, dim])
+                    for dim in range(positions.shape[1])
+                ]
+            )
+
+        # Map spikes to bins
+        spike_bins = env.bin_at(spike_positions)
+        spike_bins = spike_bins[spike_bins >= 0]  # Remove out-of-bounds
+
+        # Count spikes per bin
+        spike_counts = np.bincount(spike_bins, minlength=env.n_bins).astype(np.float64)
+    else:
+        spike_counts = np.zeros(env.n_bins, dtype=np.float64)
+
+    # Spread spikes using diffusion kernel
+    spike_density = kernel @ spike_counts
+
+    # === OCCUPANCY DENSITY ===
+    # Map trajectory to bins
+    traj_bins = env.bin_at(positions)
+    valid_traj_mask = traj_bins >= 0
+    traj_bins_valid = traj_bins[valid_traj_mask]
+
+    # Compute time spent per sample (dt)
+    dt = np.diff(times, prepend=times[0])[valid_traj_mask]
+
+    # Count occupancy per bin (weighted by dt)
+    occupancy_counts = np.bincount(traj_bins_valid, weights=dt, minlength=env.n_bins)
+
+    # Spread occupancy using diffusion kernel
+    occupancy_density = kernel @ occupancy_counts
+
+    # === NORMALIZE ===
+    firing_rate = np.zeros(env.n_bins, dtype=np.float64)
+    valid_mask = occupancy_density > 0
+    firing_rate[valid_mask] = spike_density[valid_mask] / occupancy_density[valid_mask]
+    firing_rate[~valid_mask] = np.nan
+
+    return firing_rate
+
+
+def _gaussian_kde(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    bandwidth: float,
+) -> NDArray[np.float64]:
+    """Compute place field using standard Gaussian KDE.
+
+    This method uses Euclidean distance for the kernel, ignoring boundaries.
+    Appropriate for open fields, but not for mazes/tracks where spikes can
+    "bleed through" walls.
+
+    Algorithm:
+    For each bin center:
+        spike_density = sum of Gaussian kernels centered at each spike
+        occupancy_density = integral of Gaussian over trajectory
+        firing_rate = spike_density / occupancy_density
+    """
+    # Normalize positions to 2D
+    if positions.ndim == 1:
+        positions = positions[:, np.newaxis]
+
+    # Filter and interpolate spike positions
+    time_min, time_max = times[0], times[-1]
+    valid_spike_mask = (spike_times >= time_min) & (spike_times <= time_max)
+    spike_times_valid = spike_times[valid_spike_mask]
+
+    if len(spike_times_valid) > 0:
+        if positions.shape[1] == 1:
+            spike_x = np.interp(spike_times_valid, times, positions[:, 0])
+            spike_positions = spike_x[:, np.newaxis]
+        else:
+            spike_positions = np.column_stack(
+                [
+                    np.interp(spike_times_valid, times, positions[:, dim])
+                    for dim in range(positions.shape[1])
+                ]
+            )
+    else:
+        spike_positions = np.zeros((0, positions.shape[1]))
+
+    # Compute dt for trajectory
+    dt = np.diff(times, prepend=times[0])
+
+    # For each bin center, compute KDE
+    firing_rate = np.zeros(env.n_bins, dtype=np.float64)
+    two_sigma_sq = 2 * bandwidth**2
+
+    for i, bin_center in enumerate(env.bin_centers):
+        # Spike density: sum of Gaussian weights
+        if len(spike_positions) > 0:
+            spike_distances_sq = np.sum((spike_positions - bin_center) ** 2, axis=1)
+            spike_weights = np.exp(-spike_distances_sq / two_sigma_sq)
+            spike_density = np.sum(spike_weights)
+        else:
+            spike_density = 0.0
+
+        # Occupancy density: integral of Gaussian over trajectory
+        traj_distances_sq = np.sum((positions - bin_center) ** 2, axis=1)
+        traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
+        occupancy_density = np.sum(traj_weights * dt)
+
+        # Normalize
+        if occupancy_density > 0:
+            firing_rate[i] = spike_density / occupancy_density
+        else:
+            firing_rate[i] = np.nan
+
+    return firing_rate
+
+
+def _binned(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    bandwidth: float,
+    min_occupancy_seconds: float,
+) -> NDArray[np.float64]:
+    """Compute place field using binned approach (legacy method).
+
+    This method bins spikes, normalizes by occupancy, then smooths.
+    Has discretization artifacts but is fast.
+
+    Algorithm:
+    1. Bin spikes and trajectory
+    2. Normalize: firing_rate = spike_counts / occupancy
+    3. Smooth with diffusion kernel
+    """
+    # Use existing spikes_to_field function
+    field = spikes_to_field(
+        env,
+        spike_times,
+        times,
+        positions,
+        min_occupancy_seconds=min_occupancy_seconds,
+    )
+
+    # Smooth if bandwidth > 0
+    if bandwidth <= 0:
+        return field
+
+    # Handle NaN values with proper weight normalization
+    nan_mask = np.isnan(field)
+
+    if not np.any(nan_mask):
+        # No NaN - smooth directly
+        return cast("EnvironmentProtocol", env).smooth(field, bandwidth=bandwidth)
+
+    # Has NaN - use NaN-aware smoothing
+    weights = np.ones_like(field)
+    weights[nan_mask] = 0.0
+
+    field_filled = field.copy()
+    field_filled[nan_mask] = 0.0
+
+    # Smooth both field and weights
+    field_smoothed = cast("EnvironmentProtocol", env).smooth(
+        field_filled, bandwidth=bandwidth
+    )
+    weights_smoothed = cast("EnvironmentProtocol", env).smooth(
+        weights, bandwidth=bandwidth
+    )
+
+    # Normalize
+    field_normalized = np.zeros_like(field_smoothed)
+    valid_mask = weights_smoothed > 0
+    field_normalized[valid_mask] = (
+        field_smoothed[valid_mask] / weights_smoothed[valid_mask]
+    )
+    field_normalized[~valid_mask] = np.nan
+
+    return field_normalized
+
+
 def compute_place_field(
-    env: EnvironmentProtocol,
+    env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    method: str = "diffusion_kde",
+    bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
-    smoothing_bandwidth: float | None = None,
 ) -> NDArray[np.float64]:
-    """Compute smoothed place field from spike train (convenience function).
+    """Compute place field from spike train with multiple estimation methods.
 
-    This function combines `spikes_to_field()` and `env.smooth()` into a
-    single convenient call for typical place field analysis workflows.
-
-    Equivalent to::
-
-        field = spikes_to_field(
-            env,
-            spike_times,
-            times,
-            positions,
-            min_occupancy_seconds=min_occupancy_seconds,
-        )
-        if smoothing_bandwidth is not None:
-            field = env.smooth(field, bandwidth=smoothing_bandwidth)
+    Converts a spike train to a spatial firing rate map using one of three
+    kernel density estimation approaches. The default diffusion KDE method
+    respects environment boundaries and is mathematically principled.
 
     Parameters
     ----------
@@ -272,90 +489,147 @@ def compute_place_field(
     times : NDArray[np.float64], shape (n_timepoints,)
         Timestamps of trajectory samples (seconds).
     positions : NDArray[np.float64], shape (n_timepoints, n_dims) or (n_timepoints,)
-        Position trajectory.
+        Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Estimation method:
+
+        - **"diffusion_kde"** (default, recommended):
+          Graph-based diffusion kernel respecting environment boundaries.
+          Spreads spike and occupancy mass using graph Laplacian before
+          normalization. Most accurate for irregular geometries (mazes,
+          tracks, arenas with walls). Uses the correct mathematical order:
+          spread → normalize.
+
+        - **"gaussian_kde"**:
+          Standard Gaussian kernel density estimation with Euclidean distance.
+          Faster than diffusion_kde but ignores boundaries/walls. Good for
+          open fields only. Spikes can "bleed through" walls in mazes.
+
+        - **"binned"**:
+          Legacy method - bin spikes, normalize by occupancy, then smooth.
+          Fastest but has discretization artifacts. Uses the order:
+          bin → normalize → smooth. Useful for quick visualization.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units (e.g., cm).
+        Controls spatial scale of smoothing kernel.
+        Typical values: 5-10 cm for small arenas, 20-50 cm for large fields.
+
     min_occupancy_seconds : float, default=0.0
-        Minimum occupancy (seconds) required for reliable firing rate estimate.
-        Bins with less occupancy are set to NaN. For typical place field
-        analysis, 0.5 seconds is recommended.
-    smoothing_bandwidth : float or None, default=None
-        Bandwidth for Gaussian smoothing (same units as environment).
-        If None, no smoothing is applied.
+        Minimum occupancy threshold in seconds (only used for method="binned").
+        Bins with less occupancy are set to NaN. For diffusion_kde and
+        gaussian_kde, this parameter is ignored as low occupancy is handled
+        naturally by the normalization. For binned method, 0.5 seconds is
+        typical for place field analysis.
 
     Returns
     -------
-    field : NDArray[np.float64], shape (n_bins,)
-        Smoothed firing rate field (spikes/second) for each spatial bin.
-        Bins with insufficient occupancy are set to NaN.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Firing rate field (spikes/second) for each spatial bin.
+        Bins with zero occupancy are set to NaN.
+
+    Raises
+    ------
+    ValueError
+        If method is not one of {"diffusion_kde", "gaussian_kde", "binned"}.
+    ValueError
+        If bandwidth is not positive.
+    ValueError
+        If times and positions have different lengths.
 
     See Also
     --------
-    spikes_to_field : Lower-level function for spike train to field conversion.
-    Environment.smooth : Gaussian smoothing of spatial fields.
+    spikes_to_field : Lower-level binning function (used by method="binned").
+    Environment.compute_kernel : Compute diffusion kernel.
+    Environment.smooth : Smooth spatial fields.
 
     Notes
     -----
-    This is a convenience wrapper for the common workflow of computing a
-    firing rate map and then smoothing it. For more control over the
-    smoothing parameters or to skip smoothing entirely, use
-    `spikes_to_field()` directly followed by `env.smooth()`.
+    **Method Comparison:**
 
-    Typical smoothing bandwidths for place field analysis are 5-10 cm
-    for small environments or 20-50 cm for large open fields.
+    ========================================  ==============  =============  =================
+    Method                                    Boundary-Aware  Artifacts      Speed
+    ========================================  ==============  =============  =================
+    diffusion_kde (recommended)               Yes (graph)     None           Medium
+    gaussian_kde                              No              Bleeds walls   Slow (O(n*m))
+    binned                                    Yes (graph)     Discretization Fast
+    ========================================  ==============  =============  =================
+
+    **Mathematical Difference:**
+
+    - **diffusion_kde** and **gaussian_kde**: Spread → Normalize
+      (mathematically correct KDE)
+    - **binned**: Bin → Normalize → Smooth
+      (has discretization artifacts)
+
+    **When to Use Each:**
+
+    - **diffusion_kde**: Default for all analyses. Best for mazes, tracks,
+      irregular geometries. Proper KDE with boundary awareness.
+    - **gaussian_kde**: Open fields only. Use when boundaries don't matter
+      and you want standard Euclidean KDE.
+    - **binned**: Quick visualization, legacy code, or when you need exact
+      compatibility with older analyses that used binning.
 
     Examples
     --------
+    Compute place field with default diffusion KDE:
+
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.spike_field import compute_place_field
+    >>> from neurospatial import compute_place_field
     >>>
-    >>> # Create trajectory and spike train
-    >>> positions = np.column_stack(
-    ...     [
-    ...         np.linspace(0, 100, 1000),
-    ...         np.linspace(0, 100, 1000),
-    ...     ]
-    ... )
-    >>> times = np.linspace(0, 10, 1000)
-    >>> spike_times = np.linspace(0, 10, 50)
+    >>> # Create trajectory
+    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> times = np.linspace(0, 100, 1000)
+    >>> spike_times = np.random.uniform(0, 100, 50)
     >>>
     >>> # Create environment
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>>
-    >>> # Compute smoothed place field (one-liner)
-    >>> field = compute_place_field(
-    ...     env, spike_times, times, positions, smoothing_bandwidth=5.0
+    >>> # Compute place field (default: diffusion_kde)
+    >>> firing_rate = compute_place_field(
+    ...     env, spike_times, times, positions, bandwidth=8.0
     ... )
-    >>> field.shape == (env.n_bins,)
+    >>> firing_rate.shape == (env.n_bins,)
     True
+
+    Compare all three methods:
+
+    >>> rate_diffusion = compute_place_field(
+    ...     env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
+    ... )
+    >>> rate_gaussian = compute_place_field(
+    ...     env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+    ... )
+    >>> rate_binned = compute_place_field(
+    ...     env, spike_times, times, positions, method="binned", bandwidth=8.0
+    ... )
     """
-    # Compute raw firing rate field
-    field = spikes_to_field(
-        env,
-        spike_times,
-        times,
-        positions,
-        min_occupancy_seconds=min_occupancy_seconds,
-    )
+    # Validate method
+    valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
+    if method not in valid_methods:
+        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
 
-    # Apply smoothing if requested
-    if smoothing_bandwidth is not None:
-        # Handle NaN values: env.smooth() doesn't accept NaN
-        # Standard approach: fill NaN with 0, smooth, then restore NaN
-        nan_mask = np.isnan(field)
+    # Validate bandwidth
+    if bandwidth <= 0:
+        raise ValueError(f"bandwidth must be positive, got {bandwidth}")
 
-        if np.any(nan_mask):
-            # Fill NaN with 0 for smoothing
-            field_filled = field.copy()
-            field_filled[nan_mask] = 0.0
+    # Validate inputs (times and positions length)
+    if len(times) != len(positions):
+        raise ValueError(
+            f"times and positions must have same length, got {len(times)} and {len(positions)}"
+        )
 
-            # Smooth the filled field
-            field_smoothed = env.smooth(field_filled, bandwidth=smoothing_bandwidth)
-
-            # Restore NaN in original low-occupancy bins
-            field_smoothed[nan_mask] = np.nan
-            field = field_smoothed
-        else:
-            # No NaN values, smooth directly
-            field = env.smooth(field, bandwidth=smoothing_bandwidth)
-
-    return field
+    # Dispatch to appropriate backend
+    if method == "diffusion_kde":
+        return _diffusion_kde(env, spike_times, times, positions, bandwidth)
+    elif method == "gaussian_kde":
+        return _gaussian_kde(env, spike_times, times, positions, bandwidth)
+    elif method == "binned":
+        return _binned(
+            env, spike_times, times, positions, bandwidth, min_occupancy_seconds
+        )
+    else:
+        # Should never reach here due to validation above
+        raise ValueError(f"Unknown method: {method}")

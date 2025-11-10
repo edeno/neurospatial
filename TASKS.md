@@ -877,7 +877,7 @@
   - [x] Segment T-maze trials
   - [x] Compute trajectory similarity
   - [x] Goal-directed run detection
-  - [x] Core functionality verified (40KB notebook)
+  - [x] Core functionality verified (523KB with outputs)
 
 **pynapple Integration**:
 

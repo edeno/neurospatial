@@ -2,7 +2,8 @@
 
 This module provides functionalities to align and map data, particularly
 probability distributions, between different spatial `Environment` instances
-defined in the `neurospatial` package.
+defined in the `neurospatial` package. Supports N-dimensional environments
+(2D, 3D, or higher).
 
 Core capabilities include:
 
@@ -10,8 +11,8 @@ Core capabilities include:
     * Applying similarity transformations (rotation, scaling, and translation)
         to sets of points, typically the bin centers of a source `Environment`,
         to align them with a target `Environment`'s coordinate space.
-    * Helper functions to create 2D rotation matrices from angles or for
-        common rotations (e.g., 90 degrees).
+    * Helper functions to create 2D rotation matrices from angles.
+    * For 3D rotations, use `scipy.spatial.transform.Rotation`.
 
 2.  **Probability Mapping**:
     * The primary method, `map_probabilities_to_nearest_target_bin`,
@@ -273,7 +274,8 @@ def _transform_source_bin_centers(
     source_scale_factor : float
         Scaling factor to apply.
     source_rotation_matrix : NDArray[np.float64] or None
-        Optional 2x2 rotation matrix.
+        Optional rotation matrix (n_dims × n_dims). For 2D, use `get_2d_rotation_matrix()`.
+        For 3D, use `scipy.spatial.transform.Rotation.as_matrix()`.
     source_translation_vector : NDArray[np.float64] or None
         Optional translation vector.
 
@@ -289,6 +291,7 @@ def _transform_source_bin_centers(
 
     """
     transformed = source_centers.copy().astype(float)
+    n_dims = transformed.shape[1]
 
     # Apply scale
     if source_scale_factor != 1.0:
@@ -297,8 +300,12 @@ def _transform_source_bin_centers(
     # Apply rotation
     if source_rotation_matrix is not None:
         rotation = np.asarray(source_rotation_matrix, dtype=float)
-        if rotation.shape != (2, 2):
-            raise ValueError("source_rotation_matrix must be a 2x2 array.")
+        if rotation.shape != (n_dims, n_dims):
+            raise ValueError(
+                f"source_rotation_matrix must be a square matrix of shape "
+                f"({n_dims}, {n_dims}) to match source_centers dimensionality, "
+                f"got shape {rotation.shape}."
+            )
         transformed = transformed @ rotation.T
 
     # Apply translation
@@ -456,7 +463,9 @@ def map_probabilities_to_nearest_target_bin(
     source_scale_factor : float
         Multiply every source bin-center by this scalar before querying.
     source_rotation_matrix : Optional[NDArray[np.float64]]
-        If not None, must be a 2x2 rotation matrix (shape (2, 2)) for 2D environments.
+        If not None, must be a square rotation matrix (shape (n_dims, n_dims)).
+        For 2D environments, use `get_2d_rotation_matrix()`.
+        For 3D environments, use `scipy.spatial.transform.Rotation.as_matrix()`.
         Applied to source bin centers after scaling but before translation.
     source_translation_vector : Optional[NDArray[np.float64]]
         If not None, must be a 1D array of length n_dims. Applied to source bin centers

@@ -28,8 +28,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment._protocols import SelfEnv
+
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    pass
+    from neurospatial import Environment
 
 
 class EnvironmentFields:
@@ -39,7 +42,7 @@ class EnvironmentFields:
     """
 
     def compute_kernel(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         bandwidth: float,
         *,
         mode: Literal["transition", "density"] = "density",
@@ -135,7 +138,7 @@ class EnvironmentFields:
         return kernel
 
     def smooth(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         bandwidth: float,
         *,
@@ -278,7 +281,7 @@ class EnvironmentFields:
         return smoothed
 
     def interpolate(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
         *,
@@ -437,7 +440,7 @@ class EnvironmentFields:
             return self._interpolate_linear(field, points)
 
     def _interpolate_nearest(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -465,7 +468,10 @@ class EnvironmentFields:
         bin_indices = cast(
             "NDArray[np.int64]",
             map_points_to_bins(
-                points, self, tie_break="lowest_index", return_dist=False
+                points,
+                cast("Environment", self),
+                tie_break="lowest_index",
+                return_dist=False,
             ),
         )
 
@@ -479,7 +485,7 @@ class EnvironmentFields:
         return result
 
     def _interpolate_linear(
-        self: EnvironmentProtocol,
+        self: SelfEnv,
         field: NDArray[np.float64],
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]:
@@ -508,7 +514,7 @@ class EnvironmentFields:
         if self.layout._layout_type_tag != "RegularGrid":
             raise NotImplementedError(
                 f"Linear interpolation (mode='linear') is only supported for "
-                f"RegularGridLayout. Current layout type: {type(self.layout).__name__}. "
+                f"RegularGridLayout. Current layout type: {self.layout._layout_type_tag}. "
                 f"Use mode='nearest' for non-grid layouts, or create a regular grid "
                 f"environment with Environment.from_samples()."
             )

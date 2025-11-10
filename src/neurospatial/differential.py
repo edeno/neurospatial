@@ -25,12 +25,11 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
-    from neurospatial.environment.core import Environment
+    from neurospatial import Environment
 
 
 def compute_differential_operator(
-    env: Environment | EnvironmentProtocol,
+    env: Environment,
 ) -> sparse.csc_matrix:
     """Compute the differential operator matrix for graph signal processing.
 
@@ -46,7 +45,7 @@ def compute_differential_operator(
 
     Parameters
     ----------
-    env : EnvironmentProtocol
+    env : Environment
         Environment with a connectivity graph. Must have a `connectivity`
         attribute containing a NetworkX graph with 'distance' edge attributes.
 
@@ -146,8 +145,8 @@ def compute_differential_operator(
 
 
 def gradient(
+    env: Environment,
     field: NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
 ) -> NDArray[np.float64]:
     """Compute the gradient of a scalar field on the graph.
 
@@ -163,12 +162,12 @@ def gradient(
 
     Parameters
     ----------
+    env : Environment
+        Environment with connectivity graph and differential operator. Must be
+        fitted (i.e., created via a factory method like `Environment.from_samples()`).
     field : NDArray[np.float64], shape (n_bins,)
         Scalar field defined on the environment's bins. Each element corresponds
         to a field value at a bin center.
-    env : EnvironmentProtocol
-        Environment with connectivity graph and differential operator. Must be
-        fitted (i.e., created via a factory method like `Environment.from_samples()`).
 
     Returns
     -------
@@ -206,7 +205,7 @@ def gradient(
     >>> # Create distance field (distance from left end)
     >>> field = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> # Compute gradient
-    >>> grad = gradient(field, env)
+    >>> grad = gradient(env, field)
     >>> grad.shape
     (4,)
     >>> # For uniform spacing and linear field, gradient should be constant
@@ -216,7 +215,7 @@ def gradient(
     Gradient of a constant field is zero:
 
     >>> const_field = np.ones(env.n_bins) * 5.0
-    >>> grad_const = gradient(const_field, env)
+    >>> grad_const = gradient(env, const_field)
     >>> np.allclose(grad_const, 0.0, atol=1e-10)
     True
 
@@ -254,8 +253,8 @@ def gradient(
 
 
 def divergence(
+    env: Environment,
     edge_field: NDArray[np.float64],
-    env: Environment | EnvironmentProtocol,
 ) -> NDArray[np.float64]:
     """Compute the divergence of an edge field on the graph.
 
@@ -270,13 +269,13 @@ def divergence(
 
     Parameters
     ----------
+    env : Environment
+        Environment with connectivity graph and differential operator. Must be
+        fitted (i.e., created via a factory method like `Environment.from_samples()`).
     edge_field : NDArray[np.float64], shape (n_edges,)
         Edge field (vector field on edges). Each element corresponds to a value
         assigned to one edge in the connectivity graph. Typically represents a
         flow or gradient along edges.
-    env : EnvironmentProtocol
-        Environment with connectivity graph and differential operator. Must be
-        fitted (i.e., created via a factory method like `Environment.from_samples()`).
 
     Returns
     -------
@@ -324,8 +323,8 @@ def divergence(
     >>> # Create test field
     >>> field = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
     >>> # Compute div(grad(f))
-    >>> grad_field = gradient(field, env)
-    >>> div_grad = divergence(grad_field, env)
+    >>> grad_field = gradient(env, field)
+    >>> div_grad = divergence(env, grad_field)
     >>> div_grad.shape
     (5,)
     >>> # Verify div(grad(f)) = Laplacian(f)
@@ -339,7 +338,7 @@ def divergence(
 
     >>> n_edges = len(env.connectivity.edges)
     >>> zero_field = np.zeros(n_edges)
-    >>> div_zero = divergence(zero_field, env)
+    >>> div_zero = divergence(env, zero_field)
     >>> np.allclose(div_zero, 0.0, atol=1e-10)
     True
 

@@ -1,19 +1,27 @@
-"""transforms.py - minimal 2-D coordinate transforms
-=================================================
+"""transforms.py - N-D coordinate transforms (2D and 3D)
+======================================================
 
-**Important:** This module is specifically for 2D transformations. For 3D environments,
-use ``scipy.spatial.transform.Rotation`` or implement custom 3D transformation matrices.
-See docs/dimensionality_support.md for details on 3D support status.
+Supports both 2D and 3D affine transformations with a unified API.
 
 Two complementary APIs
 ----------------------
-1.  *Composable objects* (`Affine2D`, `SpatialTransform`)
+1.  *Composable objects* (`AffineND`, `Affine2D`, `Affine3D`)
     Build a transform once, reuse everywhere, keep provenance.
 2.  *Quick helpers* (`flip_y_data`, `convert_to_cm`, `convert_to_pixels`)
     One-liners for scripts that just need a NumPy array back.
 
-All functions assume coordinates are shaped ``(..., 2)`` and are no-ops on
-the x-axis unless you chain additional transforms.
+For 2D (backward compatible):
+    Use `Affine2D` or factory functions like `translate()`, `scale_2d()`.
+
+For 3D (new in v0.3):
+    Use `Affine3D` or factory functions like `translate_3d()`, `scale_3d()`,
+    or `from_rotation_matrix()` with scipy.spatial.transform.Rotation.
+
+Notes
+-----
+**Version History**:
+- v0.2.x and earlier: 2D-only (`Affine2D`)
+- v0.3+: Added 3D support (`AffineND`, `Affine3D`)
 """
 
 from __future__ import annotations
@@ -34,9 +42,184 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------
 @runtime_checkable
 class SpatialTransform(Protocol):
-    """Callable that maps an (N, 2) array of points → (N, 2) array."""
+    """Callable that maps an (N, n_dims) array of points → (N, n_dims) array."""
 
     def __call__(self, pts: NDArray[np.float64]) -> NDArray[np.float64]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AffineND(SpatialTransform):
+    """N-D affine transform expressed as an (n_dims+1) × (n_dims+1) homogeneous matrix.
+
+    Works for 2D, 3D, or higher dimensions. For N-dimensional points, uses
+    (N+1) × (N+1) homogeneous matrix A such that:
+
+        [x'₁, x'₂, ..., x'ₙ, 1]^T  =  A @ [x₁, x₂, ..., xₙ, 1]^T
+
+    Attributes
+    ----------
+    A : NDArray[np.float64], shape (n_dims+1, n_dims+1)
+        Homogeneous transformation matrix. Encodes rotation, scaling,
+        translation, and shear. The bottom row is always [0, 0, ..., 0, 1].
+    n_dims : int
+        Number of spatial dimensions (2 for 2D, 3 for 3D, etc.).
+
+    Examples
+    --------
+    3D translation:
+
+    >>> import numpy as np
+    >>> from neurospatial.transforms import translate_3d
+    >>> transform = translate_3d(10, 20, 30)
+    >>> points = np.array([[0, 0, 0], [1, 1, 1]])
+    >>> transformed = transform(points)
+    >>> transformed
+    array([[10., 20., 30.],
+           [11., 21., 31.]])
+
+    3D rotation using scipy:
+
+    >>> from scipy.spatial.transform import Rotation
+    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> R = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    >>> transform = from_rotation_matrix(R)
+    >>> points = np.array([[1, 0, 0]])
+    >>> transformed = transform(points)
+    >>> np.allclose(transformed, [[0, 1, 0]])
+    True
+
+    See Also
+    --------
+    Affine2D : Alias for 2D transforms (backward compatible)
+    Affine3D : Alias for 3D transforms
+    from_rotation_matrix : Create transform from rotation matrix
+    """
+
+    A: NDArray[np.float64]  # shape (n_dims+1, n_dims+1)
+
+    def __post_init__(self) -> None:
+        """Validate transformation matrix shape."""
+        A = np.asarray(self.A, dtype=np.float64)
+        if A.ndim != 2 or A.shape[0] != A.shape[1]:
+            raise ValueError(f"Affine matrix must be square, got shape {A.shape}")
+        # Store validated array
+        object.__setattr__(self, "A", A)
+
+    @property
+    def n_dims(self) -> int:
+        """Number of spatial dimensions (2 for 2D, 3 for 3D, etc.)."""
+        return int(self.A.shape[0] - 1)
+
+    def __call__(self, pts: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Apply transformation to N-dimensional points.
+
+        Parameters
+        ----------
+        pts : NDArray[np.float64], shape (..., n_dims)
+            Points to transform (2D, 3D, or higher dimensions).
+
+        Returns
+        -------
+        NDArray[np.float64], shape (..., n_dims)
+            Transformed points.
+
+        Examples
+        --------
+        >>> from neurospatial.transforms import translate_3d
+        >>> transform = translate_3d(10, 20, 30)
+        >>> points = np.array([[0, 0, 0], [1, 1, 1]])
+        >>> transform(points)
+        array([[10., 20., 30.],
+               [11., 21., 31.]])
+        """
+        pts = np.asanyarray(pts, dtype=float)
+        original_shape = pts.shape
+        n_dims = self.n_dims
+
+        # Validate dimensions
+        if pts.shape[-1] != n_dims:
+            raise ValueError(
+                f"Transform is {n_dims}D but points have {pts.shape[-1]} dimensions. "
+                f"Expected shape (..., {n_dims}), got {pts.shape}"
+            )
+
+        # Flatten to (n_points, n_dims)
+        pts_flat = pts.reshape(-1, n_dims)
+        n_points = pts_flat.shape[0]
+
+        # Add homogeneous coordinate
+        pts_h = np.c_[pts_flat, np.ones((n_points, 1))]  # (n_points, n_dims+1)
+
+        # Apply transformation
+        out_h = pts_h @ self.A.T  # (n_points, n_dims+1)
+
+        # Normalize by homogeneous coordinate and extract spatial dims
+        out = out_h[:, :n_dims] / out_h[:, n_dims : n_dims + 1]
+
+        # Reshape to original shape
+        return np.asarray(out.reshape(original_shape), dtype=np.float64)
+
+    def inverse(self) -> AffineND:
+        """Compute the inverse transformation.
+
+        Returns
+        -------
+        AffineND
+            New AffineND representing the inverse transformation.
+
+        Raises
+        ------
+        np.linalg.LinAlgError
+            If transformation matrix is singular (non-invertible).
+
+        Examples
+        --------
+        >>> from neurospatial.transforms import translate_3d
+        >>> transform = translate_3d(10, 20, 30)
+        >>> inv = transform.inverse()
+        >>> points = np.array([[10, 20, 30]])
+        >>> inv(points)
+        array([[0., 0., 0.]])
+        """
+        return AffineND(np.asarray(np.linalg.inv(self.A), dtype=np.float64))
+
+    def compose(self, other: AffineND) -> AffineND:
+        """Compose this transformation with another.
+
+        Parameters
+        ----------
+        other : AffineND
+            Transformation to compose with (applied first).
+
+        Returns
+        -------
+        AffineND
+            New transformation representing ``self ∘ other``.
+
+        Raises
+        ------
+        ValueError
+            If transforms have different dimensions.
+
+        Examples
+        --------
+        >>> from neurospatial.transforms import translate_3d, scale_3d
+        >>> t1 = translate_3d(10, 0, 0)
+        >>> t2 = scale_3d(2.0)
+        >>> combined = t1.compose(t2)
+        >>> points = np.array([[1, 1, 1]])
+        >>> combined(points)
+        array([[12.,  2.,  2.]])
+        """
+        if self.n_dims != other.n_dims:
+            raise ValueError(
+                f"Cannot compose {self.n_dims}D transform with {other.n_dims}D transform"
+            )
+        return AffineND(self.A @ other.A)
+
+    def __matmul__(self, other: AffineND) -> AffineND:
+        """Compose transformations using @ operator."""
+        return self.compose(other)
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +476,168 @@ def flip_y(frame_height_px: float) -> Affine2D:
     )
 
 
+# --- 3D Transform Factories ------------------------------------------
+def translate_3d(tx: float = 0.0, ty: float = 0.0, tz: float = 0.0) -> AffineND:
+    """Create 3D translation transformation.
+
+    Parameters
+    ----------
+    tx : float, default=0.0
+        Translation in x direction.
+    ty : float, default=0.0
+        Translation in y direction.
+    tz : float, default=0.0
+        Translation in z direction.
+
+    Returns
+    -------
+    AffineND
+        3D translation transformation.
+
+    Examples
+    --------
+    >>> from neurospatial.transforms import translate_3d
+    >>> transform = translate_3d(10, 20, 30)
+    >>> points = np.array([[0, 0, 0], [1, 1, 1]])
+    >>> transform(points)
+    array([[10., 20., 30.],
+           [11., 21., 31.]])
+    """
+    A = np.eye(4)
+    A[:3, 3] = [tx, ty, tz]
+    return AffineND(A)
+
+
+def scale_3d(
+    sx: float = 1.0, sy: float | None = None, sz: float | None = None
+) -> AffineND:
+    """Create 3D scaling transformation.
+
+    Parameters
+    ----------
+    sx : float, default=1.0
+        Scale factor for x-axis.
+    sy : float or None, default=None
+        Scale factor for y-axis. If None, uses `sx` for uniform scaling.
+    sz : float or None, default=None
+        Scale factor for z-axis. If None, uses `sx` for uniform scaling.
+
+    Returns
+    -------
+    AffineND
+        3D scaling transformation.
+
+    Examples
+    --------
+    Uniform scaling:
+
+    >>> from neurospatial.transforms import scale_3d
+    >>> transform = scale_3d(2.0)
+    >>> points = np.array([[1, 2, 3]])
+    >>> transform(points)
+    array([[2., 4., 6.]])
+
+    Anisotropic scaling:
+
+    >>> transform = scale_3d(sx=2.0, sy=0.5, sz=3.0)
+    >>> points = np.array([[1, 2, 3]])
+    >>> transform(points)
+    array([[2., 1., 9.]])
+    """
+    sy = sx if sy is None else sy
+    sz = sx if sz is None else sz
+    A = np.diag([sx, sy, sz, 1.0])
+    return AffineND(A)
+
+
+def from_rotation_matrix(
+    rotation_matrix: NDArray[np.float64],
+    translation: NDArray[np.float64] | None = None,
+) -> AffineND:
+    """Create affine transform from rotation matrix (2D or 3D).
+
+    Parameters
+    ----------
+    rotation_matrix : NDArray[np.float64], shape (n_dims, n_dims)
+        Rotation matrix (orthogonal matrix with det(rotation_matrix) = 1).
+        For 3D, use scipy.spatial.transform.Rotation to generate.
+    translation : NDArray[np.float64], shape (n_dims,), optional
+        Translation vector. If None, no translation is applied.
+
+    Returns
+    -------
+    AffineND
+        Affine transformation combining rotation and optional translation.
+
+    Examples
+    --------
+    3D rotation from scipy:
+
+    >>> import numpy as np
+    >>> from scipy.spatial.transform import Rotation
+    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> # 90-degree rotation around z-axis
+    >>> rot_mat = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    >>> transform = from_rotation_matrix(rot_mat)
+    >>> points = np.array([[1, 0, 0], [0, 1, 0]])
+    >>> transformed = transform(points)
+    >>> np.allclose(transformed, [[0, 1, 0], [-1, 0, 0]])
+    True
+
+    With translation:
+
+    >>> transform = from_rotation_matrix(rot_mat, translation=np.array([10, 20, 30]))
+    >>> points = np.array([[1, 0, 0]])
+    >>> transform(points)  # doctest: +SKIP
+    array([[10., 21., 30.]])
+    """
+    rot = np.asarray(rotation_matrix, dtype=float)
+    if rot.ndim != 2 or rot.shape[0] != rot.shape[1]:
+        raise ValueError(f"Rotation matrix must be square, got shape {rot.shape}")
+
+    n_dims = rot.shape[0]
+    A = np.eye(n_dims + 1)
+    A[:n_dims, :n_dims] = rot
+
+    if translation is not None:
+        t = np.asarray(translation, dtype=float)
+        if t.shape != (n_dims,):
+            raise ValueError(
+                f"Translation vector must have shape ({n_dims},), got {t.shape}"
+            )
+        A[:n_dims, n_dims] = t
+
+    return AffineND(A)
+
+
+def identity_nd(n_dims: int = 2) -> AffineND:
+    """Return the N-dimensional identity transform.
+
+    Parameters
+    ----------
+    n_dims : int, default=2
+        Number of dimensions (2 for 2D, 3 for 3D, etc.).
+
+    Returns
+    -------
+    AffineND
+        Identity transformation (no change to input points).
+
+    Examples
+    --------
+    >>> from neurospatial.transforms import identity_nd
+    >>> transform = identity_nd(n_dims=3)
+    >>> points = np.array([[1, 2, 3]])
+    >>> transform(points)
+    array([[1., 2., 3.]])
+    """
+    return AffineND(np.eye(n_dims + 1))
+
+
+# Convenience aliases
+Affine3D = AffineND  # Type alias for 3D transforms
+
+
 # ---------------------------------------------------------------------
 # Quick NumPy helpers that *internally* build and apply Affine2D
 # ---------------------------------------------------------------------
@@ -354,8 +699,8 @@ def convert_to_cm(
         Converted coordinates in centimeters, shape (..., 2).
 
     """
-    T = scale_2d(cm_per_px) @ flip_y(frame_height_px=frame_size_px[1])
-    return T(np.asanyarray(data_px, dtype=float))
+    transform = scale_2d(cm_per_px) @ flip_y(frame_height_px=frame_size_px[1])
+    return transform(np.asanyarray(data_px, dtype=float))
 
 
 def convert_to_pixels(
@@ -384,8 +729,8 @@ def convert_to_pixels(
     Inverse of `convert_to_cm`. Internally constructs ``flip_y(H) @ scale_2d(1/cm_per_px)``.
 
     """
-    T = flip_y(frame_height_px=frame_size_px[1]) @ scale_2d(1.0 / cm_per_px)
-    return T(np.asanyarray(data_cm, dtype=float))
+    transform = flip_y(frame_height_px=frame_size_px[1]) @ scale_2d(1.0 / cm_per_px)
+    return transform(np.asanyarray(data_cm, dtype=float))
 
 
 # ---------------------------------------------------------------------
@@ -395,18 +740,20 @@ def estimate_transform(
     src: NDArray[np.float64],
     dst: NDArray[np.float64],
     kind: str = "rigid",
-) -> Affine2D:
-    """Estimate 2D transformation from point correspondences.
+) -> AffineND:
+    """Estimate transformation from point correspondences (2D or 3D).
 
     Given pairs of corresponding points in source and destination coordinate
     systems, compute the best-fit transformation (rigid, similarity, or affine).
+    Automatically detects dimensionality from input points.
 
     Parameters
     ----------
-    src : NDArray[np.float64], shape (N, 2)
+    src : NDArray[np.float64], shape (N, n_dims)
         Source points (N >= 2 for rigid/similarity, N >= 3 for affine).
-    dst : NDArray[np.float64], shape (N, 2)
-        Destination points corresponding to src.
+        n_dims can be 2 (2D), 3 (3D), or higher.
+    dst : NDArray[np.float64], shape (N, n_dims)
+        Destination points corresponding to src (same dimensionality).
     kind : {"rigid", "similarity", "affine"}, default="rigid"
         Type of transformation to estimate:
 
@@ -417,20 +764,24 @@ def estimate_transform(
 
     Returns
     -------
-    Affine2D
+    AffineND
         Estimated transformation that maps src → dst.
+        For 2D points, returns 3×3 matrix. For 3D points, returns 4×4 matrix.
 
     Raises
     ------
     ValueError
         If insufficient points for the requested transformation type,
-        or if points are degenerate (collinear, etc.).
+        or if points are degenerate (collinear, etc.),
+        or if dimensionality mismatch between src and dst.
 
     Examples
     --------
+    2D transformation:
+
     >>> import numpy as np
     >>> from neurospatial.transforms import estimate_transform
-    >>> # Define corresponding points (e.g., landmarks in two sessions)
+    >>> # Define corresponding 2D points
     >>> src_pts = np.array([[0, 0], [10, 0], [10, 10], [0, 10]])
     >>> # Rotated 45 degrees and translated
     >>> angle = np.pi / 4
@@ -438,22 +789,39 @@ def estimate_transform(
     ...     [np.cos(angle), -np.sin(angle)],
     ...     [np.sin(angle), np.cos(angle)],
     ... ] + [5, 5]
-    >>> T = estimate_transform(src_pts, dst_pts, kind="rigid")
-    >>> transformed = T(src_pts)
+    >>> transform = estimate_transform(src_pts, dst_pts, kind="rigid")
+    >>> transformed = transform(src_pts)
     >>> np.allclose(transformed, dst_pts)
+    True
+
+    3D transformation:
+
+    >>> from scipy.spatial.transform import Rotation
+    >>> # Create 3D source points
+    >>> src_3d = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    >>> # Apply known transformation
+    >>> R = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+    >>> dst_3d = src_3d @ R.T + [10, 20, 30]
+    >>> # Estimate transformation
+    >>> transform = estimate_transform(src_3d, dst_3d, kind="rigid")
+    >>> transformed = transform(src_3d)
+    >>> np.allclose(transformed, dst_3d)
     True
 
     Notes
     -----
     Uses Procrustes analysis for rigid and similarity transforms, and
-    least-squares for affine transforms.
+    least-squares for affine transforms. The Procrustes method works for
+    any dimensionality.
 
     For cross-session alignment, collect 3-4 landmark points (e.g., corners
     of arena) in both sessions and use this function to compute the alignment.
 
     See Also
     --------
-    Affine2D : 2D affine transformation class
+    AffineND : N-D affine transformation class
+    Affine2D : 2D affine transformation (same as AffineND with n_dims=2)
+    Affine3D : 3D affine transformation (same as AffineND with n_dims=3)
     apply_transform_to_environment : Apply transform to Environment
 
     """
@@ -467,12 +835,13 @@ def estimate_transform(
             f"src and dst must have same shape, got {src.shape} and {dst.shape}"
         )
 
-    if src.ndim != 2 or src.shape[1] != 2:
+    if src.ndim != 2:
         raise ValueError(
-            f"src and dst must be (N, 2) arrays for 2D transforms, got shape {src.shape}"
+            f"src and dst must be 2D arrays (N points x n_dims), got shape {src.shape}"
         )
 
     n_points = src.shape[0]
+    n_dims = src.shape[1]
 
     if kind in ("rigid", "similarity"):
         if n_points < 2:
@@ -494,10 +863,10 @@ def estimate_transform(
         R = R_proc.T
 
         # Ensure R is a proper rotation (det(R) = +1, not -1)
-        # If det(R) < 0, we have a reflection; flip one axis to get rotation
+        # If det(R) < 0, we have a reflection; flip last axis to get rotation
         if np.linalg.det(R) < 0:
-            # Flip the second column to convert reflection to rotation
-            R[:, 1] = -R[:, 1]
+            # Flip the last column to convert reflection to rotation
+            R[:, -1] = -R[:, -1]
 
         if kind == "rigid":
             # Rigid: rotation + translation
@@ -506,11 +875,11 @@ def estimate_transform(
             t = dst_mean - R @ src_mean
 
             # Build homogeneous matrix
-            A = np.eye(3)
-            A[:2, :2] = R
-            A[:2, 2] = t
+            A = np.eye(n_dims + 1)
+            A[:n_dims, :n_dims] = R
+            A[:n_dims, n_dims] = t
 
-            return Affine2D(A)
+            return AffineND(A)
 
         else:  # similarity
             # Similarity: rotation + uniform scale + translation
@@ -527,37 +896,33 @@ def estimate_transform(
             # where t = dst_mean - scale * R @ src_mean
             t = dst_mean - scale * (R @ src_mean)
 
-            A = np.eye(3)
-            A[:2, :2] = scale * R
-            A[:2, 2] = t
+            A = np.eye(n_dims + 1)
+            A[:n_dims, :n_dims] = scale * R
+            A[:n_dims, n_dims] = t
 
-            return Affine2D(A)
+            return AffineND(A)
 
     elif kind == "affine":
-        if n_points < 3:
+        if n_points < n_dims + 1:
             raise ValueError(
-                f"affine transform requires at least 3 point pairs, got {n_points}"
+                f"affine transform requires at least {n_dims + 1} point pairs "
+                f"for {n_dims}D, got {n_points}"
             )
 
         # Solve affine transform using least squares
-        # T(x, y) = [a, b, tx] @ [x, y, 1]^T  for x-coordinate
-        #           [c, d, ty] @ [x, y, 1]^T  for y-coordinate
+        # For each dimension i: T_i(x) = [a_i1, a_i2, ..., a_in, t_i] @ [x1, x2, ..., xn, 1]^T
 
-        # Build design matrix: [x, y, 1] for each point
-        X = np.c_[src, np.ones(n_points)]  # (N, 3)
+        # Build design matrix: [x1, x2, ..., xn, 1] for each point
+        X = np.c_[src, np.ones(n_points)]  # (N, n_dims+1)
 
-        # Solve for each row of transformation matrix independently
-        # For x: [a, b, tx] = argmin ||X @ [a, b, tx]^T - dst_x||^2
-        # For y: [c, d, ty] = argmin ||X @ [c, d, ty]^T - dst_y||^2
-        params_x = np.linalg.lstsq(X, dst[:, 0], rcond=None)[0]  # [a, b, tx]
-        params_y = np.linalg.lstsq(X, dst[:, 1], rcond=None)[0]  # [c, d, ty]
+        # Solve for each output dimension independently
+        A = np.eye(n_dims + 1)
+        for dim in range(n_dims):
+            # Solve: params = argmin ||X @ params - dst[:, dim]||^2
+            params = np.linalg.lstsq(X, dst[:, dim], rcond=None)[0]
+            A[dim, :] = params
 
-        # Build homogeneous matrix
-        A = np.eye(3)
-        A[0, :] = params_x  # [a, b, tx]
-        A[1, :] = params_y  # [c, d, ty]
-
-        return Affine2D(A)
+        return AffineND(A)
 
     else:
         raise ValueError(
@@ -567,22 +932,25 @@ def estimate_transform(
 
 def apply_transform_to_environment(
     env: Environment,
-    transform: Affine2D,
+    transform: AffineND | Affine2D,
     *,
     name: str | None = None,
 ) -> Environment:
-    """Apply 2D affine transformation to an Environment, returning a new instance.
+    """Apply N-D affine transformation to an Environment, returning a new instance.
 
     This function creates a new Environment with transformed bin_centers and
     updated connectivity graph. All other properties (regions, metadata) are
-    copied from the source environment.
+    copied from the source environment. Supports 2D, 3D, or higher-dimensional
+    transformations.
 
     Parameters
     ----------
     env : Environment
-        Source environment to transform (must be 2D).
-    transform : Affine2D
-        Transformation to apply.
+        Source environment to transform (any dimensionality).
+    transform : AffineND or Affine2D
+        Transformation to apply. Must match environment dimensionality:
+        - For 2D environments: use Affine2D or AffineND with n_dims=2
+        - For 3D environments: use AffineND with n_dims=3
     name : str, optional
         Name for the new environment. If None, appends "_transformed" to original name.
 
@@ -594,12 +962,14 @@ def apply_transform_to_environment(
     Raises
     ------
     ValueError
-        If environment is not 2D (transforms only support 2D currently).
+        If transform dimensionality doesn't match environment dimensionality.
     RuntimeError
         If environment is not fitted.
 
     Examples
     --------
+    2D transformation (backward compatible):
+
     >>> from neurospatial import Environment
     >>> from neurospatial.transforms import (
     ...     estimate_transform,
@@ -608,14 +978,33 @@ def apply_transform_to_environment(
     >>> # Create environment from session 1
     >>> env1 = Environment.from_samples(data1, bin_size=2.0)
     >>> # Estimate transform from landmarks
-    >>> T = estimate_transform(landmarks_session1, landmarks_session2, kind="rigid")
+    >>> transform = estimate_transform(
+    ...     landmarks_session1, landmarks_session2, kind="rigid"
+    ... )
     >>> # Transform environment to session 2 coordinates
-    >>> env1_aligned = apply_transform_to_environment(env1, T, name="session1_aligned")
+    >>> env1_aligned = apply_transform_to_environment(
+    ...     env1, transform, name="session1_aligned"
+    ... )
+
+    3D transformation:
+
+    >>> import numpy as np
+    >>> from scipy.spatial.transform import Rotation
+    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> # Create 3D environment
+    >>> positions_3d = np.random.randn(1000, 3) * 20
+    >>> env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
+    >>> # Apply 45-degree rotation around z-axis
+    >>> R = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+    >>> transform_3d = from_rotation_matrix(R, translation=[10, 20, 30])
+    >>> env_3d_rotated = apply_transform_to_environment(env_3d, transform_3d)
 
     See Also
     --------
     estimate_transform : Estimate transformation from point pairs
     Affine2D : 2D affine transformation class
+    AffineND : N-dimensional affine transformation class
+    from_rotation_matrix : Create transform from rotation matrix (scipy integration)
 
     Notes
     -----
@@ -628,6 +1017,8 @@ def apply_transform_to_environment(
 
     Edge distances and vectors are recomputed after transformation.
 
+    For 2D environments, edge 'angle_2d' attributes are also recomputed.
+
     """
     from neurospatial.environment import Environment
     from neurospatial.regions import Region, Regions
@@ -639,10 +1030,12 @@ def apply_transform_to_environment(
             "Use a factory method like Environment.from_samples()."
         )
 
-    if env.n_dims != 2:
+    # Validate dimensionality match
+    transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
+    if env.n_dims != transform_dims:
         raise ValueError(
-            f"apply_transform_to_environment only supports 2D environments, "
-            f"got {env.n_dims}D. For 3D, use scipy.spatial.transform.Rotation."
+            f"Transform dimensionality ({transform_dims}D) does not match "
+            f"environment dimensionality ({env.n_dims}D)."
         )
 
     # Transform bin centers
@@ -656,7 +1049,7 @@ def apply_transform_to_environment(
         new_pos = transform(np.array([old_pos]))[0]
         new_graph.nodes[node_id]["pos"] = tuple(new_pos)
 
-    # Recompute edge attributes (distance, vector, angle_2d)
+    # Recompute edge attributes (distance, vector, and angle_2d for 2D)
     for u, v in new_graph.edges:
         pos_u = np.array(new_graph.nodes[u]["pos"])
         pos_v = np.array(new_graph.nodes[v]["pos"])
@@ -666,30 +1059,38 @@ def apply_transform_to_environment(
         new_graph.edges[u, v]["vector"] = tuple(vec)
         new_graph.edges[u, v]["distance"] = dist
 
-        # Recompute angle_2d if present
-        if "angle_2d" in new_graph.edges[u, v]:
+        # Recompute angle_2d for 2D environments only
+        if env.n_dims == 2 and "angle_2d" in new_graph.edges[u, v]:
             angle = float(np.arctan2(vec[1], vec[0]))
             new_graph.edges[u, v]["angle_2d"] = angle
 
-    # Transform dimension_ranges
+    # Transform dimension_ranges (N-dimensional)
     transformed_dim_ranges = None
     if env.dimension_ranges is not None:
-        # Transform corner points
-        lo_x, hi_x = env.dimension_ranges[0]
-        lo_y, hi_y = env.dimension_ranges[1]
-        corners = np.array([[lo_x, lo_y], [hi_x, lo_y], [hi_x, hi_y], [lo_x, hi_y]])
+        # Generate all corner points of the N-dimensional bounding box
+        # For N dims, we have 2^N corners (all combinations of low/high per dimension)
+        n_dims = env.n_dims
+        ranges = env.dimension_ranges
+
+        # Generate corner points using itertools.product
+        from itertools import product
+
+        corner_indices = list(product([0, 1], repeat=n_dims))  # All combinations of 0/1
+        corners = np.array(
+            [
+                [ranges[dim][idx] for dim, idx in enumerate(corner)]
+                for corner in corner_indices
+            ]
+        )
+
+        # Transform all corners
         transformed_corners = transform(corners)
 
-        # New bounding box
-        new_lo_x, new_hi_x = (
-            transformed_corners[:, 0].min(),
-            transformed_corners[:, 0].max(),
-        )
-        new_lo_y, new_hi_y = (
-            transformed_corners[:, 1].min(),
-            transformed_corners[:, 1].max(),
-        )
-        transformed_dim_ranges = [(new_lo_x, new_hi_x), (new_lo_y, new_hi_y)]
+        # New bounding box: min/max along each dimension
+        transformed_dim_ranges = [
+            (transformed_corners[:, dim].min(), transformed_corners[:, dim].max())
+            for dim in range(n_dims)
+        ]
 
     # Create new Environment using from_layout pattern
     # We'll create a minimal layout wrapper

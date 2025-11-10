@@ -6,13 +6,13 @@ This guide covers trajectory characterization metrics and automatic behavioral e
 
 Neurospatial provides a comprehensive suite of tools for analyzing animal trajectories and automatically detecting behavioral epochs:
 
-**Trajectory Metrics** ([Milestone 4.1](../../TASKS.md#41-trajectory-metrics-week-9)):
+**Trajectory Metrics**:
 - Turn angles between movement vectors
 - Step lengths along the path
 - Home range estimation (core territory)
 - Mean square displacement (diffusion classification)
 
-**Behavioral Segmentation** ([Milestones 4.2-4.5](../../TASKS.md#42-region-based-segmentation-week-10-days-1-3)):
+**Behavioral Segmentation**:
 - Region-based segmentation (crossings, runs between regions)
 - Lap detection (circular track analysis)
 - Trial segmentation (task-based epochs)
@@ -65,8 +65,9 @@ Turn angles quantify changes in movement direction at each position along the tr
 from neurospatial.metrics.trajectory import compute_turn_angles
 import numpy as np
 
-# Compute turn angles between consecutive movement vectors
-turn_angles = compute_turn_angles(trajectory_bins, env)
+# Compute turn angles from continuous positions
+# positions: (n_samples, 2) array of x,y coordinates
+turn_angles = compute_turn_angles(positions)
 
 # Analyze turning behavior
 mean_turn = np.abs(np.mean(turn_angles))  # Average turning magnitude
@@ -77,9 +78,10 @@ print(f"Turn variance: {turn_variance:.3f}")
 ```
 
 **Key Points**:
+- **Uses continuous positions** for sub-bin precision (ecology standard)
 - Returns angles in radians `[-π, π]`
 - Positive = left turns, Negative = right turns, 0 = straight
-- Stationary periods (consecutive duplicate bins) are filtered out
+- Stationary periods (consecutive duplicate positions) are filtered out
 - Uses vectorized NumPy operations for efficiency
 
 **Applications**:
@@ -93,13 +95,16 @@ print(f"Turn variance: {turn_variance:.3f}")
 
 ### Step Lengths
 
-Step lengths are the graph geodesic distances between consecutive positions.
+Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (graph-based) distances.
 
 ```python
 from neurospatial.metrics.trajectory import compute_step_lengths
 
-# Compute step lengths (uses graph distances)
-step_lengths = compute_step_lengths(trajectory_bins, env)
+# Euclidean distance (default, ecology standard)
+step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+
+# OR: Geodesic distance for constrained environments (requires env)
+# step_lengths_geo = compute_step_lengths(positions, distance_type="geodesic", env=env)
 
 # Analyze movement statistics
 mean_step = np.mean(step_lengths)
@@ -110,10 +115,10 @@ print(f"Step length CV: {step_cv:.3f}")
 ```
 
 **Key Points**:
-- Uses `networkx.shortest_path_length()` for graph geodesic distances
-- Stationary periods (same bin) return 0.0
-- Disconnected bins return `np.inf`
-- Handles irregular environments correctly
+- **Euclidean (default)**: Straight-line distance in physical space, uses continuous positions
+- **Geodesic**: Graph shortest-path distance, respects walls/obstacles, requires `env`
+- Stationary periods (duplicate positions) return 0.0
+- For geodesic: disconnected bins return `np.inf`
 
 **Applications**:
 - **Movement speed** (step_length / dt): Velocity estimation
@@ -124,10 +129,15 @@ print(f"Step length CV: {step_cv:.3f}")
 
 ### Home Range
 
-Home range is the set of bins containing a specified percentile of time spent.
+Home range is the set of bins containing a specified percentile of time spent. This metric uses discretized bins (occupancy-based).
 
 ```python
 from neurospatial.metrics.trajectory import compute_home_range
+from neurospatial import Environment
+
+# Create environment and map positions to bins
+env = Environment.from_samples(positions, bin_size=5.0)
+trajectory_bins = env.bin_at(positions)
 
 # Compute core territory (95th percentile)
 home_range_bins = compute_home_range(trajectory_bins, percentile=95.0)
@@ -157,15 +167,20 @@ print(f"Core area (50%): {len(compute_home_range(trajectory_bins, percentile=50.
 
 ### Mean Square Displacement
 
-Mean square displacement (MSD) classifies diffusion processes based on scaling exponent α.
+Mean square displacement (MSD) classifies diffusion processes based on scaling exponent α. **Critical**: Uses continuous positions for accurate diffusion exponent estimation.
 
 ```python
 from neurospatial.metrics.trajectory import mean_square_displacement
 
-# Compute MSD for time lags up to 10 seconds
+# Compute MSD from continuous positions (Euclidean distance, ecology standard)
 tau_values, msd_values = mean_square_displacement(
-    trajectory_bins, times, env, max_tau=10.0
+    positions, times, distance_type="euclidean", max_tau=10.0
 )
+
+# OR: Geodesic distance for constrained environments
+# tau_geo, msd_geo = mean_square_displacement(
+#     positions, times, distance_type="geodesic", env=env, max_tau=10.0
+# )
 
 # Fit power law: MSD ~ τ^α
 log_tau = np.log(tau_values[1:])
@@ -793,14 +808,14 @@ laps = detect_laps(
     direction="both"
 )
 
-# Step 2: Compute metrics per lap
+# Step 2: Compute metrics per lap using continuous positions
 lap_metrics = []
 for lap in laps:
     mask = (times >= lap.start_time) & (times <= lap.end_time)
-    lap_bins = trajectory_bins[mask]
+    lap_positions = positions[mask]  # Use continuous positions
 
-    turn_angles = compute_turn_angles(lap_bins, env)
-    step_lengths = compute_step_lengths(lap_bins, env)
+    turn_angles = compute_turn_angles(lap_positions)
+    step_lengths = compute_step_lengths(lap_positions, distance_type="euclidean")
 
     lap_metrics.append({
         "duration": lap.end_time - lap.start_time,
@@ -905,19 +920,20 @@ for trial in trials[:5]:  # First 5 trials
 Detect behavioral shift from exploration to exploitation.
 
 ```python
-# Compute MSD in sliding windows
+# Compute MSD in sliding windows using continuous positions
 window_size = 100  # samples
 hop_size = 20
 alphas = []
 
-for i in range(0, len(trajectory_bins) - window_size, hop_size):
-    window_bins = trajectory_bins[i:i+window_size]
+for i in range(0, len(positions) - window_size, hop_size):
+    window_positions = positions[i:i+window_size]
     window_times = times[i:i+window_size]
 
+    # Use continuous positions for accurate diffusion exponent
     tau_vals, msd_vals = mean_square_displacement(
-        window_bins,
+        window_positions,
         window_times,
-        env,
+        distance_type="euclidean",
         max_tau=5.0
     )
 
@@ -935,7 +951,10 @@ if transition_idx:
     transition_time = times[transition_idx * hop_size]
     print(f"Exploration → goal-directed transition at t={transition_time:.1f}s")
 
-    # Compare spatial coverage before/after
+    # Compare spatial coverage before/after (home range still uses bins)
+    env = Environment.from_samples(positions, bin_size=5.0)
+    trajectory_bins = env.bin_at(positions)
+
     explore_bins = trajectory_bins[:transition_idx * hop_size]
     goal_bins = trajectory_bins[transition_idx * hop_size:]
 

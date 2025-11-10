@@ -12,23 +12,23 @@ Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial import Environment
 
 
 def border_score(
     firing_rate: NDArray[np.float64],
-    env: EnvironmentProtocol,
+    env: Environment,
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
-    distance_method: str = "geodesic",
+    distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.
@@ -51,16 +51,15 @@ def border_score(
         smaller than this return NaN. Default is 0.0 (no filtering). For rat
         hippocampal data, Solstad et al. (2008) used 200 cm². Adjust based on
         your bin size and environment scale.
-    distance_method : {"geodesic", "euclidean"}, optional
-        Method for computing distances from field bins to boundaries:
-
-        - "geodesic" (default): Graph shortest path distances through
-          connectivity. Handles irregular environments correctly.
-        - "euclidean": Straight-line distances in physical space. Matches
-          opexebo and original Solstad et al. (2008) for rectangular arenas.
-
-        Use "euclidean" for direct comparison with opexebo/BNT implementations.
-        Use "geodesic" for irregular environments with obstacles.
+    distance_metric : {'geodesic', 'euclidean'}, optional
+        Distance metric for computing distance from field bins to boundary bins.
+        - 'geodesic': Graph shortest path distance (default). Respects environment
+          connectivity, appropriate for irregular environments or those with obstacles.
+        - 'euclidean': Straight-line distance in physical space. Generally faster
+          for large environments (no graph traversal). Appropriate for simple,
+          open environments without obstacles.
+        Default is 'geodesic' to match the original implementation and ensure
+        compatibility with irregular graph structures.
 
     Returns
     -------
@@ -87,13 +86,58 @@ def border_score(
     - **0**: No boundary preference (uniform or mixed)
     - **-1**: Anti-border (field in center, far from boundaries)
 
-    **Differences from Solstad et al. (2008)**:
+    **Differences from opexebo and Solstad et al. (2008)**:
 
-    - Original algorithm uses rectangular arenas with 4 discrete walls
-    - This implementation generalizes to irregular graph-based environments
-    - Boundary coverage computed over all boundary bins (not per-wall)
-    - Distance computed using graph shortest paths (geodesic, default) or
-      Euclidean distances (when distance_method="euclidean")
+    This implementation differs from opexebo's border_score in several ways:
+
+    1. **Coverage**: Overall boundary coverage (not per-wall). This implementation
+       computes a single coverage metric across all boundary bins, whereas opexebo
+       computes coverage for each wall (N/S/E/W) separately and uses the maximum.
+
+    2. **Distance**: Geodesic or Euclidean (not Manhattan). Opexebo uses Manhattan
+       (taxicab) distance from arena edges. This implementation supports both
+       geodesic (graph shortest path) and Euclidean (straight-line) distances.
+
+    3. **Boundaries**: Automatic graph-based detection (not wall specification).
+       Opexebo requires explicit arena shape ("square", "rect", "circle"). This
+       implementation automatically detects boundaries via ``env.boundary_bins``.
+
+    4. **Environment**: Works on any graph (not rectangular arenas only). This
+       implementation generalizes to irregular environments with obstacles.
+
+    **Computing per-wall coverage** (for rectangular arenas):
+
+    If you need per-wall coverage analysis like opexebo, use
+    `compute_region_coverage()` with wall regions:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.metrics import border_score, compute_region_coverage
+    >>> from shapely.geometry import box
+    >>>
+    >>> # Create rectangular environment
+    >>> positions = np.random.randn(5000, 2) * 20
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>>
+    >>> # Define wall regions (for a 40x40 arena centered at origin)
+    >>> wall_width = 5.0  # Width of wall region in cm
+    >>> env.regions.add("north_wall", polygon=box(-20, 15, 20, 20))
+    >>> env.regions.add("south_wall", polygon=box(-20, -20, 20, -15))
+    >>> env.regions.add("east_wall", polygon=box(15, -20, 20, 20))
+    >>> env.regions.add("west_wall", polygon=box(-20, -20, -15, 20))
+    >>>
+    >>> # Compute coverage for each wall
+    >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[0]
+    >>> coverage = compute_region_coverage(field_bins, env)
+    >>> for wall_name in ["north_wall", "south_wall", "east_wall", "west_wall"]:
+    ...     print(f"{wall_name}: {coverage[wall_name]:.2%}")  # doctest: +SKIP
+
+    **When to use opexebo vs. neurospatial**:
+
+    - Use **opexebo** for rectangular arenas requiring exact reproduction of
+      Solstad et al. (2008) or comparison with Moser lab publications
+    - Use **neurospatial** for irregular environments, graphs with obstacles,
+      or when you need flexible distance metrics
 
     References
     ----------
@@ -139,9 +183,9 @@ def border_score(
     if min_area < 0:
         raise ValueError(f"min_area must be non-negative, got {min_area}")
 
-    if distance_method not in ("geodesic", "euclidean"):
+    if distance_metric not in ("geodesic", "euclidean"):
         raise ValueError(
-            f"distance_method must be 'geodesic' or 'euclidean', got '{distance_method}'"
+            f"distance_metric must be 'geodesic' or 'euclidean', got '{distance_metric}'"
         )
 
     # Handle all-NaN or all-zero
@@ -180,7 +224,7 @@ def border_score(
     coverage = np.sum(boundary_in_field) / len(boundary_bins)
 
     # Compute mean distance from field bins to nearest boundary bin
-    if distance_method == "geodesic":
+    if distance_metric == "geodesic":
         # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
         try:
             # Compute shortest distances from ALL boundary bins to all reachable nodes
@@ -203,26 +247,23 @@ def border_score(
 
         mean_distance = np.mean(distances_to_boundary)
 
-    else:  # distance_method == "euclidean"
-        # Compute Euclidean distances in physical space
-        # For each field bin, find minimum Euclidean distance to any boundary bin
-        field_centers = env.bin_centers[field_bins]  # shape (n_field_bins, n_dims)
-        boundary_centers = env.bin_centers[boundary_bins]  # shape (n_boundary_bins, n_dims)
+    else:  # distance_metric == "euclidean"
+        # Compute Euclidean distances in physical space (vectorized)
+        boundary_positions = env.bin_centers[boundary_bins]
+        field_positions = env.bin_centers[field_bins]
 
-        # For each field bin, compute distance to all boundary bins
-        # and take the minimum
-        distances_to_boundary = []
-        for field_center in field_centers:
-            # Compute distances to all boundary bins
-            dists = np.linalg.norm(boundary_centers - field_center, axis=1)
-            # Take minimum distance
-            min_dist = np.min(dists)
-            distances_to_boundary.append(min_dist)
+        # Vectorized computation using broadcasting
+        # Shape: (n_field_bins, n_boundary_bins, n_dims)
+        diff = field_positions[:, np.newaxis, :] - boundary_positions[np.newaxis, :, :]
+        # Shape: (n_field_bins, n_boundary_bins)
+        distances_matrix = np.linalg.norm(diff, axis=2)
+        # Shape: (n_field_bins,) - minimum distance to any boundary bin
+        distances_to_boundary = np.min(distances_matrix, axis=1)
 
         if len(distances_to_boundary) == 0:
             return np.nan
 
-        mean_distance = np.mean(distances_to_boundary)
+        mean_distance = float(np.mean(distances_to_boundary))
 
     # Normalize distance by environment extent (maximum spatial extent)
     # Compute extent as the diagonal of the bounding box
@@ -246,3 +287,110 @@ def border_score(
     score = np.clip(score, -1.0, 1.0)
 
     return float(score)
+
+
+def compute_region_coverage(
+    field_bins: NDArray[np.int64],
+    env: Environment,
+    *,
+    regions: list[str] | None = None,
+) -> dict[str, float]:
+    """
+    Compute field coverage for each region.
+
+    This function calculates what fraction of each spatial region is covered
+    by a place field. Useful for determining wall preferences in border cells
+    or analyzing field overlap with task-relevant zones.
+
+    Parameters
+    ----------
+    field_bins : array of int
+        Bin indices comprising the field (e.g., from detect_place_fields).
+    env : Environment
+        Spatial environment with defined regions.
+    regions : list of str, optional
+        List of region names to analyze. If None, analyzes all regions
+        defined in env.regions.
+
+    Returns
+    -------
+    coverage : dict[str, float]
+        Dictionary mapping region name to coverage fraction [0, 1].
+        Coverage is computed as:
+        (number of region bins in field) / (total number of region bins)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.metrics import compute_region_coverage
+    >>> from shapely.geometry import box
+    >>>
+    >>> # Create environment with wall regions
+    >>> positions = np.random.randn(5000, 2) * 20
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env.regions.add("north", polygon=box(-20, 15, 20, 20))
+    >>> env.regions.add("south", polygon=box(-20, -20, 20, -15))
+    >>> env.regions.add("east", polygon=box(15, -20, 20, 20))
+    >>> env.regions.add("west", polygon=box(-20, -20, -15, 20))
+    >>>
+    >>> # Create field along north wall
+    >>> firing_rate = np.zeros(env.n_bins)
+    >>> north_bins = np.where(env.mask_for_region("north"))[0]
+    >>> firing_rate[north_bins] = 5.0
+    >>> field_bins = np.where(firing_rate > 0)[0]
+    >>>
+    >>> # Compute coverage per wall
+    >>> coverage = compute_region_coverage(field_bins, env)
+    >>> for wall, cov in sorted(coverage.items()):
+    ...     print(f"{wall}: {cov:.1%}")  # doctest: +SKIP
+    east: 0.0%
+    north: 100.0%
+    south: 0.0%
+    west: 0.0%
+
+    See Also
+    --------
+    border_score : Compute overall border preference score
+    detect_place_fields : Detect place fields from firing rate maps
+
+    Notes
+    -----
+    This function is particularly useful for:
+
+    - **Border cell analysis**: Determine which wall a border cell prefers
+    - **Task-relevant regions**: Check if fields overlap with reward zones, start boxes, etc.
+    - **Multi-zone analysis**: Quantify field distribution across spatial zones
+
+    The coverage metric is simply the Jaccard coefficient between the field
+    and each region, but computed more efficiently.
+    """
+    # Get region names to analyze
+    if regions is None:
+        regions = list(env.regions.keys())
+
+    # Validate regions exist
+    for region_name in regions:
+        if region_name not in env.regions:
+            raise ValueError(
+                f"Region '{region_name}' not found. "
+                f"Available regions: {list(env.regions.keys())}"
+            )
+
+    # Compute coverage for each region
+    coverage = {}
+    for region_name in regions:
+        # Get bins in this region
+        region_mask = env.mask_for_region(region_name)
+        region_bins = np.where(region_mask)[0]
+
+        if len(region_bins) == 0:
+            # Empty region
+            coverage[region_name] = 0.0
+        else:
+            # Compute fraction of region bins that are in field
+            coverage[region_name] = float(
+                np.sum(np.isin(region_bins, field_bins)) / len(region_bins)
+            )
+
+    return coverage

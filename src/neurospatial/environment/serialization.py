@@ -32,8 +32,9 @@ import pickle
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
+
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import EnvironmentProtocol
     from neurospatial.environment.core import Environment
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ class EnvironmentSerialization:
 
     """
 
-    def to_file(self: EnvironmentProtocol, path: str | Path) -> None:
+    def to_file(self: SelfEnv, path: str | Path) -> None:
         """Save Environment to versioned JSON + npz files.
 
         This method provides stable, reproducible serialization that is safer
@@ -123,7 +124,7 @@ class EnvironmentSerialization:
         """
         from neurospatial.io import to_file as _to_file
 
-        _to_file(self, path)
+        _to_file(cast("Environment", self), path)
 
     @classmethod
     def from_file(cls: type[EnvironmentProtocol], path: str | Path) -> Environment:
@@ -165,7 +166,7 @@ class EnvironmentSerialization:
 
         return _from_file(path)
 
-    def to_dict(self: EnvironmentProtocol) -> dict[str, Any]:
+    def to_dict(self: SelfEnv) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
 
         Returns a dictionary representation with all numpy arrays converted
@@ -199,7 +200,7 @@ class EnvironmentSerialization:
         """
         from neurospatial.io import to_dict as _to_dict
 
-        return _to_dict(self)
+        return _to_dict(cast("Environment", self))
 
     @classmethod
     def from_dict(cls: type[EnvironmentProtocol], data: dict[str, Any]) -> Environment:
@@ -232,7 +233,7 @@ class EnvironmentSerialization:
 
         return _from_dict(data)
 
-    def save(self: EnvironmentProtocol, filename: str = "environment.pkl") -> None:
+    def save(self: SelfEnv, filename: str = "environment.pkl") -> None:
         """Save the Environment object to a file using pickle.
 
         .. deprecated:: 0.1.0

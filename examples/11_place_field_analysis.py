@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: neurospatial
 #     language: python
 #     name: python3
 # ---
@@ -53,22 +53,43 @@ np.random.seed(42)
 # - Gaussian spatial tuning
 
 # %%
-# Create circular trajectory
-n_samples = 5000
-t = np.linspace(0, 20 * np.pi, n_samples)
-radius = 40.0
-center = np.array([50.0, 50.0])
+# Generate 2D random walk in open field arena
+sampling_rate = 50.0  # Hz
+duration = 100.0  # seconds
+n_samples = int(duration * sampling_rate)
+times = np.linspace(0, duration, n_samples)
 
-# Circular path with some noise
-positions = np.column_stack(
-    [
-        center[0] + radius * np.cos(t) + np.random.randn(n_samples) * 2.0,
-        center[1] + radius * np.sin(t) + np.random.randn(n_samples) * 2.0,
-    ]
-)
+# Arena size: 100x100 cm open field
+arena_size = 100.0  # cm
+arena_center = arena_size / 2
 
-# Time array (50 samples per second)
-times = np.linspace(0, 100, n_samples)
+# Random walk parameters
+step_size = 2.0  # cm per step
+boundary_margin = 5.0  # cm from walls
+
+# Initialize trajectory
+positions = np.zeros((n_samples, 2))
+positions[0] = [arena_center, arena_center]  # Start at center
+
+# Generate random walk with wall reflection
+for i in range(1, n_samples):
+    # Random step direction
+    angle = np.random.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+
+    # Propose new position
+    new_pos = positions[i - 1] + step
+
+    # Reflect at boundaries (with margin)
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    positions[i] = new_pos
 
 # Create environment
 env = Environment.from_samples(
@@ -77,12 +98,12 @@ env = Environment.from_samples(
     bin_count_threshold=5,
 )
 env.units = "cm"
-env.frame = "session1"
+env.frame = "open_field"
 
-print(f"Environment: {env.n_bins} bins, {env.n_dims}D")
+print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm open field")
+print(f"  {env.n_bins} bins, {env.n_dims}D")
 print(
-    f"Extent: x=[{env.dimension_ranges[0][0]:.1f}, {env.dimension_ranges[0][1]:.1f}], "
-    f"y=[{env.dimension_ranges[1][0]:.1f}, {env.dimension_ranges[1][1]:.1f}]"
+    f"  Coverage: x=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
 )
 
 # %% [markdown]
@@ -120,14 +141,17 @@ print(f"Mean firing rate: {len(spike_times) / times[-1]:.2f} Hz")
 # Convert spike train to a spatial firing rate map using occupancy normalization.
 
 # %%
-# Compute occupancy-normalized firing rate
+# Compute occupancy-normalized firing rate with smoothing
+# Using diffusion KDE method (default) with 5 cm bandwidth
+# This method spreads spike and occupancy mass BEFORE normalization
+# and respects environment boundaries via graph connectivity
 firing_rate = compute_place_field(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,  # Exclude bins with < 0.5s occupancy
-    smoothing_bandwidth=5.0,  # Smooth with 5cm Gaussian
+    method="diffusion_kde",  # Default: boundary-aware graph-based KDE
+    bandwidth=5.0,  # Spatial smoothing bandwidth (cm)
 )
 
 print(
@@ -346,8 +370,7 @@ firing_rate_half1 = compute_place_field(
     spike_times[spike_times < mid_time],
     times[first_half_mask],
     positions[first_half_mask],
-    min_occupancy_seconds=0.5,
-    smoothing_bandwidth=5.0,
+    bandwidth=5.0,
 )
 
 firing_rate_half2 = compute_place_field(
@@ -355,8 +378,7 @@ firing_rate_half2 = compute_place_field(
     spike_times[spike_times >= mid_time],
     times[second_half_mask],
     positions[second_half_mask],
-    min_occupancy_seconds=0.5,
-    smoothing_bandwidth=5.0,
+    bandwidth=5.0,
 )
 
 # Compute stability (correlation between halves)
@@ -443,8 +465,7 @@ def analyze_place_cell(env, spike_times, times, positions):
         spike_times,
         times,
         positions,
-        min_occupancy_seconds=0.5,
-        smoothing_bandwidth=5.0,
+        bandwidth=5.0,
     )
 
     # Step 2: Detect place fields
@@ -483,8 +504,7 @@ def analyze_place_cell(env, spike_times, times, positions):
         spike_times[spike_times < mid_time],
         times[first_half],
         positions[first_half],
-        min_occupancy_seconds=0.5,
-        smoothing_bandwidth=5.0,
+        bandwidth=5.0,
     )
 
     rate_half2 = compute_place_field(
@@ -492,8 +512,7 @@ def analyze_place_cell(env, spike_times, times, positions):
         spike_times[spike_times >= mid_time],
         times[second_half],
         positions[second_half],
-        min_occupancy_seconds=0.5,
-        smoothing_bandwidth=5.0,
+        bandwidth=5.0,
     )
 
     stability = field_stability(rate_half1, rate_half2, method="pearson")
@@ -524,6 +543,334 @@ print(
 )
 
 # %% [markdown]
+# ---
+#
+# ## Part 8: Place Remapping in Different Environments
+#
+# **Place remapping** occurs when place cells change their firing patterns between different environments or contexts. This demonstrates how neurospatial handles irregular environments like T-mazes and how to quantify remapping.
+#
+# ### Types of Remapping:
+#
+# - **Global remapping**: Complete reorganization of place fields (different contexts)
+# - **Rate remapping**: Same locations, different rates (similar contexts)
+# - **Partial remapping**: Some cells remap, others maintain fields
+#
+# We'll compare place fields between the open field and a T-maze to demonstrate remapping analysis.
+
+# %% [markdown]
+# ### Generate T-Maze Trajectory
+#
+# T-mazes are commonly used to study spatial memory and decision-making. They have:
+# - A start box
+# - A stem leading to a choice point
+# - Left and right arms
+
+# %%
+# Define T-maze structure (coordinates in cm)
+# Start box: x=[40, 60], y=[10, 25]
+# Stem: x=[45, 55], y=[25, 50]
+# Left arm: x=[20, 45], y=[50, 65]
+# Right arm: x=[55, 80], y=[50, 65]
+
+
+def generate_tmaze_trajectory(n_trials=20, samples_per_trial=100):
+    """Generate T-maze exploration trajectory with alternating left/right choices."""
+    trajectory_list = []
+
+    for trial in range(n_trials):
+        trial_traj = []
+
+        # Start box (random position)
+        start_x = np.random.uniform(45, 55)
+        start_y = np.random.uniform(12, 20)
+        trial_traj.append([start_x, start_y])
+
+        # Move through stem to choice point
+        stem_samples = 40
+        for i in range(1, stem_samples):
+            progress = i / stem_samples
+            x = 50.0  # Center of stem
+            y = 20 + progress * 30  # Move from 20 to 50 (choice point)
+            x += np.random.randn() * 1.0  # Add noise
+            y += np.random.randn() * 1.0
+            trial_traj.append([x, y])
+
+        # Choose arm (alternate for good coverage)
+        go_left = trial % 2 == 0
+
+        # Move through chosen arm
+        arm_samples = 30
+        for i in range(arm_samples):
+            progress = i / arm_samples
+            if go_left:
+                x = 50 - progress * 18  # Move from 50 to 32
+                y = 50 + progress * 10  # Move from 50 to 60
+            else:
+                x = 50 + progress * 18  # Move from 50 to 68
+                y = 50 + progress * 10  # Move from 50 to 60
+
+            x += np.random.randn() * 1.5
+            y += np.random.randn() * 1.5
+            trial_traj.append([x, y])
+
+        # Return to start (simplified - just jump back)
+        # In real experiments, animal would be picked up or walk back
+
+        trajectory_list.extend(trial_traj)
+
+    return np.array(trajectory_list)
+
+
+# Generate T-maze trajectory
+tmaze_positions = generate_tmaze_trajectory(n_trials=25, samples_per_trial=100)
+tmaze_times = np.linspace(0, 100, len(tmaze_positions))
+
+# Create T-maze environment
+tmaze_env = Environment.from_samples(
+    tmaze_positions,
+    bin_size=3.0,
+    bin_count_threshold=5,
+)
+tmaze_env.units = "cm"
+tmaze_env.frame = "tmaze"
+
+print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
+print(
+    f"  Coverage: x=[{tmaze_positions[:, 0].min():.1f}, {tmaze_positions[:, 0].max():.1f}], "
+    f"y=[{tmaze_positions[:, 1].min():.1f}, {tmaze_positions[:, 1].max():.1f}] cm"
+)
+
+# %% [markdown]
+# ### Visualize T-Maze Environment
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
+
+# Open field trajectory
+axes[0].scatter(
+    positions[::20, 0],
+    positions[::20, 1],
+    c=np.arange(len(positions[::20])),
+    cmap="viridis",
+    s=10,
+    alpha=0.5,
+)
+axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c="lightgray",
+    s=80,
+    edgecolors="black",
+    linewidths=0.5,
+    alpha=0.7,
+)
+axes[0].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
+axes[0].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
+axes[0].set_title("Open Field Arena", fontsize=15, fontweight="bold")
+axes[0].set_aspect("equal")
+
+# T-maze trajectory
+axes[1].scatter(
+    tmaze_positions[::10, 0],
+    tmaze_positions[::10, 1],
+    c=np.arange(len(tmaze_positions[::10])),
+    cmap="plasma",
+    s=10,
+    alpha=0.5,
+)
+axes[1].scatter(
+    tmaze_env.bin_centers[:, 0],
+    tmaze_env.bin_centers[:, 1],
+    c="lightgray",
+    s=80,
+    edgecolors="black",
+    linewidths=0.5,
+    alpha=0.7,
+)
+axes[1].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
+axes[1].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
+axes[1].set_title("T-Maze", fontsize=15, fontweight="bold")
+axes[1].set_aspect("equal")
+
+plt.show()
+
+# %% [markdown]
+# ### Simulate Place Cell in T-Maze
+#
+# This place cell will remap - it had a field at (60, 50) in the open field. In the T-maze, we'll give it a field at (35, 58) (left arm).
+
+# %%
+# Generate spikes for T-maze (place field in left arm)
+tmaze_field_center = np.array([35.0, 58.0])  # Left arm
+tmaze_sigma = 8.0  # cm
+tmaze_peak_rate = 12.0  # Hz (slightly higher rate in T-maze)
+
+# Compute firing probability
+tmaze_distances = np.linalg.norm(tmaze_positions - tmaze_field_center, axis=1)
+tmaze_firing_rate_continuous = tmaze_peak_rate * np.exp(
+    -(tmaze_distances**2) / (2 * tmaze_sigma**2)
+)
+
+# Generate spikes
+tmaze_dt = np.mean(np.diff(tmaze_times))
+tmaze_spike_probs = tmaze_firing_rate_continuous * tmaze_dt
+tmaze_spike_mask = np.random.rand(len(tmaze_times)) < tmaze_spike_probs
+tmaze_spike_times = tmaze_times[tmaze_spike_mask]
+
+print(f"\nGenerated {len(tmaze_spike_times)} spikes in T-maze")
+print(f"T-maze field center: {tmaze_field_center}")
+
+# Compute firing rate map for T-maze
+tmaze_firing_rate = compute_place_field(
+    tmaze_env,
+    tmaze_spike_times,
+    tmaze_times,
+    tmaze_positions,
+    bandwidth=5.0,
+)
+
+# %% [markdown]
+# ### Visualize Remapping: Same Cell, Two Environments
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
+
+# Open field place field
+scatter1 = axes[0].scatter(
+    env.bin_centers[:, 0],
+    env.bin_centers[:, 1],
+    c=firing_rate,
+    s=120,
+    cmap="hot",
+    vmin=0,
+    edgecolors="white",
+    linewidths=0.5,
+)
+axes[0].scatter(
+    field_center[0],
+    field_center[1],
+    s=300,
+    c="cyan",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="Field Center",
+    zorder=10,
+)
+axes[0].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
+axes[0].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
+axes[0].set_title("Open Field Place Field", fontsize=15, fontweight="bold")
+axes[0].set_aspect("equal")
+axes[0].legend(fontsize=11)
+cbar1 = plt.colorbar(scatter1, ax=axes[0], label="Firing Rate (Hz)")
+
+# T-maze place field
+scatter2 = axes[1].scatter(
+    tmaze_env.bin_centers[:, 0],
+    tmaze_env.bin_centers[:, 1],
+    c=tmaze_firing_rate,
+    s=120,
+    cmap="hot",
+    vmin=0,
+    edgecolors="white",
+    linewidths=0.5,
+)
+axes[1].scatter(
+    tmaze_field_center[0],
+    tmaze_field_center[1],
+    s=300,
+    c="cyan",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="Field Center",
+    zorder=10,
+)
+axes[1].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
+axes[1].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
+axes[1].set_title("T-Maze Place Field (REMAPPED)", fontsize=15, fontweight="bold")
+axes[1].set_aspect("equal")
+axes[1].legend(fontsize=11)
+cbar2 = plt.colorbar(scatter2, ax=axes[1], label="Firing Rate (Hz)")
+
+plt.show()
+
+print("\n" + "=" * 60)
+print("REMAPPING DETECTED")
+print("=" * 60)
+print(f"Open field center: {field_center}")
+print(f"T-maze center:     {tmaze_field_center}")
+print(f"Distance moved:    {np.linalg.norm(field_center - tmaze_field_center):.1f} cm")
+print("\nThis demonstrates GLOBAL REMAPPING - the place field")
+print("completely reorganized in the new environment!")
+
+# %% [markdown]
+# ### Quantify Remapping with Spatial Correlation
+#
+# We can't directly compare firing rates between different environments (different bin positions). Instead, we use **spatial correlation** by interpolating one map onto the other's coordinates.
+#
+# For environments with overlapping spatial extent, we can:
+# 1. Find bins that exist in both environments
+# 2. Interpolate firing rates to common positions
+# 3. Compute correlation
+#
+# **Note**: For very different geometries (like open field vs T-maze), spatial correlation is less meaningful. Population vector correlation (across multiple cells) is more appropriate.
+
+
+# %%
+def compute_spatial_correlation_overlap(env1, rate1, env2, rate2):
+    """
+    Compute spatial correlation for overlapping region of two environments.
+
+    This is a simplified approach - finds bins in env2 closest to env1 bins
+    within a distance threshold.
+    """
+    from scipy.spatial.distance import cdist
+
+    # Find overlapping bins (bins in env1 close to bins in env2)
+    distances = cdist(env1.bin_centers, env2.bin_centers)
+
+    # For each bin in env1, find closest bin in env2
+    closest_env2_bins = np.argmin(distances, axis=1)
+    min_distances = np.min(distances, axis=1)
+
+    # Only use bins within 5 cm (approximately overlapping)
+    overlap_threshold = 5.0  # cm
+    overlap_mask = min_distances < overlap_threshold
+
+    if overlap_mask.sum() < 5:
+        return np.nan, 0
+
+    # Get firing rates for overlapping bins
+    rate1_overlap = rate1[overlap_mask]
+    rate2_overlap = rate2[closest_env2_bins[overlap_mask]]
+
+    # Remove NaN values
+    valid = ~np.isnan(rate1_overlap) & ~np.isnan(rate2_overlap)
+
+    if valid.sum() < 5:
+        return np.nan, valid.sum()
+
+    # Compute correlation
+    corr = np.corrcoef(rate1_overlap[valid], rate2_overlap[valid])[0, 1]
+
+    return corr, valid.sum()
+
+
+# Compute spatial correlation
+spatial_corr, n_overlap = compute_spatial_correlation_overlap(
+    env, firing_rate, tmaze_env, tmaze_firing_rate
+)
+
+print("\nSpatial Correlation (Remapping Metric):")
+print(f"  Correlation: {spatial_corr:.3f}")
+print(f"  Overlapping bins: {n_overlap}")
+print("\nInterpretation:")
+print("  > 0.7: Same place field (stable)")
+print("  0.3-0.7: Partial remapping")
+print("  < 0.3: Complete remapping (this cell)")
+
+# %% [markdown]
 # ## Summary
 #
 # In this notebook, we demonstrated:
@@ -534,6 +881,8 @@ print(
 # 4. **Spatial Metrics**: Skaggs information and sparsity for quantifying spatial coding
 # 5. **Stability Analysis**: Split-half correlation to assess field reliability
 # 6. **Complete Workflow**: End-to-end analysis function
+# 7. **T-Maze Analysis**: Working with irregular environments
+# 8. **Place Remapping**: Quantifying how place fields change between environments
 #
 # ### Key Functions Used
 #

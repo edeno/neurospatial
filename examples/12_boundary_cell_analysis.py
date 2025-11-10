@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: neurospatial
 #     language: python
 #     name: python3
 # ---
@@ -35,6 +35,7 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Patch
 
 from neurospatial import Environment
 from neurospatial.metrics import border_score
@@ -45,32 +46,58 @@ np.random.seed(42)
 # %% [markdown]
 # ## Part 1: Generate Synthetic Border Cell
 #
-# We'll create a circular trajectory and simulate a border cell that fires preferentially along the walls of the environment.
+# We'll create a 2D square arena with clear boundaries and simulate a border cell that fires preferentially along the walls of the environment.
 
 # %%
-# Generate circular trajectory (5000 samples, 100 seconds at 50 Hz)
-n_samples = 5000
-t = np.linspace(0, 10 * np.pi, n_samples)
-radius = 40.0
-center = np.array([60.0, 50.0])
+# Generate 2D random walk in square arena (border cells need clear boundaries!)
+sampling_rate = 50.0  # Hz
+duration = 100.0  # seconds
+n_samples = int(duration * sampling_rate)
+times = np.linspace(0, duration, n_samples)
 
-# Circular trajectory
-positions = np.column_stack(
-    [center[0] + radius * np.cos(t), center[1] + radius * np.sin(t)]
-)
+# Arena size: 80x80 cm square arena (clear boundaries for border cells)
+arena_size = 80.0  # cm
+arena_center = arena_size / 2
 
-times = np.linspace(0, 100, n_samples)  # 100 seconds at 50 Hz
+# Random walk parameters
+step_size = 2.0  # cm per step
+boundary_margin = 5.0  # cm from walls
+
+# Initialize trajectory
+positions = np.zeros((n_samples, 2))
+positions[0] = [arena_center, arena_center]  # Start at center
+
+# Generate random walk with wall reflection (explore near boundaries!)
+for i in range(1, n_samples):
+    # Random step direction
+    angle = np.random.uniform(0, 2 * np.pi)
+    step = step_size * np.array([np.cos(angle), np.sin(angle)])
+
+    # Propose new position
+    new_pos = positions[i - 1] + step
+
+    # Reflect at boundaries (with margin)
+    for dim in range(2):
+        if new_pos[dim] < boundary_margin:
+            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
+        elif new_pos[dim] > (arena_size - boundary_margin):
+            new_pos[dim] = (arena_size - boundary_margin) - (
+                new_pos[dim] - (arena_size - boundary_margin)
+            )
+
+    positions[i] = new_pos
 
 # Create environment with 3cm bins
 env = Environment.from_samples(positions, bin_size=3.0)
 env.units = "cm"
 env.frame = "arena"
 
-print(f"Environment: {env.n_bins} bins, {env.n_dims}D")
-# Compute extent from dimension ranges
-extent_x = env.dimension_ranges[0][1] - env.dimension_ranges[0][0]
-extent_y = env.dimension_ranges[1][1] - env.dimension_ranges[1][0]
-print(f"Extent: ({extent_x:.1f} cm, {extent_y:.1f} cm)")
+print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm square arena")
+print(f"  {env.n_bins} bins, {env.n_dims}D")
+print(
+    f"  Coverage: x=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
+)
+print(f"\nBoundary bins: {len(env.boundary_bins)} (edges of the arena)")
 
 # %% [markdown]
 # ### Create Border Cell Firing Pattern
@@ -245,8 +272,6 @@ print(
 # ### Visualize Components
 
 # %%
-from matplotlib.patches import Patch  # noqa: E402
-
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
 # Panel 1: Field segmentation

@@ -1,5 +1,200 @@
 # Neurospatial v0.3.0 Development Notes
 
+## 2025-11-08: Code Quality - Refactor Nested Conditionals COMPLETE
+
+### Task: Refactor nested conditionals using guard clauses and early returns
+
+**Status**: ✅ COMPLETE
+
+**Motivation**: Following Raymond Hettinger code review feedback to improve code readability by reducing nesting depth. Guard clauses (early returns) make code more linear and easier to follow.
+
+**Files Modified**:
+
+1. **src/neurospatial/spike_field.py**:
+   - `spikes_to_field()` function (3 nested conditionals refactored)
+   - `compute_place_field()` function (1 nested conditional refactored)
+
+**Specific Refactorings**:
+
+**1. Time filtering with empty check (lines 159-176)**
+- **Before**: Nested if checking for empty spikes inside time filtering block
+- **After**: Separate filter step + guard clause for empty spikes
+- **Impact**: Reduced nesting from 2 levels to 1 level
+
+**2. Spatial filtering with empty check (lines 204-218)**
+- **Before**: Nested if checking for empty spikes inside spatial filtering block
+- **After**: Separate filter step + guard clause for empty spikes
+- **Impact**: Reduced nesting from 2 levels to 1 level
+
+**3. Smoothing with NaN handling (lines 351-376)**
+- **Before**: Nested if/else for NaN handling inside smoothing block
+- **After**: Early return for no smoothing, early return for no NaN, linear NaN handling
+- **Impact**: Eliminated if/else nesting, made happy path more linear
+
+**Pattern Applied**:
+```python
+# Before (NESTED):
+if condition:
+    do_something()
+    if nested_condition:
+        return early_result
+
+# After (GUARD CLAUSE):
+if condition:
+    do_something()
+
+# Guard clause at top level
+if nested_condition:
+    return early_result
+```
+
+**Verification**:
+- ✅ All 14 spike_field tests pass
+- ✅ All warnings still properly raised
+- ✅ Behavior unchanged (just readability improvement)
+- ✅ No mypy errors
+- ✅ No ruff errors
+
+**Readability Impact**:
+- Reduced maximum nesting depth from 3 to 2 levels
+- Made control flow more linear and easier to trace
+- Separated concerns (filtering vs empty checks)
+
+**Effort**: ~30 minutes (Nov 8, 2025)
+
+---
+
+## 2025-11-08: API Refactoring - Parameter Order Consistency COMPLETE
+
+### Task: Make `env` always the first parameter in environment-dependent functions
+
+**Status**: ✅ COMPLETE
+
+**Motivation**: Following Raymond Hettinger code review feedback to improve API consistency. Since neurospatial has no external users yet (pre-v1.0), this is the right time to make breaking changes for long-term API quality.
+
+**Functions Modified** (4 total):
+
+1. **src/neurospatial/differential.py**:
+   - `gradient(field, env)` → `gradient(env, field)` (line 147)
+   - `divergence(edge_field, env)` → `divergence(env, edge_field)` (line 255)
+
+2. **src/neurospatial/primitives.py**:
+   - `neighbor_reduce(field, env, ...)` → `neighbor_reduce(env, field, ...)` (line 16)
+   - `convolve(field, kernel, env, ...)` → `convolve(env, field, kernel, ...)` (line 192)
+
+**Additional Changes**:
+- Removed 1 remaining `cast()` call in primitives.py (line 321)
+- Removed unused imports: `cast`, `EnvironmentProtocol` from primitives.py
+- Updated all docstring examples to use new parameter order
+- Updated NumPy-style parameter documentation sections
+
+**Call Sites Updated**:
+
+**Source Files** (1 change):
+- `src/neurospatial/metrics/place_fields.py`: 1 call to `neighbor_reduce()`
+
+**Test Files** (30+ changes):
+- `tests/test_differential.py`: 10 calls to `gradient()` and `divergence()`
+- `tests/test_primitives.py`: 28 calls to `neighbor_reduce()` and `convolve()`
+- `tests/test_field_ops.py`: No changes needed (uses different `kl_divergence()`)
+
+**Verification**:
+- ✅ All 1533 tests pass
+- ✅ No mypy errors
+- ✅ No ruff errors
+- ✅ All docstring examples updated
+- ✅ Consistent parameter order across all environment-dependent functions
+
+**API Impact**: Breaking change for 4 functions. Users (if any) would need to swap parameter order in calls to `gradient()`, `divergence()`, `neighbor_reduce()`, and `convolve()`.
+
+**Consistency Achieved**:
+```python
+# Before (INCONSISTENT):
+spikes_to_field(env, ...)      # env first ✓
+gradient(field, env)            # field first ✗
+neighbor_reduce(field, env, ...)  # field first ✗
+
+# After (CONSISTENT):
+spikes_to_field(env, ...)      # env first ✓
+gradient(env, field)            # env first ✓
+neighbor_reduce(env, field, ...)  # env first ✓
+```
+
+**Effort**: ~2 hours (Nov 8, 2025)
+
+---
+
+## 2025-11-08: Milestone 4.6 - Behavioral Segmentation Example Notebook COMPLETE
+
+### Task: Create `examples/15_behavioral_segmentation.ipynb`
+
+**Status**: ✅ COMPLETE
+
+**Files Created**:
+
+1. `examples/15_behavioral_segmentation.ipynb` - Behavioral segmentation demonstration (523KB with outputs)
+
+**Notebook Coverage**:
+
+**Part 1: Region Crossings**
+- Entry/exit event detection
+- Direction filtering (both, entry, exit)
+- Visualization with timeline
+
+**Part 2: Runs Between Regions**
+- Goal-directed navigation from source to target
+- Success/failure tracking
+- Duration filtering
+
+**Part 3: Lap Detection on Circular Track**
+- Automatic template detection from first 10% of trajectory
+- Direction discrimination (clockwise/counter-clockwise)
+- Overlap-based lap quality assessment
+
+**Part 4: Trial Segmentation (T-maze)**
+- Left/right choice trial detection
+- Start/end region configuration
+- Outcome tracking
+
+**Part 5: Trajectory Similarity**
+- Four similarity metrics: Jaccard, correlation, Hausdorff, DTW
+- Comparison of trial trajectories
+- Replay analysis applications
+
+**Part 6: Goal-Directed Run Detection**
+- Directedness score computation
+- Path efficiency analysis
+- Goal region navigation
+
+**Key Functions Demonstrated**:
+
+1. `detect_region_crossings(trajectory_bins, times, region, env, direction='both')`
+2. `detect_runs_between_regions(trajectory_positions, times, env, source=..., target=...)`
+3. `detect_laps(trajectory_bins, times, env, method='auto')`
+4. `segment_trials(trajectory_bins, times, env, start_region=..., end_regions=...)`
+5. `trajectory_similarity(trajectory1_bins, trajectory2_bins, env, method='jaccard')`
+6. `detect_goal_directed_runs(trajectory_bins, times, env, goal_region=...)`
+
+**Validation**:
+
+- ✅ Notebook executes successfully (523KB with outputs)
+- ✅ All 6 parts demonstrate correct functionality
+- ✅ All segmentation functions work as expected
+- ✅ Visualizations render correctly
+
+**Milestone 4.6 Status**: ✅ COMPLETE
+- ✅ All 57 segmentation tests pass (85% coverage)
+- ✅ Integration tests complete (3 comprehensive workflows)
+- ✅ Documentation complete (724 lines)
+- ✅ Example notebook 14 complete (trajectory analysis, 731KB)
+- ✅ Example notebook 15 complete (behavioral segmentation, 523KB)
+
+**Next Milestone**: Milestone 5.1 - Validation Against Authority Packages
+
+**Effort**: Notebook created Nov 8, 2024
+
+---
+
 ## 2025-11-07: Milestone 4.6 - Trajectory Analysis Example Notebook COMPLETE
 
 ### Task: Create `examples/14_trajectory_analysis.ipynb`

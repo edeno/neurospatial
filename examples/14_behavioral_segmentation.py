@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: neurospatial
 #     language: python
 #     name: python3
 # ---
@@ -68,27 +68,37 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # **Output**: List of `Crossing` objects with time and direction ('entry' or 'exit')
 
 # %%
-# Create simple environment with a goal region
-positions = np.random.randn(200, 2) * 10 + 50
+# Create environment in 80x80 cm arena with a goal region
+arena_size = 80.0
+positions = np.random.uniform(5, arena_size - 5, (200, 2))  # Sample entire arena
 env = Environment.from_samples(positions, bin_size=3.0)
 env.units = "cm"
 
-# Define a goal region (circular area using buffered point)
-goal_center = np.array([55.0, 55.0])
+# Define a goal region in top-right corner (circular area)
+goal_center = np.array([65.0, 65.0])
 env.regions.buffer(goal_center, distance=8.0, new_name="goal")
 
 # Create trajectory that crosses the goal region multiple times
 times = np.linspace(0, 50, 200)  # 50 seconds
 
-# Generate trajectory: alternating between outside and inside goal region
+# Generate realistic trajectory: alternating between foraging and goal approaches
 trajectory_positions_list = []
 for i in range(200):
     if (i // 40) % 2 == 0:
-        # Outside goal region
-        pos = goal_center + np.random.randn(2) * 15 + np.array([20, 0])
+        # Foraging outside goal region (random position in arena)
+        pos = np.random.uniform(10, arena_size - 10, 2)
+        # Bias away from goal
+        to_goal = goal_center - pos
+        pos = pos - to_goal * 0.3
+        pos = np.clip(pos, 5, arena_size - 5)
     else:
-        # Inside goal region
-        pos = goal_center + np.random.randn(2) * 3
+        # Approach and enter goal region
+        progress = (i % 40) / 40.0
+        start_pos = (
+            trajectory_positions_list[-1] if trajectory_positions_list else [40, 40]
+        )
+        pos = start_pos + progress * (goal_center - start_pos)
+        pos += np.random.randn(2) * 2.0  # Add noise
     trajectory_positions_list.append(pos)
 
 trajectory_positions = np.array(trajectory_positions_list)
@@ -100,7 +110,46 @@ print(f"Environment: {env.n_bins} bins")
 print(f"Trajectory: {len(trajectory_positions)} samples over {times[-1]:.1f} seconds")
 
 # %% [markdown]
-# Detect crossings into and out of the goal region:
+# ### Single Example: Understanding One Crossing
+#
+# Before detecting all crossings, let's examine a single entry/exit event in detail:
+
+# %%
+# Manually identify one crossing by checking when bins transition in/out of goal region
+goal_mask = regions_to_mask(env, "goal")
+in_goal = goal_mask[trajectory_bins]  # Boolean array: True when in goal region
+
+# Find first entry event (False → True transition)
+entry_transitions = np.where(np.diff(in_goal.astype(int)) == 1)[0]
+if len(entry_transitions) > 0:
+    entry_idx = entry_transitions[0]
+
+    # Show surrounding samples
+    demo_window = slice(max(0, entry_idx - 3), min(len(times), entry_idx + 4))
+    demo_times = times[demo_window]
+    demo_bins = trajectory_bins[demo_window]
+    demo_in_goal = in_goal[demo_window]
+
+    print("✓ Single Entry Event (Frame-by-Frame):")
+    print(f"{'Frame':>6s} {'Time (s)':>10s} {'Bin ID':>8s} {'In Goal?':>10s}")
+    print("-" * 40)
+    for i, (t, b, in_g) in enumerate(
+        zip(demo_times, demo_bins, demo_in_goal, strict=False)
+    ):
+        marker = " <- ENTRY" if i == 3 else ""  # Mark the transition
+        print(f"{i:>6d} {t:>10.2f} {b:>8d} {in_g!s:>10s}{marker}")
+
+    print(f"\n  Entry detected at frame {entry_idx}, time {times[entry_idx]:.2f}s")
+    print(
+        f"  Bin changed from {trajectory_bins[entry_idx]} (outside) to {trajectory_bins[entry_idx + 1]} (inside goal)"
+    )
+else:
+    print("No entry transitions found - trajectory may not cross goal region")
+
+# %% [markdown]
+# ### Detect All Crossings
+#
+# Now that we understand how a single crossing is detected, let's find all crossings automatically:
 
 # %%
 # Detect all crossings (both entries and exits)
@@ -111,6 +160,30 @@ crossings = detect_region_crossings(
 print(f"\nDetected {len(crossings)} region crossings:")
 for i, crossing in enumerate(crossings, 1):
     print(f"  {i}. {crossing.direction:6s} at t={crossing.time:.2f}s")
+
+# Validation checks
+print("\n✓ Validation Checks:")
+n_entries = sum(1 for c in crossings if c.direction == "entry")
+n_exits = sum(1 for c in crossings if c.direction == "exit")
+print(f"  Entries: {n_entries}")
+print(f"  Exits: {n_exits}")
+
+# Crossings should alternate (entry, exit, entry, exit, ...)
+if len(crossings) > 1:
+    alternates_correctly = all(
+        crossings[i].direction != crossings[i + 1].direction
+        for i in range(len(crossings) - 1)
+    )
+    if alternates_correctly:
+        print("  ✓ Crossings alternate correctly (entry/exit pattern)")
+    else:
+        print("  ⚠ Warning: Crossings don't alternate - may indicate detection issue")
+
+# Number of entries and exits should differ by at most 1
+if abs(n_entries - n_exits) <= 1:
+    print(f"  ✓ Entry/exit counts balanced: {n_entries} entries, {n_exits} exits")
+else:
+    print(f"  ⚠ Warning: Imbalanced counts - {n_entries} entries vs {n_exits} exits")
 
 # %% [markdown]
 # Visualize trajectory with crossing events:
@@ -424,7 +497,10 @@ circular_trajectory = np.column_stack(
 times_circular = np.linspace(0, 100, total_samples)  # 100 seconds
 
 # Create environment
-env_circular = Environment.from_samples(circular_trajectory, bin_size=3.0)
+# Note: Use larger bin_size (8.0 cm) to make lap detection robust to trajectory noise.
+# With small bins (3.0 cm), each lap visits slightly different bins due to noise,
+# leading to low Jaccard overlap and failed detection.
+env_circular = Environment.from_samples(circular_trajectory, bin_size=8.0)
 env_circular.units = "cm"
 
 # Map to bins
@@ -438,8 +514,9 @@ print(f"Trajectory: {total_samples} samples, {n_laps} expected laps")
 
 # %%
 # Detect laps using auto method
+# Use min_overlap=0.5 to allow for natural trajectory variability
 laps = detect_laps(
-    circular_bins, times_circular, env_circular, method="auto", min_overlap=0.6
+    circular_bins, times_circular, env_circular, method="auto", min_overlap=0.5
 )
 
 print(f"\nDetected {len(laps)} laps:")
@@ -564,7 +641,8 @@ env_tmaze.regions.buffer(np.array([35.0, 60.0]), distance=5.0, new_name="left_go
 env_tmaze.regions.buffer(np.array([65.0, 60.0]), distance=5.0, new_name="right_goal")
 
 # Generate trajectory with 4 trials: left, right, left, right
-times_tmaze = np.linspace(0, 80, 400)  # 80 seconds
+# Total samples: 30+30+20+30 + 30+30+20+30 + 30+30+20+30 + 30+30+20+30 = 440
+times_tmaze = np.linspace(0, 88, 440)  # ~88 seconds, 440 samples
 
 trial_paths = [
     # Trial 1: start → left
@@ -589,6 +667,8 @@ trial_paths = [
     np.linspace([50, 20], [50, 50], 30) + np.random.randn(30, 2) * 1,
     np.linspace([50, 50], [65, 60], 30) + np.random.randn(30, 2) * 1,
     np.random.randn(20, 2) * 2 + [65, 60],
+    # Return to start
+    np.linspace([65, 60], [50, 20], 30) + np.random.randn(30, 2) * 1,
 ]
 
 trajectory_tmaze = np.vstack(trial_paths)
