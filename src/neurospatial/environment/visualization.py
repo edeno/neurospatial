@@ -346,7 +346,8 @@ class EnvironmentVisualization:
         if not self.layout.is_1d and self.n_dims > 2:
             raise NotImplementedError(
                 f"Cannot plot {self.n_dims}D fields spatially. "
-                "Only 1D and 2D environments are supported."
+                "Only 1D and 2D environments are supported. "
+                "Consider using marginal plots, slicing, or 3D scatter plots instead."
             )
 
         # Create axes if needed
@@ -491,6 +492,9 @@ def _plot_hex_field(
         )
 
     # Create hexagon patches
+    # Note: Unlike grid layouts which use colormap's built-in NaN handling,
+    # PatchCollection requires manual filtering of NaN values to avoid creating
+    # empty patches that matplotlib doesn't handle well.
     patches = []
     colors = []
 
@@ -550,13 +554,18 @@ def _plot_trimesh_field(
     # Get mesh points
     mesh_points = env.layout._full_delaunay_tri.points
 
+    # Setup colormap with NaN handling
+    cmap_obj = plt.get_cmap(cmap).copy()
+    if nan_color is not None:
+        cmap_obj.set_bad(color=nan_color, alpha=1.0)
+
     # Plot using tripcolor
     mesh = ax.tripcolor(
         mesh_points[:, 0],
         mesh_points[:, 1],
         triangles,
         facecolors=field,
-        cmap=cmap,
+        cmap=cmap_obj,
         vmin=vmin,
         vmax=vmax,
         rasterized=rasterized,
@@ -629,7 +638,7 @@ def _plot_scatter_field(
         sample_size = min(100, env.n_bins)
         distances, _ = tree.query(env.bin_centers[:sample_size], k=2)
         typical_spacing = np.median(distances[:, 1])
-        marker_size = (typical_spacing * 72 / 2) ** 2  # Convert to points^2
+        marker_size = (typical_spacing * 72 / 2) ** 2 if typical_spacing > 0 else 100
     else:
         marker_size = 100
 
