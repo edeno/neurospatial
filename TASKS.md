@@ -1,0 +1,524 @@
+# Simulation Subpackage Implementation Tasks
+
+**Project**: neurospatial.simulation subpackage
+**Last Updated**: 2025-11-11
+**Total Estimated Time**: 4.5 weeks (excluding optional Phase 4)
+
+---
+
+## Milestone 1: Core Trajectory + Place Cells (1 week)
+
+**Goal**: Minimal viable simulation for testing place field detection
+
+### Module Structure Setup
+
+- [x] Create directory structure: `src/neurospatial/simulation/`
+- [x] Create `__init__.py` with flat import design (see SIMULATION_PLAN.md lines 96-174)
+- [x] Create `models/` subdirectory with `__init__.py`
+- [x] Create test directory: `tests/simulation/`
+- [x] Set up imports in test `conftest.py`
+
+### Base Protocol Implementation
+
+- [x] Implement `NeuralModel` Protocol in `models/base.py`
+  - [x] Add `@runtime_checkable` decorator
+  - [x] Define `firing_rate()` method signature
+  - [x] Define `ground_truth` property with documented dict structures
+  - [x] Add comprehensive docstring with all model types (lines 345-386)
+- [x] Add type hints: `from typing import Protocol, runtime_checkable, Any`
+
+### Trajectory Simulation: OU Process
+
+- [x] Implement `simulate_trajectory_ou()` in `trajectory.py` (lines 208-316)
+  - [x] Parse parameters: `env`, `duration`, `dt`, `start_position`, `speed_mean`, `speed_std`, `coherence_time`
+  - [x] Validate `env.units` is set (raise `ValueError` if None)
+  - [x] Implement Euler-Maruyama integration scheme for N-D velocity
+  - [x] Add velocity magnitude clipping to maintain `speed_mean`
+  - [x] Implement boundary handling modes:
+    - [x] `'reflect'`: Elastic boundary reflection (lines 2066-2082)
+    - [x] `'periodic'`: Toroidal wrapping (lines 2084-2090)
+    - [x] `'stop'`: Clamp to boundary (lines 2092-2097)
+  - [x] Add speed units conversion support (if `speed_units` != `env.units`)
+  - [x] Implement random seed handling with `np.random.default_rng(seed)`
+  - [x] Return `(positions, times)` tuple
+- [x] Write comprehensive NumPy docstring with all parameters documented
+
+### Trajectory Simulation: Sinusoidal (1D)
+
+- [x] Implement `simulate_trajectory_sinusoidal()` in `trajectory.py` (lines 318-373)
+  - [x] Check `env.is_1d` (raise `ValueError` if False)
+  - [x] Compute period from track length and speed if not provided
+  - [x] Generate sinusoidal motion with pauses at peaks
+  - [x] Return `(positions, times)` tuple
+- [x] Write NumPy docstring
+
+### Place Cell Model
+
+- [x] Implement `PlaceCellModel` in `models/place_cells.py` (lines 502-610)
+  - [x] Constructor: store `env`, `center`, `width`, `max_rate`, `baseline_rate`, `distance_metric`, `condition`, `seed`
+  - [x] If `center` is None, randomly choose from `env.bin_centers`
+  - [x] If `width` is None, default to `3 * env.bin_size`
+  - [x] Implement `firing_rate(positions, times)` method:
+    - [x] Compute distance (euclidean or geodesic) from positions to center
+    - [x] For geodesic: precompute distance field in `__init__` (cache it)
+    - [x] Apply Gaussian decay with clipping at 5σ for numerical stability
+    - [x] Formula: `baseline + (max - baseline) * exp(-0.5 * (d/width)^2)`
+    - [x] Apply condition mask if provided: `rates * condition(positions, times)`
+  - [x] Implement `ground_truth` property returning dict with keys: `center`, `width`, `max_rate`, `baseline_rate`
+- [x] Write comprehensive NumPy docstring with examples
+
+### Spike Generation
+
+- [x] Implement `generate_poisson_spikes()` in `spikes.py` (lines 781-838)
+  - [x] Generate candidate spikes from inhomogeneous Poisson process
+  - [x] Sort candidate spike times
+  - [x] Apply O(n) refractory period filter (single-pass algorithm, lines 811-823)
+  - [x] Handle random seed with `np.random.default_rng(seed)`
+  - [x] Return spike times array
+- [x] Write NumPy docstring with algorithm notes
+
+- [x] Implement `generate_population_spikes()` in `spikes.py` (lines 840-908)
+  - [x] Loop over models with progress bar (use `tqdm.auto.tqdm`)
+  - [x] Compute firing rates for each model
+  - [x] Generate spikes for each model with derived seeds
+  - [x] Show progress with postfix: `n_spikes`, `rate`
+  - [x] Print summary after completion
+  - [x] Return list of spike time arrays
+- [x] Write NumPy docstring
+
+### Testing
+
+- [x] Write `tests/simulation/test_trajectory.py`:
+  - [x] Test OU trajectory stays in bounds
+  - [x] Test velocity autocorrelation matches `coherence_time`
+  - [x] Test boundary modes (reflect, periodic, stop)
+  - [x] Test sinusoidal trajectory requires 1D environment
+  - [x] Test reproducibility with same seed
+
+- [x] Write `tests/simulation/test_models.py`:
+  - [x] Test place cell peak at center
+  - [x] Test Gaussian falloff at 1σ
+  - [x] Test geodesic vs euclidean distance options
+  - [x] Test condition function gates firing correctly
+  - [x] Test ground_truth property returns correct keys
+
+- [x] Write `tests/simulation/test_spikes.py`:
+  - [x] Test Poisson spike generation mean rate
+  - [x] Test refractory period constraint (all ISIs >= refractory_period)
+  - [x] Test spike times are sorted
+  - [x] Test reproducibility with seed
+  - [x] Test population spikes returns correct number of arrays
+
+### Documentation
+
+- [x] Add docstring examples to all functions
+- [x] Run doctests: `uv run pytest --doctest-modules src/neurospatial/simulation/`
+- [x] Ensure all docstrings follow NumPy format
+
+### Validation
+
+- [x] Run all tests: `uv run pytest tests/simulation/`
+- [x] Run with coverage: `uv run pytest --cov=src/neurospatial/simulation`
+- [x] Run mypy: `uv run mypy src/neurospatial/simulation/`
+- [x] Run ruff: `uv run ruff check src/neurospatial/simulation/ && uv run ruff format src/neurospatial/simulation/`
+
+---
+
+## Milestone 2: Boundary Cells + Extended Models (1 week)
+
+**Goal**: Add boundary cell model and structured trajectory patterns
+
+### Trajectory Simulation: Laps
+
+- [ ] Implement `simulate_trajectory_laps()` in `trajectory.py` (lines 375-440)
+  - [ ] Parse parameters: `env`, `n_laps`, `speed_mean`, `speed_std`, `outbound_path`, `inbound_path`, `pause_duration`, `sampling_frequency`, `seed`, `return_metadata`
+  - [ ] If paths not provided, use shortest path between environment extrema
+  - [ ] Generate velocity along path with noise
+  - [ ] Add pauses at lap ends
+  - [ ] If `return_metadata=True`, return `(positions, times, metadata)` with lap IDs and directions
+  - [ ] Otherwise return `(positions, times)`
+- [ ] Write NumPy docstring with T-maze example
+
+### Boundary Cell Model
+
+- [ ] Implement `BoundaryCellModel` in `models/boundary_cells.py` (lines 614-687)
+  - [ ] Constructor: store `env`, `preferred_distance`, `distance_tolerance`, `preferred_direction`, `direction_tolerance`, `max_rate`, `baseline_rate`, `distance_metric`
+  - [ ] Precompute boundary bins: `env.boundary_bins()`
+  - [ ] Precompute distance field from all boundary bins (cache it)
+  - [ ] Implement `firing_rate(positions, times)` method:
+    - [ ] Compute distance to nearest boundary for each position
+    - [ ] If directional, compute direction to boundary and apply von Mises tuning
+    - [ ] Apply Gaussian tuning: `exp(-(d - preferred_distance)^2 / (2 * tolerance^2))`
+    - [ ] Scale by max_rate and add baseline
+  - [ ] Implement `ground_truth` property
+- [ ] Write NumPy docstring
+
+### Spike Modulation
+
+- [ ] Implement `add_modulation()` in `spikes.py` (lines 910-948)
+  - [ ] Compute phase of each spike time: `2π * freq * spike_times + phase`
+  - [ ] Compute acceptance probability: `(1 + depth * cos(phase)) / 2`
+  - [ ] Thin spikes using acceptance probability
+  - [ ] Return modulated spike times
+- [ ] Write NumPy docstring
+
+### Testing
+
+- [ ] Write tests for `simulate_trajectory_laps()`:
+  - [ ] Test n_laps produces correct number of laps
+  - [ ] Test metadata contains lap_ids and directions
+  - [ ] Test pauses at lap ends
+
+- [ ] Write tests for `BoundaryCellModel`:
+  - [ ] Test peak firing at preferred_distance
+  - [ ] Test directional tuning when preferred_direction specified
+  - [ ] Test omnidirectional when preferred_direction=None
+
+- [ ] Write tests for `add_modulation()`:
+  - [ ] Test modulation reduces spike count
+  - [ ] Test phase preference
+  - [ ] Test modulation_depth=0 returns all spikes
+
+### Documentation
+
+- [ ] Add examples to all new functions
+- [ ] Run doctests
+
+### Validation
+
+- [ ] Run all tests with coverage
+- [ ] Run mypy and ruff
+
+---
+
+## Milestone 3: Grid Cells + Convenience Functions (1.5 weeks)
+
+**Goal**: Add grid cells, high-level session API, validation helpers, and pre-configured examples
+
+### Grid Cell Model
+
+- [ ] Implement `GridCellModel` in `models/grid_cells.py` (lines 689-772)
+  - [ ] Check `env.n_dims == 2` in constructor (raise ValueError otherwise)
+  - [ ] Constructor: store `env`, `grid_spacing`, `grid_orientation`, `phase_offset`, `max_rate`, `baseline_rate`, `field_width`
+  - [ ] Implement `firing_rate(positions, times)` method:
+    - [ ] Compute wave vectors: `k_magnitude = 4π / (√3 * grid_spacing)`
+    - [ ] Compute three wave vectors at 60° intervals (lines 753-758)
+    - [ ] Apply rotation by `grid_orientation`
+    - [ ] Compute grid pattern: `g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))`
+    - [ ] Apply rectification: `rate = baseline + (max - baseline) * max(0, g(x))`
+  - [ ] Implement `ground_truth` property
+- [ ] Write NumPy docstring
+
+### Session Simulation
+
+- [ ] Implement `SimulationSession` dataclass in `session.py` (lines 965-992)
+  - [ ] Add `@dataclass(frozen=True)` decorator
+  - [ ] Define fields: `env`, `positions`, `times`, `spike_trains`, `models`, `ground_truth`, `metadata`
+  - [ ] Add type hints for all fields
+  - [ ] Write comprehensive docstring
+
+- [ ] Implement `simulate_session()` in `session.py` (lines 994-1077)
+  - [ ] Parse parameters including `coverage` (lines 1027-1034 explain algorithm)
+  - [ ] Validate parameters
+  - [ ] Generate trajectory based on `trajectory_method`
+  - [ ] Create models based on `cell_type`:
+    - [ ] `'place'`: All place cells
+    - [ ] `'boundary'`: All boundary cells
+    - [ ] `'grid'`: All grid cells
+    - [ ] `'mixed'`: 60% place, 20% boundary, 20% grid
+  - [ ] Distribute field centers based on `coverage`:
+    - [ ] `'uniform'`: `env.bin_centers[::step]` where `step = max(1, n_bins // n_cells)`
+    - [ ] `'random'`: `np.random.choice(env.bin_centers, size=n_cells)`
+  - [ ] Generate spikes with `generate_population_spikes()`
+  - [ ] Collect ground truth from all models
+  - [ ] Create metadata dict with session parameters
+  - [ ] Return `SimulationSession` instance
+- [ ] Write NumPy docstring with examples
+
+### Validation Helpers
+
+- [ ] Implement `validate_simulation()` in `validation.py` (lines 1056-1141)
+  - [ ] Parse session or individual parameters
+  - [ ] Loop over spike trains:
+    - [ ] Compute place field with `compute_place_field()`
+    - [ ] Detect center (peak of rate map)
+    - [ ] Compare to ground truth center
+    - [ ] Compute correlation between true and detected rate maps
+  - [ ] Compute error statistics: center errors, correlations, width errors, rate errors
+  - [ ] Generate summary string
+  - [ ] Determine pass/fail based on thresholds
+  - [ ] If `show_plots`, create diagnostic plots
+  - [ ] Return dict with: `center_errors`, `center_correlations`, `width_errors`, `rate_errors`, `summary`, `passed`, optional `plots`
+- [ ] Write NumPy docstring
+
+- [ ] Implement `plot_session_summary()` in `validation.py` (lines 1143-1173)
+  - [ ] Create multi-panel figure
+  - [ ] Plot trajectory
+  - [ ] Plot selected cells' rate maps
+  - [ ] Plot ground truth vs detected centers
+  - [ ] Plot raster plots
+  - [ ] Return `(fig, axes)` tuple
+- [ ] Write NumPy docstring
+
+### Pre-Configured Examples
+
+- [ ] Implement `open_field_session()` in `examples.py` (lines 1183-1223)
+  - [ ] Create square arena environment
+  - [ ] Call `simulate_session()` with appropriate parameters
+  - [ ] Return `SimulationSession`
+- [ ] Write NumPy docstring
+
+- [ ] Implement `linear_track_session()` in `examples.py` (lines 1225-1261)
+  - [ ] Create 1D track environment
+  - [ ] Use sinusoidal trajectory
+  - [ ] Add direction-selective place cells
+  - [ ] Return `SimulationSession`
+- [ ] Write NumPy docstring
+
+- [ ] Implement `tmaze_alternation_session()` in `examples.py` (lines 1263-1297)
+  - [ ] Create T-maze graph environment
+  - [ ] Use lap-based trajectory with alternating paths
+  - [ ] Add trial metadata
+  - [ ] Return `SimulationSession`
+- [ ] Write NumPy docstring
+
+- [ ] Implement `boundary_cell_session()` in `examples.py` (lines 1299-1342)
+  - [ ] Create environment with specified shape (square/circle/polygon)
+  - [ ] Mix boundary cells and place cells
+  - [ ] Return `SimulationSession`
+- [ ] Write NumPy docstring
+
+- [ ] Implement `grid_cell_session()` in `examples.py` (lines 1344-1381)
+  - [ ] Create 2D arena
+  - [ ] Create grid cells with varied phases
+  - [ ] Return `SimulationSession`
+- [ ] Write NumPy docstring
+
+### Testing
+
+- [ ] Write tests for `GridCellModel`:
+  - [ ] Test hexagonal symmetry
+  - [ ] Test grid spacing matches parameter
+  - [ ] Test orientation rotation
+  - [ ] Test requires 2D environment
+
+- [ ] Write `tests/simulation/test_integration.py`:
+  - [ ] Test `simulate_session()` with all cell types
+  - [ ] Test `validate_simulation()` detects place fields correctly
+  - [ ] Test all pre-configured examples run without errors
+  - [ ] Test place field detection accuracy (lines 1912-1947):
+    - [ ] Create known place cells
+    - [ ] Generate trajectory and spikes
+    - [ ] Detect fields with `compute_place_field()`
+    - [ ] Assert detection error < 2 * bin_size
+
+### Update __init__.py
+
+- [ ] Add all new functions/classes to imports (lines 96-174)
+- [ ] Update `__all__` list
+- [ ] Test flat imports work: `from neurospatial.simulation import <everything>`
+
+### Documentation
+
+- [ ] Add comprehensive examples to high-level functions
+- [ ] Run all doctests
+- [ ] Create example usage scripts
+
+### Validation
+
+- [ ] Run full test suite: `uv run pytest tests/simulation/`
+- [ ] Achieve >90% code coverage
+- [ ] Run mypy with no errors
+- [ ] Run ruff check and format
+
+---
+
+## Milestone 3.5: Documentation Integration (0.5 weeks)
+
+**Goal**: Replace hand-written simulation code in example notebooks with simulation subpackage
+
+### Update Existing Notebooks
+
+- [ ] Update `examples/11_place_field_analysis.ipynb` (HIGH PRIORITY):
+  - [ ] Replace Section "2D Random Walk Generation" with `simulate_trajectory_ou()`
+  - [ ] Replace Section "Place Cell Simulation" with `PlaceCellModel` + `generate_poisson_spikes()`
+  - [ ] Replace Section "T-maze Trajectory" with `tmaze_alternation_session()`
+  - [ ] Add markdown cell explaining simulation subpackage usage
+  - [ ] Test notebook runs without errors
+
+- [ ] Update `examples/08_spike_field_basics.ipynb` (HIGH PRIORITY):
+  - [ ] Replace Section "Random Walk" with `simulate_trajectory_ou()`
+  - [ ] Replace Section "Spike Generation" with simulation API
+  - [ ] Add note directing to simulation subpackage documentation
+  - [ ] Test notebook runs without errors
+
+- [ ] Update `examples/12_boundary_cell_analysis.ipynb` (MEDIUM PRIORITY):
+  - [ ] Replace Section "Random Walk" with `simulate_trajectory_ou()`
+  - [ ] Add note about `boundary_cell_session()` example
+  - [ ] Test notebook runs without errors
+
+### Create New Notebook
+
+- [ ] Create `examples/15_simulation_workflows.ipynb`:
+  - [ ] Add introduction to simulation subpackage
+  - [ ] Section 1: Quick start with `open_field_session()`
+  - [ ] Section 2: Low-level API demonstration (trajectory + models + spikes)
+  - [ ] Section 3: All pre-configured examples (open_field, linear_track, tmaze, boundary, grid)
+  - [ ] Section 4: Validation workflow with `validate_simulation()`
+  - [ ] Section 5: Customization examples:
+    - [ ] Direction-selective place cell
+    - [ ] Speed-gated place cell
+    - [ ] Custom boundary cell
+  - [ ] Section 6: Performance tips
+  - [ ] Test notebook runs without errors
+
+### Sync Notebooks
+
+- [ ] Copy updated notebooks from `examples/` to `docs/examples/`
+- [ ] Verify documentation build picks up new notebooks
+- [ ] Check all links work
+
+### Documentation Updates
+
+- [ ] Update main `README.md`:
+  - [ ] Add "Simulation" section
+  - [ ] Link to `examples/15_simulation_workflows.ipynb`
+  - [ ] Add quick example code snippet
+
+- [ ] Update API reference:
+  - [ ] Add simulation subpackage section
+  - [ ] Document all public functions and classes
+  - [ ] Add cross-references to related functions
+
+- [ ] Create migration guide:
+  - [ ] Document how to replace hand-written simulation code
+  - [ ] Show before/after examples
+  - [ ] Provide troubleshooting tips
+
+### Validation
+
+- [ ] Run all notebooks and verify they execute without errors
+- [ ] Check that simulation code is significantly shorter and clearer
+- [ ] Verify examples demonstrate best practices
+
+---
+
+## Milestone 4 (Optional): Advanced Features
+
+**Goal**: Advanced realism features based on user demand
+
+**Priority**: Implement based on user requests. Phase 3 features provide more immediate value.
+
+### State-Dependent Movement
+
+- [ ] Add `exploration_params` and `exploitation_params` to OU process
+- [ ] Implement state switching logic
+- [ ] Add tests
+- [ ] Document usage
+
+### Bursting Behavior
+
+- [ ] Add `burst_probability`, `burst_size`, `intraburst_interval` to spike generation
+- [ ] Implement burst generation algorithm
+- [ ] Add tests
+- [ ] Document usage
+
+### Elliptical Place Fields
+
+- [ ] Add `covariance` matrix parameter to `PlaceCellModel`
+- [ ] Implement anisotropic Gaussian fields
+- [ ] Add tests
+- [ ] Document usage
+
+### Correlated Turning
+
+- [ ] Add `turning_correlation` parameter to OU process
+- [ ] Implement heading autocorrelation
+- [ ] Add tests
+- [ ] Document usage
+
+### SpikeTrain Class
+
+- [ ] Design `SpikeTrain` wrapper class with metadata
+- [ ] Implement useful methods (ISI, firing rate, etc.)
+- [ ] Add tests
+- [ ] Document usage
+
+---
+
+## Completion Checklist
+
+### Code Quality
+
+- [ ] All functions have NumPy-style docstrings
+- [ ] All functions have working examples in docstrings
+- [ ] All doctests pass: `uv run pytest --doctest-modules src/neurospatial/simulation/`
+- [ ] Test coverage >90%: `uv run pytest --cov=src/neurospatial/simulation tests/simulation/`
+- [ ] Mypy passes with no errors: `uv run mypy src/neurospatial/simulation/`
+- [ ] Ruff check passes: `uv run ruff check src/neurospatial/simulation/`
+- [ ] Ruff format applied: `uv run ruff format src/neurospatial/simulation/`
+
+### Performance
+
+- [ ] `simulate_trajectory_ou()` for 60s @ 100 Hz (6k points) < 100 ms
+- [ ] `PlaceCellModel.firing_rate()` (Euclidean) for 6k positions < 10 ms
+- [ ] `PlaceCellModel.firing_rate()` (Geodesic) for 6k positions < 1 s
+- [ ] `generate_poisson_spikes()` for 6k timepoints < 50 ms
+- [ ] `generate_population_spikes()` for 50 cells × 6k points < 5 s
+- [ ] `GridCellModel.firing_rate()` for 6k positions < 20 ms
+
+### Testing Checklist (from SIMULATION_PLAN.md lines 2174-2197)
+
+**For Each Neural Model:**
+- [ ] Peak firing rate occurs at expected location
+- [ ] Firing rate decays correctly with distance
+- [ ] Condition function properly gates firing (if applicable)
+- [ ] ground_truth property returns all model parameters
+- [ ] Works correctly in 1D, 2D, 3D environments (or raises clear error)
+
+**For Trajectory Simulation:**
+- [ ] All positions lie within environment (`env.contains()` returns True)
+- [ ] Velocity statistics match parameters (mean speed, coherence time)
+- [ ] Boundary handling works correctly (reflect, periodic, stop)
+- [ ] Position and time arrays have consistent shapes
+- [ ] Reproducible with same seed
+
+**For Spike Generation:**
+- [ ] Mean firing rate matches expected rate (within Poisson variance)
+- [ ] Inter-spike intervals >= refractory_period (all ISIs)
+- [ ] Spike times sorted in ascending order
+- [ ] Reproducible with same seed
+- [ ] No spikes outside time range
+
+### Documentation
+
+- [ ] All notebooks run without errors
+- [ ] All examples in documentation are tested
+- [ ] API reference is complete and accurate
+- [ ] Migration guide is clear and helpful
+- [ ] README includes simulation section
+
+### Integration
+
+- [ ] Flat imports work correctly from `neurospatial.simulation`
+- [ ] All public functions/classes in `__all__`
+- [ ] Type hints are complete and correct
+- [ ] Follows neurospatial patterns (functions, not methods)
+- [ ] Works with all neurospatial `Environment` types (1D, 2D, 3D, N-D)
+
+---
+
+## Notes
+
+- Use `uv run` prefix for all commands (per CLAUDE.md)
+- Follow NumPy docstring format (per CLAUDE.md)
+- All implementations must follow SIMULATION_PLAN.md specifications
+- Reference line numbers in SIMULATION_PLAN.md for detailed specifications
+- Run tests frequently during development
+- Commit after each completed task with conventional commit messages (per CLAUDE.md)
+
+**Conventional Commit Format:**
+- `feat(simulation): add PlaceCellModel implementation`
+- `test(simulation): add tests for OU trajectory`
+- `docs(simulation): add examples to validate_simulation`
+- `fix(simulation): correct grid cell wave vector calculation`

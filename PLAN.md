@@ -77,6 +77,7 @@ Phase 6 — Tests & notebooks
 
 Advanced Utilities (kept, re‑exported)
 --------------------------------------
+
 These remain available as flat functions and are documented as advanced tools. They are not “primary verbs” but are part of the public API.
 
 - Differential operators: `gradient`, `divergence`
