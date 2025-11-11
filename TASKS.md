@@ -221,23 +221,23 @@
   - [x] Add type hints for all fields
   - [x] Write comprehensive docstring
 
-- [ ] Implement `simulate_session()` in `session.py` (lines 994-1077)
-  - [ ] Parse parameters including `coverage` (lines 1027-1034 explain algorithm)
-  - [ ] Validate parameters
-  - [ ] Generate trajectory based on `trajectory_method`
-  - [ ] Create models based on `cell_type`:
-    - [ ] `'place'`: All place cells
-    - [ ] `'boundary'`: All boundary cells
-    - [ ] `'grid'`: All grid cells
-    - [ ] `'mixed'`: 60% place, 20% boundary, 20% grid
-  - [ ] Distribute field centers based on `coverage`:
-    - [ ] `'uniform'`: `env.bin_centers[::step]` where `step = max(1, n_bins // n_cells)`
-    - [ ] `'random'`: `np.random.choice(env.bin_centers, size=n_cells)`
-  - [ ] Generate spikes with `generate_population_spikes()`
-  - [ ] Collect ground truth from all models
-  - [ ] Create metadata dict with session parameters
-  - [ ] Return `SimulationSession` instance
-- [ ] Write NumPy docstring with examples
+- [x] Implement `simulate_session()` in `session.py` (lines 994-1077)
+  - [x] Parse parameters including `coverage` (lines 1027-1034 explain algorithm)
+  - [x] Validate parameters
+  - [x] Generate trajectory based on `trajectory_method`
+  - [x] Create models based on `cell_type`:
+    - [x] `'place'`: All place cells
+    - [x] `'boundary'`: All boundary cells
+    - [x] `'grid'`: All grid cells
+    - [x] `'mixed'`: 60% place, 20% boundary, 20% grid
+  - [x] Distribute field centers based on `coverage`:
+    - [x] `'uniform'`: `env.bin_centers[::step]` where `step = max(1, n_bins // n_cells)`
+    - [x] `'random'`: `np.random.choice(env.bin_centers, size=n_cells)`
+  - [x] Generate spikes with `generate_population_spikes()`
+  - [x] Collect ground truth from all models
+  - [x] Create metadata dict with session parameters
+  - [x] Return `SimulationSession` instance
+- [x] Write NumPy docstring with examples
 
 ### Validation Helpers
 

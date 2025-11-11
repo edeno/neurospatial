@@ -252,9 +252,11 @@ class BoundaryCellModel:
             # Map positions to bins and lookup distances
             bin_indices = np.array(
                 [
-                    self.env.bin_at(pos)
+                    int(self.env.bin_at(pos)[0])
                     if self.env.contains(pos)
-                    else np.argmin(np.linalg.norm(self.env.bin_centers - pos, axis=1))
+                    else int(
+                        np.argmin(np.linalg.norm(self.env.bin_centers - pos, axis=1))
+                    )
                     for pos in positions
                 ],
                 dtype=np.int_,
