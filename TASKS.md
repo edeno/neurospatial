@@ -280,12 +280,12 @@
   - [x] Return `SimulationSession`
 - [x] Write NumPy docstring
 
-- [ ] Implement `tmaze_alternation_session()` in `examples.py` (lines 1263-1297)
-  - [ ] Create T-maze graph environment
-  - [ ] Use lap-based trajectory with alternating paths
-  - [ ] Add trial metadata
-  - [ ] Return `SimulationSession`
-- [ ] Write NumPy docstring
+- [x] Implement `tmaze_alternation_session()` in `examples.py` (lines 331-530)
+  - [x] Create T-maze graph environment
+  - [x] Use lap-based trajectory with alternating paths
+  - [x] Add trial metadata
+  - [x] Return `SimulationSession`
+- [x] Write NumPy docstring
 
 - [ ] Implement `boundary_cell_session()` in `examples.py` (lines 1299-1342)
   - [ ] Create environment with specified shape (square/circle/polygon)

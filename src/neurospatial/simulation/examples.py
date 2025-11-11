@@ -326,3 +326,214 @@ def linear_track_session(
     )
 
     return session
+
+
+def tmaze_alternation_session(
+    duration: float = 300.0,
+    n_trials: int = 20,
+    n_place_cells: int = 60,
+    seed: int | None = None,
+) -> SimulationSession:
+    """Generate T-maze spatial alternation task simulation.
+
+    Creates a T-maze graph environment with place cells and lap-based
+    trajectory that alternates between left and right arms. This is a
+    convenience function for simulating typical spatial alternation tasks
+    in hippocampal recordings.
+
+    Parameters
+    ----------
+    duration : float, optional
+        Session duration in seconds (default: 300.0).
+    n_trials : int, optional
+        Number of alternation trials (default: 20).
+    n_place_cells : int, optional
+        Number of place cells (default: 60).
+    seed : int | None, optional
+        Random seed for reproducibility (default: None).
+
+    Returns
+    -------
+    session : SimulationSession
+        Complete simulation session containing:
+        - env: T-maze graph Environment with units="cm"
+        - positions: Trajectory from lap-based running with alternation
+        - times: Time points matching trajectory
+        - spike_trains: Poisson spikes for each place cell
+        - models: PlaceCellModel instances
+        - ground_truth: True parameters for each cell
+        - metadata: Session configuration including 'trial_choices'
+
+    Raises
+    ------
+    ValueError
+        If duration, n_trials, or n_place_cells are non-positive.
+
+    Examples
+    --------
+    Quick start for testing:
+
+    >>> from neurospatial.simulation import tmaze_alternation_session
+    >>> session = tmaze_alternation_session(
+    ...     duration=60.0, n_trials=10, n_place_cells=20
+    ... )
+    >>> env = session.env
+    >>> len(session.spike_trains)
+    20
+    >>> "trial_choices" in session.metadata
+    True
+
+    Check trial alternation pattern:
+
+    >>> from neurospatial.simulation import tmaze_alternation_session
+    >>> session = tmaze_alternation_session(n_trials=10, seed=42)
+    >>> trial_choices = session.metadata["trial_choices"]
+    >>> len(trial_choices)
+    10
+    >>> set(trial_choices)
+    {'left', 'right'}
+
+    Visualize session summary:
+
+    >>> from neurospatial.simulation import (
+    ...     tmaze_alternation_session,
+    ...     plot_session_summary,
+    ... )
+    >>> import matplotlib.pyplot as plt
+    >>> session = tmaze_alternation_session(
+    ...     duration=60.0, n_trials=10, n_place_cells=10, seed=42
+    ... )
+    >>> fig, axes = plot_session_summary(session)
+    >>> plt.show()  # doctest: +SKIP
+
+    See Also
+    --------
+    simulate_session : Low-level session simulation with full control
+    validate_simulation : Validate detected vs ground truth fields
+    plot_session_summary : Visualize session summary
+    linear_track_session : Linear track with lap-based running
+
+    Notes
+    -----
+    **Default Parameters**:
+
+    The defaults are chosen to match typical rodent spatial alternation tasks:
+
+    - Duration: 300 seconds (5 minutes) - sufficient for multiple trials
+    - Number of trials: 20 - typical experimental session length
+    - Number of cells: 60 - realistic hippocampal CA1 recording
+
+    **T-maze Structure**:
+
+    Creates a simplified T-maze graph with:
+    - Central stem (100 cm)
+    - Left arm (50 cm)
+    - Right arm (50 cm)
+    Total track length: approximately 150 cm
+
+    **Trajectory**:
+
+    Uses lap-based trajectory generation. The animal alternates between
+    left and right arms according to a perfect alternation pattern,
+    starting with a random first choice determined by the seed.
+
+    **Trial Metadata**:
+
+    The metadata['trial_choices'] field contains a list of strings
+    indicating the choice on each trial: ['left', 'right', 'left', ...].
+    This allows analysis of choice-dependent neural activity.
+
+    **Coverage**:
+
+    Place field centers are uniformly distributed across the T-maze
+    environment to ensure representative spatial sampling across all
+    regions (stem, left arm, right arm).
+    """
+    # Import here to avoid circular dependencies
+    import networkx as nx
+
+    from neurospatial import Environment
+    from neurospatial.simulation.session import simulate_session
+
+    # Validate parameters
+    if duration <= 0:
+        msg = f"duration must be positive, got {duration}"
+        raise ValueError(msg)
+    if n_trials <= 0:
+        msg = f"n_trials must be positive, got {n_trials}"
+        raise ValueError(msg)
+    if n_place_cells <= 0:
+        msg = f"n_place_cells must be positive, got {n_place_cells}"
+        raise ValueError(msg)
+
+    # Create T-maze graph structure
+    # Nodes: stem_start (0,0), center (0,100), left_end (-50,150), right_end (50,150)
+    tmaze_graph = nx.Graph()
+    tmaze_graph.add_node("stem_start", pos=(0.0, 0.0))
+    tmaze_graph.add_node("center", pos=(0.0, 100.0))
+    tmaze_graph.add_node("left_end", pos=(-50.0, 150.0))
+    tmaze_graph.add_node("right_end", pos=(50.0, 150.0))
+
+    # Add edges with distance attribute
+    # Stem edge
+    pos1 = np.array(tmaze_graph.nodes["stem_start"]["pos"])
+    pos2 = np.array(tmaze_graph.nodes["center"]["pos"])
+    distance = np.linalg.norm(pos2 - pos1)
+    tmaze_graph.add_edge("stem_start", "center", distance=distance)
+
+    # Left arm edge
+    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
+    pos2 = np.array(tmaze_graph.nodes["left_end"]["pos"])
+    distance = np.linalg.norm(pos2 - pos1)
+    tmaze_graph.add_edge("center", "left_end", distance=distance)
+
+    # Right arm edge
+    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
+    pos2 = np.array(tmaze_graph.nodes["right_end"]["pos"])
+    distance = np.linalg.norm(pos2 - pos1)
+    tmaze_graph.add_edge("center", "right_end", distance=distance)
+
+    # Define edge order for linearization (stem -> left arm path as primary)
+    edge_order = [("stem_start", "center"), ("center", "left_end")]
+    edge_spacing = 0.0  # No spacing between connected edges
+
+    # Create environment from graph
+    env = Environment.from_graph(
+        graph=tmaze_graph,
+        edge_order=edge_order,
+        edge_spacing=edge_spacing,
+        bin_size=2.0,
+    )
+    env.units = "cm"
+
+    # Generate trial choices (perfect alternation pattern)
+    # Use seed to determine first choice, then alternate
+    rng = np.random.default_rng(seed)
+    first_choice = rng.choice(["left", "right"])
+
+    trial_choices = []
+    for i in range(n_trials):
+        if i == 0:
+            trial_choices.append(first_choice)
+        else:
+            # Alternate from previous choice
+            prev = trial_choices[-1]
+            trial_choices.append("right" if prev == "left" else "left")
+
+    # Simulate session with place cells and lap trajectory
+    session = simulate_session(
+        env,
+        duration=duration,
+        n_cells=n_place_cells,
+        cell_type="place",
+        trajectory_method="laps",
+        coverage="uniform",
+        n_laps=n_trials,
+        seed=seed,
+        show_progress=False,  # Disable progress bar for convenience function
+    )
+
+    # Add trial_choices to metadata
+    session.metadata["trial_choices"] = trial_choices
+
+    return session

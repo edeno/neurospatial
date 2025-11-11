@@ -514,6 +514,59 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
 - ✅ Code review feedback fully addressed
 
+### `tmaze_alternation_session()` Implementation
+
+**Location**: `src/neurospatial/simulation/examples.py` (lines 331-530)
+
+**Tests**: 16 tests passing in `tests/simulation/test_examples.py` (lines 347-541)
+
+**Key Features**:
+
+- Pre-configured convenience function for T-maze spatial alternation tasks
+- Creates T-maze graph environment using NetworkX
+- Uses Environment.from_graph() for graph-based environment creation
+- Generates place cell spike trains with uniform coverage
+- Returns SimulationSession dataclass with trial_choices metadata
+- Comprehensive parameter validation with diagnostic error messages
+- Perfect alternation pattern (left-right-left-right...)
+- Reproducible with seed parameter
+
+**Code Review Applied**: Fixed critical issues identified by code-reviewer:
+
+1. ✅ Fixed variable naming: `G` → `tmaze_graph` (PEP 8 compliance)
+2. ✅ Added tmaze_alternation_session to imports in `neurospatial.simulation.__init__.py`
+3. ✅ Added to `__all__` list for public API access
+4. ✅ Added 3 parameter validation tests (duration, n_trials, n_place_cells)
+
+**Key Design Decisions**:
+
+1. **T-maze Structure**: Created simplified T-maze graph with:
+   - Stem: 100 cm (stem_start to center)
+   - Left arm: ~70.7 cm (center to left_end at diagonal)
+   - Right arm: ~70.7 cm (center to right_end at diagonal)
+   - Total graph has 4 nodes and 3 edges
+
+2. **Graph Edge Attributes**: Computed Euclidean distance for each edge and added as `distance` attribute (required by GraphLayout)
+
+3. **Perfect Alternation**: Generates trial choices by:
+   - Using seed to randomly pick first choice (left or right)
+   - Alternating strictly thereafter: ['left', 'right', 'left', ...]
+   - Stored in `session.metadata['trial_choices']`
+
+4. **Edge Ordering**: Uses only stem + left arm in edge_order for linearization, creating a branching structure suitable for choice-point analysis
+
+5. **Trial Metadata**: Extended SimulationSession by adding `trial_choices` key to metadata dict, allowing downstream analysis of choice-dependent neural activity
+
+**Quality Checks**:
+
+- ✅ All 16 tests passing (13 original + 3 validation tests)
+- ✅ ruff check passes (no issues after renaming G → tmaze_graph)
+- ✅ mypy passes (no type errors)
+- ✅ Comprehensive NumPy docstring with 3 examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+- ✅ Code review feedback fully addressed
+- ✅ Public export verified: `from neurospatial.simulation import tmaze_alternation_session` works
+
 ## Blockers
 
-None - linear_track_session() complete and tested. Ready for next example function (tmaze_alternation_session).
+None - tmaze_alternation_session() complete and tested. Ready for next example function (boundary_cell_session or grid_cell_session).

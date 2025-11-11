@@ -48,7 +48,11 @@ for maximum discoverability and IDE support.
 # Milestone 2 imports (boundary cells + extended features)
 # Milestone 3 imports (grid cells)
 # Pre-configured example simulations (Milestone 3)
-from neurospatial.simulation.examples import linear_track_session, open_field_session
+from neurospatial.simulation.examples import (
+    linear_track_session,
+    open_field_session,
+    tmaze_alternation_session,
+)
 from neurospatial.simulation.models import (
     BoundaryCellModel,
     GridCellModel,
@@ -99,6 +103,7 @@ __all__ = [
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
+    "tmaze_alternation_session",
     "validate_simulation",
 ]
 
