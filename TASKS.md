@@ -267,11 +267,11 @@
 
 ### Pre-Configured Examples
 
-- [ ] Implement `open_field_session()` in `examples.py` (lines 1183-1223)
-  - [ ] Create square arena environment
-  - [ ] Call `simulate_session()` with appropriate parameters
-  - [ ] Return `SimulationSession`
-- [ ] Write NumPy docstring
+- [x] Implement `open_field_session()` in `examples.py` (lines 1183-1223)
+  - [x] Create square arena environment
+  - [x] Call `simulate_session()` with appropriate parameters
+  - [x] Return `SimulationSession`
+- [x] Write NumPy docstring
 
 - [ ] Implement `linear_track_session()` in `examples.py` (lines 1225-1261)
   - [ ] Create 1D track environment

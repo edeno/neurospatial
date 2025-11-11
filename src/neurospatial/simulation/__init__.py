@@ -47,6 +47,8 @@ for maximum discoverability and IDE support.
 # Neural models
 # Milestone 2 imports (boundary cells + extended features)
 # Milestone 3 imports (grid cells)
+# Pre-configured example simulations (Milestone 3)
+from neurospatial.simulation.examples import open_field_session
 from neurospatial.simulation.models import (
     BoundaryCellModel,
     GridCellModel,
@@ -74,10 +76,7 @@ from neurospatial.simulation.validation import (
     validate_simulation,
 )
 
-# from neurospatial.simulation.session import simulate_session
-# from neurospatial.simulation.validation import validate_simulation, plot_session_summary
 # from neurospatial.simulation.examples import (
-#     open_field_session,
 #     linear_track_session,
 #     tmaze_alternation_session,
 #     boundary_cell_session,
@@ -93,6 +92,7 @@ __all__ = [
     "add_modulation",
     "generate_poisson_spikes",
     "generate_population_spikes",
+    "open_field_session",
     "plot_session_summary",
     "simulate_session",
     "simulate_trajectory_laps",
