@@ -69,6 +69,7 @@ from neurospatial.simulation.trajectory import (
     simulate_trajectory_ou,
     simulate_trajectory_sinusoidal,
 )
+from neurospatial.simulation.validation import validate_simulation
 
 # from neurospatial.simulation.session import simulate_session
 # from neurospatial.simulation.validation import validate_simulation, plot_session_summary
@@ -93,6 +94,7 @@ __all__ = [
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
+    "validate_simulation",
 ]
 
 # Version for tracking API changes

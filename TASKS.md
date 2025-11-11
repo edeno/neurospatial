@@ -241,19 +241,19 @@
 
 ### Validation Helpers
 
-- [ ] Implement `validate_simulation()` in `validation.py` (lines 1056-1141)
-  - [ ] Parse session or individual parameters
-  - [ ] Loop over spike trains:
-    - [ ] Compute place field with `compute_place_field()`
-    - [ ] Detect center (peak of rate map)
-    - [ ] Compare to ground truth center
-    - [ ] Compute correlation between true and detected rate maps
-  - [ ] Compute error statistics: center errors, correlations, width errors, rate errors
-  - [ ] Generate summary string
-  - [ ] Determine pass/fail based on thresholds
-  - [ ] If `show_plots`, create diagnostic plots
-  - [ ] Return dict with: `center_errors`, `center_correlations`, `width_errors`, `rate_errors`, `summary`, `passed`, optional `plots`
-- [ ] Write NumPy docstring
+- [x] Implement `validate_simulation()` in `validation.py` (lines 1056-1141)
+  - [x] Parse session or individual parameters
+  - [x] Loop over spike trains:
+    - [x] Compute place field with `compute_place_field()`
+    - [x] Detect center (peak of rate map)
+    - [x] Compare to ground truth center
+    - [x] Compute correlation between true and detected rate maps
+  - [x] Compute error statistics: center errors, correlations, width errors, rate errors
+  - [x] Generate summary string
+  - [x] Determine pass/fail based on thresholds
+  - [x] If `show_plots`, create diagnostic plots
+  - [x] Return dict with: `center_errors`, `center_correlations`, `width_errors`, `rate_errors`, `summary`, `passed`, optional `plots`
+- [x] Write NumPy docstring
 
 - [ ] Implement `plot_session_summary()` in `validation.py` (lines 1143-1173)
   - [ ] Create multi-panel figure

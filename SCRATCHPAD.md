@@ -257,7 +257,8 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 
 1. ✅ Implement SimulationSession dataclass - DONE
 2. ✅ Implement `simulate_session()` function - DONE (TASKS.md line 224)
-3. Continue Milestone 3: Validation helpers and pre-configured examples (next: validate_simulation())
+3. ✅ Implement `validate_simulation()` function - DONE (TASKS.md line 244)
+4. Continue Milestone 3: Validation helpers and pre-configured examples (next: plot_session_summary(), TASKS.md line 258)
 
 ## Recent Completion (2025-11-11)
 
@@ -296,6 +297,49 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - ✅ Comprehensive NumPy docstring with examples
 - ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
 
+### `validate_simulation()` Implementation
+
+**Location**: `src/neurospatial/simulation/validation.py` (lines 17-415)
+
+**Tests**: 16 tests passing in `tests/simulation/test_validation.py`
+
+**Key Features**:
+
+- Validates simulations by comparing detected vs ground truth fields
+- Two input modes: SimulationSession or individual parameters
+- Computes place fields from spike data using `compute_place_field()`
+- Detects field centers as peak of rate map
+- Computes center errors (Euclidean distance) and field correlations (Pearson r)
+- Generates human-readable summary with pass/fail determination
+- Optional diagnostic plots (4-panel figure)
+- Cell subsetting via `cell_indices` parameter
+- Graceful handling of empty spike trains (NaN values)
+
+**Code Review Applied**: Fixed 3 critical issues:
+
+1. ✅ Added proper type checking with isinstance() for SimulationSession
+2. ✅ Added cell_indices range validation with diagnostic errors
+3. ✅ Fixed NaN handling - warns and fails when no cells can be validated
+
+**Key Design Decisions**:
+
+1. **Dual input modes**: Accept either SimulationSession or all individual parameters for flexibility
+2. **Default thresholds**: Center error = 2 × mean(bin_sizes), correlation = 0.5
+3. **NaN for empty spikes**: Allows partial validation when some cells have no spikes
+4. **Fail on no validation**: If all cells empty, issue warning and fail validation (not pass)
+5. **Place cell only**: Currently only validates place cells (has center and width in ground_truth)
+6. **Method flexibility**: Supports diffusion_kde (default), gaussian_kde, or binned place field computation
+
+**Exports**: Added to `neurospatial.simulation.__init__.py` and `__all__` list
+
+**Quality Checks**:
+
+- ✅ All 16 validation tests passing
+- ✅ ruff check passes
+- ✅ mypy passes (no issues)
+- ✅ Comprehensive NumPy docstring with examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+
 ## Blockers
 
-None - simulate_session() complete and tested.
+None - validate_simulation() complete and tested.
