@@ -714,8 +714,16 @@ None
 - ✅ Both .ipynb and .py files synchronized
 - ✅ All imports work correctly
 - ✅ Jupytext pairing maintained
+- ✅ **Notebook executes successfully** (tested with `jupyter nbconvert --execute`)
 
-**Impact**: Notebook is now significantly simpler, demonstrates best practices for simulation API usage, and serves as a reference for other users.
+**Bug Found and Fixed**:
+
+- **Issue**: KeyError when accessing `tmaze_session.ground_truth[0]`
+- **Root Cause**: `ground_truth` is a dict with keys like `'cell_0'`, not a list
+- **Fix**: Changed `tmaze_session.ground_truth[0]` → `tmaze_session.ground_truth["cell_0"]`
+- **Commit**: `2d2e75d`
+
+**Impact**: Notebook is now significantly simpler, demonstrates best practices for simulation API usage, and serves as a reference for other users. **Fully tested and verified to execute without errors.**
 
 ## Doctest Performance Optimization (2025-11-11)
 
