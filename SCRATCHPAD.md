@@ -165,16 +165,58 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - `test_spikes.py`: 32 tests (all passed)
 - **Total**: 74 passed, 3 skipped
 
+## Milestone 3: GridCellModel Implementation
+
+**Status**: ✅ COMPLETE
+
+### Implementation Details
+
+1. **Hexagonal grid pattern**: Uses three plane waves at 60° intervals
+   - Wave vector magnitude: `k = 4π / (√3 * grid_spacing)`
+   - Three wave vectors rotated by `grid_orientation` at 0°, 60°, 120°
+   - Grid pattern: `g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))`
+   - Rectification: `rate = baseline + (max - baseline) * max(0, g(x))`
+
+2. **Parameter validation**: All parameters validated upfront
+   - `grid_spacing > 0`
+   - `max_rate > 0`
+   - `baseline_rate >= 0` and `< max_rate`
+   - `phase_offset` shape must be `(2,)`
+   - 2D environment required (raises ValueError for 1D/3D)
+
+3. **Code review improvements applied**:
+   - ✅ Fixed doctest examples (undefined variables `arena_data` and `env`)
+   - ✅ Added parameter validation (5 validators)
+   - ✅ Added 6 parameter validation tests
+   - ✅ Removed unused `field_width` parameter (was stored but never used in computation)
+   - ✅ Enhanced docstring Notes with performance, stability, and grid spacing selection guidance
+   - ✅ Fixed numpy bool doctest issue (`np.True_` → use `bool()` wrapper)
+
+### Test Coverage
+
+- **16 tests total**, all passing
+  - 10 functional tests (2D requirement, initialization, hexagonal symmetry, spacing, orientation, output shape, bounds, ground truth, protocol compliance, default phase)
+  - 6 validation tests (negative/zero grid_spacing, invalid rates, wrong phase_offset shape)
+- **2 doctests**, both passing
+- **Mypy**: Clean (no issues)
+- **Ruff**: Clean (all checks passed)
+
+### Key Design Decisions
+
+1. **No field_width parameter**: Removed because unused in `firing_rate()` computation. Standard hexagonal grid model doesn't have variable bump width. Can add later if needed.
+
+2. **Phase offset at origin by default**: `phase_offset=[0, 0]` creates grid with vertices at origin and periodic spacing.
+
+3. **Performance**: O(n_positions) with low constant (3 cosine evaluations per position). Much faster than geodesic distance metrics.
+
+4. **Numerical stability**: Cosine gratings bounded [-1, 1], so grid pattern bounded [-1, 1]. After rectification max(0, g(x)), pattern bounded [0, 1], preventing overflow/underflow.
+
 ## Next Steps
 
-1. ✅ Update TASKS.md checkboxes - DONE
-2. ✅ Commit Milestone 1 completion - DONE (commit ad96365)
-3. ✅ Commit Milestone 2: `simulate_trajectory_laps()` - DONE (commit 6024dcc)
-4. ✅ Commit Milestone 2: `BoundaryCellModel` - DONE (commit 8558b68)
-5. ✅ Commit Milestone 2: `add_modulation()` - DONE (commit 5b90bc5)
-6. Commit Milestone 2 completion documentation - Ready to commit
-7. Begin Milestone 3 (Grid cells + session API) - Awaiting user instruction
+1. ✅ Implement GridCellModel - DONE
+2. Commit GridCellModel implementation - Ready
+3. Continue Milestone 3: Session API and validation helpers
 
 ## Blockers
 
-None - Milestone 2 fully complete and ready for Milestone 3.
+None - GridCellModel complete and tested.

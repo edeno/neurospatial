@@ -197,17 +197,21 @@
 
 ### Grid Cell Model
 
-- [ ] Implement `GridCellModel` in `models/grid_cells.py` (lines 689-772)
-  - [ ] Check `env.n_dims == 2` in constructor (raise ValueError otherwise)
-  - [ ] Constructor: store `env`, `grid_spacing`, `grid_orientation`, `phase_offset`, `max_rate`, `baseline_rate`, `field_width`
-  - [ ] Implement `firing_rate(positions, times)` method:
-    - [ ] Compute wave vectors: `k_magnitude = 4π / (√3 * grid_spacing)`
-    - [ ] Compute three wave vectors at 60° intervals (lines 753-758)
-    - [ ] Apply rotation by `grid_orientation`
-    - [ ] Compute grid pattern: `g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))`
-    - [ ] Apply rectification: `rate = baseline + (max - baseline) * max(0, g(x))`
-  - [ ] Implement `ground_truth` property
-- [ ] Write NumPy docstring
+- [x] Implement `GridCellModel` in `models/grid_cells.py` (lines 689-772)
+  - [x] Check `env.n_dims == 2` in constructor (raise ValueError otherwise)
+  - [x] Constructor: store `env`, `grid_spacing`, `grid_orientation`, `phase_offset`, `max_rate`, `baseline_rate` (field_width removed as unused)
+  - [x] Implement `firing_rate(positions, times)` method:
+    - [x] Compute wave vectors: `k_magnitude = 4π / (√3 * grid_spacing)`
+    - [x] Compute three wave vectors at 60° intervals (lines 753-758)
+    - [x] Apply rotation by `grid_orientation`
+    - [x] Compute grid pattern: `g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))`
+    - [x] Apply rectification: `rate = baseline + (max - baseline) * max(0, g(x))`
+  - [x] Implement `ground_truth` property
+- [x] Write NumPy docstring with doctests and examples
+- [x] Add parameter validation (grid_spacing, max_rate, baseline_rate, phase_offset)
+- [x] Export in `__init__.py` files
+- [x] Write comprehensive tests (16 tests total, all passing)
+- [x] Code review and address all critical/important issues
 
 ### Session Simulation
 

@@ -417,3 +417,298 @@ class TestBoundaryCellModel:
 
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)
+
+
+class TestGridCellModel:
+    """Tests for GridCellModel."""
+
+    def test_requires_2d_environment(self, simple_2d_env):
+        """Test that GridCellModel requires a 2D environment."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        # Should work with 2D environment
+        gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
+        assert gc is not None
+
+        # Should fail with 1D environment
+        # Create a simple 1D environment for testing
+        from neurospatial import Environment
+
+        env_1d = Environment.from_samples(
+            np.array([[0.0], [10.0], [20.0], [30.0]]), bin_size=5.0
+        )
+
+        with pytest.raises(ValueError, match="only works for 2D"):
+            GridCellModel(env_1d, grid_spacing=50.0)
+
+    def test_basic_initialization(self, simple_2d_env):
+        """Test basic grid cell initialization."""
+        from neurospatial.simulation.models import GridCellModel
+
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=50.0,
+            grid_orientation=0.0,
+            max_rate=20.0,
+            baseline_rate=0.1,
+        )
+
+        assert gc.grid_spacing == 50.0
+        assert gc.grid_orientation == 0.0
+        assert gc.max_rate == 20.0
+        assert gc.baseline_rate == 0.1
+
+    def test_hexagonal_symmetry(self, simple_2d_env):
+        """Test that grid pattern has hexagonal symmetry."""
+        from neurospatial.simulation.models import GridCellModel
+
+        # Set phase_offset at center so we're testing around a grid peak
+        center_pos = np.array([50.0, 50.0])
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=30.0,
+            grid_orientation=0.0,
+            phase_offset=center_pos,  # Ensure peak at center
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Center point should be at a peak
+        center = np.array([[50.0, 50.0]])
+        center_rate = gc.firing_rate(center)[0]
+        assert center_rate > 15.0  # Should be near max_rate
+
+        # Test 6 points arranged hexagonally around center
+        # Hexagon vertices at 60° intervals at distance = grid_spacing
+        angles = np.array([0, 60, 120, 180, 240, 300]) * np.pi / 180
+        spacing = 30.0
+        hex_points = np.column_stack(
+            [
+                center_pos[0] + spacing * np.cos(angles),
+                center_pos[1] + spacing * np.sin(angles),
+            ]
+        )
+
+        hex_rates = gc.firing_rate(hex_points)
+
+        # All hexagonal neighbors should have similar rates (hexagonal symmetry)
+        # Allow some tolerance due to numerical precision and grid structure
+        # Note: exact hexagonal symmetry depends on the phase relationship
+        mean_rate = np.mean(hex_rates)
+        for rate in hex_rates:
+            # Each point should be within reasonable range of mean
+            assert abs(rate - mean_rate) < 8.0  # Relaxed tolerance for grid structure
+
+    def test_grid_spacing_matches_parameter(self, simple_2d_env):
+        """Test that distance between grid peaks matches grid_spacing."""
+        from neurospatial.simulation.models import GridCellModel
+
+        grid_spacing = 40.0
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=grid_spacing,
+            grid_orientation=0.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Create a grid of test points
+        x = np.linspace(0, 100, 101)
+        y = np.linspace(0, 100, 101)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+
+        # Compute rates
+        rates = gc.firing_rate(positions)
+        rate_map = rates.reshape(101, 101)
+
+        # Find local maxima (peaks)
+        from scipy import ndimage
+
+        local_max = ndimage.maximum_filter(rate_map, size=5) == rate_map
+        peaks = np.argwhere(local_max & (rate_map > 0.5 * gc.max_rate))
+
+        # Check distances between adjacent peaks
+        if len(peaks) >= 2:
+            # Compute pairwise distances
+            from scipy.spatial.distance import pdist
+
+            distances = pdist(peaks)
+            # Minimum distance should be close to grid_spacing
+            min_dist = np.min(distances)
+            # Allow 20% tolerance due to discretization and sampling
+            assert abs(min_dist - grid_spacing) < 0.2 * grid_spacing
+
+    def test_orientation_rotation(self, simple_2d_env):
+        """Test that grid_orientation rotates the grid pattern."""
+        from neurospatial.simulation.models import GridCellModel
+
+        # Create two grid cells with different orientations
+        # Use 45° rotation which is NOT a symmetry of the hexagonal lattice (60° symmetry)
+        gc_0 = GridCellModel(
+            simple_2d_env,
+            grid_spacing=40.0,
+            grid_orientation=0.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+            phase_offset=np.array([0.0, 0.0]),  # Origin
+        )
+
+        gc_45 = GridCellModel(
+            simple_2d_env,
+            grid_spacing=40.0,
+            grid_orientation=np.pi / 4,  # 45 degrees
+            max_rate=20.0,
+            baseline_rate=0.0,
+            phase_offset=np.array([0.0, 0.0]),
+        )
+
+        # Test at many random points to find differences
+        # Use specific non-symmetric positions
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(10, 90, size=(20, 2))
+
+        rates_0 = gc_0.firing_rate(positions)
+        rates_45 = gc_45.firing_rate(positions)
+
+        # Rates should be different due to rotation at most positions
+        # Check that a substantial number of positions have different rates
+        differences = np.abs(rates_0 - rates_45)
+        # Expect significant differences at multiple positions
+        assert np.sum(differences > 0.1) >= 10  # At least half should differ
+
+    def test_firing_rate_output_shape(self, simple_2d_env):
+        """Test that firing_rate returns correct shape."""
+        from neurospatial.simulation.models import GridCellModel
+
+        gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        rates = gc.firing_rate(positions, times)
+
+        assert len(rates) == len(positions)
+        assert rates.shape == (len(positions),)
+
+    def test_firing_rate_bounds(self, simple_2d_env):
+        """Test that firing rates are within expected bounds."""
+        from neurospatial.simulation.models import GridCellModel
+
+        baseline = 0.5
+        max_rate = 20.0
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=50.0,
+            max_rate=max_rate,
+            baseline_rate=baseline,
+        )
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        rates = gc.firing_rate(positions, times)
+
+        # All rates should be between baseline and max_rate
+        assert np.all(rates >= baseline - 0.1)  # Small tolerance for numerical error
+        assert np.all(rates <= max_rate + 0.1)
+
+    def test_ground_truth_property(self, simple_2d_env):
+        """Test ground_truth property returns correct parameters."""
+        from neurospatial.simulation.models import GridCellModel
+
+        grid_spacing = 50.0
+        grid_orientation = np.pi / 4
+        phase_offset = np.array([10.0, 20.0])
+        max_rate = 20.0
+        baseline_rate = 0.5
+
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=grid_spacing,
+            grid_orientation=grid_orientation,
+            phase_offset=phase_offset,
+            max_rate=max_rate,
+            baseline_rate=baseline_rate,
+        )
+
+        gt = gc.ground_truth
+
+        assert "grid_spacing" in gt
+        assert "grid_orientation" in gt
+        assert "phase_offset" in gt
+        assert "max_rate" in gt
+        assert "baseline_rate" in gt
+
+        assert gt["grid_spacing"] == grid_spacing
+        assert gt["grid_orientation"] == grid_orientation
+        np.testing.assert_array_equal(gt["phase_offset"], phase_offset)
+        assert gt["max_rate"] == max_rate
+        assert gt["baseline_rate"] == baseline_rate
+
+    def test_implements_neural_model_protocol(self, simple_2d_env):
+        """Test that GridCellModel implements NeuralModel protocol."""
+        from neurospatial.simulation.models import GridCellModel
+
+        gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
+        assert isinstance(gc, NeuralModel)
+
+    def test_default_phase_offset(self, simple_2d_env):
+        """Test that phase_offset defaults to [0, 0]."""
+        from neurospatial.simulation.models import GridCellModel
+
+        gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
+
+        np.testing.assert_array_equal(gc.phase_offset, np.array([0.0, 0.0]))
+
+    def test_rejects_negative_grid_spacing(self, simple_2d_env):
+        """Test that negative grid_spacing raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match="grid_spacing must be positive"):
+            GridCellModel(simple_2d_env, grid_spacing=-10.0)
+
+    def test_rejects_zero_grid_spacing(self, simple_2d_env):
+        """Test that zero grid_spacing raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match="grid_spacing must be positive"):
+            GridCellModel(simple_2d_env, grid_spacing=0.0)
+
+    def test_rejects_invalid_baseline_max_rates(self, simple_2d_env):
+        """Test that baseline >= max_rate raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match=r"baseline_rate.*must be less than"):
+            GridCellModel(simple_2d_env, baseline_rate=20.0, max_rate=10.0)
+
+    def test_rejects_negative_baseline_rate(self, simple_2d_env):
+        """Test that negative baseline_rate raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match="baseline_rate must be non-negative"):
+            GridCellModel(simple_2d_env, baseline_rate=-1.0)
+
+    def test_rejects_negative_max_rate(self, simple_2d_env):
+        """Test that negative max_rate raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match="max_rate must be positive"):
+            GridCellModel(simple_2d_env, max_rate=-5.0)
+
+    def test_rejects_wrong_phase_offset_shape(self, simple_2d_env):
+        """Test that wrong phase_offset shape raises ValueError."""
+        import pytest
+
+        from neurospatial.simulation.models import GridCellModel
+
+        with pytest.raises(ValueError, match="phase_offset must be shape"):
+            GridCellModel(simple_2d_env, phase_offset=np.array([1.0, 2.0, 3.0]))
