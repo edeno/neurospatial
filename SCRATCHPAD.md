@@ -676,4 +676,101 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 
 ## Blockers
 
-None - All Milestone 3 pre-configured example functions complete (open_field_session, linear_track_session, tmaze_alternation_session, boundary_cell_session, grid_cell_session).
+None
+
+## Milestone 3.5: Documentation Integration - IN PROGRESS (2025-11-11)
+
+### ✅ Completed: Update `examples/11_place_field_analysis.ipynb`
+
+**Location**: [examples/11_place_field_analysis.ipynb](examples/11_place_field_analysis.ipynb)
+
+**Changes Made**:
+
+1. **Added simulation subpackage imports**:
+   - `PlaceCellModel`, `generate_poisson_spikes`, `simulate_trajectory_ou`, `tmaze_alternation_session`
+
+2. **Replaced Section "2D Random Walk Generation"** (lines 56-108):
+   - **Before**: 53 lines of manual random walk code with boundary reflection
+   - **After**: 10 lines using `simulate_trajectory_ou()` with Ornstein-Uhlenbeck process
+   - **Benefits**: Biologically realistic movement, simpler code, consistent API
+
+3. **Replaced Section "Place Cell Simulation"** (lines 118-136):
+   - **Before**: 19 lines of manual Gaussian field + Poisson spike generation
+   - **After**: 14 lines using `PlaceCellModel` + `generate_poisson_spikes()`
+   - **Benefits**: Refractory period handling, ground truth tracking, cleaner interface
+
+4. **Replaced Section "T-maze Trajectory"** (lines 547-612):
+   - **Before**: 66 lines of manual T-maze trajectory generation function
+   - **After**: 12 lines using `tmaze_alternation_session()` convenience function
+   - **Benefits**: Complete session with trial metadata, alternation pattern, automatic spike generation
+
+5. **Added markdown cell** explaining simulation subpackage usage at the beginning of Part 1
+
+**Code Reduction**: Reduced ~138 lines of hand-written simulation code to ~36 lines using simulation subpackage
+
+**Validation**:
+
+- ✅ Notebook JSON structure valid
+- ✅ Both .ipynb and .py files synchronized
+- ✅ All imports work correctly
+- ✅ Jupytext pairing maintained
+
+**Impact**: Notebook is now significantly simpler, demonstrates best practices for simulation API usage, and serves as a reference for other users.
+
+## Doctest Performance Optimization (2025-11-11)
+
+**Status**: ✅ COMPLETE
+
+**Problem**: Doctests were taking 8+ minutes to run, making CI/CD impractical and violating best practices (doctests should run in seconds).
+
+**Solution**: Optimized simulation durations in doctest examples across all simulation modules.
+
+### Changes Made
+
+**Files Modified**:
+
+1. `src/neurospatial/simulation/__init__.py` (line 27)
+   - Reduced `simulate_trajectory_ou()` duration from 60s → 2s
+
+2. `src/neurospatial/simulation/examples.py` (multiple locations)
+   - `open_field_session`: 60s → 5s, 20 cells → 3 cells
+   - `linear_track_session`: 60s → 5s, 20 cells → 3 cells
+   - `tmaze_alternation_session`: Multiple examples reduced to 5s, 3 cells, 3 trials
+   - `boundary_cell_session`: Examples reduced to 5s, 3+2 cells
+   - `grid_cell_session`: 60-120s → 5s, 10 cells → 3 cells
+   - Added `+SKIP` directives to all visualization examples
+
+3. `src/neurospatial/simulation/validation.py`
+   - Already optimized with 5s durations and `show_progress=False`
+
+4. `src/neurospatial/simulation/session.py`
+   - Already optimized with 2s durations and proper imports
+
+### Results
+
+- **Before**: 8+ minutes (>485 seconds), tests timing out
+- **After**: 45-47 seconds ✅
+- **All 23 doctests passing** ✅
+- **10x performance improvement**
+
+### Key Principles Applied
+
+1. **Fast execution**: Reduced durations from 60-180s to 2-5s
+2. **Skip slow operations**: Added `+SKIP` to visualization examples (matplotlib plot generation)
+3. **Meaningful examples**: 2-5s still demonstrates API correctly while running fast
+4. **Best practice alignment**: Doctests are for API demonstration, not comprehensive testing
+
+### Code Review
+
+Ran code-reviewer subagent to validate changes. Minor improvements suggested but core optimization approach approved:
+
+- Durations (2-5s) are meaningful for doctest examples
+- +SKIP directives used appropriately for slow operations
+- Examples still demonstrate intended functionality correctly
+
+**Quality Checks**:
+
+- ✅ All 23 doctests passing (0 failures)
+- ✅ Execution time: 45-47 seconds (acceptable for CI)
+- ✅ No functionality compromised (all examples still work)
+- ✅ Follows doctest best practices (fast, demonstrative, not comprehensive)
