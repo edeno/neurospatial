@@ -114,12 +114,38 @@ Following the code-reviewer subagent's recommendations:
   - Removed redundant check inside boundary handling loop
   - Provides clear error message with guidance
 
+- ✅ `add_modulation()` implemented and tested
+  - 16/16 tests passing (10 core + 6 edge case validation tests)
+  - Non-homogeneous thinning algorithm for phase-locked firing
+  - Full parameter validation (modulation_depth ∈ [0,1], modulation_freq > 0)
+  - Special case: depth=0 returns all spikes (no modulation)
+  - Comprehensive NumPy docstring with biological motivation
+  - Code review applied and all critical/important issues resolved:
+    - Fixed mypy type error (`.copy()` → `np.array(..., copy=True)`)
+    - Added parameter validation with diagnostic error messages
+    - Exported in `neurospatial.simulation.__init__.py`
+    - Added 6 edge case tests (invalid params, single spike, high freq)
+  - Mypy clean (no issues), ruff clean (all checks passed)
+  - Exported in `neurospatial.simulation.__init__.py`
+
+### add_modulation() Implementation
+
+1. **Zero modulation depth special case**: When `modulation_depth=0.0`, return all spikes without random thinning. Formula `(1 + 0 * cos(phase)) / 2 = 0.5` would give uniform 50% acceptance, but zero depth should mean "no modulation".
+2. **Parameter validation upfront**: Validate `modulation_depth ∈ [0,1]` and `modulation_freq > 0` to prevent silent failures with invalid inputs. Follows project pattern of explicit validation.
+3. **Typed array copy**: Use `np.array(spike_times, dtype=np.float64, copy=True)` instead of `.copy()` to satisfy mypy's strict type checking.
+4. **Phase computation**: Direct formula `2π * freq * spike_times + phase` without wrapping. NumPy's `np.cos()` handles large phase values correctly.
+5. **Acceptance probability formula**: `(1 + depth * cos(phase)) / 2` ensures valid probabilities ∈ [0,1] for all phases when depth ∈ [0,1].
+6. **Test robustness**: Used larger sample sizes (2000 spikes) and bigger depth differences (0.1 vs 0.95) to reduce probabilistic test flakiness.
+
 ## Next Steps
 
 1. ✅ Update TASKS.md checkboxes - DONE
 2. ✅ Commit Milestone 1 completion - DONE (commit ad96365)
-3. Begin Milestone 2 (Boundary cells + laps) - Awaiting user instruction
+3. ✅ Commit Milestone 2: `simulate_trajectory_laps()` - DONE (commit 6024dcc)
+4. ✅ Commit Milestone 2: `BoundaryCellModel` - DONE (commit 8558b68)
+5. Commit Milestone 2: `add_modulation()` - Ready to commit
+6. Begin Milestone 3 (Grid cells + session API) - Awaiting user instruction
 
 ## Blockers
 
-None - all critical functionality implemented and tested.
+None - all Milestone 2 critical functionality implemented and tested.

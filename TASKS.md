@@ -155,29 +155,29 @@
 
 ### Spike Modulation
 
-- [ ] Implement `add_modulation()` in `spikes.py` (lines 910-948)
-  - [ ] Compute phase of each spike time: `2π * freq * spike_times + phase`
-  - [ ] Compute acceptance probability: `(1 + depth * cos(phase)) / 2`
-  - [ ] Thin spikes using acceptance probability
-  - [ ] Return modulated spike times
-- [ ] Write NumPy docstring
+- [x] Implement `add_modulation()` in `spikes.py` (lines 910-948)
+  - [x] Compute phase of each spike time: `2π * freq * spike_times + phase`
+  - [x] Compute acceptance probability: `(1 + depth * cos(phase)) / 2`
+  - [x] Thin spikes using acceptance probability
+  - [x] Return modulated spike times
+- [x] Write NumPy docstring
 
 ### Testing
 
-- [ ] Write tests for `simulate_trajectory_laps()`:
-  - [ ] Test n_laps produces correct number of laps
-  - [ ] Test metadata contains lap_ids and directions
-  - [ ] Test pauses at lap ends
+- [x] Write tests for `simulate_trajectory_laps()`:
+  - [x] Test n_laps produces correct number of laps
+  - [x] Test metadata contains lap_ids and directions
+  - [x] Test pauses at lap ends
 
-- [ ] Write tests for `BoundaryCellModel`:
-  - [ ] Test peak firing at preferred_distance
-  - [ ] Test directional tuning when preferred_direction specified
-  - [ ] Test omnidirectional when preferred_direction=None
+- [x] Write tests for `BoundaryCellModel`:
+  - [x] Test peak firing at preferred_distance
+  - [x] Test directional tuning when preferred_direction specified
+  - [x] Test omnidirectional when preferred_direction=None
 
-- [ ] Write tests for `add_modulation()`:
-  - [ ] Test modulation reduces spike count
-  - [ ] Test phase preference
-  - [ ] Test modulation_depth=0 returns all spikes
+- [x] Write tests for `add_modulation()`:
+  - [x] Test modulation reduces spike count
+  - [x] Test phase preference
+  - [x] Test modulation_depth=0 returns all spikes
 
 ### Documentation
 
