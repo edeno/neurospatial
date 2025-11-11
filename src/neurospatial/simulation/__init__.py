@@ -45,7 +45,9 @@ for maximum discoverability and IDE support.
 
 # Milestone 1 imports (core trajectory + place cells)
 # Neural models
+# Milestone 2 imports (boundary cells + extended features) - in progress
 from neurospatial.simulation.models import (
+    BoundaryCellModel,
     NeuralModel,  # Protocol
     PlaceCellModel,
 )
@@ -61,8 +63,6 @@ from neurospatial.simulation.trajectory import (
     simulate_trajectory_sinusoidal,
 )
 
-# Milestone 2 imports (boundary cells + extended features) - in progress
-# from neurospatial.simulation.models import BoundaryCellModel
 # from neurospatial.simulation.spikes import add_modulation
 
 # Milestone 3 imports (grid cells + session API)
@@ -78,6 +78,7 @@ from neurospatial.simulation.trajectory import (
 # )
 
 __all__ = [
+    "BoundaryCellModel",
     "NeuralModel",
     "PlaceCellModel",
     "generate_poisson_spikes",

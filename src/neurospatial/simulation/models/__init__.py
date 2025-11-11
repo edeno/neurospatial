@@ -12,10 +12,10 @@ All models implement the NeuralModel protocol.
 
 # Milestone 1: Place cells
 from neurospatial.simulation.models.base import NeuralModel
-from neurospatial.simulation.models.place_cells import PlaceCellModel
 
 # Milestone 2: Boundary cells
-# from neurospatial.simulation.models.boundary_cells import BoundaryCellModel
+from neurospatial.simulation.models.boundary_cells import BoundaryCellModel
+from neurospatial.simulation.models.place_cells import PlaceCellModel
 
 # Milestone 3: Grid cells
 # from neurospatial.simulation.models.grid_cells import GridCellModel
@@ -25,6 +25,7 @@ from neurospatial.simulation.models.place_cells import PlaceCellModel
 # from neurospatial.simulation.models.speed_cells import SpeedCellModel
 
 __all__ = [
+    "BoundaryCellModel",
     "NeuralModel",
     "PlaceCellModel",
 ]

@@ -141,17 +141,17 @@
 
 ### Boundary Cell Model
 
-- [ ] Implement `BoundaryCellModel` in `models/boundary_cells.py` (lines 614-687)
-  - [ ] Constructor: store `env`, `preferred_distance`, `distance_tolerance`, `preferred_direction`, `direction_tolerance`, `max_rate`, `baseline_rate`, `distance_metric`
-  - [ ] Precompute boundary bins: `env.boundary_bins()`
-  - [ ] Precompute distance field from all boundary bins (cache it)
-  - [ ] Implement `firing_rate(positions, times)` method:
-    - [ ] Compute distance to nearest boundary for each position
-    - [ ] If directional, compute direction to boundary and apply von Mises tuning
-    - [ ] Apply Gaussian tuning: `exp(-(d - preferred_distance)^2 / (2 * tolerance^2))`
-    - [ ] Scale by max_rate and add baseline
-  - [ ] Implement `ground_truth` property
-- [ ] Write NumPy docstring
+- [x] Implement `BoundaryCellModel` in `models/boundary_cells.py` (lines 614-687)
+  - [x] Constructor: store `env`, `preferred_distance`, `distance_tolerance`, `preferred_direction`, `direction_tolerance`, `max_rate`, `baseline_rate`, `distance_metric`
+  - [x] Precompute boundary bins: `env.boundary_bins`
+  - [x] Precompute distance field from all boundary bins (cache it)
+  - [x] Implement `firing_rate(positions, times)` method:
+    - [x] Compute distance to nearest boundary for each position
+    - [x] If directional, compute direction to boundary and apply von Mises tuning
+    - [x] Apply Gaussian tuning: `exp(-(d - preferred_distance)^2 / (2 * tolerance^2))`
+    - [x] Scale by max_rate and add baseline
+  - [x] Implement `ground_truth` property
+- [x] Write NumPy docstring
 
 ### Spike Modulation
 

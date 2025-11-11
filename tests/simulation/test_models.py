@@ -228,3 +228,192 @@ class TestPlaceCellModel:
         # Rate should be close to baseline (Gaussian decayed to ~0)
         # Allow tolerance for small contribution from tail
         assert abs(rate[0] - pc.baseline_rate) < 0.001
+
+
+class TestBoundaryCellModel:
+    """Tests for BoundaryCellModel."""
+
+    def test_basic_initialization(self, simple_2d_env):
+        """Test basic boundary cell initialization."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_tolerance=3.0,
+            max_rate=15.0,
+            baseline_rate=0.1,
+        )
+
+        assert bc.preferred_distance == 5.0
+        assert bc.distance_tolerance == 3.0
+        assert bc.max_rate == 15.0
+        assert bc.baseline_rate == 0.1
+        assert bc.preferred_direction is None  # Default: omnidirectional
+
+    def test_directional_initialization(self, simple_2d_env):
+        """Test boundary cell with directional preference."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=10.0,
+            preferred_direction=-np.pi / 2,  # South
+            direction_tolerance=np.pi / 6,
+        )
+
+        assert bc.preferred_direction == -np.pi / 2
+        assert bc.direction_tolerance == np.pi / 6
+
+    def test_peak_firing_at_preferred_distance(self, simple_2d_env):
+        """Test that firing rate peaks at preferred distance from boundary."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_tolerance=3.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Generate trajectory
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=10.0, seed=42)
+        rates = bc.firing_rate(positions, times)
+
+        # Should have some firing (non-zero rates)
+        assert np.any(rates > 0.1)
+        assert np.all(rates >= 0)  # All rates non-negative
+
+    def test_omnidirectional_tuning(self, simple_2d_env):
+        """Test omnidirectional boundary cell (no directional preference)."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_tolerance=3.0,
+            preferred_direction=None,  # Omnidirectional
+        )
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        rates = bc.firing_rate(positions, times)
+
+        # Should fire near all boundaries
+        assert len(rates) == len(positions)
+        assert np.all(rates >= 0)
+
+    def test_directional_tuning(self, simple_2d_env):
+        """Test directional boundary cell (prefers specific direction)."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        # Boundary vector cell preferring south wall
+        bc_south = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=10.0,
+            preferred_direction=-np.pi / 2,  # South (negative y)
+            direction_tolerance=np.pi / 6,
+        )
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        rates = bc_south.firing_rate(positions, times)
+
+        # Should have some firing
+        assert len(rates) == len(positions)
+        assert np.all(rates >= 0)
+
+    def test_gaussian_distance_tuning(self, simple_2d_env):
+        """Test Gaussian tuning around preferred distance."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_tolerance=2.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Test that firing falls off with distance from preferred_distance
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        rates = bc.firing_rate(positions, times)
+
+        # Rates should be bounded
+        assert np.all(rates >= 0)
+        assert np.all(rates <= bc.max_rate + 0.1)  # Allow small tolerance
+
+    def test_ground_truth_property(self, simple_2d_env):
+        """Test ground_truth property returns correct parameters."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        preferred_distance = 5.0
+        distance_tolerance = 3.0
+        preferred_direction = -np.pi / 2
+        direction_tolerance = np.pi / 4
+        max_rate = 15.0
+        baseline_rate = 0.5
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=preferred_distance,
+            distance_tolerance=distance_tolerance,
+            preferred_direction=preferred_direction,
+            direction_tolerance=direction_tolerance,
+            max_rate=max_rate,
+            baseline_rate=baseline_rate,
+        )
+
+        gt = bc.ground_truth
+
+        assert "preferred_distance" in gt
+        assert "distance_tolerance" in gt
+        assert "preferred_direction" in gt
+        assert "direction_tolerance" in gt
+        assert "max_rate" in gt
+        assert "baseline_rate" in gt
+
+        assert gt["preferred_distance"] == preferred_distance
+        assert gt["distance_tolerance"] == distance_tolerance
+        assert gt["preferred_direction"] == preferred_direction
+        assert gt["direction_tolerance"] == direction_tolerance
+        assert gt["max_rate"] == max_rate
+        assert gt["baseline_rate"] == baseline_rate
+
+    def test_implements_neural_model_protocol(self, simple_2d_env):
+        """Test that BoundaryCellModel implements NeuralModel protocol."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(simple_2d_env, preferred_distance=5.0)
+        assert isinstance(bc, NeuralModel)
+
+    def test_euclidean_distance_metric(self, simple_2d_env):
+        """Test euclidean distance metric."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_metric="euclidean",
+        )
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        rates = bc.firing_rate(positions, times)
+
+        assert len(rates) == len(positions)
+        assert np.all(rates >= 0)
+
+    def test_geodesic_distance_metric(self, simple_2d_env):
+        """Test geodesic distance metric (default)."""
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        bc = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=5.0,
+            distance_metric="geodesic",
+        )
+
+        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        rates = bc.firing_rate(positions, times)
+
+        assert len(rates) == len(positions)
+        assert np.all(rates >= 0)

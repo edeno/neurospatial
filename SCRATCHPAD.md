@@ -36,7 +36,41 @@
   - Mypy clean, ruff clean, doctests passing
   - Exported in `neurospatial.simulation.__init__.py`
 
+- ✅ `BoundaryCellModel` implemented and tested
+  - 10/10 tests passing
+  - TDD approach (tests written first, verified failures, then implementation)
+  - Supports omnidirectional (border cells) and directional (BVC) tuning
+  - Both geodesic and euclidean distance metrics implemented
+  - Gaussian distance tuning around preferred_distance
+  - Von Mises directional tuning for BVCs (2D only)
+  - Comprehensive parameter validation with clear error messages
+  - Code review applied (all critical and high-priority issues fixed):
+    - Added type annotation for `_distance_field: NDArray[np.float64] | None`
+    - Added parameter validation (distances, rates, tolerances)
+    - Fixed variable scope in directional tuning
+    - Added `direction_tolerance` to `ground_truth` property
+  - Mypy clean (no issues), ruff clean (all checks passed)
+  - Exported in `neurospatial.simulation.models` and `neurospatial.simulation`
+
 ## Technical Decisions Made
+
+### BoundaryCellModel Implementation
+
+1. **boundary_bins is a property, not method**: Fixed from `env.boundary_bins()` → `env.boundary_bins`
+2. **Variable scope clarification**: Precompute `boundary_centers` at start of `firing_rate()` to avoid scope issues across geodesic/euclidean branches
+3. **Geodesic + Directional hybrid**: For directional BVCs with geodesic metric, use geodesic distance (path through graph) but Euclidean direction (geometric angle). This is scientifically correct - direction is inherently geometric, not path-based.
+4. **Type annotation for mypy**: Explicit type annotations required for:
+   - `_distance_field: NDArray[np.float64] | None` (before assignment)
+   - `rates: NDArray[np.float64]` (before return) to avoid "Any" inference
+5. **Parameter validation**: Comprehensive validation upfront with diagnostic error messages:
+   - `preferred_distance >= 0`
+   - `distance_tolerance > 0`
+   - `max_rate > 0`
+   - `baseline_rate >= 0`
+   - `baseline_rate < max_rate`
+   - `direction_tolerance > 0`
+6. **ground_truth completeness**: Include all model parameters including `direction_tolerance` (needed to reproduce model)
+7. **Distance precomputation**: For geodesic metric, precompute distance field from all boundary bins at initialization (O(n_bins²) one-time cost, then O(1) lookup per position)
 
 ### simulate_trajectory_laps() Implementation
 
