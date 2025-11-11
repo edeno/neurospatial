@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from neurospatial.simulation.examples import (
+    boundary_cell_session,
     linear_track_session,
     open_field_session,
     tmaze_alternation_session,
@@ -532,3 +533,214 @@ class TestTmazeAlternationSession:
 
         with pytest.raises(ValueError, match="n_place_cells must be positive"):
             tmaze_alternation_session(duration=30.0, n_trials=5, n_place_cells=-10)
+
+
+class TestBoundaryCellSession:
+    """Tests for boundary_cell_session() convenience function."""
+
+    def test_boundary_cell_session_returns_simulation_session(self):
+        """boundary_cell_session() should return SimulationSession instance."""
+        session = boundary_cell_session(
+            duration=10.0, n_boundary_cells=5, n_place_cells=5
+        )
+
+        assert isinstance(session, SimulationSession)
+
+    def test_boundary_cell_session_default_parameters(self):
+        """boundary_cell_session() should work with default parameters."""
+        session = boundary_cell_session()
+
+        # Should create session
+        assert isinstance(session, SimulationSession)
+        assert session.env is not None
+        assert len(session.spike_trains) > 0
+
+    def test_boundary_cell_session_creates_2d_arena(self):
+        """boundary_cell_session() should create 2D arena environment."""
+        session = boundary_cell_session(
+            duration=10.0,
+            arena_shape="square",
+            arena_size=100.0,
+            n_boundary_cells=5,
+            n_place_cells=5,
+        )
+
+        env = session.env
+
+        # Check that environment is 2D
+        assert env.n_dims == 2
+
+        # Check environment units
+        assert env.units == "cm"
+
+    def test_boundary_cell_session_square_arena(self):
+        """boundary_cell_session() should create square arena."""
+        session = boundary_cell_session(
+            duration=10.0,
+            arena_shape="square",
+            n_boundary_cells=5,
+            n_place_cells=5,
+        )
+
+        assert session.env is not None
+        assert session.env.n_dims == 2
+
+    def test_boundary_cell_session_correct_number_of_cells(self):
+        """boundary_cell_session() should create correct number of cells."""
+        n_boundary = 15
+        n_place = 10
+        session = boundary_cell_session(
+            duration=10.0,
+            n_boundary_cells=n_boundary,
+            n_place_cells=n_place,
+        )
+
+        total_cells = n_boundary + n_place
+        assert len(session.models) == total_cells
+        assert len(session.spike_trains) == total_cells
+        assert len(session.ground_truth) == total_cells
+
+    def test_boundary_cell_session_uses_mixed_cell_types(self):
+        """boundary_cell_session() should create both boundary and place cells."""
+        from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
+
+        session = boundary_cell_session(
+            duration=10.0, n_boundary_cells=10, n_place_cells=5
+        )
+
+        # Count cell types
+        n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
+        n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
+
+        assert n_boundary == 10
+        assert n_place == 5
+        assert n_boundary + n_place == len(session.models)
+
+    def test_boundary_cell_session_seed_reproducibility(self):
+        """boundary_cell_session() with same seed should produce identical results."""
+        seed = 42
+
+        session1 = boundary_cell_session(
+            duration=10.0, n_boundary_cells=5, n_place_cells=5, seed=seed
+        )
+        session2 = boundary_cell_session(
+            duration=10.0, n_boundary_cells=5, n_place_cells=5, seed=seed
+        )
+
+        # Trajectories should be identical
+        np.testing.assert_array_equal(session1.positions, session2.positions)
+        np.testing.assert_array_equal(session1.times, session2.times)
+
+        # Spike trains should be identical
+        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+            np.testing.assert_array_equal(st1, st2)
+
+    def test_boundary_cell_session_custom_duration(self):
+        """boundary_cell_session() should respect custom duration."""
+        duration = 60.0
+        session = boundary_cell_session(
+            duration=duration, n_boundary_cells=5, n_place_cells=5
+        )
+
+        # Check that session duration matches approximately
+        assert session.times[-1] >= duration * 0.9  # Allow small tolerance
+
+    def test_boundary_cell_session_custom_arena_size(self):
+        """boundary_cell_session() should create arena with custom size."""
+        arena_size = 80.0
+        session = boundary_cell_session(
+            duration=10.0,
+            arena_size=arena_size,
+            n_boundary_cells=5,
+            n_place_cells=5,
+        )
+
+        env = session.env
+
+        # Environment should be created
+        assert env is not None
+        assert env.n_bins > 0
+
+    def test_boundary_cell_session_metadata(self):
+        """boundary_cell_session() metadata should contain session info."""
+        session = boundary_cell_session(
+            duration=10.0, n_boundary_cells=5, n_place_cells=5
+        )
+
+        meta = session.metadata
+        assert "cell_type" in meta
+        # Should indicate mixed cell types
+        assert "boundary" in meta["cell_type"] or "mixed" in meta["cell_type"]
+
+    def test_boundary_cell_session_generates_spikes(self):
+        """boundary_cell_session() should generate spikes."""
+        session = boundary_cell_session(
+            duration=30.0, n_boundary_cells=5, n_place_cells=5, seed=42
+        )
+
+        # At least some cells should have spikes
+        total_spikes = sum(len(st) for st in session.spike_trains)
+        assert total_spikes > 0, "No spikes generated in session"
+
+    def test_boundary_cell_session_ground_truth_structure(self):
+        """boundary_cell_session() should have proper ground_truth structure."""
+        n_boundary = 3
+        n_place = 2
+        session = boundary_cell_session(
+            duration=10.0,
+            n_boundary_cells=n_boundary,
+            n_place_cells=n_place,
+            seed=42,
+        )
+
+        # Check ground_truth keys
+        total_cells = n_boundary + n_place
+        assert len(session.ground_truth) == total_cells
+        for i in range(total_cells):
+            key = f"cell_{i}"
+            assert key in session.ground_truth
+
+            # All cells should have some ground truth parameters
+            gt = session.ground_truth[key]
+            assert isinstance(gt, dict)
+            assert len(gt) > 0
+
+    def test_boundary_cell_session_trajectory_within_bounds(self):
+        """boundary_cell_session() trajectory should be within environment bounds."""
+        session = boundary_cell_session(
+            duration=10.0, n_boundary_cells=5, n_place_cells=5, seed=42
+        )
+
+        # All positions should map to valid bins
+        bin_indices = session.env.bin_at(session.positions)
+        assert np.all(bin_indices >= 0), "Some positions outside environment"
+
+    def test_boundary_cell_session_validates_duration(self):
+        """boundary_cell_session() should reject non-positive duration."""
+        import pytest
+
+        with pytest.raises(ValueError, match="duration must be positive"):
+            boundary_cell_session(duration=-1.0, n_boundary_cells=5, n_place_cells=5)
+
+        with pytest.raises(ValueError, match="duration must be positive"):
+            boundary_cell_session(duration=0.0, n_boundary_cells=5, n_place_cells=5)
+
+    def test_boundary_cell_session_validates_n_boundary_cells(self):
+        """boundary_cell_session() should reject non-positive n_boundary_cells."""
+        import pytest
+
+        with pytest.raises(ValueError, match="n_boundary_cells must be positive"):
+            boundary_cell_session(duration=30.0, n_boundary_cells=0, n_place_cells=5)
+
+        with pytest.raises(ValueError, match="n_boundary_cells must be positive"):
+            boundary_cell_session(duration=30.0, n_boundary_cells=-5, n_place_cells=5)
+
+    def test_boundary_cell_session_validates_n_place_cells(self):
+        """boundary_cell_session() should reject non-positive n_place_cells."""
+        import pytest
+
+        with pytest.raises(ValueError, match="n_place_cells must be positive"):
+            boundary_cell_session(duration=30.0, n_boundary_cells=5, n_place_cells=0)
+
+        with pytest.raises(ValueError, match="n_place_cells must be positive"):
+            boundary_cell_session(duration=30.0, n_boundary_cells=5, n_place_cells=-5)

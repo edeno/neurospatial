@@ -537,3 +537,256 @@ def tmaze_alternation_session(
     session.metadata["trial_choices"] = trial_choices
 
     return session
+
+
+def boundary_cell_session(
+    duration: float = 180.0,
+    arena_shape: str = "square",
+    arena_size: float = 100.0,
+    bin_size: float = 2.0,
+    n_boundary_cells: int = 30,
+    n_place_cells: int = 20,
+    seed: int | None = None,
+) -> SimulationSession:
+    """Generate session with boundary and place cells.
+
+    Creates an arena environment with a mix of boundary cells (fire near
+    walls/edges) and place cells (fire in specific locations). This is a
+    convenience function for simulating recordings that include both
+    boundary-responsive and place-responsive neurons.
+
+    Parameters
+    ----------
+    duration : float, optional
+        Session duration in seconds (default: 180.0).
+    arena_shape : str, optional
+        Arena shape - currently only "square" supported (default: "square").
+    arena_size : float, optional
+        Arena side length in cm for square arena (default: 100.0).
+    bin_size : float, optional
+        Spatial bin size in cm (default: 2.0).
+    n_boundary_cells : int, optional
+        Number of boundary cells (default: 30).
+    n_place_cells : int, optional
+        Number of place cells (default: 20).
+    seed : int | None, optional
+        Random seed for reproducibility (default: None).
+
+    Returns
+    -------
+    session : SimulationSession
+        Complete simulation session containing:
+        - env: Arena Environment with units="cm"
+        - positions: Trajectory from OU random walk
+        - times: Time points matching trajectory
+        - spike_trains: Poisson spikes for each cell (boundary + place)
+        - models: BoundaryCellModel and PlaceCellModel instances
+        - ground_truth: True parameters for each cell
+        - metadata: Session configuration
+
+    Raises
+    ------
+    ValueError
+        If duration, n_boundary_cells, or n_place_cells are non-positive.
+    ValueError
+        If bin_size >= arena_size or bin_size <= 0.
+    ValueError
+        If arena_shape is not "square" (other shapes not yet supported).
+
+    Examples
+    --------
+    Quick start for testing:
+
+    >>> from neurospatial.simulation import boundary_cell_session
+    >>> session = boundary_cell_session(
+    ...     duration=60.0, n_boundary_cells=10, n_place_cells=10
+    ... )
+    >>> env = session.env
+    >>> len(session.spike_trains)
+    20
+
+    Check cell type distribution:
+
+    >>> from neurospatial.simulation import boundary_cell_session
+    >>> from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
+    >>> session = boundary_cell_session(n_boundary_cells=30, n_place_cells=20, seed=42)
+    >>> n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
+    >>> n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
+    >>> print(f"Boundary cells: {n_boundary}, Place cells: {n_place}")
+    Boundary cells: 30, Place cells: 20
+
+    Visualize session summary:
+
+    >>> from neurospatial.simulation import (
+    ...     boundary_cell_session,
+    ...     plot_session_summary,
+    ... )
+    >>> import matplotlib.pyplot as plt
+    >>> session = boundary_cell_session(
+    ...     duration=60.0, n_boundary_cells=5, n_place_cells=5, seed=42
+    ... )
+    >>> fig, axes = plot_session_summary(session)
+    >>> plt.show()  # doctest: +SKIP
+
+    See Also
+    --------
+    simulate_session : Low-level session simulation with full control
+    validate_simulation : Validate detected vs ground truth fields
+    plot_session_summary : Visualize session summary
+    open_field_session : Open field with only place cells
+
+    Notes
+    -----
+    **Default Parameters**:
+
+    The defaults are chosen to match typical rodent recordings with mixed
+    cell types:
+
+    - Duration: 180 seconds (3 minutes) - sufficient for spatial coverage
+    - Arena size: 100 cm × 100 cm - standard open field chamber
+    - Bin size: 2 cm - balances spatial resolution vs smoothing
+    - Boundary cells: 30 - realistic proportion (~60% of total)
+    - Place cells: 20 - remaining proportion (~40% of total)
+
+    **Mixed Cell Types**:
+
+    This function creates a heterogeneous population with both boundary
+    cells (which fire preferentially near arena walls) and place cells
+    (which fire in localized spatial regions). Boundary cells are created
+    first, followed by place cells. All cells use uniform spatial coverage
+    for their field centers/boundary preferences.
+
+    **Arena Shapes**:
+
+    Currently only square arenas are supported. The arena is created using
+    Environment.from_samples() with a regular grid of points spanning the
+    arena dimensions.
+
+    **Trajectory**:
+
+    Uses Ornstein-Uhlenbeck (OU) process for trajectory generation, which
+    produces smooth, realistic random walk behavior. The trajectory covers
+    both central regions (place cell firing) and edges (boundary cell
+    firing).
+    """
+    # Import here to avoid circular dependencies
+    from neurospatial import Environment
+    from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
+    from neurospatial.simulation.session import SimulationSession
+    from neurospatial.simulation.spikes import generate_population_spikes
+    from neurospatial.simulation.trajectory import simulate_trajectory_ou
+
+    # Validate parameters
+    if duration <= 0:
+        msg = f"duration must be positive, got {duration}"
+        raise ValueError(msg)
+    if arena_size <= 0:
+        msg = f"arena_size must be positive, got {arena_size}"
+        raise ValueError(msg)
+    if bin_size <= 0:
+        msg = f"bin_size must be positive, got {bin_size}"
+        raise ValueError(msg)
+    if bin_size >= arena_size:
+        msg = f"bin_size ({bin_size}) must be smaller than arena_size ({arena_size})"
+        raise ValueError(msg)
+    if n_boundary_cells <= 0:
+        msg = f"n_boundary_cells must be positive, got {n_boundary_cells}"
+        raise ValueError(msg)
+    if n_place_cells <= 0:
+        msg = f"n_place_cells must be positive, got {n_place_cells}"
+        raise ValueError(msg)
+    if arena_shape != "square":
+        msg = f"Only 'square' arena_shape is currently supported, got {arena_shape!r}"
+        raise ValueError(msg)
+
+    # Create square arena environment (same as open_field_session)
+    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
+    x = np.linspace(0, arena_size, n_points_per_dim)
+    y = np.linspace(0, arena_size, n_points_per_dim)
+    xx, yy = np.meshgrid(x, y)
+    arena_data = np.column_stack([xx.ravel(), yy.ravel()])
+
+    # Create environment from data
+    env = Environment.from_samples(arena_data, bin_size=bin_size)
+    env.units = "cm"
+
+    # Generate trajectory using OU process
+    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+
+    # Create models: boundary cells first, then place cells
+    # Use uniform coverage for field centers
+    total_cells = n_boundary_cells + n_place_cells
+    step = max(1, env.n_bins // total_cells)
+    field_centers = env.bin_centers[::step][:total_cells]
+
+    models: list = []
+    ground_truth = {}
+
+    # Create boundary cells (don't use field_centers for boundary cells)
+    for i in range(n_boundary_cells):
+        model = BoundaryCellModel(env)
+        models.append(model)
+        # Store ground truth for boundary cell
+        ground_truth[f"cell_{i}"] = {
+            "cell_type": "boundary",
+            "preferred_distance": float(model.preferred_distance),
+            "distance_tolerance": float(model.distance_tolerance),
+            "preferred_direction": (
+                float(model.preferred_direction)
+                if model.preferred_direction is not None
+                else None
+            ),
+            "direction_tolerance": float(model.direction_tolerance),
+            "max_rate": float(model.max_rate),
+            "baseline_rate": float(model.baseline_rate),
+        }
+
+    # Create place cells using field centers
+    for i in range(n_place_cells):
+        cell_idx = n_boundary_cells + i
+        center = (
+            field_centers[cell_idx]
+            if cell_idx < len(field_centers)
+            else field_centers[i % len(field_centers)]
+        )
+        place_model = PlaceCellModel(env, center=center)
+        models.append(place_model)
+        # Store ground truth for place cell
+        ground_truth[f"cell_{cell_idx}"] = {
+            "cell_type": "place",
+            "center": center.tolist(),
+            "max_rate": float(place_model.max_rate),
+            "baseline_rate": float(place_model.baseline_rate),
+        }
+
+    # Generate spikes for all cells
+    spike_trains = generate_population_spikes(
+        models, positions, times, seed=seed, show_progress=False
+    )
+
+    # Create metadata
+    metadata = {
+        "duration": duration,
+        "arena_shape": arena_shape,
+        "arena_size": arena_size,
+        "bin_size": bin_size,
+        "n_boundary_cells": n_boundary_cells,
+        "n_place_cells": n_place_cells,
+        "cell_type": "mixed_boundary_place",
+        "trajectory_method": "ou",
+        "coverage": "uniform",
+        "seed": seed,
+    }
+
+    # Create and return session
+    session = SimulationSession(
+        env=env,
+        positions=positions,
+        times=times,
+        spike_trains=spike_trains,
+        models=models,
+        ground_truth=ground_truth,
+        metadata=metadata,
+    )
+
+    return session

@@ -287,11 +287,11 @@
   - [x] Return `SimulationSession`
 - [x] Write NumPy docstring
 
-- [ ] Implement `boundary_cell_session()` in `examples.py` (lines 1299-1342)
-  - [ ] Create environment with specified shape (square/circle/polygon)
-  - [ ] Mix boundary cells and place cells
-  - [ ] Return `SimulationSession`
-- [ ] Write NumPy docstring
+- [x] Implement `boundary_cell_session()` in `examples.py` (lines 542-784)
+  - [x] Create environment with specified shape (square/circle/polygon)
+  - [x] Mix boundary cells and place cells
+  - [x] Return `SimulationSession`
+- [x] Write NumPy docstring
 
 - [ ] Implement `grid_cell_session()` in `examples.py` (lines 1344-1381)
   - [ ] Create 2D arena
