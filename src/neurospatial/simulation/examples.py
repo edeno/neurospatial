@@ -790,3 +790,229 @@ def boundary_cell_session(
     )
 
     return session
+
+
+def grid_cell_session(
+    duration: float = 300.0,
+    arena_size: float = 150.0,
+    grid_spacing: float = 50.0,
+    n_grid_cells: int = 40,
+    seed: int | None = None,
+) -> SimulationSession:
+    """Generate session with grid cells (2D only).
+
+    Creates a square arena environment with grid cells exhibiting hexagonal
+    firing patterns. Grid cells are created with random phases distributed
+    across the arena to create diverse spatial representations. This is a
+    convenience function for simulating grid cell recordings in open field
+    environments.
+
+    Parameters
+    ----------
+    duration : float, optional
+        Session duration in seconds (default: 300.0).
+    arena_size : float, optional
+        Square arena side length in cm (default: 150.0).
+    grid_spacing : float, optional
+        Grid spacing (distance between firing fields) in cm (default: 50.0).
+    n_grid_cells : int, optional
+        Number of grid cells (default: 40).
+    seed : int | None, optional
+        Random seed for reproducibility (default: None).
+
+    Returns
+    -------
+    session : SimulationSession
+        Complete simulation session containing:
+        - env: Square arena Environment with units="cm"
+        - positions: Trajectory from OU random walk
+        - times: Time points matching trajectory
+        - spike_trains: Poisson spikes for each grid cell
+        - models: GridCellModel instances
+        - ground_truth: True parameters for each cell
+        - metadata: Session configuration
+
+    Raises
+    ------
+    ValueError
+        If duration, arena_size, grid_spacing, or n_grid_cells are non-positive.
+    ValueError
+        If grid_spacing >= arena_size (would create too few fields).
+
+    Examples
+    --------
+    Quick start for testing:
+
+    >>> from neurospatial.simulation import grid_cell_session
+    >>> session = grid_cell_session(duration=60.0, n_grid_cells=10)
+    >>> env = session.env
+    >>> len(session.spike_trains)
+    10
+
+    Use custom grid spacing:
+
+    >>> from neurospatial.simulation import grid_cell_session
+    >>> session = grid_cell_session(
+    ...     duration=120.0, grid_spacing=40.0, n_grid_cells=20, seed=42
+    ... )
+    >>> session.metadata["grid_spacing"]
+    40.0
+
+    Visualize session summary:
+
+    >>> from neurospatial.simulation import grid_cell_session, plot_session_summary
+    >>> import matplotlib.pyplot as plt
+    >>> session = grid_cell_session(duration=60.0, n_grid_cells=5, seed=42)
+    >>> fig, axes = plot_session_summary(session)
+    >>> plt.show()  # doctest: +SKIP
+
+    See Also
+    --------
+    simulate_session : Low-level session simulation with full control
+    validate_simulation : Validate detected vs ground truth fields
+    plot_session_summary : Visualize session summary
+    open_field_session : Open field with place cells
+
+    Notes
+    -----
+    **Default Parameters**:
+
+    The defaults are chosen to match typical grid cell recordings:
+
+    - Duration: 300 seconds (5 minutes) - sufficient for spatial coverage
+    - Arena size: 150 cm × 150 cm - larger arena to show grid structure
+    - Grid spacing: 50 cm - typical grid scale for medial entorhinal cortex
+    - Number of cells: 40 - realistic grid cell recording
+
+    **Grid Cell Model**:
+
+    Each grid cell is created with:
+    - Random phase offsets (uniformly distributed)
+    - Random orientation angle
+    - Shared grid spacing (same module)
+    - Hexagonal firing pattern in 2D
+
+    **Trajectory**:
+
+    Uses Ornstein-Uhlenbeck (OU) process for trajectory generation, which
+    produces smooth, realistic random walk behavior that extensively covers
+    the arena to reveal hexagonal grid structure.
+
+    **Phase Distribution**:
+
+    Grid cell phases are uniformly distributed across the arena by sampling
+    from environment bin centers. This ensures diverse phase offsets and
+    creates a realistic population of grid cells from the same module.
+    """
+    # Import here to avoid circular dependencies
+    from neurospatial import Environment
+    from neurospatial.simulation.models import GridCellModel
+    from neurospatial.simulation.session import SimulationSession
+    from neurospatial.simulation.spikes import generate_population_spikes
+    from neurospatial.simulation.trajectory import simulate_trajectory_ou
+
+    # Validate parameters
+    if duration <= 0:
+        msg = f"duration must be positive, got {duration}"
+        raise ValueError(msg)
+    if arena_size <= 0:
+        msg = f"arena_size must be positive, got {arena_size}"
+        raise ValueError(msg)
+    if grid_spacing <= 0:
+        msg = f"grid_spacing must be positive, got {grid_spacing}"
+        raise ValueError(msg)
+    if grid_spacing >= arena_size:
+        msg = (
+            f"grid_spacing ({grid_spacing}) must be smaller than "
+            f"arena_size ({arena_size})"
+        )
+        raise ValueError(msg)
+    if n_grid_cells <= 0:
+        msg = f"n_grid_cells must be positive, got {n_grid_cells}"
+        raise ValueError(msg)
+
+    # Create square arena environment (similar to open_field_session)
+    # Use bin_size = grid_spacing / 5 for good resolution of grid structure
+    bin_size = max(1.0, grid_spacing / 5.0)
+    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
+    x = np.linspace(0, arena_size, n_points_per_dim)
+    y = np.linspace(0, arena_size, n_points_per_dim)
+    xx, yy = np.meshgrid(x, y)
+    arena_data = np.column_stack([xx.ravel(), yy.ravel()])
+
+    # Create environment from data
+    env = Environment.from_samples(arena_data, bin_size=bin_size)
+    env.units = "cm"
+
+    # Generate trajectory using OU process
+    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+
+    # Create grid cell models with random phases
+    # Sample phase offsets uniformly from environment
+    rng = np.random.default_rng(seed)
+    step = max(1, env.n_bins // n_grid_cells)
+    phase_centers = env.bin_centers[::step][:n_grid_cells]
+
+    # Shuffle to randomize phase distribution
+    rng.shuffle(phase_centers)
+
+    # Generate random orientations for grid cells
+    orientations = rng.uniform(0, np.pi / 3, size=n_grid_cells)
+
+    models: list = []
+    ground_truth = {}
+
+    for i in range(n_grid_cells):
+        # Use phase_center from shuffled list
+        phase = phase_centers[i] if i < len(phase_centers) else phase_centers[0]
+
+        # Create grid cell with specified spacing, random phase and orientation
+        model = GridCellModel(
+            env,
+            grid_spacing=grid_spacing,
+            phase_offset=phase,
+            grid_orientation=orientations[i],
+        )
+        models.append(model)
+
+        # Store ground truth
+        ground_truth[f"cell_{i}"] = {
+            "cell_type": "grid",
+            "grid_spacing": float(grid_spacing),
+            "phase_offset": phase.tolist(),
+            "orientation": float(model.grid_orientation),
+            "max_rate": float(model.max_rate),
+            "baseline_rate": float(model.baseline_rate),
+        }
+
+    # Generate spikes for all cells
+    spike_trains = generate_population_spikes(
+        models, positions, times, seed=seed, show_progress=False
+    )
+
+    # Create metadata
+    metadata = {
+        "duration": duration,
+        "arena_shape": "square",
+        "arena_size": arena_size,
+        "bin_size": bin_size,
+        "grid_spacing": grid_spacing,
+        "n_grid_cells": n_grid_cells,
+        "cell_type": "grid",
+        "trajectory_method": "ou",
+        "coverage": "uniform",
+        "seed": seed,
+    }
+
+    # Create and return session
+    session = SimulationSession(
+        env=env,
+        positions=positions,
+        times=times,
+        spike_trains=spike_trains,
+        models=models,
+        ground_truth=ground_truth,
+        metadata=metadata,
+    )
+
+    return session

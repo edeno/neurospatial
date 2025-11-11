@@ -6,6 +6,7 @@ import numpy as np
 
 from neurospatial.simulation.examples import (
     boundary_cell_session,
+    grid_cell_session,
     linear_track_session,
     open_field_session,
     tmaze_alternation_session,
@@ -744,3 +745,198 @@ class TestBoundaryCellSession:
 
         with pytest.raises(ValueError, match="n_place_cells must be positive"):
             boundary_cell_session(duration=30.0, n_boundary_cells=5, n_place_cells=-5)
+
+
+class TestGridCellSession:
+    """Tests for grid_cell_session() convenience function."""
+
+    def test_grid_cell_session_returns_simulation_session(self):
+        """grid_cell_session() should return SimulationSession instance."""
+        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+
+        assert isinstance(session, SimulationSession)
+
+    def test_grid_cell_session_default_parameters(self):
+        """grid_cell_session() should work with default parameters."""
+        session = grid_cell_session()
+
+        # Should create session
+        assert isinstance(session, SimulationSession)
+        assert session.env is not None
+        assert len(session.spike_trains) > 0
+
+    def test_grid_cell_session_creates_2d_arena(self):
+        """grid_cell_session() should create 2D arena environment."""
+        arena_size = 150.0
+        session = grid_cell_session(
+            duration=10.0, arena_size=arena_size, n_grid_cells=5
+        )
+
+        env = session.env
+
+        # Check that environment is 2D
+        assert env.n_dims == 2
+
+        # Check environment units
+        assert env.units == "cm"
+
+    def test_grid_cell_session_correct_number_of_cells(self):
+        """grid_cell_session() should create correct number of grid cells."""
+        n_cells = 20
+        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells)
+
+        assert len(session.models) == n_cells
+        assert len(session.spike_trains) == n_cells
+        assert len(session.ground_truth) == n_cells
+
+    def test_grid_cell_session_uses_grid_cells(self):
+        """grid_cell_session() should create only grid cells."""
+        from neurospatial.simulation.models import GridCellModel
+
+        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+
+        # All models should be grid cells
+        assert all(isinstance(m, GridCellModel) for m in session.models)
+
+    def test_grid_cell_session_seed_reproducibility(self):
+        """grid_cell_session() with same seed should produce identical results."""
+        seed = 42
+
+        session1 = grid_cell_session(duration=10.0, n_grid_cells=5, seed=seed)
+        session2 = grid_cell_session(duration=10.0, n_grid_cells=5, seed=seed)
+
+        # Trajectories should be identical
+        np.testing.assert_array_equal(session1.positions, session2.positions)
+        np.testing.assert_array_equal(session1.times, session2.times)
+
+        # Spike trains should be identical
+        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+            np.testing.assert_array_equal(st1, st2)
+
+    def test_grid_cell_session_custom_duration(self):
+        """grid_cell_session() should respect custom duration."""
+        duration = 60.0
+        session = grid_cell_session(duration=duration, n_grid_cells=5)
+
+        # Check that session duration matches
+        assert session.times[-1] >= duration * 0.9  # Allow small tolerance
+
+    def test_grid_cell_session_custom_arena_size(self):
+        """grid_cell_session() should create arena with custom size."""
+        arena_size = 100.0
+        session = grid_cell_session(
+            duration=10.0, arena_size=arena_size, n_grid_cells=5
+        )
+
+        env = session.env
+
+        # Environment should be created
+        assert env is not None
+        assert env.n_bins > 0
+
+    def test_grid_cell_session_custom_grid_spacing(self):
+        """grid_cell_session() should use custom grid_spacing."""
+        grid_spacing = 30.0
+        session = grid_cell_session(
+            duration=10.0, grid_spacing=grid_spacing, n_grid_cells=5, seed=42
+        )
+
+        # Should complete without error
+        assert session is not None
+        assert len(session.models) == 5
+
+    def test_grid_cell_session_metadata(self):
+        """grid_cell_session() metadata should contain session info."""
+        session = grid_cell_session(duration=10.0, n_grid_cells=5)
+
+        meta = session.metadata
+        assert "cell_type" in meta
+        assert meta["cell_type"] == "grid"
+
+    def test_grid_cell_session_generates_spikes(self):
+        """grid_cell_session() should generate spikes."""
+        session = grid_cell_session(duration=30.0, n_grid_cells=5, seed=42)
+
+        # At least some cells should have spikes
+        total_spikes = sum(len(st) for st in session.spike_trains)
+        assert total_spikes > 0, "No spikes generated in session"
+
+    def test_grid_cell_session_trajectory_within_bounds(self):
+        """grid_cell_session() trajectory should be within arena bounds."""
+        session = grid_cell_session(duration=10.0, n_grid_cells=5, seed=42)
+
+        # All positions should map to valid bins
+        bin_indices = session.env.bin_at(session.positions)
+        assert np.all(bin_indices >= 0), "Some positions outside environment"
+
+    def test_grid_cell_session_ground_truth_structure(self):
+        """grid_cell_session() should have proper ground_truth structure."""
+        n_cells = 5
+        session = grid_cell_session(duration=10.0, n_grid_cells=n_cells, seed=42)
+
+        # Check ground_truth keys
+        assert len(session.ground_truth) == n_cells
+        for i in range(n_cells):
+            key = f"cell_{i}"
+            assert key in session.ground_truth
+
+            # For grid cells, should have grid-specific parameters
+            gt = session.ground_truth[key]
+            assert "cell_type" in gt
+            assert gt["cell_type"] == "grid"
+
+    def test_grid_cell_session_validates_duration(self):
+        """grid_cell_session() should reject non-positive duration."""
+        import pytest
+
+        with pytest.raises(ValueError, match="duration must be positive"):
+            grid_cell_session(duration=-1.0, n_grid_cells=5)
+
+        with pytest.raises(ValueError, match="duration must be positive"):
+            grid_cell_session(duration=0.0, n_grid_cells=5)
+
+    def test_grid_cell_session_validates_n_grid_cells(self):
+        """grid_cell_session() should reject non-positive n_grid_cells."""
+        import pytest
+
+        with pytest.raises(ValueError, match="n_grid_cells must be positive"):
+            grid_cell_session(duration=30.0, n_grid_cells=0)
+
+        with pytest.raises(ValueError, match="n_grid_cells must be positive"):
+            grid_cell_session(duration=30.0, n_grid_cells=-5)
+
+    def test_grid_cell_session_validates_grid_spacing(self):
+        """grid_cell_session() should reject non-positive grid_spacing."""
+        import pytest
+
+        with pytest.raises(ValueError, match="grid_spacing must be positive"):
+            grid_cell_session(duration=30.0, grid_spacing=-10.0, n_grid_cells=5)
+
+        with pytest.raises(ValueError, match="grid_spacing must be positive"):
+            grid_cell_session(duration=30.0, grid_spacing=0.0, n_grid_cells=5)
+
+    def test_grid_cell_session_validates_arena_size(self):
+        """grid_cell_session() should reject non-positive arena_size."""
+        import pytest
+
+        with pytest.raises(ValueError, match="arena_size must be positive"):
+            grid_cell_session(duration=30.0, arena_size=-100.0, n_grid_cells=5)
+
+        with pytest.raises(ValueError, match="arena_size must be positive"):
+            grid_cell_session(duration=30.0, arena_size=0.0, n_grid_cells=5)
+
+    def test_grid_cell_session_validates_grid_spacing_vs_arena_size(self):
+        """grid_cell_session() should reject grid_spacing >= arena_size."""
+        import pytest
+
+        # grid_spacing equal to arena_size
+        with pytest.raises(ValueError, match="must be smaller than"):
+            grid_cell_session(
+                duration=30.0, arena_size=100.0, grid_spacing=100.0, n_grid_cells=5
+            )
+
+        # grid_spacing larger than arena_size
+        with pytest.raises(ValueError, match="must be smaller than"):
+            grid_cell_session(
+                duration=30.0, arena_size=100.0, grid_spacing=150.0, n_grid_cells=5
+            )

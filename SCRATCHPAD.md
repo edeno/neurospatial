@@ -567,6 +567,113 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - ✅ Code review feedback fully addressed
 - ✅ Public export verified: `from neurospatial.simulation import tmaze_alternation_session` works
 
+### `boundary_cell_session()` Implementation
+
+**Location**: `src/neurospatial/simulation/examples.py` (lines 542-792)
+
+**Tests**: 17 tests passing in `tests/simulation/test_examples.py` (lines 538-747)
+
+**Key Features**:
+
+- Pre-configured convenience function for mixed boundary + place cell simulations
+- Creates square arena environment (default 100cm × 100cm)
+- Uses Ornstein-Uhlenbeck trajectory for smooth random walk
+- Generates both BoundaryCellModel and PlaceCellModel instances
+- Returns SimulationSession dataclass with mixed cell population
+- Comprehensive parameter validation with diagnostic error messages
+- Reproducible with seed parameter
+
+**Key Design Decisions**:
+
+1. **Mixed Cell Population**: Manually creates boundary cells first, then place cells (doesn't use simulate_session with cell_type="mixed")
+   - Gives precise control over cell type counts
+   - Boundary cells created without field centers (random boundary preferences)
+   - Place cells use uniform coverage for field centers
+
+2. **Ground Truth Storage**: Cell-type-specific dictionaries
+   - Boundary cells: preferred_distance, distance_tolerance, preferred_direction, direction_tolerance, max_rate, baseline_rate
+   - Place cells: center, max_rate, baseline_rate
+   - Each includes "cell_type" field for discrimination
+
+3. **Default Parameters**: Chosen to match typical recordings with mixed cell types
+   - Duration: 180s (3 minutes) - sufficient for spatial coverage
+   - Arena: 100cm × 100cm - standard open field chamber
+   - Boundary cells: 30 (~60% of total)
+   - Place cells: 20 (~40% of total)
+
+4. **Arena Shape Validation**: Only "square" shape supported (validates upfront)
+
+**Quality Checks**:
+
+- ✅ All 17 tests passing
+- ✅ ruff check passes (no issues)
+- ✅ mypy passes (no issues)
+- ✅ Comprehensive NumPy docstring with 3 examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+- ✅ Code review feedback fully addressed
+- ✅ Public export verified
+
+### `grid_cell_session()` Implementation
+
+**Location**: `src/neurospatial/simulation/examples.py` (lines 795-1015)
+
+**Tests**: 18 tests passing in `tests/simulation/test_examples.py` (lines 750-943)
+
+**Key Features**:
+
+- Pre-configured convenience function for grid cell simulations
+- Creates square arena environment (default 150cm × 150cm, larger for grid structure)
+- Uses Ornstein-Uhlenbeck trajectory for extensive spatial coverage
+- Generates GridCellModel instances with random phases and orientations
+- Returns SimulationSession dataclass with grid cell population
+- Comprehensive parameter validation with diagnostic error messages
+- Reproducible with seed parameter
+
+**Code Review Applied**: Fixed 3 critical issues identified by code-reviewer:
+
+1. ✅ Added grid_cell_session to imports in `neurospatial.simulation.__init__.py`
+2. ✅ Added to `__all__` list for public API access
+3. ✅ Added 2 validation tests (arena_size, grid_spacing vs arena_size edge case)
+4. ✅ Added "arena_shape": "square" to metadata for consistency
+
+**Key Design Decisions**:
+
+1. **Grid Cell Phase Distribution**: Random phases across arena
+   - Samples phase offsets from environment bin centers (uniform spatial distribution)
+   - Shuffles for randomization
+   - Creates diverse phase representations across population
+
+2. **Grid Cell Orientations**: Random orientations for each cell
+   - Generates with `rng.uniform(0, π/3, size=n_grid_cells)`
+   - Range 0 to 60° exploits hexagonal symmetry
+   - Each cell has independent random orientation
+
+3. **Bin Size Selection**: Automatic heuristic
+   - `bin_size = max(1.0, grid_spacing / 5.0)`
+   - Provides ~5 bins per grid spacing
+   - Ensures adequate resolution for hexagonal structure
+
+4. **Default Parameters**: Chosen to match typical grid cell recordings
+   - Duration: 300s (5 minutes) - longer for extensive coverage
+   - Arena: 150cm × 150cm - larger arena to show grid structure
+   - Grid spacing: 50cm - typical medial entorhinal cortex scale
+   - N cells: 40 - realistic grid cell recording
+
+5. **Ground Truth Storage**: Grid cell specific parameters
+   - cell_type: "grid"
+   - grid_spacing, phase_offset, orientation
+   - max_rate, baseline_rate
+
+**Quality Checks**:
+
+- ✅ All 18 tests passing (16 original + 2 added from code review)
+- ✅ ruff check passes (no issues)
+- ✅ mypy passes (no issues)
+- ✅ Comprehensive NumPy docstring with 3 examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+- ✅ Code review feedback fully addressed
+- ✅ Public export verified: `from neurospatial.simulation import grid_cell_session` works
+
 ## Blockers
 
-None - tmaze_alternation_session() complete and tested. Ready for next example function (boundary_cell_session or grid_cell_session).
+None - All Milestone 3 pre-configured example functions complete (open_field_session, linear_track_session, tmaze_alternation_session, boundary_cell_session, grid_cell_session).

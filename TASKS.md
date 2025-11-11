@@ -293,11 +293,11 @@
   - [x] Return `SimulationSession`
 - [x] Write NumPy docstring
 
-- [ ] Implement `grid_cell_session()` in `examples.py` (lines 1344-1381)
-  - [ ] Create 2D arena
-  - [ ] Create grid cells with varied phases
-  - [ ] Return `SimulationSession`
-- [ ] Write NumPy docstring
+- [x] Implement `grid_cell_session()` in `examples.py` (lines 795-1015)
+  - [x] Create 2D arena
+  - [x] Create grid cells with varied phases
+  - [x] Return `SimulationSession`
+- [x] Write NumPy docstring
 
 ### Testing
 
@@ -394,11 +394,6 @@
   - [ ] Add simulation subpackage section
   - [ ] Document all public functions and classes
   - [ ] Add cross-references to related functions
-
-- [ ] Create migration guide:
-  - [ ] Document how to replace hand-written simulation code
-  - [ ] Show before/after examples
-  - [ ] Provide troubleshooting tips
 
 ### Validation
 

@@ -50,6 +50,7 @@ for maximum discoverability and IDE support.
 # Pre-configured example simulations (Milestone 3)
 from neurospatial.simulation.examples import (
     boundary_cell_session,
+    grid_cell_session,
     linear_track_session,
     open_field_session,
     tmaze_alternation_session,
@@ -98,6 +99,7 @@ __all__ = [
     "boundary_cell_session",
     "generate_poisson_spikes",
     "generate_population_spikes",
+    "grid_cell_session",
     "linear_track_session",
     "open_field_session",
     "plot_session_summary",
