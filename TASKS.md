@@ -273,12 +273,12 @@
   - [x] Return `SimulationSession`
 - [x] Write NumPy docstring
 
-- [ ] Implement `linear_track_session()` in `examples.py` (lines 1225-1261)
-  - [ ] Create 1D track environment
-  - [ ] Use sinusoidal trajectory
-  - [ ] Add direction-selective place cells
-  - [ ] Return `SimulationSession`
-- [ ] Write NumPy docstring
+- [x] Implement `linear_track_session()` in `examples.py` (lines 1225-1261)
+  - [x] Create 1D track environment
+  - [x] Use laps trajectory (with n_laps parameter)
+  - [x] Add place cells with uniform coverage
+  - [x] Return `SimulationSession`
+- [x] Write NumPy docstring
 
 - [ ] Implement `tmaze_alternation_session()` in `examples.py` (lines 1263-1297)
   - [ ] Create T-maze graph environment

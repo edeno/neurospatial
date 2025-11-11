@@ -451,6 +451,69 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
 - ✅ Code review feedback fully addressed
 
+### `linear_track_session()` Implementation
+
+**Location**: `src/neurospatial/simulation/examples.py` (lines 163-326)
+
+**Tests**: 14 tests passing in `tests/simulation/test_examples.py` (lines 158-337)
+
+**Key Features**:
+
+- Pre-configured convenience function for linear track simulations
+- Creates 1D linear track environment (default 200cm length)
+- Uses lap-based trajectory generation (n_laps parameter)
+- Generates place cell spike trains with uniform coverage
+- Returns SimulationSession dataclass
+- Comprehensive parameter validation with diagnostic error messages
+- Reproducible with seed parameter
+
+**Code Review Applied**: Fixed critical export issue:
+
+1. ✅ Added linear_track_session to imports in `neurospatial.simulation.__init__.py`
+2. ✅ Added to `__all__` list for public API access
+
+**Key Design Decisions**:
+
+1. **1D environment creation**: Uses linspace to generate 1D track data
+   - `n_points = max(20, int(track_length / bin_size) + 1)`
+   - Reshapes to column vector: `.reshape(-1, 1)`
+   - Creates environment with `Environment.from_samples()`
+   - Sets units to "cm" for neuroscience convention
+
+2. **Default parameters**: Chosen to match typical hippocampal recordings
+   - Duration: 240s (4 minutes) - sufficient for multiple laps
+   - Track length: 200cm - standard linear track
+   - Bin size: 1cm - fine resolution for 1D (vs 2cm for 2D)
+   - N cells: 40 - typical hippocampal CA1 recording
+   - N laps: 20 - good spatial coverage
+
+3. **Lap-based trajectory**: Uses `trajectory_method="laps"`
+   - More realistic than sinusoidal for linear track
+   - Includes speed variations and pauses at endpoints
+   - Automatic path finding
+
+4. **Parameter validation**: Upfront validation with diagnostic error messages
+   - All parameters must be positive
+   - bin_size must be smaller than track_length
+   - Follows project pattern of explicit validation
+
+5. **Consistency with open_field_session()**:
+   - Same validation pattern
+   - Same delegation to simulate_session()
+   - Same docstring structure and quality
+   - Same parameter naming conventions
+
+**Exports**: Added to `neurospatial.simulation.__init__.py` and `__all__` list (line 95)
+
+**Quality Checks**:
+
+- ✅ All 14 tests passing (first implementation!)
+- ✅ ruff check passes (1 file reformatted)
+- ✅ mypy passes (no issues)
+- ✅ Comprehensive NumPy docstring with 3 examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+- ✅ Code review feedback fully addressed
+
 ## Blockers
 
-None - open_field_session() complete and tested. Ready for next example function (linear_track_session).
+None - linear_track_session() complete and tested. Ready for next example function (tmaze_alternation_session).

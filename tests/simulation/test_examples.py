@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from neurospatial.simulation.examples import open_field_session
+from neurospatial.simulation.examples import linear_track_session, open_field_session
 from neurospatial.simulation.session import SimulationSession
 
 
@@ -140,6 +140,191 @@ class TestOpenFieldSession:
         """open_field_session() should have proper ground_truth structure."""
         n_cells = 5
         session = open_field_session(duration=10.0, n_place_cells=n_cells, seed=42)
+
+        # Check ground_truth keys
+        assert len(session.ground_truth) == n_cells
+        for i in range(n_cells):
+            key = f"cell_{i}"
+            assert key in session.ground_truth
+
+            # For place cells, should have center, width, max_rate, baseline_rate
+            gt = session.ground_truth[key]
+            assert "center" in gt
+            assert "width" in gt
+            assert "max_rate" in gt
+            assert "baseline_rate" in gt
+
+
+class TestLinearTrackSession:
+    """Tests for linear_track_session() convenience function."""
+
+    def test_linear_track_session_returns_simulation_session(self):
+        """linear_track_session() should return SimulationSession instance."""
+        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
+
+        assert isinstance(session, SimulationSession)
+
+    def test_linear_track_session_default_parameters(self):
+        """linear_track_session() should work with default parameters."""
+        session = linear_track_session()
+
+        # Should create session
+        assert isinstance(session, SimulationSession)
+        assert session.env is not None
+        assert len(session.spike_trains) > 0
+
+    def test_linear_track_session_creates_1d_environment(self):
+        """linear_track_session() should create 1D track environment."""
+        track_length = 200.0
+        bin_size = 1.0
+        session = linear_track_session(
+            duration=10.0,
+            track_length=track_length,
+            bin_size=bin_size,
+            n_place_cells=5,
+            n_laps=3,
+        )
+
+        env = session.env
+
+        # Check that environment is 1D
+        assert env.n_dims == 1
+
+        # Check environment units
+        assert env.units == "cm"
+
+    def test_linear_track_session_correct_number_of_cells(self):
+        """linear_track_session() should create correct number of place cells."""
+        n_cells = 20
+        session = linear_track_session(duration=10.0, n_place_cells=n_cells, n_laps=3)
+
+        assert len(session.models) == n_cells
+        assert len(session.spike_trains) == n_cells
+        assert len(session.ground_truth) == n_cells
+
+    def test_linear_track_session_uses_place_cells(self):
+        """linear_track_session() should create only place cells."""
+        from neurospatial.simulation.models import PlaceCellModel
+
+        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
+
+        # All models should be place cells
+        assert all(isinstance(m, PlaceCellModel) for m in session.models)
+
+    def test_linear_track_session_seed_reproducibility(self):
+        """linear_track_session() with same seed should produce identical results."""
+        seed = 42
+
+        session1 = linear_track_session(
+            duration=10.0, n_place_cells=5, n_laps=3, seed=seed
+        )
+        session2 = linear_track_session(
+            duration=10.0, n_place_cells=5, n_laps=3, seed=seed
+        )
+
+        # Trajectories should be identical
+        np.testing.assert_array_equal(session1.positions, session2.positions)
+        np.testing.assert_array_equal(session1.times, session2.times)
+
+        # Spike trains should be identical
+        for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
+            np.testing.assert_array_equal(st1, st2)
+
+    def test_linear_track_session_custom_duration(self):
+        """linear_track_session() should respect custom duration."""
+        duration = 60.0
+        session = linear_track_session(duration=duration, n_place_cells=5, n_laps=5)
+
+        # Check that session duration matches approximately
+        assert session.times[-1] >= duration * 0.9  # Allow small tolerance
+
+    def test_linear_track_session_custom_track_length(self):
+        """linear_track_session() should create track with custom length."""
+        track_length = 150.0
+        session = linear_track_session(
+            duration=10.0,
+            track_length=track_length,
+            bin_size=1.0,
+            n_place_cells=5,
+            n_laps=3,
+        )
+
+        env = session.env
+
+        # Check that environment spans approximately track_length
+        # For 1D environment, check bin_centers span
+        position_span = np.ptp(env.bin_centers)
+        assert position_span >= track_length * 0.9  # At least 90% of track length
+
+    def test_linear_track_session_custom_bin_size(self):
+        """linear_track_session() should use custom bin_size."""
+        bin_size_small = 1.0
+        bin_size_large = 5.0
+
+        session_small = linear_track_session(
+            duration=10.0,
+            track_length=200.0,
+            bin_size=bin_size_small,
+            n_place_cells=5,
+            n_laps=3,
+        )
+        session_large = linear_track_session(
+            duration=10.0,
+            track_length=200.0,
+            bin_size=bin_size_large,
+            n_place_cells=5,
+            n_laps=3,
+        )
+
+        # Smaller bin_size should result in more bins
+        assert session_small.env.n_bins > session_large.env.n_bins
+
+    def test_linear_track_session_custom_n_laps(self):
+        """linear_track_session() should use custom n_laps."""
+        session = linear_track_session(
+            duration=20.0, n_place_cells=5, n_laps=10, seed=42
+        )
+
+        # Should complete without error
+        assert len(session.positions) > 0
+        assert len(session.times) > 0
+
+    def test_linear_track_session_metadata(self):
+        """linear_track_session() metadata should contain session info."""
+        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
+
+        meta = session.metadata
+        assert "cell_type" in meta
+        assert meta["cell_type"] == "place"
+        assert "trajectory_method" in meta
+        assert meta["trajectory_method"] == "laps"
+
+    def test_linear_track_session_generates_spikes(self):
+        """linear_track_session() should generate spikes."""
+        session = linear_track_session(
+            duration=30.0, n_place_cells=5, n_laps=5, seed=42
+        )
+
+        # At least some cells should have spikes
+        total_spikes = sum(len(st) for st in session.spike_trains)
+        assert total_spikes > 0, "No spikes generated in session"
+
+    def test_linear_track_session_trajectory_within_bounds(self):
+        """linear_track_session() trajectory should be within track bounds."""
+        session = linear_track_session(
+            duration=10.0, n_place_cells=5, n_laps=3, seed=42
+        )
+
+        # All positions should map to valid bins
+        bin_indices = session.env.bin_at(session.positions)
+        assert np.all(bin_indices >= 0), "Some positions outside environment"
+
+    def test_linear_track_session_ground_truth_structure(self):
+        """linear_track_session() should have proper ground_truth structure."""
+        n_cells = 5
+        session = linear_track_session(
+            duration=10.0, n_place_cells=n_cells, n_laps=3, seed=42
+        )
 
         # Check ground_truth keys
         assert len(session.ground_truth) == n_cells
