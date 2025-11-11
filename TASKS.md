@@ -215,11 +215,11 @@
 
 ### Session Simulation
 
-- [ ] Implement `SimulationSession` dataclass in `session.py` (lines 965-992)
-  - [ ] Add `@dataclass(frozen=True)` decorator
-  - [ ] Define fields: `env`, `positions`, `times`, `spike_trains`, `models`, `ground_truth`, `metadata`
-  - [ ] Add type hints for all fields
-  - [ ] Write comprehensive docstring
+- [x] Implement `SimulationSession` dataclass in `session.py` (lines 965-992)
+  - [x] Add `@dataclass(frozen=True)` decorator
+  - [x] Define fields: `env`, `positions`, `times`, `spike_trains`, `models`, `ground_truth`, `metadata`
+  - [x] Add type hints for all fields
+  - [x] Write comprehensive docstring
 
 - [ ] Implement `simulate_session()` in `session.py` (lines 994-1077)
   - [ ] Parse parameters including `coverage` (lines 1027-1034 explain algorithm)

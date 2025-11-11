@@ -211,12 +211,54 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 
 4. **Numerical stability**: Cosine gratings bounded [-1, 1], so grid pattern bounded [-1, 1]. After rectification max(0, g(x)), pattern bounded [0, 1], preventing overflow/underflow.
 
+## Milestone 3: SimulationSession Dataclass
+
+**Status**: ✅ COMPLETE (commit 017cd79)
+
+### Implementation Details
+
+1. **Frozen dataclass**: Immutable container for complete simulation session results
+   - 7 required fields: `env`, `positions`, `times`, `spike_trains`, `models`, `ground_truth`, `metadata`
+   - All fields with complete type annotations
+   - Uses `TYPE_CHECKING` guards for forward references to avoid circular imports
+
+2. **Design rationale**:
+   - Frozen to prevent accidental modification of simulation results
+   - Separation of `models` (for regenerating rates) and `ground_truth` (for validation)
+   - Metadata dict for flexible configuration storage
+   - Typed dataclass for IDE autocomplete and type safety
+
+3. **Documentation**:
+   - Comprehensive NumPy-style docstring (131 lines)
+   - Complete usage examples with all import statements
+   - Notes on immutability and usage with `dataclasses.replace()`
+   - Cross-references to related functions (simulate_session, validate_simulation, plot_session_summary)
+
+### Test Coverage
+
+- **6 tests total**, all passing
+  - Immutability (frozen dataclass)
+  - Required field presence
+  - Type annotations (dataclass fields)
+  - Empty spike trains handling
+  - Multiple cells handling
+  - Repr formatting
+- **Mypy**: Clean (no issues)
+- **Ruff**: Clean (all checks passed, imports sorted)
+
+### Key Design Decisions
+
+1. **TYPE_CHECKING guards**: Used to avoid circular imports between session.py and models/base.py
+2. **Forward references**: `Environment` and `NeuralModel` imported only at type-checking time
+3. **Simplified type hints test**: Uses `dataclasses.fields()` instead of `typing.get_type_hints()` to avoid forward reference resolution complexity
+4. **Exported in flat API**: Added to `neurospatial.simulation.__init__.py` for discoverability
+
 ## Next Steps
 
-1. ✅ Implement GridCellModel - DONE
-2. Commit GridCellModel implementation - Ready
-3. Continue Milestone 3: Session API and validation helpers
+1. ✅ Implement SimulationSession dataclass - DONE
+2. Implement `simulate_session()` function (next unchecked task in TASKS.md line 224)
+3. Continue Milestone 3: Validation helpers and pre-configured examples
 
 ## Blockers
 
-None - GridCellModel complete and tested.
+None - SimulationSession complete and tested.
