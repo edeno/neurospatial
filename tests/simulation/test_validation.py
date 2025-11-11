@@ -339,3 +339,250 @@ class TestValidateSimulation:
                 times=session.times,
                 # Missing ground_truth
             )
+
+
+class TestPlotSessionSummary:
+    """Tests for plot_session_summary() function."""
+
+    def test_plot_session_summary_returns_tuple(self, simple_2d_env):
+        """plot_session_summary() should return (fig, axes) tuple."""
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=5,
+            cell_type="place",
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        result = plot_session_summary(session)
+
+        # Should return tuple
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_plot_session_summary_returns_figure_and_axes(self, simple_2d_env):
+        """plot_session_summary() should return matplotlib Figure and axes."""
+        import matplotlib.figure
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=5,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        fig, axes = plot_session_summary(session)
+
+        # Check types
+        assert isinstance(fig, matplotlib.figure.Figure)
+        assert isinstance(axes, np.ndarray)
+
+        plt.close(fig)
+
+    def test_plot_session_summary_default_cell_ids(self, simple_2d_env):
+        """plot_session_summary() should default to first 6 cells."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=10,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        fig, _ = plot_session_summary(session)
+
+        # Should not crash with 10 cells
+        assert fig is not None
+
+        plt.close(fig)
+
+    def test_plot_session_summary_custom_cell_ids(self, simple_2d_env):
+        """plot_session_summary() should accept custom cell_ids."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=10,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        # Plot specific cells
+        fig, _ = plot_session_summary(session, cell_ids=[0, 2, 5])
+
+        assert fig is not None
+
+        plt.close(fig)
+
+    def test_plot_session_summary_custom_figsize(self, simple_2d_env):
+        """plot_session_summary() should accept custom figsize."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=5,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        fig, _ = plot_session_summary(session, figsize=(12, 8))
+
+        # Check figsize was applied
+        assert fig.get_size_inches()[0] == 12
+        assert fig.get_size_inches()[1] == 8
+
+        plt.close(fig)
+
+    def test_plot_session_summary_with_empty_spike_trains(self, simple_2d_env):
+        """plot_session_summary() should handle cells with no spikes."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=5.0,  # Very short, may have empty trains
+            n_cells=3,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        # Should not crash even if some cells have no spikes
+        fig, _ = plot_session_summary(session)
+
+        assert fig is not None
+
+        plt.close(fig)
+
+    def test_plot_session_summary_invalid_cell_ids(self, simple_2d_env):
+        """plot_session_summary() should raise error for invalid cell_ids."""
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=5,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        # Try to plot non-existent cells
+        with pytest.raises(ValueError, match="cell_ids"):
+            plot_session_summary(session, cell_ids=[0, 10, 20])
+
+    def test_plot_session_summary_invalid_session_type(self):
+        """plot_session_summary() should raise error for invalid session."""
+        from neurospatial.simulation.validation import plot_session_summary
+
+        with pytest.raises(TypeError):
+            plot_session_summary("not a session")
+
+    def test_plot_session_summary_has_trajectory_plot(self, simple_2d_env):
+        """plot_session_summary() should include trajectory visualization."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=5,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        fig, axes = plot_session_summary(session)
+
+        # At least one subplot should exist
+        assert len(axes.flat) > 0
+
+        plt.close(fig)
+
+    def test_plot_session_summary_reproducible(self, simple_2d_env):
+        """plot_session_summary() should produce consistent plots for same session."""
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=3,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        fig1, axes1 = plot_session_summary(session, cell_ids=[0, 1, 2])
+        fig2, axes2 = plot_session_summary(session, cell_ids=[0, 1, 2])
+
+        # Same session should produce same structure
+        assert fig1.get_size_inches()[0] == fig2.get_size_inches()[0]
+        assert fig1.get_size_inches()[1] == fig2.get_size_inches()[1]
+        assert len(axes1.flat) == len(axes2.flat)
+
+        plt.close(fig1)
+        plt.close(fig2)
+
+    def test_plot_session_summary_truncates_many_cells(self, simple_2d_env):
+        """plot_session_summary() should warn and truncate when >6 cells requested."""
+        import warnings
+
+        import matplotlib.pyplot as plt
+
+        simple_2d_env.units = "cm"
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=30.0,
+            n_cells=15,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.validation import plot_session_summary
+
+        # Should emit UserWarning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            fig, _ = plot_session_summary(session, cell_ids=list(range(10)))
+
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+            assert "Only first 6 will be plotted" in str(w[0].message)
+
+        plt.close(fig)

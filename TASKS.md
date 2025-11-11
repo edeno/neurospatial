@@ -255,14 +255,15 @@
   - [x] Return dict with: `center_errors`, `center_correlations`, `width_errors`, `rate_errors`, `summary`, `passed`, optional `plots`
 - [x] Write NumPy docstring
 
-- [ ] Implement `plot_session_summary()` in `validation.py` (lines 1143-1173)
-  - [ ] Create multi-panel figure
-  - [ ] Plot trajectory
-  - [ ] Plot selected cells' rate maps
-  - [ ] Plot ground truth vs detected centers
-  - [ ] Plot raster plots
-  - [ ] Return `(fig, axes)` tuple
-- [ ] Write NumPy docstring
+- [x] Implement `plot_session_summary()` in `validation.py` (lines 419-703)
+  - [x] Create multi-panel figure (4x3 GridSpec layout)
+  - [x] Plot trajectory (with color-coded time)
+  - [x] Plot selected cells' rate maps (up to 6 cells, 2x3 grid)
+  - [x] Plot raster plots (all cells)
+  - [x] Return `(fig, axes)` tuple
+  - [x] Handle empty spike trains gracefully
+  - [x] Support both full-grid and masked-grid environments
+- [x] Write NumPy docstring
 
 ### Pre-Configured Examples
 

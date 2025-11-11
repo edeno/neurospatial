@@ -258,7 +258,8 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 1. ✅ Implement SimulationSession dataclass - DONE
 2. ✅ Implement `simulate_session()` function - DONE (TASKS.md line 224)
 3. ✅ Implement `validate_simulation()` function - DONE (TASKS.md line 244)
-4. Continue Milestone 3: Validation helpers and pre-configured examples (next: plot_session_summary(), TASKS.md line 258)
+4. ✅ Implement `plot_session_summary()` function - DONE (TASKS.md line 258)
+5. Continue Milestone 3: Pre-configured examples (next: open_field_session(), TASKS.md line 269)
 
 ## Recent Completion (2025-11-11)
 
@@ -340,6 +341,53 @@ All Milestone 2 tasks successfully implemented, tested, and validated:
 - ✅ Comprehensive NumPy docstring with examples
 - ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
 
+### `plot_session_summary()` Implementation
+
+**Location**: `src/neurospatial/simulation/validation.py` (lines 419-703)
+
+**Tests**: 11 tests passing in `tests/simulation/test_validation.py` (lines 344-588)
+
+**Key Features**:
+
+- Multi-panel figure with 4×3 GridSpec layout
+- Trajectory plot with color-coded time progression (viridis colormap)
+- Session metadata panel (duration, n_bins, n_cells, cell_type, trajectory method)
+- Rate maps for up to 6 cells (2×3 grid) using diffusion_kde method
+- Raster plot showing spike times for all cells
+- Handles empty spike trains gracefully (shows "No spikes" message)
+- Supports both full-grid and masked-grid environments (auto-detects)
+- Custom figsize support (default 15×10 inches)
+- Cell subsetting via cell_ids parameter
+
+**Code Review Applied**: Fixed all critical and quality issues:
+
+1. ✅ Fixed mypy type error - added explicit grid_shape None check
+2. ✅ Fixed return type annotation - uses `tuple[Figure, NDArray]` with TYPE_CHECKING guard
+3. ✅ Improved TypeError message - added hint about how to create sessions
+4. ✅ Fixed variable shadowing - renamed `cell_id` to `i` in raster loop
+5. ✅ Added test for >6 cells warning truncation
+6. ✅ Used unpacking syntax instead of list concatenation (ruff RUF005)
+
+**Key Design Decisions**:
+
+1. **GridSpec layout**: Flexible 4×3 grid for optimal use of space
+2. **Scatter vs imshow**: Auto-detects if environment has inactive bins - uses imshow for full grids, scatter for masked grids
+3. **Cell limit**: Maximum 6 cells for rate maps to prevent overcrowding (warns if more requested)
+4. **Colormap choices**: viridis for trajectory (perceptually uniform), hot for firing rates (standard neuroscience)
+5. **Empty handling**: Shows "No spikes" text instead of crashing or blank plots
+6. **Return format**: Returns (fig, axes) tuple for user customization after plotting
+
+**Exports**: Added to `neurospatial.simulation.__init__.py` and `__all__` list (line 96)
+
+**Quality Checks**:
+
+- ✅ All 11 tests passing (including new truncation warning test)
+- ✅ ruff check passes (all issues fixed)
+- ✅ mypy passes (no issues, proper Figure type annotation)
+- ✅ Comprehensive NumPy docstring with examples
+- ✅ TDD workflow followed (tests written first, verified FAIL, then implement)
+- ✅ Code review feedback fully addressed
+
 ## Blockers
 
-None - validate_simulation() complete and tested.
+None - plot_session_summary() complete and tested.

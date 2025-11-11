@@ -69,7 +69,10 @@ from neurospatial.simulation.trajectory import (
     simulate_trajectory_ou,
     simulate_trajectory_sinusoidal,
 )
-from neurospatial.simulation.validation import validate_simulation
+from neurospatial.simulation.validation import (
+    plot_session_summary,
+    validate_simulation,
+)
 
 # from neurospatial.simulation.session import simulate_session
 # from neurospatial.simulation.validation import validate_simulation, plot_session_summary
@@ -90,6 +93,7 @@ __all__ = [
     "add_modulation",
     "generate_poisson_spikes",
     "generate_population_spikes",
+    "plot_session_summary",
     "simulate_session",
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",

@@ -9,6 +9,8 @@ from numpy.typing import NDArray
 from scipy.stats import pearsonr
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from neurospatial import Environment
     from neurospatial.simulation.session import SimulationSession
 
@@ -412,3 +414,292 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
         results["plots"] = None
 
     return results
+
+
+def plot_session_summary(
+    session: SimulationSession,
+    cell_ids: list[int] | None = None,
+    figsize: tuple[float, float] = (15, 10),
+) -> tuple[Figure, NDArray]:
+    """Create comprehensive visualization of simulation session.
+
+    Generates a multi-panel figure showing trajectory, spatial rate maps,
+    and temporal spiking patterns for a complete simulation session. Useful
+    for quickly inspecting simulation quality and spatial tuning properties.
+
+    Parameters
+    ----------
+    session : SimulationSession
+        Complete simulation session from simulate_session().
+    cell_ids : list[int] | None, optional
+        Specific cells to plot rate maps for. If None, plots first 6 cells
+        (or fewer if session has < 6 cells). Default: None.
+    figsize : tuple[float, float], optional
+        Figure size in inches (width, height). Default: (15, 10).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure handle.
+    axes : NDArray
+        Array of axis handles for each subplot.
+
+    Raises
+    ------
+    TypeError
+        If session is not a SimulationSession instance.
+    ValueError
+        If cell_ids contains indices outside valid range [0, n_cells-1].
+
+    Examples
+    --------
+    Basic usage with default cells:
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import simulate_session, plot_session_summary
+    >>>
+    >>> # Create environment
+    >>> data = np.random.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> env.units = "cm"
+    >>>
+    >>> # Simulate session
+    >>> session = simulate_session(env, duration=120.0, n_cells=10, seed=42)
+    >>>
+    >>> # Plot summary
+    >>> fig, axes = plot_session_summary(session)
+    >>> # Figure shows: trajectory, rate maps for first 6 cells, raster plot
+
+    Plot specific cells:
+
+    >>> fig, axes = plot_session_summary(session, cell_ids=[0, 5, 10, 15])
+    >>> # Shows rate maps for cells 0, 5, 10, 15 only
+
+    Custom figure size:
+
+    >>> fig, axes = plot_session_summary(session, figsize=(12, 8))
+
+    See Also
+    --------
+    simulate_session : Create complete simulation session
+    validate_simulation : Validate simulation against ground truth
+
+    Notes
+    -----
+    **Figure Layout**:
+
+    The figure uses a 4×3 grid layout:
+
+    - Row 0, Cols 0-1: Trajectory plot with color-coded time
+    - Row 0, Col 2: Session metadata (duration, n_cells, cell_type)
+    - Rows 1-2: Rate maps for up to 6 cells (2×3 grid)
+    - Row 3: Raster plot showing spike times for all cells
+
+    **Rate Map Computation**:
+
+    Rate maps are computed using diffusion_kde method (graph-based
+    boundary-aware smoothing) with default bandwidth. This provides
+    smooth, accurate spatial tuning curves.
+
+    **Empty Spike Trains**:
+
+    Cells with no spikes will show empty rate maps with a "No spikes"
+    message. This is common in short simulations or cells with low rates.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+
+    # Import here to avoid circular dependency
+    from neurospatial import compute_place_field
+    from neurospatial.simulation.session import SimulationSession
+
+    # Validate session type
+    if not isinstance(session, SimulationSession):
+        raise TypeError(
+            f"session must be a SimulationSession instance, got {type(session).__name__}. "
+            f"Create a session using simulate_session() or SimulationSession(...)"
+        )
+
+    # Extract session data
+    env = session.env
+    positions = session.positions
+    times = session.times
+    spike_trains = session.spike_trains
+    n_cells = len(spike_trains)
+
+    # Determine which cells to plot
+    if cell_ids is None:
+        # Default to first 6 cells (or fewer if session has < 6)
+        cell_ids = list(range(min(6, n_cells)))
+    else:
+        # Validate cell_ids range
+        invalid_ids = [cid for cid in cell_ids if cid < 0 or cid >= n_cells]
+        if invalid_ids:
+            raise ValueError(
+                f"cell_ids contains invalid indices {invalid_ids}. "
+                f"Valid range is [0, {n_cells - 1}] for {n_cells} cells."
+            )
+
+    # Limit to 6 cells for visualization clarity
+    if len(cell_ids) > 6:
+        import warnings
+
+        warnings.warn(
+            f"cell_ids has {len(cell_ids)} cells. Only first 6 will be plotted.",
+            UserWarning,
+            stacklevel=2,
+        )
+        cell_ids = cell_ids[:6]
+
+    # Create figure with GridSpec for flexible layout
+    fig = plt.figure(figsize=figsize)
+    gs = GridSpec(4, 3, figure=fig, hspace=0.3, wspace=0.3)
+
+    # Row 0, Cols 0-1: Trajectory
+    ax_traj = fig.add_subplot(gs[0, :2])
+
+    # Row 0, Col 2: Metadata text
+    ax_info = fig.add_subplot(gs[0, 2])
+
+    # Rows 1-2: Rate maps (2x3 grid for up to 6 cells)
+    axes_rates = []
+    for i in range(2):
+        for j in range(3):
+            axes_rates.append(fig.add_subplot(gs[i + 1, j]))
+
+    # Row 3: Raster plot (spans all columns)
+    ax_raster = fig.add_subplot(gs[3, :])
+
+    # Plot 1: Trajectory with color-coded time
+    # Use scatter plot for color-mapped trajectory
+    scatter = ax_traj.scatter(
+        positions[:, 0],
+        positions[:, 1],
+        c=times,
+        cmap="viridis",
+        s=1,
+        alpha=0.5,
+    )
+    ax_traj.set_xlabel(f"X ({env.units or 'units'})")
+    ax_traj.set_ylabel(f"Y ({env.units or 'units'})")
+    ax_traj.set_title("Trajectory", fontweight="bold")
+    ax_traj.set_aspect("equal")
+    plt.colorbar(scatter, ax=ax_traj, label="Time (s)", fraction=0.046, pad=0.04)
+
+    # Plot 2: Session metadata
+    ax_info.axis("off")
+    metadata = session.metadata
+    info_text = f"""Session Info:
+Duration: {times[-1]:.1f} s
+Bins: {env.n_bins}
+Cells: {n_cells}
+Type: {metadata.get("cell_type", "mixed")}
+Traj: {metadata.get("trajectory_method", "ou")}
+"""
+    ax_info.text(
+        0.1,
+        0.9,
+        info_text,
+        transform=ax_info.transAxes,
+        verticalalignment="top",
+        fontfamily="monospace",
+        fontsize=9,
+    )
+
+    # Plots 3-8: Rate maps for selected cells
+    for i, cell_id in enumerate(cell_ids):
+        if i >= len(axes_rates):
+            break
+
+        ax = axes_rates[i]
+        spike_times = spike_trains[cell_id]
+
+        if len(spike_times) == 0:
+            # Empty spike train
+            ax.text(
+                0.5,
+                0.5,
+                "No spikes",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_title(f"Cell {cell_id}", fontsize=10)
+            ax.axis("off")
+        else:
+            # Compute rate map
+            rate_map = compute_place_field(
+                env, spike_times, times, positions, method="diffusion_kde"
+            )
+
+            # Plot as 2D heatmap if possible
+            if env.layout is not None and hasattr(env.layout, "grid_shape"):
+                grid_shape = env.layout.grid_shape
+
+                # Check if rate_map matches full grid (no inactive bins)
+                if grid_shape is not None and len(rate_map) == np.prod(grid_shape):
+                    # Can reshape directly
+                    rate_map_2d = rate_map.reshape(grid_shape)
+
+                    im = ax.imshow(
+                        rate_map_2d.T,
+                        origin="lower",
+                        aspect="equal",
+                        cmap="hot",
+                        interpolation="nearest",
+                    )
+                    ax.set_title(f"Cell {cell_id}", fontsize=10)
+                    ax.set_xlabel("X bin")
+                    ax.set_ylabel("Y bin")
+                    plt.colorbar(im, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04)
+                else:
+                    # Has inactive bins - use scatter plot instead
+                    scatter = ax.scatter(
+                        env.bin_centers[:, 0],
+                        env.bin_centers[:, 1],
+                        c=rate_map,
+                        cmap="hot",
+                        s=10,
+                    )
+                    ax.set_title(f"Cell {cell_id}", fontsize=10)
+                    ax.set_xlabel(f"X ({env.units or 'units'})")
+                    ax.set_ylabel(f"Y ({env.units or 'units'})")
+                    ax.set_aspect("equal")
+                    plt.colorbar(
+                        scatter, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04
+                    )
+            else:
+                # Fallback: plot as 1D trace
+                ax.plot(rate_map)
+                ax.set_title(f"Cell {cell_id}", fontsize=10)
+                ax.set_xlabel("Bin")
+                ax.set_ylabel("Rate (Hz)")
+
+    # Hide unused rate map subplots
+    for i in range(len(cell_ids), len(axes_rates)):
+        axes_rates[i].axis("off")
+
+    # Plot 9: Raster plot
+    for i in range(n_cells):
+        spike_times = spike_trains[i]
+        if len(spike_times) > 0:
+            ax_raster.scatter(
+                spike_times, np.full_like(spike_times, i), s=1, c="k", alpha=0.5
+            )
+
+    ax_raster.set_xlabel("Time (s)")
+    ax_raster.set_ylabel("Cell ID")
+    ax_raster.set_title("Raster Plot", fontweight="bold")
+    ax_raster.set_xlim(times[0], times[-1])
+    ax_raster.set_ylim(-0.5, n_cells - 0.5)
+
+    # Overall title
+    fig.suptitle("Simulation Session Summary", fontsize=14, fontweight="bold")
+
+    # Store axes in array for return
+    all_axes = np.array(
+        [ax_traj, ax_info, *axes_rates, ax_raster], dtype=object
+    ).reshape(-1)
+
+    return fig, all_axes
