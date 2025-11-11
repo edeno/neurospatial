@@ -54,6 +54,10 @@ from neurospatial.simulation.models import (
     PlaceCellModel,
 )
 
+# Milestone 3 imports (grid cells + session API)
+# from neurospatial.simulation.models import GridCellModel  # Already imported above
+from neurospatial.simulation.session import SimulationSession
+
 # Spike generation
 from neurospatial.simulation.spikes import (
     add_modulation,
@@ -66,9 +70,7 @@ from neurospatial.simulation.trajectory import (
     simulate_trajectory_sinusoidal,
 )
 
-# Milestone 3 imports (grid cells + session API)
-# from neurospatial.simulation.models import GridCellModel
-# from neurospatial.simulation.session import SimulationSession, simulate_session
+# from neurospatial.simulation.session import simulate_session
 # from neurospatial.simulation.validation import validate_simulation, plot_session_summary
 # from neurospatial.simulation.examples import (
 #     open_field_session,
@@ -83,6 +85,7 @@ __all__ = [
     "GridCellModel",
     "NeuralModel",
     "PlaceCellModel",
+    "SimulationSession",
     "add_modulation",
     "generate_poisson_spikes",
     "generate_population_spikes",
