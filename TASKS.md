@@ -181,13 +181,13 @@
 
 ### Documentation
 
-- [ ] Add examples to all new functions
-- [ ] Run doctests
+- [x] Add examples to all new functions
+- [x] Run doctests (12/12 passing)
 
 ### Validation
 
-- [ ] Run all tests with coverage
-- [ ] Run mypy and ruff
+- [x] Run all tests with coverage (74 passed, 3 skipped, 73% coverage)
+- [x] Run mypy and ruff (all checks passed)
 
 ---
 
