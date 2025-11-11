@@ -130,14 +130,14 @@
 
 ### Trajectory Simulation: Laps
 
-- [ ] Implement `simulate_trajectory_laps()` in `trajectory.py` (lines 375-440)
-  - [ ] Parse parameters: `env`, `n_laps`, `speed_mean`, `speed_std`, `outbound_path`, `inbound_path`, `pause_duration`, `sampling_frequency`, `seed`, `return_metadata`
-  - [ ] If paths not provided, use shortest path between environment extrema
-  - [ ] Generate velocity along path with noise
-  - [ ] Add pauses at lap ends
-  - [ ] If `return_metadata=True`, return `(positions, times, metadata)` with lap IDs and directions
-  - [ ] Otherwise return `(positions, times)`
-- [ ] Write NumPy docstring with T-maze example
+- [x] Implement `simulate_trajectory_laps()` in `trajectory.py` (lines 375-440)
+  - [x] Parse parameters: `env`, `n_laps`, `speed_mean`, `speed_std`, `outbound_path`, `inbound_path`, `pause_duration`, `sampling_frequency`, `seed`, `return_metadata`
+  - [x] If paths not provided, use shortest path between environment extrema
+  - [x] Generate velocity along path with noise
+  - [x] Add pauses at lap ends
+  - [x] If `return_metadata=True`, return `(positions, times, metadata)` with lap IDs and directions
+  - [x] Otherwise return `(positions, times)`
+- [x] Write NumPy docstring with T-maze example
 
 ### Boundary Cell Model
 
@@ -312,7 +312,7 @@
     - [ ] Detect fields with `compute_place_field()`
     - [ ] Assert detection error < 2 * bin_size
 
-### Update __init__.py
+### Update **init**.py
 
 - [ ] Add all new functions/classes to imports (lines 96-174)
 - [ ] Update `__all__` list
@@ -470,6 +470,7 @@
 ### Testing Checklist (from SIMULATION_PLAN.md lines 2174-2197)
 
 **For Each Neural Model:**
+
 - [ ] Peak firing rate occurs at expected location
 - [ ] Firing rate decays correctly with distance
 - [ ] Condition function properly gates firing (if applicable)
@@ -477,6 +478,7 @@
 - [ ] Works correctly in 1D, 2D, 3D environments (or raises clear error)
 
 **For Trajectory Simulation:**
+
 - [ ] All positions lie within environment (`env.contains()` returns True)
 - [ ] Velocity statistics match parameters (mean speed, coherence time)
 - [ ] Boundary handling works correctly (reflect, periodic, stop)
@@ -484,6 +486,7 @@
 - [ ] Reproducible with same seed
 
 **For Spike Generation:**
+
 - [ ] Mean firing rate matches expected rate (within Poisson variance)
 - [ ] Inter-spike intervals >= refractory_period (all ISIs)
 - [ ] Spike times sorted in ascending order
@@ -518,6 +521,7 @@
 - Commit after each completed task with conventional commit messages (per CLAUDE.md)
 
 **Conventional Commit Format:**
+
 - `feat(simulation): add PlaceCellModel implementation`
 - `test(simulation): add tests for OU trajectory`
 - `docs(simulation): add examples to validate_simulation`

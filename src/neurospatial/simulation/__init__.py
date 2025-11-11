@@ -56,12 +56,12 @@ from neurospatial.simulation.spikes import (
     generate_population_spikes,
 )
 from neurospatial.simulation.trajectory import (
+    simulate_trajectory_laps,
     simulate_trajectory_ou,
     simulate_trajectory_sinusoidal,
 )
 
-# Milestone 2 imports (boundary cells + laps)
-# from neurospatial.simulation.trajectory import simulate_trajectory_laps
+# Milestone 2 imports (boundary cells + extended features) - in progress
 # from neurospatial.simulation.models import BoundaryCellModel
 # from neurospatial.simulation.spikes import add_modulation
 
@@ -82,6 +82,7 @@ __all__ = [
     "PlaceCellModel",
     "generate_poisson_spikes",
     "generate_population_spikes",
+    "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
 ]

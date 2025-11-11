@@ -22,9 +22,32 @@
 - Code review approved with all critical and important issues resolved
 - ✅ Committed to main (commit ad96365)
 
+### Milestone 2: 🚧 IN PROGRESS
+
+**Completed:**
+
+- ✅ `simulate_trajectory_laps()` implemented and tested
+  - 7/7 tests passing
+  - Full parameter validation (n_laps, speeds, pause_duration, sampling_frequency)
+  - Path validation (bin index bounds checking)
+  - Smart boundary handling using `map_points_to_bins()` for efficiency
+  - Proper NumPy docstring format
+  - Code review applied and all critical/important issues resolved
+  - Mypy clean, ruff clean, doctests passing
+  - Exported in `neurospatial.simulation.__init__.py`
+
 ## Technical Decisions Made
 
-### Mypy Type Fixes
+### simulate_trajectory_laps() Implementation
+
+1. **Speed clamping**: Uses absolute minimum (0.01) instead of relative to `speed_mean` to prevent division by zero regardless of parameter values
+2. **Boundary handling**: Uses `map_points_to_bins()` for efficient vectorized boundary checking instead of looping with `env.contains()`
+3. **Path validation**: Validates bin indices upfront with clear error messages before trajectory generation
+4. **Mypy type safety**: Renamed `lap_boundaries` list to `lap_boundaries_list` to avoid list→array type reassignment errors
+5. **Default path selection**: Uses `nx.shortest_path()` between environment extrema (min/max of first dimension) with graceful fallback
+6. **Metadata structure**: Returns dict with 'lap_ids', 'lap_boundaries', and 'direction' arrays for complete lap characterization
+
+### Mypy Type Fixes (Milestone 1)
 
 1. **env.bin_at() returns array, not scalar**: Must use `int(env.bin_at(pos)[0])` to extract scalar
 2. **dimension_ranges can be None**: Added None checks before indexing

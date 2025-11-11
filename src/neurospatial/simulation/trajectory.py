@@ -464,3 +464,268 @@ def simulate_trajectory_sinusoidal(
     positions = positions.reshape(-1, 1)
 
     return positions, times  # type: ignore[return-value]
+
+
+def simulate_trajectory_laps(
+    env: Environment,
+    n_laps: int,
+    speed_mean: float = 0.1,
+    speed_std: float = 0.02,
+    outbound_path: list[int] | None = None,
+    inbound_path: list[int] | None = None,
+    pause_duration: float = 0.5,
+    sampling_frequency: float = 500.0,
+    seed: int | None = None,
+    return_metadata: bool = False,
+) -> (
+    tuple[NDArray[np.float64], NDArray[np.float64]]
+    | tuple[NDArray[np.float64], NDArray[np.float64], dict]
+):
+    """Simulate structured lap-based trajectory.
+
+    Generates back-and-forth movement along specified or auto-computed paths,
+    useful for alternation tasks, T-mazes, and linear tracks.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment.
+    n_laps : int
+        Number of complete laps (outbound + inbound).
+    speed_mean : float, optional
+        Mean speed in environment units/second (default: 0.1).
+    speed_std : float, optional
+        Speed variability (default: 0.02).
+    outbound_path : list[int] | None, optional
+        Sequence of bin indices for outbound trajectory.
+        If None, uses shortest path from start to end of environment.
+    inbound_path : list[int] | None, optional
+        Sequence of bin indices for inbound trajectory.
+        If None, reverses outbound_path.
+    pause_duration : float, optional
+        Pause at lap ends in seconds (default: 0.5s).
+    sampling_frequency : float, optional
+        Samples per second (default: 500 Hz).
+    seed : int | None, optional
+        Random seed for reproducibility.
+    return_metadata : bool, optional
+        If True, returns metadata dict with lap_ids, lap_boundaries, and
+        direction arrays (default: False).
+
+    Returns
+    -------
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Position coordinates.
+    times : NDArray[np.float64], shape (n_time,)
+        Time points in seconds.
+    metadata : dict, optional (if return_metadata=True)
+        Dictionary with keys:
+
+        - 'lap_ids' : NDArray[np.int_], shape (n_time,) - Lap number for each time
+        - 'lap_boundaries' : NDArray[np.int_] - Indices where laps start
+        - 'direction' : NDArray[str] - 'outbound' or 'inbound' for each time
+
+    Raises
+    ------
+    ValueError
+        If n_laps <= 0, speed_mean <= 0, speed_std < 0, pause_duration < 0,
+        or sampling_frequency <= 0.
+    ValueError
+        If custom paths contain invalid bin indices or are empty.
+
+    Examples
+    --------
+    Generate laps in a 2D environment:
+
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import simulate_trajectory_laps
+    >>> import numpy as np
+    >>>
+    >>> # Create environment
+    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(samples, bin_size=2.0)
+    >>> env.units = "cm"
+    >>>
+    >>> # Simulate laps
+    >>> positions, times = simulate_trajectory_laps(env, n_laps=5)
+    >>> print(positions.shape[0] > 0)  # Should have positions
+    True
+
+    With metadata:
+
+    >>> positions, times, metadata = simulate_trajectory_laps(
+    ...     env, n_laps=3, return_metadata=True
+    ... )
+    >>> print("lap_ids" in metadata)
+    True
+    >>> print("direction" in metadata)
+    True
+
+    See Also
+    --------
+    simulate_trajectory_ou : Realistic random exploration
+    simulate_trajectory_sinusoidal : Simple periodic motion (1D)
+    """
+    # Validate parameters
+    if n_laps <= 0:
+        msg = f"n_laps must be positive (got {n_laps})"
+        raise ValueError(msg)
+
+    if speed_mean <= 0:
+        msg = f"speed_mean must be positive (got {speed_mean})"
+        raise ValueError(msg)
+
+    if speed_std < 0:
+        msg = f"speed_std must be non-negative (got {speed_std})"
+        raise ValueError(msg)
+
+    if pause_duration < 0:
+        msg = f"pause_duration must be non-negative (got {pause_duration})"
+        raise ValueError(msg)
+
+    if sampling_frequency <= 0:
+        msg = f"sampling_frequency must be positive (got {sampling_frequency})"
+        raise ValueError(msg)
+
+    # Initialize random number generator
+    rng = np.random.default_rng(seed)
+
+    # Compute paths if not provided
+    if outbound_path is None:
+        # Use shortest path between environment extrema
+        # Find bins at minimum and maximum positions in first dimension
+        bin_positions = env.bin_centers
+        first_dim_positions = bin_positions[:, 0]
+        start_bin = int(np.argmin(first_dim_positions))
+        end_bin = int(np.argmax(first_dim_positions))
+
+        # Compute shortest path
+        import networkx as nx
+
+        try:
+            path = nx.shortest_path(env.connectivity, start_bin, end_bin)
+            outbound_path = path
+        except nx.NetworkXNoPath:
+            # If no path, just use start and end
+            outbound_path = [start_bin, end_bin]
+
+    if inbound_path is None:
+        # Reverse outbound path
+        inbound_path = list(reversed(outbound_path))
+
+    # Validate paths
+    for path_name, path in [
+        ("outbound_path", outbound_path),
+        ("inbound_path", inbound_path),
+    ]:
+        if not path:
+            msg = f"{path_name} must contain at least one bin"
+            raise ValueError(msg)
+        for bin_idx in path:
+            if bin_idx < 0 or bin_idx >= env.n_bins:
+                msg = (
+                    f"{path_name} contains invalid bin index {bin_idx} "
+                    f"(must be in [0, {env.n_bins}))"
+                )
+                raise ValueError(msg)
+
+    # Time step
+    dt = 1.0 / sampling_frequency
+
+    # Build trajectory by concatenating laps
+    all_positions = []
+    all_times = []
+    all_lap_ids = []
+    all_directions = []
+    lap_boundaries_list = [0]  # Start of first lap (will convert to array later)
+    current_time = 0.0
+
+    for lap_idx in range(n_laps):
+        # Alternate between outbound and inbound
+        if lap_idx % 2 == 0:
+            path = outbound_path
+            direction = "outbound"
+        else:
+            path = inbound_path
+            direction = "inbound"
+
+        # Generate positions along path
+        path_positions = env.bin_centers[path]
+
+        # Compute distances between consecutive bins
+        distances = np.linalg.norm(np.diff(path_positions, axis=0), axis=1)
+        total_distance = np.sum(distances)
+
+        # Compute time to traverse path (with speed variability)
+        speed = rng.normal(speed_mean, speed_std)
+        # Ensure positive speed with absolute minimum
+        speed = max(speed, 0.01)
+        path_duration = total_distance / speed
+
+        # Number of samples for this path
+        n_samples = max(2, int(path_duration / dt))
+
+        # Interpolate positions along path
+        # Create cumulative distances
+        cumulative_distances = np.concatenate([[0], np.cumsum(distances)])
+        interpolation_points = np.linspace(0, total_distance, n_samples)
+
+        # Interpolate each dimension separately
+        lap_positions = np.zeros((n_samples, env.n_dims))
+        for dim in range(env.n_dims):
+            lap_positions[:, dim] = np.interp(
+                interpolation_points, cumulative_distances, path_positions[:, dim]
+            )
+
+        # Ensure all positions are within environment bounds by mapping to bins
+        # This handles edge cases where interpolation might go slightly outside
+        from neurospatial import map_points_to_bins
+
+        bin_indices = map_points_to_bins(lap_positions, env, tie_break="lowest_index")
+        # Use bin centers to ensure all positions are valid
+        lap_positions = env.bin_centers[bin_indices]
+
+        # Generate times for this lap
+        lap_times = current_time + np.arange(n_samples) * dt
+        current_time = lap_times[-1] + dt
+
+        # Append to trajectory
+        all_positions.append(lap_positions)
+        all_times.append(lap_times)
+        all_lap_ids.extend([lap_idx] * n_samples)
+        all_directions.extend([direction] * n_samples)
+
+        # Add pause at lap end (except after last lap)
+        if lap_idx < n_laps - 1 and pause_duration > 0:
+            pause_samples = int(pause_duration * sampling_frequency)
+            if pause_samples > 0:
+                # Hold position constant during pause
+                pause_position = lap_positions[-1:].repeat(pause_samples, axis=0)
+                pause_times = current_time + np.arange(pause_samples) * dt
+                current_time = pause_times[-1] + dt
+
+                all_positions.append(pause_position)
+                all_times.append(pause_times)
+                all_lap_ids.extend([lap_idx] * pause_samples)
+                all_directions.extend([direction] * pause_samples)
+
+        # Record lap boundary (start of next lap)
+        if lap_idx < n_laps - 1:
+            lap_boundaries_list.append(len(all_lap_ids))
+
+    # Concatenate all segments
+    positions = np.vstack(all_positions)
+    times = np.concatenate(all_times)
+    lap_ids = np.array(all_lap_ids, dtype=np.int_)
+    directions = np.array(all_directions)
+    lap_boundaries = np.array(lap_boundaries_list, dtype=np.int_)
+
+    if return_metadata:
+        metadata = {
+            "lap_ids": lap_ids,
+            "lap_boundaries": lap_boundaries,
+            "direction": directions,
+        }
+        return positions, times, metadata
+    else:
+        return positions, times
