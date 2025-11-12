@@ -103,7 +103,12 @@ def validate_simulation(
     >>>
     >>> # Simulate session with place cells
     >>> session = simulate_session(
-    ...     env, duration=120.0, n_cells=10, cell_type="place", seed=42
+    ...     env,
+    ...     duration=5.0,
+    ...     n_cells=3,
+    ...     cell_type="place",
+    ...     seed=42,
+    ...     show_progress=False,
     ... )
     >>>
     >>> # Validate detected vs true place fields
@@ -465,7 +470,9 @@ def plot_session_summary(
     >>> env.units = "cm"
     >>>
     >>> # Simulate session
-    >>> session = simulate_session(env, duration=120.0, n_cells=10, seed=42)
+    >>> session = simulate_session(
+    ...     env, duration=5.0, n_cells=3, seed=42, show_progress=False
+    ... )
     >>>
     >>> # Plot summary
     >>> fig, axes = plot_session_summary(session)

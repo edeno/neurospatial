@@ -52,7 +52,7 @@ class SimulationSession:
     of simulation results. To create a modified session, use dataclasses.replace():
 
         >>> from dataclasses import replace
-        >>> new_session = replace(session, metadata={...})
+        >>> new_session = replace(session, metadata={...})  # doctest: +SKIP
 
     The separation of `models` and `ground_truth` allows flexible usage:
     - Use `models` to regenerate firing rates or extend simulations
@@ -195,9 +195,12 @@ def simulate_session(
     Examples
     --------
     >>> # Quick place cell session
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> arena_data = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(arena_data, bin_size=2.0)
     >>> env.units = "cm"
-    >>> session = simulate_session(env, duration=120.0, n_cells=50)
+    >>> session = simulate_session(env, duration=2.0, n_cells=3, show_progress=False)
     >>> positions = session.positions  # Typed access
     >>> spike_trains = session.spike_trains  # IDE autocomplete
     >>> ground_truth = session.ground_truth  # Discoverable
@@ -205,12 +208,13 @@ def simulate_session(
     >>> # Mixed cell types with custom parameters
     >>> session = simulate_session(
     ...     env,
-    ...     duration=180.0,
-    ...     n_cells=100,
+    ...     duration=2.0,
+    ...     n_cells=10,
     ...     cell_type="mixed",
     ...     trajectory_method="ou",
     ...     speed_mean=0.1,
     ...     coherence_time=0.8,
+    ...     show_progress=False,
     ... )
 
     >>> # Validate detected vs true place fields

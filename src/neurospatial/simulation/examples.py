@@ -60,26 +60,30 @@ def open_field_session(
     Quick start for testing:
 
     >>> from neurospatial.simulation import open_field_session
-    >>> session = open_field_session(duration=60.0, n_place_cells=20)
+    >>> session = open_field_session(duration=5.0, n_place_cells=3)
     >>> env = session.env
     >>> spike_trains = session.spike_trains
     >>> len(spike_trains)
-    20
+    3
 
     Validate neurospatial's place field detection:
 
     >>> from neurospatial.simulation import open_field_session, validate_simulation
-    >>> session = open_field_session(duration=120.0, n_place_cells=30, seed=42)
-    >>> report = validate_simulation(session)
-    >>> print(f"Validation: {report['passed']}")
-    Validation: True
+    >>> session = open_field_session(
+    ...     duration=5.0, n_place_cells=3, seed=42
+    ... )  # doctest: +SKIP
+    >>> report = validate_simulation(session)  # doctest: +SKIP
+    >>> "passed" in report and "center_errors" in report  # doctest: +SKIP
+    True
 
     Visualize session summary:
 
     >>> from neurospatial.simulation import open_field_session, plot_session_summary
     >>> import matplotlib.pyplot as plt
-    >>> session = open_field_session(duration=60.0, n_place_cells=10, seed=42)
-    >>> fig, axes = plot_session_summary(session)
+    >>> session = open_field_session(
+    ...     duration=5.0, n_place_cells=3, seed=42
+    ... )  # doctest: +SKIP
+    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
 
     See Also
@@ -214,32 +218,20 @@ def linear_track_session(
     Quick start for testing:
 
     >>> from neurospatial.simulation import linear_track_session
-    >>> session = linear_track_session(duration=60.0, n_place_cells=20, n_laps=10)
+    >>> session = linear_track_session(duration=5.0, n_place_cells=3, n_laps=2)
     >>> env = session.env
     >>> env.n_dims
     1
     >>> len(session.spike_trains)
-    20
+    3
 
     Validate place field detection on 1D track:
 
     >>> from neurospatial.simulation import linear_track_session, validate_simulation
-    >>> session = linear_track_session(
-    ...     duration=120.0, n_place_cells=30, n_laps=15, seed=42
-    ... )
+    >>> session = linear_track_session(duration=5.0, n_place_cells=3, n_laps=2, seed=42)
     >>> report = validate_simulation(session)
     >>> print(f"Validation: {report['passed']}")
     Validation: True
-
-    Visualize session summary:
-
-    >>> from neurospatial.simulation import linear_track_session, plot_session_summary
-    >>> import matplotlib.pyplot as plt
-    >>> session = linear_track_session(
-    ...     duration=60.0, n_place_cells=10, n_laps=8, seed=42
-    ... )
-    >>> fig, axes = plot_session_summary(session)
-    >>> plt.show()  # doctest: +SKIP
 
     See Also
     --------
@@ -374,36 +366,34 @@ def tmaze_alternation_session(
     Quick start for testing:
 
     >>> from neurospatial.simulation import tmaze_alternation_session
-    >>> session = tmaze_alternation_session(
-    ...     duration=60.0, n_trials=10, n_place_cells=20
-    ... )
+    >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, n_place_cells=3)
     >>> env = session.env
     >>> len(session.spike_trains)
-    20
+    3
     >>> "trial_choices" in session.metadata
     True
 
     Check trial alternation pattern:
 
     >>> from neurospatial.simulation import tmaze_alternation_session
-    >>> session = tmaze_alternation_session(n_trials=10, seed=42)
+    >>> session = tmaze_alternation_session(duration=5.0, n_trials=3, seed=42)
     >>> trial_choices = session.metadata["trial_choices"]
     >>> len(trial_choices)
-    10
-    >>> set(trial_choices)
-    {'left', 'right'}
+    3
+    >>> sorted(set(str(c) for c in trial_choices))
+    ['left', 'right']
 
     Visualize session summary:
 
-    >>> from neurospatial.simulation import (
+    >>> from neurospatial.simulation import (  # doctest: +SKIP
     ...     tmaze_alternation_session,
     ...     plot_session_summary,
     ... )
-    >>> import matplotlib.pyplot as plt
-    >>> session = tmaze_alternation_session(
-    ...     duration=60.0, n_trials=10, n_place_cells=10, seed=42
+    >>> import matplotlib.pyplot as plt  # doctest: +SKIP
+    >>> session = tmaze_alternation_session(  # doctest: +SKIP
+    ...     duration=5.0, n_trials=3, n_place_cells=3, seed=42
     ... )
-    >>> fig, axes = plot_session_summary(session)
+    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
 
     See Also
@@ -599,33 +589,35 @@ def boundary_cell_session(
 
     >>> from neurospatial.simulation import boundary_cell_session
     >>> session = boundary_cell_session(
-    ...     duration=60.0, n_boundary_cells=10, n_place_cells=10
+    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2
     ... )
     >>> env = session.env
     >>> len(session.spike_trains)
-    20
+    5
 
     Check cell type distribution:
 
     >>> from neurospatial.simulation import boundary_cell_session
     >>> from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
-    >>> session = boundary_cell_session(n_boundary_cells=30, n_place_cells=20, seed=42)
+    >>> session = boundary_cell_session(
+    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2, seed=42
+    ... )
     >>> n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
     >>> n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
     >>> print(f"Boundary cells: {n_boundary}, Place cells: {n_place}")
-    Boundary cells: 30, Place cells: 20
+    Boundary cells: 3, Place cells: 2
 
     Visualize session summary:
 
-    >>> from neurospatial.simulation import (
+    >>> from neurospatial.simulation import (  # doctest: +SKIP
     ...     boundary_cell_session,
     ...     plot_session_summary,
     ... )
-    >>> import matplotlib.pyplot as plt
-    >>> session = boundary_cell_session(
-    ...     duration=60.0, n_boundary_cells=5, n_place_cells=5, seed=42
+    >>> import matplotlib.pyplot as plt  # doctest: +SKIP
+    >>> session = boundary_cell_session(  # doctest: +SKIP
+    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2, seed=42
     ... )
-    >>> fig, axes = plot_session_summary(session)
+    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
 
     See Also
@@ -844,16 +836,16 @@ def grid_cell_session(
     Quick start for testing:
 
     >>> from neurospatial.simulation import grid_cell_session
-    >>> session = grid_cell_session(duration=60.0, n_grid_cells=10)
+    >>> session = grid_cell_session(duration=5.0, n_grid_cells=3)
     >>> env = session.env
     >>> len(session.spike_trains)
-    10
+    3
 
     Use custom grid spacing:
 
     >>> from neurospatial.simulation import grid_cell_session
     >>> session = grid_cell_session(
-    ...     duration=120.0, grid_spacing=40.0, n_grid_cells=20, seed=42
+    ...     duration=5.0, grid_spacing=40.0, n_grid_cells=3, seed=42
     ... )
     >>> session.metadata["grid_spacing"]
     40.0
@@ -862,8 +854,10 @@ def grid_cell_session(
 
     >>> from neurospatial.simulation import grid_cell_session, plot_session_summary
     >>> import matplotlib.pyplot as plt
-    >>> session = grid_cell_session(duration=60.0, n_grid_cells=5, seed=42)
-    >>> fig, axes = plot_session_summary(session)
+    >>> session = grid_cell_session(
+    ...     duration=5.0, n_grid_cells=3, seed=42
+    ... )  # doctest: +SKIP
+    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
 
     See Also

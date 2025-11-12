@@ -106,7 +106,11 @@ WONG_COLORS = {
 # 1. Create temporary environment for trajectory generation
 # We'll use this to generate realistic movement within 80x80 cm arena
 arena_size = 80.0  # cm
-arena_data = np.array([[0, 0], [arena_size, arena_size]])  # Corner points
+# Create a proper grid covering the full arena (not just corners!)
+x = np.linspace(0, arena_size, 17)  # 17 points = 5 cm bins
+y = np.linspace(0, arena_size, 17)
+xx, yy = np.meshgrid(x, y)
+arena_data = np.column_stack([xx.ravel(), yy.ravel()])  # 289 grid points
 temp_env = Environment.from_samples(arena_data, bin_size=5.0)
 temp_env.units = "cm"  # Required for trajectory simulation
 
@@ -117,8 +121,9 @@ positions, times = simulate_trajectory_ou(
     duration=duration,
     dt=1.0 / 30.0,  # 30 Hz sampling
     speed_mean=7.5,  # cm/s (realistic rat movement)
+    speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
-    boundary_mode="reflect",  # Bounce off walls
+    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
 )
 

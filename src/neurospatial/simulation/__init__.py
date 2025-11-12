@@ -24,7 +24,7 @@ Low-level API for custom simulations:
 >>> env.units = "cm"
 >>>
 >>> # Generate trajectory
->>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+>>> positions, times = simulate_trajectory_ou(env, duration=2.0, seed=42)
 >>>
 >>> # Create place cell at environment center with high rate
 >>> center = env.bin_centers[len(env.bin_centers) // 2]

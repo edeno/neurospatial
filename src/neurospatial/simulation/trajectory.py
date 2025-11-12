@@ -247,7 +247,7 @@ def simulate_trajectory_ou(
 
     # OU process parameters
     theta = 1.0 / coherence_time  # mean reversion rate
-    sigma = speed_std * np.sqrt(2 * theta)  # noise amplitude
+    sigma = speed_std * np.sqrt(2 * theta / dt)  # noise amplitude (RatInABox formula)
 
     # Time setup
     n_steps = int(duration / dt)
@@ -263,10 +263,12 @@ def simulate_trajectory_ou(
         dw = rng.standard_normal(n_dims) * np.sqrt(dt)
         velocity = velocity - theta * velocity * dt + sigma * dw
 
-        # Clip velocity magnitude to maintain speed_mean (with some tolerance)
+        # Clip velocity magnitude to maintain realistic speeds
+        # Allow 3x speed_mean as upper bound (accounts for OU variability)
         speed = np.linalg.norm(velocity)
-        if speed > 2 * speed_mean:  # Clip extreme speeds
-            velocity = velocity * (2 * speed_mean / speed)
+        max_speed = 3 * speed_mean
+        if speed > max_speed:
+            velocity = velocity * (max_speed / speed)
 
         # Update position
         position = position + velocity * dt
@@ -299,6 +301,11 @@ def simulate_trajectory_ou(
                 # Reflect velocity: v' = v - 2(v·n)n
                 v_parallel = np.dot(velocity, normal) * normal
                 velocity = velocity - 2 * v_parallel
+
+                # Clip velocity after reflection to prevent spikes
+                speed_after = np.linalg.norm(velocity)
+                if speed_after > max_speed:
+                    velocity = velocity * (max_speed / speed_after)
 
                 # Place position just inside boundary
                 epsilon = 0.1 * np.mean(env.bin_sizes)  # Small offset
