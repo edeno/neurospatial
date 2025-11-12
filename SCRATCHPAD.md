@@ -1131,3 +1131,51 @@ The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
   - `open_field_session()` high-level API: Produced only 0.7 cm Y range!
 
 **Conclusion**: Seed=137 at 100s provides good-enough coverage for tutorial purposes. The bimodal distribution (lower + upper regions) is acceptable for demonstrating `spikes_to_field()` and reward primitives.
+
+---
+
+## Milestone 3.5: Notebook Sync to Documentation (2025-11-12)
+
+**Status**: ✅ COMPLETE
+
+**Task**: Copy updated notebooks from `examples/` to `docs/examples/` for documentation build
+
+**Actions Taken**:
+
+1. **Ran sync script**: Executed `uv run python docs/sync_notebooks.py`
+   - Successfully synced all 15 notebooks from `examples/` to `docs/examples/`
+   - Script used `shutil.copy2()` to preserve timestamps and metadata
+
+2. **Cleaned up old files**: Removed obsolete `08_complete_workflow.ipynb` and `.py` files
+   - These were leftover files in `docs/examples/` from before the refactor
+   - Replaced by `08_spike_field_basics.ipynb` which uses simulation API
+
+3. **Verification**:
+   - ✅ All 15 notebooks (01-15) now present in `docs/examples/`
+   - ✅ Includes newly updated notebooks:
+     - `08_spike_field_basics.ipynb` (updated with simulation API)
+     - `11_place_field_analysis.ipynb` (updated with simulation API)
+     - `12_boundary_cell_analysis.ipynb` (updated with simulation API)
+     - `15_simulation_workflows.ipynb` (NEW comprehensive tutorial)
+
+**Files Synced**:
+- 01_introduction_basics.ipynb
+- 02_layout_engines.ipynb
+- 03_morphological_operations.ipynb
+- 04_regions_of_interest.ipynb
+- 05_track_linearization.ipynb
+- 06_composite_environments.ipynb
+- 07_advanced_operations.ipynb
+- 08_spike_field_basics.ipynb (UPDATED)
+- 09_differential_operators.ipynb
+- 10_signal_processing_primitives.ipynb
+- 11_place_field_analysis.ipynb (UPDATED)
+- 12_boundary_cell_analysis.ipynb (UPDATED)
+- 13_trajectory_analysis.ipynb
+- 14_behavioral_segmentation.ipynb
+- 15_simulation_workflows.ipynb (NEW)
+
+**Next Steps**:
+- Verify documentation build picks up new notebooks
+- Check all links work in documentation
+- Update README.md with simulation section
