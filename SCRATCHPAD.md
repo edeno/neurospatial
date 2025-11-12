@@ -1236,3 +1236,54 @@ The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
 **Next Steps**:
 - Check all links work in documentation
 - Update README.md with simulation section
+
+---
+
+## Milestone 3.5: Documentation Links Verification (2025-11-12)
+
+**Status**: ✅ COMPLETE
+
+**Task**: Check all links work in documentation
+
+**Verification Results**:
+
+1. **Source files** (`docs/examples/*.ipynb`):
+   - ✅ All 15 notebook files exist
+   - ✅ No missing or broken files
+
+2. **Navigation links** (`mkdocs.yml`):
+   - ✅ All 15 notebooks listed in navigation menu
+   - ✅ All paths correctly reference existing files
+   - ✅ No broken or invalid links
+
+3. **Examples index** (`docs/examples/index.md`):
+   - ✅ All 15 notebooks linked with descriptions
+   - ✅ All links point to valid notebook files
+   - ✅ Consistent naming convention
+
+4. **Built HTML pages** (`site/examples/`):
+   - ✅ All 15 notebook directories exist
+   - ✅ All 15 index.html files generated successfully
+   - ✅ No missing or corrupt pages
+
+**Complete Link Inventory**:
+- 01_introduction_basics.ipynb → ✓ Valid
+- 02_layout_engines.ipynb → ✓ Valid
+- 03_morphological_operations.ipynb → ✓ Valid
+- 04_regions_of_interest.ipynb → ✓ Valid
+- 05_track_linearization.ipynb → ✓ Valid
+- 06_composite_environments.ipynb → ✓ Valid
+- 07_advanced_operations.ipynb → ✓ Valid
+- 08_spike_field_basics.ipynb → ✓ Valid (UPDATED)
+- 09_differential_operators.ipynb → ✓ Valid
+- 10_signal_processing_primitives.ipynb → ✓ Valid
+- 11_place_field_analysis.ipynb → ✓ Valid (UPDATED)
+- 12_boundary_cell_analysis.ipynb → ✓ Valid (UPDATED)
+- 13_trajectory_analysis.ipynb → ✓ Valid
+- 14_behavioral_segmentation.ipynb → ✓ Valid
+- 15_simulation_workflows.ipynb → ✓ Valid (NEW)
+
+**Summary**: All documentation links verified as working. No broken links found.
+
+**Next Steps**:
+- Update README.md with simulation section
