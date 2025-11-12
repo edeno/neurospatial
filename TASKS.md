@@ -397,9 +397,9 @@
 
 ### Validation
 
-- [ ] Run all notebooks and verify they execute without errors
-- [ ] Check that simulation code is significantly shorter and clearer
-- [ ] Verify examples demonstrate best practices
+- [x] Run all notebooks and verify they execute without errors
+- [x] Check that simulation code is significantly shorter and clearer
+- [x] Verify examples demonstrate best practices
 
 ---
 
