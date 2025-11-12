@@ -18,6 +18,21 @@
 #
 # This notebook provides a comprehensive guide to the `neurospatial.simulation` subpackage for generating synthetic spatial data, neural activity, and spike trains.
 #
+# **Estimated time**: 30-40 minutes
+#
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Generate complete simulation sessions using pre-configured functions
+# - Understand the two-level API design (high-level convenience vs low-level control)
+# - Simulate realistic trajectories using Ornstein-Uhlenbeck process
+# - Create place cells, boundary cells, and grid cells with known ground truth
+# - Generate spike trains from firing rates using inhomogeneous Poisson process
+# - Validate detected spatial fields against ground truth parameters
+# - Customize simulations for specific experimental designs
+# - Apply simulation tools for algorithm testing and educational demonstrations
+#
 # **Contents:**
 #
 # 1. [Introduction](#1-Introduction)

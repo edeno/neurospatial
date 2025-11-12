@@ -20,6 +20,16 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Compute gradients of distance fields to create goal-directed flow fields
+# - Calculate divergence of flow fields to detect sources and sinks
+# - Apply Laplacian smoothing for graph-based spatial field processing
+# - Understand the differential operator matrix and its role in graph calculus
+# - Use these operators for reinforcement learning and replay analysis
+#
 # ## Contents
 #
 # 1. **Gradient of Distance Fields** - Compute goal-directed flow from distance gradients

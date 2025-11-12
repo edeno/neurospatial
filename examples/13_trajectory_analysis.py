@@ -18,13 +18,18 @@
 #
 # This notebook demonstrates trajectory characterization metrics in neurospatial.
 #
-# We'll cover:
-# 1. **Turn angles** - Direction changes in movement
-# 2. **Step lengths** - Distance traveled between consecutive positions
-# 3. **Home range** - Core area where animal spends most time
-# 4. **Mean square displacement (MSD)** - Diffusion classification
-#
 # **Estimated time**: 10-15 minutes
+#
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Compute turn angles to analyze direction changes in movement trajectories
+# - Calculate step lengths to quantify distance traveled between positions
+# - Estimate home range using quantile-based methods
+# - Compute mean square displacement (MSD) to classify diffusion patterns
+# - Interpret MSD slopes to distinguish Brownian, super-diffusive, and sub-diffusive motion
+# - Apply trajectory metrics to behavioral characterization and quality control
 #
 # ## References
 #

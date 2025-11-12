@@ -18,19 +18,18 @@
 #
 # This notebook demonstrates how to analyze boundary cells (also called border cells) - neurons that fire preferentially near environmental boundaries. These cells were discovered by Solstad, Boccara, et al. (2008) and are thought to play a role in spatial navigation and path integration.
 #
-# **What you'll learn:**
-# 1. Generate synthetic border cell firing patterns
-# 2. Compute the border score metric (Solstad et al. 2008)
-# 3. Understand the components of border score calculation
-# 4. Compare border cells vs place cells
+# **Estimated time**: 15-20 minutes
 #
-# **Key concepts:**
-# - **Border score**: Quantifies how much a cell's firing field hugs environmental boundaries
-# - **Boundary coverage**: Fraction of boundary bins within the firing field
-# - **Mean distance**: Average distance from field bins to nearest boundary
-# - **Score range**: [-1, 1] where high positive values indicate border cells
+# ## Learning Objectives
 #
-# **Time estimate**: 15-20 minutes
+# By the end of this notebook, you will be able to:
+#
+# - Generate synthetic boundary cell firing patterns using simulation tools
+# - Compute the border score metric (Solstad et al. 2008) to quantify boundary tuning
+# - Understand the components of border score calculation (boundary coverage, mean distance)
+# - Interpret border score values (range [-1, 1], positive values indicate border cells)
+# - Compare and contrast boundary cells vs place cells in spatial tuning
+# - Use distance fields and boundary detection for analyzing spatial selectivity
 
 # %%
 import matplotlib.pyplot as plt

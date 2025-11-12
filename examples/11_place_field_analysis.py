@@ -18,13 +18,18 @@
 #
 # This notebook demonstrates how to detect and analyze place fields using the neurospatial metrics module.
 #
-# **What you'll learn:**
-# - Detecting place fields from firing rate maps
-# - Computing single-cell spatial metrics (Skaggs information, sparsity)
-# - Computing field properties (size, centroid)
-# - Visualizing place fields on environments
+# **Estimated time**: 15-20 minutes
 #
-# **Time:** ~15 minutes
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Detect place fields from firing rate maps using adaptive thresholding
+# - Compute single-cell spatial information metrics (Skaggs information, sparsity)
+# - Calculate field properties including size, centroid, and peak location
+# - Visualize place fields overlaid on spatial environments
+# - Analyze spatial alternation tasks on T-maze environments
+# - Use simulation tools to validate place field detection algorithms
 
 # %%
 import matplotlib.pyplot as plt

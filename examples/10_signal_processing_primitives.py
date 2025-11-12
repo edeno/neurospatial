@@ -21,6 +21,17 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Use `neighbor_reduce()` to perform local aggregation on spatial graphs
+# - Analyze spatial coherence using neighborhood statistics
+# - Apply custom convolution filters with `convolve()` for spatial analysis
+# - Implement box filters for occupancy-based thresholding
+# - Create Mexican hat filters for edge detection in spatial fields
+# - Assess local field variability for quality control
+#
 # **Topics covered**:
 # - Local aggregation with `neighbor_reduce()`
 # - Spatial coherence analysis

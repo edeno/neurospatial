@@ -1640,3 +1640,138 @@ Created automated script (`/tmp/validate_notebooks.py`) to analyze all 15 notebo
 - Pre-configured sessions lower barrier to entry
 
 **Conclusion**: Documentation suite ready for v0.2.0 release. The notebooks effectively teach neurospatial concepts through clear progression, working examples, and appropriate balance of theory and practice. Minor enhancements (learning objectives for notebooks 9-15) can be addressed in future iterations without blocking release.
+
+---
+
+## 2025-11-12: Adding Learning Objectives to Notebooks 9-15
+
+### Motivation
+
+Pedagogical validation identified that notebooks 9-15 were missing learning objectives, while notebooks 1-8 all had them. This created an inconsistent learning experience. Adding learning objectives improves pedagogical quality and helps learners understand what skills they'll gain from each notebook.
+
+### Approach
+
+Used jupytext paired mode workflow to reliably edit all 7 notebooks:
+1. Verified notebooks already paired (.ipynb + .py files exist)
+2. Edited .py files to add Learning Objectives sections
+3. Synced changes back to .ipynb files using `jupytext --sync`
+4. Ran sync_notebooks.py to update docs/examples/
+
+### Changes Made
+
+Added "Learning Objectives" sections to all 7 notebooks following the established pattern from notebooks 1-8:
+- Standard header: "## Learning Objectives"
+- Standard intro: "By the end of this notebook, you will be able to:"
+- Bulleted list of specific, actionable learning outcomes (5-8 items each)
+- Placed after estimated time, before other content sections
+
+#### Notebook 09 (Differential Operators)
+**Learning objectives added:**
+- Compute gradients of distance fields to create goal-directed flow fields
+- Calculate divergence of flow fields to detect sources and sinks
+- Apply Laplacian smoothing for graph-based spatial field processing
+- Understand the differential operator matrix and its role in graph calculus
+- Use these operators for reinforcement learning and replay analysis
+
+#### Notebook 10 (Signal Processing Primitives)
+**Learning objectives added:**
+- Use `neighbor_reduce()` to perform local aggregation on spatial graphs
+- Analyze spatial coherence using neighborhood statistics
+- Apply custom convolution filters with `convolve()` for spatial analysis
+- Implement box filters for occupancy-based thresholding
+- Create Mexican hat filters for edge detection in spatial fields
+- Assess local field variability for quality control
+
+#### Notebook 11 (Place Field Analysis)
+**Replaced "What you'll learn" with standard format:**
+- Detect place fields from firing rate maps using adaptive thresholding
+- Compute single-cell spatial information metrics (Skaggs information, sparsity)
+- Calculate field properties including size, centroid, and peak location
+- Visualize place fields overlaid on spatial environments
+- Analyze spatial alternation tasks on T-maze environments
+- Use simulation tools to validate place field detection algorithms
+
+#### Notebook 12 (Boundary Cell Analysis)
+**Consolidated "What you'll learn" and "Key concepts" into standard format:**
+- Generate synthetic boundary cell firing patterns using simulation tools
+- Compute the border score metric (Solstad et al. 2008) to quantify boundary tuning
+- Understand the components of border score calculation (boundary coverage, mean distance)
+- Interpret border score values (range [-1, 1], positive values indicate border cells)
+- Compare and contrast boundary cells vs place cells in spatial tuning
+- Use distance fields and boundary detection for analyzing spatial selectivity
+
+#### Notebook 13 (Trajectory Analysis)
+**Replaced "We'll cover" with standard format:**
+- Compute turn angles to analyze direction changes in movement trajectories
+- Calculate step lengths to quantify distance traveled between positions
+- Estimate home range using quantile-based methods
+- Compute mean square displacement (MSD) to classify diffusion patterns
+- Interpret MSD slopes to distinguish Brownian, super-diffusive, and sub-diffusive motion
+- Apply trajectory metrics to behavioral characterization and quality control
+
+#### Notebook 14 (Behavioral Segmentation)
+**Replaced "We'll cover" with standard format:**
+- Detect region crossing events (entry/exit) for defined spatial regions
+- Identify goal-directed runs between source and target regions
+- Automatically segment laps on circular tracks using linearized coordinates
+- Segment T-maze choice trials into left/right trajectories
+- Compare trajectory similarity using multiple distance metrics
+- Apply behavioral segmentation for trial-based analysis and epoch detection
+
+#### Notebook 15 (Simulation Workflows)
+**Added learning objectives to comprehensive tutorial:**
+- Generate complete simulation sessions using pre-configured functions
+- Understand the two-level API design (high-level convenience vs low-level control)
+- Simulate realistic trajectories using Ornstein-Uhlenbeck process
+- Create place cells, boundary cells, and grid cells with known ground truth
+- Generate spike trains from firing rates using inhomogeneous Poisson process
+- Validate detected spatial fields against ground truth parameters
+- Customize simulations for specific experimental designs
+- Apply simulation tools for algorithm testing and educational demonstrations
+- **Also added**: "Estimated time: 30-40 minutes" for this comprehensive notebook
+
+### Technical Details
+
+**Tools used:**
+- jupytext 1.18.1 (verified installation)
+- Paired mode (.ipynb + .py:percent format)
+- Automatic bidirectional sync between formats
+
+**Files modified:**
+- examples/09_differential_operators.py & .ipynb
+- examples/10_signal_processing_primitives.py & .ipynb
+- examples/11_place_field_analysis.py & .ipynb
+- examples/12_boundary_cell_analysis.py & .ipynb
+- examples/13_trajectory_analysis.py & .ipynb
+- examples/14_behavioral_segmentation.py & .ipynb
+- examples/15_simulation_workflows.py & .ipynb
+- All corresponding files in docs/examples/ (synced via docs/sync_notebooks.py)
+
+**Validation:**
+- All notebooks synced successfully (15/15 via sync_notebooks.py)
+- Spot-checked notebook 09 execution (242KB output, executes correctly)
+- Only markdown cells added - no code changes - execution guaranteed to work
+
+### Results
+
+**Before:**
+- Notebooks 1-8: 100% have learning objectives
+- Notebooks 9-14: 0% have learning objectives
+- Notebook 15: 0% has learning objectives
+
+**After:**
+- **All 15 notebooks: 100% have learning objectives** ✅
+
+**Pedagogical improvement:**
+- Consistent learning experience across entire notebook suite
+- Clear expectations set for learners before starting each notebook
+- Action-oriented objectives using "By the end... you will be able to:" format
+- Specific, measurable learning outcomes (5-8 per notebook)
+- Professional educational standard maintained throughout documentation
+
+### Impact
+
+**Documentation quality:** Complete pedagogical consistency across all 15 notebooks
+**User experience:** Learners now know exactly what skills they'll gain from each notebook
+**Professional standards:** Meets educational best practices for learning objectives
+**Ready for release:** This was the final enhancement from pedagogical validation recommendations

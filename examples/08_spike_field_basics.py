@@ -79,17 +79,16 @@ WONG_COLORS = {
 # %% [markdown]
 # ---
 #
-# ## Part 1: Converting Spike Trains to Firing Rate Maps
+# ## Part 1: Place Field Analysis - Recommended Workflow
 #
-# ### Why Occupancy Normalization?
+# This section demonstrates the **recommended approach** for computing place fields from spike data. We'll use `compute_place_field()`, which handles all the details automatically:
 #
-# In neuroscience, we need to normalize spike counts by the time spent in each spatial location (occupancy) to get meaningful firing rate estimates. Without normalization, frequently-visited locations would appear to have higher firing rates simply due to more samples, not actual spatial preference.
+# - Spike-to-bin mapping
+# - Occupancy normalization (spike count / time in bin)
+# - Boundary-aware smoothing (diffusion KDE)
+# - NaN handling for unvisited bins
 #
-# The formula is:
-#
-# $$\text{firing rate}_i = \frac{\text{spike count}_i}{\text{occupancy}_i \text{ (seconds)}}$$
-#
-# This is the **standard approach** in place field analysis (O'Keefe & Dostrovsky, 1971).
+# **For most users, this is the only workflow you need.**
 
 # %% [markdown]
 # ### Generate Synthetic Data
@@ -115,16 +114,16 @@ temp_env = Environment.from_samples(arena_data, bin_size=5.0)
 temp_env.units = "cm"  # Required for trajectory simulation
 
 # 2. Generate smooth random walk trajectory using Ornstein-Uhlenbeck process
-duration = 100.0  # seconds (consistent with other simulation notebooks)
+duration = 200.0  # seconds (sufficient for uniform spatial coverage with rotational OU)
 positions, times = simulate_trajectory_ou(
     temp_env,
     duration=duration,
-    dt=1.0 / 30.0,  # 30 Hz sampling
+    dt=0.01,  # 10ms timestep (required for numerical stability with rotational OU)
     speed_mean=7.5,  # cm/s (realistic rat movement)
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
     boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
-    seed=137,  # Seed selected for balanced 2D exploration AND place field sampling
+    seed=42,  # Seed produces uniform spatial coverage with rotational OU
 )
 
 # 3. Create place cell model with Gaussian tuning
@@ -181,12 +180,188 @@ print(
 )
 
 # %% [markdown]
-# ### Compute Firing Rate Field
+# ### Visualize Raw Data
 #
-# Now let's convert the spike train to a firing rate map using `spikes_to_field()`:
+# Before computing place fields, let's see what we're working with - the animal's trajectory and where it spiked:
 
 # %%
-# Compute firing rate field (default: no occupancy filtering)
+# Visualize trajectory with spike locations
+fig, ax = plt.subplots(figsize=(10, 9), constrained_layout=True)
+
+# Plot full trajectory
+ax.plot(
+    positions[:, 0],
+    positions[:, 1],
+    "gray",
+    alpha=0.3,
+    linewidth=0.5,
+    label="Trajectory",
+)
+
+# Mark spike positions
+spike_positions = []
+for spike_time in spike_times:
+    # Find position at spike time
+    idx = np.argmin(np.abs(times - spike_time))
+    spike_positions.append(positions[idx])
+
+spike_positions = np.array(spike_positions)
+
+if len(spike_positions) > 0:
+    ax.scatter(
+        spike_positions[:, 0],
+        spike_positions[:, 1],
+        c=WONG_COLORS["red"],
+        s=20,
+        alpha=0.6,
+        edgecolor="none",
+        label=f"Spike locations (n={len(spike_positions)})",
+    )
+
+# Mark ground truth place field center
+ax.plot(
+    preferred_location[0],
+    preferred_location[1],
+    "*",
+    color=WONG_COLORS["cyan"],
+    markersize=18,
+    markeredgecolor="white",
+    markeredgewidth=2,
+    label="Ground truth center",
+)
+
+ax.set_xlabel("X position (cm)")
+ax.set_ylabel("Y position (cm)")
+ax.set_title(
+    "Raw Data: Animal Trajectory and Spike Locations",
+    fontsize=14,
+    fontweight="bold",
+    pad=10,
+)
+ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+ax.axis("equal")
+ax.grid(True, alpha=0.3)
+
+plt.show()
+
+print(f"Total trajectory: {len(positions)} samples over {times[-1]:.1f}s")
+print(
+    f"Spikes clustered around ({preferred_location[0]:.0f}, {preferred_location[1]:.0f}) cm"
+)
+
+# %% [markdown]
+# **Observation:** Spikes cluster around the ground truth place field center (cyan star). Now let's discretize this into spatial bins.
+
+# %% [markdown]
+# ### Visualize Occupancy
+#
+# How much time did the animal spend in each spatial bin?
+
+# %%
+# Compute occupancy
+occupancy = env.occupancy(times, positions, return_seconds=True)
+
+fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
+
+env.plot_field(
+    occupancy,
+    ax=ax,
+    cmap="viridis",
+    colorbar_label="Seconds",
+)
+ax.set_title(
+    "Occupancy (time spent in each bin)", fontsize=14, fontweight="bold", pad=10
+)
+ax.axis("equal")
+ax.grid(True, alpha=0.3)
+
+plt.show()
+
+print(f"Occupancy range: {occupancy.min():.1f} - {occupancy.max():.1f} seconds")
+print(f"Bins with >0.5s: {np.sum(occupancy > 0.5)}/{env.n_bins}")
+
+# %% [markdown]
+# **Why occupancy matters:** Without normalization, bins with more time would show more spikes simply from sampling, not neural preference.
+
+# %% [markdown]
+# ### Compute Place Field (Recommended Approach)
+#
+# **Use `compute_place_field()` for most applications** - it handles spike conversion, occupancy normalization, and smoothing in one call:
+
+# %%
+# One-liner: compute smoothed place field using boundary-aware diffusion KDE
+place_field = compute_place_field(
+    env,
+    spike_times,
+    times,
+    positions,
+    method="diffusion_kde",  # Boundary-aware smoothing (recommended)
+    bandwidth=8.0,  # Smoothing bandwidth in cm
+    min_occupancy_seconds=0.5,  # Exclude bins with <0.5s occupancy
+)
+
+print("Place field computed using diffusion KDE")
+print(f"Peak firing rate: {np.nanmax(place_field):.2f} Hz")
+print(f"Valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
+
+# %% [markdown]
+# **Why `compute_place_field()` is recommended:**
+#
+# - **One function call** - handles all steps automatically
+# - **Occupancy normalization** - divides spike counts by time in each bin
+# - **Boundary-aware smoothing** - diffusion KDE respects environment boundaries
+# - **Standard in neuroscience** - implements best practices from the literature
+#
+# For most users, this is the **only function you need** for place field analysis.
+
+# %%
+# Visualize the place field
+fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
+
+env.plot_field(
+    place_field,
+    ax=ax,
+    cmap="hot",
+    vmin=0,
+    colorbar_label="Firing rate (Hz)",
+)
+ax.set_title(
+    "Place Field (Recommended Approach)\nOccupancy-normalized + Diffusion KDE smoothing",
+    fontsize=14,
+    fontweight="bold",
+    pad=10,
+)
+ax.plot(
+    preferred_location[0],
+    preferred_location[1],
+    "*",
+    color=WONG_COLORS["cyan"],
+    markersize=18,
+    markeredgecolor="white",
+    markeredgewidth=2,
+    label="Ground truth center",
+)
+ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+
+plt.show()
+
+print(
+    f"\nPlace field successfully captures neural selectivity around ({preferred_location[0]:.0f}, {preferred_location[1]:.0f}) cm"
+)
+
+# %% [markdown]
+# ---
+#
+# ## Part 2: Understanding the Components (Advanced)
+#
+# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_place_field()` handles everything automatically.
+#
+# ### Manual Approach with `spikes_to_field()`
+#
+# For fine-grained control, you can manually compute firing rates using `spikes_to_field()`:
+
+# %%
+# Manual approach: compute firing rate field without smoothing
 firing_rate_raw = spikes_to_field(
     env,
     spike_times,
@@ -195,56 +370,23 @@ firing_rate_raw = spikes_to_field(
     min_occupancy_seconds=0.0,  # Include all bins
 )
 
-# Compute with occupancy threshold (standard practice)
 firing_rate_filtered = spikes_to_field(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,  # Exclude bins with < 0.5 seconds
+    min_occupancy_seconds=0.5,  # Standard threshold
 )
 
-# Also compute occupancy for visualization
+# Compute occupancy for visualization
 occupancy = env.occupancy(times, positions, return_seconds=True)
 
+print("Manual firing rate computation:")
+print(f"  Raw: {np.nanmin(firing_rate_raw):.2f} - {np.nanmax(firing_rate_raw):.2f} Hz")
 print(
-    f"Firing rate range (raw): {np.nanmin(firing_rate_raw):.2f} - {np.nanmax(firing_rate_raw):.2f} Hz"
+    f"  Filtered: {np.nanmin(firing_rate_filtered):.2f} - {np.nanmax(firing_rate_filtered):.2f} Hz"
 )
-print(
-    f"Firing rate range (filtered): {np.nanmin(firing_rate_filtered):.2f} - {np.nanmax(firing_rate_filtered):.2f} Hz"
-)
-print(
-    f"Number of NaN bins (filtered): {np.sum(np.isnan(firing_rate_filtered))} / {env.n_bins}"
-)
-
-# Quantitative validation checks
-print("\n✓ Validation Checks:")
-
-# Check 1: All raw firing rates should be non-negative
-assert np.all(firing_rate_raw >= 0), "ERROR: Negative firing rates detected!"
-print("  ✓ All raw firing rates are non-negative")
-
-# Check 2: Valid firing rates should be in reasonable range (0-50 Hz typical for place cells)
-valid_rates = firing_rate_filtered[~np.isnan(firing_rate_filtered)]
-if len(valid_rates) > 0:
-    if np.max(valid_rates) > 50:
-        print(
-            f"  ⚠ Warning: Peak firing rate {np.max(valid_rates):.1f} Hz is unusually high (>50 Hz)"
-        )
-    else:
-        print(f"  ✓ Peak firing rate {np.max(valid_rates):.1f} Hz is in expected range")
-
-# Check 3: NaN bins should correspond to low occupancy
-low_occ_bins = np.sum(occupancy < 0.5)
-nan_bins = np.sum(np.isnan(firing_rate_filtered))
-if nan_bins == low_occ_bins:
-    print(f"  ✓ NaN bins ({nan_bins}) match low occupancy bins ({low_occ_bins})")
-else:
-    print(f"  ⚠ Warning: NaN bins ({nan_bins}) ≠ low occupancy bins ({low_occ_bins})")
-
-# Check 4: Mean firing rate should be reasonable
-mean_rate = np.nanmean(valid_rates)
-print(f"  ✓ Mean firing rate: {mean_rate:.2f} Hz (across visited bins)")
+print(f"  NaN bins: {np.sum(np.isnan(firing_rate_filtered))}/{env.n_bins}")
 
 # %% [markdown]
 # ### Visualize: Occupancy vs Firing Rate
@@ -311,76 +453,19 @@ plt.show()
 # The filtered version is **standard practice** in place field analysis.
 
 # %% [markdown]
-# ### Smoothed Place Fields
+# **When to use manual approach:**
 #
-# For typical place field analysis, we also apply Gaussian smoothing using `compute_place_field()`:
-
-# %%
-# One-liner: spike conversion + smoothing
-place_field = compute_place_field(
-    env,
-    spike_times,
-    times,
-    positions,
-    min_occupancy_seconds=0.5,
-    bandwidth=8.0,  # Gaussian kernel bandwidth (cm)
-)
-
-print(f"Place field peak: {np.nanmax(place_field):.2f} Hz")
-print(f"Number of valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
-
-# Note: compute_place_field() handles NaN values automatically during smoothing
-# by temporarily filling them with 0, smoothing, then restoring NaN.
-# This prevents smoothing errors but can reduce firing rates near boundaries.
-
-# %%
-# Visualize: raw vs smoothed
-fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-
-env.plot_field(
-    firing_rate_filtered,
-    ax=axes[0],
-    cmap="hot",
-    vmin=0,
-    colorbar_label="Hz",
-)
-axes[0].set_title("Raw Firing Rate", fontsize=14, fontweight="bold", pad=10)
-axes[0].plot(
-    preferred_location[0],
-    preferred_location[1],
-    "*",
-    color=WONG_COLORS["cyan"],
-    markersize=18,
-    markeredgecolor="white",
-    markeredgewidth=2,
-)
-
-env.plot_field(
-    place_field,
-    ax=axes[1],
-    cmap="hot",
-    vmin=0,
-    colorbar_label="Hz",
-)
-axes[1].set_title(
-    "Smoothed Place Field (bandwidth=8 cm)", fontsize=14, fontweight="bold", pad=10
-)
-axes[1].plot(
-    preferred_location[0],
-    preferred_location[1],
-    "*",
-    color=WONG_COLORS["cyan"],
-    markersize=18,
-    markeredgecolor="white",
-    markeredgewidth=2,
-)
-
-plt.show()
+# - Need to inspect occupancy separately
+# - Want to apply custom smoothing methods
+# - Debugging place field computation
+# - Research requiring non-standard processing
+#
+# **For most applications, use `compute_place_field()` instead** (shown in Part 1).
 
 # %% [markdown]
 # ---
 #
-# ## Part 2: Reward Fields for Reinforcement Learning
+# ## Part 3: Reward Fields for Reinforcement Learning
 #
 # Reward shaping provides gradient information to help RL agents learn faster. However, it must be used carefully to avoid biasing policies toward suboptimal solutions.
 #
@@ -657,7 +742,7 @@ plt.show()
 # %% [markdown]
 # ---
 #
-# ## Part 3: Reward Shaping Best Practices
+# ## Part 4: Reward Shaping Best Practices
 #
 # ### Caution: When Shaping Can Hurt
 #

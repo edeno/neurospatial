@@ -64,6 +64,8 @@ def simulate_trajectory_ou(
     speed_mean: float = 0.08,
     speed_std: float = 0.04,
     coherence_time: float = 0.7,
+    rotational_velocity_std: float = 120 * (np.pi / 180),  # 120 deg/s in radians
+    rotational_velocity_coherence_time: float = 0.08,
     boundary_mode: Literal["reflect", "periodic", "stop"] = "reflect",
     speed_units: str | None = None,
     seed: int | None = None,
@@ -88,14 +90,24 @@ def simulate_trajectory_ou(
     speed_std : float, optional
         Speed standard deviation (default: 0.04).
     coherence_time : float, optional
-        Time scale for velocity autocorrelation in seconds (default: 0.7s).
-        Controls movement smoothness:
+        Time scale for speed autocorrelation in seconds (default: 0.7s).
+        Controls speed smoothness (how gradually speed changes).
+        For 2D environments, this does NOT affect direction changes
+        (see rotational_velocity_coherence_time instead).
+    rotational_velocity_std : float, optional
+        Standard deviation of rotational velocity in radians/second
+        (default: 120°/s = 2.094 rad/s). Only used for 2D environments.
+        Controls how quickly direction changes. Typical range: 60-180°/s.
+    rotational_velocity_coherence_time : float, optional
+        Time scale for rotational velocity autocorrelation in seconds
+        (default: 0.08s). Only used for 2D environments. Controls
+        direction change smoothness:
 
-        - 0.3-0.5s: Jittery, erratic movement (stressed/novel environment)
-        - 0.6-0.8s: Natural exploration (default, from Sargolini 2006)
-        - 0.9-1.2s: Smooth, persistent movement (familiar environment)
+        - 0.05-0.1s: Frequent direction changes (realistic exploration)
+        - 0.1-0.2s: Moderate persistence
+        - >0.2s: Very persistent straight-line movement
 
-        Larger values = slower direction changes, more persistent trajectories.
+        Smaller values = more uniform spatial exploration.
     boundary_mode : {'reflect', 'periodic', 'stop'}, optional
         How to handle environment boundaries (default: 'reflect').
 
@@ -128,9 +140,33 @@ def simulate_trajectory_ou(
 
     Notes
     -----
-    The OU process implements an N-dimensional velocity-based random walk:
+    The OU process implements velocity-based random walk with different
+    approaches for 2D vs N-D environments:
 
-    For each spatial dimension i:
+    **For 2D environments (recommended for realistic exploration):**
+
+    Uses separate OU processes for rotational velocity (direction) and
+    speed magnitude, following RatInABox (George et al. 2023):
+
+    .. math::
+
+        d\\omega = -\\theta_r \\omega dt + \\sigma_r dW_r
+
+        d\\theta = \\omega dt
+
+        \\mathbf{v}(t+dt) = R(\\theta) \\mathbf{v}(t)
+
+    where ω is rotational velocity, θ is heading angle, R is rotation matrix,
+    θ_r = 1/rotational_velocity_coherence_time, and
+    σ_r = rotational_velocity_std * sqrt(2*θ_r/dt).
+
+    Speed magnitude is controlled separately to maintain |v| ≈ speed_mean.
+    This produces uniform spatial exploration with biologically realistic
+    movement statistics.
+
+    **For N-D environments (n_dims != 2):**
+
+    Uses independent OU processes on each Cartesian velocity component:
 
     .. math::
 
@@ -138,15 +174,7 @@ def simulate_trajectory_ou(
 
         dx_i = v_i dt
 
-    where:
-
-    - θ = 1/coherence_time controls mean reversion rate (velocity decorrelation)
-    - σ = speed_std * sqrt(2*θ) ensures stationary speed distribution
-    - dW_i are independent Wiener increments
-    - Velocity magnitude is clipped to ensure |v| ≈ speed_mean
-
-    The stationary distribution of velocity has zero mean and variance speed_std².
-    This produces realistic movement with controlled speed and smoothness.
+    where θ = 1/coherence_time and σ = speed_std * sqrt(2*θ/dt).
 
     Boundary Handling Implementation:
 
@@ -241,13 +269,27 @@ def simulate_trajectory_ou(
     else:
         position = np.asarray(start_position, dtype=np.float64).copy()
 
-    # Initialize velocity (random direction, zero mean)
+    # Initialize velocity (random direction with magnitude ~speed_mean)
     n_dims = env.n_dims
-    velocity = rng.standard_normal(n_dims) * speed_std
+    velocity = rng.standard_normal(n_dims)
+    velocity = velocity / np.linalg.norm(velocity) * speed_mean  # Normalize and scale
 
-    # OU process parameters
-    theta = 1.0 / coherence_time  # mean reversion rate
-    sigma = speed_std * np.sqrt(2 * theta / dt)  # noise amplitude (RatInABox formula)
+    # OU process parameters depend on dimensionality
+    if n_dims == 2:
+        # For 2D: use rotational velocity OU (RatInABox approach)
+        rotational_velocity = 0.0  # Start with zero angular velocity
+        theta_rot = 1.0 / rotational_velocity_coherence_time
+        # Euler-Maruyama discretization: sigma without /dt factor
+        # because noise is scaled by sqrt(dt) when applied
+        sigma_rot = rotational_velocity_std * np.sqrt(2 * theta_rot)
+        # Speed OU parameters (for magnitude control)
+        theta_speed = 1.0 / coherence_time
+        _sigma_speed = speed_std * np.sqrt(2 * theta_speed)
+    else:
+        # For N-D: use Cartesian velocity OU
+        theta = 1.0 / coherence_time  # mean reversion rate
+        # Euler-Maruyama discretization: sigma without /dt factor
+        sigma = speed_std * np.sqrt(2 * theta)  # noise amplitude
 
     # Time setup
     n_steps = int(duration / dt)
@@ -259,37 +301,67 @@ def simulate_trajectory_ou(
 
     # Euler-Maruyama integration
     for i in range(1, n_steps):
-        # OU process update: dv = -θ v dt + σ dW
-        dw = rng.standard_normal(n_dims) * np.sqrt(dt)
-        velocity = velocity - theta * velocity * dt + sigma * dw
+        if n_dims == 2:
+            # 2D: Rotational velocity OU (direction changes)
+            # Update rotational velocity using OU: dω = -θ_r ω dt + σ_r dW
+            dw_rot = rng.standard_normal() * np.sqrt(dt)
+            rotational_velocity = (
+                rotational_velocity
+                - theta_rot * rotational_velocity * dt
+                + sigma_rot * dw_rot
+            )
 
-        # Clip velocity magnitude to maintain realistic speeds
-        # Allow 3x speed_mean as upper bound (accounts for OU variability)
-        speed = np.linalg.norm(velocity)
-        max_speed = 3 * speed_mean
-        if speed > max_speed:
-            velocity = velocity * (max_speed / speed)
+            # Rotate velocity vector by dtheta = ω * dt
+            dtheta = rotational_velocity * dt
+            cos_dtheta = np.cos(dtheta)
+            sin_dtheta = np.sin(dtheta)
+            # Rotation matrix: [[cos, -sin], [sin, cos]]
+            velocity = np.array(
+                [
+                    velocity[0] * cos_dtheta - velocity[1] * sin_dtheta,
+                    velocity[0] * sin_dtheta + velocity[1] * cos_dtheta,
+                ]
+            )
 
-        # Update position
-        position = position + velocity * dt
+            # Maintain constant speed (simplest approach)
+            # Direction changes via rotation, speed stays at speed_mean
+            speed = np.linalg.norm(velocity)
+            if speed > 0:
+                velocity = velocity * (speed_mean / speed)
 
-        # Handle boundaries
+            # Set max_speed for boundary reflection
+            max_speed = 3 * speed_mean
+        else:
+            # N-D: Cartesian velocity OU (original approach)
+            dw = rng.standard_normal(n_dims) * np.sqrt(dt)
+            velocity = velocity - theta * velocity * dt + sigma * dw
+
+            # Clip velocity magnitude to maintain realistic speeds
+            speed = np.linalg.norm(velocity)
+            max_speed = 3 * speed_mean
+            if speed > max_speed:
+                velocity = velocity * (max_speed / speed)
+
+        # Handle boundaries - check BEFORE updating position
         if boundary_mode == "reflect":
-            # Check if position is outside environment
-            if not env.contains(position):
-                # Find nearest valid bin
+            # Predict next position
+            proposed_position = position + velocity * dt
+
+            # Check if proposed position would be outside environment
+            if not env.contains(proposed_position):
+                # Find nearest valid bin to current position (not proposed)
                 try:
                     nearest_bin = int(env.bin_at(position)[0])
                 except Exception:
-                    # If bin_at fails (far outside), use nearest bin center
+                    # If bin_at fails, use nearest bin center
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
                     nearest_bin = int(np.argmin(distances))
 
-                boundary_point = env.bin_centers[nearest_bin]
+                _boundary_point = env.bin_centers[nearest_bin]
 
-                # Compute outward normal (from boundary toward invalid position)
-                # Simple approximation: direction from boundary to attempted position
-                displacement = position - boundary_point
+                # Compute outward normal (from current position toward boundary)
+                # Direction from current position to proposed position
+                displacement = proposed_position - position
                 dist = np.linalg.norm(displacement)
                 if dist > 1e-10:
                     normal = displacement / dist
@@ -302,14 +374,30 @@ def simulate_trajectory_ou(
                 v_parallel = np.dot(velocity, normal) * normal
                 velocity = velocity - 2 * v_parallel
 
-                # Clip velocity after reflection to prevent spikes
+                # Normalize velocity after reflection
                 speed_after = np.linalg.norm(velocity)
-                if speed_after > max_speed:
-                    velocity = velocity * (max_speed / speed_after)
+                if n_dims == 2:
+                    # For 2D rotational OU: maintain constant speed
+                    if speed_after > 0:
+                        velocity = velocity * (speed_mean / speed_after)
+                else:
+                    # For N-D Cartesian OU: clip to max_speed
+                    if speed_after > max_speed:
+                        velocity = velocity * (max_speed / speed_after)
 
-                # Place position just inside boundary
-                epsilon = 0.1 * np.mean(env.bin_sizes)  # Small offset
-                position = boundary_point - epsilon * normal
+        # Update position with (possibly reflected) velocity
+        position = position + velocity * dt
+
+        # Ensure position stays within environment after update
+        if boundary_mode == "reflect":
+            if not env.contains(position):
+                # Clamp to nearest valid bin
+                try:
+                    nearest_bin = int(env.bin_at(position)[0])
+                except Exception:
+                    distances = np.linalg.norm(env.bin_centers - position, axis=1)
+                    nearest_bin = int(np.argmin(distances))
+                position = env.bin_centers[nearest_bin].copy()
 
         elif boundary_mode == "periodic":
             # Wrap position using dimension ranges
