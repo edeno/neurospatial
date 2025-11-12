@@ -115,7 +115,7 @@ temp_env = Environment.from_samples(arena_data, bin_size=5.0)
 temp_env.units = "cm"  # Required for trajectory simulation
 
 # 2. Generate smooth random walk trajectory using Ornstein-Uhlenbeck process
-duration = 60.0  # seconds
+duration = 100.0  # seconds (consistent with other simulation notebooks)
 positions, times = simulate_trajectory_ou(
     temp_env,
     duration=duration,
