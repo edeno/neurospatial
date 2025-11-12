@@ -1340,3 +1340,76 @@ The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
 **Next Steps**:
 - All Milestone 3.5 documentation tasks complete
 - Ready to proceed to remaining TASKS.md items
+
+---
+
+## Milestone 3.5: API Reference Update (2025-11-12)
+
+**Status**: ✅ COMPLETE
+
+**Task**: Update API reference to include simulation subpackage
+
+**Changes Made**:
+
+1. **Updated `docs/api/index.md`** (added comprehensive simulation section):
+   - Added new section after transforms, before Layout Engines
+   - Included version badge: v0.2.0+ (green highlight)
+   - Listed all 6 key modules with descriptions
+   - Listed 4 key classes (PlaceCellModel, BoundaryCellModel, GridCellModel, SimulationSession)
+   - Listed 11 key functions covering all major workflows
+   - Added cross-references:
+     - Link to examples/15_simulation_workflows.ipynb
+     - Link to README.md#simulation-v020 section
+
+2. **Auto-generated documentation verified**:
+   - `gen_ref_pages.py` automatically scans simulation subpackage
+   - All simulation modules documented:
+     - simulation/index.html (main module)
+     - simulation/trajectory/index.html
+     - simulation/models/index.html (with place_cells, boundary_cells, grid_cells, base submodules)
+     - simulation/spikes/index.html
+     - simulation/session/index.html
+     - simulation/validation/index.html
+     - simulation/examples/index.html
+   - Total: 11 API documentation pages generated
+
+3. **Build verification**:
+   - Successfully rebuilt docs: 48.56 seconds
+   - All simulation API pages generated
+   - Word "simulation" appears 16 times in API index
+   - No build errors related to simulation docs
+
+**API Index Structure**:
+
+```markdown
+### neurospatial.simulation (v0.2.0+)
+
+Generate synthetic spatial data, neural activity, and spike trains
+
+Key Modules:
+- simulation.trajectory (OU process, structured laps)
+- simulation.models (place, boundary, grid cells)
+- simulation.spikes (Poisson, refractory, populations)
+- simulation.session (high-level API)
+- simulation.validation (ground truth comparison)
+- simulation.examples (pre-configured sessions)
+
+Key Classes: PlaceCellModel, BoundaryCellModel, GridCellModel, SimulationSession
+Key Functions: simulate_trajectory_ou, generate_poisson_spikes, validate_simulation, etc.
+
+See Also:
+- Simulation Workflows Tutorial (examples/15)
+- README Simulation Section
+```
+
+**Benefits**:
+- Users can discover simulation API from documentation index
+- Complete reference for all simulation modules and functions
+- Cross-links to tutorials and examples
+- Consistent with existing API documentation structure
+- Version badge highlights new feature
+
+**Next Steps**:
+- Validation: Run all notebooks and verify execution
+- Validation: Check code quality improvements
+- Validation: Verify best practices in examples

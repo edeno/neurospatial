@@ -390,10 +390,10 @@
   - [x] Link to `examples/15_simulation_workflows.ipynb`
   - [x] Add quick example code snippet
 
-- [ ] Update API reference:
-  - [ ] Add simulation subpackage section
-  - [ ] Document all public functions and classes
-  - [ ] Add cross-references to related functions
+- [x] Update API reference:
+  - [x] Add simulation subpackage section
+  - [x] Document all public functions and classes
+  - [x] Add cross-references to related functions
 
 ### Validation
 
