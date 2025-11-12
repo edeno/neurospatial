@@ -680,6 +680,40 @@ None
 
 ## Milestone 3.5: Documentation Integration - IN PROGRESS (2025-11-11)
 
+### ✅ Completed: Update `examples/08_spike_field_basics.ipynb`
+
+**Location**: [examples/08_spike_field_basics.ipynb](examples/08_spike_field_basics.ipynb)
+
+**Changes Made**:
+
+1. **Added simulation subpackage imports**:
+   - `simulate_trajectory_ou`, `PlaceCellModel`, `generate_poisson_spikes`
+
+2. **Replaced Section "Generate Synthetic Data"** (lines 94-158):
+   - **Before**: ~66 lines of manual random walk + Gaussian tuning + Poisson spike code
+   - **After**: ~54 lines using simulation API with better structure
+   - **Benefits**: Ornstein-Uhlenbeck process (biologically realistic), refractory period handling, ground truth tracking
+
+3. **Added markdown cell** explaining simulation subpackage usage at the beginning of Part 1
+
+**Code Improvements**:
+
+- Uses `simulate_trajectory_ou()` with biologically realistic movement parameters
+- Uses `PlaceCellModel` with explicit parameters for place field tuning
+- Uses `generate_poisson_spikes()` with 2ms refractory period (physiologically accurate)
+- Ground truth accessible via `place_cell.ground_truth['center']`
+- Cleaner, more maintainable code demonstrating API usage
+
+**Validation**:
+
+- ✅ Notebook JSON structure valid
+- ✅ Both .ipynb and .py files synchronized
+- ✅ All imports work correctly
+- ✅ Jupytext pairing maintained
+- ✅ **Notebook executes successfully** (tested with `jupyter nbconvert --execute`)
+
+**Impact**: Introductory notebook now demonstrates clean simulation API, making it easier for new users to generate synthetic data for testing place field analysis.
+
 ### ✅ Completed: Update `examples/11_place_field_analysis.ipynb`
 
 **Location**: [examples/11_place_field_analysis.ipynb](examples/11_place_field_analysis.ipynb)

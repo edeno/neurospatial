@@ -46,6 +46,11 @@ from neurospatial import (
     region_reward_field,
     spikes_to_field,
 )
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -89,73 +94,68 @@ WONG_COLORS = {
 # %% [markdown]
 # ### Generate Synthetic Data
 #
-# Let's create a simulated trajectory and spike train for a place cell:
+# We'll use the `neurospatial.simulation` subpackage to generate realistic trajectories and spike trains. This subpackage provides:
+#
+# - **`simulate_trajectory_ou()`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
+# - **`PlaceCellModel`**: Gaussian place field model with ground truth tracking
+# - **`generate_poisson_spikes()`**: Poisson spike generation with refractory period handling
+#
+# These functions replace manual simulation code with a clean, tested API.
 
 # %%
-# 1. Generate 2D random walk in open field arena (60 seconds at 30 Hz)
-sampling_rate = 30.0  # Hz
-duration = 60.0  # seconds
-n_samples = int(duration * sampling_rate)
-times = np.linspace(0, duration, n_samples)
-
-# Arena size: 80x80 cm open field
+# 1. Create temporary environment for trajectory generation
+# We'll use this to generate realistic movement within 80x80 cm arena
 arena_size = 80.0  # cm
-arena_center = arena_size / 2
+arena_data = np.array([[0, 0], [arena_size, arena_size]])  # Corner points
+temp_env = Environment.from_samples(arena_data, bin_size=5.0)
+temp_env.units = "cm"  # Required for trajectory simulation
 
-# Random walk parameters
-step_size = 2.5  # cm per step (realistic rat movement ~7.5 cm/s at 30 Hz)
-boundary_margin = 5.0  # cm from walls
+# 2. Generate smooth random walk trajectory using Ornstein-Uhlenbeck process
+duration = 60.0  # seconds
+positions, times = simulate_trajectory_ou(
+    temp_env,
+    duration=duration,
+    dt=1.0 / 30.0,  # 30 Hz sampling
+    speed_mean=7.5,  # cm/s (realistic rat movement)
+    coherence_time=0.7,  # seconds (smooth, persistent movement)
+    boundary_mode="reflect",  # Bounce off walls
+    seed=42,
+)
 
-# Initialize trajectory
-positions = np.zeros((n_samples, 2))
-positions[0] = [arena_center, arena_center]  # Start at center
-
-# Generate random walk with wall reflection
-for i in range(1, n_samples):
-    # Random step direction
-    angle = np.random.uniform(0, 2 * np.pi)
-    step = step_size * np.array([np.cos(angle), np.sin(angle)])
-
-    # Propose new position
-    new_pos = positions[i - 1] + step
-
-    # Reflect at boundaries (with margin)
-    for dim in range(2):
-        if new_pos[dim] < boundary_margin:
-            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
-        elif new_pos[dim] > (arena_size - boundary_margin):
-            new_pos[dim] = (arena_size - boundary_margin) - (
-                new_pos[dim] - (arena_size - boundary_margin)
-            )
-
-    positions[i] = new_pos
-
-# 2. Simulate place cell with Gaussian tuning
+# 3. Create place cell model with Gaussian tuning
 preferred_location = np.array([60.0, 30.0])  # Right-bottom quadrant
 tuning_width = 10.0  # cm
-
-# Compute distance to preferred location
-distances = np.linalg.norm(positions - preferred_location, axis=1)
-
-# Gaussian spatial tuning (peak 15 Hz)
 peak_rate = 15.0  # Hz
-instantaneous_rate = peak_rate * np.exp(-(distances**2) / (2 * tuning_width**2))
 
-# Generate spikes using Poisson process
-dt = 1.0 / sampling_rate
-spike_prob = instantaneous_rate * dt
-spike_mask = np.random.rand(len(times)) < spike_prob
-spike_times = times[spike_mask]
+place_cell = PlaceCellModel(
+    temp_env,
+    center=preferred_location,
+    width=tuning_width,
+    max_rate=peak_rate,
+    baseline_rate=0.001,  # Minimal baseline firing
+    distance_metric="euclidean",
+)
 
-print(f"Generated 2D random walk: {len(times)} samples over {times[-1]:.1f} seconds")
+# 4. Generate spike train from place cell firing rates
+firing_rates = place_cell.firing_rate(positions, times)
+spike_times = generate_poisson_spikes(
+    firing_rates,
+    times,
+    refractory_period=0.002,  # 2ms refractory period
+    seed=42,
+)
+
+print(f"Generated trajectory: {len(times)} samples over {times[-1]:.1f} seconds")
 print(f"Arena size: {arena_size:.0f}x{arena_size:.0f} cm")
 print(
-    f"Spatial coverage: X=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], Y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
+    f"Spatial coverage: X=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], "
+    f"Y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
 )
 print(
-    f"Generated spikes: {len(spike_times)} spikes (mean rate: {len(spike_times) / times[-1]:.2f} Hz)"
+    f"Generated spikes: {len(spike_times)} spikes "
+    f"(mean rate: {len(spike_times) / times[-1]:.2f} Hz)"
 )
-print(f"Place field center: {preferred_location}")
+print(f"Place field center: {place_cell.ground_truth['center']}")
 
 # %% [markdown]
 # ### Create Environment

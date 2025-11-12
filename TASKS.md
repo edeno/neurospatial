@@ -351,11 +351,11 @@
   - [x] Add markdown cell explaining simulation subpackage usage
   - [x] Test notebook runs without errors (imports validated)
 
-- [ ] Update `examples/08_spike_field_basics.ipynb` (use jupyter-notebook skill):
-  - [ ] Replace Section "Random Walk" with `simulate_trajectory_ou()`
-  - [ ] Replace Section "Spike Generation" with simulation API
-  - [ ] Add note directing to simulation subpackage documentation
-  - [ ] Test notebook runs without errors
+- [x] Update `examples/08_spike_field_basics.ipynb` (use jupyter-notebook skill):
+  - [x] Replace Section "Random Walk" with `simulate_trajectory_ou()`
+  - [x] Replace Section "Spike Generation" with simulation API
+  - [x] Add note directing to simulation subpackage documentation
+  - [x] Test notebook runs without errors
 
 - [ ] Update `examples/12_boundary_cell_analysis.ipynb` (use jupyter-notebook skill):
   - [ ] Replace Section "Random Walk" with `simulate_trajectory_ou()`
