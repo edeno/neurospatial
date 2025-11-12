@@ -27,7 +27,7 @@ def test_rotational_ou_small_dt():
     print(f"theta * dt = (1/0.08) * {dt} = {(1 / 0.08) * dt:.3f}")
     print(f"{'STABLE' if (1 / 0.08) * dt < 1 else 'UNSTABLE'} (need < 1)")
 
-    positions, _times = simulate_trajectory_ou(
+    positions, _ = simulate_trajectory_ou(
         env,
         duration=duration,
         dt=dt,

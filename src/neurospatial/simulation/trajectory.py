@@ -282,9 +282,6 @@ def simulate_trajectory_ou(
         # Euler-Maruyama discretization: sigma without /dt factor
         # because noise is scaled by sqrt(dt) when applied
         sigma_rot = rotational_velocity_std * np.sqrt(2 * theta_rot)
-        # Speed OU parameters (for magnitude control)
-        theta_speed = 1.0 / coherence_time
-        _sigma_speed = speed_std * np.sqrt(2 * theta_speed)
     else:
         # For N-D: use Cartesian velocity OU
         theta = 1.0 / coherence_time  # mean reversion rate
@@ -356,8 +353,6 @@ def simulate_trajectory_ou(
                     # If bin_at fails, use nearest bin center
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
                     nearest_bin = int(np.argmin(distances))
-
-                _boundary_point = env.bin_centers[nearest_bin]
 
                 # Compute outward normal (from current position toward boundary)
                 # Direction from current position to proposed position

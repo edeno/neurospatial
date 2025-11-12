@@ -23,7 +23,7 @@ def test_rotational_ou_periodic_boundaries():
     dt = 0.1
     seed = 42
 
-    positions, times = simulate_trajectory_ou(
+    positions, _ = simulate_trajectory_ou(
         env,
         duration=duration,
         dt=dt,
@@ -37,7 +37,6 @@ def test_rotational_ou_periodic_boundaries():
     # Compute diagnostics (skip first 5 seconds for steady state)
     start_idx = int(5.0 / dt)
     positions_ss = positions[start_idx:]
-    _times_ss = times[start_idx:]
 
     velocities = np.diff(positions_ss, axis=0) / dt
     speeds = np.linalg.norm(velocities, axis=1)
