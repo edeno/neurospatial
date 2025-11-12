@@ -1098,3 +1098,36 @@ seed=137,  # Seed selected for balanced 2D exploration AND place field sampling
 
 **Commits**:
 - Fixed trajectory parameters: `boundary_mode="reflect"`, `seed=137`
+- Increased duration: 60s → 100s for better occupancy distribution
+
+**Follow-up Investigation** (after user feedback):
+
+User reported figures still showed sparse coverage after initial fix. Systematic debugging revealed:
+
+**Issue**: Seed=137 at 60s produced **bimodal occupancy distribution**:
+- Y=[0-40] cm: 86.5% of time (concentrated)
+- Y=[40-60] cm: 0% (GAP)
+- Y=[60-80] cm: 12.1% (sparse visits)
+
+The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
+
+**Root Cause #2**: OU process with coherence_time=0.7s creates persistent motion. At 60s duration, trajectory explores range extremes but doesn't fill intermediate regions continuously.
+
+**Solution #2**: Increased duration to 100s (consistent with notebooks 11 & 12)
+
+**Results** (seed=137, 100s, reflect):
+- Coverage: 4/5 regions active (>5% occupancy)
+- Max concentration: 31% (vs 86% at 60s)
+- Distribution: [20%, 31%, 0%, 24%, 24%] - much better spread
+- Spikes: 73 (maintained)
+- One gap remains (Y=40-60 cm) but overall much improved
+
+**Why not perfect uniform coverage?**
+- OU process naturally creates non-uniform exploration due to persistent motion
+- 100s with coherence_time=0.7s is insufficient for complete uniformity
+- Alternative approaches tested:
+  - Shorter coherence_time: Made exploration WORSE (more concentrated)
+  - Periodic boundary: No improvement over reflect
+  - `open_field_session()` high-level API: Produced only 0.7 cm Y range!
+
+**Conclusion**: Seed=137 at 100s provides good-enough coverage for tutorial purposes. The bimodal distribution (lower + upper regions) is acceptable for demonstrating `spikes_to_field()` and reward primitives.
