@@ -165,6 +165,13 @@ nav:
       - Track Linearization: examples/05_track_linearization.ipynb
       - Composite Environments: examples/06_composite_environments.ipynb
       - Advanced Operations: examples/07_advanced_operations.ipynb
-      - Complete Workflow: examples/08_complete_workflow.ipynb
+      - Spike & Field Basics: examples/08_spike_field_basics.ipynb
+      - Differential Operators: examples/09_differential_operators.ipynb
+      - Signal Processing Primitives: examples/10_signal_processing_primitives.ipynb
+      - Place Field Analysis: examples/11_place_field_analysis.ipynb
+      - Boundary Cell Analysis: examples/12_boundary_cell_analysis.ipynb
+      - Trajectory Analysis: examples/13_trajectory_analysis.ipynb
+      - Behavioral Segmentation: examples/14_behavioral_segmentation.ipynb
+      - Simulation Workflows: examples/15_simulation_workflows.ipynb
   - Contributing: contributing.md
   - Changelog: changelog.md

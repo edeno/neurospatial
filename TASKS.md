@@ -380,7 +380,7 @@
 ### Sync Notebooks
 
 - [x] Copy updated notebooks from `examples/` to `docs/examples/` (use docs/sync_notebooks.py)
-- [ ] Verify documentation build picks up new notebooks
+- [x] Verify documentation build picks up new notebooks
 - [ ] Check all links work
 
 ### Documentation Updates

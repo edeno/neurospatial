@@ -1179,3 +1179,60 @@ The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
 - Verify documentation build picks up new notebooks
 - Check all links work in documentation
 - Update README.md with simulation section
+
+---
+
+## Milestone 3.5: Documentation Build Verification (2025-11-12)
+
+**Status**: ✅ COMPLETE
+
+**Task**: Verify documentation build picks up new notebooks
+
+**Actions Taken**:
+
+1. **Updated `mkdocs.yml`** (lines 159-175):
+   - Fixed reference from `08_complete_workflow.ipynb` → `08_spike_field_basics.ipynb`
+   - Added entries for notebooks 09-15:
+     - 09_differential_operators.ipynb
+     - 10_signal_processing_primitives.ipynb
+     - 11_place_field_analysis.ipynb (UPDATED)
+     - 12_boundary_cell_analysis.ipynb (UPDATED)
+     - 13_trajectory_analysis.ipynb
+     - 14_behavioral_segmentation.ipynb
+     - 15_simulation_workflows.ipynb (NEW)
+
+2. **Updated `docs/examples/index.md`**:
+   - Replaced old section 8 ("Complete Workflow")
+   - Added detailed descriptions for all 8 new notebooks (08-15)
+   - Each entry includes:
+     - Feature overview (bulleted list)
+     - Link to notebook
+     - "Recommended for" guidance
+
+3. **Built documentation**:
+   - Ran `uv run mkdocs build --clean` successfully
+   - Build completed in 48.83 seconds
+   - All 15 notebooks processed and rendered to HTML
+   - Verified: 16 HTML pages in site/examples/ (15 notebooks + 1 index)
+
+4. **Verification Results**:
+   - ✅ All 15 notebooks appear in navigation menu
+   - ✅ All notebooks rendered to HTML successfully
+   - ✅ `mkdocs-jupyter` plugin processed notebooks correctly
+   - ✅ Examples index page lists all 15 notebooks with descriptions
+   - ✅ No critical errors or broken notebook links
+   - ⚠️  Some warnings about missing API documentation anchors (pre-existing, not related to notebooks)
+
+**Files Modified**:
+- `mkdocs.yml` - Navigation structure updated
+- `docs/examples/index.md` - Added descriptions for notebooks 08-15
+
+**Build Output Summary**:
+- Total notebooks: 15 (all successfully built)
+- Build time: 48.83 seconds
+- Warnings: Minor anchor warnings (informational, not errors)
+- Site directory: `/Users/edeno/Documents/GitHub/neurospatial/site/`
+
+**Next Steps**:
+- Check all links work in documentation
+- Update README.md with simulation section

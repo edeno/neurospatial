@@ -81,16 +81,94 @@ Advanced features and techniques:
 
 **[Open notebook: 07_advanced_operations.ipynb](07_advanced_operations.ipynb)** | **Recommended for**: Power users
 
-### 8. Complete Workflow
+### 8. Spike & Field Basics
 
-End-to-end analysis example:
+Introduction to place field analysis:
 
-- Loading experimental data
-- Environment setup
-- Computing spatial statistics
-- Visualization and export
+- Generating synthetic trajectories
+- Simulating place cell activity
+- Computing place fields from spikes
+- Validating detection accuracy
 
-**[Open notebook: 08_complete_workflow.ipynb](08_complete_workflow.ipynb)** | **Recommended for**: Seeing it all together
+**[Open notebook: 08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)** | **Recommended for**: Neural data analysis
+
+### 9. Differential Operators
+
+Spatial derivatives and gradients:
+
+- Computing spatial gradients
+- Directional derivatives
+- Laplacian operators
+- Applications to field analysis
+
+**[Open notebook: 09_differential_operators.ipynb](09_differential_operators.ipynb)** | **Recommended for**: Advanced spatial analysis
+
+### 10. Signal Processing Primitives
+
+Spatial signal processing tools:
+
+- Smoothing and filtering
+- Convolution operations
+- Kernel methods
+- Boundary handling
+
+**[Open notebook: 10_signal_processing_primitives.ipynb](10_signal_processing_primitives.ipynb)** | **Recommended for**: Signal processing workflows
+
+### 11. Place Field Analysis
+
+Complete place field analysis pipeline:
+
+- Trajectory generation
+- Place cell models
+- Field detection and characterization
+- T-maze spatial alternation
+
+**[Open notebook: 11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)** | **Recommended for**: Hippocampal place cell analysis
+
+### 12. Boundary Cell Analysis
+
+Analyzing boundary-tuned neurons:
+
+- Boundary detection
+- Distance-to-boundary metrics
+- Border cells and boundary vector cells
+- Validation metrics
+
+**[Open notebook: 12_boundary_cell_analysis.ipynb](12_boundary_cell_analysis.ipynb)** | **Recommended for**: Border cell analysis
+
+### 13. Trajectory Analysis
+
+Analyzing movement patterns:
+
+- Trajectory metrics
+- Speed and acceleration
+- Goal-directed behavior
+- Path analysis
+
+**[Open notebook: 13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)** | **Recommended for**: Behavioral analysis
+
+### 14. Behavioral Segmentation
+
+Segmenting behavior into states:
+
+- State detection algorithms
+- Exploratory vs goal-directed behavior
+- Transition analysis
+- Behavioral bout detection
+
+**[Open notebook: 14_behavioral_segmentation.ipynb](14_behavioral_segmentation.ipynb)** | **Recommended for**: Behavioral state analysis
+
+### 15. Simulation Workflows
+
+Comprehensive simulation tutorial:
+
+- Quick start with pre-configured sessions
+- Low-level API (trajectory + models + spikes)
+- All cell types (place, boundary, grid)
+- Validation and visualization
+- Customization examples
+
+**[Open notebook: 15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)** | **Recommended for**: Generating synthetic data for testing
 
 ## Viewing on GitHub
 
