@@ -759,6 +759,39 @@ None
 
 **Impact**: Notebook is now significantly simpler, demonstrates best practices for simulation API usage, and serves as a reference for other users. **Fully tested and verified to execute without errors.**
 
+### ✅ Completed: Update `examples/12_boundary_cell_analysis.ipynb`
+
+**Location**: [examples/12_boundary_cell_analysis.ipynb](examples/12_boundary_cell_analysis.ipynb)
+
+**Changes Made**:
+
+1. **Added simulation subpackage import**:
+   - `simulate_trajectory_ou`
+
+2. **Replaced Section "Random Walk Generation"** (lines 52-89):
+   - **Before**: ~38 lines of manual random walk code with boundary reflection
+   - **After**: ~30 lines using `simulate_trajectory_ou()` with Ornstein-Uhlenbeck process
+   - **Benefits**: Biologically realistic movement, simpler code, consistent API
+
+3. **Added markdown note** about `boundary_cell_session()` convenience function at the beginning of Part 1
+
+**Code Improvements**:
+
+- Uses `simulate_trajectory_ou()` with biologically realistic movement parameters (2.5 cm/s, 0.7s coherence time)
+- Uses reflection boundary mode for realistic wall bouncing
+- Creates environment from grid first, then generates trajectory
+- Cleaner, more maintainable code demonstrating simulation API usage
+
+**Validation**:
+
+- ✅ Notebook JSON structure valid
+- ✅ Both .ipynb and .py files synchronized
+- ✅ All imports work correctly
+- ✅ Jupytext pairing maintained
+- ✅ **Notebook executes successfully** (tested with `jupyter nbconvert --execute`)
+
+**Impact**: Introductory boundary cell notebook now demonstrates clean simulation API for trajectory generation, making it easier for users to create realistic exploratory trajectories.
+
 ## Doctest Performance Optimization (2025-11-11)
 
 **Status**: ✅ COMPLETE

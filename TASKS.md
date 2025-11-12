@@ -357,10 +357,10 @@
   - [x] Add note directing to simulation subpackage documentation
   - [x] Test notebook runs without errors
 
-- [ ] Update `examples/12_boundary_cell_analysis.ipynb` (use jupyter-notebook skill):
-  - [ ] Replace Section "Random Walk" with `simulate_trajectory_ou()`
-  - [ ] Add note about `boundary_cell_session()` example
-  - [ ] Test notebook runs without errors
+- [x] Update `examples/12_boundary_cell_analysis.ipynb` (use jupyter-notebook skill):
+  - [x] Replace Section "Random Walk" with `simulate_trajectory_ou()`
+  - [x] Add note about `boundary_cell_session()` example
+  - [x] Test notebook runs without errors
 
 ### Create New Notebook
 

@@ -39,6 +39,7 @@ from matplotlib.patches import Patch
 
 from neurospatial import Environment
 from neurospatial.metrics import border_score
+from neurospatial.simulation import simulate_trajectory_ou
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -47,50 +48,39 @@ np.random.seed(42)
 # ## Part 1: Generate Synthetic Border Cell
 #
 # We'll create a 2D square arena with clear boundaries and simulate a border cell that fires preferentially along the walls of the environment.
+#
+# **Note on simulation**: This notebook uses the `neurospatial.simulation` subpackage for generating trajectories. For a complete boundary cell simulation including spike generation, see the `boundary_cell_session()` convenience function which creates a full session with both boundary cells and place cells.
 
 # %%
 # Generate 2D random walk in square arena (border cells need clear boundaries!)
-sampling_rate = 50.0  # Hz
-duration = 100.0  # seconds
-n_samples = int(duration * sampling_rate)
-times = np.linspace(0, duration, n_samples)
+# We'll use the simulation subpackage for a biologically realistic trajectory
 
 # Arena size: 80x80 cm square arena (clear boundaries for border cells)
 arena_size = 80.0  # cm
-arena_center = arena_size / 2
 
-# Random walk parameters
-step_size = 2.0  # cm per step
-boundary_margin = 5.0  # cm from walls
+# Create a grid of points spanning the arena
+n_points_per_dim = max(20, int(arena_size / 3.0) + 1)
+x = np.linspace(0, arena_size, n_points_per_dim)
+y = np.linspace(0, arena_size, n_points_per_dim)
+xx, yy = np.meshgrid(x, y)
+arena_data = np.column_stack([xx.ravel(), yy.ravel()])
 
-# Initialize trajectory
-positions = np.zeros((n_samples, 2))
-positions[0] = [arena_center, arena_center]  # Start at center
-
-# Generate random walk with wall reflection (explore near boundaries!)
-for i in range(1, n_samples):
-    # Random step direction
-    angle = np.random.uniform(0, 2 * np.pi)
-    step = step_size * np.array([np.cos(angle), np.sin(angle)])
-
-    # Propose new position
-    new_pos = positions[i - 1] + step
-
-    # Reflect at boundaries (with margin)
-    for dim in range(2):
-        if new_pos[dim] < boundary_margin:
-            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
-        elif new_pos[dim] > (arena_size - boundary_margin):
-            new_pos[dim] = (arena_size - boundary_margin) - (
-                new_pos[dim] - (arena_size - boundary_margin)
-            )
-
-    positions[i] = new_pos
-
-# Create environment with 3cm bins
-env = Environment.from_samples(positions, bin_size=3.0)
+# Create environment first (needed for trajectory simulation)
+env = Environment.from_samples(arena_data, bin_size=3.0)
 env.units = "cm"
 env.frame = "arena"
+
+# Generate realistic trajectory using Ornstein-Uhlenbeck process
+duration = 100.0  # seconds
+positions, times = simulate_trajectory_ou(
+    env,
+    duration=duration,
+    dt=0.02,  # 50 Hz sampling
+    speed_mean=0.025,  # 2.5 cm/s (slow exploration to sample boundaries)
+    coherence_time=0.7,  # Smooth, persistent movement
+    boundary_mode="reflect",  # Bounce off walls
+    seed=42,
+)
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm square arena")
 print(f"  {env.n_bins} bins, {env.n_dims}D")
