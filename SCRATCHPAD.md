@@ -1028,3 +1028,73 @@ The notebook complements the three updated notebooks (08, 11, 12) which now use 
 - Sync to `docs/examples/` directory when ready for documentation build
 - Update README with link to simulation workflows notebook
 - Consider adding to API documentation as featured example
+
+---
+
+## Bug Fix: Notebook 08 Poor 2D Exploration (2025-11-11)
+
+**Status**: ✅ FIXED
+
+**Issue**: `examples/08_spike_field_basics.ipynb` trajectory only explored narrow horizontal band
+
+**Symptoms**:
+- Spatial coverage: X=[-2.5, 82.5], Y=[6.5, 41.8] cm
+- Y span: only 35 cm out of 80 cm arena (41% vertical coverage)
+- Environment created with only 22 bins (sparse)
+- Figures showed disconnected/sparse firing rate maps
+
+**Root Cause**: Seed=42 with OU process creates directional bias
+- coherence_time=0.7s creates persistent directional movement
+- Random seed=42 initialized velocity predominantly in X direction
+- Over 60s duration, trajectory explores strongly in X but weakly in Y
+- Balance metric: min(X,Y)/max(X,Y) = 35/85 = 0.41 (poor)
+
+**Investigation Method**: Systematic debugging
+1. **Reproduced issue**: Confirmed Y span = 35 cm vs expected ~80 cm
+2. **Tested duration**: 60s insufficient, 200s gives full exploration (but too long for tutorial)
+3. **Tested coherence_time**: Higher values slightly improve balance but still < 0.5
+4. **Tested boundary_mode**: "reflect" improves balance from 0.41 → 0.54 (better but not ideal)
+5. **Seed search**: Found seeds with good 2D exploration + place field sampling
+
+**Solution**: Changed parameters in `08_spike_field_basics.py`
+```python
+# BEFORE (poor 2D exploration):
+boundary_mode="periodic",  # Wrap at boundaries
+seed=42,
+
+# AFTER (good 2D exploration):
+boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
+seed=137,  # Seed selected for balanced 2D exploration AND place field sampling
+```
+
+**Seed Selection Criteria**:
+- Large exploration: min(X, Y) > 60 cm (covers most of arena)
+- Place field sampling: min_distance < 15 cm (generates spikes)
+- Seed=137 chosen: X=84 cm, Y=70 cm, balance=0.83, min_dist=13.5 cm
+
+**Verification** (notebook 08 after fix):
+
+**BEFORE (seed=42, periodic)**:
+- Spatial coverage: X=[-2.5, 82.5], Y=[6.5, 41.8] cm
+- Y span: 35 cm (41% of arena) ✗
+- Balance: 0.41 (poor 2D exploration) ✗
+- Spikes: 75
+- Bins: 22 (sparse environment)
+
+**AFTER (seed=137, reflect)**:
+- Spatial coverage: X=[-2.5, 82.0], Y=[12.0, 82.5] cm
+- Y span: 70 cm (83% of arena) ✓
+- Balance: 0.83 (good 2D exploration) ✓
+- Spikes: 73 (similar to before)
+- Bins: 29 (denser environment coverage)
+
+**Why seed=27 didn't work**:
+- Balance=0.99 (perfect 2D exploration) ✓
+- BUT min_distance=40.28 cm to place field center ✗
+- Generated 0 spikes (place field never sampled)
+- Seed=137 provides BOTH exploration AND sampling
+
+**Impact**: Notebook 08 figures now show proper 2D coverage with connected firing rate maps instead of sparse disconnected bins. Users will see realistic place field analysis output.
+
+**Commits**:
+- Fixed trajectory parameters: `boundary_mode="reflect"`, `seed=137`

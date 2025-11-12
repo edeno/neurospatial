@@ -123,8 +123,8 @@ positions, times = simulate_trajectory_ou(
     speed_mean=7.5,  # cm/s (realistic rat movement)
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
-    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
-    seed=42,
+    boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
+    seed=137,  # Seed selected for balanced 2D exploration AND place field sampling
 )
 
 # 3. Create place cell model with Gaussian tuning
