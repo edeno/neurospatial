@@ -385,10 +385,10 @@
 
 ### Documentation Updates
 
-- [ ] Update main `README.md`:
-  - [ ] Add "Simulation" section
-  - [ ] Link to `examples/15_simulation_workflows.ipynb`
-  - [ ] Add quick example code snippet
+- [x] Update main `README.md`:
+  - [x] Add "Simulation" section
+  - [x] Link to `examples/15_simulation_workflows.ipynb`
+  - [x] Add quick example code snippet
 
 - [ ] Update API reference:
   - [ ] Add simulation subpackage section

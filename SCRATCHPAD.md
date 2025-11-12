@@ -1287,3 +1287,56 @@ The trajectory RANGE was correct (70 cm), but OCCUPANCY was non-uniform.
 
 **Next Steps**:
 - Update README.md with simulation section
+
+---
+
+## Milestone 3.5: README.md Simulation Section (2025-11-12)
+
+**Status**: ✅ COMPLETE
+
+**Task**: Update main README.md with Simulation section
+
+**Changes Made**:
+
+1. **Added "Simulation (v0.2.0+)" section** (after "Common Use Cases", before "Documentation"):
+   - Section placement: Line 280 (between use cases and documentation)
+   - Total addition: ~80 lines
+
+2. **Section contents**:
+   - **Introduction paragraph**: Brief description of simulation subpackage purpose
+   - **Quick Example** (30 lines): Complete working code snippet showing:
+     - Environment creation with units
+     - OU trajectory generation
+     - Place cell model creation
+     - Spike generation
+     - Validation with `compute_place_field()`
+     - Ground truth comparison
+   - **Available Features**: Bulleted list of capabilities:
+     - Trajectory simulation (OU process, structured laps, boundary modes)
+     - Neural models (place, boundary, grid cells with ground truth)
+     - Spike generation (Poisson, refractory periods, populations)
+     - High-level API (pre-configured sessions, validation, one-call workflow)
+   - **Learn More**: Link to `examples/15_simulation_workflows.ipynb` with feature list
+
+3. **Link integration**:
+   - ✅ Direct link to `examples/15_simulation_workflows.ipynb`
+   - ✅ Mentions all pre-configured session functions
+   - ✅ References validation workflow
+
+**Benefits**:
+- Users can immediately discover simulation capabilities from README
+- Working code example provides copy-paste starting point
+- Clear organization: introduction → example → features → tutorial link
+- Consistent with existing README structure and style
+- Highlights v0.2.0+ feature (version tag included)
+
+**Code Example Features**:
+- Self-contained (imports, environment, trajectory, model, spikes, validation)
+- Shows full workflow from data generation to validation
+- Demonstrates ground truth comparison pattern
+- Uses realistic parameters (speeds, durations, rates)
+- Includes comments explaining key parameters
+
+**Next Steps**:
+- All Milestone 3.5 documentation tasks complete
+- Ready to proceed to remaining TASKS.md items

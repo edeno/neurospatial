@@ -277,6 +277,87 @@ center = env.regions.region_center("RewardZone1")
 print(f"RewardZone1 area: {area:.2f}, center: {center}")
 ```
 
+## Simulation (v0.2.0+)
+
+neurospatial includes a comprehensive simulation subpackage for generating synthetic spatial data, neural activity, and spike trains. This is essential for testing analysis pipelines, validating algorithms against ground truth, and creating educational examples.
+
+### Quick Example
+
+```python
+from neurospatial import Environment
+from neurospatial.simulation import (
+    simulate_trajectory_ou,
+    PlaceCellModel,
+    generate_poisson_spikes,
+)
+
+# Create environment
+env = Environment.from_samples(arena_data, bin_size=2.0)
+env.units = "cm"  # Required for trajectory simulation
+
+# Generate realistic trajectory using Ornstein-Uhlenbeck process
+positions, times = simulate_trajectory_ou(
+    env,
+    duration=120.0,  # seconds
+    speed_mean=0.08,  # m/s (8 cm/s)
+    coherence_time=0.7,  # smoothness parameter
+    seed=42
+)
+
+# Create place cell with known ground truth
+place_cell = PlaceCellModel(
+    env,
+    center=[50.0, 75.0],  # field center in cm
+    width=10.0,  # field width (Gaussian std)
+    max_rate=25.0  # peak firing rate in Hz
+)
+
+# Generate spikes
+firing_rates = place_cell.firing_rate(positions, times)
+spike_times = generate_poisson_spikes(firing_rates, times, seed=42)
+
+# Validate with neurospatial analysis
+from neurospatial import compute_place_field
+detected_field = compute_place_field(env, spike_times, times, positions)
+
+# Compare detected field to ground truth
+true_center = place_cell.ground_truth['center']
+print(f"True field center: {true_center}")
+print(f"Detected peak: {env.bin_centers[detected_field.argmax()]}")
+```
+
+### Available Features
+
+- **Trajectory Simulation**
+  - Ornstein-Uhlenbeck process for realistic exploration
+  - Structured trajectories (laps, alternation tasks)
+  - Boundary handling (reflect, periodic, stop)
+
+- **Neural Models**
+  - Place cells (Gaussian fields, direction-selective, speed-gated)
+  - Boundary/border cells (distance-tuned)
+  - Grid cells (hexagonal patterns)
+  - All models expose `.ground_truth` for validation
+
+- **Spike Generation**
+  - Inhomogeneous Poisson process
+  - Refractory period constraints
+  - Population spike generation with progress tracking
+
+- **High-Level API**
+  - Pre-configured sessions: `open_field_session()`, `linear_track_session()`, etc.
+  - Automated validation: `validate_simulation()` compares detected vs true parameters
+  - One-call workflow: `simulate_session()` handles trajectory + models + spikes
+
+### Learn More
+
+See the comprehensive tutorial: **[Simulation Workflows Notebook](examples/15_simulation_workflows.ipynb)** for complete examples including:
+- Quick start with pre-configured sessions
+- Low-level API for custom workflows
+- All cell types (place, boundary, grid)
+- Validation and visualization
+- Performance tips and customization
+
 ## Documentation
 
 - **[Documentation Home](https://edeno.github.io/neurospatial/)**: Complete documentation site
