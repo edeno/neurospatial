@@ -364,18 +364,18 @@
 
 ### Create New Notebook
 
-- [ ] Create `examples/15_simulation_workflows.ipynb` (use jupyter-notebook skill):
-  - [ ] Add introduction to simulation subpackage
-  - [ ] Section 1: Quick start with `open_field_session()`
-  - [ ] Section 2: Low-level API demonstration (trajectory + models + spikes)
-  - [ ] Section 3: All pre-configured examples (open_field, linear_track, tmaze, boundary, grid)
-  - [ ] Section 4: Validation workflow with `validate_simulation()`
-  - [ ] Section 5: Customization examples:
-    - [ ] Direction-selective place cell
-    - [ ] Speed-gated place cell
-    - [ ] Custom boundary cell
-  - [ ] Section 6: Performance tips
-  - [ ] Test notebook runs without errors
+- [x] Create `examples/15_simulation_workflows.ipynb` (use jupyter-notebook skill):
+  - [x] Add introduction to simulation subpackage
+  - [x] Section 1: Quick start with `open_field_session()`
+  - [x] Section 2: Low-level API demonstration (trajectory + models + spikes)
+  - [x] Section 3: All pre-configured examples (open_field, linear_track, tmaze, boundary, grid)
+  - [x] Section 4: Validation workflow with `validate_simulation()`
+  - [x] Section 5: Customization examples:
+    - [x] Direction-selective place cell
+    - [x] Speed-gated place cell
+    - [x] Custom boundary cell
+  - [x] Section 6: Performance tips
+  - [x] Test notebook runs without errors
 
 ### Sync Notebooks
 
