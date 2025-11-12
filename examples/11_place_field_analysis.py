@@ -95,9 +95,10 @@ positions, times = simulate_trajectory_ou(
     env,
     duration=duration,
     dt=0.02,  # 50 Hz sampling (1/0.02)
-    speed_mean=0.025,  # 2.5 cm per time step = 125 cm/s actual speed
+    speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
+    speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # Natural exploration smoothness
-    boundary_mode="reflect",  # Bounce off walls
+    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
 )
 
