@@ -18,13 +18,18 @@
 #
 # This notebook demonstrates how to detect and analyze place fields using the neurospatial metrics module.
 #
-# **What you'll learn:**
-# - Detecting place fields from firing rate maps
-# - Computing single-cell spatial metrics (Skaggs information, sparsity)
-# - Computing field properties (size, centroid)
-# - Visualizing place fields on environments
+# **Estimated time**: 15-20 minutes
 #
-# **Time:** ~15 minutes
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Detect place fields from firing rate maps using adaptive thresholding
+# - Compute single-cell spatial information metrics (Skaggs information, sparsity)
+# - Calculate field properties including size, centroid, and peak location
+# - Visualize place fields overlaid on spatial environments
+# - Analyze spatial alternation tasks on T-maze environments
+# - Use simulation tools to validate place field detection algorithms
 
 # %%
 import matplotlib.pyplot as plt
@@ -41,11 +46,28 @@ from neurospatial.metrics import (
     sparsity,
 )
 
+# Simulation subpackage imports
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+    tmaze_alternation_session,
+)
+
 # Set random seed for reproducibility
 np.random.seed(42)
 
 # %% [markdown]
 # ## Part 1: Generate Synthetic Data
+#
+# **Note**: This notebook now uses the `neurospatial.simulation` subpackage for generating synthetic data.
+# The simulation subpackage provides:
+# - Realistic trajectory generation (`simulate_trajectory_ou()`)
+# - Neural models (`PlaceCellModel`, `BoundaryCellModel`, `GridCellModel`)
+# - Spike generation (`generate_poisson_spikes()`)
+# - Pre-configured examples (`open_field_session()`, `tmaze_alternation_session()`)
+#
+# For more details, see the simulation subpackage documentation.
 #
 # We'll create a synthetic trajectory with a place cell that has:
 # - A single place field in the environment
@@ -53,55 +75,41 @@ np.random.seed(42)
 # - Gaussian spatial tuning
 
 # %%
-# Generate 2D random walk in open field arena
-sampling_rate = 50.0  # Hz
-duration = 100.0  # seconds
-n_samples = int(duration * sampling_rate)
-times = np.linspace(0, duration, n_samples)
-
-# Arena size: 100x100 cm open field
+# Generate 2D open field arena using simulation subpackage
 arena_size = 100.0  # cm
-arena_center = arena_size / 2
+duration = 100.0  # seconds
 
-# Random walk parameters
-step_size = 2.0  # cm per step
-boundary_margin = 5.0  # cm from walls
+# Create arena environment from grid
+n_grid = 50
+x = np.linspace(0, arena_size, n_grid)
+y = np.linspace(0, arena_size, n_grid)
+xx, yy = np.meshgrid(x, y)
+arena_data = np.column_stack([xx.ravel(), yy.ravel()])
 
-# Initialize trajectory
-positions = np.zeros((n_samples, 2))
-positions[0] = [arena_center, arena_center]  # Start at center
-
-# Generate random walk with wall reflection
-for i in range(1, n_samples):
-    # Random step direction
-    angle = np.random.uniform(0, 2 * np.pi)
-    step = step_size * np.array([np.cos(angle), np.sin(angle)])
-
-    # Propose new position
-    new_pos = positions[i - 1] + step
-
-    # Reflect at boundaries (with margin)
-    for dim in range(2):
-        if new_pos[dim] < boundary_margin:
-            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
-        elif new_pos[dim] > (arena_size - boundary_margin):
-            new_pos[dim] = (arena_size - boundary_margin) - (
-                new_pos[dim] - (arena_size - boundary_margin)
-            )
-
-    positions[i] = new_pos
-
-# Create environment
 env = Environment.from_samples(
-    positions,
+    arena_data,
     bin_size=3.0,
-    bin_count_threshold=5,
+    bin_count_threshold=1,
 )
 env.units = "cm"
 env.frame = "open_field"
 
+# Generate realistic trajectory using Ornstein-Uhlenbeck process
+# This produces smooth, biologically realistic random exploration
+positions, times = simulate_trajectory_ou(
+    env,
+    duration=duration,
+    dt=0.02,  # 50 Hz sampling (1/0.02)
+    speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
+    speed_std=0.4,  # cm/s (speed variability)
+    coherence_time=0.7,  # Natural exploration smoothness
+    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
+    seed=42,
+)
+
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm open field")
 print(f"  {env.n_bins} bins, {env.n_dims}D")
+print(f"Generated trajectory: {len(positions)} time points over {duration:.0f}s")
 print(
     f"  Coverage: x=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
 )
@@ -109,31 +117,42 @@ print(
 # %% [markdown]
 # ### Define Place Cell Properties
 #
-# We'll create a place cell with a Gaussian place field:
+# We'll create a place cell with a Gaussian place field using `PlaceCellModel`:
 # - Field center at (60, 50) cm
 # - Spatial tuning width σ = 10 cm
 # - Peak firing rate = 10 Hz
 
 # %%
-# Place field center
+# Create place cell model using simulation subpackage
 field_center = np.array([60.0, 50.0])
-
-# Generate spikes based on Gaussian place field
 sigma = 10.0  # Spatial tuning width (cm)
 peak_rate = 10.0  # Hz
 
-# Compute firing probability at each position
-distances_to_field = np.linalg.norm(positions - field_center, axis=1)
-firing_rate_at_position = peak_rate * np.exp(-(distances_to_field**2) / (2 * sigma**2))
+# PlaceCellModel implements Gaussian spatial tuning
+place_cell = PlaceCellModel(
+    env,
+    center=field_center,
+    width=sigma,
+    max_rate=peak_rate,
+    baseline_rate=0.001,  # Minimal baseline (0.001 Hz)
+    distance_metric="euclidean",  # Fast Euclidean distance
+    seed=42,
+)
 
-# Generate spike times (Poisson process)
-dt = np.mean(np.diff(times))
-spike_probs = firing_rate_at_position * dt
-spike_mask = np.random.rand(n_samples) < spike_probs
-spike_times = times[spike_mask]
+# Compute firing rates along trajectory
+firing_rate_at_position = place_cell.firing_rate(positions, times)
+
+# Generate spike times using inhomogeneous Poisson process
+spike_times = generate_poisson_spikes(
+    firing_rate_at_position,
+    times,
+    refractory_period=0.002,  # 2ms refractory period
+    seed=42,
+)
 
 print(f"Generated {len(spike_times)} spikes")
 print(f"Mean firing rate: {len(spike_times) / times[-1]:.2f} Hz")
+print(f"Ground truth: {place_cell.ground_truth}")
 
 # %% [markdown]
 # ## Part 2: Compute Firing Rate Map
@@ -159,24 +178,17 @@ print(
 )
 print(f"Mean firing rate: {np.nanmean(firing_rate[~np.isnan(firing_rate)]):.2f} Hz")
 
-# Visualize firing rate map
+# Visualize firing rate map using plot_field()
 fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
 
-# Plot firing rate
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=100,
+# Plot firing rate with env.plot_field()
+env.plot_field(
+    firing_rate,
+    ax=ax,
     cmap="hot",
     vmin=0,
-    vmax=np.nanmax(firing_rate),
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-
-# Add colorbar
-cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-cbar.ax.tick_params(labelsize=12)
 
 # Add field center marker
 ax.scatter(
@@ -191,10 +203,7 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel("X Position (cm)", fontsize=14, fontweight="bold")
-ax.set_ylabel("Y Position (cm)", fontsize=14, fontweight="bold")
 ax.set_title("Firing Rate Map", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12)
 ax.tick_params(labelsize=12)
 
@@ -238,17 +247,13 @@ for i, field_bins in enumerate(place_fields):
 # %%
 fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
 
-# Plot firing rate (background)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=100,
+# Plot firing rate (background) using plot_field()
+env.plot_field(
+    firing_rate,
+    ax=ax,
     cmap="hot",
     vmin=0,
-    vmax=np.nanmax(firing_rate),
-    edgecolors="none",
-    alpha=0.6,
+    colorbar_label="Firing Rate (Hz)",
 )
 
 # Plot detected place field bins
@@ -264,10 +269,6 @@ if len(place_fields) > 0:
             label=f"Field {i + 1}" if i == 0 else "",
         )
 
-# Add colorbar
-cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-cbar.ax.tick_params(labelsize=12)
-
 # Add true field center
 ax.scatter(
     field_center[0],
@@ -281,10 +282,7 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel("X Position (cm)", fontsize=14, fontweight="bold")
-ax.set_ylabel("Y Position (cm)", fontsize=14, fontweight="bold")
 ax.set_title("Detected Place Fields", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12)
 ax.tick_params(labelsize=12)
 
@@ -410,24 +408,16 @@ for ax, rate_map, title in zip(
     ["First Half", "Second Half", "Absolute Difference"],
     strict=True,
 ):
-    scatter = ax.scatter(
-        env.bin_centers[:, 0],
-        env.bin_centers[:, 1],
-        c=rate_map,
-        s=100,
+    env.plot_field(
+        rate_map,
+        ax=ax,
         cmap="hot" if "Difference" not in title else "viridis",
         vmin=0,
         vmax=np.nanmax(firing_rate),
-        edgecolors="none",
+        colorbar_label="Firing Rate (Hz)",
     )
 
-    cbar = plt.colorbar(scatter, ax=ax, label="Firing Rate (Hz)")
-    cbar.ax.tick_params(labelsize=11)
-
-    ax.set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-    ax.set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
     ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.set_aspect("equal")
     ax.tick_params(labelsize=11)
 
 plt.show()
@@ -564,77 +554,34 @@ print(
 # - A start box
 # - A stem leading to a choice point
 # - Left and right arms
+#
+# We'll use the `tmaze_alternation_session()` convenience function from the simulation subpackage.
 
 # %%
-# Define T-maze structure (coordinates in cm)
-# Start box: x=[40, 60], y=[10, 25]
-# Stem: x=[45, 55], y=[25, 50]
-# Left arm: x=[20, 45], y=[50, 65]
-# Right arm: x=[55, 80], y=[50, 65]
-
-
-def generate_tmaze_trajectory(n_trials=20, samples_per_trial=100):
-    """Generate T-maze exploration trajectory with alternating left/right choices."""
-    trajectory_list = []
-
-    for trial in range(n_trials):
-        trial_traj = []
-
-        # Start box (random position)
-        start_x = np.random.uniform(45, 55)
-        start_y = np.random.uniform(12, 20)
-        trial_traj.append([start_x, start_y])
-
-        # Move through stem to choice point
-        stem_samples = 40
-        for i in range(1, stem_samples):
-            progress = i / stem_samples
-            x = 50.0  # Center of stem
-            y = 20 + progress * 30  # Move from 20 to 50 (choice point)
-            x += np.random.randn() * 1.0  # Add noise
-            y += np.random.randn() * 1.0
-            trial_traj.append([x, y])
-
-        # Choose arm (alternate for good coverage)
-        go_left = trial % 2 == 0
-
-        # Move through chosen arm
-        arm_samples = 30
-        for i in range(arm_samples):
-            progress = i / arm_samples
-            if go_left:
-                x = 50 - progress * 18  # Move from 50 to 32
-                y = 50 + progress * 10  # Move from 50 to 60
-            else:
-                x = 50 + progress * 18  # Move from 50 to 68
-                y = 50 + progress * 10  # Move from 50 to 60
-
-            x += np.random.randn() * 1.5
-            y += np.random.randn() * 1.5
-            trial_traj.append([x, y])
-
-        # Return to start (simplified - just jump back)
-        # In real experiments, animal would be picked up or walk back
-
-        trajectory_list.extend(trial_traj)
-
-    return np.array(trajectory_list)
-
-
-# Generate T-maze trajectory
-tmaze_positions = generate_tmaze_trajectory(n_trials=25, samples_per_trial=100)
-tmaze_times = np.linspace(0, 100, len(tmaze_positions))
-
-# Create T-maze environment
-tmaze_env = Environment.from_samples(
-    tmaze_positions,
-    bin_size=3.0,
-    bin_count_threshold=5,
+# Generate complete T-maze session using simulation subpackage
+# This creates a T-maze environment, trajectory, and place cell spike data
+tmaze_session = tmaze_alternation_session(
+    duration=100.0,  # seconds
+    n_trials=25,
+    n_place_cells=1,  # Just one cell for this example
+    seed=42,
 )
-tmaze_env.units = "cm"
-tmaze_env.frame = "tmaze"
+
+# Extract components from session
+tmaze_env = tmaze_session.env
+tmaze_positions = tmaze_session.positions
+tmaze_times = tmaze_session.times
+tmaze_spike_times_list = tmaze_session.spike_trains
+
+# Get the first (and only) cell's spikes
+tmaze_spike_times = tmaze_spike_times_list[0]
+
+# Get trial metadata
+trial_choices = tmaze_session.metadata["trial_choices"]
 
 print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
+print(f"  Generated {len(tmaze_positions)} trajectory points")
+print(f"  {len(trial_choices)} trials with choices: {trial_choices[:5]}... (first 5)")
 print(
     f"  Coverage: x=[{tmaze_positions[:, 0].min():.1f}, {tmaze_positions[:, 0].max():.1f}], "
     f"y=[{tmaze_positions[:, 1].min():.1f}, {tmaze_positions[:, 1].max():.1f}] cm"
@@ -697,28 +644,19 @@ plt.show()
 # %% [markdown]
 # ### Simulate Place Cell in T-Maze
 #
-# This place cell will remap - it had a field at (60, 50) in the open field. In the T-maze, we'll give it a field at (35, 58) (left arm).
+# The `tmaze_alternation_session()` function has already generated place cell spike data.
+# The place cell was automatically positioned with uniform coverage across the T-maze.
+# Let's compute the firing rate map to see where the cell fired.
 
 # %%
-# Generate spikes for T-maze (place field in left arm)
-tmaze_field_center = np.array([35.0, 58.0])  # Left arm
-tmaze_sigma = 8.0  # cm
-tmaze_peak_rate = 12.0  # Hz (slightly higher rate in T-maze)
+# Note: Spikes were already generated by tmaze_alternation_session()
+# Extract ground truth from the session (ground_truth is a dict with keys like 'cell_0')
+tmaze_ground_truth = tmaze_session.ground_truth["cell_0"]  # First cell
+tmaze_field_center = tmaze_ground_truth["center"]
 
-# Compute firing probability
-tmaze_distances = np.linalg.norm(tmaze_positions - tmaze_field_center, axis=1)
-tmaze_firing_rate_continuous = tmaze_peak_rate * np.exp(
-    -(tmaze_distances**2) / (2 * tmaze_sigma**2)
-)
-
-# Generate spikes
-tmaze_dt = np.mean(np.diff(tmaze_times))
-tmaze_spike_probs = tmaze_firing_rate_continuous * tmaze_dt
-tmaze_spike_mask = np.random.rand(len(tmaze_times)) < tmaze_spike_probs
-tmaze_spike_times = tmaze_times[tmaze_spike_mask]
-
-print(f"\nGenerated {len(tmaze_spike_times)} spikes in T-maze")
-print(f"T-maze field center: {tmaze_field_center}")
+print(f"\nT-maze session generated {len(tmaze_spike_times)} spikes")
+print(f"T-maze field center (ground truth): {tmaze_field_center}")
+print(f"Field properties: {tmaze_ground_truth}")
 
 # Compute firing rate map for T-maze
 tmaze_firing_rate = compute_place_field(
@@ -736,15 +674,12 @@ tmaze_firing_rate = compute_place_field(
 fig, axes = plt.subplots(1, 2, figsize=(16, 7), constrained_layout=True)
 
 # Open field place field
-scatter1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
-    s=120,
+env.plot_field(
+    firing_rate,
+    ax=axes[0],
     cmap="hot",
     vmin=0,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="Firing Rate (Hz)",
 )
 axes[0].scatter(
     field_center[0],
@@ -757,23 +692,16 @@ axes[0].scatter(
     label="Field Center",
     zorder=10,
 )
-axes[0].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-axes[0].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
 axes[0].set_title("Open Field Place Field", fontsize=15, fontweight="bold")
-axes[0].set_aspect("equal")
 axes[0].legend(fontsize=11)
-cbar1 = plt.colorbar(scatter1, ax=axes[0], label="Firing Rate (Hz)")
 
 # T-maze place field
-scatter2 = axes[1].scatter(
-    tmaze_env.bin_centers[:, 0],
-    tmaze_env.bin_centers[:, 1],
-    c=tmaze_firing_rate,
-    s=120,
+tmaze_env.plot_field(
+    tmaze_firing_rate,
+    ax=axes[1],
     cmap="hot",
     vmin=0,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
     tmaze_field_center[0],
@@ -786,12 +714,8 @@ axes[1].scatter(
     label="Field Center",
     zorder=10,
 )
-axes[1].set_xlabel("X Position (cm)", fontsize=13, fontweight="bold")
-axes[1].set_ylabel("Y Position (cm)", fontsize=13, fontweight="bold")
 axes[1].set_title("T-Maze Place Field (REMAPPED)", fontsize=15, fontweight="bold")
-axes[1].set_aspect("equal")
 axes[1].legend(fontsize=11)
-cbar2 = plt.colorbar(scatter2, ax=axes[1], label="Firing Rate (Hz)")
 
 plt.show()
 

@@ -20,6 +20,16 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Compute gradients of distance fields to create goal-directed flow fields
+# - Calculate divergence of flow fields to detect sources and sinks
+# - Apply Laplacian smoothing for graph-based spatial field processing
+# - Understand the differential operator matrix and its role in graph calculus
+# - Use these operators for reinforcement learning and replay analysis
+#
 # ## Contents
 #
 # 1. **Gradient of Distance Fields** - Compute goal-directed flow from distance gradients
@@ -171,14 +181,11 @@ fig, axes = plt.subplots(1, 2, figsize=(14, 6), constrained_layout=True)
 
 # Distance field
 ax = axes[0]
-scatter1 = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=distances,
+env.plot_field(
+    distances,
+    ax=ax,
     cmap="viridis",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="Distance (cm)",
 )
 ax.scatter(
     env.bin_centers[goal_bin, 0],
@@ -191,25 +198,16 @@ ax.scatter(
     label="Goal",
     zorder=10,
 )
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title("Distance Field from Goal", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12, loc="upper right")
-cbar1 = plt.colorbar(scatter1, ax=ax, label="Distance (cm)")
-cbar1.ax.tick_params(labelsize=12)
-cbar1.set_label("Distance (cm)", fontsize=13)
 
 # Gradient magnitude
 ax = axes[1]
-scatter2 = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=grad_per_node,
+env.plot_field(
+    grad_per_node,
+    ax=ax,
     cmap="hot",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
+    colorbar_label="|∇ distance|",
 )
 ax.scatter(
     env.bin_centers[goal_bin, 0],
@@ -222,14 +220,8 @@ ax.scatter(
     label="Goal",
     zorder=10,
 )
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title("Gradient Magnitude", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12, loc="upper right")
-cbar2 = plt.colorbar(scatter2, ax=ax, label="|∇ distance|")
-cbar2.ax.tick_params(labelsize=12)
-cbar2.set_label("|∇ distance|", fontsize=13)
 
 plt.show()
 
@@ -288,16 +280,13 @@ print(f"Sink bins (divergence < -0.05): {len(sinks)}")
 fig, ax = plt.subplots(figsize=(10, 8), constrained_layout=True)
 
 # Divergence field with symmetric colormap
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=div_flow,
+env.plot_field(
+    div_flow,
+    ax=ax,
     cmap="RdBu_r",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
     vmin=-0.5,
     vmax=0.5,
+    colorbar_label="Divergence\n(red = source, blue = sink)",
 )
 
 # Mark goal (should be a sink)
@@ -313,15 +302,8 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title("Flow Divergence: Sources and Sinks", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
 ax.legend(fontsize=12, loc="upper right")
-
-cbar = plt.colorbar(scatter, ax=ax, label="Divergence")
-cbar.ax.tick_params(labelsize=12)
-cbar.set_label("Divergence\n(red = source, blue = sink)", fontsize=13)
 
 plt.show()
 
@@ -393,65 +375,38 @@ vmax = max(noisy_field.max(), laplacian_smoothed.max(), gaussian_smoothed.max())
 
 # Original noisy field
 ax = axes[0]
-scatter1 = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=noisy_field,
+env.plot_field(
+    noisy_field,
+    ax=ax,
     cmap="RdBu_r",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
     vmin=vmin,
     vmax=vmax,
 )
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title("Original (Noisy)", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
-cbar1 = plt.colorbar(scatter1, ax=ax)
-cbar1.ax.tick_params(labelsize=12)
 
 # Laplacian smoothed
 ax = axes[1]
-scatter2 = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=laplacian_smoothed,
+env.plot_field(
+    laplacian_smoothed,
+    ax=ax,
     cmap="RdBu_r",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
     vmin=vmin,
     vmax=vmax,
 )
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title(
     "Laplacian Smoothed\n(20 iterations, alpha=0.05)", fontsize=16, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar2 = plt.colorbar(scatter2, ax=ax)
-cbar2.ax.tick_params(labelsize=12)
 
 # Gaussian smoothed
 ax = axes[2]
-scatter3 = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=gaussian_smoothed,
+env.plot_field(
+    gaussian_smoothed,
+    ax=ax,
     cmap="RdBu_r",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
     vmin=vmin,
     vmax=vmax,
 )
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title("Gaussian Smoothed\n(bandwidth=10 cm)", fontsize=16, fontweight="bold")
-ax.set_aspect("equal")
-cbar3 = plt.colorbar(scatter3, ax=ax)
-cbar3.ax.tick_params(labelsize=12)
 
 plt.show()
 
@@ -593,16 +548,13 @@ print(f"Strongest sinks: {sinks_policy}")
 fig, ax = plt.subplots(figsize=(10, 8), constrained_layout=True)
 
 # Divergence field
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=div_policy,
+env.plot_field(
+    div_policy,
+    ax=ax,
     cmap="RdBu_r",
-    s=120,
-    edgecolors="white",
-    linewidths=0.5,
     vmin=-0.1,
     vmax=0.1,
+    colorbar_label="Divergence\n(red = source, blue = sink)",
 )
 
 # Mark start (should be source)
@@ -631,17 +583,10 @@ ax.scatter(
     zorder=10,
 )
 
-ax.set_xlabel(f"X ({env.units})", fontsize=14, fontweight="bold")
-ax.set_ylabel(f"Y ({env.units})", fontsize=14, fontweight="bold")
 ax.set_title(
     "Policy Flow Divergence\n(Goal-Directed Navigation)", fontsize=16, fontweight="bold"
 )
-ax.set_aspect("equal")
 ax.legend(fontsize=12, loc="upper right")
-
-cbar = plt.colorbar(scatter, ax=ax, label="Divergence")
-cbar.ax.tick_params(labelsize=12)
-cbar.set_label("Divergence\n(red = source, blue = sink)", fontsize=13)
 
 plt.show()
 

@@ -21,6 +21,17 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Use `neighbor_reduce()` to perform local aggregation on spatial graphs
+# - Analyze spatial coherence using neighborhood statistics
+# - Apply custom convolution filters with `convolve()` for spatial analysis
+# - Implement box filters for occupancy-based thresholding
+# - Create Mexican hat filters for edge detection in spatial fields
+# - Assess local field variability for quality control
+#
 # **Topics covered**:
 # - Local aggregation with `neighbor_reduce()`
 # - Spatial coherence analysis
@@ -35,7 +46,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.primitives import convolve, neighbor_reduce
-from neurospatial.spike_field import compute_place_field, spikes_to_field
+from neurospatial.spike_field import compute_place_field
 
 # Random seed for reproducibility
 rng = np.random.default_rng(42)
@@ -123,9 +134,9 @@ print(f"Environment: {env.n_bins} bins")
 print(f"Generated {len(spike_times)} spikes")
 
 # %%
-# Compute firing rate field
-firing_rate = spikes_to_field(
-    env, spike_times, times, positions, min_occupancy_seconds=0.5
+# Compute firing rate field with diffusion KDE (recommended for visualization)
+firing_rate = compute_place_field(
+    env, spike_times, times, positions, bandwidth=5.0, min_occupancy_seconds=0.5
 )
 
 # Compute neighbor average (for coherence)
@@ -146,36 +157,22 @@ print("  < 0.3: Low coherence (noisy/fragmented)")
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
 # Firing rate
-sc1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate,
+env.plot_field(
+    firing_rate,
+    ax=axes[0],
     cmap="hot",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-axes[0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0].set_title("Firing Rate (Hz)", fontsize=14, weight="bold")
-axes[0].set_aspect("equal")
-cbar1 = plt.colorbar(sc1, ax=axes[0])
-cbar1.set_label("Rate (Hz)", fontsize=11)
 
 # Neighbor average
-sc2 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=neighbor_avg,
+env.plot_field(
+    neighbor_avg,
+    ax=axes[1],
     cmap="hot",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-axes[1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1].set_title("Neighbor Average (Hz)", fontsize=14, weight="bold")
-axes[1].set_aspect("equal")
-cbar2 = plt.colorbar(sc2, ax=axes[1])
-cbar2.set_label("Rate (Hz)", fontsize=11)
 
 # Scatter plot: firing rate vs neighbor average
 axes[2].scatter(
@@ -224,70 +221,42 @@ cv = neighbor_std / (neighbor_mean + epsilon)
 fig, axes = plt.subplots(2, 2, figsize=(14, 12), constrained_layout=True)
 
 # Mean
-sc1 = axes[0, 0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=neighbor_mean,
+env.plot_field(
+    neighbor_mean,
+    ax=axes[0, 0],
     cmap="hot",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Mean (Hz)",
 )
-axes[0, 0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0, 0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0, 0].set_title("Neighbor Mean (Hz)", fontsize=14, weight="bold")
-axes[0, 0].set_aspect("equal")
-cbar1 = plt.colorbar(sc1, ax=axes[0, 0])
-cbar1.set_label("Mean (Hz)", fontsize=11)
 
 # Std
-sc2 = axes[0, 1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=neighbor_std,
+env.plot_field(
+    neighbor_std,
+    ax=axes[0, 1],
     cmap="viridis",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Std (Hz)",
 )
-axes[0, 1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0, 1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0, 1].set_title("Neighbor Std (Hz)", fontsize=14, weight="bold")
-axes[0, 1].set_aspect("equal")
-cbar2 = plt.colorbar(sc2, ax=axes[0, 1])
-cbar2.set_label("Std (Hz)", fontsize=11)
 
 # Max
-sc3 = axes[1, 0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=neighbor_max,
+env.plot_field(
+    neighbor_max,
+    ax=axes[1, 0],
     cmap="hot",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Max (Hz)",
 )
-axes[1, 0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1, 0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1, 0].set_title("Neighbor Max (Hz)", fontsize=14, weight="bold")
-axes[1, 0].set_aspect("equal")
-cbar3 = plt.colorbar(sc3, ax=axes[1, 0])
-cbar3.set_label("Max (Hz)", fontsize=11)
 
 # Coefficient of variation
-sc4 = axes[1, 1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=cv,
+env.plot_field(
+    cv,
+    ax=axes[1, 1],
     cmap="coolwarm",
-    s=80,
-    edgecolors="none",
     vmin=0,
     vmax=2,
+    colorbar_label="CV (std/mean)",
 )
-axes[1, 1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1, 1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1, 1].set_title("Coefficient of Variation", fontsize=14, weight="bold")
-axes[1, 1].set_aspect("equal")
-cbar4 = plt.colorbar(sc4, ax=axes[1, 1])
-cbar4.set_label("CV (std/mean)", fontsize=11)
 
 plt.show()
 
@@ -328,58 +297,37 @@ print(f"Smoothed occupancy: {reliable_visited.sum():.0f} reliably visited bins")
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
 # Binary occupancy
-sc1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=binary_occupancy,
+env.plot_field(
+    binary_occupancy,
+    ax=axes[0],
     cmap="gray",
-    s=80,
-    edgecolors="none",
     vmin=0,
     vmax=1,
+    colorbar_label="Visited",
 )
-axes[0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0].set_title("Binary Occupancy", fontsize=14, weight="bold")
-axes[0].set_aspect("equal")
-cbar1 = plt.colorbar(sc1, ax=axes[0], ticks=[0, 1])
-cbar1.set_label("Visited", fontsize=11)
 
 # Smoothed occupancy
-sc2 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=smoothed_occupancy,
+env.plot_field(
+    smoothed_occupancy,
+    ax=axes[1],
     cmap="viridis",
-    s=80,
-    edgecolors="none",
     vmin=0,
     vmax=1,
+    colorbar_label="Proportion",
 )
-axes[1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1].set_title("Box Filter (10 cm)", fontsize=14, weight="bold")
-axes[1].set_aspect("equal")
-cbar2 = plt.colorbar(sc2, ax=axes[1])
-cbar2.set_label("Proportion", fontsize=11)
 
 # Thresholded
-sc3 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reliable_visited,
+env.plot_field(
+    reliable_visited,
+    ax=axes[2],
     cmap="gray",
-    s=80,
-    edgecolors="none",
     vmin=0,
     vmax=1,
+    colorbar_label="Reliable",
 )
-axes[2].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[2].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[2].set_title("Reliable Visited (>50%)", fontsize=14, weight="bold")
-axes[2].set_aspect("equal")
-cbar3 = plt.colorbar(sc3, ax=axes[2], ticks=[0, 1])
-cbar3.set_label("Reliable", fontsize=11)
 
 plt.show()
 
@@ -399,7 +347,7 @@ firing_rate_smooth = compute_place_field(
     times,
     positions,
     min_occupancy_seconds=0.5,
-    smoothing_bandwidth=5.0,
+    bandwidth=5.0,
 )
 
 
@@ -429,58 +377,37 @@ print(f"Detected {field_centers.sum()} bins as place field centers")
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
 # Original firing rate
-sc1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate_smooth,
+env.plot_field(
+    firing_rate_smooth,
+    ax=axes[0],
     cmap="hot",
-    s=80,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-axes[0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0].set_title("Smoothed Firing Rate", fontsize=14, weight="bold")
-axes[0].set_aspect("equal")
-cbar1 = plt.colorbar(sc1, ax=axes[0])
-cbar1.set_label("Rate (Hz)", fontsize=11)
 
 # Edge response (Mexican hat)
 # Use symmetric colormap centered at 0
 vmax = np.nanmax(np.abs(edges))
-sc2 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=edges,
+env.plot_field(
+    edges,
+    ax=axes[1],
     cmap="RdBu_r",
-    s=80,
-    edgecolors="none",
     vmin=-vmax,
     vmax=vmax,
+    colorbar_label="Response",
 )
-axes[1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1].set_title("Edge Response (Mexican Hat)", fontsize=14, weight="bold")
-axes[1].set_aspect("equal")
-cbar2 = plt.colorbar(sc2, ax=axes[1])
-cbar2.set_label("Response", fontsize=11)
 
 # Detected field centers
-sc3 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=field_centers,
+env.plot_field(
+    field_centers,
+    ax=axes[2],
     cmap="gray",
-    s=80,
-    edgecolors="none",
     vmin=0,
     vmax=1,
+    colorbar_label="Center",
 )
-axes[2].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[2].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[2].set_title("Detected Field Centers", fontsize=14, weight="bold")
-axes[2].set_aspect("equal")
-cbar3 = plt.colorbar(sc3, ax=axes[2], ticks=[0, 1])
-cbar3.set_label("Center", fontsize=11)
 
 plt.show()
 
@@ -527,49 +454,28 @@ print("\nBoth methods produce nearly identical results!")
 fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 
 # Original random field
-sc1 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=random_field,
+env.plot_field(
+    random_field,
+    ax=axes[0],
     cmap="viridis",
-    s=80,
-    edgecolors="none",
 )
-axes[0].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[0].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[0].set_title("Original Random Field", fontsize=14, weight="bold")
-axes[0].set_aspect("equal")
-cbar1 = plt.colorbar(sc1, ax=axes[0])
 
 # Custom convolution
-sc2 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=result_convolve,
+env.plot_field(
+    result_convolve,
+    ax=axes[1],
     cmap="viridis",
-    s=80,
-    edgecolors="none",
 )
-axes[1].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[1].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[1].set_title("convolve() Result", fontsize=14, weight="bold")
-axes[1].set_aspect("equal")
-cbar2 = plt.colorbar(sc2, ax=axes[1])
 
 # Built-in smoothing
-sc3 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=result_smooth,
+env.plot_field(
+    result_smooth,
+    ax=axes[2],
     cmap="viridis",
-    s=80,
-    edgecolors="none",
 )
-axes[2].set_xlabel("X position (cm)", fontsize=12, weight="bold")
-axes[2].set_ylabel("Y position (cm)", fontsize=12, weight="bold")
 axes[2].set_title("env.smooth() Result", fontsize=14, weight="bold")
-axes[2].set_aspect("equal")
-cbar3 = plt.colorbar(sc3, ax=axes[2])
 
 plt.show()
 

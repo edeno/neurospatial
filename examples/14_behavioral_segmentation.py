@@ -18,14 +18,18 @@
 #
 # This notebook demonstrates automatic detection of behavioral epochs in neurospatial.
 #
-# We'll cover:
-# 1. **Region crossings** - Detect entry/exit events
-# 2. **Runs between regions** - Goal-directed navigation from source to target
-# 3. **Lap detection** - Automatic lap segmentation on circular tracks
-# 4. **Trial segmentation** - T-maze left/right choice trials
-# 5. **Trajectory similarity** - Compare paths using multiple metrics
-#
 # **Estimated time**: 15-20 minutes
+#
+# ## Learning Objectives
+#
+# By the end of this notebook, you will be able to:
+#
+# - Detect region crossing events (entry/exit) for defined spatial regions
+# - Identify goal-directed runs between source and target regions
+# - Automatically segment laps on circular tracks using linearized coordinates
+# - Segment T-maze choice trials into left/right trajectories
+# - Compare trajectory similarity using multiple distance metrics
+# - Apply behavioral segmentation for trial-based analysis and epoch detection
 #
 # ## References
 #

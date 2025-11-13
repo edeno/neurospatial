@@ -65,6 +65,41 @@ Transform and align spatial representations.
 
 - `Affine2D`: Composable 2D affine transformations
 
+### [neurospatial.simulation](neurospatial/simulation/index.md) <span style="color: #4CAF50;">v0.2.0+</span>
+
+Generate synthetic spatial data, neural activity, and spike trains for testing and validation.
+
+**Key Modules:**
+
+- `simulation.trajectory`: Trajectory generation (OU process, structured laps)
+- `simulation.models`: Neural models (place cells, boundary cells, grid cells)
+- `simulation.spikes`: Spike generation (Poisson process, refractory periods)
+- `simulation.session`: High-level session simulation API
+- `simulation.validation`: Automated validation against ground truth
+- `simulation.examples`: Pre-configured example sessions
+
+**Key Classes:**
+
+- `PlaceCellModel`: Gaussian place field model with ground truth
+- `BoundaryCellModel`: Distance-tuned boundary/border cell model
+- `GridCellModel`: Hexagonal grid cell model (2D only)
+- `SimulationSession`: Complete simulation session dataclass
+
+**Key Functions:**
+
+- `simulate_trajectory_ou()`: Ornstein-Uhlenbeck process for realistic exploration
+- `simulate_trajectory_sinusoidal()`: Sinusoidal movement for 1D tracks
+- `simulate_trajectory_laps()`: Structured lap-based trajectories
+- `generate_poisson_spikes()`: Generate spikes from firing rates
+- `generate_population_spikes()`: Generate spikes for neuron populations
+- `simulate_session()`: One-call workflow for complete sessions
+- `validate_simulation()`: Compare detected fields to ground truth
+- `open_field_session()`, `linear_track_session()`, etc.: Pre-configured examples
+
+**See Also:**
+
+- [Simulation Workflows Tutorial](../examples/15_simulation_workflows.ipynb): Comprehensive examples and quick start guide
+
 ## Layout Engines
 
 Detailed documentation for each layout engine:

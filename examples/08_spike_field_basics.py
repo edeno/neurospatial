@@ -46,6 +46,11 @@ from neurospatial import (
     region_reward_field,
     spikes_to_field,
 )
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -74,88 +79,87 @@ WONG_COLORS = {
 # %% [markdown]
 # ---
 #
-# ## Part 1: Converting Spike Trains to Firing Rate Maps
+# ## Part 1: Place Field Analysis - Recommended Workflow
 #
-# ### Why Occupancy Normalization?
+# This section demonstrates the **recommended approach** for computing place fields from spike data. We'll use `compute_place_field()`, which handles all the details automatically:
 #
-# In neuroscience, we need to normalize spike counts by the time spent in each spatial location (occupancy) to get meaningful firing rate estimates. Without normalization, frequently-visited locations would appear to have higher firing rates simply due to more samples, not actual spatial preference.
+# - Spike-to-bin mapping
+# - Occupancy normalization (spike count / time in bin)
+# - Boundary-aware smoothing (diffusion KDE)
+# - NaN handling for unvisited bins
 #
-# The formula is:
-#
-# $$\text{firing rate}_i = \frac{\text{spike count}_i}{\text{occupancy}_i \text{ (seconds)}}$$
-#
-# This is the **standard approach** in place field analysis (O'Keefe & Dostrovsky, 1971).
+# **For most users, this is the only workflow you need.**
 
 # %% [markdown]
 # ### Generate Synthetic Data
 #
-# Let's create a simulated trajectory and spike train for a place cell:
+# We'll use the `neurospatial.simulation` subpackage to generate realistic trajectories and spike trains. This subpackage provides:
+#
+# - **`simulate_trajectory_ou()`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
+# - **`PlaceCellModel`**: Gaussian place field model with ground truth tracking
+# - **`generate_poisson_spikes()`**: Poisson spike generation with refractory period handling
+#
+# These functions replace manual simulation code with a clean, tested API.
 
 # %%
-# 1. Generate 2D random walk in open field arena (60 seconds at 30 Hz)
-sampling_rate = 30.0  # Hz
-duration = 60.0  # seconds
-n_samples = int(duration * sampling_rate)
-times = np.linspace(0, duration, n_samples)
-
-# Arena size: 80x80 cm open field
+# 1. Create temporary environment for trajectory generation
+# We'll use this to generate realistic movement within 80x80 cm arena
 arena_size = 80.0  # cm
-arena_center = arena_size / 2
+# Create a proper grid covering the full arena (not just corners!)
+x = np.linspace(0, arena_size, 17)  # 17 points = 5 cm bins
+y = np.linspace(0, arena_size, 17)
+xx, yy = np.meshgrid(x, y)
+arena_data = np.column_stack([xx.ravel(), yy.ravel()])  # 289 grid points
+temp_env = Environment.from_samples(arena_data, bin_size=5.0)
+temp_env.units = "cm"  # Required for trajectory simulation
 
-# Random walk parameters
-step_size = 2.5  # cm per step (realistic rat movement ~7.5 cm/s at 30 Hz)
-boundary_margin = 5.0  # cm from walls
+# 2. Generate smooth random walk trajectory using Ornstein-Uhlenbeck process
+duration = 200.0  # seconds (sufficient for uniform spatial coverage with rotational OU)
+positions, times = simulate_trajectory_ou(
+    temp_env,
+    duration=duration,
+    dt=0.01,  # 10ms timestep (required for numerical stability with rotational OU)
+    speed_mean=7.5,  # cm/s (realistic rat movement)
+    speed_std=0.4,  # cm/s (speed variability)
+    coherence_time=0.7,  # seconds (smooth, persistent movement)
+    boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
+    seed=42,  # Seed produces uniform spatial coverage with rotational OU
+)
 
-# Initialize trajectory
-positions = np.zeros((n_samples, 2))
-positions[0] = [arena_center, arena_center]  # Start at center
-
-# Generate random walk with wall reflection
-for i in range(1, n_samples):
-    # Random step direction
-    angle = np.random.uniform(0, 2 * np.pi)
-    step = step_size * np.array([np.cos(angle), np.sin(angle)])
-
-    # Propose new position
-    new_pos = positions[i - 1] + step
-
-    # Reflect at boundaries (with margin)
-    for dim in range(2):
-        if new_pos[dim] < boundary_margin:
-            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
-        elif new_pos[dim] > (arena_size - boundary_margin):
-            new_pos[dim] = (arena_size - boundary_margin) - (
-                new_pos[dim] - (arena_size - boundary_margin)
-            )
-
-    positions[i] = new_pos
-
-# 2. Simulate place cell with Gaussian tuning
+# 3. Create place cell model with Gaussian tuning
 preferred_location = np.array([60.0, 30.0])  # Right-bottom quadrant
 tuning_width = 10.0  # cm
-
-# Compute distance to preferred location
-distances = np.linalg.norm(positions - preferred_location, axis=1)
-
-# Gaussian spatial tuning (peak 15 Hz)
 peak_rate = 15.0  # Hz
-instantaneous_rate = peak_rate * np.exp(-(distances**2) / (2 * tuning_width**2))
 
-# Generate spikes using Poisson process
-dt = 1.0 / sampling_rate
-spike_prob = instantaneous_rate * dt
-spike_mask = np.random.rand(len(times)) < spike_prob
-spike_times = times[spike_mask]
+place_cell = PlaceCellModel(
+    temp_env,
+    center=preferred_location,
+    width=tuning_width,
+    max_rate=peak_rate,
+    baseline_rate=0.001,  # Minimal baseline firing
+    distance_metric="euclidean",
+)
 
-print(f"Generated 2D random walk: {len(times)} samples over {times[-1]:.1f} seconds")
+# 4. Generate spike train from place cell firing rates
+firing_rates = place_cell.firing_rate(positions, times)
+spike_times = generate_poisson_spikes(
+    firing_rates,
+    times,
+    refractory_period=0.002,  # 2ms refractory period
+    seed=42,
+)
+
+print(f"Generated trajectory: {len(times)} samples over {times[-1]:.1f} seconds")
 print(f"Arena size: {arena_size:.0f}x{arena_size:.0f} cm")
 print(
-    f"Spatial coverage: X=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], Y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
+    f"Spatial coverage: X=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], "
+    f"Y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}] cm"
 )
 print(
-    f"Generated spikes: {len(spike_times)} spikes (mean rate: {len(spike_times) / times[-1]:.2f} Hz)"
+    f"Generated spikes: {len(spike_times)} spikes "
+    f"(mean rate: {len(spike_times) / times[-1]:.2f} Hz)"
 )
-print(f"Place field center: {preferred_location}")
+print(f"Place field center: {place_cell.ground_truth['center']}")
 
 # %% [markdown]
 # ### Create Environment
@@ -176,12 +180,188 @@ print(
 )
 
 # %% [markdown]
-# ### Compute Firing Rate Field
+# ### Visualize Raw Data
 #
-# Now let's convert the spike train to a firing rate map using `spikes_to_field()`:
+# Before computing place fields, let's see what we're working with - the animal's trajectory and where it spiked:
 
 # %%
-# Compute firing rate field (default: no occupancy filtering)
+# Visualize trajectory with spike locations
+fig, ax = plt.subplots(figsize=(10, 9), constrained_layout=True)
+
+# Plot full trajectory
+ax.plot(
+    positions[:, 0],
+    positions[:, 1],
+    "gray",
+    alpha=0.3,
+    linewidth=0.5,
+    label="Trajectory",
+)
+
+# Mark spike positions
+spike_positions = []
+for spike_time in spike_times:
+    # Find position at spike time
+    idx = np.argmin(np.abs(times - spike_time))
+    spike_positions.append(positions[idx])
+
+spike_positions = np.array(spike_positions)
+
+if len(spike_positions) > 0:
+    ax.scatter(
+        spike_positions[:, 0],
+        spike_positions[:, 1],
+        c=WONG_COLORS["red"],
+        s=20,
+        alpha=0.6,
+        edgecolor="none",
+        label=f"Spike locations (n={len(spike_positions)})",
+    )
+
+# Mark ground truth place field center
+ax.plot(
+    preferred_location[0],
+    preferred_location[1],
+    "*",
+    color=WONG_COLORS["cyan"],
+    markersize=18,
+    markeredgecolor="white",
+    markeredgewidth=2,
+    label="Ground truth center",
+)
+
+ax.set_xlabel("X position (cm)")
+ax.set_ylabel("Y position (cm)")
+ax.set_title(
+    "Raw Data: Animal Trajectory and Spike Locations",
+    fontsize=14,
+    fontweight="bold",
+    pad=10,
+)
+ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+ax.axis("equal")
+ax.grid(True, alpha=0.3)
+
+plt.show()
+
+print(f"Total trajectory: {len(positions)} samples over {times[-1]:.1f}s")
+print(
+    f"Spikes clustered around ({preferred_location[0]:.0f}, {preferred_location[1]:.0f}) cm"
+)
+
+# %% [markdown]
+# **Observation:** Spikes cluster around the ground truth place field center (cyan star). Now let's discretize this into spatial bins.
+
+# %% [markdown]
+# ### Visualize Occupancy
+#
+# How much time did the animal spend in each spatial bin?
+
+# %%
+# Compute occupancy
+occupancy = env.occupancy(times, positions, return_seconds=True)
+
+fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
+
+env.plot_field(
+    occupancy,
+    ax=ax,
+    cmap="viridis",
+    colorbar_label="Seconds",
+)
+ax.set_title(
+    "Occupancy (time spent in each bin)", fontsize=14, fontweight="bold", pad=10
+)
+ax.axis("equal")
+ax.grid(True, alpha=0.3)
+
+plt.show()
+
+print(f"Occupancy range: {occupancy.min():.1f} - {occupancy.max():.1f} seconds")
+print(f"Bins with >0.5s: {np.sum(occupancy > 0.5)}/{env.n_bins}")
+
+# %% [markdown]
+# **Why occupancy matters:** Without normalization, bins with more time would show more spikes simply from sampling, not neural preference.
+
+# %% [markdown]
+# ### Compute Place Field (Recommended Approach)
+#
+# **Use `compute_place_field()` for most applications** - it handles spike conversion, occupancy normalization, and smoothing in one call:
+
+# %%
+# One-liner: compute smoothed place field using boundary-aware diffusion KDE
+place_field = compute_place_field(
+    env,
+    spike_times,
+    times,
+    positions,
+    method="diffusion_kde",  # Boundary-aware smoothing (recommended)
+    bandwidth=8.0,  # Smoothing bandwidth in cm
+    min_occupancy_seconds=0.5,  # Exclude bins with <0.5s occupancy
+)
+
+print("Place field computed using diffusion KDE")
+print(f"Peak firing rate: {np.nanmax(place_field):.2f} Hz")
+print(f"Valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
+
+# %% [markdown]
+# **Why `compute_place_field()` is recommended:**
+#
+# - **One function call** - handles all steps automatically
+# - **Occupancy normalization** - divides spike counts by time in each bin
+# - **Boundary-aware smoothing** - diffusion KDE respects environment boundaries
+# - **Standard in neuroscience** - implements best practices from the literature
+#
+# For most users, this is the **only function you need** for place field analysis.
+
+# %%
+# Visualize the place field
+fig, ax = plt.subplots(figsize=(8, 7), constrained_layout=True)
+
+env.plot_field(
+    place_field,
+    ax=ax,
+    cmap="hot",
+    vmin=0,
+    colorbar_label="Firing rate (Hz)",
+)
+ax.set_title(
+    "Place Field (Recommended Approach)\nOccupancy-normalized + Diffusion KDE smoothing",
+    fontsize=14,
+    fontweight="bold",
+    pad=10,
+)
+ax.plot(
+    preferred_location[0],
+    preferred_location[1],
+    "*",
+    color=WONG_COLORS["cyan"],
+    markersize=18,
+    markeredgecolor="white",
+    markeredgewidth=2,
+    label="Ground truth center",
+)
+ax.legend(loc="upper right", fontsize=11, framealpha=0.9)
+
+plt.show()
+
+print(
+    f"\nPlace field successfully captures neural selectivity around ({preferred_location[0]:.0f}, {preferred_location[1]:.0f}) cm"
+)
+
+# %% [markdown]
+# ---
+#
+# ## Part 2: Understanding the Components (Advanced)
+#
+# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_place_field()` handles everything automatically.
+#
+# ### Manual Approach with `spikes_to_field()`
+#
+# For fine-grained control, you can manually compute firing rates using `spikes_to_field()`:
+
+# %%
+# Manual approach: compute firing rate field without smoothing
 firing_rate_raw = spikes_to_field(
     env,
     spike_times,
@@ -190,56 +370,23 @@ firing_rate_raw = spikes_to_field(
     min_occupancy_seconds=0.0,  # Include all bins
 )
 
-# Compute with occupancy threshold (standard practice)
 firing_rate_filtered = spikes_to_field(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,  # Exclude bins with < 0.5 seconds
+    min_occupancy_seconds=0.5,  # Standard threshold
 )
 
-# Also compute occupancy for visualization
+# Compute occupancy for visualization
 occupancy = env.occupancy(times, positions, return_seconds=True)
 
+print("Manual firing rate computation:")
+print(f"  Raw: {np.nanmin(firing_rate_raw):.2f} - {np.nanmax(firing_rate_raw):.2f} Hz")
 print(
-    f"Firing rate range (raw): {np.nanmin(firing_rate_raw):.2f} - {np.nanmax(firing_rate_raw):.2f} Hz"
+    f"  Filtered: {np.nanmin(firing_rate_filtered):.2f} - {np.nanmax(firing_rate_filtered):.2f} Hz"
 )
-print(
-    f"Firing rate range (filtered): {np.nanmin(firing_rate_filtered):.2f} - {np.nanmax(firing_rate_filtered):.2f} Hz"
-)
-print(
-    f"Number of NaN bins (filtered): {np.sum(np.isnan(firing_rate_filtered))} / {env.n_bins}"
-)
-
-# Quantitative validation checks
-print("\n✓ Validation Checks:")
-
-# Check 1: All raw firing rates should be non-negative
-assert np.all(firing_rate_raw >= 0), "ERROR: Negative firing rates detected!"
-print("  ✓ All raw firing rates are non-negative")
-
-# Check 2: Valid firing rates should be in reasonable range (0-50 Hz typical for place cells)
-valid_rates = firing_rate_filtered[~np.isnan(firing_rate_filtered)]
-if len(valid_rates) > 0:
-    if np.max(valid_rates) > 50:
-        print(
-            f"  ⚠ Warning: Peak firing rate {np.max(valid_rates):.1f} Hz is unusually high (>50 Hz)"
-        )
-    else:
-        print(f"  ✓ Peak firing rate {np.max(valid_rates):.1f} Hz is in expected range")
-
-# Check 3: NaN bins should correspond to low occupancy
-low_occ_bins = np.sum(occupancy < 0.5)
-nan_bins = np.sum(np.isnan(firing_rate_filtered))
-if nan_bins == low_occ_bins:
-    print(f"  ✓ NaN bins ({nan_bins}) match low occupancy bins ({low_occ_bins})")
-else:
-    print(f"  ⚠ Warning: NaN bins ({nan_bins}) ≠ low occupancy bins ({low_occ_bins})")
-
-# Check 4: Mean firing rate should be reasonable
-mean_rate = np.nanmean(valid_rates)
-print(f"  ✓ Mean firing rate: {mean_rate:.2f} Hz (across visited bins)")
+print(f"  NaN bins: {np.sum(np.isnan(firing_rate_filtered))}/{env.n_bins}")
 
 # %% [markdown]
 # ### Visualize: Occupancy vs Firing Rate
@@ -250,53 +397,35 @@ print(f"  ✓ Mean firing rate: {mean_rate:.2f} Hz (across visited bins)")
 fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
 
 # Plot occupancy
-scatter0 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=occupancy,
+env.plot_field(
+    occupancy,
+    ax=axes[0],
     cmap="viridis",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Seconds",
 )
 axes[0].set_title("Occupancy (seconds)", fontsize=14, fontweight="bold", pad=10)
-axes[0].set_xlabel("X (cm)", fontsize=12)
-axes[0].set_ylabel("Y (cm)", fontsize=12)
-axes[0].set_aspect("equal")
-plt.colorbar(scatter0, ax=axes[0], label="Seconds")
 
 # Plot raw firing rate
-scatter1 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate_raw,
+env.plot_field(
+    firing_rate_raw,
+    ax=axes[1],
     cmap="hot",
-    s=100,
     vmin=0,
-    edgecolors="none",
+    colorbar_label="Hz",
 )
 axes[1].set_title("Firing Rate (raw)", fontsize=14, fontweight="bold", pad=10)
-axes[1].set_xlabel("X (cm)", fontsize=12)
-axes[1].set_ylabel("Y (cm)", fontsize=12)
-axes[1].set_aspect("equal")
-plt.colorbar(scatter1, ax=axes[1], label="Hz")
 
 # Plot filtered firing rate
-scatter2 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate_filtered,
+env.plot_field(
+    firing_rate_filtered,
+    ax=axes[2],
     cmap="hot",
-    s=100,
     vmin=0,
-    edgecolors="none",
+    colorbar_label="Hz",
 )
 axes[2].set_title(
     "Firing Rate (filtered, min_occ=0.5s)", fontsize=14, fontweight="bold", pad=10
 )
-axes[2].set_xlabel("X (cm)", fontsize=12)
-axes[2].set_ylabel("Y (cm)", fontsize=12)
-axes[2].set_aspect("equal")
-plt.colorbar(scatter2, ax=axes[2], label="Hz")
 
 # Mark preferred location
 for ax in axes[1:]:
@@ -324,88 +453,19 @@ plt.show()
 # The filtered version is **standard practice** in place field analysis.
 
 # %% [markdown]
-# ### Smoothed Place Fields
+# **When to use manual approach:**
 #
-# For typical place field analysis, we also apply Gaussian smoothing using `compute_place_field()`:
-
-# %%
-# One-liner: spike conversion + smoothing
-place_field = compute_place_field(
-    env,
-    spike_times,
-    times,
-    positions,
-    min_occupancy_seconds=0.5,
-    smoothing_bandwidth=8.0,  # Gaussian kernel bandwidth (cm)
-)
-
-print(f"Place field peak: {np.nanmax(place_field):.2f} Hz")
-print(f"Number of valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
-
-# Note: compute_place_field() handles NaN values automatically during smoothing
-# by temporarily filling them with 0, smoothing, then restoring NaN.
-# This prevents smoothing errors but can reduce firing rates near boundaries.
-
-# %%
-# Visualize: raw vs smoothed
-fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-
-scatter0 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate_filtered,
-    cmap="hot",
-    s=100,
-    vmin=0,
-    edgecolors="none",
-)
-axes[0].set_title("Raw Firing Rate", fontsize=14, fontweight="bold", pad=10)
-axes[0].set_xlabel("X (cm)", fontsize=12)
-axes[0].set_ylabel("Y (cm)", fontsize=12)
-axes[0].set_aspect("equal")
-plt.colorbar(scatter0, ax=axes[0], label="Hz")
-axes[0].plot(
-    preferred_location[0],
-    preferred_location[1],
-    "*",
-    color=WONG_COLORS["cyan"],
-    markersize=18,
-    markeredgecolor="white",
-    markeredgewidth=2,
-)
-
-scatter1 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=place_field,
-    cmap="hot",
-    s=100,
-    vmin=0,
-    edgecolors="none",
-)
-axes[1].set_title(
-    "Smoothed Place Field (bandwidth=8 cm)", fontsize=14, fontweight="bold", pad=10
-)
-axes[1].set_xlabel("X (cm)", fontsize=12)
-axes[1].set_ylabel("Y (cm)", fontsize=12)
-axes[1].set_aspect("equal")
-plt.colorbar(scatter1, ax=axes[1], label="Hz")
-axes[1].plot(
-    preferred_location[0],
-    preferred_location[1],
-    "*",
-    color=WONG_COLORS["cyan"],
-    markersize=18,
-    markeredgecolor="white",
-    markeredgewidth=2,
-)
-
-plt.show()
+# - Need to inspect occupancy separately
+# - Want to apply custom smoothing methods
+# - Debugging place field computation
+# - Research requiring non-standard processing
+#
+# **For most applications, use `compute_place_field()` instead** (shown in Part 1).
 
 # %% [markdown]
 # ---
 #
-# ## Part 2: Reward Fields for Reinforcement Learning
+# ## Part 3: Reward Fields for Reinforcement Learning
 #
 # Reward shaping provides gradient information to help RL agents learn faster. However, it must be used carefully to avoid biasing policies toward suboptimal solutions.
 #
@@ -452,20 +512,15 @@ print(
 # Visualize region-based rewards
 fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-scatter0 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_constant,
+env.plot_field(
+    reward_constant,
+    ax=axes[0],
     cmap="viridis",
-    s=100,
     vmin=0,
     vmax=10,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[0].set_title("Constant (Sparse RL)", fontsize=12, fontweight="bold")
-axes[0].set_xlabel("X (cm)", fontsize=12)
-axes[0].set_ylabel("Y (cm)", fontsize=12)
-axes[0].set_aspect("equal")
 axes[0].plot(
     goal_location[0],
     goal_location[1],
@@ -476,22 +531,16 @@ axes[0].plot(
     label="Goal",
 )
 axes[0].legend()
-plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-scatter1 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_linear,
+env.plot_field(
+    reward_linear,
+    ax=axes[1],
     cmap="viridis",
-    s=100,
     vmin=0,
     vmax=10,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[1].set_title("Linear Decay", fontsize=12, fontweight="bold")
-axes[1].set_xlabel("X (cm)", fontsize=12)
-axes[1].set_ylabel("Y (cm)", fontsize=12)
-axes[1].set_aspect("equal")
 axes[1].plot(
     goal_location[0],
     goal_location[1],
@@ -502,22 +551,16 @@ axes[1].plot(
     label="Goal",
 )
 axes[1].legend()
-plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-scatter2 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_gaussian,
+env.plot_field(
+    reward_gaussian,
+    ax=axes[2],
     cmap="viridis",
-    s=100,
     vmin=0,
     vmax=10,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[2].set_title("Gaussian Falloff (bandwidth=12 cm)", fontsize=12, fontweight="bold")
-axes[2].set_xlabel("X (cm)", fontsize=12)
-axes[2].set_ylabel("Y (cm)", fontsize=12)
-axes[2].set_aspect("equal")
 axes[2].plot(
     goal_location[0],
     goal_location[1],
@@ -528,7 +571,6 @@ axes[2].plot(
     label="Goal",
 )
 axes[2].legend()
-plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
 plt.show()
 
@@ -573,18 +615,13 @@ print(f"  Inverse: max={np.max(reward_inverse):.2f}, min={np.min(reward_inverse)
 # Visualize goal-based rewards
 fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-scatter0 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_exponential,
+env.plot_field(
+    reward_exponential,
+    ax=axes[0],
     cmap="plasma",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[0].set_title("Exponential Decay (scale=15)", fontsize=12, fontweight="bold")
-axes[0].set_xlabel("X (cm)", fontsize=12)
-axes[0].set_ylabel("Y (cm)", fontsize=12)
-axes[0].set_aspect("equal")
 axes[0].plot(
     goal_location[0],
     goal_location[1],
@@ -595,20 +632,14 @@ axes[0].plot(
     label="Goal",
 )
 axes[0].legend()
-plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-scatter1 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_linear_cutoff,
+env.plot_field(
+    reward_linear_cutoff,
+    ax=axes[1],
     cmap="plasma",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[1].set_title("Linear Decay (cutoff=50 cm)", fontsize=12, fontweight="bold")
-axes[1].set_xlabel("X (cm)", fontsize=12)
-axes[1].set_ylabel("Y (cm)", fontsize=12)
-axes[1].set_aspect("equal")
 axes[1].plot(
     goal_location[0],
     goal_location[1],
@@ -619,20 +650,14 @@ axes[1].plot(
     label="Goal",
 )
 axes[1].legend()
-plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-scatter2 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=reward_inverse,
+env.plot_field(
+    reward_inverse,
+    ax=axes[2],
     cmap="plasma",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[2].set_title("Inverse Distance", fontsize=12, fontweight="bold")
-axes[2].set_xlabel("X (cm)", fontsize=12)
-axes[2].set_ylabel("Y (cm)", fontsize=12)
-axes[2].set_aspect("equal")
 axes[2].plot(
     goal_location[0],
     goal_location[1],
@@ -643,7 +668,6 @@ axes[2].plot(
     label="Goal",
 )
 axes[2].legend()
-plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
 plt.show()
 
@@ -683,18 +707,13 @@ print(f"Goal 2: bin {goal_bin_2} at {goal_loc_2}")
 # Visualize multi-goal reward
 fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
 
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=multi_goal_reward,
+env.plot_field(
+    multi_goal_reward,
+    ax=ax,
     cmap="plasma",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 ax.set_title("Multi-Goal Reward Field (Exponential)", fontsize=12, fontweight="bold")
-ax.set_xlabel("X (cm)", fontsize=12)
-ax.set_ylabel("Y (cm)", fontsize=12)
-ax.set_aspect("equal")
 ax.plot(
     goal_loc_1[0],
     goal_loc_1[1],
@@ -714,7 +733,6 @@ ax.plot(
     label="Goal 2",
 )
 ax.legend(loc="upper left")
-plt.colorbar(scatter, ax=ax, label="Reward")
 
 plt.show()
 
@@ -724,7 +742,7 @@ plt.show()
 # %% [markdown]
 # ---
 #
-# ## Part 3: Reward Shaping Best Practices
+# ## Part 4: Reward Shaping Best Practices
 #
 # ### Caution: When Shaping Can Hurt
 #
@@ -762,47 +780,29 @@ print(f"Combined reward max: {np.max(combined_reward):.1f}")
 # Visualize combined rewards
 fig, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
 
-scatter0 = axes[0].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=primary_reward,
+env.plot_field(
+    primary_reward,
+    ax=axes[0],
     cmap="viridis",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[0].set_title("Primary (Sparse)", fontsize=12, fontweight="bold")
-axes[0].set_xlabel("X (cm)", fontsize=12)
-axes[0].set_ylabel("Y (cm)", fontsize=12)
-axes[0].set_aspect("equal")
-plt.colorbar(scatter0, ax=axes[0], label="Reward")
 
-scatter1 = axes[1].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=shaping_reward * 0.1,
+env.plot_field(
+    shaping_reward * 0.1,
+    ax=axes[1],
     cmap="viridis",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[1].set_title("Shaping (Weighted 0.1x)", fontsize=12, fontweight="bold")
-axes[1].set_xlabel("X (cm)", fontsize=12)
-axes[1].set_ylabel("Y (cm)", fontsize=12)
-axes[1].set_aspect("equal")
-plt.colorbar(scatter1, ax=axes[1], label="Reward")
 
-scatter2 = axes[2].scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=combined_reward,
+env.plot_field(
+    combined_reward,
+    ax=axes[2],
     cmap="viridis",
-    s=100,
-    edgecolors="none",
+    colorbar_label="Reward",
 )
 axes[2].set_title("Combined Reward", fontsize=12, fontweight="bold")
-axes[2].set_xlabel("X (cm)", fontsize=12)
-axes[2].set_ylabel("Y (cm)", fontsize=12)
-axes[2].set_aspect("equal")
-plt.colorbar(scatter2, ax=axes[2], label="Reward")
 
 for ax in axes:
     ax.plot(

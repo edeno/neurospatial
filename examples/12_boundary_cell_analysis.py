@@ -18,19 +18,18 @@
 #
 # This notebook demonstrates how to analyze boundary cells (also called border cells) - neurons that fire preferentially near environmental boundaries. These cells were discovered by Solstad, Boccara, et al. (2008) and are thought to play a role in spatial navigation and path integration.
 #
-# **What you'll learn:**
-# 1. Generate synthetic border cell firing patterns
-# 2. Compute the border score metric (Solstad et al. 2008)
-# 3. Understand the components of border score calculation
-# 4. Compare border cells vs place cells
+# **Estimated time**: 15-20 minutes
 #
-# **Key concepts:**
-# - **Border score**: Quantifies how much a cell's firing field hugs environmental boundaries
-# - **Boundary coverage**: Fraction of boundary bins within the firing field
-# - **Mean distance**: Average distance from field bins to nearest boundary
-# - **Score range**: [-1, 1] where high positive values indicate border cells
+# ## Learning Objectives
 #
-# **Time estimate**: 15-20 minutes
+# By the end of this notebook, you will be able to:
+#
+# - Generate synthetic boundary cell firing patterns using simulation tools
+# - Compute the border score metric (Solstad et al. 2008) to quantify boundary tuning
+# - Understand the components of border score calculation (boundary coverage, mean distance)
+# - Interpret border score values (range [-1, 1], positive values indicate border cells)
+# - Compare and contrast boundary cells vs place cells in spatial tuning
+# - Use distance fields and boundary detection for analyzing spatial selectivity
 
 # %%
 import matplotlib.pyplot as plt
@@ -39,6 +38,7 @@ from matplotlib.patches import Patch
 
 from neurospatial import Environment
 from neurospatial.metrics import border_score
+from neurospatial.simulation import simulate_trajectory_ou
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -47,50 +47,40 @@ np.random.seed(42)
 # ## Part 1: Generate Synthetic Border Cell
 #
 # We'll create a 2D square arena with clear boundaries and simulate a border cell that fires preferentially along the walls of the environment.
+#
+# **Note on simulation**: This notebook uses the `neurospatial.simulation` subpackage for generating trajectories. For a complete boundary cell simulation including spike generation, see the `boundary_cell_session()` convenience function which creates a full session with both boundary cells and place cells.
 
 # %%
 # Generate 2D random walk in square arena (border cells need clear boundaries!)
-sampling_rate = 50.0  # Hz
-duration = 100.0  # seconds
-n_samples = int(duration * sampling_rate)
-times = np.linspace(0, duration, n_samples)
+# We'll use the simulation subpackage for a biologically realistic trajectory
 
 # Arena size: 80x80 cm square arena (clear boundaries for border cells)
 arena_size = 80.0  # cm
-arena_center = arena_size / 2
 
-# Random walk parameters
-step_size = 2.0  # cm per step
-boundary_margin = 5.0  # cm from walls
+# Create a grid of points spanning the arena
+n_points_per_dim = max(20, int(arena_size / 3.0) + 1)
+x = np.linspace(0, arena_size, n_points_per_dim)
+y = np.linspace(0, arena_size, n_points_per_dim)
+xx, yy = np.meshgrid(x, y)
+arena_data = np.column_stack([xx.ravel(), yy.ravel()])
 
-# Initialize trajectory
-positions = np.zeros((n_samples, 2))
-positions[0] = [arena_center, arena_center]  # Start at center
-
-# Generate random walk with wall reflection (explore near boundaries!)
-for i in range(1, n_samples):
-    # Random step direction
-    angle = np.random.uniform(0, 2 * np.pi)
-    step = step_size * np.array([np.cos(angle), np.sin(angle)])
-
-    # Propose new position
-    new_pos = positions[i - 1] + step
-
-    # Reflect at boundaries (with margin)
-    for dim in range(2):
-        if new_pos[dim] < boundary_margin:
-            new_pos[dim] = boundary_margin + (boundary_margin - new_pos[dim])
-        elif new_pos[dim] > (arena_size - boundary_margin):
-            new_pos[dim] = (arena_size - boundary_margin) - (
-                new_pos[dim] - (arena_size - boundary_margin)
-            )
-
-    positions[i] = new_pos
-
-# Create environment with 3cm bins
-env = Environment.from_samples(positions, bin_size=3.0)
+# Create environment first (needed for trajectory simulation)
+env = Environment.from_samples(arena_data, bin_size=3.0)
 env.units = "cm"
 env.frame = "arena"
+
+# Generate realistic trajectory using Ornstein-Uhlenbeck process
+duration = 100.0  # seconds
+positions, times = simulate_trajectory_ou(
+    env,
+    duration=duration,
+    dt=0.02,  # 50 Hz sampling
+    speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
+    speed_std=0.4,  # cm/s (speed variability)
+    coherence_time=0.7,  # Smooth, persistent movement
+    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
+    seed=42,
+)
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm square arena")
 print(f"  {env.n_bins} bins, {env.n_dims}D")
@@ -125,37 +115,23 @@ fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
 
 # Left: Firing rate
 ax = axes[0]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=border_cell_rate,
+env.plot_field(
+    border_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Border Cell Firing Rate", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Firing Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Right: Distance to boundary
 ax = axes[1]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=boundary_distances,
+env.plot_field(
+    boundary_distances,
+    ax=ax,
     cmap="viridis",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Distance (cm)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Distance to Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Distance (cm)", fontsize=11, fontweight="bold")
 
 plt.show()
 
@@ -277,22 +253,15 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
 # Panel 1: Field segmentation
 ax = axes[0]
 colors = np.where(field_mask, border_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Firing Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Field Segmentation (>{threshold * 100:.0f}% peak)", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Firing Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Panel 2: Boundary bins
 ax = axes[1]
@@ -300,20 +269,15 @@ colors = np.full(env.n_bins, np.nan)
 colors[boundary_bins] = 1.0  # Boundary bins
 colors[field_bins] = 2.0  # Field bins
 colors[np.where(boundary_in_field)[0]] = 3.0  # Overlap
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="Set1",
-    s=50,
-    edgecolors="none",
     vmin=0,
     vmax=4,
+    colorbar=False,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Boundary Coverage", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
 # Manual legend
 legend_elements = [
     Patch(facecolor="#e41a1c", label="Boundary bins"),
@@ -326,24 +290,17 @@ ax.legend(handles=legend_elements, fontsize=10, loc="upper right")
 ax = axes[2]
 colors = np.full(env.n_bins, np.nan)
 colors[field_bins] = field_distances
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="viridis",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Distance (cm)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Field Distance to Boundary\n(mean = {mean_distance:.1f} cm)",
     fontsize=14,
     fontweight="bold",
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Distance (cm)", fontsize=11, fontweight="bold")
 
 plt.show()
 
@@ -369,53 +326,37 @@ fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
 
 # Row 1: Border cell
 ax = axes[0, 0]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=border_cell_rate,
+env.plot_field(
+    border_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Border Cell\nScore = {border_score_border:.3f}", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 1: Place cell
 ax = axes[0, 1]
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=place_cell_rate,
+env.plot_field(
+    place_cell_rate,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title(
     f"Place Cell\nScore = {border_score_place:.3f}", fontsize=14, fontweight="bold"
 )
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 2: Border cell field
 ax = axes[1, 0]
 field_mask_border = border_cell_rate >= (0.3 * border_cell_rate.max())
 colors = np.where(field_mask_border, border_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
 # Highlight boundary bins
 boundary_x = env.bin_centers[boundary_bins, 0]
@@ -429,24 +370,17 @@ ax.scatter(
     linewidths=2,
     alpha=0.5,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Field Overlaps Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 # Row 2: Place cell field
 ax = axes[1, 1]
 field_mask_place = place_cell_rate >= (0.3 * place_cell_rate.max())
 colors = np.where(field_mask_place, place_cell_rate, np.nan)
-scatter = ax.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=colors,
+env.plot_field(
+    colors,
+    ax=ax,
     cmap="hot",
-    s=50,
-    edgecolors="none",
+    colorbar_label="Rate (Hz)",
 )
 # Highlight boundary bins
 ax.scatter(
@@ -458,12 +392,7 @@ ax.scatter(
     linewidths=2,
     alpha=0.5,
 )
-ax.set_xlabel("X position (cm)", fontsize=12, fontweight="bold")
-ax.set_ylabel("Y position (cm)", fontsize=12, fontweight="bold")
 ax.set_title("Field Away from Boundary", fontsize=14, fontweight="bold")
-ax.set_aspect("equal")
-cbar = plt.colorbar(scatter, ax=ax)
-cbar.set_label("Rate (Hz)", fontsize=11, fontweight="bold")
 
 plt.show()
 
