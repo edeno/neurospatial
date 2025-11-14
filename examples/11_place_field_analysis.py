@@ -562,47 +562,33 @@ print(
 
 # %%
 # Create T-maze shape using Shapely polygons
-# T-maze dimensions (cm)
-stem_width = 15.0
-stem_length = 60.0
-arm_width = 15.0
-arm_length = 50.0
-start_box_size = 20.0
+# Simple T-maze with uniform corridor width throughout
+corridor_width = 15.0  # Width of all corridors
+stem_length = 60.0  # Length of vertical stem
+arm_length = 50.0  # Length of each horizontal arm from center
 
 # Small overlap to ensure boxes merge into a single polygon
 overlap = 0.1
 
-# Create component rectangles with slight overlaps to ensure proper merging
-# Start box at bottom (extends slightly into stem)
-start_box = box(-start_box_size / 2, 0, start_box_size / 2, start_box_size + overlap)
-
-# Stem extending upward from start box (extends slightly into arms)
+# Create T-maze as two intersecting rectangles
+# Vertical stem (from bottom to junction)
 stem = box(
-    -stem_width / 2,
-    start_box_size,
-    stem_width / 2,
-    start_box_size + stem_length + overlap,
+    -corridor_width / 2,
+    0,  # Start at y=0 (bottom)
+    corridor_width / 2,
+    stem_length + overlap,  # Extend slightly into horizontal bar
 )
 
-# Left arm (extends from far left to slightly past center, overlapping with right arm)
-left_arm = box(
-    -(arm_length + stem_width / 2),
-    start_box_size + stem_length - overlap,
-    overlap,  # Extends past center to overlap with right arm
-    start_box_size + stem_length + arm_width,
+# Horizontal bar at top (single continuous rectangle)
+horizontal_bar = box(
+    -arm_length,  # Left edge
+    stem_length - overlap,  # Slightly below stem top for overlap
+    arm_length,  # Right edge
+    stem_length + corridor_width,  # Top edge
 )
 
-# Right arm (extends from slightly before center to far right, overlapping with left arm)
-right_arm = box(
-    -overlap,  # Extends past center to overlap with left arm
-    start_box_size + stem_length - overlap,
-    arm_length + stem_width / 2,
-    start_box_size + stem_length + arm_width,
-)
-
-# Combine all parts into single T-maze polygon
-# With overlaps, unary_union creates a single merged Polygon
-tmaze_polygon = unary_union([start_box, stem, left_arm, right_arm])
+# Combine stem and horizontal bar into single T-maze polygon
+tmaze_polygon = unary_union([stem, horizontal_bar])
 
 # Create environment from polygon
 tmaze_env = Environment.from_polygon(
@@ -633,8 +619,8 @@ print(
 print(f"  Maze extent: {tmaze_polygon.bounds}")
 
 # Create a single place cell for the T-maze
-# Position field at choice point (junction of stem and arms)
-tmaze_field_center = np.array([0.0, start_box_size + stem_length])
+# Position field at choice point (junction of stem and horizontal arms)
+tmaze_field_center = np.array([0.0, stem_length])
 
 pc_tmaze = PlaceCellModel(
     tmaze_env,
@@ -1148,9 +1134,9 @@ print(
 )
 print(f"T-maze is 2D polygon with {tmaze_env.n_bins} bins")
 
-# Session A: Place field at stem start (bottom of start box)
+# Session A: Place field at stem start (bottom of stem)
 # Using coordinates from the Shapely-based T-maze
-stem_start_center = np.array([0.0, start_box_size / 2])  # Center of start box
+stem_start_center = np.array([0.0, stem_length / 4])  # Bottom quarter of stem
 pc_stem = PlaceCellModel(
     tmaze_env,
     center=stem_start_center,
@@ -1179,8 +1165,8 @@ rate_stem = compute_place_field(
 # Session B: Place field at left arm end (far from stem start)
 # Left arm center: midpoint along the left arm
 left_arm_end_center = np.array(
-    [-(arm_length / 2 + stem_width / 2), start_box_size + stem_length + arm_width / 2]
-)  # Center of left arm
+    [-(arm_length * 0.75), stem_length + corridor_width / 2]
+)  # 3/4 along left arm
 pc_arm = PlaceCellModel(
     tmaze_env,
     center=left_arm_end_center,
