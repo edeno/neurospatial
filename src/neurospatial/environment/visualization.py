@@ -496,7 +496,7 @@ def _plot_grid_field(
         vmin=vmin,
         vmax=vmax,
         rasterized=rasterized,
-        shading="auto",
+        shading="flat",
         **kwargs,
     )
 
