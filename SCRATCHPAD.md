@@ -5,9 +5,61 @@
 
 ## Current Status
 
-Working on: **Task 1.3 - Numerical: Float Comparison in Hexagonal [CRITICAL]** - ✅ READY TO COMMIT
+Working on: **Task 1.4 - Correctness: Region Metadata Mutability [CRITICAL]** - ✅ READY TO COMMIT
 
 ## Session Notes
+
+### 2025-11-14: Task 1.4 - Region Metadata Mutability ✅ COMPLETED
+
+**Status**: Complete - Code reviewer approved
+
+**Summary**:
+Successfully fixed critical metadata mutability bug in Region class by replacing shallow copy with deep copy, preventing silent data corruption when external metadata dictionaries are modified.
+
+**Implementation Details**:
+- **Key Issue**: Region.__post_init__ used `dict(self.metadata)` which creates a **shallow copy**. This means nested dicts/lists were shared by reference, allowing external modifications to corrupt Region metadata.
+- Added `import copy` to regions/core.py (line 9)
+- Replaced `dict(self.metadata)` with `copy.deepcopy(self.metadata)` in __post_init__ (line 67)
+- Updated comment to explain deep copy vs shallow copy (lines 65-66)
+
+**Tests Added** (3 new tests in TestRegionMetadataImmutability class):
+1. `test_metadata_isolated_from_external_modification()` - Tests top-level dict isolation
+2. `test_nested_metadata_isolated_from_external_modification()` - Tests nested dict/list isolation (critical test for deep copy)
+3. `test_metadata_empty_dict_default()` - Tests that default empty dicts are not shared
+
+**Test Results**:
+- ✅ All 3 new metadata immutability tests PASS
+- ✅ All 33 region core tests PASS (30 existing + 3 new)
+- ✅ Zero regressions
+- ✅ Ruff: All checks passed
+- ✅ Mypy: Success: no issues found in 1 source file
+
+**Code Review Feedback** (code-reviewer agent):
+- ✅ **APPROVED** - Production-ready
+- **Rating**: EXCELLENT - "Textbook example of a high-quality bug fix"
+- **Strengths noted**:
+  - Correctly identified root cause (shallow vs deep copy)
+  - Minimal, targeted fix (only 3 lines changed)
+  - Comprehensive test coverage with clear documentation
+  - Zero regressions
+  - Performance impact acceptable (<10μs for typical metadata)
+  - Backward compatible
+- **Minor suggestions** (not blocking):
+  - Consider adding performance note to docstring (low priority)
+  - Consider JSON-serialization validation (defer to future)
+
+**TDD Process Followed**:
+1. ✅ Read regions/core.py to understand Region implementation
+2. ✅ Wrote 3 comprehensive tests for metadata immutability
+3. ✅ Ran tests - 1 FAILED as expected (nested dict mutation detected)
+4. ✅ Added copy import and replaced dict() with copy.deepcopy()
+5. ✅ All tests PASS (33/33)
+6. ✅ Applied code-reviewer agent - APPROVED
+7. ✅ Ruff and mypy pass
+
+**Time**: ~30 minutes (within 2h estimate)
+
+---
 
 ### 2025-11-14: Task 1.3 - Numerical Stability in Hexagonal Layout ✅ COMPLETED
 

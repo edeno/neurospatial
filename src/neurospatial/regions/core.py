@@ -6,6 +6,7 @@ Pure data layer for *continuous* regions of interest (ROIs).
 
 from __future__ import annotations
 
+import copy
 import json
 import warnings
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
@@ -61,8 +62,9 @@ class Region:
     # Validation
     # -----------------------------------------------------------------
     def __post_init__(self) -> None:
-        # Freeze metadata to prevent accidental mutation through aliasing
-        object.__setattr__(self, "metadata", dict(self.metadata))
+        # Deep copy metadata to prevent accidental mutation through aliasing
+        # Use copy.deepcopy() instead of dict() to handle nested dicts/lists
+        object.__setattr__(self, "metadata", copy.deepcopy(self.metadata))
 
         if self.kind == "point":
             if isinstance(self.data, Point):

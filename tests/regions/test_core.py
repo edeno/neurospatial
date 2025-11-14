@@ -255,6 +255,96 @@ def test_regions_update_region_preserves_metadata():
     assert updated.metadata["size"] == 10
 
 
+class TestRegionMetadataImmutability:
+    """Test that Region metadata is truly immutable and isolated from external changes.
+
+    These tests verify that Region metadata is deep-copied on creation, preventing
+    accidental mutation through external references to the original metadata dict.
+    """
+
+    def test_metadata_isolated_from_external_modification(self):
+        """Test that modifying original metadata dict doesn't affect Region.
+
+        Bug: Region.__post_init__ uses dict() which creates a shallow copy.
+        This means if you modify the original dict after creating the Region,
+        the Region's metadata also changes (for nested dicts/lists).
+        """
+        # Create metadata dict
+        original_metadata = {"color": "red", "type": "goal"}
+
+        # Create region with metadata
+        region = Region(
+            name="test", kind="point", data=[10.0, 10.0], metadata=original_metadata
+        )
+
+        # Verify initial state
+        assert region.metadata["color"] == "red"
+        assert region.metadata["type"] == "goal"
+
+        # Modify original dict - this should NOT affect the Region
+        original_metadata["color"] = "blue"
+        original_metadata["type"] = "start"
+
+        # Region metadata should be unchanged (isolated from external changes)
+        assert region.metadata["color"] == "red", (
+            "Region metadata was mutated by external change to original dict! "
+            "Metadata should be deep-copied on creation."
+        )
+        assert region.metadata["type"] == "goal"
+
+    def test_nested_metadata_isolated_from_external_modification(self):
+        """Test that modifying nested structures in original metadata doesn't affect Region.
+
+        This is the critical test for deep copy vs shallow copy. With shallow copy,
+        nested dicts/lists are shared by reference.
+        """
+        # Create metadata with nested dict
+        original_metadata = {
+            "color": "red",
+            "properties": {"size": 10, "visible": True},
+            "tags": ["important", "goal"],
+        }
+
+        # Create region
+        region = Region(
+            name="test", kind="point", data=[10.0, 10.0], metadata=original_metadata
+        )
+
+        # Verify initial state
+        assert region.metadata["properties"]["size"] == 10
+        assert region.metadata["properties"]["visible"] is True
+        assert region.metadata["tags"] == ["important", "goal"]
+
+        # Modify nested structures in original metadata
+        original_metadata["properties"]["size"] = 20
+        original_metadata["properties"]["visible"] = False
+        original_metadata["tags"].append("new_tag")
+
+        # Region metadata should be unchanged (deep copy protection)
+        assert region.metadata["properties"]["size"] == 10, (
+            "Nested metadata dict was mutated! Shallow copy detected. "
+            "Need copy.deepcopy() not dict()."
+        )
+        assert region.metadata["properties"]["visible"] is True
+        assert region.metadata["tags"] == ["important", "goal"]
+
+    def test_metadata_empty_dict_default(self):
+        """Test that omitting metadata creates an empty dict (not shared reference)."""
+        # Create two regions without metadata
+        region1 = Region(name="r1", kind="point", data=[1.0, 2.0])
+        region2 = Region(name="r2", kind="point", data=[3.0, 4.0])
+
+        # Both should have empty metadata
+        assert region1.metadata == {}
+        assert region2.metadata == {}
+
+        # They should NOT share the same dict object
+        assert region1.metadata is not region2.metadata, (
+            "Regions are sharing the same default metadata dict! "
+            "Each Region should have its own metadata instance."
+        )
+
+
 @pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_regions_update_region_change_kind():
     """Test updating a region to a different kind (point -> polygon)."""
