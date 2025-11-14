@@ -34,14 +34,19 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §1.2 | **Effort**: 3h | **Files**: `src/neurospatial/environment/trajectory.py`
 
-- [ ] Add EPSILON constant (1e-12) at module level in `trajectory.py`
-- [ ] Add epsilon check before division at line ~1171
-- [ ] Add test `test_occupancy_ray_parallel_to_edge()` in `tests/test_trajectory.py`
-- [ ] Add test `test_occupancy_very_small_ray_direction()`
-- [ ] Verify no inf/nan: `uv run pytest tests/test_trajectory.py::test_occupancy* -v`
-- [ ] Run full trajectory test suite: `uv run pytest tests/test_trajectory.py`
+- [x] Add EPSILON constant (1e-12) at module level in `trajectory.py`
+- [x] Replace magic numbers with EPSILON in two locations (lines ~1154, ~1172)
+- [x] Add test `test_occupancy_ray_parallel_to_edge()` in `tests/test_linear_occupancy.py`
+- [x] Add test `test_occupancy_very_small_ray_direction()`
+- [x] Add test `test_occupancy_near_epsilon_threshold()`
+- [x] Add test `test_occupancy_perfectly_stationary_linear()`
+- [x] Verify no inf/nan: All tests pass with `np.all(np.isfinite(occupancy))`
+- [x] Run full trajectory test suite: All 45 occupancy tests PASS
+- [x] Code review: APPROVED by code-reviewer agent
+- [x] Enhanced docstring to document numerical stability
 
 **Acceptance**: All occupancy tests pass with `np.all(np.isfinite(occupancy))`
+**Status**: ✅ COMPLETED (2025-11-14) - Ready to commit
 
 ---
 

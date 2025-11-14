@@ -342,6 +342,120 @@ class TestLinearOccupancyIntegration:
         assert_allclose(occupancy.sum(), expected_time, rtol=1e-6)
 
 
+class TestLinearOccupancyNumericalStability:
+    """Test numerical stability for edge cases in linear allocation.
+
+    These tests verify that the ray-grid intersection algorithm handles
+    edge cases without producing inf/nan values.
+    """
+
+    def test_occupancy_ray_parallel_to_edge(self):
+        """Test trajectory segment parallel to grid edge (ray_dir[dim] ≈ 0).
+
+        When a ray is perfectly parallel to a grid edge, the ray direction
+        component in that dimension is zero. The algorithm should skip
+        division by zero and handle this gracefully.
+        """
+        # Create grid
+        positions = np.array([[i, j] for i in range(11) for j in range(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        # Movement only in x direction (parallel to y-edges)
+        # ray_dir = [10.0, 0.0] → ray_dir[1] = 0.0 after normalization
+        times = np.array([0.0, 1.0])
+        trajectory = np.array([[1.0, 5.0], [9.0, 5.0]])
+
+        # Should not produce inf/nan
+        occupancy = env.occupancy(
+            times, trajectory, time_allocation="linear", max_gap=None
+        )
+
+        # Verify no inf/nan values
+        assert np.all(np.isfinite(occupancy)), "Occupancy contains inf/nan values"
+        assert np.sum(occupancy) > 0, "Occupancy should be non-zero"
+        assert_allclose(occupancy.sum(), 1.0, rtol=1e-6)
+
+    def test_occupancy_very_small_ray_direction(self):
+        """Test trajectory with very small movement in one dimension.
+
+        When movement in one dimension is tiny (but non-zero), we approach
+        the numerical stability limit. This tests that epsilon threshold
+        properly prevents division by near-zero values.
+        """
+        # Create grid
+        positions = np.array([[i, j] for i in range(11) for j in range(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        # Very small movement in y direction (1e-14), large in x
+        # This tests the epsilon threshold (should be ~1e-12)
+        times = np.array([0.0, 1.0])
+        trajectory = np.array([[1.0, 5.0], [9.0, 5.0 + 1e-14]])
+
+        # Should handle gracefully (treat y as parallel since movement < epsilon)
+        occupancy = env.occupancy(
+            times, trajectory, time_allocation="linear", max_gap=None
+        )
+
+        # Verify no inf/nan values
+        assert np.all(np.isfinite(occupancy)), "Occupancy contains inf/nan values"
+        assert np.sum(occupancy) > 0
+        assert_allclose(occupancy.sum(), 1.0, rtol=1e-6)
+
+    def test_occupancy_near_epsilon_threshold(self):
+        """Test ray direction component near but above epsilon threshold.
+
+        Tests that ray direction components just above the epsilon threshold
+        (~1e-12) are handled correctly without numerical issues.
+        """
+        # Create grid
+        positions = np.array([[i, j] for i in range(11) for j in range(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        # Movement slightly above epsilon threshold in y
+        # If epsilon is 1e-12, use 1e-10 (100x above threshold)
+        times = np.array([0.0, 1.0])
+        small_dy = 1e-10
+        trajectory = np.array([[1.0, 5.0], [9.0, 5.0 + small_dy]])
+
+        # Should handle without issues
+        occupancy = env.occupancy(
+            times, trajectory, time_allocation="linear", max_gap=None
+        )
+
+        # Verify numerical stability
+        assert np.all(np.isfinite(occupancy)), "Occupancy contains inf/nan values"
+        assert np.sum(occupancy) > 0
+        # Total time should be conserved
+        assert_allclose(occupancy.sum(), 1.0, rtol=1e-6)
+
+    def test_occupancy_perfectly_stationary_linear(self):
+        """Test zero-distance ray (start == end).
+
+        When start and end positions are identical, total_distance = 0.
+        This should be handled before any division occurs.
+        """
+        # Create grid
+        positions = np.array([[i, j] for i in range(11) for j in range(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        # Stationary (no movement)
+        times = np.array([0.0, 1.0])
+        trajectory = np.array([[5.0, 5.0], [5.0, 5.0]])
+
+        # Should allocate all time to starting bin
+        occupancy = env.occupancy(
+            times, trajectory, time_allocation="linear", max_gap=None
+        )
+
+        # Verify no inf/nan
+        assert np.all(np.isfinite(occupancy)), "Occupancy contains inf/nan values"
+
+        # All time should be in the starting bin
+        bin_idx = env.bin_at([5.0, 5.0])
+        assert_allclose(occupancy[bin_idx], 1.0, rtol=1e-6)
+        assert_allclose(occupancy.sum(), 1.0, rtol=1e-6)
+
+
 class TestLinearOccupancyAccuracy:
     """Test accuracy of linear allocation against known solutions."""
 

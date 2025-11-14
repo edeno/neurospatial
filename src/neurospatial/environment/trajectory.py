@@ -39,6 +39,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
 
 
+# Numerical stability constants
+# Epsilon threshold for detecting near-zero values in ray-grid intersection.
+# Used to prevent division by zero when ray direction components are parallel
+# to grid edges. Values below this threshold are treated as exactly zero.
+EPSILON = 1e-12
+
+
 class EnvironmentTrajectory:
     """Trajectory analysis methods mixin.
 
@@ -1136,6 +1143,14 @@ class EnvironmentTrajectory:
         bin_times : list[tuple[int, float]]
             List of (bin_index, time_in_bin) pairs.
 
+        Notes
+        -----
+        Numerical Stability: This method uses an epsilon threshold (EPSILON = 1e-12)
+        to prevent division by zero. Ray direction components smaller than EPSILON
+        are treated as zero (parallel to grid edges), avoiding numerical instabilities
+        when trajectories are aligned with grid axes or have very small movements
+        in certain dimensions.
+
         """
         n_dims = len(grid_shape)
 
@@ -1144,7 +1159,7 @@ class EnvironmentTrajectory:
         total_distance = np.linalg.norm(ray_dir)
 
         # Handle zero-distance case (no movement)
-        if total_distance < 1e-12:
+        if total_distance < EPSILON:
             # No movement - allocate all time to starting bin
             start_bin_idx = self._position_to_flat_index(
                 start_pos, list(grid_edges), grid_shape
@@ -1160,7 +1175,9 @@ class EnvironmentTrajectory:
         crossings: list[tuple[float, int, int]] = []  # (t, dim, grid_index)
 
         for dim in range(n_dims):
-            if abs(ray_dir[dim]) < 1e-12:
+            # Skip dimensions where ray is parallel to grid edges
+            # This prevents division by zero in parametric intersection calculation
+            if abs(ray_dir[dim]) < EPSILON:
                 # Ray parallel to this dimension - no crossings
                 continue
 
