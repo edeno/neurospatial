@@ -18,7 +18,7 @@
 #
 # This notebook demonstrates how to detect and analyze place fields using the neurospatial metrics module.
 #
-# **Estimated time**: 15-20 minutes
+# **Estimated time**: 30-35 minutes
 #
 # ## Learning Objectives
 #
@@ -29,6 +29,8 @@
 # - Calculate field properties including size, centroid, and peak location
 # - Visualize place fields overlaid on spatial environments
 # - Analyze spatial alternation tasks on T-maze environments
+# - Measure place field shift between sessions using Euclidean and geodesic distances
+# - Understand when to use Euclidean vs geodesic distance for shift measurement
 # - Use simulation tools to validate place field detection algorithms
 
 # %%
@@ -40,6 +42,7 @@ from neurospatial import Environment, compute_place_field
 from neurospatial.metrics import (
     detect_place_fields,
     field_centroid,
+    field_shift_distance,
     field_size,
     field_stability,
     skaggs_information,
@@ -77,7 +80,7 @@ np.random.seed(42)
 # %%
 # Generate 2D open field arena using simulation subpackage
 arena_size = 100.0  # cm
-duration = 100.0  # seconds
+duration = 600.0  # seconds
 
 # Create arena environment from grid
 n_grid = 50
@@ -88,7 +91,7 @@ arena_data = np.column_stack([xx.ravel(), yy.ravel()])
 
 env = Environment.from_samples(
     arena_data,
-    bin_size=3.0,
+    bin_size=5.0,
     bin_count_threshold=1,
 )
 env.units = "cm"
@@ -103,7 +106,7 @@ positions, times = simulate_trajectory_ou(
     speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # Natural exploration smoothness
-    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
+    boundary_mode="reflect",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
 )
 
@@ -186,7 +189,6 @@ env.plot_field(
     firing_rate,
     ax=ax,
     cmap="hot",
-    vmin=0,
     colorbar_label="Firing Rate (Hz)",
 )
 
@@ -252,7 +254,6 @@ env.plot_field(
     firing_rate,
     ax=ax,
     cmap="hot",
-    vmin=0,
     colorbar_label="Firing Rate (Hz)",
 )
 
@@ -412,7 +413,6 @@ for ax, rate_map, title in zip(
         rate_map,
         ax=ax,
         cmap="hot" if "Difference" not in title else "viridis",
-        vmin=0,
         vmax=np.nanmax(firing_rate),
         colorbar_label="Firing Rate (Hz)",
     )
@@ -678,7 +678,6 @@ env.plot_field(
     firing_rate,
     ax=axes[0],
     cmap="hot",
-    vmin=0,
     colorbar_label="Firing Rate (Hz)",
 )
 axes[0].scatter(
@@ -700,7 +699,6 @@ tmaze_env.plot_field(
     tmaze_firing_rate,
     ax=axes[1],
     cmap="hot",
-    vmin=0,
     colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
@@ -795,6 +793,524 @@ print("  0.3-0.7: Partial remapping")
 print("  < 0.3: Complete remapping (this cell)")
 
 # %% [markdown]
+# ---
+#
+# ## Part 9: Measuring Place Field Shift
+#
+# When analyzing place fields across sessions or conditions, we often want to quantify **how much a place field has shifted in position**. The `field_shift_distance()` function computes the distance between field centroids and supports both:
+#
+# - **Euclidean distance**: Straight-line distance (fast, appropriate for open fields)
+# - **Geodesic distance**: Shortest path through environment connectivity (respects walls and barriers)
+#
+# We'll demonstrate both approaches with clear examples where the shift is obvious and measurable.
+
+# %% [markdown]
+# ### Example 1: Linear Track with Known Shift (Euclidean Distance)
+#
+# First, let's create a simple 2D rectangular environment and simulate two sessions where the same place cell's field shifts by a known amount. This demonstrates Euclidean distance measurement where the answer is obvious.
+
+# %%
+# Create a simple 2D rectangular environment (like a linear track)
+# Match 08_spike_field_basics.py approach: create REGULAR GRID first, then generate trajectory
+# This avoids masked grids which cause grey squares in visualization
+
+# Define track boundaries
+track_length = 100.0  # cm
+track_width = 30.0  # cm (narrow corridor)
+bin_size = 5.0  # cm
+
+# Create proper regular grid covering the track (like 08_spike_field_basics.py does)
+x = np.linspace(0, track_length, int(track_length / bin_size) + 1)
+y = np.linspace(40, 40 + track_width, int(track_width / bin_size) + 1)
+xx, yy = np.meshgrid(x, y)
+track_grid_data = np.column_stack([xx.ravel(), yy.ravel()])
+
+# Create environment from regular grid (NOT from trajectory)
+track_env = Environment.from_samples(
+    track_grid_data,
+    bin_size=bin_size,
+)
+track_env.units = "cm"
+track_env.frame = "linear_track"
+
+# Generate trajectory on this environment
+track_positions, track_times = simulate_trajectory_ou(
+    track_env,
+    duration=600.0,  # Long duration for complete coverage
+    dt=0.02,
+    speed_mean=10.0,
+    speed_std=3.0,
+    coherence_time=0.5,  # More exploration
+    boundary_mode="reflect",
+    seed=100,
+)
+
+print(f"Linear track environment: {track_env.n_bins} bins")
+print(
+    f"  Extent: x=[{track_env.dimension_ranges[0][0]:.1f}, {track_env.dimension_ranges[0][1]:.1f}] cm"
+)
+print(
+    f"  Width: y=[{track_env.dimension_ranges[1][0]:.1f}, {track_env.dimension_ranges[1][1]:.1f}] cm"
+)
+
+# DIAGNOSTIC: Check if environment has active_mask (which causes grey squares)
+if (
+    hasattr(track_env.layout, "active_mask")
+    and track_env.layout.active_mask is not None
+):
+    print("  ⚠️  Environment has MASKED GRID")
+    print(f"  Grid shape: {track_env.layout.grid_shape}")
+    print(f"  Active bins: {track_env.n_bins}")
+    print(f"  Total grid cells: {np.prod(track_env.layout.grid_shape)}")
+    print(
+        f"  Inactive (grey) bins: {np.prod(track_env.layout.grid_shape) - track_env.n_bins}"
+    )
+else:
+    print("  ✓ Regular grid (no masking)")
+
+# Session 1: Place field at x=30 cm
+field_center_session1 = np.array([30.0, 50.0])
+pc_session1 = PlaceCellModel(
+    track_env,
+    center=field_center_session1,
+    width=8.0,
+    max_rate=15.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=100,
+)
+
+spikes_session1 = generate_poisson_spikes(
+    firing_rate=pc_session1.firing_rate(track_positions, track_times),
+    times=track_times,
+    refractory_period=0.002,
+    seed=100,
+)
+
+rate_session1 = compute_place_field(
+    track_env,
+    spikes_session1,
+    track_times,
+    track_positions,
+    bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
+)
+
+# Session 2: Same cell, but field shifted 20 cm to the right (x=50 cm)
+field_center_session2 = np.array([50.0, 50.0])  # 20 cm shift
+pc_session2 = PlaceCellModel(
+    track_env,
+    center=field_center_session2,
+    width=8.0,
+    max_rate=15.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=100,
+)
+
+spikes_session2 = generate_poisson_spikes(
+    firing_rate=pc_session2.firing_rate(track_positions, track_times),
+    times=track_times,
+    refractory_period=0.002,
+    seed=101,
+)
+
+rate_session2 = compute_place_field(
+    track_env,
+    spikes_session2,
+    track_times,
+    track_positions,
+    bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
+)
+
+print(f"\nSession 1: {len(spikes_session1)} spikes, field at {field_center_session1}")
+print(f"Session 2: {len(spikes_session2)} spikes, field at {field_center_session2}")
+print(
+    f"Ground truth shift: {np.linalg.norm(field_center_session2 - field_center_session1):.1f} cm"
+)
+
+# %%
+# Detect fields in both sessions
+fields_session1 = detect_place_fields(
+    rate_session1,
+    track_env,
+    threshold=0.2,
+    detect_subfields=False,
+)
+
+fields_session2 = detect_place_fields(
+    rate_session2,
+    track_env,
+    threshold=0.2,
+    detect_subfields=False,
+)
+
+print("\nDetected fields:")
+print(f"  Session 1: {len(fields_session1)} field(s)")
+print(f"  Session 2: {len(fields_session2)} field(s)")
+
+# Compute centroids
+if len(fields_session1) > 0 and len(fields_session2) > 0:
+    centroid_s1 = field_centroid(rate_session1, fields_session1[0], track_env)
+    centroid_s2 = field_centroid(rate_session2, fields_session2[0], track_env)
+
+    print("\nDetected centroids:")
+    print(f"  Session 1: ({centroid_s1[0]:.1f}, {centroid_s1[1]:.1f}) cm")
+    print(f"  Session 2: ({centroid_s2[0]:.1f}, {centroid_s2[1]:.1f}) cm")
+
+# %%
+# Measure place field shift using field_shift_distance()
+if len(fields_session1) > 0 and len(fields_session2) > 0:
+    shift_distance = field_shift_distance(
+        rate_session1,
+        fields_session1[0],
+        track_env,
+        rate_session2,
+        fields_session2[0],
+        track_env,
+        use_geodesic=False,  # Euclidean distance
+    )
+
+    # Compare to ground truth
+    ground_truth_shift = np.linalg.norm(field_center_session2 - field_center_session1)
+    error = abs(shift_distance - ground_truth_shift)
+
+    print("\n" + "=" * 60)
+    print("PLACE FIELD SHIFT MEASUREMENT (Euclidean)")
+    print("=" * 60)
+    print(f"Measured shift:      {shift_distance:.2f} cm")
+    print(f"Ground truth shift:  {ground_truth_shift:.2f} cm")
+    print(f"Measurement error:   {error:.2f} cm")
+    print(f"Accuracy:            {(1 - error / ground_truth_shift) * 100:.1f}%")
+
+# %%
+# Visualize the shift
+fig, axes = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True)
+
+# Session 1 - let colormap autoscale to avoid black appearance of low firing rates
+track_env.plot_field(
+    rate_session1,
+    ax=axes[0],
+    cmap="hot",
+    colorbar_label="Firing Rate (Hz)",
+)
+axes[0].scatter(
+    field_center_session1[0],
+    field_center_session1[1],
+    s=400,
+    c="cyan",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="True Center",
+    zorder=10,
+)
+if len(fields_session1) > 0:
+    axes[0].scatter(
+        centroid_s1[0],
+        centroid_s1[1],
+        s=300,
+        c="lime",
+        marker="X",
+        edgecolors="black",
+        linewidths=2,
+        label="Detected Centroid",
+        zorder=10,
+    )
+axes[0].set_title("Session 1: Field at x=30 cm", fontsize=14, fontweight="bold")
+axes[0].legend(fontsize=11)
+
+# Session 2
+track_env.plot_field(
+    rate_session2,
+    ax=axes[1],
+    cmap="hot",
+    colorbar_label="Firing Rate (Hz)",
+)
+axes[1].scatter(
+    field_center_session2[0],
+    field_center_session2[1],
+    s=400,
+    c="cyan",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="True Center",
+    zorder=10,
+)
+if len(fields_session2) > 0:
+    axes[1].scatter(
+        centroid_s2[0],
+        centroid_s2[1],
+        s=300,
+        c="lime",
+        marker="X",
+        edgecolors="black",
+        linewidths=2,
+        label="Detected Centroid",
+        zorder=10,
+    )
+    # Draw arrow showing shift
+    axes[1].annotate(
+        "",
+        xy=(centroid_s2[0], centroid_s2[1]),
+        xytext=(centroid_s1[0], centroid_s1[1]),
+        arrowprops={
+            "arrowstyle": "->",
+            "lw": 3,
+            "color": "yellow",
+            "alpha": 0.8,
+        },
+    )
+axes[1].set_title(
+    f"Session 2: Field Shifted {shift_distance:.1f} cm", fontsize=14, fontweight="bold"
+)
+axes[1].legend(fontsize=11)
+
+plt.show()
+
+# %% [markdown]
+# ### Example 2: T-Maze with Geodesic Distance
+#
+# Now let's demonstrate why **geodesic distance** is important for complex environments. In a T-maze, a place field shifting from one arm to another might have a short Euclidean distance (straight through the wall) but a much longer geodesic distance (following the path through the maze).
+#
+# This example shows a clear case where Euclidean distance is misleading.
+
+# %%
+# For T-maze, use the trajectory from the earlier tmaze_session which has structured exploration
+# This ensures good coverage of all maze arms
+# Re-use the existing tmaze trajectory which was properly structured
+
+# Use the trajectory from the earlier T-maze session for better coverage
+maze_positions = tmaze_positions
+maze_times = tmaze_times
+
+print(
+    f"Using T-maze trajectory: {len(maze_positions)} points over {maze_times[-1]:.1f}s"
+)
+
+# Session A: Place field at stem start (bottom of T)
+stem_start_center = np.array([-25.0, 20.0])
+pc_stem = PlaceCellModel(
+    tmaze_env,
+    center=stem_start_center,
+    width=10.0,
+    max_rate=18.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=200,
+)
+
+spikes_stem = generate_poisson_spikes(
+    firing_rate=pc_stem.firing_rate(maze_positions, maze_times),
+    times=maze_times,
+    refractory_period=0.002,
+    seed=200,
+)
+
+rate_stem = compute_place_field(
+    tmaze_env,
+    spikes_stem,
+    maze_times,
+    maze_positions,
+    bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
+)
+
+# Session B: Place field at left arm end (far from stem start)
+left_arm_end_center = np.array([-45.0, 130.0])  # Left arm end
+pc_arm = PlaceCellModel(
+    tmaze_env,
+    center=left_arm_end_center,
+    width=10.0,
+    max_rate=18.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=201,
+)
+
+spikes_arm = generate_poisson_spikes(
+    firing_rate=pc_arm.firing_rate(maze_positions, maze_times),
+    times=maze_times,
+    refractory_period=0.002,
+    seed=201,
+)
+
+rate_arm = compute_place_field(
+    tmaze_env,
+    spikes_arm,
+    maze_times,
+    maze_positions,
+    bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
+)
+
+print(f"\nSession A (stem start): {len(spikes_stem)} spikes")
+print(f"Session B (arm end): {len(spikes_arm)} spikes")
+
+# %%
+# Detect fields
+fields_stem = detect_place_fields(
+    rate_stem,
+    tmaze_env,
+    threshold=0.2,
+    detect_subfields=False,
+)
+
+fields_arm = detect_place_fields(
+    rate_arm,
+    tmaze_env,
+    threshold=0.2,
+    detect_subfields=False,
+)
+
+print("\nDetected fields:")
+print(f"  Stem start: {len(fields_stem)} field(s)")
+print(f"  Arm end: {len(fields_arm)} field(s)")
+
+# %%
+# Measure shift with BOTH Euclidean and geodesic distance
+if len(fields_stem) > 0 and len(fields_arm) > 0:
+    # Euclidean distance (straight line)
+    shift_euclidean = field_shift_distance(
+        rate_stem,
+        fields_stem[0],
+        tmaze_env,
+        rate_arm,
+        fields_arm[0],
+        tmaze_env,
+        use_geodesic=False,
+    )
+
+    # Geodesic distance (following the maze path)
+    shift_geodesic = field_shift_distance(
+        rate_stem,
+        fields_stem[0],
+        tmaze_env,
+        rate_arm,
+        fields_arm[0],
+        tmaze_env,
+        use_geodesic=True,
+    )
+
+    # Compute ground truth distances
+    euclidean_truth = np.linalg.norm(left_arm_end_center - stem_start_center)
+
+    print("\n" + "=" * 60)
+    print("PLACE FIELD SHIFT: T-MAZE (Euclidean vs Geodesic)")
+    print("=" * 60)
+    print(f"Euclidean distance:  {shift_euclidean:.1f} cm (straight line)")
+    print(f"Geodesic distance:   {shift_geodesic:.1f} cm (following maze path)")
+    print(f"\nRatio (geodesic/euclidean): {shift_geodesic / shift_euclidean:.2f}x")
+    print("\nInterpretation:")
+    print("  The field 'shifted' from stem start to arm end.")
+    print(f"  Euclidean distance: {shift_euclidean:.1f} cm (straight line)")
+    print(f"  Geodesic distance: {shift_geodesic:.1f} cm (actual path through maze)")
+    print(f"  Geodesic is {shift_geodesic - shift_euclidean:.1f} cm longer!")
+    print("\n  For mazes and complex environments, always use geodesic distance!")
+
+# %%
+# Visualize both measurements
+fig, axes = plt.subplots(1, 2, figsize=(16, 8), constrained_layout=True)
+
+# Stem field (Session A)
+tmaze_env.plot_field(
+    rate_stem,
+    ax=axes[0],
+    cmap="hot",
+    colorbar_label="Firing Rate (Hz)",
+)
+axes[0].scatter(
+    stem_start_center[0],
+    stem_start_center[1],
+    s=400,
+    c="cyan",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="Session A (Stem Start)",
+    zorder=10,
+)
+axes[0].set_title(
+    "Session A: Place Field at Stem Start", fontsize=14, fontweight="bold"
+)
+axes[0].legend(fontsize=11)
+
+# Arm field (Session B) with both distance visualizations
+tmaze_env.plot_field(
+    rate_arm,
+    ax=axes[1],
+    cmap="hot",
+    colorbar_label="Firing Rate (Hz)",
+)
+axes[1].scatter(
+    left_arm_end_center[0],
+    left_arm_end_center[1],
+    s=400,
+    c="lime",
+    marker="*",
+    edgecolors="black",
+    linewidths=2,
+    label="Session B (Arm End)",
+    zorder=10,
+)
+axes[1].scatter(
+    stem_start_center[0],
+    stem_start_center[1],
+    s=300,
+    c="cyan",
+    marker="*",
+    edgecolors="white",
+    linewidths=2,
+    label="Session A Position",
+    alpha=0.5,
+    zorder=9,
+)
+
+# Draw Euclidean distance (dashed line)
+axes[1].plot(
+    [stem_start_center[0], left_arm_end_center[0]],
+    [stem_start_center[1], left_arm_end_center[1]],
+    "r--",
+    linewidth=3,
+    alpha=0.6,
+    label=f"Euclidean: {shift_euclidean:.1f} cm",
+)
+
+axes[1].set_title(
+    f"Session B: Geodesic Distance = {shift_geodesic:.1f} cm",
+    fontsize=14,
+    fontweight="bold",
+)
+axes[1].legend(fontsize=11)
+
+plt.show()
+
+print("\n" + "=" * 60)
+print("KEY INSIGHT")
+print("=" * 60)
+print("For T-mazes, plus-mazes, or any environment with barriers:")
+print("  - Euclidean distance measures straight-line distance (ignores walls)")
+print("  - Geodesic distance measures actual path distance (respects maze structure)")
+print("\nAlways use geodesic distance for complex environments!")
+
+# %% [markdown]
+# ### When to Use Euclidean vs Geodesic Distance
+#
+# **Use Euclidean distance** (`use_geodesic=False`) when:
+# - Open field environments with no barriers
+# - Computational speed is critical
+# - You want to compare to older literature (most papers use Euclidean)
+#
+# **Use Geodesic distance** (`use_geodesic=True`) when:
+# - Mazes (T-maze, plus-maze, radial arm maze)
+# - Multi-room environments
+# - Environments with barriers or walls
+# - You need accurate path-based distance measurements
+#
+# **Key Functions**:
+# - `field_shift_distance()` - Measures centroid displacement between sessions
+# - `field_centroid()` - Computes rate-weighted center of mass
+# - `detect_place_fields()` - Finds place field bins
+
+# %% [markdown]
 # ## Summary
 #
 # In this notebook, we demonstrated:
@@ -807,6 +1323,7 @@ print("  < 0.3: Complete remapping (this cell)")
 # 6. **Complete Workflow**: End-to-end analysis function
 # 7. **T-Maze Analysis**: Working with irregular environments
 # 8. **Place Remapping**: Quantifying how place fields change between environments
+# 9. **Place Field Shift Measurement**: Measuring centroid displacement with Euclidean and geodesic distances
 #
 # ### Key Functions Used
 #
@@ -817,6 +1334,7 @@ print("  < 0.3: Complete remapping (this cell)")
 # - `skaggs_information()` - Spatial information (bits/spike)
 # - `sparsity()` - Firing sparsity [0, 1]
 # - `field_stability()` - Temporal stability (correlation)
+# - `field_shift_distance()` - Measure distance between field centroids (Euclidean or geodesic)
 #
 # ### References
 #
