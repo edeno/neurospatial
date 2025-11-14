@@ -182,3 +182,25 @@ def env_all_active_2x2() -> Environment:
         name="AllActive2x2",
         connect_diagonal_neighbors=False,  # Orthogonal connections for simpler graph
     )
+
+
+@pytest.fixture
+def simple_3d_env() -> Environment:
+    """A simple 3D environment for comprehensive 3D testing.
+
+    Creates a 3D grid from random samples in a 10x10x10 space.
+    Uses bin_size=2.0 and enables diagonal connectivity to test
+    full 3D neighbor connectivity (up to 26 neighbors per bin).
+    """
+    # Generate random 3D data samples
+    np.random.seed(42)  # Fixed seed for reproducibility
+    data_samples = np.random.rand(200, 3) * 10.0  # 200 points in [0, 10] cube
+
+    return Environment.from_samples(
+        data_samples=data_samples,
+        bin_size=2.0,
+        name="Simple3DEnv",
+        connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)
+        infer_active_bins=True,
+        bin_count_threshold=1,  # At least 1 sample per active bin
+    )

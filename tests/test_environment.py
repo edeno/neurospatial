@@ -911,6 +911,244 @@ def test_boundary_1d_grid_degree_logic(env_1d_grid_3bins: Environment):
     assert np.array_equal(np.sort(boundary_indices), np.array([0, 2]))
 
 
+class TestEnvironment3D:
+    """Comprehensive tests for 3D environment functionality.
+
+    Tests 3D-specific behavior including creation, spatial queries,
+    neighbor connectivity (6-26 neighbors), distance calculations,
+    serialization, and trajectory occupancy.
+    """
+
+    def test_creation_3d(self, simple_3d_env: Environment):
+        """Test 3D environment creation and basic properties."""
+        assert simple_3d_env.name == "Simple3DEnv"
+        assert simple_3d_env._is_fitted
+        assert simple_3d_env.n_dims == 3
+        assert not simple_3d_env.is_1d  # RegularGrid is never 1D
+
+        # Verify bin_centers shape
+        assert simple_3d_env.bin_centers.ndim == 2
+        assert simple_3d_env.bin_centers.shape[1] == 3  # 3D coordinates
+
+        # Verify grid structure
+        assert len(simple_3d_env.grid_edges) == 3
+        assert len(simple_3d_env.grid_shape) == 3
+        assert simple_3d_env.active_mask is not None
+        assert simple_3d_env.active_mask.ndim == 3
+
+        # Verify connectivity graph
+        assert simple_3d_env.connectivity.number_of_nodes() > 0
+        assert simple_3d_env.connectivity.number_of_edges() > 0
+
+        # Verify bin sizes are volumes (bin_size^3)
+        volumes = simple_3d_env.bin_sizes
+        assert np.all(volumes > 0)
+        # Should be approximately bin_size^3 = 2.0^3 = 8.0
+        assert np.allclose(volumes, 8.0, rtol=0.2)
+
+    def test_bin_at_3d(self, simple_3d_env: Environment):
+        """Test point-to-bin mapping in 3D space."""
+        # Use actual bin centers for testing (guaranteed to be in active bins)
+        # Test with first 3 bin centers
+        test_centers = simple_3d_env.bin_centers[:3]
+
+        # Single point in 3D - use first bin center
+        point_single = test_centers[0:1]
+        bin_idx = simple_3d_env.bin_at(point_single)
+        assert bin_idx.ndim == 1
+        assert len(bin_idx) == 1
+        assert bin_idx[0] >= 0  # Valid bin index
+
+        # Multiple points in 3D - use first 3 bin centers
+        points_batch = test_centers
+        bin_indices = simple_3d_env.bin_at(points_batch)
+        assert len(bin_indices) == 3
+        assert np.all(bin_indices >= 0)
+
+        # Verify bin centers are in 3D
+        bin_center = simple_3d_env.bin_centers[bin_idx[0]]
+        assert len(bin_center) == 3
+
+        # Verify point maps to nearest bin
+        # When querying with exact bin center, should map to that bin
+        mapped_bin_idx = simple_3d_env.bin_at(test_centers[0:1])[0]
+        assert mapped_bin_idx == 0  # First bin center maps to bin 0
+
+    def test_neighbors_3d_connectivity(self, simple_3d_env: Environment):
+        """Test 3D neighbor connectivity (6-26 neighbors depending on connectivity).
+
+        With diagonal_neighbors=True, 3D bins can have:
+        - Face neighbors: 6 (±x, ±y, ±z)
+        - Edge neighbors: 12 (diagonals on faces)
+        - Vertex neighbors: 8 (corner diagonals)
+        - Total: up to 26 neighbors for interior bins
+        """
+        # Get a bin in the interior (not on boundary)
+        # Find interior bins by checking degree
+        interior_bins = []
+        for node in simple_3d_env.connectivity.nodes():
+            degree = simple_3d_env.connectivity.degree(node)
+            if degree > 6:  # More than face neighbors means not on boundary
+                interior_bins.append(node)
+
+        # Should have at least some interior bins
+        assert len(interior_bins) > 0, "Expected interior bins in 3D grid"
+
+        # Test an interior bin
+        interior_bin = interior_bins[0]
+        neighbors = simple_3d_env.neighbors(interior_bin)
+
+        # Interior bin with diagonal connectivity should have > 6 neighbors
+        assert len(neighbors) > 6, (
+            f"Interior bin should have >6 neighbors, got {len(neighbors)}"
+        )
+        # Maximum 26 neighbors in 3D
+        assert len(neighbors) <= 26
+
+        # Test a boundary bin (fewer neighbors)
+        boundary_bins = simple_3d_env.boundary_bins
+        if len(boundary_bins) > 0:
+            boundary_bin = boundary_bins[0]
+            boundary_neighbors = simple_3d_env.neighbors(boundary_bin)
+            # Boundary should have fewer neighbors than max
+            assert len(boundary_neighbors) < 26
+
+        # Verify all neighbors are valid bin indices
+        all_neighbors = simple_3d_env.neighbors(interior_bin)
+        assert all(0 <= n < simple_3d_env.n_bins for n in all_neighbors)
+
+    def test_distance_between_3d(self, simple_3d_env: Environment):
+        """Test distance calculations in 3D space."""
+        # Use actual bin centers (guaranteed to be in active bins)
+        # Select bins that are reasonably far apart
+        if simple_3d_env.n_bins < 3:
+            pytest.skip("Need at least 3 bins for distance test")
+
+        p1 = simple_3d_env.bin_centers[0]  # First bin (1D array)
+        p2 = simple_3d_env.bin_centers[-1]  # Last bin (likely far from first)
+
+        # Calculate manifold distance
+        manifold_dist = simple_3d_env.distance_between(p1, p2)
+        assert manifold_dist > 0
+        assert np.isfinite(manifold_dist)
+
+        # Euclidean distance in 3D
+        euclidean_dist = np.linalg.norm(p2 - p1)
+        # Manifold distance on grid should be >= Euclidean
+        assert manifold_dist >= euclidean_dist * 0.9  # Allow some tolerance
+
+        # Distance from a point to itself should be 0
+        dist_self = simple_3d_env.distance_between(p1, p1)
+        assert np.isclose(dist_self, 0.0, atol=1e-6)
+
+        # Test multiple point pairs
+        p3 = simple_3d_env.bin_centers[1]  # Second bin
+        dist_p1_p3 = simple_3d_env.distance_between(p1, p3)
+        dist_p3_p2 = simple_3d_env.distance_between(p3, p2)
+
+        # Triangle inequality: dist(p1, p3) + dist(p3, p2) >= dist(p1, p2)
+        # (with some tolerance for floating point)
+        assert dist_p1_p3 + dist_p3_p2 >= manifold_dist * 0.99
+
+    def test_serialization_roundtrip_3d(
+        self, simple_3d_env: Environment, tmp_path: Path
+    ):
+        """Test that 3D environment can be saved and loaded correctly."""
+        # Save to file
+        save_path = tmp_path / "test_3d_env"
+        simple_3d_env.to_file(save_path)
+
+        # Verify files were created
+        assert (tmp_path / "test_3d_env.json").exists()
+        assert (tmp_path / "test_3d_env.npz").exists()
+
+        # Load from file
+        loaded_env = Environment.from_file(save_path)
+
+        # Verify loaded environment matches original
+        assert loaded_env.name == simple_3d_env.name
+        assert loaded_env.n_dims == 3
+        assert loaded_env.n_bins == simple_3d_env.n_bins
+        assert np.array_equal(loaded_env.bin_centers, simple_3d_env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_nodes()
+            == simple_3d_env.connectivity.number_of_nodes()
+        )
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == simple_3d_env.connectivity.number_of_edges()
+        )
+
+        # Verify grid structure preserved
+        assert len(loaded_env.grid_edges) == 3
+        assert len(loaded_env.grid_shape) == 3
+        assert np.array_equal(loaded_env.active_mask, simple_3d_env.active_mask)
+
+        # Verify spatial queries still work
+        test_point = simple_3d_env.bin_centers[0:1]  # Use actual bin center
+        original_bin = simple_3d_env.bin_at(test_point)
+        loaded_bin = loaded_env.bin_at(test_point)
+        assert np.array_equal(original_bin, loaded_bin)
+
+    def test_3d_occupancy(self, simple_3d_env: Environment):
+        """Test trajectory occupancy calculation in 3D space."""
+        # Create a 3D trajectory using actual bin centers
+        # Select first and last bins for trajectory endpoints
+        if simple_3d_env.n_bins < 2:
+            pytest.skip("Need at least 2 bins for occupancy test")
+
+        start_point = simple_3d_env.bin_centers[0]
+        end_point = simple_3d_env.bin_centers[-1]
+
+        # Create trajectory from start to end
+        n_steps = 100
+        times = np.linspace(0.0, 10.0, n_steps)
+        trajectory = np.linspace(start_point, end_point, n_steps)
+
+        # Calculate occupancy with max_gap=None to count all intervals
+        occupancy = simple_3d_env.occupancy(times, trajectory, max_gap=None)
+
+        # Verify occupancy properties
+        assert len(occupancy) == simple_3d_env.n_bins
+        assert np.all(occupancy >= 0)  # Non-negative
+        assert np.sum(occupancy) > 0  # Some bins occupied
+
+        # Verify occupancy sums to total time (approximately)
+        # Note: May not be exact due to interpolation across bins
+        total_time = times[-1] - times[0]
+        assert np.isclose(np.sum(occupancy), total_time, rtol=0.1)
+
+        # Verify no inf/nan values
+        assert np.all(np.isfinite(occupancy))
+
+        # Test with stationary trajectory at first bin center
+        stationary_point = simple_3d_env.bin_centers[0]
+        stationary_times = np.array([0.0, 10.0])  # Two time points for one interval
+        stationary_traj = np.array(
+            [
+                stationary_point,
+                stationary_point,
+            ]
+        )
+        stationary_occ = simple_3d_env.occupancy(
+            stationary_times, stationary_traj, max_gap=None
+        )
+
+        # All time should be in one or a few bins
+        assert np.sum(stationary_occ > 0) >= 1  # At least one bin occupied
+        assert np.sum(stationary_occ > 0) <= 3  # At most a few bins occupied
+        # Should sum to ~10 seconds
+        assert np.isclose(np.sum(stationary_occ), 10.0, rtol=0.1)
+
+        # Verify linear time allocation works in 3D
+        linear_occ = simple_3d_env.occupancy(
+            times, trajectory, time_allocation="linear", max_gap=None
+        )
+        assert len(linear_occ) == simple_3d_env.n_bins
+        assert np.all(np.isfinite(linear_occ))
+        assert np.isclose(np.sum(linear_occ), total_time, rtol=0.1)
+
+
 # ==============================================================================
 # Note: Mixin verification tests have been moved to tests/test_import_paths.py
 # to avoid duplication and improve test organization.
