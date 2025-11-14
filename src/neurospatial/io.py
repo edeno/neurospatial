@@ -102,6 +102,49 @@ def _get_library_version() -> str:
         return "unknown"
 
 
+def _validate_path_safety(path: str | Path) -> Path:
+    """Validate that a path is safe from directory traversal attacks.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to validate.
+
+    Returns
+    -------
+    Path
+        Resolved Path object if safe.
+
+    Raises
+    ------
+    ValueError
+        If path contains parent directory traversal ('..' components).
+
+    Notes
+    -----
+    This function prevents path traversal attacks by checking for '..'
+    components in the path before resolution. It helps ensure that file
+    operations stay within intended directories.
+
+    """
+    # Convert to Path but don't resolve yet
+    path_obj = Path(path)
+
+    # Check if any part of the ORIGINAL path contains parent directory reference
+    # Must check before resolve() because resolve() normalizes away the '..'
+    if ".." in path_obj.parts:
+        raise ValueError(
+            f"Path traversal detected in path: {path}. "
+            f"Use absolute paths or paths without '..' components. "
+            f"This restriction helps prevent security vulnerabilities."
+        )
+
+    # Now resolve to absolute path
+    path_obj = path_obj.resolve()
+
+    return path_obj
+
+
 def to_file(env: Environment, path: str | Path) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
@@ -119,6 +162,13 @@ def to_file(env: Environment, path: str | Path) -> None:
     path : str or Path
         Base path for output files (without extension).
         Will create `{path}.json` and `{path}.npz`.
+        Paths containing '..' components are rejected to prevent
+        directory traversal attacks.
+
+    Raises
+    ------
+    ValueError
+        If path contains parent directory traversal ('..' components).
 
     Examples
     --------
@@ -137,8 +187,12 @@ def to_file(env: Environment, path: str | Path) -> None:
     This format is safer than pickle (no arbitrary code execution) and
     more portable across Python versions and platforms.
 
+    For security, paths are validated to prevent directory traversal attacks.
+    Use absolute paths or relative paths without '..' components.
+
     """
-    path_obj = Path(path)
+    # Validate path for security
+    path_obj = _validate_path_safety(path)
     json_path = path_obj.with_suffix(".json")
     npz_path = path_obj.with_suffix(".npz")
 
@@ -217,6 +271,8 @@ def from_file(path: str | Path) -> Environment:
     path : str or Path
         Base path to load from (without extension).
         Will read `{path}.json` and `{path}.npz`.
+        Paths containing '..' components are rejected to prevent
+        directory traversal attacks.
 
     Returns
     -------
@@ -228,7 +284,8 @@ def from_file(path: str | Path) -> Environment:
     FileNotFoundError
         If required files are not found.
     ValueError
-        If schema version is incompatible or data is malformed.
+        If schema version is incompatible, data is malformed, or path
+        contains parent directory traversal ('..' components).
 
     Examples
     --------
@@ -240,11 +297,17 @@ def from_file(path: str | Path) -> Environment:
     to_file : Save environment to files
     Environment.load : Legacy pickle-based deserialization
 
+    Notes
+    -----
+    For security, paths are validated to prevent directory traversal attacks.
+    Use absolute paths or relative paths without '..' components.
+
     """
     from neurospatial.environment import Environment
     from neurospatial.regions import Region, Regions
 
-    path_obj = Path(path)
+    # Validate path for security
+    path_obj = _validate_path_safety(path)
     json_path = path_obj.with_suffix(".json")
     npz_path = path_obj.with_suffix(".npz")
 

@@ -157,3 +157,77 @@ class TestSerialization:
         assert loaded_env.n_bins == env.n_bins
         # units and frame should be None or not set
         assert not hasattr(loaded_env, "units") or loaded_env.units is None
+
+
+class TestSecurityPathTraversal:
+    """Test security measures against path traversal attacks."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple 2D environment for testing."""
+        np.random.seed(42)
+        data = np.random.randn(100, 2) * 10
+        return Environment.from_samples(data, bin_size=3.0, name="test_env")
+
+    def test_to_file_rejects_path_traversal(self, simple_env, tmp_path):
+        """Test that to_file() rejects paths with parent directory traversal."""
+        # Try various path traversal attack vectors
+        attack_paths = [
+            tmp_path / ".." / ".." / "etc" / "passwd",
+            tmp_path / ".." / "sensitive_file",
+            "../../../etc/passwd",
+            "valid_dir/../../../etc/passwd",
+        ]
+
+        for attack_path in attack_paths:
+            with pytest.raises(ValueError, match="Path traversal detected"):
+                to_file(simple_env, attack_path)
+
+    def test_to_file_rejects_symlink_attacks(self, simple_env, tmp_path):
+        """Test that to_file() validates against symlink attacks."""
+        # Skip if symlink creation not supported (Windows without admin)
+        try:
+            external_dir = tmp_path.parent / "external"
+            external_dir.mkdir(exist_ok=True)
+            symlink_path = tmp_path / "symlink_to_external"
+            symlink_path.symlink_to(external_dir)
+
+            # Should reject paths through symlinks that escape tmp_path
+            with pytest.raises(ValueError, match="Path traversal detected"):
+                to_file(simple_env, symlink_path / ".." / ".." / "etc" / "passwd")
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlink creation not supported on this platform")
+
+    def test_from_file_rejects_path_traversal(self, tmp_path):
+        """Test that from_file() rejects paths with parent directory traversal."""
+        # Try various path traversal attack vectors
+        attack_paths = [
+            tmp_path / ".." / ".." / "etc" / "passwd",
+            tmp_path / ".." / "sensitive_file",
+            "../../../etc/passwd",
+        ]
+
+        for attack_path in attack_paths:
+            with pytest.raises(ValueError, match="Path traversal detected"):
+                from_file(attack_path)
+
+    def test_to_file_accepts_safe_paths(self, simple_env, tmp_path):
+        """Test that to_file() accepts legitimate paths without '..'."""
+        # These should all work
+        safe_paths = [
+            tmp_path / "env",
+            tmp_path / "subdir" / "env",
+            tmp_path / "deep" / "nested" / "path" / "env",
+        ]
+
+        for safe_path in safe_paths:
+            safe_path.parent.mkdir(parents=True, exist_ok=True)
+            to_file(simple_env, safe_path)
+            assert safe_path.with_suffix(".json").exists()
+            assert safe_path.with_suffix(".npz").exists()
+
+    def test_absolute_paths_without_traversal_accepted(self, simple_env, tmp_path):
+        """Test that absolute paths without '..' are accepted."""
+        absolute_path = tmp_path.resolve() / "safe_env"
+        to_file(simple_env, absolute_path)
+        assert absolute_path.with_suffix(".json").exists()
