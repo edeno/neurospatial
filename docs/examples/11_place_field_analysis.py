@@ -37,6 +37,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Import Shapely for polygon-based T-maze
+from shapely.geometry import box
+from shapely.ops import unary_union
+
 # Neurospatial imports
 from neurospatial import Environment, compute_place_field
 from neurospatial.metrics import (
@@ -54,12 +58,7 @@ from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
     simulate_trajectory_ou,
-    tmaze_alternation_session,
 )
-
-# Import Shapely for polygon-based T-maze
-from shapely.geometry import Polygon, box
-from shapely.ops import unary_union
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -585,17 +584,17 @@ stem = box(
     start_box_size + stem_length + overlap,
 )
 
-# Left arm (extends slightly into stem on right side and down into junction)
+# Left arm (extends from far left to slightly past center, overlapping with right arm)
 left_arm = box(
     -(arm_length + stem_width / 2),
     start_box_size + stem_length - overlap,
-    -stem_width / 2 + overlap,
+    overlap,  # Extends past center to overlap with right arm
     start_box_size + stem_length + arm_width,
 )
 
-# Right arm (extends slightly into stem on left side and down into junction)
+# Right arm (extends from slightly before center to far right, overlapping with left arm)
 right_arm = box(
-    stem_width / 2 - overlap,
+    -overlap,  # Extends past center to overlap with left arm
     start_box_size + stem_length - overlap,
     arm_length + stem_width / 2,
     start_box_size + stem_length + arm_width,
@@ -726,7 +725,7 @@ tmaze_firing_rate = compute_place_field(
     bandwidth=8.0,  # Consistent smoothing
 )
 
-print(f"\nComputed T-maze firing rate map:")
+print("\nComputed T-maze firing rate map:")
 print(f"  Peak rate: {tmaze_firing_rate.max():.2f} Hz")
 print(f"  Mean rate: {tmaze_firing_rate.mean():.2f} Hz")
 

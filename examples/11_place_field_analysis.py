@@ -584,17 +584,17 @@ stem = box(
     start_box_size + stem_length + overlap,
 )
 
-# Left arm (extends slightly into stem on right side and down into junction)
+# Left arm (extends from far left to slightly past center, overlapping with right arm)
 left_arm = box(
     -(arm_length + stem_width / 2),
     start_box_size + stem_length - overlap,
-    -stem_width / 2 + overlap,
+    overlap,  # Extends past center to overlap with right arm
     start_box_size + stem_length + arm_width,
 )
 
-# Right arm (extends slightly into stem on left side and down into junction)
+# Right arm (extends from slightly before center to far right, overlapping with left arm)
 right_arm = box(
-    stem_width / 2 - overlap,
+    -overlap,  # Extends past center to overlap with left arm
     start_box_size + stem_length - overlap,
     arm_length + stem_width / 2,
     start_box_size + stem_length + arm_width,
