@@ -28,6 +28,11 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+# Numerical stability constants
+# Minimum hex_radius to prevent division by zero and numerical instability.
+# Values below this threshold are too small for reliable hexagonal coordinate conversion.
+MIN_HEX_RADIUS = 1e-10
+
 
 def _create_hex_grid(
     data_samples: NDArray[np.float64] | None,
@@ -201,11 +206,24 @@ def _cartesian_to_fractional_cube(
 
     Points outside the grid bounds or containing NaNs in inputs will produce NaN outputs.
 
+    Raises
+    ------
+    ValueError
+        If hex_radius is below MIN_HEX_RADIUS (1e-10), which would cause
+        numerical instability in coordinate conversion.
+
     """
-    if hex_radius == 0:  # Avoid division by zero
-        # If hex_radius is zero, implies a degenerate grid.
-        # Return zeros or handle as an error appropriately.
-        # For now, returning zeros, assuming points effectively map to a single point.
+    # Validate hex_radius is not too small (prevents numerical instability)
+    if abs(hex_radius) < MIN_HEX_RADIUS:
+        raise ValueError(
+            f"hex_radius too small ({hex_radius:.2e}). "
+            f"Minimum supported radius: {MIN_HEX_RADIUS:.2e}. "
+            "This prevents division by near-zero values which cause numerical instability."
+        )
+
+    # Handle near-zero case using tolerance-based comparison (more robust than hex_radius == 0)
+    if np.isclose(hex_radius, 0.0, atol=1e-12):
+        # Degenerate grid - all points map to origin
         zero_coords = np.zeros_like(points_x)
         return zero_coords, zero_coords, zero_coords
 

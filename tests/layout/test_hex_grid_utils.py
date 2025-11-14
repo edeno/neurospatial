@@ -160,3 +160,77 @@ def test_points_to_hex_bin_ind_nan_handling():
         data_samples, min_x, min_y, hex_radius, centers_shape
     )
     assert indices[1] == -1 and indices[2] == -1
+
+
+class TestNumericalStabilityHexagonal:
+    """Test numerical stability for hexagonal layout edge cases.
+
+    These tests verify that the hexagonal coordinate conversion handles
+    edge cases involving very small or zero hex_radius without numerical issues.
+    """
+
+    def test_cartesian_to_cube_very_small_radius(self):
+        """Test _cartesian_to_fractional_cube with hex_radius near numerical precision limits.
+
+        When hex_radius is very small (approaching numerical precision), the
+        function should either raise a clear error or handle gracefully without
+        producing inf/nan values from division.
+        """
+        points_x = np.array([0.0, 1.0, 2.0])
+        points_y = np.array([0.0, 1.0, 2.0])
+
+        # Test hex_radius just below minimum threshold (should raise error)
+        # MIN_HEX_RADIUS should be ~1e-10
+        with pytest.raises(ValueError, match="hex_radius too small"):
+            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-12)
+
+        # Test hex_radius at minimum threshold (should work)
+        q, r, s = hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-8)
+        assert np.all(np.isfinite(q)), "q contains inf/nan"
+        assert np.all(np.isfinite(r)), "r contains inf/nan"
+        assert np.all(np.isfinite(s)), "s contains inf/nan"
+
+    def test_cartesian_to_cube_zero_radius_handling(self):
+        """Test _cartesian_to_fractional_cube with hex_radius exactly zero.
+
+        Zero and near-zero values should raise ValueError to prevent division
+        by zero and numerical instability.
+        """
+        points_x = np.array([0.0, 1.0])
+        points_y = np.array([0.0, 1.0])
+
+        # Exact zero should raise error (below MIN_HEX_RADIUS threshold)
+        with pytest.raises(ValueError, match="hex_radius too small"):
+            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=0.0)
+
+        # Very small value (near-zero but not exactly zero) should also raise error
+        very_small = 1e-15
+        with pytest.raises(ValueError, match="hex_radius too small"):
+            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=very_small)
+
+        # Value just above MIN_HEX_RADIUS should work without error
+        barely_valid = 1.1e-10
+        q, r, s = hgu._cartesian_to_fractional_cube(
+            points_x, points_y, hex_radius=barely_valid
+        )
+        assert np.all(np.isfinite(q)), "q contains inf/nan"
+        assert np.all(np.isfinite(r)), "r contains inf/nan"
+        assert np.all(np.isfinite(s)), "s contains inf/nan"
+
+    def test_cartesian_to_cube_preserves_constraint(self):
+        """Test that q + r + s = 0 constraint is preserved for all valid inputs.
+
+        Cube coordinates must satisfy q + r + s = 0. This test ensures the constraint
+        holds even with numerical edge cases.
+        """
+        points_x = np.array([0.0, 1.0, 2.0, -1.0, -2.0])
+        points_y = np.array([0.0, 1.0, 2.0, -1.0, -2.0])
+        hex_radius = 1.0
+
+        q, r, s = hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius)
+
+        # Check cube coordinate constraint
+        constraint = q + r + s
+        assert np.allclose(constraint, 0.0, atol=1e-10), (
+            f"Cube coordinate constraint violated: q+r+s = {constraint}"
+        )

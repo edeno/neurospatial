@@ -54,13 +54,19 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §1.3 | **Effort**: 2h | **Files**: `src/neurospatial/layout/helpers/hexagonal.py`
 
-- [ ] Replace `hex_radius == 0` with `np.isclose()` at line 205
-- [ ] Add MIN_HEX_RADIUS validation (1e-10) in `_points_to_hex_coords()`
-- [ ] Add test `test_hexagonal_layout_very_small_width()` in `tests/layout/test_hex_grid_utils.py`
-- [ ] Add test `test_hexagonal_zero_radius_handling()`
-- [ ] Run hex tests: `uv run pytest tests/layout/test_hex_grid_utils.py -v`
+- [x] Add MIN_HEX_RADIUS constant (1e-10) at module level in `hexagonal.py`
+- [x] Replace `hex_radius == 0` with `np.isclose(hex_radius, 0.0, atol=1e-12)` at line ~220
+- [x] Add MIN_HEX_RADIUS validation (1e-10) in `_cartesian_to_fractional_cube()` (lines 217-222)
+- [x] Add test `test_cartesian_to_cube_very_small_radius()` in `tests/layout/test_hex_grid_utils.py`
+- [x] Add test `test_cartesian_to_cube_zero_radius_handling()`
+- [x] Add test `test_cartesian_to_cube_preserves_constraint()` (bonus test for mathematical invariant)
+- [x] Enhanced docstring with Raises section documenting validation
+- [x] Run hex tests: All 12 tests PASS (9 existing + 3 new)
+- [x] Code review: APPROVED by code-reviewer agent
+- [x] Ruff and mypy pass
 
 **Verification**: No direct `==` comparisons on floats in hexagonal.py
+**Status**: ✅ COMPLETED (2025-11-14) - Ready to commit
 
 ---
 
