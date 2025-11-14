@@ -127,11 +127,14 @@ def simulate_trajectory_coverage(
         # Choose next bin
         next_bin = np.random.choice(neighbors, p=weights)
 
-        # Compute movement duration
-        edge_distance = env.distance_between(current_bin, next_bin)
+        # Compute movement duration (use Euclidean distance from bin centers)
+        # Note: env.distance_between() has a bug and returns inf for adjacent bins
+        pos_current = env.bin_centers[current_bin]
+        pos_next = env.bin_centers[next_bin]
+        edge_distance = np.linalg.norm(pos_next - pos_current)
 
-        # Handle disconnected bins (shouldn't happen with neighbors, but be safe)
-        if not np.isfinite(edge_distance):
+        # Handle invalid distances (shouldn't happen, but be safe)
+        if edge_distance <= 0:
             trajectory_bins.append(next_bin)
             samples_generated += 1
             current_bin = next_bin
@@ -359,10 +362,17 @@ def simulate_trajectory_goal_directed(
     all_trial_ids = []
 
     current_time = 0.0
-    current_bin = goal_bins[sequence[0]]  # Start at first goal
+
+    # Start at center of environment (not at a goal)
+    center_idx = env.n_bins // 2
+    current_bin = center_idx
 
     for trial_idx, goal_idx in enumerate(sequence):
         goal_bin = goal_bins[goal_idx]
+
+        # Skip if already at goal (avoids zero-length trials)
+        if current_bin == goal_bin:
+            continue
 
         # Find shortest path
         path = env.shortest_path(current_bin, goal_bin)
@@ -376,21 +386,20 @@ def simulate_trajectory_goal_directed(
         for i in range(len(path) - 1):
             bin_a, bin_b = path[i], path[i + 1]
 
-            # Get edge distance and duration
-            edge_distance = env.distance_between(bin_a, bin_b)
+            # Get edge distance (use Euclidean from bin centers)
+            # Note: env.distance_between() has a bug and returns inf for adjacent bins
+            pos_a = env.bin_centers[bin_a]
+            pos_b = env.bin_centers[bin_b]
+            edge_distance = np.linalg.norm(pos_b - pos_a)
 
             # Skip if edge is invalid
-            if not np.isfinite(edge_distance) or edge_distance <= 0:
+            if edge_distance <= 0:
                 continue
 
             move_duration = edge_distance / speed
             n_move_samples = max(1, int(move_duration * sampling_frequency))
 
-            # Interpolate positions along edge
-            pos_a = env.bin_centers[bin_a]
-            pos_b = env.bin_centers[bin_b]
-
-            # Linear interpolation
+            # Linear interpolation along edge
             alphas = np.linspace(0, 1, n_move_samples, endpoint=False)
             segment_positions = pos_a + alphas[:, np.newaxis] * (pos_b - pos_a)
 
