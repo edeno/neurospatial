@@ -42,6 +42,7 @@ from neurospatial import Environment, compute_place_field
 from neurospatial.metrics import (
     detect_place_fields,
     field_centroid,
+    field_shift_distance,
     field_size,
     field_stability,
     skaggs_information,
@@ -55,6 +56,10 @@ from neurospatial.simulation import (
     simulate_trajectory_ou,
     tmaze_alternation_session,
 )
+
+# Import Shapely for polygon-based T-maze
+from shapely.geometry import Polygon, box
+from shapely.ops import unary_union
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -79,7 +84,7 @@ np.random.seed(42)
 # %%
 # Generate 2D open field arena using simulation subpackage
 arena_size = 100.0  # cm
-duration = 100.0  # seconds
+duration = 600.0  # seconds
 
 # Create arena environment from grid
 n_grid = 50
@@ -90,7 +95,7 @@ arena_data = np.column_stack([xx.ravel(), yy.ravel()])
 
 env = Environment.from_samples(
     arena_data,
-    bin_size=3.0,
+    bin_size=5.0,
     bin_count_threshold=1,
 )
 env.units = "cm"
@@ -105,7 +110,7 @@ positions, times = simulate_trajectory_ou(
     speed_mean=7.5,  # 7.5 cm/s (realistic rat speed)
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # Natural exploration smoothness
-    boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
+    boundary_mode="reflect",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
 )
 
@@ -188,7 +193,6 @@ env.plot_field(
     firing_rate,
     ax=ax,
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 
@@ -254,7 +258,6 @@ env.plot_field(
     firing_rate,
     ax=ax,
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 
@@ -414,7 +417,6 @@ for ax, rate_map, title in zip(
         rate_map,
         ax=ax,
         cmap="hot" if "Difference" not in title else "viridis",
-
         vmax=np.nanmax(firing_rate),
         colorbar_label="Firing Rate (Hz)",
     )
@@ -550,44 +552,110 @@ print(
 # We'll compare place fields between the open field and a T-maze to demonstrate remapping analysis.
 
 # %% [markdown]
-# ### Generate T-Maze Trajectory
+# ### Create 2D T-Maze with Shapely Polygon
 #
 # T-mazes are commonly used to study spatial memory and decision-making. They have:
 # - A start box
 # - A stem leading to a choice point
 # - Left and right arms
 #
-# We'll use the `tmaze_alternation_session()` convenience function from the simulation subpackage.
+# We'll create a 2D T-maze using Shapely polygons and `Environment.from_polygon()`.
 
 # %%
-# Generate complete T-maze session using simulation subpackage
-# This creates a T-maze environment, trajectory, and place cell spike data
-tmaze_session = tmaze_alternation_session(
-    duration=100.0,  # seconds
-    n_trials=25,
-    n_place_cells=1,  # Just one cell for this example
+# Create T-maze shape using Shapely polygons
+# T-maze dimensions (cm)
+stem_width = 15.0
+stem_length = 60.0
+arm_width = 15.0
+arm_length = 50.0
+start_box_size = 20.0
+
+# Small overlap to ensure boxes merge into a single polygon
+overlap = 0.1
+
+# Create component rectangles with slight overlaps to ensure proper merging
+# Start box at bottom (extends slightly into stem)
+start_box = box(-start_box_size / 2, 0, start_box_size / 2, start_box_size + overlap)
+
+# Stem extending upward from start box (extends slightly into arms)
+stem = box(
+    -stem_width / 2,
+    start_box_size,
+    stem_width / 2,
+    start_box_size + stem_length + overlap,
+)
+
+# Left arm (extends slightly into stem on right side and down into junction)
+left_arm = box(
+    -(arm_length + stem_width / 2),
+    start_box_size + stem_length - overlap,
+    -stem_width / 2 + overlap,
+    start_box_size + stem_length + arm_width,
+)
+
+# Right arm (extends slightly into stem on left side and down into junction)
+right_arm = box(
+    stem_width / 2 - overlap,
+    start_box_size + stem_length - overlap,
+    arm_length + stem_width / 2,
+    start_box_size + stem_length + arm_width,
+)
+
+# Combine all parts into single T-maze polygon
+# With overlaps, unary_union creates a single merged Polygon
+tmaze_polygon = unary_union([start_box, stem, left_arm, right_arm])
+
+# Create environment from polygon
+tmaze_env = Environment.from_polygon(
+    polygon=tmaze_polygon,
+    bin_size=5.0,
+)
+tmaze_env.units = "cm"
+tmaze_env.frame = "tmaze"
+
+# Generate trajectory on T-maze
+tmaze_positions, tmaze_times = simulate_trajectory_ou(
+    tmaze_env,
+    duration=400.0,  # Longer duration for good coverage of all arms
+    dt=0.02,
+    speed_mean=12.0,  # cm/s
+    speed_std=3.0,
+    coherence_time=0.8,  # Longer coherence for smoother paths
+    boundary_mode="reflect",
     seed=42,
 )
 
-# Extract components from session
-tmaze_env = tmaze_session.env
-tmaze_positions = tmaze_session.positions
-tmaze_times = tmaze_session.times
-tmaze_spike_times_list = tmaze_session.spike_trains
-
-# Get the first (and only) cell's spikes
-tmaze_spike_times = tmaze_spike_times_list[0]
-
-# Get trial metadata
-trial_choices = tmaze_session.metadata["trial_choices"]
-
 print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
 print(f"  Generated {len(tmaze_positions)} trajectory points")
-print(f"  {len(trial_choices)} trials with choices: {trial_choices[:5]}... (first 5)")
 print(
     f"  Coverage: x=[{tmaze_positions[:, 0].min():.1f}, {tmaze_positions[:, 0].max():.1f}], "
     f"y=[{tmaze_positions[:, 1].min():.1f}, {tmaze_positions[:, 1].max():.1f}] cm"
 )
+print(f"  Maze extent: {tmaze_polygon.bounds}")
+
+# Create a single place cell for the T-maze
+# Position field at choice point (junction of stem and arms)
+tmaze_field_center = np.array([0.0, start_box_size + stem_length])
+
+pc_tmaze = PlaceCellModel(
+    tmaze_env,
+    center=tmaze_field_center,
+    width=12.0,
+    max_rate=15.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=42,
+)
+
+tmaze_spike_times = generate_poisson_spikes(
+    firing_rate=pc_tmaze.firing_rate(tmaze_positions, tmaze_times),
+    times=tmaze_times,
+    refractory_period=0.002,
+    seed=42,
+)
+
+print(f"\nGenerated {len(tmaze_spike_times)} spikes for T-maze place cell")
+print(f"Place field center: {tmaze_field_center}")
 
 # %% [markdown]
 # ### Visualize T-Maze Environment
@@ -644,30 +712,23 @@ axes[1].set_aspect("equal")
 plt.show()
 
 # %% [markdown]
-# ### Simulate Place Cell in T-Maze
+# ### Compute Place Field for T-Maze
 #
-# The `tmaze_alternation_session()` function has already generated place cell spike data.
-# The place cell was automatically positioned with uniform coverage across the T-maze.
-# Let's compute the firing rate map to see where the cell fired.
+# Now compute the firing rate map for the T-maze place cell.
 
 # %%
-# Note: Spikes were already generated by tmaze_alternation_session()
-# Extract ground truth from the session (ground_truth is a dict with keys like 'cell_0')
-tmaze_ground_truth = tmaze_session.ground_truth["cell_0"]  # First cell
-tmaze_field_center = tmaze_ground_truth["center"]
-
-print(f"\nT-maze session generated {len(tmaze_spike_times)} spikes")
-print(f"T-maze field center (ground truth): {tmaze_field_center}")
-print(f"Field properties: {tmaze_ground_truth}")
-
 # Compute firing rate map for T-maze
 tmaze_firing_rate = compute_place_field(
     tmaze_env,
     tmaze_spike_times,
     tmaze_times,
     tmaze_positions,
-    bandwidth=5.0,
+    bandwidth=8.0,  # Consistent smoothing
 )
+
+print(f"\nComputed T-maze firing rate map:")
+print(f"  Peak rate: {tmaze_firing_rate.max():.2f} Hz")
+print(f"  Mean rate: {tmaze_firing_rate.mean():.2f} Hz")
 
 # %% [markdown]
 # ### Visualize Remapping: Same Cell, Two Environments
@@ -680,7 +741,6 @@ env.plot_field(
     firing_rate,
     ax=axes[0],
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 axes[0].scatter(
@@ -702,7 +762,6 @@ tmaze_env.plot_field(
     tmaze_firing_rate,
     ax=axes[1],
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
@@ -814,16 +873,14 @@ print("  < 0.3: Complete remapping (this cell)")
 # First, let's create a simple 2D rectangular environment and simulate two sessions where the same place cell's field shifts by a known amount. This demonstrates Euclidean distance measurement where the answer is obvious.
 
 # %%
-from neurospatial.metrics import field_shift_distance
-
 # Create a simple 2D rectangular environment (like a linear track)
 # Match 08_spike_field_basics.py approach: create REGULAR GRID first, then generate trajectory
 # This avoids masked grids which cause grey squares in visualization
 
 # Define track boundaries
 track_length = 100.0  # cm
-track_width = 30.0    # cm (narrow corridor)
-bin_size = 5.0        # cm
+track_width = 30.0  # cm (narrow corridor)
+bin_size = 5.0  # cm
 
 # Create proper regular grid covering the track (like 08_spike_field_basics.py does)
 x = np.linspace(0, track_length, int(track_length / bin_size) + 1)
@@ -852,18 +909,27 @@ track_positions, track_times = simulate_trajectory_ou(
 )
 
 print(f"Linear track environment: {track_env.n_bins} bins")
-print(f"  Extent: x=[{track_env.dimension_ranges[0][0]:.1f}, {track_env.dimension_ranges[0][1]:.1f}] cm")
-print(f"  Width: y=[{track_env.dimension_ranges[1][0]:.1f}, {track_env.dimension_ranges[1][1]:.1f}] cm")
+print(
+    f"  Extent: x=[{track_env.dimension_ranges[0][0]:.1f}, {track_env.dimension_ranges[0][1]:.1f}] cm"
+)
+print(
+    f"  Width: y=[{track_env.dimension_ranges[1][0]:.1f}, {track_env.dimension_ranges[1][1]:.1f}] cm"
+)
 
 # DIAGNOSTIC: Check if environment has active_mask (which causes grey squares)
-if hasattr(track_env.layout, 'active_mask') and track_env.layout.active_mask is not None:
-    print(f"  ⚠️  Environment has MASKED GRID")
+if (
+    hasattr(track_env.layout, "active_mask")
+    and track_env.layout.active_mask is not None
+):
+    print("  ⚠️  Environment has MASKED GRID")
     print(f"  Grid shape: {track_env.layout.grid_shape}")
     print(f"  Active bins: {track_env.n_bins}")
     print(f"  Total grid cells: {np.prod(track_env.layout.grid_shape)}")
-    print(f"  Inactive (grey) bins: {np.prod(track_env.layout.grid_shape) - track_env.n_bins}")
+    print(
+        f"  Inactive (grey) bins: {np.prod(track_env.layout.grid_shape) - track_env.n_bins}"
+    )
 else:
-    print(f"  ✓ Regular grid (no masking)")
+    print("  ✓ Regular grid (no masking)")
 
 # Session 1: Place field at x=30 cm
 field_center_session1 = np.array([30.0, 50.0])
@@ -921,7 +987,9 @@ rate_session2 = compute_place_field(
 
 print(f"\nSession 1: {len(spikes_session1)} spikes, field at {field_center_session1}")
 print(f"Session 2: {len(spikes_session2)} spikes, field at {field_center_session2}")
-print(f"Ground truth shift: {np.linalg.norm(field_center_session2 - field_center_session1):.1f} cm")
+print(
+    f"Ground truth shift: {np.linalg.norm(field_center_session2 - field_center_session1):.1f} cm"
+)
 
 # %%
 # Detect fields in both sessions
@@ -939,7 +1007,7 @@ fields_session2 = detect_place_fields(
     detect_subfields=False,
 )
 
-print(f"\nDetected fields:")
+print("\nDetected fields:")
 print(f"  Session 1: {len(fields_session1)} field(s)")
 print(f"  Session 2: {len(fields_session2)} field(s)")
 
@@ -948,7 +1016,7 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
     centroid_s1 = field_centroid(rate_session1, fields_session1[0], track_env)
     centroid_s2 = field_centroid(rate_session2, fields_session2[0], track_env)
 
-    print(f"\nDetected centroids:")
+    print("\nDetected centroids:")
     print(f"  Session 1: ({centroid_s1[0]:.1f}, {centroid_s1[1]:.1f}) cm")
     print(f"  Session 2: ({centroid_s2[0]:.1f}, {centroid_s2[1]:.1f}) cm")
 
@@ -1019,7 +1087,6 @@ track_env.plot_field(
     rate_session2,
     ax=axes[1],
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
@@ -1050,38 +1117,41 @@ if len(fields_session2) > 0:
         "",
         xy=(centroid_s2[0], centroid_s2[1]),
         xytext=(centroid_s1[0], centroid_s1[1]),
-        arrowprops=dict(
-            arrowstyle="->",
-            lw=3,
-            color="yellow",
-            alpha=0.8,
-        ),
+        arrowprops={
+            "arrowstyle": "->",
+            "lw": 3,
+            "color": "yellow",
+            "alpha": 0.8,
+        },
     )
-axes[1].set_title(f"Session 2: Field Shifted {shift_distance:.1f} cm", fontsize=14, fontweight="bold")
+axes[1].set_title(
+    f"Session 2: Field Shifted {shift_distance:.1f} cm", fontsize=14, fontweight="bold"
+)
 axes[1].legend(fontsize=11)
 
 plt.show()
 
 # %% [markdown]
-# ### Example 2: T-Maze with Geodesic Distance
+# ### Example 2: 2D T-Maze with Geodesic Distance
 #
 # Now let's demonstrate why **geodesic distance** is important for complex environments. In a T-maze, a place field shifting from one arm to another might have a short Euclidean distance (straight through the wall) but a much longer geodesic distance (following the path through the maze).
 #
-# This example shows a clear case where Euclidean distance is misleading.
+# This example uses the **2D Shapely polygon-based T-maze** created earlier, showing how geodesic distance correctly accounts for the maze structure.
 
 # %%
-# For T-maze, use the trajectory from the earlier tmaze_session which has structured exploration
-# This ensures good coverage of all maze arms
-# Re-use the existing tmaze trajectory which was properly structured
-
-# Use the trajectory from the earlier T-maze session for better coverage
+# Use the trajectory from the 2D Shapely-based T-maze created earlier
+# This provides good coverage of all maze arms
 maze_positions = tmaze_positions
 maze_times = tmaze_times
 
-print(f"Using T-maze trajectory: {len(maze_positions)} points over {maze_times[-1]:.1f}s")
+print(
+    f"Using 2D T-maze trajectory: {len(maze_positions)} points over {maze_times[-1]:.1f}s"
+)
+print(f"T-maze is 2D polygon with {tmaze_env.n_bins} bins")
 
-# Session A: Place field at stem start (bottom of T)
-stem_start_center = np.array([-25.0, 20.0])
+# Session A: Place field at stem start (bottom of start box)
+# Using coordinates from the Shapely-based T-maze
+stem_start_center = np.array([0.0, start_box_size / 2])  # Center of start box
 pc_stem = PlaceCellModel(
     tmaze_env,
     center=stem_start_center,
@@ -1108,7 +1178,10 @@ rate_stem = compute_place_field(
 )
 
 # Session B: Place field at left arm end (far from stem start)
-left_arm_end_center = np.array([-45.0, 130.0])  # Left arm end
+# Left arm center: midpoint along the left arm
+left_arm_end_center = np.array(
+    [-(arm_length / 2 + stem_width / 2), start_box_size + stem_length + arm_width / 2]
+)  # Center of left arm
 pc_arm = PlaceCellModel(
     tmaze_env,
     center=left_arm_end_center,
@@ -1153,7 +1226,7 @@ fields_arm = detect_place_fields(
     detect_subfields=False,
 )
 
-print(f"\nDetected fields:")
+print("\nDetected fields:")
 print(f"  Stem start: {len(fields_stem)} field(s)")
 print(f"  Arm end: {len(fields_arm)} field(s)")
 
@@ -1191,12 +1264,12 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
     print(f"Euclidean distance:  {shift_euclidean:.1f} cm (straight line)")
     print(f"Geodesic distance:   {shift_geodesic:.1f} cm (following maze path)")
     print(f"\nRatio (geodesic/euclidean): {shift_geodesic / shift_euclidean:.2f}x")
-    print(f"\nInterpretation:")
-    print(f"  The field 'shifted' from stem start to arm end.")
+    print("\nInterpretation:")
+    print("  The field 'shifted' from stem start to arm end.")
     print(f"  Euclidean distance: {shift_euclidean:.1f} cm (straight line)")
     print(f"  Geodesic distance: {shift_geodesic:.1f} cm (actual path through maze)")
     print(f"  Geodesic is {shift_geodesic - shift_euclidean:.1f} cm longer!")
-    print(f"\n  For mazes and complex environments, always use geodesic distance!")
+    print("\n  For mazes and complex environments, always use geodesic distance!")
 
 # %%
 # Visualize both measurements
@@ -1207,7 +1280,6 @@ tmaze_env.plot_field(
     rate_stem,
     ax=axes[0],
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 axes[0].scatter(
@@ -1221,7 +1293,9 @@ axes[0].scatter(
     label="Session A (Stem Start)",
     zorder=10,
 )
-axes[0].set_title("Session A: Place Field at Stem Start", fontsize=14, fontweight="bold")
+axes[0].set_title(
+    "Session A: Place Field at Stem Start", fontsize=14, fontweight="bold"
+)
 axes[0].legend(fontsize=11)
 
 # Arm field (Session B) with both distance visualizations
@@ -1229,7 +1303,6 @@ tmaze_env.plot_field(
     rate_arm,
     ax=axes[1],
     cmap="hot",
-
     colorbar_label="Firing Rate (Hz)",
 )
 axes[1].scatter(
@@ -1260,7 +1333,7 @@ axes[1].scatter(
 axes[1].plot(
     [stem_start_center[0], left_arm_end_center[0]],
     [stem_start_center[1], left_arm_end_center[1]],
-    'r--',
+    "r--",
     linewidth=3,
     alpha=0.6,
     label=f"Euclidean: {shift_euclidean:.1f} cm",

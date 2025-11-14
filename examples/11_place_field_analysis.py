@@ -37,6 +37,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Import Shapely for polygon-based T-maze
+from shapely.geometry import box
+from shapely.ops import unary_union
+
 # Neurospatial imports
 from neurospatial import Environment, compute_place_field
 from neurospatial.metrics import (
@@ -54,7 +58,6 @@ from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
     simulate_trajectory_ou,
-    tmaze_alternation_session,
 )
 
 # Set random seed for reproducibility
@@ -548,44 +551,110 @@ print(
 # We'll compare place fields between the open field and a T-maze to demonstrate remapping analysis.
 
 # %% [markdown]
-# ### Generate T-Maze Trajectory
+# ### Create 2D T-Maze with Shapely Polygon
 #
 # T-mazes are commonly used to study spatial memory and decision-making. They have:
 # - A start box
 # - A stem leading to a choice point
 # - Left and right arms
 #
-# We'll use the `tmaze_alternation_session()` convenience function from the simulation subpackage.
+# We'll create a 2D T-maze using Shapely polygons and `Environment.from_polygon()`.
 
 # %%
-# Generate complete T-maze session using simulation subpackage
-# This creates a T-maze environment, trajectory, and place cell spike data
-tmaze_session = tmaze_alternation_session(
-    duration=100.0,  # seconds
-    n_trials=25,
-    n_place_cells=1,  # Just one cell for this example
+# Create T-maze shape using Shapely polygons
+# T-maze dimensions (cm)
+stem_width = 15.0
+stem_length = 60.0
+arm_width = 15.0
+arm_length = 50.0
+start_box_size = 20.0
+
+# Small overlap to ensure boxes merge into a single polygon
+overlap = 0.1
+
+# Create component rectangles with slight overlaps to ensure proper merging
+# Start box at bottom (extends slightly into stem)
+start_box = box(-start_box_size / 2, 0, start_box_size / 2, start_box_size + overlap)
+
+# Stem extending upward from start box (extends slightly into arms)
+stem = box(
+    -stem_width / 2,
+    start_box_size,
+    stem_width / 2,
+    start_box_size + stem_length + overlap,
+)
+
+# Left arm (extends slightly into stem on right side and down into junction)
+left_arm = box(
+    -(arm_length + stem_width / 2),
+    start_box_size + stem_length - overlap,
+    -stem_width / 2 + overlap,
+    start_box_size + stem_length + arm_width,
+)
+
+# Right arm (extends slightly into stem on left side and down into junction)
+right_arm = box(
+    stem_width / 2 - overlap,
+    start_box_size + stem_length - overlap,
+    arm_length + stem_width / 2,
+    start_box_size + stem_length + arm_width,
+)
+
+# Combine all parts into single T-maze polygon
+# With overlaps, unary_union creates a single merged Polygon
+tmaze_polygon = unary_union([start_box, stem, left_arm, right_arm])
+
+# Create environment from polygon
+tmaze_env = Environment.from_polygon(
+    polygon=tmaze_polygon,
+    bin_size=5.0,
+)
+tmaze_env.units = "cm"
+tmaze_env.frame = "tmaze"
+
+# Generate trajectory on T-maze
+tmaze_positions, tmaze_times = simulate_trajectory_ou(
+    tmaze_env,
+    duration=400.0,  # Longer duration for good coverage of all arms
+    dt=0.02,
+    speed_mean=12.0,  # cm/s
+    speed_std=3.0,
+    coherence_time=0.8,  # Longer coherence for smoother paths
+    boundary_mode="reflect",
     seed=42,
 )
 
-# Extract components from session
-tmaze_env = tmaze_session.env
-tmaze_positions = tmaze_session.positions
-tmaze_times = tmaze_session.times
-tmaze_spike_times_list = tmaze_session.spike_trains
-
-# Get the first (and only) cell's spikes
-tmaze_spike_times = tmaze_spike_times_list[0]
-
-# Get trial metadata
-trial_choices = tmaze_session.metadata["trial_choices"]
-
 print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
 print(f"  Generated {len(tmaze_positions)} trajectory points")
-print(f"  {len(trial_choices)} trials with choices: {trial_choices[:5]}... (first 5)")
 print(
     f"  Coverage: x=[{tmaze_positions[:, 0].min():.1f}, {tmaze_positions[:, 0].max():.1f}], "
     f"y=[{tmaze_positions[:, 1].min():.1f}, {tmaze_positions[:, 1].max():.1f}] cm"
 )
+print(f"  Maze extent: {tmaze_polygon.bounds}")
+
+# Create a single place cell for the T-maze
+# Position field at choice point (junction of stem and arms)
+tmaze_field_center = np.array([0.0, start_box_size + stem_length])
+
+pc_tmaze = PlaceCellModel(
+    tmaze_env,
+    center=tmaze_field_center,
+    width=12.0,
+    max_rate=15.0,
+    baseline_rate=0.1,
+    distance_metric="euclidean",
+    seed=42,
+)
+
+tmaze_spike_times = generate_poisson_spikes(
+    firing_rate=pc_tmaze.firing_rate(tmaze_positions, tmaze_times),
+    times=tmaze_times,
+    refractory_period=0.002,
+    seed=42,
+)
+
+print(f"\nGenerated {len(tmaze_spike_times)} spikes for T-maze place cell")
+print(f"Place field center: {tmaze_field_center}")
 
 # %% [markdown]
 # ### Visualize T-Maze Environment
@@ -642,30 +711,23 @@ axes[1].set_aspect("equal")
 plt.show()
 
 # %% [markdown]
-# ### Simulate Place Cell in T-Maze
+# ### Compute Place Field for T-Maze
 #
-# The `tmaze_alternation_session()` function has already generated place cell spike data.
-# The place cell was automatically positioned with uniform coverage across the T-maze.
-# Let's compute the firing rate map to see where the cell fired.
+# Now compute the firing rate map for the T-maze place cell.
 
 # %%
-# Note: Spikes were already generated by tmaze_alternation_session()
-# Extract ground truth from the session (ground_truth is a dict with keys like 'cell_0')
-tmaze_ground_truth = tmaze_session.ground_truth["cell_0"]  # First cell
-tmaze_field_center = tmaze_ground_truth["center"]
-
-print(f"\nT-maze session generated {len(tmaze_spike_times)} spikes")
-print(f"T-maze field center (ground truth): {tmaze_field_center}")
-print(f"Field properties: {tmaze_ground_truth}")
-
 # Compute firing rate map for T-maze
 tmaze_firing_rate = compute_place_field(
     tmaze_env,
     tmaze_spike_times,
     tmaze_times,
     tmaze_positions,
-    bandwidth=5.0,
+    bandwidth=8.0,  # Consistent smoothing
 )
+
+print("\nComputed T-maze firing rate map:")
+print(f"  Peak rate: {tmaze_firing_rate.max():.2f} Hz")
+print(f"  Mean rate: {tmaze_firing_rate.mean():.2f} Hz")
 
 # %% [markdown]
 # ### Visualize Remapping: Same Cell, Two Environments
@@ -1069,27 +1131,26 @@ axes[1].legend(fontsize=11)
 plt.show()
 
 # %% [markdown]
-# ### Example 2: T-Maze with Geodesic Distance
+# ### Example 2: 2D T-Maze with Geodesic Distance
 #
 # Now let's demonstrate why **geodesic distance** is important for complex environments. In a T-maze, a place field shifting from one arm to another might have a short Euclidean distance (straight through the wall) but a much longer geodesic distance (following the path through the maze).
 #
-# This example shows a clear case where Euclidean distance is misleading.
+# This example uses the **2D Shapely polygon-based T-maze** created earlier, showing how geodesic distance correctly accounts for the maze structure.
 
 # %%
-# For T-maze, use the trajectory from the earlier tmaze_session which has structured exploration
-# This ensures good coverage of all maze arms
-# Re-use the existing tmaze trajectory which was properly structured
-
-# Use the trajectory from the earlier T-maze session for better coverage
+# Use the trajectory from the 2D Shapely-based T-maze created earlier
+# This provides good coverage of all maze arms
 maze_positions = tmaze_positions
 maze_times = tmaze_times
 
 print(
-    f"Using T-maze trajectory: {len(maze_positions)} points over {maze_times[-1]:.1f}s"
+    f"Using 2D T-maze trajectory: {len(maze_positions)} points over {maze_times[-1]:.1f}s"
 )
+print(f"T-maze is 2D polygon with {tmaze_env.n_bins} bins")
 
-# Session A: Place field at stem start (bottom of T)
-stem_start_center = np.array([-25.0, 20.0])
+# Session A: Place field at stem start (bottom of start box)
+# Using coordinates from the Shapely-based T-maze
+stem_start_center = np.array([0.0, start_box_size / 2])  # Center of start box
 pc_stem = PlaceCellModel(
     tmaze_env,
     center=stem_start_center,
@@ -1116,7 +1177,10 @@ rate_stem = compute_place_field(
 )
 
 # Session B: Place field at left arm end (far from stem start)
-left_arm_end_center = np.array([-45.0, 130.0])  # Left arm end
+# Left arm center: midpoint along the left arm
+left_arm_end_center = np.array(
+    [-(arm_length / 2 + stem_width / 2), start_box_size + stem_length + arm_width / 2]
+)  # Center of left arm
 pc_arm = PlaceCellModel(
     tmaze_env,
     center=left_arm_end_center,
