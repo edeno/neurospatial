@@ -22,10 +22,8 @@ data samples, which might be shared with or used by other utility modules.
 from __future__ import annotations
 
 import itertools
-import math
 import warnings
 from collections.abc import Sequence
-from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -78,7 +76,18 @@ def _create_regular_grid_connectivity_graph(
         If input shapes (`full_grid_bin_centers`, `active_mask_nd`,
         `grid_shape`) are inconsistent.
 
+    Notes
+    -----
+    This function now delegates to the generic connectivity graph builder,
+    providing a regular grid-specific neighbor-finding callback.
+
     """
+    # Import the generic helper (local import to avoid circular dependencies)
+    from neurospatial.layout.helpers.graph_building import (
+        _create_connectivity_graph_generic,
+    )
+
+    # Validate inputs
     if full_grid_bin_centers.shape[0] != np.prod(grid_shape):
         raise ValueError(
             f"Mismatch: full_grid_bin_centers length ({full_grid_bin_centers.shape[0]}) "
@@ -90,114 +99,70 @@ def _create_regular_grid_connectivity_graph(
             f"does not match grid_shape {grid_shape}.",
         )
 
-    n_dims = active_mask_nd.ndim
-    connectivity_graph = nx.Graph()
-
-    # 1. Identify active bins and create mapping from original flat index to new node ID
+    # Extract active bin indices from mask
     active_original_flat_indices = np.flatnonzero(active_mask_nd)
-    n_active_bins = len(active_original_flat_indices)
 
-    if n_active_bins == 0:
-        return connectivity_graph  # Return an empty graph
+    # Define neighbor-finding callback for regular grids
+    def get_regular_grid_neighbors(
+        flat_index: int, grid_shape: tuple[int, ...]
+    ) -> list[int]:
+        """Get neighbor flat indices for a regular grid bin.
 
-    # Map: original_full_grid_flat_index -> new_active_bin_node_id (0 to n_active_bins-1)
-    original_flat_to_new_node_id_map: dict[int, int] = {
-        original_idx: new_idx
-        for new_idx, original_idx in enumerate(active_original_flat_indices)
-    }
+        Parameters
+        ----------
+        flat_index : int
+            Flat index of the current bin.
+        grid_shape : tuple[int, ...]
+            Shape of the grid.
 
-    # 2. Add nodes to the graph with new IDs (0 to n_active_bins-1) and attributes
-    for new_node_id in range(n_active_bins):
-        original_flat_idx = active_original_flat_indices[new_node_id]
-        original_nd_idx_tuple = tuple(np.unravel_index(original_flat_idx, grid_shape))
-        pos_coordinates = tuple(full_grid_bin_centers[original_flat_idx])
+        Returns
+        -------
+        list[int]
+            List of flat indices of neighbors in the grid.
+        """
+        n_dims = len(grid_shape)
 
-        connectivity_graph.add_node(
-            new_node_id,
-            pos=pos_coordinates,
-            source_grid_flat_index=int(original_flat_idx),
-            original_grid_nd_index=original_nd_idx_tuple,
-        )
+        # Convert flat index to N-D index
+        nd_index = np.array(np.unravel_index(flat_index, grid_shape))
 
-    # 3. Add edges between these new active node IDs
-    # Iterate through each active bin using its *original* N-D index
-    active_original_nd_indices_list = np.array(np.nonzero(active_mask_nd)).T
+        # Define neighbor offsets based on connectivity mode
+        if connect_diagonal:
+            # All combinations of -1, 0, 1 across n_dims, excluding (0,0,...)
+            neighbor_offsets = [
+                offset
+                for offset in itertools.product([-1, 0, 1], repeat=n_dims)
+                if not all(o == 0 for o in offset)
+            ]
+        else:  # Orthogonal neighbors only
+            neighbor_offsets = []
+            for dim_idx in range(n_dims):
+                for offset_val in [-1, 1]:
+                    offset = [0] * n_dims
+                    offset[dim_idx] = offset_val
+                    neighbor_offsets.append(tuple(offset))
 
-    # Define neighbor offsets
-    if connect_diagonal:
-        # All combinations of -1, 0, 1 across n_dims, excluding (0,0,...)
-        neighbor_offsets = [
-            offset
-            for offset in itertools.product([-1, 0, 1], repeat=n_dims)
-            if not all(o == 0 for o in offset)
-        ]
-    else:  # Orthogonal neighbors only
-        neighbor_offsets = []
-        for dim_idx in range(n_dims):
-            for offset_val in [-1, 1]:
-                offset = [0] * n_dims
-                offset[dim_idx] = offset_val
-                neighbor_offsets.append(tuple(offset))
-
-    edges_to_add_with_attrs = []
-
-    for current_original_nd_idx_arr in active_original_nd_indices_list:
-        # current_original_nd_idx_arr is like np.array([r, c, z])
-        current_original_flat_idx = np.ravel_multi_index(
-            current_original_nd_idx_arr,
-            grid_shape,
-        )
-        u_new = original_flat_to_new_node_id_map[current_original_flat_idx]
-
+        # Find neighbors
+        neighbors = []
         for offset_tuple in neighbor_offsets:
-            neighbor_original_nd_idx_arr = current_original_nd_idx_arr + np.array(
-                offset_tuple,
-            )
-            neighbor_original_nd_idx_tuple = tuple(neighbor_original_nd_idx_arr)
+            neighbor_nd_index = nd_index + np.array(offset_tuple)
 
             # Check if neighbor is within grid bounds
-            if not all(
-                0 <= neighbor_original_nd_idx_arr[d] < grid_shape[d]
-                for d in range(n_dims)
-            ):
-                continue
-
-            # Check if this neighbor is also active
-            if active_mask_nd[neighbor_original_nd_idx_tuple]:
-                neighbor_original_flat_idx = np.ravel_multi_index(
-                    neighbor_original_nd_idx_tuple,
-                    grid_shape,
+            if all(0 <= neighbor_nd_index[d] < grid_shape[d] for d in range(n_dims)):
+                # Convert back to flat index
+                neighbor_flat_idx = int(
+                    np.ravel_multi_index(tuple(neighbor_nd_index), grid_shape)
                 )
-                v_new = original_flat_to_new_node_id_map[neighbor_original_flat_idx]
+                neighbors.append(neighbor_flat_idx)
 
-                # Add edge if u_new < v_new to avoid duplicates and self-loops (though u_new should not equal v_new here)
-                if u_new < v_new:
-                    pos_u = np.asarray(connectivity_graph.nodes[u_new]["pos"])
-                    pos_v = np.asarray(connectivity_graph.nodes[v_new]["pos"])
-                    distance = float(np.linalg.norm(pos_u - pos_v))
-                    displacement_vector = pos_v - pos_u
-                    edge_attrs: dict[str, Any] = {
-                        "distance": distance,
-                        "vector": tuple(displacement_vector.tolist()),
-                    }
-                    if n_dims == 2:
-                        edge_attrs["angle_2d"] = math.atan2(
-                            displacement_vector[1],
-                            displacement_vector[0],
-                        )
+        return neighbors
 
-                    edges_to_add_with_attrs.append((u_new, v_new, edge_attrs))
-
-    # Add all edges with their attributes
-    connectivity_graph.add_edges_from(edges_to_add_with_attrs)
-
-    # Add edge IDs to the graph
-    # This is a unique ID for each edge in the graph, starting from 0
-    # and incrementing by 1 for each edge
-    for edge_id_counter, (u, v) in enumerate(connectivity_graph.edges()):
-        connectivity_graph.edges[u, v]["edge_id"] = edge_id_counter
-
-    return connectivity_graph
+    # Use generic helper to build the graph
+    return _create_connectivity_graph_generic(
+        active_original_flat_indices,
+        full_grid_bin_centers,
+        grid_shape,
+        get_regular_grid_neighbors,
+    )
 
 
 def _infer_active_bins_from_regular_grid(

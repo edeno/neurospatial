@@ -1,13 +1,95 @@
 # neurospatial Development Scratchpad
 
 **Last Updated**: 2025-11-14
-**Current Session**: Starting Milestone 1
+**Current Session**: Milestone 2 - Code Quality & Performance
 
 ## Current Status
 
-Working on: **Task 1.5 - Testing: 3D Environment Coverage [CRITICAL]** - ✅ COMPLETED
+Working on: **Task 2.1 - Refactor: Graph Connectivity Helper [HIGH]** - ✅ COMPLETED
 
 ## Session Notes
+
+### 2025-11-14: Task 2.1 - Graph Connectivity Helper ✅ COMPLETED
+
+**Status**: Complete - Code reviewer APPROVED (production-ready)
+
+**Summary**:
+Successfully refactored graph connectivity building by creating a generic helper function that eliminates ~70% code duplication between regular grid and hexagonal layout engines.
+
+**Implementation Details**:
+- **Created** `src/neurospatial/layout/helpers/graph_building.py` (new file, 197 lines):
+  - Implemented `_create_connectivity_graph_generic()` function
+  - Uses callback pattern to delegate neighbor-finding logic to caller
+  - Comprehensive NumPy-style docstring with runnable example
+  - Handles all standard graph attributes (pos, distance, vector, angle_2d, edge_id)
+  - Works for any N-D grid with any topology
+
+- **Created** `tests/layout/test_graph_building.py` (new test file, 10 comprehensive tests):
+  - Covers empty bins, single bin, full grids, partial active
+  - Tests 2D orthogonal, 2D diagonal, and 3D connectivity
+  - Verifies edge attributes, edge IDs, no self-loops, node remapping
+
+- **Refactored** `src/neurospatial/layout/helpers/regular_grid.py`:
+  - Reduced `_create_regular_grid_connectivity_graph()` from 163 lines to 89 lines
+  - Extracted neighbor-finding logic to local callback function
+  - Maintains 100% backward compatibility
+
+- **Refactored** `src/neurospatial/layout/helpers/hexagonal.py`:
+  - Reduced `_create_hex_connectivity_graph()` from 123 lines to 57 lines
+  - Extracted hex-specific neighbor logic to local callback
+  - Maintains 100% backward compatibility
+
+**Test Results**:
+- ✅ All 10 new generic helper tests PASS (0.04s)
+- ✅ All 12 regular grid tests PASS (no regressions)
+- ✅ All 12 hexagonal tests PASS (no regressions)
+- ✅ All 175 layout tests PASS (0.31s)
+- ✅ Ruff: All checks passed
+- ✅ Mypy: Success, no issues found in 3 source files
+
+**Code Review Feedback** (code-reviewer agent):
+- ✅ **APPROVED** - Production-ready
+- **Rating**: EXCELLENT on all criteria
+  - Code quality: EXCELLENT (callback pattern is elegant)
+  - Test coverage: EXCELLENT (10 comprehensive tests)
+  - Documentation: EXEMPLARY (NumPy-style with runnable example)
+  - Type safety: EXCELLENT (mypy passes)
+  - Backward compatibility: 100% (all tests pass)
+  - Code duplication: Eliminated ~150 lines (~70% reduction verified)
+- **Strengths noted**:
+  - Outstanding NumPy-style docstring with runnable example
+  - Comprehensive test coverage (edge cases, 2D/3D, attributes)
+  - Clean callback pattern allows any grid topology
+  - Smart local imports to avoid circular dependencies
+  - Proper type annotations throughout
+  - Zero regressions (175/175 tests pass)
+- **Minor suggestions** (all optional, low priority):
+  - Consider adding disconnected components test (checkerboard pattern)
+  - Could extract edge attribute computation to helper (YAGNI applies)
+  - Could add toroidal grid example to docstring (nice-to-have)
+
+**TDD Process Followed**:
+1. ✅ Read existing test files to understand patterns
+2. ✅ Designed generic graph connectivity helper API (callback pattern)
+3. ✅ Wrote 10 comprehensive tests for generic helper
+4. ✅ Ran tests - verified they FAIL (ModuleNotFoundError)
+5. ✅ Implemented `_create_connectivity_graph_generic()` with full docstring
+6. ✅ All 10 tests PASS
+7. ✅ Refactored regular_grid.py - 12/12 tests PASS
+8. ✅ Refactored hexagonal.py - 12/12 tests PASS
+9. ✅ All 175 layout tests PASS (zero regressions)
+10. ✅ Applied code-reviewer agent - APPROVED
+11. ✅ Ruff and mypy pass
+
+**Key Design Decisions**:
+- **Callback pattern**: Allows generic helper to work with any grid topology
+- **Local imports**: Avoids circular dependencies in helpers module
+- **Closure-based callbacks**: Capture layout-specific parameters (connect_diagonal, hex row parity)
+- **Maintain backward compatibility**: Public API unchanged, all tests pass
+
+**Time**: ~3 hours (under 8h estimate, thanks to TDD and careful design)
+
+---
 
 ### 2025-11-14: Task 1.5 - 3D Environment Coverage ✅ COMPLETED
 

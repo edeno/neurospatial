@@ -20,11 +20,8 @@ These utilities are primarily used by the `HexagonalLayout` engine.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
-from typing import Any
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -555,42 +552,40 @@ def _create_hex_connectivity_graph(
         Connectivity graph of active hexagonal bins. Nodes are re-indexed
         `0` to `n_active_bins - 1`.
 
+    Notes
+    -----
+    This function now delegates to the generic connectivity graph builder,
+    providing a hexagonal grid-specific neighbor-finding callback.
+
     """
-    connectivity_graph = nx.Graph()
+    # Import the generic helper (local import to avoid circular dependencies)
+    from neurospatial.layout.helpers.graph_building import (
+        _create_connectivity_graph_generic,
+    )
 
-    # 1. Identify active bins and create mapping from original flat index to new node ID
-    n_active_bins = len(active_original_flat_indices)
+    # Define neighbor-finding callback for hexagonal grids
+    def get_hex_grid_neighbors(
+        flat_index: int, grid_shape: tuple[int, ...]
+    ) -> list[int]:
+        """Get neighbor flat indices for a hexagonal grid bin.
 
-    if n_active_bins == 0:
-        return connectivity_graph  # Return an empty graph
+        Parameters
+        ----------
+        flat_index : int
+            Flat index of the current hexagon.
+        grid_shape : tuple[int, ...]
+            Shape of the hexagonal grid (n_hex_rows, n_hex_cols).
 
-    # Map: original_full_grid_flat_index -> new_active_bin_node_id (0 to n_active_bins-1)
-    original_flat_to_new_node_id_map: dict[int, int] = {
-        original_idx: new_idx
-        for new_idx, original_idx in enumerate(active_original_flat_indices)
-    }
+        Returns
+        -------
+        list[int]
+            List of flat indices of neighbors in the hexagonal lattice.
+        """
+        n_hex_y, n_hex_x = grid_shape
 
-    # 2. Add nodes to the graph with new IDs (0 to n_active_bins-1) and attributes
-    n_hex_y, n_hex_x = centers_shape
-    for node_id, original_flat_idx in enumerate(active_original_flat_indices):
-        row_idx = original_flat_idx // n_hex_x
-        col_idx = original_flat_idx % n_hex_x
-        original_nd_idx = (row_idx, col_idx)
-        pos_coordinates = tuple(full_grid_bin_centers[original_flat_idx])
-
-        connectivity_graph.add_node(
-            node_id,
-            pos=pos_coordinates,
-            source_grid_flat_index=int(original_flat_idx),
-            original_grid_nd_index=original_nd_idx,
-        )
-
-    # 3. Add edges between these new active node IDs
-    # Iterate through each active bin using its *original* N-D index
-    edges_to_add_with_attrs = []
-    for node_id, original_flat_idx in enumerate(active_original_flat_indices):
-        row_idx = original_flat_idx // n_hex_x
-        col_idx = original_flat_idx % n_hex_x
+        # Convert flat index to 2D index
+        row_idx = flat_index // n_hex_x
+        col_idx = flat_index % n_hex_x
 
         # Determine if the current row is odd or even
         is_odd_row = (row_idx % 2) == 1
@@ -598,51 +593,24 @@ def _create_hex_connectivity_graph(
         # Get the neighbor deltas based on the row parity
         neighbor_deltas = _get_hex_grid_neighbor_deltas(is_odd_row)
 
-        # Add edges to neighbors
+        # Find neighbors
+        neighbors = []
         for delta_col, delta_row in neighbor_deltas:
             neighbor_row = row_idx + delta_row
             neighbor_col = col_idx + delta_col
 
             # Check if the neighbor is within bounds
-            if not (0 <= neighbor_row < n_hex_y and 0 <= neighbor_col < n_hex_x):
-                continue
+            if 0 <= neighbor_row < n_hex_y and 0 <= neighbor_col < n_hex_x:
+                # Calculate the original flat index of the neighbor
+                neighbor_flat_index = neighbor_row * n_hex_x + neighbor_col
+                neighbors.append(neighbor_flat_index)
 
-            # Calculate the original flat index of the neighbor
-            neighbor_flat_index = neighbor_row * n_hex_x + neighbor_col
+        return neighbors
 
-            # Check if the neighbor is an active bin
-            if neighbor_flat_index in original_flat_to_new_node_id_map:
-                # Get the new node ID for the neighbor
-                neighbor_node_id = original_flat_to_new_node_id_map[neighbor_flat_index]
-
-                # Add an edge between the current node and its neighbor
-                if node_id < neighbor_node_id:
-                    # Avoid duplicate edges in undirected graph
-                    pos_u = np.asarray(connectivity_graph.nodes[node_id]["pos"])
-                    pos_v = np.asarray(
-                        connectivity_graph.nodes[neighbor_node_id]["pos"],
-                    )
-                    distance = float(np.linalg.norm(pos_u - pos_v))
-                    displacement_vector = pos_v - pos_u
-                    edge_attrs: dict[str, Any] = {
-                        "distance": distance,
-                        "vector": tuple(displacement_vector.tolist()),
-                        "angle_2d": math.atan2(
-                            displacement_vector[1],
-                            displacement_vector[0],
-                        ),
-                    }
-                    edges_to_add_with_attrs.append(
-                        (node_id, neighbor_node_id, edge_attrs),
-                    )
-
-    # Add all edges with their attributes
-    connectivity_graph.add_edges_from(edges_to_add_with_attrs)
-
-    # Add edge IDs to the graph
-    # This is a unique ID for each edge in the graph, starting from 0
-    # and incrementing by 1 for each edge
-    for edge_id_counter, (u, v) in enumerate(connectivity_graph.edges()):
-        connectivity_graph.edges[u, v]["edge_id"] = edge_id_counter
-
-    return connectivity_graph
+    # Use generic helper to build the graph
+    return _create_connectivity_graph_generic(
+        active_original_flat_indices,
+        full_grid_bin_centers,
+        centers_shape,
+        get_hex_grid_neighbors,
+    )
