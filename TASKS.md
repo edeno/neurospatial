@@ -345,14 +345,15 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.9 | **Effort**: 2h | **Files**: `src/neurospatial/__init__.py`
 
-- [ ] Add comprehensive module-level docstring to `__init__.py`
-- [ ] Document core classes (Environment, Region, CompositeEnvironment)
-- [ ] Document key functions by category (spatial, trajectory, fields, etc.)
-- [ ] Add import patterns section
-- [ ] Add "See Also" references
-- [ ] Verify formatting: `uv run python -c "import neurospatial; help(neurospatial)"`
+- [x] Add comprehensive module-level docstring to `__init__.py`
+- [x] Document core classes (Environment, Region, CompositeEnvironment)
+- [x] Document key functions by category (spatial, trajectory, fields, etc.)
+- [x] Add import patterns section
+- [x] Add "See Also" references
+- [x] Verify formatting: `uv run python -c "import neurospatial; help(neurospatial)"`
 
-**Acceptance**: `help(neurospatial)` shows comprehensive API overview
+**Acceptance**: `help(neurospatial)` shows comprehensive API overview ✅
+**Status**: ✅ COMPLETED (2025-11-14)
 
 ---
 
@@ -565,7 +566,7 @@ git diff TASKS.md
 ## Progress Tracking
 
 **Milestone 1**: ☐ 0/8 tasks (0%)
-**Milestone 2**: ☑ 8/12 tasks (67%)
+**Milestone 2**: ☑ 9/12 tasks (75%)
 **Milestone 3**: ☐ 0/10 tasks (0%)
 **Milestone 4**: ☐ 0/2 tasks (0%)
 

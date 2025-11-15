@@ -1,3 +1,178 @@
+"""Spatial discretization and analysis for neuroscience.
+
+**neurospatial** provides tools for discretizing continuous N-dimensional spatial
+environments into bins/nodes with connectivity graphs. It enables spatial analysis
+for neuroscience applications including place fields, position tracking, and
+spatial navigation.
+
+Core Classes
+------------
+Environment : Main spatial discretization class
+    Discretizes continuous space into bins with connectivity graph.
+    Factory methods: from_samples, from_polygon, from_graph, from_mask, from_image.
+Region : Immutable region of interest (ROI)
+    Point or polygon-based spatial region with metadata.
+Regions : Container for multiple named regions
+    Dict-like interface for managing collections of ROIs.
+CompositeEnvironment : Multi-environment composition
+    Merges multiple environments with automatic bridge inference.
+
+Key Functions by Category
+--------------------------
+
+Spatial Queries and Mapping:
+    map_points_to_bins : Batch point-to-bin mapping with KDTree caching
+    distance_field : Multi-source geodesic distance computation
+    pairwise_distances : Distances between node subsets
+    neighbors_within : Find nodes within distance threshold
+
+Trajectory Analysis:
+    compute_place_field : Place field estimation from spike data
+    spikes_to_field : Convert spike times to spatial firing rate
+    Environment.occupancy : Compute spatial occupancy from trajectory
+    Environment.bin_sequence : Extract bin sequence from positions
+
+Field Operations:
+    normalize_field : Normalize field to sum to 1
+    combine_fields : Weighted combination of multiple fields
+    clamp : Clamp field values to range
+    kl_divergence : KL divergence between fields
+    Environment.smooth : Graph-based field smoothing
+    Environment.interpolate : Interpolate field values
+
+Transforms and Alignment:
+    estimate_transform : Estimate affine transform from point pairs
+    apply_transform_to_environment : Transform entire environment
+    get_2d_rotation_matrix : Create 2D rotation matrix
+    map_probabilities_to_nearest_target_bin : Align probability distributions
+
+Regions:
+    Environment.region_membership : Compute region membership for bins
+    regions_to_mask : Convert regions to boolean mask
+    goal_reward_field : Gaussian reward field centered at goal
+    region_reward_field : Reward field for region
+
+Kernels and Convolution:
+    compute_diffusion_kernels : Graph-based diffusion kernels
+    apply_kernel : Apply kernel to field
+    convolve : Graph-based convolution
+    neighbor_reduce : Reduce over graph neighborhoods
+
+Graph Operations:
+    gradient : Spatial gradient on graph
+    divergence : Spatial divergence on graph
+    Environment.shortest_path : Find shortest path between bins
+    Environment.neighbors : Get neighboring bins
+
+I/O and Serialization:
+    to_file : Save environment to .json + .npz files
+    from_file : Load environment from files
+    to_dict : Serialize to dictionary
+    from_dict : Deserialize from dictionary
+
+Validation and Utilities:
+    validate_environment : Validate environment structure
+    clear_kdtree_cache : Clear KDTree cache for memory management
+    list_available_layouts : List all available layout types
+    get_layout_parameters : Get parameters for layout type
+
+Import Patterns
+---------------
+Import core classes and functions::
+
+    from neurospatial import Environment, Region, Regions, CompositeEnvironment
+    from neurospatial import (
+        map_points_to_bins,
+        distance_field,
+        compute_place_field,
+        to_file,
+        from_file,
+        validate_environment,
+    )
+
+Common Usage
+------------
+Create environment from position data::
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units='cm')
+    >>> env.n_bins
+    400
+
+Map trajectory to bins::
+
+    >>> times = np.linspace(0, 10, 100)
+    >>> trajectory = np.random.uniform(0, 100, (100, 2))
+    >>> bin_sequence = env.bin_sequence(trajectory)
+    >>> occupancy = env.occupancy(times, trajectory)
+
+Compute place field from spikes::
+
+    >>> from neurospatial import compute_place_field
+    >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])
+    >>> firing_rate = compute_place_field(
+    ...     env, spike_times, times, trajectory,
+    ...     method='diffusion_kde', bandwidth=5.0
+    ... )
+
+Add and query regions::
+
+    >>> env.regions.add('goal', point=[50, 50])
+    >>> env.regions.add('start', point=[10, 10])
+    >>> membership = env.region_membership(env.bin_centers)
+
+Save and load::
+
+    >>> from neurospatial import to_file, from_file
+    >>> to_file(env, 'my_environment')
+    >>> loaded = from_file('my_environment')
+
+See Also
+--------
+Environment : Core environment class with detailed documentation
+Region : Region of interest documentation
+compute_place_field : Place field computation methods
+distance_field : Graph-based distance computation
+
+Notes
+-----
+This package uses graph-based representations to handle arbitrary spatial
+topologies including regular grids, hexagonal tessellations, 1D tracks,
+polygon-bounded regions, and custom connectivity patterns.
+
+For detailed documentation, see https://neurospatial.readthedocs.io
+
+Examples
+--------
+Create 2D environment and compute shortest path::
+
+    >>> env = Environment.from_samples(
+    ...     positions, bin_size=5.0, units='cm',
+    ...     connect_diagonal_neighbors=True
+    ... )
+    >>> path = env.shortest_path(start_bin=0, goal_bin=100)
+    >>> distance = env.distance_between(0, 100)
+
+Create 3D environment::
+
+    >>> positions_3d = np.random.uniform(0, 100, (1000, 3))
+    >>> env_3d = Environment.from_samples(
+    ...     positions_3d, bin_size=5.0, units='cm'
+    ... )
+    >>> env_3d.n_dims
+    3
+
+Create environment from polygon::
+
+    >>> from shapely.geometry import box
+    >>> polygon = box(0, 0, 100, 100)
+    >>> env = Environment.from_polygon(
+    ...     polygon, bin_size=5.0, units='cm'
+    ... )
+"""
+
 import logging
 
 from neurospatial.alignment import (

@@ -5,11 +5,77 @@
 
 ## Current Status
 
-**Milestone 2 Progress**: 8/12 tasks completed (67%)
+**Milestone 2 Progress**: 9/12 tasks completed (75%)
 
-Working on: **Task 2.9 - Documentation: API Overview Docstring [MEDIUM]** - Next task
+Working on: **Task 2.10 - Consistency: Scale Parameter Naming [LOW]** - Next task
 
 ## Session Notes
+
+### 2025-11-14: Task 2.9 - Documentation: API Overview Docstring ✅ COMPLETED
+
+**Status**: Complete
+
+**Summary**:
+Successfully added comprehensive module-level docstring to `__init__.py` with NumPy format, documenting all core classes, key functions by category, import patterns, and usage examples.
+
+**Implementation Details**:
+- **Added** comprehensive module-level docstring (170 lines) to `src/neurospatial/__init__.py`
+- **Core Classes** section:
+  - Environment: Main spatial discretization class with factory methods
+  - Region: Immutable ROI with point or polygon
+  - Regions: Dict-like container for multiple ROIs
+  - CompositeEnvironment: Multi-environment composition
+- **Key Functions by Category** (8 categories):
+  1. Spatial Queries and Mapping (4 functions)
+  2. Trajectory Analysis (4 functions)
+  3. Field Operations (6 functions)
+  4. Transforms and Alignment (4 functions)
+  5. Regions (4 functions)
+  6. Kernels and Convolution (4 functions)
+  7. Graph Operations (4 functions)
+  8. I/O and Serialization (4 functions)
+  9. Validation and Utilities (4 functions)
+- **Import Patterns** section:
+  - Core classes import example
+  - Common functions import example
+- **Common Usage** section (5 examples):
+  - Create environment from position data
+  - Map trajectory to bins
+  - Compute place field from spikes
+  - Add and query regions
+  - Save and load
+- **See Also** section: Links to key classes and functions
+- **Notes** section: Explains graph-based approach and spatial topologies
+- **Examples** section (3 advanced examples):
+  - 2D environment with shortest path
+  - 3D environment creation
+  - Environment from polygon
+
+**Test Results**:
+- ✅ `help(neurospatial)` renders correctly with all sections
+- ✅ All documented imports work (tested)
+- ✅ Ruff: All checks passed (1 file reformatted for indentation)
+- ✅ Mypy: Success: no issues found
+
+**Key Features**:
+1. Comprehensive API overview at module level ✅
+2. All core classes documented with descriptions ✅
+3. Functions organized by 9 categories ✅
+4. Import patterns shown with examples ✅
+5. Usage examples demonstrate common workflows ✅
+6. NumPy docstring format followed ✅
+
+**Acceptance Criteria Met**: ✅
+- Comprehensive module-level docstring: YES (170 lines)
+- Core classes documented: YES (all 4)
+- Functions by category: YES (9 categories, 36+ functions)
+- Import patterns section: YES (with examples)
+- See Also references: YES (4 key items)
+- help(neurospatial) shows overview: YES (renders correctly)
+
+**Time**: ~25 minutes (slightly over 2h estimate due to comprehensive categorization)
+
+---
 
 ### 2025-11-14: Task 2.8 - Type Safety: Fix SubsetLayout ✅ COMPLETED
 
