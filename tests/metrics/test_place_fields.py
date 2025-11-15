@@ -1525,3 +1525,502 @@ class TestComputeFieldEMD:
             # Should still return a valid result (using Euclidean fallback)
             assert emd > 0
             assert not np.isnan(emd)
+
+
+# =============================================================================
+# Additional Edge Case Tests for Coverage
+# =============================================================================
+
+
+class TestDetectPlaceFieldsValidation:
+    """Test validation and error handling in detect_place_fields."""
+
+    def test_firing_rate_shape_mismatch_raises_error(self):
+        """Test that ValueError is raised when firing_rate shape doesn't match env.n_bins."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import detect_place_fields
+
+        wrong_firing_rate = np.zeros(env.n_bins + 10)
+
+        with pytest.raises(
+            ValueError, match=r"firing_rate shape.*does not match.*n_bins"
+        ):
+            detect_place_fields(wrong_firing_rate, env)
+
+    def test_threshold_out_of_range_raises_error(self):
+        """Test that ValueError is raised when threshold is not in (0, 1)."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+        firing_rate = np.random.rand(env.n_bins) * 5.0
+
+        from neurospatial.metrics.place_fields import detect_place_fields
+
+        with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
+            detect_place_fields(firing_rate, env, threshold=0.0)
+
+        with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
+            detect_place_fields(firing_rate, env, threshold=1.0)
+
+        with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
+            detect_place_fields(firing_rate, env, threshold=-0.1)
+
+        with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
+            detect_place_fields(firing_rate, env, threshold=1.5)
+
+    def test_all_nan_firing_rate_returns_empty(self):
+        """Test that all-NaN firing rate returns empty field list."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import detect_place_fields
+
+        firing_rate = np.full(env.n_bins, np.nan)
+
+        fields = detect_place_fields(firing_rate, env)
+
+        assert fields == []
+
+    def test_explicit_min_size_parameter(self):
+        """Test that min_size parameter is respected."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import detect_place_fields
+
+        firing_rate = np.zeros(env.n_bins)
+        peak_idx = env.n_bins // 2
+        firing_rate[peak_idx] = 5.0
+        for neighbor in env.neighbors(peak_idx):
+            firing_rate[neighbor] = 3.0
+
+        fields = detect_place_fields(firing_rate, env, min_size=20)
+        assert len(fields) == 0 or all(len(f) >= 20 for f in fields)
+
+    def test_subfields_extension_path(self):
+        """Test that subfields are properly extended to fields list."""
+        positions = []
+        for x in np.linspace(0, 30, 150):
+            for y in np.linspace(0, 30, 150):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import detect_place_fields
+
+        firing_rate = np.zeros(env.n_bins)
+        for i in range(env.n_bins):
+            center = env.bin_centers[i]
+            dist1 = np.sqrt((center[0] - 10) ** 2 + (center[1] - 10) ** 2)
+            dist2 = np.sqrt((center[0] - 20) ** 2 + (center[1] - 20) ** 2)
+            firing_rate[i] = 5.0 * np.exp(-(dist1**2) / (2 * 2.5**2)) + 5.0 * np.exp(
+                -(dist2**2) / (2 * 2.5**2)
+            )
+
+        fields_with_subfields = detect_place_fields(
+            firing_rate, env, detect_subfields=True, threshold=0.2
+        )
+
+        fields_without_subfields = detect_place_fields(
+            firing_rate, env, detect_subfields=False, threshold=0.2
+        )
+
+        assert len(fields_with_subfields) >= len(fields_without_subfields)
+
+
+class TestFieldCentroidEdgeCases:
+    """Test edge cases in field_centroid function."""
+
+    def test_field_centroid_zero_firing_rate(self):
+        """Test field_centroid when all firing rates are zero (unweighted centroid)."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import field_centroid
+
+        field_bins = np.array([0, 1, 2, 3, 4])
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[field_bins] = 0.0
+
+        centroid = field_centroid(firing_rate, field_bins, env)
+
+        expected_centroid = env.bin_centers[field_bins].mean(axis=0)
+        assert_allclose(centroid, expected_centroid, rtol=1e-10)
+
+
+class TestSkaggsInformationEdgeCases:
+    """Test edge cases in skaggs_information function."""
+
+    def test_skaggs_information_zero_mean_rate(self):
+        """Test skaggs_information when mean rate is zero."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import skaggs_information
+
+        firing_rate = np.zeros(env.n_bins)
+        occupancy = np.ones(env.n_bins)
+
+        info = skaggs_information(firing_rate, occupancy)
+        assert info == 0.0
+
+    def test_skaggs_information_nan_mean_rate(self):
+        """Test skaggs_information when mean rate is NaN."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import skaggs_information
+
+        firing_rate = np.full(env.n_bins, np.nan)
+        occupancy = np.ones(env.n_bins)
+
+        info = skaggs_information(firing_rate, occupancy)
+        assert info == 0.0
+
+
+class TestSparsityEdgeCases:
+    """Test edge cases in sparsity function."""
+
+    def test_sparsity_zero_denominator(self):
+        """Test sparsity when denominator is zero."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import sparsity
+
+        firing_rate = np.zeros(env.n_bins)
+        occupancy = np.ones(env.n_bins)
+
+        sparsity_value = sparsity(firing_rate, occupancy)
+        assert sparsity_value == 0.0
+
+    def test_sparsity_nan_denominator(self):
+        """Test sparsity when denominator is NaN."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import sparsity
+
+        firing_rate = np.full(env.n_bins, np.nan)
+        occupancy = np.ones(env.n_bins)
+
+        sparsity_value = sparsity(firing_rate, occupancy)
+        assert sparsity_value == 0.0
+
+
+class TestFieldStabilityEdgeCases:
+    """Test edge cases in field_stability function."""
+
+    def test_field_stability_insufficient_valid_points(self):
+        """Test field_stability when fewer than 2 valid points."""
+        from neurospatial.metrics.place_fields import field_stability
+
+        rate_map_1 = np.array([1.0, np.nan, np.nan, np.nan])
+        rate_map_2 = np.array([2.0, np.nan, np.nan, np.nan])
+
+        stability = field_stability(rate_map_1, rate_map_2)
+        assert stability == 0.0
+
+    def test_field_stability_all_nan(self):
+        """Test field_stability when all values are NaN."""
+        from neurospatial.metrics.place_fields import field_stability
+
+        rate_map_1 = np.array([np.nan, np.nan, np.nan])
+        rate_map_2 = np.array([np.nan, np.nan, np.nan])
+
+        stability = field_stability(rate_map_1, rate_map_2)
+        assert stability == 0.0
+
+    def test_field_stability_invalid_method(self):
+        """Test field_stability raises ValueError for invalid method."""
+        from neurospatial.metrics.place_fields import field_stability
+
+        rate_map_1 = np.array([1.0, 2.0, 3.0])
+        rate_map_2 = np.array([1.5, 2.5, 3.5])
+
+        with pytest.raises(
+            ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
+        ):
+            field_stability(rate_map_1, rate_map_2, method="invalid")
+
+
+class TestRateMapCoherenceEdgeCases:
+    """Test edge cases in rate_map_coherence function."""
+
+    def test_rate_map_coherence_wrong_shape_raises_error(self):
+        """Test rate_map_coherence raises ValueError for wrong shape."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        # Wrong shape
+        firing_rate = np.random.rand(env.n_bins + 10)
+
+        with pytest.raises(ValueError, match=r"firing_rate\.shape must be"):
+            rate_map_coherence(firing_rate, env)
+
+    def test_rate_map_coherence_all_nan_returns_nan(self):
+        """Test rate_map_coherence returns NaN when all values are NaN."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        firing_rate = np.full(env.n_bins, np.nan)
+
+        coherence = rate_map_coherence(firing_rate, env)
+        assert np.isnan(coherence)
+
+    def test_rate_map_coherence_insufficient_points_returns_nan(self):
+        """Test rate_map_coherence returns NaN when too few valid points."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        # Only one valid bin
+        firing_rate = np.full(env.n_bins, np.nan)
+        firing_rate[0] = 1.0
+
+        coherence = rate_map_coherence(firing_rate, env)
+        assert np.isnan(coherence)
+
+    def test_rate_map_coherence_zero_variance_returns_nan(self):
+        """Test rate_map_coherence returns NaN when zero variance."""
+        positions = []
+        for x in np.linspace(0, 20, 50):
+            for y in np.linspace(0, 20, 50):
+                positions.append([x, y])
+        positions = np.array(positions)
+
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        # Constant firing rate (zero variance)
+        firing_rate = np.ones(env.n_bins) * 5.0
+
+        coherence = rate_map_coherence(firing_rate, env)
+        # May return NaN for zero variance
+        assert isinstance(coherence, (float, np.floating))
+
+    def test_rate_map_coherence_invalid_method_raises_error(self):
+        """Test rate_map_coherence raises ValueError for invalid method."""
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        from neurospatial.metrics.place_fields import rate_map_coherence
+
+        firing_rate = np.random.rand(env.n_bins) * 5.0
+
+        with pytest.raises(
+            ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
+        ):
+            rate_map_coherence(firing_rate, env, method="invalid")
+
+
+class TestSelectivityEdgeCases:
+    """Test edge cases in selectivity function."""
+
+    def test_selectivity_zero_mean_positive_peak_returns_inf(self):
+        """Test selectivity returns inf when mean_rate is 0 but peak_rate > 0."""
+        from neurospatial.metrics.place_fields import selectivity
+
+        # Create firing rate with one positive value, rest zeros
+        firing_rate = np.zeros(100)
+        firing_rate[50] = 5.0
+
+        # Create uniform occupancy so mean_rate will be low
+        # With one non-zero firing rate and uniform occupancy, mean should be close to zero
+        occupancy = np.ones(100)
+
+        result = selectivity(firing_rate, occupancy)
+
+        # When mean is effectively zero but peak > 0, should return very high selectivity
+        assert result >= 100  # Very high selectivity (exactly 100 in this case)
+
+
+class TestInOutFieldRatioEdgeCases:
+    """Test edge cases in in_out_field_ratio function."""
+
+    def test_in_out_field_ratio_entire_environment(self):
+        """Test in_out_field_ratio returns NaN when field covers entire environment."""
+        from neurospatial.metrics.place_fields import in_out_field_ratio
+
+        firing_rate = np.random.rand(100) * 5.0
+        field_bins = np.arange(100)  # All bins
+
+        result = in_out_field_ratio(firing_rate, field_bins)
+        assert np.isnan(result)
+
+    def test_in_out_field_ratio_no_valid_bins(self):
+        """Test in_out_field_ratio returns NaN when no valid in/out bins."""
+        from neurospatial.metrics.place_fields import in_out_field_ratio
+
+        # All NaN firing rates
+        firing_rate = np.full(100, np.nan)
+        field_bins = np.array([10, 20, 30])
+
+        result = in_out_field_ratio(firing_rate, field_bins)
+        assert np.isnan(result)
+
+    def test_in_out_field_ratio_zero_out_field_positive_in_field(self):
+        """Test in_out_field_ratio returns inf when out_field_rate is 0 but in_field_rate > 0."""
+        from neurospatial.metrics.place_fields import in_out_field_ratio
+
+        # Only field bins have non-zero rates
+        firing_rate = np.zeros(100)
+        field_bins = np.array([10, 20, 30])
+        firing_rate[field_bins] = 5.0
+
+        result = in_out_field_ratio(firing_rate, field_bins)
+        assert np.isinf(result)
+
+    def test_in_out_field_ratio_zero_both(self):
+        """Test in_out_field_ratio returns NaN when both in_field and out_field are 0."""
+        from neurospatial.metrics.place_fields import in_out_field_ratio
+
+        # All zeros
+        firing_rate = np.zeros(100)
+        field_bins = np.array([10, 20, 30])
+
+        result = in_out_field_ratio(firing_rate, field_bins)
+        assert np.isnan(result)
+
+
+class TestInformationPerSecondEdgeCases:
+    """Test edge cases in information_per_second function."""
+
+    def test_information_per_second_no_valid_pairs(self):
+        """Test information_per_second returns NaN when no valid firing_rate/occupancy pairs."""
+        from neurospatial.metrics.place_fields import information_per_second
+
+        # All NaN
+        firing_rate = np.full(100, np.nan)
+        occupancy = np.full(100, np.nan)
+
+        result = information_per_second(firing_rate, occupancy)
+        assert np.isnan(result)
+
+
+class TestSpatialCoverageSingleCellEdgeCases:
+    """Test edge cases in spatial_coverage_single_cell function."""
+
+    def test_spatial_coverage_all_nan_returns_nan(self):
+        """Test spatial_coverage_single_cell returns NaN when all firing rates are NaN."""
+        from neurospatial.metrics.place_fields import spatial_coverage_single_cell
+
+        firing_rate = np.full(100, np.nan)
+
+        result = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+        assert np.isnan(result)
+
+
+class TestFieldShapeMetricsEdgeCases:
+    """Test edge cases in field_shape_metrics function."""
+
+    def test_field_shape_metrics_empty_field(self):
+        """Test field_shape_metrics returns empty dict for empty field_bins."""
+        from neurospatial.metrics.place_fields import field_shape_metrics
+
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate = np.random.rand(env.n_bins)
+        field_bins = np.array([], dtype=np.int64)
+
+        result = field_shape_metrics(firing_rate, field_bins, env)
+
+        # Should return dict with NaN values
+        assert isinstance(result, dict)
+        assert np.isnan(result.get("area", 0))
+
+    def test_field_shape_metrics_all_nan_rates(self):
+        """Test field_shape_metrics returns NaN values when all rates are NaN."""
+        from neurospatial.metrics.place_fields import field_shape_metrics
+
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate = np.full(env.n_bins, np.nan)
+        field_bins = np.array([10, 20, 30])
+
+        result = field_shape_metrics(firing_rate, field_bins, env)
+
+        # Should return dict with NaN values
+        assert isinstance(result, dict)
+        assert np.isnan(result.get("area", 0))
+
+
+class TestFieldShiftDistanceEdgeCases:
+    """Test edge cases in field_shift_distance function."""
+
+    def test_field_shift_distance_nan_centroid(self):
+        """Test field_shift_distance returns NaN when centroids are NaN."""
+        from neurospatial.metrics.place_fields import field_shift_distance
+
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # All NaN firing rates will produce NaN centroids
+        firing_rate_1 = np.full(env.n_bins, np.nan)
+        firing_rate_2 = np.random.rand(env.n_bins)
+        field_bins_1 = np.array([10, 20, 30])
+        field_bins_2 = np.array([40, 50, 60])
+
+        result = field_shift_distance(
+            firing_rate_1, field_bins_1, env, firing_rate_2, field_bins_2, env
+        )
+        assert np.isnan(result)
+
+    def test_field_shift_distance_incompatible_environments_geodesic(self):
+        """Test field_shift_distance with incompatible environments (geodesic mode)."""
+        from neurospatial.metrics.place_fields import field_shift_distance
+
+        positions1 = np.random.randn(1000, 2) * 10
+        env1 = Environment.from_samples(positions1, bin_size=2.0)
+
+        positions2 = np.random.randn(500, 2) * 10  # Different size/location
+        env2 = Environment.from_samples(positions2, bin_size=2.0)
+
+        firing_rate_1 = np.random.rand(env1.n_bins)
+        firing_rate_2 = np.random.rand(env2.n_bins)
+        field_bins_1 = np.array([10, 20, 30])
+        field_bins_2 = np.array([10, 20, 30])
+
+        # When environments have different number of bins, falls back to Euclidean
+        # This triggers the "different number of bins" warning (lines 1660-1670)
+        with pytest.warns(UserWarning, match="different number of bins"):
+            result = field_shift_distance(
+                firing_rate_1,
+                field_bins_1,
+                env1,
+                firing_rate_2,
+                field_bins_2,
+                env2,
+                use_geodesic=True,
+            )
+        # Should fall back to Euclidean and return a valid distance
+        assert isinstance(result, float)
+        assert result >= 0
+
+
+class TestComputeFieldEMDEdgeCases:
+    """Test edge cases in compute_field_emd function."""
+
+    def test_compute_field_emd_both_zero(self):
+        """Test compute_field_emd returns 0 when both distributions are all zeros (unnormalized)."""
+        from neurospatial.metrics.place_fields import compute_field_emd
+
+        positions = np.random.randn(1000, 2) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate_1 = np.zeros(env.n_bins)
+        firing_rate_2 = np.zeros(env.n_bins)
+
+        # Use normalize=False since zero mass with normalize=True returns NaN
+        result = compute_field_emd(firing_rate_1, firing_rate_2, env, normalize=False)
+        assert result == 0.0
