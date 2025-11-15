@@ -8,7 +8,7 @@ Your workflow MUST be:
         CLAUDE.md (implementation guide)
         SCRATCHPAD.md (notes and current status)
         TASKS.md (current tasks)
-        SIMULATION_PLAN.md (overall project plan for specific context)
+        PLAN.md (overall project plan for specific context)
 
     Find the FIRST unchecked [ ] task in TASKS.md
 

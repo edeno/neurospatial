@@ -5,9 +5,92 @@
 
 ## Current Status
 
-Working on: **Task 2.1 - Refactor: Graph Connectivity Helper [HIGH]** - ✅ COMPLETED
+**Milestone 2 Progress**: 2/12 tasks completed (17%)
+
+Working on: **Task 2.3 - Testing: Performance Regression Suite [HIGH]** - Ready to start
 
 ## Session Notes
+
+### 2025-11-14: Task 2.2 - Optimize region_membership() Performance ✅ COMPLETED
+
+**Status**: Complete - Code reviewer APPROVED (production-ready)
+
+**Summary**:
+Successfully optimized `region_membership()` by hoisting `shapely_points()` creation outside the region loop, achieving 2.88x speedup with significantly improved scaling (3.34x ratio for 10 regions vs 6.86x before).
+
+**Implementation Details**:
+- **Modified** `src/neurospatial/environment/regions.py` (lines 363-399):
+  - Added pre-check for polygon regions existence (line 368)
+  - Moved 2D dimensionality check outside loop (lines 370-375)
+  - Created shapely Points array ONCE before loop (line 377) - major optimization
+  - Reused pre-created points array for all polygon regions (line 388)
+  - Removed redundant shapely_points() calls from inside loop
+
+- **Created** `tests/test_performance.py` (new file, 167 lines):
+  - Added `@pytest.mark.slow` marker to pytest.ini
+  - Implemented `TestRegionMembershipPerformance` class with 2 benchmarks
+  - `test_region_membership_scales_with_regions()`: Tests scaling with 1, 5, 10 regions
+  - `test_region_membership_absolute_performance()`: Tests absolute threshold (<100ms)
+  - Implemented `TestEnvironmentCreationPerformance` class with 1 benchmark
+  - All tests include detailed timing output for manual inspection
+
+**Performance Results**:
+- **Before optimization**:
+  - 1 region: 0.35 ms
+  - 5 regions: 1.30 ms (ratio: 3.68x)
+  - 10 regions: 2.42 ms (ratio: 6.86x)
+- **After optimization**:
+  - 1 region: 0.25 ms (28% faster)
+  - 5 regions: 0.51 ms (ratio: 2.04x) - improved from 3.68x
+  - 10 regions: 0.84 ms (ratio: 3.34x) - improved from 6.86x
+- **Improvement**: 2.88x faster absolute speedup, 51% reduction in scaling overhead
+
+**Test Results**:
+- ✅ All 25 region membership tests PASS (correctness verified, 0.19s)
+- ✅ All 3 performance benchmarks PASS (0.34s)
+- ✅ Ruff: All checks passed (1 f-string auto-fixed)
+- ✅ Mypy: Success: no issues found in 2 source files
+
+**Code Review Feedback** (code-reviewer agent):
+- ✅ **APPROVED** - Production-ready
+- **Rating**: EXCELLENT on all criteria
+  - Correctness: EXCELLENT (all 25 correctness tests pass)
+  - Performance: EXCELLENT (2.88x speedup, improved scaling)
+  - Code quality: EXCELLENT (clear comments, proper optimization)
+  - Edge cases: EXCELLENT (handles no polygon regions, mixed types)
+  - Tests: EXCELLENT (comprehensive correctness + performance)
+- **Strengths noted**:
+  - Smart optimization strategy (pre-check avoids unnecessary work)
+  - Dimensionality validation moved outside loop (fail-fast principle)
+  - Maintains exact behavior (zero regressions)
+  - Proper complexity analysis (O(N*R) vs O(N*R²))
+  - Comprehensive test coverage (25 correctness + 3 performance)
+  - Scientifically sound (vectorized operations preserved)
+- **Minor suggestions** (all low priority, not blocking):
+  - Consider tightening performance threshold to 5x (currently 7x)
+  - Could add CI performance tracking for regression detection
+  - Could extract polygon validation to helper function
+
+**TDD Process Followed**:
+1. ✅ Read region_membership() implementation to understand the issue
+2. ✅ Read existing region tests to understand patterns
+3. ✅ Created tests/test_performance.py with benchmark tests
+4. ✅ Ran baseline benchmark - established current performance (6.86x ratio)
+5. ✅ Implemented optimization (hoisted shapely_points() outside loop)
+6. ✅ Ran benchmark again - verified 2.88x speedup (3.34x ratio)
+7. ✅ Ran all region tests - verified correctness (25/25 pass)
+8. ✅ Applied code-reviewer agent - APPROVED
+9. ✅ Ruff and mypy pass
+
+**Key Design Decisions**:
+- **Pre-check for polygon regions**: Avoids creating points array when not needed (point-only regions)
+- **Hoist dimensionality check**: Fail-fast principle - check once before loop instead of N times
+- **Single points array creation**: Eliminates redundant shapely_points() conversions (N → 1)
+- **Maintain vectorized operations**: Preserves shapely's efficient covers/contains methods
+
+**Time**: ~1 hour (within 4h estimate)
+
+---
 
 ### 2025-11-14: Task 2.1 - Graph Connectivity Helper ✅ COMPLETED
 

@@ -364,6 +364,18 @@ class EnvironmentRegions:
         from shapely import contains, covers
         from shapely import points as shapely_points
 
+        # Check if any polygon regions exist and validate dimensionality
+        has_polygon_regions = any(r.kind == "polygon" for r in regions.values())
+        if has_polygon_regions:
+            # Only supports 2D for now
+            if bin_centers.shape[1] != 2:
+                raise NotImplementedError(
+                    f"region_membership currently only supports 2D environments "
+                    f"for polygon regions. Environment has {bin_centers.shape[1]} dimensions."
+                )
+            # Create shapely Points array ONCE before loop (major optimization)
+            points = shapely_points(bin_centers[:, 0], bin_centers[:, 1])
+
         # Iterate over regions and check containment
         for region_idx, (_region_name, region) in enumerate(regions.items()):
             # Handle point regions - points have no area, so no bins can be inside
@@ -373,16 +385,7 @@ class EnvironmentRegions:
 
             # Handle polygon regions
             if region.kind == "polygon":
-                # Create shapely Points array from bin centers for vectorized operation
-                # Only supports 2D for now
-                if bin_centers.shape[1] != 2:
-                    raise NotImplementedError(
-                        f"region_membership currently only supports 2D environments "
-                        f"for polygon regions. Environment has {bin_centers.shape[1]} dimensions."
-                    )
-
-                points = shapely_points(bin_centers[:, 0], bin_centers[:, 1])
-
+                # Use pre-created points array (created once before loop)
                 # Vectorized containment check
                 if include_boundary:
                     # covers: True if point is inside or on boundary
