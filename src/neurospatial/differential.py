@@ -243,11 +243,9 @@ def gradient(
     diff_op = env.differential_operator  # Use cached property
     gradient_field = diff_op.T @ field
 
-    # Convert sparse result to dense array and ensure proper dtype
-    if sparse.issparse(gradient_field):
-        result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
-    else:
-        result = np.asarray(gradient_field, dtype=np.float64).ravel()
+    # Convert result to dense array and ensure proper dtype
+    # Note: sparse @ dense always returns dense in scipy
+    result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
 
     return result
 
@@ -369,10 +367,8 @@ def divergence(
     diff_op = env.differential_operator  # Use cached property
     divergence_field = diff_op @ edge_field
 
-    # Convert sparse result to dense array and ensure proper dtype
-    if sparse.issparse(divergence_field):
-        result: np.ndarray = np.asarray(divergence_field, dtype=np.float64).ravel()
-    else:
-        result = np.asarray(divergence_field, dtype=np.float64).ravel()
+    # Convert result to dense array and ensure proper dtype
+    # Note: sparse @ dense always returns dense in scipy
+    result: np.ndarray = np.asarray(divergence_field, dtype=np.float64).ravel()
 
     return result

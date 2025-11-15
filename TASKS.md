@@ -48,17 +48,20 @@
 - `neighbors_within()`: 20 tests (geodesic, euclidean, validation, edge cases)
 - `distance_field()` many sources: 3 tests (broadcasted pairwise path)
 
-### 1.2 Coverage Audit: differential.py
+### 1.2 Coverage Audit: differential.py ✅ COMPLETE
 
-- [ ] Run coverage report for differential.py
-  ```bash
-  uv run pytest tests/ --cov=src/neurospatial/differential.py --cov-report=html
-  ```
-- [ ] Verify coverage for `compute_differential_operator()` ≥95%
-- [ ] Verify coverage for `gradient()` on 1D, 2D, 3D environments ≥95%
-- [ ] Verify coverage for `divergence()` ≥95%
+- [x] Run coverage report for differential.py ✅ (Final: **100% coverage**)
+- [x] Verify coverage for `compute_differential_operator()` ≥95% ✅ (100%)
+- [x] Verify coverage for `gradient()` on 1D, 2D, 3D environments ≥95% ✅ (100%)
+- [x] Verify coverage for `divergence()` ≥95% ✅ (100%)
 
-**Acceptance**: All functions in differential.py have ≥95% line coverage
+**Solution**: Removed 4 lines of unreachable dead code
+
+- `sparse.issparse()` branches in `gradient()` and `divergence()` could never execute
+- Root cause: `sparse_matrix @ dense_array` always returns dense array in scipy
+- Code simplified from 49 to 45 statements
+
+**Acceptance**: All functions in differential.py have ≥95% line coverage ✅ **EXCEEDED: 100% coverage**
 
 ### 1.3 Coverage Audit: kernels.py
 

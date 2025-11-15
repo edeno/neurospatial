@@ -50,7 +50,73 @@
 
 **Next Steps**:
 - [x] Task 1.1 COMPLETE ✅
-- [ ] Move to Task 1.2 (differential.py coverage audit)
+- [x] Task 1.2 COMPLETE ✅
+- [ ] Move to Task 1.3 (kernels.py coverage audit)
+
+---
+
+### Milestone 1: Test Coverage Audit - differential.py (Task 1.2)
+
+**Status**: ✅ Coverage achieved through dead code removal
+
+**Coverage Results**:
+- Initial: **93% coverage** (49 statements, 2 missed, 12 branches, 2 partial)
+- Final: **100% coverage** (45 statements, 0 missed, 8 branches, 0 partial)
+
+**Issue Identified**:
+- Lines 248 and 374 were unreachable dead code
+- `sparse.issparse()` branches in `gradient()` and `divergence()` could never be hit
+- Root cause: `sparse_matrix @ dense_array` always returns dense array in scipy
+
+**Investigation**:
+```python
+# Verified behavior:
+import numpy as np
+from scipy import sparse
+
+D = sparse.csc_matrix([[1, 0, 1], [0, 1, 1]])
+field = np.array([1.0, 2.0])
+result = D.T @ field
+
+print(sparse.issparse(result))  # Always False!
+```
+
+**Solution Applied**:
+- Removed unreachable `if sparse.issparse()` branches
+- Simplified to single code path with explanatory comment
+- Reduced code from 49 to 45 statements (-4 lines)
+
+**Code Changes** (`src/neurospatial/differential.py`):
+```python
+# Before (lines 241-252):
+diff_op = env.differential_operator
+gradient_field = diff_op.T @ field
+
+if sparse.issparse(gradient_field):
+    result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
+else:
+    result = np.asarray(gradient_field, dtype=np.float64).ravel()
+
+# After (lines 241-248):
+diff_op = env.differential_operator
+gradient_field = diff_op.T @ field
+
+# Convert result to dense array and ensure proper dtype
+# Note: sparse @ dense always returns dense in scipy
+result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
+```
+
+**Test Results**:
+- All 21 tests pass
+- Test execution time: 0.17s
+- No new tests added (dead code removal only)
+
+**Files Modified**:
+- `src/neurospatial/differential.py`: -4 lines (removed dead code)
+
+**Next Steps**:
+- [x] Task 1.2 COMPLETE ✅
+- [ ] Move to Task 1.3 (kernels.py coverage audit)
 
 **Test Command Used**:
 ```bash
