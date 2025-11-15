@@ -186,7 +186,7 @@ This file tracks concrete implementation tasks for the code review action items.
 
 ## Milestone 2: Code Quality & Performance (v1.0-beta)
 
-**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: In Progress (2/12 tasks completed)
+**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: In Progress (3/12 tasks completed - 25%)
 
 **Goal**: Improve code quality, reduce duplication, add performance tests, improve API consistency.
 
@@ -239,14 +239,14 @@ This file tracks concrete implementation tasks for the code review action items.
 - [x] Add test `test_region_membership_scales_with_regions()` (1, 5, 10 regions)
 - [x] Add test `test_region_membership_absolute_performance()` (2500 bins × 10 regions <100ms)
 - [x] Add to pytest.ini: `markers = slow: marks tests as slow`
-- [ ] Add test `test_kdtree_batch_query_performance()` (10k queries)
-- [ ] Add test `test_shortest_path_large_graph()`
-- [ ] Add test `test_occupancy_large_trajectory()`
-- [ ] Document how to run: `uv run pytest -m slow` in CLAUDE.md
-- [ ] Create CI performance tracking (optional)
+- [x] Add test `test_kdtree_batch_query_performance()` (10k queries <50ms)
+- [x] Add test `test_shortest_path_large_graph()` (2500-node graph <10ms avg)
+- [x] Add test `test_occupancy_large_trajectory()` (100k time points <500ms)
+- [x] Document how to run: `uv run pytest -m slow` in CLAUDE.md
+- [ ] Create CI performance tracking (optional - defer to future)
 
-**Acceptance**: Performance tests exist and pass with reasonable thresholds
-**Status**: 🔄 IN PROGRESS - File created with 3 tests, need 3 more tests
+**Acceptance**: Performance tests exist and pass with reasonable thresholds ✅
+**Status**: ✅ COMPLETED (2025-11-14) - 6 performance tests, all passing
 
 ---
 

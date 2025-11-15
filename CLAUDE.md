@@ -38,6 +38,12 @@ uv run ruff check . && uv run ruff format .
 
 # Run doctests
 uv run pytest --doctest-modules src/neurospatial/
+
+# Run performance benchmarks (slow tests)
+uv run pytest -m slow -v -s
+
+# Run all tests except performance benchmarks
+uv run pytest -m "not slow"
 ```
 
 **Most Common Patterns**:

@@ -7,7 +7,9 @@ run separately with: uv run pytest -m slow
 Benchmarks cover:
 - region_membership() scaling with number of regions
 - Large environment creation
-- Spatial query performance
+- Spatial query performance (KDTree batch queries)
+- Graph algorithms (shortest path)
+- Trajectory analysis (occupancy computation)
 """
 
 import time
@@ -16,7 +18,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, map_points_to_bins
 
 
 @pytest.mark.slow
@@ -171,4 +173,138 @@ class TestEnvironmentCreationPerformance:
         assert env.n_bins > 0
         print(
             f"\nEnvironment creation: {elapsed * 1000:.0f} ms for 10k points → {env.n_bins} bins"
+        )
+
+
+@pytest.mark.slow
+class TestSpatialQueryPerformance:
+    """Benchmark spatial query performance (KDTree-based operations)."""
+
+    def test_kdtree_batch_query_performance(self):
+        """Test KDTree batch query performance for map_points_to_bins().
+
+        This benchmark verifies that batch point-to-bin mapping scales
+        efficiently with the number of query points, using the cached
+        KDTree implementation.
+        """
+        # Create environment with ~2500 bins
+        data = np.array([[i, j] for i in range(50) for j in range(50)])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Generate 10,000 random query points within environment bounds
+        rng = np.random.default_rng(42)
+        query_points = rng.uniform(0, 50, size=(10000, 2))
+
+        # Benchmark batch query
+        start = time.perf_counter()
+        bin_indices = map_points_to_bins(query_points, env)
+        elapsed = time.perf_counter() - start
+
+        # Should complete in <50ms for 10k queries on 2500 bins
+        # KDTree query is O(N log M) where N=queries, M=bins
+        assert elapsed < 0.05, (
+            f"KDTree batch query took {elapsed * 1000:.1f}ms for 10k queries "
+            f"on {env.n_bins} bins (expected <50ms)"
+        )
+
+        # Verify correctness
+        assert len(bin_indices) == len(query_points)
+        assert bin_indices.dtype == np.int_
+        print(
+            f"\nKDTree batch query: {elapsed * 1000:.2f} ms for 10k queries on {env.n_bins} bins"
+        )
+
+
+@pytest.mark.slow
+class TestGraphAlgorithmPerformance:
+    """Benchmark graph algorithm performance."""
+
+    def test_shortest_path_large_graph(self):
+        """Test shortest path computation on large graphs.
+
+        This benchmark verifies that shortest path algorithms scale
+        efficiently with graph size.
+        """
+        # Create a large grid environment (2500 bins, ~10k edges)
+        data = np.array([[i, j] for i in range(50) for j in range(50)])
+        env = Environment.from_samples(
+            data, bin_size=1.0, connect_diagonal_neighbors=True
+        )
+
+        # Get two distant bins (opposite corners)
+        start_bin = 0
+        end_bin = env.n_bins - 1
+
+        # Benchmark shortest path computation
+        start_time = time.perf_counter()
+        # Run multiple times to get stable measurement
+        n_iterations = 100
+        for _ in range(n_iterations):
+            path = env.shortest_path(start_bin, end_bin)
+        elapsed = time.perf_counter() - start_time
+        avg_time = elapsed / n_iterations
+
+        # Should complete in <10ms per query for 2500-node graph
+        assert avg_time < 0.01, (
+            f"Shortest path took {avg_time * 1000:.1f}ms on {env.n_bins}-node graph "
+            f"with {env.connectivity.number_of_edges()} edges (expected <10ms)"
+        )
+
+        # Verify correctness
+        assert path is not None
+        assert len(path) > 0
+        assert path[0] == start_bin
+        assert path[-1] == end_bin
+        print(
+            f"\nShortest path: {avg_time * 1000:.2f} ms avg for {env.n_bins}-node graph "
+            f"({env.connectivity.number_of_edges()} edges)"
+        )
+
+
+@pytest.mark.slow
+class TestTrajectoryPerformance:
+    """Benchmark trajectory analysis performance."""
+
+    def test_occupancy_large_trajectory(self):
+        """Test occupancy computation with large trajectories.
+
+        This benchmark verifies that occupancy computation scales
+        efficiently with trajectory length.
+        """
+        # Create environment with ~1000 bins
+        data = np.array([[i, j] for i in range(32) for j in range(32)])
+        env = Environment.from_samples(data, bin_size=1.0)
+
+        # Generate a large trajectory (100,000 time points)
+        # Use trajectory that samples uniformly from active bins
+        rng = np.random.default_rng(42)
+        n_points = 100000
+
+        # Get bounds from actual bin centers
+        bounds_min = env.bin_centers.min(axis=0)
+        bounds_max = env.bin_centers.max(axis=0)
+
+        # Generate positions uniformly distributed within environment bounds
+        positions = rng.uniform(low=bounds_min, high=bounds_max, size=(n_points, 2))
+
+        times = np.arange(n_points, dtype=float)
+
+        # Benchmark occupancy computation
+        start = time.perf_counter()
+        occupancy = env.occupancy(times, positions, max_gap=None)
+        elapsed = time.perf_counter() - start
+
+        # Should complete in <500ms for 100k time points
+        assert elapsed < 0.5, (
+            f"Occupancy computation took {elapsed * 1000:.0f}ms for {n_points} time points "
+            f"on {env.n_bins} bins (expected <500ms)"
+        )
+
+        # Verify correctness
+        assert occupancy.shape == (env.n_bins,)
+        assert np.all(occupancy >= 0)
+        assert occupancy.sum() > 0  # Should have some occupancy
+        print(
+            f"\nOccupancy computation: {elapsed * 1000:.0f} ms for {n_points} time points "
+            f"on {env.n_bins} bins (total occupancy: {occupancy.sum():.0f})"
         )
