@@ -96,13 +96,16 @@ def map_points_to_bins(
     max_distance: float | None = None,
     max_distance_factor: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Map points to bin indices with deterministic tie-breaking.
+    """Map points to bins using nearest-neighbor with KDTree caching.
 
     This function provides fast, batch mapping of continuous coordinates to
-    discrete bin indices using KD-tree queries. It handles edge cases like
-    boundary points consistently through configurable tie-breaking rules.
+    discrete bin indices using KD-tree nearest-neighbor queries. Unlike
+    `Environment.bin_at()` which uses geometric containment, this finds the
+    bin whose center is closest to each point.
 
-    Internally caches a KD-tree on first call for O(log N) lookups.
+    Internally caches a KD-tree on first call for O(log N) lookups. Best for
+    large batches, trajectory processing, and when approximate assignment is
+    acceptable.
 
     Parameters
     ----------
@@ -184,8 +187,22 @@ def map_points_to_bins(
 
     See Also
     --------
-    Environment.bin_at : Basic point-to-bin mapping (delegates to layout engine)
+    Environment.bin_at : Geometric containment mapping (exact bin assignment)
     Environment.contains : Check if points are within environment bounds
+
+    Notes
+    -----
+    **Geometric Containment vs Nearest-Neighbor:**
+
+    - `Environment.bin_at()`: Uses layout-specific geometric containment to
+      determine which bin actually contains the point. This is exact but may
+      be slower for large batches and doesn't support advanced features like
+      tie-breaking or distance thresholds.
+
+    - `map_points_to_bins()` (this function): Uses KDTree to find the bin whose
+      center is closest to the point. Fast with caching, supports tie-breaking,
+      and allows distance thresholds. Best for large batches and trajectory
+      processing.
 
     """
     # Validate parameters

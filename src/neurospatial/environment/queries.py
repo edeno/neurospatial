@@ -40,10 +40,14 @@ class EnvironmentQueries:
 
     @check_fitted
     def bin_at(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
-        """Map N-dimensional continuous points to discrete active bin indices.
+        """Map N-dimensional points to bins using geometric containment.
 
-        This method delegates to the `point_to_bin_index` method of the
-        underlying `LayoutEngine`.
+        This method uses the layout-specific geometric logic to determine which
+        bin contains each point. This is different from nearest-neighbor mapping
+        and respects the actual geometry of the bins (grid cells, hexagons, etc.).
+
+        For nearest-neighbor mapping with caching and tie-breaking, see
+        `neurospatial.map_points_to_bins()`.
 
         Parameters
         ----------
@@ -61,6 +65,25 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
+
+        See Also
+        --------
+        neurospatial.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
+
+        Notes
+        -----
+        **Geometric Containment vs Nearest-Neighbor:**
+
+        - `bin_at()` (this method): Uses layout-specific geometric containment
+          to determine which bin actually contains the point. For grids, this
+          checks which grid cell the point falls into. For hexagons, which
+          hexagon contains it. This is exact but may be slower for large batches.
+
+        - `map_points_to_bins()`: Uses KDTree to find the bin whose center is
+          closest to the point. This is fast (O(log N)) with caching, supports
+          tie-breaking on boundaries, and allows distance thresholds. Best for
+          large batches, trajectory processing, and when approximate assignment
+          is acceptable.
 
         Examples
         --------
