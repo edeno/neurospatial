@@ -525,32 +525,52 @@
 
 **Acceptance**: All pathlib tests pass ✅ (9 comprehensive tests in Task 4.1)
 
-### 4.6 Custom Exception - Implementation
+### 4.6 Custom Exception - Implementation ✅ COMPLETE
 
-- [ ] Open `src/neurospatial/environment/decorators.py`
-- [ ] Create `EnvironmentNotFittedError` class (see PLAN.md)
-- [ ] Add helpful `__init__` with factory method suggestions
-- [ ] Add docstring with examples
-- [ ] Update `check_fitted` decorator to use new exception
+- [x] Open `src/neurospatial/environment/decorators.py` ✅
+- [x] Create `EnvironmentNotFittedError` class (see PLAN.md) ✅
+- [x] Add helpful `__init__` with factory method suggestions ✅
+- [x] Add docstring with examples ✅
+- [x] Update `check_fitted` decorator to use new exception ✅
 
-**Acceptance**: Custom exception implemented
+**Acceptance**: Custom exception implemented ✅
 
-### 4.7 Custom Exception - Export
+**Features**:
 
-- [ ] Add to `src/neurospatial/environment/__init__.py`
-- [ ] Add to `src/neurospatial/__init__.py` in `__all__`
-- [ ] Update imports in test files if needed
+- Inherits from `RuntimeError` for backward compatibility
+- Has `class_name`, `method_name`, and `error_code` attributes
+- Generates helpful error message with factory method examples
+- Error code E1004 with documentation link
 
-**Acceptance**: Exception is publicly importable
+### 4.7 Custom Exception - Export ✅ COMPLETE
 
-### 4.8 Custom Exception - Testing
+- [x] Add to `src/neurospatial/environment/__init__.py` ✅
+- [x] Add to `src/neurospatial/__init__.py` in `__all__` ✅
+- [x] Update imports in test files if needed ✅
 
-- [ ] Create test that triggers exception
-- [ ] Verify exception message includes factory method names
-- [ ] Verify exception is subclass of RuntimeError
-- [ ] Test with pytest.raises()
+**Acceptance**: Exception is publicly importable ✅
 
-**Acceptance**: Exception behavior tested
+**Import patterns**:
+
+```python
+from neurospatial import EnvironmentNotFittedError
+from neurospatial.environment.decorators import EnvironmentNotFittedError
+```
+
+### 4.8 Custom Exception - Testing ✅ COMPLETE
+
+- [x] Create test that triggers exception ✅ (7 new tests added)
+- [x] Verify exception message includes factory method names ✅
+- [x] Verify exception is subclass of RuntimeError ✅
+- [x] Test with pytest.raises() ✅
+- [x] Test exception attributes (class_name, method_name, error_code) ✅
+- [x] Test backward compatibility (can catch as RuntimeError) ✅
+- [x] Test specific catching (can catch as EnvironmentNotFittedError) ✅
+
+**Acceptance**: Exception behavior tested ✅
+
+**Tests added**: `TestEnvironmentNotFittedErrorType` class with 7 comprehensive tests
+**All tests pass**: 68 tests (15 in test_check_fitted_error.py + 53 in test_environment.py)
 
 ### 4.9 env.info() - Design
 

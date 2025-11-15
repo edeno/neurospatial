@@ -182,7 +182,7 @@ from neurospatial.alignment import (
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
-from neurospatial.environment import Environment
+from neurospatial.environment import Environment, EnvironmentNotFittedError
 from neurospatial.field_ops import (
     clamp,
     combine_fields,
@@ -221,6 +221,7 @@ __all__ = [
     # Core classes
     "CompositeEnvironment",
     "Environment",
+    "EnvironmentNotFittedError",
     "Region",
     "Regions",
     # Enums and types

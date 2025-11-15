@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 
 class TestCheckFittedErrorMessage:
@@ -159,3 +160,93 @@ class TestCheckFittedFormatConsistency:
             assert has_init_mention, (
                 f"Error for {method_name} lacks initialization guidance"
             )
+
+
+class TestEnvironmentNotFittedErrorType:
+    """Test custom EnvironmentNotFittedError exception class."""
+
+    def test_raises_specific_exception_type(self):
+        """Test that @check_fitted raises EnvironmentNotFittedError."""
+        env = Environment.__new__(Environment)
+        points = np.array([[5, 5]])
+
+        with pytest.raises(EnvironmentNotFittedError) as exc_info:
+            env.bin_at(points)
+
+        # Verify it's the custom exception
+        assert isinstance(exc_info.value, EnvironmentNotFittedError)
+        # Verify it's still a RuntimeError (backward compatibility)
+        assert isinstance(exc_info.value, RuntimeError)
+
+    def test_exception_has_useful_attributes(self):
+        """Test that EnvironmentNotFittedError has class_name and method_name."""
+        env = Environment.__new__(Environment)
+        points = np.array([[5, 5]])
+
+        with pytest.raises(EnvironmentNotFittedError) as exc_info:
+            env.bin_at(points)
+
+        exception = exc_info.value
+        assert hasattr(exception, "class_name")
+        assert hasattr(exception, "method_name")
+        assert hasattr(exception, "error_code")
+        assert exception.class_name == "Environment"
+        assert exception.method_name == "bin_at"
+        assert exception.error_code == "E1004"
+
+    def test_can_catch_as_runtime_error(self):
+        """Test backward compatibility - can catch as RuntimeError."""
+        env = Environment.__new__(Environment)
+
+        # Should be catchable as RuntimeError
+        with pytest.raises(RuntimeError):
+            _ = env.n_bins
+
+    def test_can_catch_specifically(self):
+        """Test that users can catch EnvironmentNotFittedError specifically."""
+        env = Environment.__new__(Environment)
+
+        # Should be catchable specifically
+        try:
+            _ = env.n_bins
+        except EnvironmentNotFittedError as e:
+            # This is the expected path
+            assert "Environment" in str(e)
+            assert "from_samples" in str(e)
+        except Exception:
+            pytest.fail("Should have raised EnvironmentNotFittedError")
+
+    def test_exception_message_format(self):
+        """Test that exception message has expected format."""
+        exception = EnvironmentNotFittedError("TestClass", "test_method")
+
+        message = str(exception)
+        assert "[E1004]" in message
+        assert "TestClass.test_method()" in message
+        assert "from_samples" in message
+        assert "factory method" in message
+
+    def test_custom_error_code(self):
+        """Test that custom error code can be specified."""
+        exception = EnvironmentNotFittedError("TestClass", "method", error_code="E9999")
+
+        message = str(exception)
+        assert "[E9999]" in message
+        assert exception.error_code == "E9999"
+
+    def test_all_check_fitted_methods_raise_custom_exception(self):
+        """Test that all @check_fitted methods raise EnvironmentNotFittedError."""
+        env = Environment.__new__(Environment)
+
+        # Test various methods
+        test_cases = [
+            lambda: env.n_bins,
+            lambda: env.bin_at(np.array([[0, 0]])),
+            lambda: env.contains(np.array([[0, 0]])),
+            lambda: env.neighbors(0),
+            lambda: env.bin_sizes(),
+        ]
+
+        for test_func in test_cases:
+            with pytest.raises(EnvironmentNotFittedError):
+                test_func()

@@ -33,7 +33,7 @@ directly on Environment instances.
 """
 
 from neurospatial.environment.core import Environment
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import EnvironmentNotFittedError, check_fitted
 from neurospatial.environment.regions import _HAS_SHAPELY
 
-__all__ = ["_HAS_SHAPELY", "Environment", "check_fitted"]
+__all__ = ["_HAS_SHAPELY", "Environment", "EnvironmentNotFittedError", "check_fitted"]

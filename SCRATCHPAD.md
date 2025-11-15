@@ -663,7 +663,75 @@ detection in place field analysis:
 - `tests/test_io.py`: +9 comprehensive pathlib tests (107 lines)
 
 **Next Steps**:
-- [ ] Task 4.2: pathlib Support - Implementation (SKIP - already implemented)
-- [ ] Task 4.3: pathlib Support - Environment Serialization (SKIP - already delegated)
-- [ ] Task 4.4: pathlib Support - Regions I/O (check if needed)
-- [ ] Task 4.5: pathlib Support - Testing (COMPLETE - 9 tests added)
+- [x] Task 4.2: pathlib Support - Implementation (SKIP - already implemented)
+- [x] Task 4.3: pathlib Support - Environment Serialization (SKIP - already delegated)
+- [x] Task 4.4: pathlib Support - Regions I/O (COMPLETE - already implemented)
+- [x] Task 4.5: pathlib Support - Testing (COMPLETE - 9 tests added)
+
+---
+
+### Milestone 4: UX Improvements - Tasks 4.6-4.8 Custom Exception (2025-11-15)
+
+**Status**: ✅ COMPLETE
+
+**Goal**: Implement custom `EnvironmentNotFittedError` exception to replace generic `RuntimeError`
+
+**Implementation** (TDD Approach):
+
+1. **Created custom exception class** in `environment/decorators.py`:
+   - `EnvironmentNotFittedError` inherits from `RuntimeError` for backward compatibility
+   - Takes `class_name`, `method_name`, and optional `error_code` parameters
+   - Generates helpful error message with:
+     - Error code [E1004] with documentation link
+     - Explanation of what went wrong
+     - Example of correct usage with factory methods
+     - Example of what to avoid
+   - Stores attributes: `class_name`, `method_name`, `error_code`
+
+2. **Updated check_fitted decorator** to use new exception:
+   - Changed from `raise RuntimeError(...)` to `raise EnvironmentNotFittedError(self.__class__.__name__, method.__name__)`
+   - Simplified decorator code (from 16 lines to 2 lines)
+   - Updated docstring to reflect new exception type
+
+3. **Added 7 comprehensive tests** in `test_check_fitted_error.py`:
+   - `test_raises_specific_exception_type`: Verifies EnvironmentNotFittedError is raised
+   - `test_exception_has_useful_attributes`: Checks class_name, method_name, error_code attributes
+   - `test_can_catch_as_runtime_error`: Backward compatibility test
+   - `test_can_catch_specifically`: Test specific exception catching
+   - `test_exception_message_format`: Verify message content
+   - `test_custom_error_code`: Test custom error codes
+   - `test_all_check_fitted_methods_raise_custom_exception`: Test multiple methods
+
+4. **Exported exception publicly**:
+   - Added to `environment/__init__.py`
+   - Added to main `__init__.py` in __all__
+   - Can be imported: `from neurospatial import EnvironmentNotFittedError`
+
+**TDD Process**:
+
+1. ✅ Created exception class
+2. ✅ Added 7 tests expecting EnvironmentNotFittedError
+3. ✅ Ran tests - 4 failed (still raising RuntimeError)
+4. ✅ Updated decorator to use new exception
+5. ✅ Ran tests - all 15 passed (7 new + 8 existing)
+6. ✅ Verified backward compatibility with existing tests
+
+**Results**:
+
+- ✅ All 68 tests pass (15 in test_check_fitted_error.py + 53 in test_environment.py)
+- ✅ Ruff check and format: PASS
+- ✅ Mypy type checking: PASS
+- ✅ Backward compatible (still catchable as RuntimeError)
+- ✅ User-friendly error messages with actionable guidance
+
+**Files Modified**:
+
+- `src/neurospatial/environment/decorators.py`: +74 lines (exception class), -16 lines (simplified decorator)
+- `tests/test_check_fitted_error.py`: +87 lines (7 new tests)
+- `src/neurospatial/environment/__init__.py`: +1 import, +1 __all__ entry
+- `src/neurospatial/__init__.py`: +1 import, +1 __all__ entry
+
+**Next Steps**:
+
+- [ ] Task 4.9-4.11: Implement env.info() method
+- [ ] Task 4.12-4.14: Update docstrings/examples
