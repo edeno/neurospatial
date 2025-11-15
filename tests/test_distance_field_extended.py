@@ -367,3 +367,104 @@ class TestDistanceFieldEdgeCases:
             pytest.warns(UserWarning),
         ):
             distance_field(G, sources=[999, 1000], metric="geodesic")
+
+
+class TestDistanceFieldManySources:
+    """Test distance_field() with many sources (broadcasted pairwise path)."""
+
+    @pytest.fixture
+    def large_grid_graph(self):
+        """Create a 10x10 grid graph with coordinates for testing many sources."""
+        G = nx.grid_2d_graph(10, 10)
+        # Relabel nodes to integers
+        mapping = {(i, j): i * 10 + j for i, j in G.nodes}
+        G = nx.relabel_nodes(G, mapping)
+
+        # Create bin_centers array
+        bin_centers = np.array(
+            [[i, j] for i in range(10) for j in range(10)], dtype=np.float64
+        )
+
+        # Add edge distances
+        for u, v in G.edges:
+            uc, vc = bin_centers[u], bin_centers[v]
+            dist = np.linalg.norm(uc - vc)
+            G.edges[u, v]["distance"] = dist
+
+        return G, bin_centers
+
+    def test_euclidean_many_sources_uses_broadcast(self, large_grid_graph):
+        """Test that many sources triggers broadcasted pairwise calculation.
+
+        When n_sources >= max(32, sqrt(n_nodes)), the code should use
+        broadcasted pairwise calculation instead of KD-tree.
+        For 100 nodes, threshold is max(32, 10) = 32 sources.
+        """
+        G, bin_centers = large_grid_graph
+
+        # Use 35 sources to trigger broadcasted path (>= 32)
+        # Sources: first 35 nodes
+        sources = list(range(35))
+        assert len(sources) == 35
+
+        dists = distance_field(
+            G, sources=sources, metric="euclidean", bin_centers=bin_centers
+        )
+
+        # Verify results
+        assert dists.shape == (100,)
+        assert np.all(np.isfinite(dists))
+
+        # Sources should have distance 0
+        for src in sources:
+            assert dists[src] == 0.0
+
+        # Node 99 (far corner at (9, 9)) should have a specific distance
+        # Closest source among 0-34 is node 29 at (2, 9)
+        # Distance = sqrt((9-2)^2 + (9-9)^2) = 7.0
+        assert_allclose(dists[99], 7.0, rtol=1e-10)
+
+    def test_euclidean_many_sources_with_cutoff(self, large_grid_graph):
+        """Test broadcasted path with cutoff parameter."""
+        G, bin_centers = large_grid_graph
+
+        # Use 40 sources to ensure broadcasted path
+        sources = list(range(40))
+
+        # Cutoff at distance 3.0
+        dists = distance_field(
+            G, sources=sources, metric="euclidean", bin_centers=bin_centers, cutoff=3.0
+        )
+
+        assert dists.shape == (100,)
+
+        # Sources should have distance 0
+        for src in sources:
+            assert dists[src] == 0.0
+
+        # Far nodes should be inf
+        # Node 99 is at (9, 9), far from sources 0-39
+        assert np.isinf(dists[99])
+
+    def test_euclidean_many_sources_matches_few_sources(self, large_grid_graph):
+        """Test that many sources gives same result as few sources."""
+        G, bin_centers = large_grid_graph
+
+        # Test with same sources using both paths
+        sources = [0, 10, 20]  # Few sources (KD-tree path)
+
+        dists_few = distance_field(
+            G, sources=sources, metric="euclidean", bin_centers=bin_centers
+        )
+
+        # Now use 35 sources including the original 3 (broadcasted path)
+        sources_many = list(range(35))  # Includes 0, 10, 20
+
+        dists_many = distance_field(
+            G, sources=sources_many, metric="euclidean", bin_centers=bin_centers
+        )
+
+        # For nodes where the nearest source is one of {0, 10, 20},
+        # results should match or be smaller (due to more sources)
+        # At minimum, all distances in dists_many should be <= dists_few
+        assert np.all(dists_many <= dists_few + 1e-10)

@@ -33,10 +33,23 @@
    - `pairwise_distances()` - ✓ Good coverage
    - `_validate_source_nodes()` - ✓ Helper function covered
 
+**Actions Taken**:
+- [x] Wrote comprehensive test suite for `neighbors_within()` - 20 tests added
+  - TestNeighborsWithinGeodesic (8 tests): basic, multiple centers, exclude center, zero/large radius, empty centers, disconnected graph, invalid center
+  - TestNeighborsWithinEuclidean (5 tests): basic, multiple centers, exclude center, zero/large radius
+  - TestNeighborsWithinValidation (4 tests): invalid metric, negative radius, missing/mismatched bin_centers
+  - TestNeighborsWithinEdgeCases (3 tests): empty graphs, single node
+- [x] Added test for `distance_field()` with many sources - 3 tests added
+  - TestDistanceFieldManySources: broadcasts pairwise path, with cutoff, matches few sources
+- [x] Re-ran coverage - **100% coverage achieved!** ✅
+
+**Results**:
+- **Final Coverage**: 100% (124/124 statements, 70/70 branches)
+- **Tests**: 120 total (97 → 120, +23 new tests)
+- **Test Execution Time**: 0.29s for all distance tests
+
 **Next Steps**:
-- [ ] Write comprehensive test suite for `neighbors_within()` (CRITICAL)
-- [ ] Add test for `distance_field()` with many sources (HIGH)
-- [ ] Re-run coverage to verify ≥95% threshold met
+- [x] Task 1.1 COMPLETE ✅
 - [ ] Move to Task 1.2 (differential.py coverage audit)
 
 **Test Command Used**:

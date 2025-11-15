@@ -26,22 +26,27 @@
 **Estimated Time**: 1-2 days
 **Blocks**: Milestone 2
 
-### 1.1 Coverage Audit: distance.py
+### 1.1 Coverage Audit: distance.py ✅ COMPLETE
 
-- [x] Run coverage report for distance.py ✅ (69% coverage - below target)
+- [x] Run coverage report for distance.py ✅ (Final: **100% coverage**)
   ```bash
   uv run pytest tests/test_distance*.py --cov --cov-report=html --cov-report=term-missing
   ```
 - [x] Open coverage report and identify gaps ✅ (documented in SCRATCHPAD.md)
 - [x] Verify coverage for `geodesic_distance_matrix()` ≥95% ✅
 - [x] Verify coverage for `euclidean_distance_matrix()` ≥95% ✅
-- [ ] Verify coverage for `distance_field()` - geodesic metric ≥95% (missing: many sources branch)
-- [ ] Verify coverage for `distance_field()` - euclidean metric ≥95% (missing: many sources branch)
-- [ ] Verify coverage for `distance_field()` - with cutoff parameter ≥95%
+- [x] Verify coverage for `distance_field()` - geodesic metric ≥95% ✅
+- [x] Verify coverage for `distance_field()` - euclidean metric ≥95% ✅ (added many-sources tests)
+- [x] Verify coverage for `distance_field()` - with cutoff parameter ≥95% ✅
 - [x] Verify coverage for `pairwise_distances()` ≥95% ✅
-- [ ] Verify coverage for `neighbors_within()` ≥95% 🔴 **0% coverage - needs tests**
+- [x] Verify coverage for `neighbors_within()` ≥95% ✅ (added 20 comprehensive tests)
 
-**Acceptance**: All functions in distance.py have ≥95% line coverage
+**Acceptance**: All functions in distance.py have ≥95% line coverage ✅ **EXCEEDED: 100% coverage**
+
+**Tests Added**: 23 new tests (97 → 120 total)
+
+- `neighbors_within()`: 20 tests (geodesic, euclidean, validation, edge cases)
+- `distance_field()` many sources: 3 tests (broadcasted pairwise path)
 
 ### 1.2 Coverage Audit: differential.py
 
