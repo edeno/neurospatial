@@ -422,4 +422,102 @@ After completing the scipy investigation, also checked NetworkX's `incidence_mat
 - [x] Task 2.4 COMPLETE ✅ (Investigation confirms: KEEP CURRENT)
 - [x] Tasks 2.5-2.6 SKIPPED (Implementation/testing not applicable)
 - [x] Documented NetworkX incidence_matrix is also not suitable
-- [ ] Move to Task 2.7 (Connected Components investigation)
+- [x] Task 2.7 COMPLETE ✅ (Investigation complete)
+- [ ] Move to Task 2.8 (Connected Components - Implementation)
+
+---
+
+### Milestone 2: scipy Integration - Connected Components (Task 2.7)
+
+**Status**: ✅ Investigation complete - **APPROVED** for implementation
+
+**Background**:
+- Current implementation uses flood-fill algorithm (`_extract_connected_component()`)
+  - BFS with frontier queue
+  - Queries `env.connectivity.neighbors()` directly
+  - Works for any graph structure (grid, irregular, 1D tracks)
+- Proposed: Use `scipy.ndimage.label()` for grid environments
+
+**Investigation Performed**:
+1. Created test script `investigate_connected_components.py`
+2. Tested on 2 environment types:
+   - Small 2D grid (387 bins, 41 masked) - correctness test
+   - Large 2D grid (6,308 bins, 1,245 masked) - performance test
+3. Compared three approaches:
+   - Current flood-fill
+   - NetworkX `connected_components()`
+   - scipy `ndimage.label()`
+4. Verified numerical equivalence
+5. Benchmarked performance (10 trials each)
+
+**Results**:
+
+✅ **Correctness**: All three methods produce **identical results** (exact match)
+
+✅ **Performance** (large 2D grid, 6,308 bins, 1,245 masked):
+```
+Method                    Time (mean ± std)       Speedup vs Current
+────────────────────────────────────────────────────────────────────
+Current (flood-fill)      0.752 ms ± 0.057 ms    1.00× (baseline)
+NetworkX                  2.468 ms ± 0.049 ms    0.30× (SLOWER!)
+scipy.ndimage.label       0.122 ms ± 0.041 ms    6.16× (FASTER!)
+```
+
+**Critical Findings**:
+
+1. **scipy.ndimage.label**: **6.16× faster** than current implementation ✅
+   - Exceeds 5× speedup target
+   - Low variance, consistent performance
+   - Only applicable to grid environments
+
+2. **NetworkX connected_components**: **3.3× SLOWER** than current ❌
+   - Overhead from creating subgraph
+   - NOT suitable for optimization
+   - Current flood-fill already optimal
+
+3. **Current flood-fill**: Already very efficient for sparse components
+   - Optimal for small-to-medium components
+   - Direct graph queries avoid overhead
+   - Should be kept as fallback path
+
+**Decision: TWO-PATH APPROACH**
+
+1. **Fast Path** (scipy.ndimage.label) - Grid environments only
+   - Condition: `env.grid_shape is not None and len(env.grid_shape) >= 2`
+   - AND: `env.active_mask is not None`
+   - Expected speedup: **6× faster**
+   - Applicable to: RegularGridLayout, MaskedGridLayout, ShapelyPolygonLayout
+
+2. **Fallback Path** (current flood-fill) - All other environments
+   - Keep existing `_extract_connected_component()` implementation
+   - **Already optimal** - no NetworkX replacement needed
+   - Works for: 1D tracks, irregular grids, custom graphs
+
+**Implementation Strategy**:
+- Modify `_extract_connected_component()` to route based on `grid_shape`
+- Add `_extract_connected_component_scipy()` helper (scipy fast path)
+- Rename current implementation to `_extract_connected_component_graph()` (fallback)
+- Existing tests should pass unchanged (same results)
+- Add performance benchmarks with `@pytest.mark.slow`
+
+**Comparison with Task 2.1-2.3** (geodesic_distance_matrix):
+
+| Aspect | Distance Matrix (2.1-2.3) | Connected Components (2.7) |
+|--------|---------------------------|----------------------------|
+| scipy provides | ✅ Complete drop-in | ✅ Grid-only optimization |
+| Performance gain | ✅ 13.75× speedup | ✅ **6.16× speedup** (grid) |
+| Code simplification | ✅ 15→3 lines | ➖ Adds complexity (2 paths) |
+| Applicability | ✅ All graphs | ⚠️ Grid environments only |
+| **Recommendation** | ✅ **REPLACE** | ⚠️ **ADD FAST PATH** |
+
+**Files Created**:
+- `investigate_connected_components.py`: Investigation script (364 lines)
+- `CONNECTED_COMPONENTS_INVESTIGATION_2.7.md`: Full investigation report
+
+**Next Steps**:
+- [x] Task 2.7 COMPLETE ✅ (Investigation confirms: ADD FAST PATH)
+- [ ] Move to Task 2.8 (Implementation - grid fast path)
+- [ ] Task 2.9 (Implementation - extract graph fallback)
+- [ ] Task 2.10 (Integration - routing logic)
+- [ ] Task 2.11 (Testing)
+- [ ] Task 2.12 (Benchmarking)
