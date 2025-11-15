@@ -5,11 +5,57 @@
 
 ## Current Status
 
-**Milestone 2 Progress**: 9/12 tasks completed (75%)
+**Milestone 2 Progress**: 10/12 tasks completed (83%)
 
-Working on: **Task 2.10 - Consistency: Scale Parameter Naming [LOW]** - Next task
+Completed: **Task 2.10 - Consistency: Scale Parameter Naming [LOW]** ✅
+Next: **Task 2.11 - Memory: Cache Management [MEDIUM]**
 
 ## Session Notes
+
+### 2025-11-14: Task 2.10 - Consistency: Scale Parameter Naming ✅ COMPLETED
+
+**Status**: Complete
+
+**Summary**:
+Successfully standardized scale parameter naming across `transforms.py` and `alignment.py` to achieve consistency: uniform scaling uses `scale` (not `scale_factor`), per-axis scaling uses `sx`, `sy`, `sz`.
+
+**Implementation Details**:
+- **Renamed parameters** in `alignment.py`:
+  - `apply_similarity_transform()`: `scale_factor` → `scale` (line 180)
+  - `_transform_source_bin_centers()`: `source_scale_factor` → `source_scale` (line 264)
+  - `map_probabilities_to_nearest_target_bin()`: `source_scale_factor` → `source_scale` (line 438)
+- **Updated all docstrings** to reflect new parameter names with clear descriptions
+- **Updated code examples** in docstrings to use new parameter names
+- **Added 2 new tests** in `test_alignment.py`:
+  - `test_map_probabilities_with_source_scale_keyword()`: Tests `source_scale` parameter
+  - `test_apply_similarity_transform_with_scale_keyword()`: Tests `scale` parameter
+
+**Test Results**:
+- ✅ All 17 alignment tests PASS (including 2 new tests)
+- ✅ All 65 transform tests PASS (zero regressions)
+- ✅ Ruff check: All checks passed
+- ✅ Ruff format: 2 files left unchanged (already formatted)
+- ✅ Mypy: Success (no issues found)
+- ✅ Code review: **APPROVED** by code-reviewer agent
+
+**Breaking Changes**:
+- This is an **intentional breaking change** for existing code using keyword arguments:
+  - `source_scale_factor` → `source_scale`
+  - `scale_factor` → `scale`
+- Positional arguments unaffected (backward compatible in that sense)
+- Code reviewer suggested optional deprecation warnings for migration path
+
+**Consistency Achieved**:
+- `transforms.py` already correctly used `sx`, `sy`, `sz` for per-axis scaling ✅
+- `alignment.py` now uses `scale` for uniform scaling ✅
+- Naming pattern: `source_scale` clearly indicates uniform scaling on source environment
+
+**Files Modified**:
+- `src/neurospatial/alignment.py` (7 locations)
+- `tests/test_alignment.py` (2 new tests)
+- `TASKS.md` (marked 2.10 complete, updated M2 progress to 83%)
+
+---
 
 ### 2025-11-14: Task 2.9 - Documentation: API Overview Docstring ✅ COMPLETED
 

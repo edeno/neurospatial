@@ -186,7 +186,7 @@ This file tracks concrete implementation tasks for the code review action items.
 
 ## Milestone 2: Code Quality & Performance (v1.0-beta)
 
-**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: In Progress (3/12 tasks completed - 25%)
+**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: In Progress (10/12 tasks completed - 83%)
 
 **Goal**: Improve code quality, reduce duplication, add performance tests, improve API consistency.
 
@@ -361,13 +361,14 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.10 | **Effort**: 2h | **Files**: `transforms.py`, `alignment.py`
 
-- [ ] Audit all uses of `scale`, `scale_factor`, `sx`/`sy`
-- [ ] Standardize on `scale` for uniform scaling
-- [ ] Standardize on `sx`, `sy`, `sz` for per-axis scaling
-- [ ] Update docstrings
-- [ ] Run: `uv run pytest tests/test_transforms.py tests/test_alignment.py -v`
+- [x] Audit all uses of `scale`, `scale_factor`, `sx`/`sy`
+- [x] Standardize on `scale` for uniform scaling
+- [x] Standardize on `sx`, `sy`, `sz` for per-axis scaling
+- [x] Update docstrings
+- [x] Run: `uv run pytest tests/test_transforms.py tests/test_alignment.py -v`
 
-**Acceptance**: Consistent naming across all transform functions
+**Acceptance**: Consistent naming across all transform functions ✅
+**Status**: ✅ COMPLETED (2025-11-14)
 
 ---
 

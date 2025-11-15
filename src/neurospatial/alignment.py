@@ -177,7 +177,7 @@ def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
 def apply_similarity_transform(
     points: NDArray[np.float64],
     rotation_matrix: NDArray[np.float64],
-    scale_factor: float,
+    scale: float,
     translation_vector: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Applies a similarity transformation (rotation, scaling, translation)
@@ -190,7 +190,7 @@ def apply_similarity_transform(
         Points to transform, shape (n_points, n_dims).
     rotation_matrix : NDArray[np.float64]
         Rotation matrix, shape (n_dims, n_dims).
-    scale_factor : float
+    scale : float
         Uniform scaling factor.
     translation_vector : NDArray[np.float64]
         Translation vector, shape (n_dims,).
@@ -242,8 +242,8 @@ def apply_similarity_transform(
             f"Rotation matrix shape {rotation_matrix.shape} "
             f"is not compatible with points_dims {n_dims}.",
         )
-    if not np.isscalar(scale_factor):
-        raise ValueError("Scale factor must be a scalar.")
+    if not np.isscalar(scale):
+        raise ValueError("Scale must be a scalar.")
     if translation_vector.shape != (n_dims,):
         raise ValueError(
             f"Translation vector shape {translation_vector.shape} "
@@ -253,7 +253,7 @@ def apply_similarity_transform(
     # 1. Rotate
     rotated_points = (rotation_matrix @ points.T).T
     # 2. Scale
-    scaled_points = scale_factor * rotated_points
+    scaled_points = scale * rotated_points
     # 3. Translate
     transformed_points = scaled_points + translation_vector
     return np.asarray(transformed_points, dtype=np.float64)
@@ -261,7 +261,7 @@ def apply_similarity_transform(
 
 def _transform_source_bin_centers(
     source_centers: NDArray[np.float64],
-    source_scale_factor: float,
+    source_scale: float,
     source_rotation_matrix: NDArray[np.float64] | None,
     source_translation_vector: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
@@ -271,7 +271,7 @@ def _transform_source_bin_centers(
     ----------
     source_centers : NDArray[np.float64]
         Source bin centers, shape (n_bins, n_dims).
-    source_scale_factor : float
+    source_scale : float
         Scaling factor to apply.
     source_rotation_matrix : NDArray[np.float64] or None
         Optional rotation matrix (n_dims × n_dims). For 2D, use `get_2d_rotation_matrix()`.
@@ -294,8 +294,8 @@ def _transform_source_bin_centers(
     n_dims = transformed.shape[1]
 
     # Apply scale
-    if source_scale_factor != 1.0:
-        transformed *= float(source_scale_factor)
+    if source_scale != 1.0:
+        transformed *= float(source_scale)
 
     # Apply rotation
     if source_rotation_matrix is not None:
@@ -435,7 +435,7 @@ def map_probabilities_to_nearest_target_bin(
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
     n_neighbors: int = 1,
     eps: float = IDW_MIN_DISTANCE,
-    source_scale_factor: float = 1.0,
+    source_scale: float = 1.0,
     source_rotation_matrix: NDArray[np.float64] | None = None,
     source_translation_vector: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -460,8 +460,8 @@ def map_probabilities_to_nearest_target_bin(
         (ignored if mode="nearest").
     eps : float, default=IDW_MIN_DISTANCE
         Small constant to avoid division by zero in IDW weights.
-    source_scale_factor : float
-        Multiply every source bin-center by this scalar before querying.
+    source_scale : float, default=1.0
+        Uniform scaling factor to multiply every source bin-center by before querying.
     source_rotation_matrix : Optional[NDArray[np.float64]]
         If not None, must be a square rotation matrix (shape (n_dims, n_dims)).
         For 2D environments, use `get_2d_rotation_matrix()`.
@@ -516,7 +516,7 @@ def map_probabilities_to_nearest_target_bin(
     ...     target_env,
     ...     source_probs,
     ...     source_rotation_matrix=rotation,
-    ...     source_scale_factor=0.9,
+    ...     source_scale=0.9,
     ... )
 
     """
@@ -544,7 +544,7 @@ def map_probabilities_to_nearest_target_bin(
     # Transform source bin centers
     src_centers = _transform_source_bin_centers(
         source_env.bin_centers,
-        source_scale_factor,
+        source_scale,
         source_rotation_matrix,
         source_translation_vector,
     )

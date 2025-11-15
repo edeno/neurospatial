@@ -156,3 +156,34 @@ def test_map_probabilities_to_nearest_target_bin_dim_mismatch():
     tgt_env = MockEnvironment(tgt_bins, 3)
     with pytest.raises(ValueError):
         map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+
+
+def test_map_probabilities_with_source_scale_keyword():
+    """Test that source_scale keyword argument works (standardized naming)."""
+    # 2D, 2 bins each, with scaling
+    src_bins = np.array([[1, 0], [0, 1]])
+    tgt_bins = np.array([[2, 0], [0, 2]])  # Scaled by 2
+    src_probs = np.array([0.6, 0.4])
+    src_env = MockEnvironment(src_bins, 2)
+    tgt_env = MockEnvironment(tgt_bins, 2)
+
+    # Use source_scale keyword argument (NEW STANDARDIZED NAME)
+    tgt_probs = map_probabilities_to_nearest_target_bin(
+        src_env, tgt_env, src_probs, source_scale=2.0
+    )
+
+    # After scaling source by 2, [1,0]->[2,0] and [0,1]->[0,2]
+    np.testing.assert_allclose(tgt_probs, [0.6, 0.4])
+
+
+def test_apply_similarity_transform_with_scale_keyword():
+    """Test that scale keyword argument works in apply_similarity_transform."""
+    points = np.array([[1, 2], [3, 4]])
+    R = np.eye(2)
+    t = np.zeros(2)
+
+    # Use 'scale' keyword argument (NEW STANDARDIZED NAME)
+    transformed = apply_similarity_transform(points, R, scale=2.0, translation_vector=t)
+
+    expected = np.array([[2, 4], [6, 8]])
+    np.testing.assert_allclose(transformed, expected)
