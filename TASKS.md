@@ -178,34 +178,50 @@
 - ✅ Fixed flaky test in place_fields.py
 - ✅ Zero regressions
 
-### 2.4 Replace Laplacian - Investigation
+### 2.4 Replace Laplacian - Investigation ✅ COMPLETE - KEEP CURRENT
 
-- [ ] Read current implementation in `src/neurospatial/differential.py`
-- [ ] Read scipy.sparse.csgraph.laplacian documentation
-- [ ] Create test script comparing outputs on small graph
-- [ ] Check eigenvalue properties match
-- [ ] Verify gradient/divergence operators use Laplacian correctly
-- [ ] Document any sign/normalization differences
+- [x] Read current implementation in `src/neurospatial/differential.py`
+- [x] Read scipy.sparse.csgraph.laplacian documentation
+- [x] Create test script comparing outputs on small graph
+- [x] Check eigenvalue properties match
+- [x] Verify gradient/divergence operators use Laplacian correctly
+- [x] Document any sign/normalization differences
+- [x] **BONUS**: Investigate NetworkX incidence_matrix as alternative
 
-**Acceptance**: Confirmed scipy Laplacian is compatible
+**Investigation Results**:
 
-### 2.5 Replace Laplacian - Implementation
+- ✅ scipy.sparse.csgraph.laplacian produces identical Laplacian matrices
+- ✅ Eigenvalue properties preserved
+- ✅ Gradient/divergence consistency verified
+- ❌ **scipy only provides L, NOT differential operator D**
+- ❌ **NetworkX incidence_matrix uses ±weight, NOT ±sqrt(weight)**
 
-- [ ] Open `src/neurospatial/differential.py`
-- [ ] Add import: `from scipy.sparse.csgraph import laplacian`
-- [ ] Replace `compute_differential_operator()` body with scipy version
-- [ ] Handle normalization parameter mapping
-- [ ] Update docstring with scipy reference
+**Decision**: **KEEP CURRENT IMPLEMENTATION**
 
-**Acceptance**: Code replaced, maintains API compatibility
+**Reason**:
 
-### 2.6 Replace Laplacian - Testing
+- gradient() requires D.T (scalar → edge field)
+- divergence() requires D (edge → scalar field)
+- scipy only provides L = D @ D.T (scalar → scalar)
+- NetworkX incidence_matrix uses wrong weighting (±weight vs ±sqrt(weight))
+- No performance benefit, would add complexity
 
-- [ ] Run tests: `uv run pytest tests/test_differential.py -v`
-- [ ] Verify eigenvalue properties (test should already exist)
-- [ ] Test gradient operator: `uv run pytest tests/test_differential.py::test_gradient -v`
-- [ ] Test divergence operator: `uv run pytest tests/test_differential.py::test_divergence -v`
-- [ ] Run full test suite to ensure no regressions
+**Files Created**:
+
+- `investigate_scipy_laplacian.py`: Full comparison (4 test environments)
+- `test_networkx_incidence.py`: NetworkX incidence matrix test
+- `test_networkx_incidence_weighted.py`: Non-uniform weight test
+- `SCIPY_INVESTIGATION_2.4.md`: Complete investigation report
+
+**Acceptance**: ✅ Investigation confirms current implementation is necessary
+
+### 2.5 Replace Laplacian - Implementation ⏭️ SKIPPED
+
+**Reason**: Task 2.4 investigation determined replacement is not beneficial
+
+### 2.6 Replace Laplacian - Testing ⏭️ SKIPPED
+
+**Reason**: Task 2.4 investigation determined replacement is not beneficial
 
 **Acceptance**: All differential tests pass
 

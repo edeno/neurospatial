@@ -384,11 +384,42 @@ Reasons:
 - Document equivalence: L = D @ D.T = scipy.sparse.csgraph.laplacian(adjacency)
 - Clarify why custom implementation is maintained (D needed for grad/div)
 
+**Additional Investigation: NetworkX incidence_matrix**
+
+After completing the scipy investigation, also checked NetworkX's `incidence_matrix()` function:
+
+**NetworkX provides**: `nx.incidence_matrix(G, oriented=True, weight='distance')`
+- Returns matrix of shape (n_nodes, n_edges)
+- Source node = -weight, destination node = +weight
+- Looks similar to differential operator D
+
+**Critical Finding**:
+- NetworkX uses **±weight** directly
+- neurospatial uses **±sqrt(weight)**
+- For weighted graphs: M @ M.T ≠ Laplacian ❌
+
+**Example with non-uniform weights** (edge weights = [3.17, 3.17]):
+- NetworkX: M @ M.T = [[10.03, ...], ...] (WRONG)
+- neurospatial: D @ D.T = [[3.17, ...], ...] (CORRECT, matches nx.laplacian_matrix)
+
+**Why sqrt(weight)?**
+- Mathematical requirement: L = D @ D.T
+- For Laplacian L = Degree - Adjacency, where Degree uses sum of weights
+- Differential operator must use sqrt(weight) to satisfy D @ D.T = L
+
+**Verdict**:
+- NetworkX incidence_matrix is NOT a suitable replacement ❌
+- Uses wrong weighting scheme (weight vs sqrt(weight))
+- Would break Laplacian relationship D @ D.T = L
+
 **Files Modified**:
-- `investigate_scipy_laplacian.py`: Investigation script (317 lines)
+- `investigate_scipy_laplacian.py`: Investigation script (412 lines)
+- `test_networkx_incidence.py`: NetworkX incidence test (uniform weights)
+- `test_networkx_incidence_weighted.py`: Non-uniform weight test (REVEALS BUG)
 - `SCIPY_INVESTIGATION_2.4.md`: Full investigation report
 
 **Next Steps**:
 - [x] Task 2.4 COMPLETE ✅ (Investigation confirms: KEEP CURRENT)
 - [x] Tasks 2.5-2.6 SKIPPED (Implementation/testing not applicable)
+- [x] Documented NetworkX incidence_matrix is also not suitable
 - [ ] Move to Task 2.7 (Connected Components investigation)
