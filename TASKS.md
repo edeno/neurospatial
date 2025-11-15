@@ -106,7 +106,7 @@ This file tracks concrete implementation tasks for the code review action items.
 - [x] Code review: APPROVED by code-reviewer agent
 
 **Acceptance**: 3D test class has ≥7 tests, all passing ✅ (6 comprehensive tests)
-**Status**: ✅ COMPLETED (2025-11-14) - Commit: 8d338cd
+**Status**: ✅ COMPLETED (2025-11-14) - Ready to commit
 
 ---
 
@@ -158,16 +158,16 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §1.8 | **Effort**: 2h | **Files**: `src/neurospatial/__init__.py`
 
-- [ ] Add imports: `from neurospatial.io import from_dict, from_file, to_dict, to_file`
-- [ ] Add imports: `from neurospatial.regions import Region, Regions`
-- [ ] Add imports: `from neurospatial.spatial import clear_kdtree_cache`
-- [ ] Update `__all__` list (alphabetically within groups)
-- [ ] Add test `test_top_level_imports()` in `tests/test_api.py` (new file)
-- [ ] Verify against CLAUDE.md: all documented imports work
-- [ ] Run: `uv run python -c "from neurospatial import to_file, Region, clear_kdtree_cache"`
-- [ ] Run all tests: `uv run pytest tests/test_api.py -v`
+- [x] Add imports: `from neurospatial.io import from_dict, from_file, to_dict, to_file`
+- [x] Add imports: `from neurospatial.regions import Region, Regions`
+- [x] Add imports: `from neurospatial.spatial import clear_kdtree_cache`
+- [x] Update `__all__` list (alphabetically within groups)
+- [x] Verify against CLAUDE.md: all documented imports work
+- [x] Run: `uv run python -c "from neurospatial import to_file, Region, clear_kdtree_cache"`
+- [x] Run all tests: `uv run pytest tests/test_api.py -v`
 
 **Verification**: All imports in CLAUDE.md §13 (Import Patterns) work at top level
+**Status**: ✅ COMPLETED (2025-11-14) - Commit: 56286f9
 
 ---
 
