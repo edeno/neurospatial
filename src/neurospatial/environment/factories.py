@@ -88,7 +88,7 @@ class EnvironmentFactories:
 
     Methods
     -------
-    from_samples(data_samples, bin_size, ...)
+    from_samples(positions, bin_size, ...)
         Create environment by discretizing sample data into bins.
     from_graph(graph, edge_order, edge_spacing, bin_size, ...)
         Create 1D linearized track environment from graph structure.
@@ -135,7 +135,7 @@ class EnvironmentFactories:
     @classmethod
     def from_samples(
         cls,
-        data_samples: NDArray[np.float64],
+        positions: NDArray[np.float64],
         bin_size: float | Sequence[float],
         name: str = "",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
@@ -148,14 +148,14 @@ class EnvironmentFactories:
         connect_diagonal_neighbors: bool = True,
         **layout_specific_kwargs: Any,
     ) -> Environment:
-        """Create an Environment by binning (discretizing) `data_samples` into a layout grid.
+        """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
         Parameters
         ----------
-        data_samples : array, shape (n_samples, n_dims)
+        positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
         bin_size : float or sequence of floats
-            Size of each bin in the same units as `data_samples` coordinates.
+            Size of each bin in the same units as `positions` coordinates.
             For RegularGrid: length of each square bin side (or per-dimension if sequence).
             For Hexagonal: hexagon width (flat-to-flat distance across hexagon).
             If your data is in centimeters, bin_size=5.0 creates 5cm bins.
@@ -190,7 +190,7 @@ class EnvironmentFactories:
         Raises
         ------
         ValueError
-            If `data_samples` is not 2D or contains invalid coordinates.
+            If `positions` is not 2D or contains invalid coordinates.
         NotImplementedError
             If `layout` is neither "RegularGrid" nor "Hexagonal".
 
@@ -215,7 +215,7 @@ class EnvironmentFactories:
         >>> positions = np.random.rand(1000, 2) * 100  # cm
         >>> # Create environment with 5cm x 5cm bins
         >>> env = Environment.from_samples(
-        ...     data_samples=positions,
+        ...     positions=positions,
         ...     bin_size=5.0,
         ...     name="arena",  # bin_size in cm
         ... )
@@ -227,7 +227,7 @@ class EnvironmentFactories:
         Create environment with morphological operations to clean up the active region:
 
         >>> env = Environment.from_samples(
-        ...     data_samples=positions,
+        ...     positions=positions,
         ...     bin_size=5.0,  # 5cm bins
         ...     bin_count_threshold=5,  # Require 5 samples per bin (lowered from 10)
         ...     dilate=True,  # Expand active region
@@ -237,7 +237,7 @@ class EnvironmentFactories:
         Create a hexagonal grid environment:
 
         >>> env = Environment.from_samples(
-        ...     data_samples=positions,
+        ...     positions=positions,
         ...     layout=LayoutType.HEXAGONAL,  # or layout="Hexagonal"
         ...     bin_size=5.0,  # 5cm hexagon width
         ... )
@@ -256,7 +256,7 @@ class EnvironmentFactories:
            reducing bin_count_threshold to 0 or 1, or use morphological operations
            to expand the active region.
 
-        3. **Mismatched units**: Ensure bin_size and data_samples use the same
+        3. **Mismatched units**: Ensure bin_size and positions use the same
            units. If your data is in centimeters, bin_size should also be in
            centimeters. Mixing units (e.g., data in meters, bin_size in centimeters)
            will result in incorrect spatial binning. For example, if your data spans
@@ -271,20 +271,20 @@ class EnvironmentFactories:
            filling small unvisited areas within explored regions.
 
         """
-        # Convert and validate data_samples array with helpful error messages
+        # Convert and validate positions array with helpful error messages
         try:
-            data_samples = np.asarray(data_samples, dtype=float)
+            positions = np.asarray(positions, dtype=float)
         except (TypeError, ValueError) as e:
-            actual_type = type(data_samples).__name__
+            actual_type = type(positions).__name__
             raise TypeError(
-                f"data_samples must be a numeric array-like object (e.g., numpy array, "
-                f"list of lists, pandas DataFrame). Got {actual_type}: {data_samples!r}"
+                f"positions must be a numeric array-like object (e.g., numpy array, "
+                f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
             ) from e
 
-        if data_samples.ndim != 2:
+        if positions.ndim != 2:
             raise ValueError(
-                f"data_samples must be a 2D array of shape (n_points, n_dims), "
-                f"got shape {data_samples.shape}.",
+                f"positions must be a 2D array of shape (n_points, n_dims), "
+                f"got shape {positions.shape}.",
             )
 
         # Validate bin_size early to provide helpful error messages
@@ -312,7 +312,7 @@ class EnvironmentFactories:
         # Build the dict of layout parameters
         # Common parameters for all layouts
         common_params = {
-            "data_samples": data_samples,
+            "positions": positions,
             "infer_active_bins": infer_active_bins,
             "bin_count_threshold": bin_count_threshold,
         }

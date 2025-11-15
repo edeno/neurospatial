@@ -37,7 +37,7 @@ position_data = np.array([
 
 # Create an environment with 2 cm bins
 env = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,
     name="OpenField"
 )

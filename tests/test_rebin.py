@@ -13,7 +13,7 @@ class TestRebinBasic:
         """Rebinning by factor 2 reduces grid dimensions by half."""
         # Create grid with explicit range to control shape
         env = Environment.from_samples(
-            data_samples=np.array([[0, 0], [100, 100]]),
+            positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
         )
 
@@ -71,7 +71,7 @@ class TestRebinBasic:
         """Rebinning creates correct coarse grid geometry."""
         # Create grid with known shape (use dimension_ranges to control)
         env = Environment.from_samples(
-            data_samples=np.array([[0, 0], [100, 100]]),
+            positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
         )
 
@@ -147,7 +147,7 @@ class TestRebinFactorVariations:
         """Factor 3 works correctly."""
         # Create grid with explicit range to get 9x9
         env = Environment.from_samples(
-            data_samples=np.array([[0, 0], [90, 90]]),
+            positions=np.array([[0, 0], [90, 90]]),
             bin_size=10.0,
         )
 
@@ -241,7 +241,7 @@ class TestRebinValidation:
         """Non-divisible factor warns and truncates."""
         # Create grid with known non-divisible shape
         env = Environment.from_samples(
-            data_samples=np.array([[0, 0], [100, 100]]),
+            positions=np.array([[0, 0], [100, 100]]),
             bin_size=10.0,
         )
 

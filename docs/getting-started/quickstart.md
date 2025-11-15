@@ -25,7 +25,7 @@ position_data = np.array([
 
 # Create environment with 2 cm bins
 env = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,  # Required parameter
     name="OpenField"
 )
@@ -145,7 +145,7 @@ For sparse data, you can automatically detect active regions:
 ```python
 # Create environment with automatic active bin detection
 env_auto = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,
     infer_active_bins=True,  # Enable automatic detection
     bin_count_threshold=1,   # Minimum samples per bin
@@ -189,7 +189,7 @@ neurospatial supports multiple layout engines:
 ```python
 # Hexagonal layout (more uniform neighbor distances)
 env_hex = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,
     layout_type="hexagonal",
     name="HexEnvironment"
@@ -197,7 +197,7 @@ env_hex = Environment.from_samples(
 
 # Triangular mesh
 env_tri = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,
     layout_type="triangular",
     name="TriEnvironment"

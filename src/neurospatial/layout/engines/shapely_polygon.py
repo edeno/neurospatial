@@ -97,7 +97,7 @@ class ShapelyPolygonLayout(_GridMixin):
             full_grid_bin_centers,
             self.grid_shape,
         ) = _create_regular_grid(
-            data_samples=None,
+            positions=None,
             bin_size=bin_size,
             dimension_range=self.dimension_ranges,
             add_boundary_bins=False,

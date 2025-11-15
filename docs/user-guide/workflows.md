@@ -28,7 +28,7 @@ sampling_rate = 30.0  # Hz
 
 # Step 2: Create environment with appropriate parameters
 env = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.5,  # 2.5 cm bins for 100x100 cm arena
     infer_active_bins=True,
     bin_count_threshold=5,  # Require at least 5 samples per bin

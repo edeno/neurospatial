@@ -21,7 +21,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=50.0,  # Much larger than data range
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,  # Require more samples than we have
                 dilate=False,
@@ -59,7 +59,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=1.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=10,  # Higher than any bin can have
                 dilate=False,
@@ -92,7 +92,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=1.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=2,  # Require at least 2 samples per bin (only 2 total)
                 dilate=False,  # No dilation
@@ -123,7 +123,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=100.0,  # Too large
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,  # Too high for any bin
                 dilate=False,
@@ -148,7 +148,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=100.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,  # Too high
                 dilate=False,
@@ -174,7 +174,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=50.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,
                 dilate=True,
@@ -204,7 +204,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=50.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=10,
                 dilate=False,
@@ -245,7 +245,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=50.0,
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,  # Too high
                 dilate=False,
@@ -268,7 +268,7 @@ class TestNoActiveBinsError:
         with pytest.raises(ValueError) as exc_info:
             layout.build(
                 bin_size=[100.0, 50.0],  # Different sizes per dimension
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=5,
                 dilate=False,
@@ -294,7 +294,7 @@ class TestNoActiveBinsError:
             layout.build(
                 bin_size=1.0,
                 dimension_ranges=[(0, 10), (0, 10)],  # Must provide explicit range
-                data_samples=data,
+                positions=data,
                 infer_active_bins=True,
                 bin_count_threshold=0,
                 dilate=False,

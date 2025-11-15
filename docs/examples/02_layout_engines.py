@@ -68,7 +68,7 @@ square_data = np.random.uniform(0, 50, size=(n_samples, 2))
 
 # Create regular grid environment
 env_regular = Environment.from_samples(
-    data_samples=square_data, bin_size=5.0, name="RegularGrid"
+    positions=square_data, bin_size=5.0, name="RegularGrid"
 )
 
 print("Regular Grid Environment:")
@@ -84,7 +84,7 @@ print(f"  Grid shape: {env_regular.grid_shape}")
 # %%
 # Orthogonal neighbors only (4-connectivity in 2D)
 env_orthogonal = Environment.from_samples(
-    data_samples=square_data,
+    positions=square_data,
     bin_size=5.0,
     connect_diagonal_neighbors=False,
     name="Orthogonal",
@@ -92,7 +92,7 @@ env_orthogonal = Environment.from_samples(
 
 # Include diagonal neighbors (8-connectivity in 2D)
 env_diagonal = Environment.from_samples(
-    data_samples=square_data,
+    positions=square_data,
     bin_size=5.0,
     connect_diagonal_neighbors=True,
     name="Diagonal",
@@ -134,7 +134,7 @@ plt.show()
 # %%
 # Create hexagonal environment
 env_hex = Environment.from_samples(
-    data_samples=square_data,
+    positions=square_data,
     layout_kind="Hexagonal",  # Specify layout type
     bin_size=5.0,  # This is the hexagon width (flat-to-flat distance)
     name="Hexagonal",
@@ -352,13 +352,13 @@ circle_polygon = Point(50, 50).buffer(25)
 
 envs_comparison = {
     "Regular Grid\n(from_samples)": Environment.from_samples(
-        data_samples=circle_data, bin_size=4.0, name="Regular"
+        positions=circle_data, bin_size=4.0, name="Regular"
     ),
     "Regular Grid\n(from_polygon)": Environment.from_polygon(
         polygon=circle_polygon, bin_size=4.0, name="RegularPoly"
     ),
     "Hexagonal\n(from_samples)": Environment.from_samples(
-        data_samples=circle_data,
+        positions=circle_data,
         layout_kind="Hexagonal",
         bin_size=4.0,
         name="HexSamples",
@@ -399,7 +399,7 @@ plt.show()
 # %%
 # Regular grid parameters
 env1 = Environment.from_samples(
-    data_samples=square_data,
+    positions=square_data,
     bin_size=5.0,  # Size of bins
     connect_diagonal_neighbors=True,  # Include diagonal connections
     infer_active_bins=True,  # Auto-detect active bins
@@ -409,7 +409,7 @@ env1 = Environment.from_samples(
 
 # Hexagonal parameters
 env2 = Environment.from_samples(
-    data_samples=square_data,
+    positions=square_data,
     layout_kind="Hexagonal",
     bin_size=5.0,  # Hexagon width (flat-to-flat)
     infer_active_bins=True,

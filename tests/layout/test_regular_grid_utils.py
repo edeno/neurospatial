@@ -27,7 +27,7 @@ def test_create_regular_grid_2d_basic():
 def test_create_regular_grid_with_dimension_range_and_boundary():
     # 1D grid, explicit range, with boundary bins
     edges, centers, shape = _create_regular_grid(
-        data_samples=None,
+        positions=None,
         bin_size=1.0,
         dimension_range=[(0, 2)],
         add_boundary_bins=True,
@@ -182,7 +182,7 @@ def test_create_and_connectivity_for_3d_grid():
 
     # 2) Create the grid with bin_size = 1.0 (no boundary bins)
     edges_tuple, bin_centers, centers_shape = _create_regular_grid(
-        data_samples=cube_pts,
+        positions=cube_pts,
         bin_size=1.0,
         dimension_range=None,
         add_boundary_bins=False,
@@ -213,7 +213,7 @@ def test_create_and_connectivity_for_3d_grid():
     # 3) Infer the active_mask without any morphological ops.
     #    Signature: _infer_active_bins_from_regular_grid(data_samples, edges, ...)
     active_mask = _infer_active_bins_from_regular_grid(
-        data_samples=cube_pts,
+        positions=cube_pts,
         edges=edges_tuple,
         close_gaps=False,
         fill_holes=False,

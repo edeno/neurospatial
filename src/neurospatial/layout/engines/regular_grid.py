@@ -55,7 +55,7 @@ class RegularGridLayout(_GridMixin):
         *,
         bin_size: float | Sequence[float],
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
-        data_samples: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64] | None = None,
         add_boundary_bins: bool = False,
         infer_active_bins: bool = True,
         dilate: bool = True,
@@ -72,14 +72,14 @@ class RegularGridLayout(_GridMixin):
             Desired size of bins in each dimension.
         dimension_ranges : Optional[Sequence[Tuple[float, float]]], optional
             Explicit `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` for the grid.
-            If None, range is inferred from `data_samples`.
-        data_samples : Optional[NDArray[np.float64]], shape (n_samples, n_dims), optional
+            If None, range is inferred from `positions`.
+        positions : Optional[NDArray[np.float64]], shape (n_samples, n_dims), optional
             Data used to infer `dimension_ranges` (if not provided) and/or to
             infer active bins (if `infer_active_bins` is True).
         add_boundary_bins : bool, default=False
             If True, adds one bin on each side of the grid, extending the range.
         infer_active_bins : bool, default=True
-            If True and `data_samples` are provided, infers active bins based
+            If True and `positions` are provided, infers active bins based
             on occupancy and morphological operations.
         dilate : bool, default=True
             If `infer_active_bins` is True, dilates the inferred active area.
@@ -99,10 +99,10 @@ class RegularGridLayout(_GridMixin):
         if dimension_ranges is not None:
             self.dimension_ranges = dimension_ranges
         else:
-            # Infer ranges from data_samples
-            if data_samples is None:
+            # Infer ranges from positions
+            if positions is None:
                 raise ValueError(
-                    "dimension_ranges must be provided if data_samples is None.",
+                    "dimension_ranges must be provided if positions is None.",
                 )
 
             buffer_for_inference = (
@@ -110,9 +110,9 @@ class RegularGridLayout(_GridMixin):
                 if isinstance(bin_size, (float, int, np.number))
                 else bin_size
             )
-            # Infer ranges from data_samples
+            # Infer ranges from positions
             self.dimension_ranges = _infer_dimension_ranges_from_samples(
-                data_samples=data_samples,
+                positions=positions,
                 buffer_around_data=buffer_for_inference,
             )
 
@@ -121,15 +121,15 @@ class RegularGridLayout(_GridMixin):
             full_grid_bin_centers,
             self.grid_shape,
         ) = _create_regular_grid(
-            data_samples=data_samples,
+            positions=positions,
             bin_size=bin_size,
             dimension_range=self.dimension_ranges,
             add_boundary_bins=add_boundary_bins,
         )
 
-        if infer_active_bins and data_samples is not None:
+        if infer_active_bins and positions is not None:
             self.active_mask = _infer_active_bins_from_regular_grid(
-                data_samples=data_samples,
+                positions=positions,
                 edges=self.grid_edges,
                 close_gaps=close_gaps,
                 fill_holes=fill_holes,
@@ -138,20 +138,20 @@ class RegularGridLayout(_GridMixin):
                 boundary_exists=add_boundary_bins,
             )
         else:
-            # No data_samples or not inferring active bins, use all bins
+            # No positions or not inferring active bins, use all bins
             self.active_mask = np.ones(self.grid_shape, dtype=bool)
 
         if not np.any(self.active_mask):
             # Build comprehensive error message with diagnostics
-            error_lines = ["No active bins found after filtering."]
+            error_lines = ["[E1001] No active bins found after filtering."]
             error_lines.append("")  # Blank line
 
             # Add diagnostic information
             error_lines.append("Diagnostics:")
 
             # Show data range
-            if data_samples is not None:
-                data_clean = data_samples[~np.any(np.isnan(data_samples), axis=1)]
+            if positions is not None:
+                data_clean = positions[~np.any(np.isnan(positions), axis=1)]
                 if len(data_clean) > 0:
                     # Convert to Python native types for cleaner display
                     data_min = data_clean.min(axis=0).tolist()
@@ -168,7 +168,7 @@ class RegularGridLayout(_GridMixin):
                     # All data is NaN - inform user clearly
                     error_lines.append("  Data samples: All NaN (no valid data)")
                     error_lines.append(
-                        f"  Number of samples (including NaN): {len(data_samples)}"
+                        f"  Number of samples (including NaN): {len(positions)}"
                     )
 
             # Show grid information
@@ -208,7 +208,7 @@ class RegularGridLayout(_GridMixin):
                 "  3. Enable morphological operations (dilate=True, fill_holes=True, close_gaps=True)"
             )
             error_lines.append(
-                "  4. Check that data_samples covers the expected spatial range"
+                "  4. Check that positions cover the expected spatial range"
             )
 
             raise ValueError("\n".join(error_lines))

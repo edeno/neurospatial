@@ -77,14 +77,14 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     for i, env in enumerate(subenvs[1:], start=1):
         if env.n_dims != first_ndims:
             raise ValueError(
-                f"All sub-environments must share the same n_dims. "
+                f"[E1003] All sub-environments must share the same n_dims. "
                 f"Env 0 has {first_ndims}, Env {i} has {env.n_dims}.\n"
                 "\n"
                 "Common cause: Mixing environments with different dimensionalities "
                 "(e.g., 2D position data and 3D spatial data).\n"
                 "\n"
                 "To fix:\n"
-                "  1. Check that all data_samples arrays have the same number of columns\n"
+                "  1. Check that all position data arrays have the same number of columns\n"
                 "  2. Verify each environment's n_dims property before creating the composite"
             )
 

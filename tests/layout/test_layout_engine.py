@@ -45,7 +45,7 @@ def test_create_layout_regular_grid():
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
         add_boundary_bins=False,
     )
@@ -62,7 +62,7 @@ def test_regular_grid_point_to_bin_index():
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
         add_boundary_bins=False,
     )
@@ -77,7 +77,7 @@ def test_regular_grid_bin_area_volume():
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
         add_boundary_bins=False,
     )
@@ -91,7 +91,7 @@ def test_create_layout_hexagonal():
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
     )
     assert hasattr(layout, "bin_centers")
@@ -105,7 +105,7 @@ def test_hexagonal_point_to_bin_index():
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
     )
     points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
@@ -119,7 +119,7 @@ def test_hexagonal_bin_area_volume():
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,
-        data_samples=data,
+        positions=data,
         infer_active_bins=True,
     )
     areas = layout.bin_sizes()
@@ -259,10 +259,10 @@ def simple_graph_for_layout() -> nx.Graph:
 
 
 @pytest.fixture
-def simple_hex_env(plus_maze_data_samples) -> Environment:
+def simple_hex_env(plus_maze_positions) -> Environment:
     """Basic hexagonal environment for mask testing."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,  # Use existing samples
+        positions=plus_maze_positions,  # Use existing samples
         bin_size=2.0,  # Required parameter
         layout_type="Hexagonal",
         hexagon_width=2.0,  # Reasonably large hexes
@@ -294,10 +294,10 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
 
 
 @pytest.fixture
-def grid_env_for_indexing(plus_maze_data_samples) -> Environment:
+def grid_env_for_indexing(plus_maze_positions) -> Environment:
     """A 2D RegularGrid environment suitable for index testing."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,  # Creates a reasonable grid
+        positions=plus_maze_positions,  # Creates a reasonable grid
         bin_size=1.0,
         infer_active_bins=True,
         bin_count_threshold=0,

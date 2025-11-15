@@ -32,7 +32,7 @@ MIN_HEX_RADIUS = 1e-10
 
 
 def _create_hex_grid(
-    data_samples: NDArray[np.float64] | None,
+    positions: NDArray[np.float64] | None,
     dimension_range: Sequence[tuple[float, float]] | None = None,
     hexagon_width: float = 1.0,
 ) -> tuple[
@@ -46,15 +46,15 @@ def _create_hex_grid(
 ]:
     """Generate a 2D hexagonal grid (pointy-top) that covers either:
     - A user-specified bounding box (`dimension_range`), or
-    - The min/max extent of `data_samples`.
+    - The min/max extent of `positions`.
 
     Parameters
     ----------
-    data_samples : ndarray of shape (n_samples, 2), optional
+    positions : ndarray of shape (n_samples, 2), optional
         2D points to infer bounding box if `dimension_range` is None.
         NaNs are ignored. If None, `dimension_range` must be provided.
     dimension_range : sequence of ((min_x, max_x), (min_y, max_y)), optional
-        If provided, must be length 2. Otherwise inferred from `data_samples`.
+        If provided, must be length 2. Otherwise inferred from `positions`.
     hexagon_width : float, default=1.0
         Distance between parallel sides of each hexagon; must be positive.
 
@@ -79,9 +79,9 @@ def _create_hex_grid(
     ------
     ValueError
         - If `hexagon_width <= 0`.
-        - If neither `dimension_range` nor `data_samples` (with valid shape) is provided.
+        - If neither `dimension_range` nor `positions` (with valid shape) is provided.
         - If `dimension_range` is provided but not length 2 or has min > max.
-        - If `data_samples` is not a 2D array of shape (n_samples, 2).
+        - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
     # 1) Validate hexagon_width
@@ -92,11 +92,11 @@ def _create_hex_grid(
 
     hex_orientation = 0.0  # point-up
 
-    # 2) Clean & validate data_samples
-    if data_samples is not None:
-        ds_arr = np.asarray(data_samples, dtype=float)
+    # 2) Clean & validate positions
+    if positions is not None:
+        ds_arr = np.asarray(positions, dtype=float)
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
-            raise ValueError("`data_samples` must be shape (n_samples, 2).")
+            raise ValueError("`positions` must be shape (n_samples, 2).")
         # Remove any rows containing NaNs
         ds_arr = ds_arr[~np.isnan(ds_arr).any(axis=1)]
     else:
@@ -114,7 +114,7 @@ def _create_hex_grid(
         effective_range = [(min_x, max_x), (min_y, max_y)]
     else:
         if ds_arr.shape[0] == 0:
-            raise ValueError("`data_samples` is empty; cannot infer bounding box.")
+            raise ValueError("`positions` is empty; cannot infer bounding box.")
         min_vals = np.min(ds_arr, axis=0)
         max_vals = np.max(ds_arr, axis=0)
         min_x, max_x = float(min_vals[0]), float(max_vals[0])
@@ -432,7 +432,7 @@ def _points_to_hex_bin_ind(
 
 
 def _infer_active_bins_from_hex_grid(
-    data_samples: NDArray[np.float64],
+    positions: NDArray[np.float64],
     centers_shape: tuple[int, int],
     hex_radius: float,
     min_x: float,
@@ -441,13 +441,13 @@ def _infer_active_bins_from_hex_grid(
 ) -> NDArray[np.int_]:
     """Infer active bins in a hexagonal grid based on data sample occupancy.
 
-    Maps `data_samples` to their respective hexagon bins within the full
+    Maps `positions` to their respective hexagon bins within the full
     conceptual grid. Hexagons are marked active if their occupancy count
     exceeds `bin_count_threshold`.
 
     Parameters
     ----------
-    data_samples : NDArray[np.float64], shape (n_samples, 2)
+    positions : NDArray[np.float64], shape (n_samples, 2)
         2D data samples (e.g., positions).
     centers_shape : Tuple[int, int]
         Shape (n_hex_rows, n_hex_cols) of the full conceptual grid of hexagons.
@@ -469,7 +469,7 @@ def _infer_active_bins_from_hex_grid(
 
     """
     bin_ind = _points_to_hex_bin_ind(
-        points=data_samples,
+        points=positions,
         grid_offset_x=min_x,
         grid_offset_y=min_y,
         hex_radius=hex_radius,

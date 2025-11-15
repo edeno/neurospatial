@@ -546,7 +546,7 @@ print("But NOT when returning from north arm through the same physical space!")
 # %%
 # Create 2D environment (wrong for this analysis!)
 env_2d = Environment.from_samples(
-    data_samples=plus_maze_data, bin_size=8.0, name="PlusMaze2D"
+    positions=plus_maze_data, bin_size=8.0, name="PlusMaze2D"
 )
 
 # Map to bins

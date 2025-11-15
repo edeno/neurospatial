@@ -67,7 +67,7 @@ class HexagonalLayout:
         *,
         hexagon_width: float,
         dimension_ranges: tuple[tuple[float, float], tuple[float, float]] | None = None,
-        data_samples: NDArray[np.float64] | None = None,
+        positions: NDArray[np.float64] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
     ) -> None:
@@ -79,13 +79,13 @@ class HexagonalLayout:
             The width of the hexagons (distance between parallel sides).
         dimension_ranges : Optional[Tuple[Tuple[float,float], Tuple[float,float]]], optional
             Explicit `[(min_x, max_x), (min_y, max_y)]` for the area to tile.
-            If None (default), range is inferred from `data_samples`.
-        data_samples : Optional[NDArray[np.float64]], shape (n_samples, 2), optional
+            If None (default), range is inferred from `positions`.
+        positions : Optional[NDArray[np.float64]], shape (n_samples, 2), optional
             2D data used to infer `dimension_ranges` (if not provided) and/or
             to infer active hexagons (if `infer_active_bins` is True).
             Defaults to None.
         infer_active_bins : bool, default=True
-            If True and `data_samples` are provided, infers active hexagons
+            If True and `positions` are provided, infers active hexagons
             based on occupancy. If False, all hexagons within the defined
             area are considered active.
         bin_count_threshold : int, default=0
@@ -95,7 +95,7 @@ class HexagonalLayout:
         Raises
         ------
         ValueError
-            If `dimension_ranges` and `data_samples` are both None, or if
+            If `dimension_ranges` and `positions` are both None, or if
             `hexagon_width` is not positive.
 
         """
@@ -109,13 +109,13 @@ class HexagonalLayout:
             self.grid_offset_y_,
             self.dimension_ranges,
         ) = _create_hex_grid(
-            data_samples=data_samples,
+            positions=positions,
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
-        if infer_active_bins and data_samples is not None:
+        if infer_active_bins and positions is not None:
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(
-                data_samples=data_samples,
+                positions=positions,
                 centers_shape=self.grid_shape,
                 hex_radius=self.hex_radius_,
                 min_x=self.grid_offset_x_,

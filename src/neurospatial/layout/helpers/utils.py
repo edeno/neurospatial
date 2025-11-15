@@ -42,7 +42,7 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def get_n_bins(
-    data_samples: NDArray[np.float64],
+    positions: NDArray[np.float64],
     bin_size: float | Sequence[float],
     dimension_range: Sequence[tuple[float, float]] | None = None,
 ) -> NDArray[np.int_]:
@@ -53,8 +53,8 @@ def get_n_bins(
 
     Parameters
     ----------
-    data_samples : NDArray[np.float64], shape (n_samples, n_dims)
-        N-dimensional data samples. Used to determine the data extent if
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        N-dimensional position samples. Used to determine the data extent if
         `dimension_range` is not provided. NaNs are ignored for range calculation.
     bin_size : Union[float, Sequence[float]]
         The desired size of the bins. If a float, this size is applied to
@@ -63,7 +63,7 @@ def get_n_bins(
     dimension_range : Optional[Sequence[Tuple[float, float]]], optional
         Explicit range `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` for
         each dimension. If None (default), the range is calculated from
-        the min/max of `data_samples`.
+        the min/max of `positions`.
 
     Returns
     -------
@@ -88,7 +88,7 @@ def get_n_bins(
         extent = np.diff(pr, axis=1).squeeze(axis=1)
     else:
         # Ignore NaNs when calculating range from data
-        extent = np.nanmax(data_samples, axis=0) - np.nanmin(data_samples, axis=0)
+        extent = np.nanmax(positions, axis=0) - np.nanmin(positions, axis=0)
 
     # Validate and convert bin_size with helpful error messages
     try:
@@ -127,25 +127,25 @@ def get_n_bins(
 
 def _infer_active_elements_from_samples(
     candidate_element_centers: NDArray[np.float64],
-    data_samples: NDArray[np.float64],
+    positions: NDArray[np.float64],
     bin_count_threshold: int = 0,
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.int_]]:
-    """Infer active elements from candidates based on data sample occupancy.
+    """Infer active elements from candidates based on position sample occupancy.
 
-    This function maps `data_samples` to the nearest `candidate_element_centers`
+    This function maps `positions` to the nearest `candidate_element_centers`
     using a KD-tree. Candidates are marked "active" if their occupancy count
-    (number of mapped data samples) exceeds `bin_count_threshold`.
+    (number of mapped position samples) exceeds `bin_count_threshold`.
 
     Parameters
     ----------
     candidate_element_centers : NDArray[np.float64], shape (n_candidates, n_dims)
         N-dimensional coordinates of the centers of all potential elements
         (e.g., bins, cells).
-    data_samples : NDArray[np.float64], shape (n_samples, n_dims)
-        N-dimensional data samples (e.g., recorded positions) used to
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        N-dimensional position samples (e.g., recorded positions) used to
         determine occupancy. NaNs within this array are filtered out.
     bin_count_threshold : int, optional, default=0
-        Minimum number of data samples that must map to a candidate element
+        Minimum number of position samples that must map to a candidate element
         for it to be considered active. If 0, any occupancy makes it active.
 
     Returns
@@ -162,7 +162,7 @@ def _infer_active_elements_from_samples(
     Raises
     ------
     ValueError
-        If `candidate_element_centers` or `data_samples` have incompatible
+        If `candidate_element_centers` or `positions` have incompatible
         dimensions, or if `bin_count_threshold` is negative.
 
     """
@@ -172,7 +172,7 @@ def _infer_active_elements_from_samples(
         )
 
     n_candidates, n_dims_candidates = candidate_element_centers.shape
-    _, n_dims_samples = data_samples.shape
+    _, n_dims_samples = positions.shape
 
     if n_candidates == 0:
         warnings.warn(
@@ -189,16 +189,16 @@ def _infer_active_elements_from_samples(
     if n_dims_candidates != n_dims_samples:
         raise ValueError(
             f"Dimensionality mismatch: candidate_element_centers have {n_dims_candidates} dims, "
-            f"while data_samples have {n_dims_samples} dims.",
+            f"while positions have {n_dims_samples} dims.",
         )
 
-    # Filter out NaN data_samples
-    valid_samples_mask = ~np.any(np.isnan(data_samples), axis=1)
-    valid_data_samples = data_samples[valid_samples_mask]
+    # Filter out NaN positions
+    valid_samples_mask = ~np.any(np.isnan(positions), axis=1)
+    valid_positions = positions[valid_samples_mask]
 
-    if valid_data_samples.shape[0] == 0:
+    if valid_positions.shape[0] == 0:
         warnings.warn(
-            "No valid (non-NaN) data samples provided for interior inference. "
+            "No valid (non-NaN) positions provided for interior inference. "
             "No elements will be marked as active based on occupancy.",
             UserWarning,
         )
@@ -212,7 +212,7 @@ def _infer_active_elements_from_samples(
             source_indices_of_active_centers,
         )
 
-    # Build KD-tree on candidate centers to map data samples
+    # Build KD-tree on candidate centers to map positions
     try:
         candidate_kdtree = KDTree(candidate_element_centers)
     except (
@@ -233,9 +233,9 @@ def _infer_active_elements_from_samples(
             source_indices_of_active_centers,
         )
 
-    # Query the KD-tree: for each valid_data_sample, find the index of the nearest candidate_element_center
+    # Query the KD-tree: for each valid position, find the index of the nearest candidate_element_center
     try:
-        _, assigned_candidate_indices = candidate_kdtree.query(valid_data_samples)
+        _, assigned_candidate_indices = candidate_kdtree.query(valid_positions)
     except Exception as e:  # Catch errors if query points have wrong dimension etc.
         warnings.warn(
             f"KDTree query failed during active element inference: {e}. "
@@ -279,15 +279,15 @@ def _infer_active_elements_from_samples(
 
 
 def _infer_dimension_ranges_from_samples(
-    data_samples: NDArray[np.float64],
+    positions: NDArray[np.float64],
     buffer_around_data: float | Sequence[float] = 0.0,
 ) -> Sequence[tuple[float, float]]:
-    """Infer min/max range for each dimension from data samples, with a buffer.
+    """Infer min/max range for each dimension from position samples, with a buffer.
 
     Parameters
     ----------
-    data_samples : NDArray[np.float64], shape (n_samples, n_dims)
-        Data points from which to infer ranges. NaNs are ignored.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position points from which to infer ranges. NaNs are ignored.
     buffer_around_data : Union[float, Sequence[float]], default=0.0
         Buffer to add to the min and max of the inferred range in each
         dimension. If a float, applied to all dimensions. If a sequence,
@@ -302,21 +302,21 @@ def _infer_dimension_ranges_from_samples(
     Raises
     ------
     ValueError
-        If `data_samples` are all NaN, empty after NaN removal, not 2D,
-        or if `buffer_around_data` dimensionality mismatches `data_samples`.
+        If `positions` are all NaN, empty after NaN removal, not 2D,
+        or if `buffer_around_data` dimensionality mismatches `positions`.
     TypeError
         If `buffer_around_data` is not a float or sequence of floats.
 
     """
-    if data_samples.ndim != 2:
+    if positions.ndim != 2:
         raise ValueError(
-            f"data_samples must be a 2D array, shape is {data_samples.shape}",
+            f"positions must be a 2D array, shape is {positions.shape}",
         )
-    n_dimensions = data_samples.shape[1]
+    n_dimensions = positions.shape[1]
 
-    clean_samples = data_samples[~np.any(np.isnan(data_samples), axis=1)]
+    clean_samples = positions[~np.any(np.isnan(positions), axis=1)]
     if clean_samples.shape[0] == 0:
-        raise ValueError("All 'data_samples' are NaN or the array is empty.")
+        raise ValueError("All 'positions' are NaN or the array is empty.")
 
     min_vals = np.min(clean_samples, axis=0)
     max_vals = np.max(clean_samples, axis=0)

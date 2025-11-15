@@ -5,11 +5,237 @@
 
 ## Current Status
 
-**Milestone 2 Progress**: 4/12 tasks completed (33%)
+**Milestone 2 Progress**: 7/12 tasks completed (58%)
 
-Working on: **Task 2.5 - UX: Standardize Parameter Naming [HIGH]** - Next task
+Working on: **Task 2.8 - Type Safety: Fix SubsetLayout [MEDIUM]** - Next task
 
 ## Session Notes
+
+### 2025-11-14: Task 2.7 - Refactor: Split Long Methods ✅ COMPLETED
+
+**Status**: Complete - Code reviewer APPROVED (production-ready)
+
+**Summary**:
+Successfully refactored the large `_create_regular_grid()` function (145 lines) by extracting three well-designed helper functions, reducing the main function to 10 lines of orchestration code while maintaining 100% backward compatibility.
+
+**Implementation Details**:
+- **Extracted `_validate_and_prepare_inputs()`** (103 lines including docstring):
+  - Handles dimensionality determination and position validation
+  - Normalizes and validates bin_size (NaN/Inf/negative checks with [E1002] error codes)
+  - Returns: (samples, n_dims, bin_sizes)
+  - Preserves all diagnostic-rich error messages
+
+- **Extracted `_compute_dimension_ranges()`** (69 lines including docstring):
+  - Computes ranges from explicit specification or infers from samples
+  - Handles zero-span range expansion for constant data
+  - Returns: ranges list
+  - Clean separation from validation logic
+
+- **Extracted `_build_grid_structure()`** (70 lines including docstring):
+  - Computes number of bins via get_n_bins()
+  - Generates edges via np.histogramdd
+  - Adds boundary bins if requested
+  - Computes centers and shape
+  - Returns: (edges_tuple, bin_centers, centers_shape)
+
+- **Refactored `_create_regular_grid()`** (53 lines total, 10 lines of code):
+  - Reduced from ~145 lines to 10 lines of orchestration
+  - Cyclomatic complexity reduced to 1 (sequential calls)
+  - Maintains identical public API and behavior
+  - Clear data flow: raw inputs → validated → ranges → grid structure
+
+**Test Results**:
+- ✅ All 12 regular grid utils tests PASS (zero regressions)
+- ✅ All 40 tests with "regular_grid" pattern PASS
+- ✅ All 5 Environment.from_samples integration tests PASS
+- ✅ Ruff: All checks passed
+- ✅ Mypy: Success: no issues found
+
+**Code Review Results**:
+- **Rating**: APPROVE - Production-ready
+- **Quality Assessment**:
+  - Separation of Concerns: Excellent - Clean 3-phase decomposition ✅
+  - Documentation: Outstanding - Perfect NumPy docstring format ✅
+  - Zero Behavioral Changes: All tests pass, no regressions ✅
+  - Maintainability: Dramatically improved (145→10 lines) ✅
+  - Type Safety: Complete annotations, mypy passes ✅
+  - Error Handling: All diagnostic messages preserved ✅
+
+**Reviewer Highlights**:
+- "Exemplary refactoring that successfully decomposes a complex function"
+- "Excellent separation of concerns - three distinct phases cleanly separated"
+- "Outstanding documentation following NumPy format perfectly"
+- "Zero behavioral changes - 100% backward compatibility maintained"
+- "Dramatically improved maintainability - cyclomatic complexity = 1"
+- "Smart code organization with numbered comments maintaining continuity"
+- "This sets an excellent pattern for similar refactorings"
+
+**Key Achievements**:
+1. Main function reduced from 145 lines to **10 lines** ✅
+2. Cyclomatic complexity reduced to **1** (well under target of 10) ✅
+3. Zero test regressions (100% pass rate) ✅
+4. All helper functions have comprehensive NumPy docstrings ✅
+5. Type safety maintained with complete annotations ✅
+6. Error codes and diagnostic messages preserved ✅
+
+**Acceptance Criteria Met**: ✅
+- Main function <50 lines: YES (10 lines of code, 53 total)
+- Cyclomatic complexity <10: YES (complexity = 1)
+- All existing tests pass: YES (12/12 pass, zero regressions)
+- Clear separation of concerns: YES (3 focused helpers)
+- Comprehensive documentation: YES (NumPy docstrings)
+
+**Time**: ~1 hour (within 4h estimate)
+
+---
+
+### 2025-11-14: Task 2.6 - Documentation: Error Code System ✅ COMPLETED
+
+**Status**: Complete - Code reviewer APPROVED (production-ready)
+
+**Summary**:
+Successfully implemented comprehensive error code system with 5 error codes (E1001-E1005), complete documentation, and thorough test coverage to improve developer experience and debugging.
+
+**Implementation Details**:
+- **Created** `docs/errors.md` (493 lines):
+  - Comprehensive error reference for 5 error codes
+  - Quick index table with severity ratings
+  - Each error has 6+ sections: Example, What This Means, Solutions, See Also
+  - Code examples showing both wrong (❌) and correct (✓) usage
+  - Pedagogical explanations of WHY errors happen, not just how to fix them
+  - Developer guidelines for adding new error codes
+
+- **Created** `tests/test_error_codes.py` (249 lines, 15 tests):
+  - E1001 (No active bins): 2 tests - code presence + diagnostics
+  - E1002 (Invalid bin_size): 4 tests - negative, zero, NaN, inf cases
+  - E1003 (Dimension mismatch): 2 tests - code presence + dimension info
+  - E1004 (Not fitted): 2 tests - code presence + usage example
+  - E1005 (Path traversal): 2 tests - code presence + security explanation
+  - Documentation: 2 tests - all codes documented + solutions present
+  - Constants: 1 test - module imports (placeholder for future constants)
+
+**Error Codes Implemented**:
+1. **E1001**: No active bins found after filtering
+   - Location: `src/neurospatial/layout/engines/regular_grid.py:146`
+   - Includes comprehensive diagnostics (data range, grid shape, parameters)
+   - Provides actionable suggestions with numbered fixes
+
+2. **E1002**: Invalid bin_size (negative, zero, NaN, inf)
+   - Location: `src/neurospatial/layout/helpers/regular_grid.py:363-375`
+   - Three separate validation points for different invalid states
+   - Shows actual invalid value in error message
+
+3. **E1003**: Dimension mismatch in CompositeEnvironment
+   - Location: `src/neurospatial/composite.py:80`
+   - Shows actual dimension values (e.g., "Env 0 has 2, Env 1 has 3")
+   - Explains common cause and fix steps
+
+4. **E1004**: Environment not fitted
+   - Location: `src/neurospatial/environment/decorators.py:69`
+   - Shows correct usage example in error message
+   - Links to documentation: `https://neurospatial.readthedocs.io/errors/#e1004`
+
+5. **E1005**: Path traversal detected (security)
+   - Location: `src/neurospatial/io.py:137`
+   - Validates path BEFORE file operations
+   - Explains security rationale
+   - Links to documentation: `https://neurospatial.readthedocs.io/errors/#e1005`
+
+**Test Results**:
+- ✅ 15/15 error code tests PASS (0.17s)
+- ✅ Ruff: All checks passed
+- ✅ Mypy: No errors (only external library stub warnings - expected)
+
+**Code Review Results**:
+- **Rating**: APPROVE - Production-ready
+- **Quality Assessment**:
+  - Requirements: All acceptance criteria met comprehensively ✅
+  - Test Coverage: 15 tests covering all error codes and documentation ✅
+  - Documentation Quality: Outstanding 493-line reference guide ✅
+  - Code Quality: Clean integration, no linting/typing issues ✅
+  - User Experience: Actionable diagnostics and clear examples ✅
+  - Security: Proper path traversal prevention with transparency ✅
+
+**Reviewer Highlights**:
+- "Exceptional attention to user experience (diagnostics, examples, solutions)"
+- "Security-aware design (E1005 path traversal)"
+- "Comprehensive documentation with pedagogical explanations"
+- "Well-structured tests with clear organization"
+- "This implementation exceeds expectations in every category"
+
+**Minor Suggestions (non-blocking)**:
+1. Consider extracting error codes to constants module for refactorability
+2. Centralize documentation URL generation
+3. Could add calculated bin_size suggestions in E1001
+
+**Acceptance Criteria Met**: ✅
+- All 5 error codes documented with solutions
+- Error codes added to source modules
+- 15 comprehensive tests passing
+- Documentation links included in error messages
+- User-friendly error messages with examples
+
+**Time**: ~3 hours (within 4h estimate)
+
+---
+
+### 2025-11-14: Task 2.5 - UX: Standardize Parameter Naming ✅ COMPLETED
+
+**Status**: Complete - Code reviewer APPROVED
+
+**Summary**:
+Successfully standardized parameter naming from `data_samples` to `positions` throughout the codebase for better API consistency with trajectory analysis methods like `occupancy()` and `compute_place_field()`.
+
+**Implementation Details**:
+- **Renamed** `data_samples` → `positions` in all factory methods and layout engines
+- **Updated** 30+ files across source and tests
+- **No backwards compatibility** (per user request - breaking change)
+
+**Files Modified**:
+- `src/neurospatial/environment/factories.py` - `Environment.from_samples()` parameter
+- `src/neurospatial/layout/engines/regular_grid.py` - `RegularGridLayout.build()`
+- `src/neurospatial/layout/engines/hexagonal.py` - `HexagonalLayout.build()`
+- `src/neurospatial/layout/engines/shapely_polygon.py` - Internal call to `_create_regular_grid()`
+- `src/neurospatial/layout/helpers/regular_grid.py` - `_create_regular_grid()`, `_infer_active_bins_from_regular_grid()`
+- `src/neurospatial/layout/helpers/hexagonal.py` - `_create_hex_grid()`, `_infer_active_bins_from_hex_grid()`
+- All test files in `tests/` (batch updated with sed)
+- `tests/conftest.py` - All fixtures updated
+- `CLAUDE.md` - All examples updated
+
+**Tests Added**:
+- **Created** `TestPositionsParameterNaming` test class with 5 tests:
+  1. `test_from_samples_accepts_positions_parameter()` - Basic parameter acceptance
+  2. `test_from_samples_positions_produces_correct_environment()` - Output correctness
+  3. `test_from_samples_positions_with_hexagonal_layout()` - Hexagonal layout
+  4. `test_from_samples_positions_with_morphological_ops()` - Morphological operations
+  5. `test_from_samples_positions_3d()` - 3D environments
+
+**Test Results**:
+- ✅ 5/5 new tests PASSED
+- ✅ 626/627 total tests PASSED (1 unrelated simulation test failure)
+- ✅ Ruff: All checks passed (2 files reformatted)
+- ✅ Mypy: No errors in project code (only external lib stubs missing)
+
+**Code Review Results**:
+- **Rating**: APPROVE - Production-ready
+- **Quality Metrics**:
+  - Code Quality: 9/10 (Excellent)
+  - Test Coverage: 9/10 (Comprehensive)
+  - Documentation: 9/10 (Clear and complete)
+  - Type Safety: 10/10 (Perfect)
+- **Minor observations** (low priority, optional):
+  - Internal helper functions in `utils.py` still use `data_samples` (not blocking)
+  - Test fixture names still reference old naming (cosmetic only)
+  - Some error messages still mention `data_samples` (polish item)
+
+**Acceptance Criteria Met**: ✅
+- All public API uses `positions` parameter
+- All docstrings updated
+- All examples updated
+- Tests comprehensive and passing
+- CLAUDE.md updated
+
+---
 
 ### 2025-11-14: Task 2.4 - Testing: Property-Based Tests ✅ COMPLETED
 

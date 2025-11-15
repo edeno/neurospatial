@@ -50,7 +50,7 @@ uv run pytest -m "not slow"
 
 ```python
 # Create environment from data
-env = Environment.from_samples(data, bin_size=2.0)  # bin_size is required
+env = Environment.from_samples(positions, bin_size=2.0)  # bin_size is required
 
 # Add units and coordinate frame (v0.1.0+)
 env.units = "cm"
@@ -631,7 +631,7 @@ class Environment:
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> print(env.n_bins)
     100
     """
@@ -682,7 +682,7 @@ env.bin_at([10.0, 5.0])  # RuntimeError
 ✅ Right:
 
 ```python
-env = Environment.from_samples(data, bin_size=2.0)  # Factory methods fit automatically
+env = Environment.from_samples(positions, bin_size=2.0)  # Factory methods fit automatically
 env.bin_at([10.0, 5.0])  # Works
 ```
 
@@ -721,7 +721,7 @@ del env.regions['old_goal']  # Delete existing
 ❌ Wrong:
 
 ```python
-env = Environment.from_samples(data, bin_size=2.0)  # Creates 2D grid
+env = Environment.from_samples(positions, bin_size=2.0)  # Creates 2D grid
 linear_pos = env.to_linear(position)  # AttributeError
 ```
 
@@ -800,7 +800,7 @@ env = Environment.from_samples(data)  # TypeError: missing required argument
 ✅ Right:
 
 ```python
-env = Environment.from_samples(data, bin_size=2.0)  # Explicit is better
+env = Environment.from_samples(positions, bin_size=2.0)  # Explicit is better
 ```
 
 **Tip**: Choose bin_size based on your data's spatial scale and units (cm, meters, pixels, etc.)
@@ -860,7 +860,7 @@ env = Environment()
 env.bin_at([10, 5])
 
 # Right
-env = Environment.from_samples(data, bin_size=2.0)
+env = Environment.from_samples(positions, bin_size=2.0)
 env.bin_at([10, 5])
 ```
 
@@ -905,13 +905,13 @@ Example fix:
 
 ```python
 # If bin_size is too large
-env = Environment.from_samples(data, bin_size=1.0)  # Reduce from 10.0
+env = Environment.from_samples(positions, bin_size=1.0)  # Reduce from 10.0
 
 # If threshold is too high
-env = Environment.from_samples(data, bin_size=2.0, bin_count_threshold=1)
+env = Environment.from_samples(positions, bin_size=2.0, bin_count_threshold=1)
 
 # If data is sparse
-env = Environment.from_samples(data, bin_size=2.0, dilate=True, fill_holes=True)
+env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=True)
 ```
 
 ### Pre-commit hooks fail on commit

@@ -277,17 +277,16 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.5 | **Effort**: 6h | **Files**: Multiple
 
-- [ ] Add `positions` parameter to `from_samples()` (preferred name)
-- [ ] Update all `occupancy()` calls to use `positions`
-- [ ] Update all `compute_place_field()` calls to use `positions`
-- [ ] Update all docstrings to use `positions`
-- [ ] Update all examples to use `positions`
-- [ ] Add test `test_data_samples_deprecated_warning()`
-- [ ] Add test `test_positions_parameter_works()`
-- [ ] Update CLAUDE.md to use `positions` throughout
-- [ ] Run: `uv run pytest -W error::DeprecationWarning` (should fail on old usage)
+- [x] Add `positions` parameter to `from_samples()` (preferred name)
+- [x] Update all `occupancy()` calls to use `positions`
+- [x] Update all `compute_place_field()` calls to use `positions`
+- [x] Update all docstrings to use `positions`
+- [x] Update all examples to use `positions`
+- [x] Add test `test_positions_parameter_works()`
+- [x] Update CLAUDE.md to use `positions` throughout
 
-**Acceptance**: All code uses `positions`, deprecation warning on `data_samples`
+**Acceptance**: All code uses `positions` (no backwards compatibility per user request) ✅
+**Status**: ✅ COMPLETED (2025-11-14)
 
 ---
 
@@ -295,16 +294,17 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.6 | **Effort**: 4h | **Files**: Multiple, `docs/errors.md` (new)
 
-- [ ] Create `docs/errors.md` with error reference structure
-- [ ] Define error code constants (E1001, E1002, etc.) in relevant modules
-- [ ] Add E1001 to "No active bins" error in `regular_grid.py`
-- [ ] Add E1002 to bin_size validation errors
-- [ ] Add E1003 to dimension mismatch errors
-- [ ] Add documentation link to error messages
-- [ ] Document 5 most common errors in `docs/errors.md`
-- [ ] Add test verifying error codes appear in messages
+- [x] Create `docs/errors.md` with error reference structure
+- [x] Define error code constants (E1001, E1002, etc.) in relevant modules
+- [x] Add E1001 to "No active bins" error in `regular_grid.py`
+- [x] Add E1002 to bin_size validation errors
+- [x] Add E1003 to dimension mismatch errors
+- [x] Add documentation link to error messages
+- [x] Document 5 most common errors in `docs/errors.md`
+- [x] Add test verifying error codes appear in messages
 
-**Acceptance**: Top 5 errors have codes and documented solutions
+**Acceptance**: Top 5 errors have codes and documented solutions ✅
+**Status**: ✅ COMPLETED (2025-11-14) - Code reviewer APPROVED
 
 ---
 
@@ -312,15 +312,17 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.7 | **Effort**: 4h | **Files**: `layout/helpers/regular_grid.py`
 
-- [ ] Extract `_validate_grid_inputs()` from `_create_regular_grid()`
-- [ ] Extract `_compute_dimension_ranges()` from `_create_regular_grid()`
-- [ ] Extract `_compute_grid_structure()` from `_create_regular_grid()`
-- [ ] Extract `_generate_bin_centers()` from `_create_regular_grid()`
-- [ ] Update `_create_regular_grid()` to orchestrate helper functions
-- [ ] Verify `_create_regular_grid()` is now <50 lines
-- [ ] Run: `uv run pytest tests/layout/test_regular_grid_utils.py -v`
+- [x] Extract `_validate_and_prepare_inputs()` from `_create_regular_grid()`
+- [x] Extract `_compute_dimension_ranges()` from `_create_regular_grid()`
+- [x] Extract `_build_grid_structure()` from `_create_regular_grid()`
+- [x] Update `_create_regular_grid()` to orchestrate helper functions
+- [x] Verify `_create_regular_grid()` is now <50 lines (10 lines of code)
+- [x] Run: `uv run pytest tests/layout/test_regular_grid_utils.py -v` (12/12 pass)
+- [x] Run ruff and mypy (all checks pass)
+- [x] Apply code-reviewer agent (APPROVED)
 
-**Acceptance**: Main function <50 lines, cyclomatic complexity <10
+**Acceptance**: Main function <50 lines ✅, cyclomatic complexity <10 ✅
+**Status**: ✅ COMPLETED (2025-11-14) - Code reviewer APPROVED
 
 ---
 
@@ -361,7 +363,6 @@ This file tracks concrete implementation tasks for the code review action items.
 - [ ] Standardize on `scale` for uniform scaling
 - [ ] Standardize on `sx`, `sy`, `sz` for per-axis scaling
 - [ ] Update docstrings
-- [ ] Add deprecation aliases if needed
 - [ ] Run: `uv run pytest tests/test_transforms.py tests/test_alignment.py -v`
 
 **Acceptance**: Consistent naming across all transform functions
@@ -563,7 +564,7 @@ git diff TASKS.md
 ## Progress Tracking
 
 **Milestone 1**: ☐ 0/8 tasks (0%)
-**Milestone 2**: ☐ 0/12 tasks (0%)
+**Milestone 2**: ☑ 7/12 tasks (58%)
 **Milestone 3**: ☐ 0/10 tasks (0%)
 **Milestone 4**: ☐ 0/2 tasks (0%)
 

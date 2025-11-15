@@ -140,7 +140,7 @@ plt.show()
 # %%
 # Create environment with 5 cm bins
 env = Environment.from_samples(
-    data_samples=position_2d,
+    positions=position_2d,
     bin_size=5.0,  # 5 cm bins
     name="OpenFieldExample",
 )
@@ -372,7 +372,7 @@ envs = {}
 
 for bin_size in bin_sizes:
     envs[bin_size] = Environment.from_samples(
-        data_samples=position_2d, bin_size=bin_size, name=f"OpenField_{bin_size}cm"
+        positions=position_2d, bin_size=bin_size, name=f"OpenField_{bin_size}cm"
     )
     print(f"\nBin size = {bin_size} cm:")
     print(f"  Total bins: {envs[bin_size].n_bins}")
@@ -408,7 +408,7 @@ plt.show()
 # This will fail!
 try:
     bad_env = Environment.from_samples(
-        data_samples=position_2d,
+        positions=position_2d,
         bin_size=200.0,  # 200 cm - way too large!
         name="TooBig",
     )
@@ -439,7 +439,7 @@ print("If your data is in pixels, use bin_size in pixels (e.g., 10)")
 # env = Environment()  # This won't work!
 
 # ✓ CORRECT - Use factory methods
-env_correct = Environment.from_samples(data_samples=position_2d, bin_size=5.0)
+env_correct = Environment.from_samples(positions=position_2d, bin_size=5.0)
 print("Always use factory methods like from_samples()!")
 
 # %% [markdown]

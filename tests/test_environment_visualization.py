@@ -38,7 +38,7 @@ class TestPlotField:
         layout = create_layout(
             kind="hexagonal",
             hexagon_width=10.0,
-            data_samples=data,
+            positions=data,
             infer_active_bins=True,
         )
         env = Environment(layout=layout, layout_type_used="hexagonal")

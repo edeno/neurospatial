@@ -321,7 +321,7 @@ class TestInterpolateMultipleLayouts:
         data_points = np.random.uniform(0, 10, size=(100, 2))
 
         env = Environment.from_samples(
-            data_samples=data_points,
+            positions=data_points,
             bin_size=2.0,
             layout="Hexagonal",
         )

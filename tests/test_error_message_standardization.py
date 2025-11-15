@@ -118,7 +118,7 @@ class TestRegularGridErrorMessages:
         bad_bin_size = -3.0
 
         with pytest.raises(ValueError) as exc_info:
-            _create_regular_grid(data_samples=data, bin_size=bad_bin_size)
+            _create_regular_grid(positions=data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
         assert str(bad_bin_size) in error_msg or f"{bad_bin_size}" in error_msg
@@ -130,7 +130,7 @@ class TestRegularGridErrorMessages:
         bad_bin_size = [2.0, 3.0]  # Only 2 values for 3D data
 
         with pytest.raises(ValueError) as exc_info:
-            _create_regular_grid(data_samples=data, bin_size=bad_bin_size)
+            _create_regular_grid(positions=data, bin_size=bad_bin_size)
 
         error_msg = str(exc_info.value)
         # Should show expected dimension count
@@ -150,7 +150,7 @@ class TestHexagonalErrorMessages:
         bad_width = -5.0
 
         with pytest.raises(ValueError) as exc_info:
-            _create_hex_grid(data_samples=data, hexagon_width=bad_width)
+            _create_hex_grid(positions=data, hexagon_width=bad_width)
 
         error_msg = str(exc_info.value)
         assert str(bad_width) in error_msg or f"{bad_width}" in error_msg
@@ -162,7 +162,7 @@ class TestHexagonalErrorMessages:
         bad_width = 0.0
 
         with pytest.raises(ValueError) as exc_info:
-            _create_hex_grid(data_samples=data, hexagon_width=bad_width)
+            _create_hex_grid(positions=data, hexagon_width=bad_width)
 
         error_msg = str(exc_info.value)
         assert "0" in error_msg or "0.0" in error_msg
@@ -174,7 +174,7 @@ class TestHexagonalErrorMessages:
 
         with pytest.raises(ValueError) as exc_info:
             _create_hex_grid(
-                data_samples=None, dimension_range=bad_range, hexagon_width=2.0
+                positions=None, dimension_range=bad_range, hexagon_width=2.0
             )
 
         error_msg = str(exc_info.value)
@@ -188,7 +188,7 @@ class TestHexagonalErrorMessages:
         bad_data = np.array([[0, 0, 0], [10, 10, 10]])  # 3D data for 2D hexagonal grid
 
         with pytest.raises(ValueError) as exc_info:
-            _create_hex_grid(data_samples=bad_data, hexagon_width=2.0)
+            _create_hex_grid(positions=bad_data, hexagon_width=2.0)
 
         error_msg = str(exc_info.value)
         # Should show expected shape requirements

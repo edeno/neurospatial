@@ -6,7 +6,7 @@ from neurospatial.layout.helpers import hexagonal as hgu
 
 
 def test_create_hex_grid_basic():
-    data_samples = np.array([[0, 0], [1, 1], [2, 2]], dtype=np.float64)
+    positions = np.array([[0, 0], [1, 1], [2, 2]], dtype=np.float64)
     (
         bin_centers,
         centers_shape,
@@ -15,7 +15,7 @@ def test_create_hex_grid_basic():
         min_x,
         min_y,
         dimension_range,
-    ) = hgu._create_hex_grid(data_samples, hexagon_width=1.0)
+    ) = hgu._create_hex_grid(positions, hexagon_width=1.0)
     assert bin_centers.shape[1] == 2
     assert isinstance(centers_shape, tuple)
     assert hex_radius > 0
@@ -26,7 +26,7 @@ def test_create_hex_grid_basic():
 
 
 def test_create_hex_grid_with_dimension_range():
-    data_samples = np.empty((0, 2))
+    positions = np.empty((0, 2))
     (
         bin_centers,
         centers_shape,
@@ -36,7 +36,7 @@ def test_create_hex_grid_with_dimension_range():
         min_y,
         _dimension_range,
     ) = hgu._create_hex_grid(
-        data_samples, dimension_range=[(0, 2), (0, 2)], hexagon_width=1.0
+        positions, dimension_range=[(0, 2), (0, 2)], hexagon_width=1.0
     )
     assert bin_centers.shape[1] == 2
     assert centers_shape[0] > 0 and centers_shape[1] > 0
@@ -45,9 +45,9 @@ def test_create_hex_grid_with_dimension_range():
 
 
 def test_create_hex_grid_invalid_hexagon_width():
-    data_samples = np.array([[0, 0], [1, 1]], dtype=np.float64)
+    positions = np.array([[0, 0], [1, 1]], dtype=np.float64)
     with pytest.raises(ValueError):
-        hgu._create_hex_grid(data_samples, hexagon_width=0)
+        hgu._create_hex_grid(positions, hexagon_width=0)
 
 
 def test_cartesian_to_fractional_cube_and_round_trip():
@@ -90,23 +90,23 @@ def test_axial_to_offset_bin_indices_and_points_to_hex_bin_ind():
 
 
 def test_infer_active_bins_from_hex_grid():
-    data_samples = np.array([[0, 0], [1, 0], [0, 0], [1, 0]], dtype=np.float64)
+    positions = np.array([[0, 0], [1, 0], [0, 0], [1, 0]], dtype=np.float64)
     _bin_centers, centers_shape, hex_radius, _, min_x, min_y, _ = hgu._create_hex_grid(
-        data_samples, hexagon_width=1.0
+        positions, hexagon_width=1.0
     )
     # Threshold 0: all bins with at least 1 sample
     active_bins = hgu._infer_active_bins_from_hex_grid(
-        data_samples, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=0
+        positions, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=0
     )
     assert active_bins.size > 0
     # Threshold 2: only bins with at least 2 samples
     active_bins2 = hgu._infer_active_bins_from_hex_grid(
-        data_samples, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=2
+        positions, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=2
     )
     assert np.all(np.isin(active_bins2, active_bins))
     # Threshold high: no bins
     active_bins3 = hgu._infer_active_bins_from_hex_grid(
-        data_samples, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=10
+        positions, centers_shape, hex_radius, min_x, min_y, bin_count_threshold=10
     )
     assert active_bins3.size == 0
 
@@ -123,9 +123,9 @@ def test_get_hex_grid_neighbor_deltas():
 
 def test_create_hex_connectivity_graph():
     # Create a small grid and mark all bins as active
-    data_samples = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float64)
+    positions = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float64)
     bin_centers, centers_shape, _hex_radius, _, _min_x, _min_y, _ = (
-        hgu._create_hex_grid(data_samples, hexagon_width=1.0)
+        hgu._create_hex_grid(positions, hexagon_width=1.0)
     )
     n_bins = bin_centers.shape[0]
     active_indices = np.arange(n_bins, dtype=int)
@@ -152,12 +152,12 @@ def test_create_hex_connectivity_graph():
 
 def test_points_to_hex_bin_ind_nan_handling():
     # Points with NaN should return -1
-    data_samples = np.array([[0, 0], [np.nan, 1], [1, np.nan]], dtype=np.float64)
+    positions = np.array([[0, 0], [np.nan, 1], [1, np.nan]], dtype=np.float64)
     _bin_centers, centers_shape, hex_radius, _, min_x, min_y, _ = hgu._create_hex_grid(
         np.array([[0, 0], [1, 0]], dtype=np.float64), hexagon_width=1.0
     )
     indices = hgu._points_to_hex_bin_ind(
-        data_samples, min_x, min_y, hex_radius, centers_shape
+        positions, min_x, min_y, hex_radius, centers_shape
     )
     assert indices[1] == -1 and indices[2] == -1
 

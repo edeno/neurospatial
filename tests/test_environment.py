@@ -147,7 +147,7 @@ class TestEnvironmentFromGraph:
         assert np.allclose(mapped_nd_coord_north, point_nd_north)
 
     def test_plot_methods(
-        self, graph_env: Environment, plus_maze_data_samples: NDArray[np.float64]
+        self, graph_env: Environment, plus_maze_positions: NDArray[np.float64]
     ):  # Corrected fixture name
         """Test plotting methods run without error."""
         import matplotlib.pyplot as plt
@@ -211,7 +211,7 @@ class TestEnvironmentFromDataSamplesGrid:
     def test_bin_at_grid(
         self,
         grid_env_from_samples: Environment,
-        plus_maze_data_samples: NDArray[np.float64],
+        plus_maze_positions: NDArray[np.float64],
     ):
         """Test mapping points to bin indices for grid."""
         point_on_active_bin = np.array([[-1.0, 0.0]])
@@ -231,8 +231,8 @@ class TestEnvironmentFromDataSamplesGrid:
         idx_off_grid = grid_env_from_samples.bin_at(point_far_left_bottom)
         assert idx_off_grid[0] == -1
 
-        grid_env_from_samples.bin_at(plus_maze_data_samples)
-        on_track_samples = plus_maze_data_samples[:-2]
+        grid_env_from_samples.bin_at(plus_maze_positions)
+        on_track_samples = plus_maze_positions[:-2]
         on_track_indices = grid_env_from_samples.bin_at(on_track_samples)
 
         # It's possible that due to binning, some on_track_samples might fall into
@@ -353,7 +353,7 @@ def env_hexagonal() -> Environment:
     np.random.seed(42)
     data = np.random.rand(100, 2) * 5  # 100 points in a 5x5 area
     return Environment.from_samples(
-        data_samples=data,
+        positions=data,
         layout="Hexagonal",
         bin_size=1.0,
         name="HexTestEnv",
@@ -378,7 +378,7 @@ def env_with_disconnected_regions() -> Environment:
 def env_no_active_bins() -> Environment:
     """Environment with no active bins."""
     return Environment.from_samples(
-        data_samples=np.array([[100.0, 100.0]]),  # Far from default range
+        positions=np.array([[100.0, 100.0]]),  # Far from default range
         dimension_ranges=[(0, 1), (0, 1)],  # Explicit small range
         bin_size=0.5,
         infer_active_bins=True,
@@ -417,7 +417,7 @@ class TestFromDataSamplesDetailed:
     def test_morphological_ops(self, data_for_morpho_ops: NDArray[np.float64]):
         """Test dilate, fill_holes, close_gaps effects."""
         base_env = Environment.from_samples(
-            data_samples=data_for_morpho_ops,
+            positions=data_for_morpho_ops,
             bin_size=1.0,
             infer_active_bins=True,
             dilate=False,
@@ -426,7 +426,7 @@ class TestFromDataSamplesDetailed:
             bin_count_threshold=0,
         )
         dilated_env = Environment.from_samples(
-            data_samples=data_for_morpho_ops,
+            positions=data_for_morpho_ops,
             bin_size=1.0,
             infer_active_bins=True,
             dilate=True,
@@ -444,7 +444,7 @@ class TestFromDataSamplesDetailed:
             )
 
         # Creating specific scenarios for fill_holes and close_gaps for concise unit tests
-        # requires very careful crafting of data_samples and bin_size, which can be complex.
+        # requires very careful crafting of position samples and bin_size, which can be complex.
         # For now, we check that they run and don't drastically reduce active bins unexpectedly.
         hole_data = np.array(
             [
@@ -502,7 +502,7 @@ class TestFromDataSamplesDetailed:
         data = np.array([[0.5, 0.5], [2.5, 2.5]])
         dim_ranges = [(0, 3), (0, 3)]  # Defines a 3x3 grid if bin_size=1
         env = Environment.from_samples(
-            data_samples=data,
+            positions=data,
             dimension_ranges=dim_ranges,
             bin_size=1.0,
             infer_active_bins=False,
@@ -613,7 +613,7 @@ class TestShapelyPolygonLayoutDetailed:
 class TestDimensionality:
     def test_1d_regular_grid(self):
         env = Environment.from_samples(
-            data_samples=np.arange(10).reshape(-1, 1).astype(float),
+            positions=np.arange(10).reshape(-1, 1).astype(float),
             bin_size=1.0,
             name="1DGridTest",
         )
@@ -631,7 +631,7 @@ class TestDimensionality:
         data = np.random.rand(100, 3) * 5
         input_bin_size = 1.0
         env = Environment.from_samples(
-            data_samples=data,
+            positions=data,
             bin_size=input_bin_size,  # Use the variable
             name="3DGridTest",
             connect_diagonal_neighbors=True,
@@ -679,10 +679,10 @@ def simple_graph_for_layout() -> nx.Graph:
 
 
 @pytest.fixture
-def simple_hex_env(plus_maze_data_samples) -> Environment:
+def simple_hex_env(plus_maze_positions) -> Environment:
     """Basic hexagonal environment for mask testing."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,  # Use existing samples
+        positions=plus_maze_positions,  # Use existing samples
         bin_size=2.0,  # Required parameter
         layout_type="Hexagonal",
         hexagon_width=2.0,  # Reasonably large hexes
@@ -1147,6 +1147,89 @@ class TestEnvironment3D:
         assert len(linear_occ) == simple_3d_env.n_bins
         assert np.all(np.isfinite(linear_occ))
         assert np.isclose(np.sum(linear_occ), total_time, rtol=0.1)
+
+
+class TestPositionsParameterNaming:
+    """Tests for standardized 'positions' parameter naming.
+
+    Task 2.5: Verify that from_samples() uses 'positions' instead of 'data_samples'
+    for consistency with trajectory analysis methods like occupancy() and
+    compute_place_field().
+    """
+
+    def test_from_samples_accepts_positions_parameter(self):
+        """Test that from_samples() accepts 'positions' parameter."""
+        positions = np.random.rand(100, 2) * 50
+
+        # Should work with 'positions' parameter
+        env = Environment.from_samples(
+            positions=positions, bin_size=5.0, name="test_positions"
+        )
+
+        assert env.n_dims == 2
+        assert env.n_bins > 0
+        assert env.name == "test_positions"
+
+    def test_from_samples_positions_produces_correct_environment(self):
+        """Test that using 'positions' parameter creates correct environment."""
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((500, 2)) * 20
+
+        env = Environment.from_samples(
+            positions=positions,
+            bin_size=3.0,
+        )
+
+        # Verify environment is properly fitted
+        assert env._is_fitted
+        assert env.bin_centers.shape[1] == 2
+        assert env.n_bins > 0
+
+        # Verify we can query bins
+        test_points = positions[:10]
+        bin_indices = env.bin_at(test_points)
+        assert len(bin_indices) == 10
+        assert np.all(bin_indices >= -1)  # -1 for outside, >=0 for valid bins
+
+    def test_from_samples_positions_with_hexagonal_layout(self):
+        """Test 'positions' parameter works with hexagonal layout."""
+        positions = np.random.rand(200, 2) * 40
+
+        env = Environment.from_samples(
+            positions=positions, bin_size=4.0, layout="Hexagonal", name="hex_test"
+        )
+
+        assert env.n_dims == 2
+        assert env.n_bins > 0
+        assert env.layout._layout_type_tag == "Hexagonal"
+
+    def test_from_samples_positions_with_morphological_ops(self):
+        """Test 'positions' parameter with morphological operations."""
+        positions = np.random.rand(300, 2) * 30
+
+        env = Environment.from_samples(
+            positions=positions,
+            bin_size=2.5,
+            dilate=True,
+            fill_holes=True,
+            close_gaps=True,
+        )
+
+        assert env.n_dims == 2
+        assert env.n_bins > 0
+
+    def test_from_samples_positions_3d(self):
+        """Test 'positions' parameter works with 3D data."""
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((400, 3)) * 15
+
+        env = Environment.from_samples(
+            positions=positions, bin_size=3.0, connect_diagonal_neighbors=True
+        )
+
+        assert env.n_dims == 3
+        assert env.n_bins > 0
+        assert env.bin_centers.shape[1] == 3
 
 
 # ==============================================================================

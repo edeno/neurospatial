@@ -41,8 +41,8 @@ def plus_maze_edge_order() -> list[tuple[int, int]]:
 
 
 @pytest.fixture
-def plus_maze_data_samples() -> NDArray[np.float64]:
-    """Regularly spaced data samples along the plus maze arms."""
+def plus_maze_positions() -> NDArray[np.float64]:
+    """Regularly spaced position samples along the plus maze arms."""
     samples = [
         # Center
         [0.0, 0.0],
@@ -99,11 +99,11 @@ def graph_env(
 
 @pytest.fixture
 def grid_env_from_samples(
-    plus_maze_data_samples: NDArray[np.float64],
+    plus_maze_positions: NDArray[np.float64],
 ) -> Environment:
-    """Environment created as a RegularGrid from plus maze data samples."""
+    """Environment created as a RegularGrid from plus maze position samples."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,
+        positions=plus_maze_positions,
         bin_size=0.5,
         infer_active_bins=True,
         bin_count_threshold=0,  # A single sample makes a bin active
@@ -126,10 +126,10 @@ def simple_graph_for_layout() -> nx.Graph:
 
 
 @pytest.fixture
-def simple_hex_env(plus_maze_data_samples) -> Environment:
+def simple_hex_env(plus_maze_positions) -> Environment:
     """Basic hexagonal environment for mask testing."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,  # Use existing samples
+        positions=plus_maze_positions,  # Use existing samples
         layout="Hexagonal",
         bin_size=2.0,  # Reasonably large hexes
         name="SimpleHexEnvForMask",
@@ -160,10 +160,10 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
 
 
 @pytest.fixture
-def grid_env_for_indexing(plus_maze_data_samples) -> Environment:
+def grid_env_for_indexing(plus_maze_positions) -> Environment:
     """A 2D RegularGrid environment suitable for index testing."""
     return Environment.from_samples(
-        data_samples=plus_maze_data_samples,  # Creates a reasonable grid
+        positions=plus_maze_positions,  # Creates a reasonable grid
         bin_size=1.0,
         infer_active_bins=True,
         bin_count_threshold=0,
@@ -192,12 +192,12 @@ def simple_3d_env() -> Environment:
     Uses bin_size=2.0 and enables diagonal connectivity to test
     full 3D neighbor connectivity (up to 26 neighbors per bin).
     """
-    # Generate random 3D data samples
+    # Generate random 3D position samples
     np.random.seed(42)  # Fixed seed for reproducibility
-    data_samples = np.random.rand(200, 3) * 10.0  # 200 points in [0, 10] cube
+    positions = np.random.rand(200, 3) * 10.0  # 200 points in [0, 10] cube
 
     return Environment.from_samples(
-        data_samples=data_samples,
+        positions=positions,
         bin_size=2.0,
         name="Simple3DEnv",
         connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)

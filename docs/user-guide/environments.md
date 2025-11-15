@@ -27,7 +27,7 @@ from neurospatial import Environment
 data = np.random.uniform(0, 100, (1000, 2))
 
 env = Environment.from_samples(
-    data_samples=data,
+    positions=data,
     bin_size=5.0,
     name="MyEnvironment"
 )
@@ -35,7 +35,7 @@ env = Environment.from_samples(
 
 **Parameters:**
 
-- `data_samples`: Array of shape (n_samples, n_dims)
+- `positions`: Array of shape (n_samples, n_dims)
 - `bin_size`: Size of bins (required)
 - `infer_active_bins`: Automatically detect active regions (default: False)
 - `bin_count_threshold`: Minimum samples per active bin

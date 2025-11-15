@@ -22,7 +22,7 @@ continuous_position = np.array([[10.5, 12.3]])
 
 # Create discretized environment
 env = Environment.from_samples(
-    data_samples=continuous_position,
+    positions=continuous_position,
     bin_size=2.0  # 2 cm bins
 )
 

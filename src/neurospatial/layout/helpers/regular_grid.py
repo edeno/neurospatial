@@ -166,7 +166,7 @@ def _create_regular_grid_connectivity_graph(
 
 
 def _infer_active_bins_from_regular_grid(
-    data_samples: NDArray[np.float64],
+    positions: NDArray[np.float64],
     edges: tuple[NDArray[np.float64], ...],
     close_gaps: bool = False,
     fill_holes: bool = False,
@@ -176,14 +176,14 @@ def _infer_active_bins_from_regular_grid(
 ) -> NDArray[np.bool_]:
     """Infer active bins in a regular grid based on data sample density.
 
-    This function first counts data samples in each grid bin defined by `edges`.
+    This function first counts positions in each grid bin defined by `edges`.
     Bins with counts above `bin_count_threshold` are initially marked active.
     Optional morphological operations (closing, filling, dilation) can then be
     applied to refine the active area.
 
     Parameters
     ----------
-    data_samples : NDArray[np.float64], shape (n_samples, n_dims)
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
         N-dimensional data samples (e.g., positions). NaNs are ignored.
     edges : Tuple[NDArray[np.float64], ...]
         A tuple where each element is a 1D array of bin edge positions for
@@ -211,13 +211,13 @@ def _infer_active_bins_from_regular_grid(
         considered active or part of the track interior.
 
     """
-    pos_clean = data_samples[~np.any(np.isnan(data_samples), axis=1)]
+    pos_clean = positions[~np.any(np.isnan(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:
-        # Handle case with no valid data_sampless
+        # Handle case with no valid positions
         grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
         warnings.warn(
-            "infer_active_bins is True, but no data_samples provided. "
+            "infer_active_bins is True, but no positions provided. "
             "Returning all bins inactive (no data to infer from).",
             UserWarning,
         )
@@ -226,7 +226,7 @@ def _infer_active_bins_from_regular_grid(
     bin_counts, _ = np.histogramdd(pos_clean, bins=edges)
     active_mask = bin_counts > bin_count_threshold
 
-    n_dims = data_samples.shape[1]
+    n_dims = positions.shape[1]
     if n_dims > 1:
         # Use connectivity=1 for 4-neighbor (2D) or 6-neighbor (3D) etc.
         structure = ndimage.generate_binary_structure(n_dims, connectivity=2)
@@ -263,78 +263,67 @@ def _infer_active_bins_from_regular_grid(
     return active_mask.astype(bool)
 
 
-def _create_regular_grid(
-    data_samples: NDArray[np.float64] | None = None,
-    bin_size: float | Sequence[float] = 2.0,
-    dimension_range: Sequence[tuple[float, float]] | None = None,
-    add_boundary_bins: bool = False,
-) -> tuple[
-    tuple[NDArray[np.float64], ...],  # edges_tuple
-    NDArray[np.float64],  # bin_centers
-    tuple[int, ...],  # centers_shape
-]:
-    """Define bin edges and centers for a regular N-D Cartesian grid.
+def _validate_and_prepare_inputs(
+    positions: NDArray[np.float64] | None,
+    bin_size: float | Sequence[float],
+    dimension_range: Sequence[tuple[float, float]] | None,
+) -> tuple[NDArray[np.float64] | None, int, NDArray[np.float64]]:
+    """Validate inputs and prepare normalized parameters for grid creation.
 
     Parameters
     ----------
-    data_samples : ndarray of shape (n_samples, n_dims), optional
-        Used to infer dimension ranges if `dimension_range` is None.
-        NaNs are ignored. If None, `dimension_range` must be provided.
-    bin_size : float or sequence of floats, default=2.0
-        If float, same bin size along every dimension. If sequence, must match `n_dims`.
-    dimension_range : sequence of (min, max) tuples, length `n_dims`, optional
-        Explicit bounding box for each dimension, used if `data_samples` is None.
-    add_boundary_bins : bool, default=False
-        If True, extends each axis by one extra bin on both ends.
+    positions : NDArray[np.float64] or None
+        N-dimensional data samples. If None, dimension_range must be provided.
+    bin_size : float or sequence of floats
+        Bin size(s) for each dimension.
+    dimension_range : sequence of (min, max) tuples or None
+        Explicit dimension ranges. If None, positions must be provided.
 
     Returns
     -------
-    edges_tuple : tuple of ndarrays
-        Each element is a 1D array of bin-edge coordinates for that dimension,
-        length = n_bins_dim + 1.
-    bin_centers : ndarray, shape (∏(n_bins_dim), n_dims)
-        Cartesian product of centers of each bin (flattened).
-    centers_shape : tuple of ints
-        Number of bins along each dimension, e.g. (n_x, n_y, n_z).
+    samples : NDArray[np.float64] or None
+        Cleaned positions array (NaNs removed) or None if positions not provided.
+    n_dims : int
+        Number of dimensions.
+    bin_sizes : NDArray[np.float64], shape (n_dims,)
+        Normalized bin sizes for each dimension.
 
     Raises
     ------
     ValueError
-        - If both `data_samples` and `dimension_range` are None.
-        - If `data_samples` is provided but not a 2D array.
-        - If `dimension_range` length ≠ inferred `n_dims`.
-        - If `bin_size` sequence length ≠ `n_dims`, or any `bin_size` ≤ 0.
+        If both positions and dimension_range are None, or if validation fails.
+    TypeError
+        If inputs have incorrect types.
 
     """
     # 1) Determine dimensionality
-    if data_samples is None and dimension_range is None:
-        raise ValueError("Either `data_samples` or `dimension_range` must be provided.")
-    if data_samples is not None:
-        # Validate and convert data_samples with helpful error messages
+    if positions is None and dimension_range is None:
+        raise ValueError("Either `positions` or `dimension_range` must be provided.")
+
+    if positions is not None:
+        # Validate and convert positions with helpful error messages
         try:
-            samples = np.asarray(data_samples, dtype=float)
+            samples = np.asarray(positions, dtype=float)
         except (TypeError, ValueError) as e:
-            actual_type = type(data_samples).__name__
+            actual_type = type(positions).__name__
             raise TypeError(
-                f"data_samples must be a numeric array-like object (e.g., numpy array, "
-                f"list of lists, pandas DataFrame). Got {actual_type}: {data_samples!r}"
+                f"positions must be a numeric array-like object (e.g., numpy array, "
+                f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
             ) from e
 
         if samples.ndim != 2:
-            raise ValueError(f"`data_samples` must be 2D, got shape {samples.shape}.")
+            raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
         n_dims = samples.shape[1]
         # Remove NaNs
         samples = samples[~np.isnan(samples).any(axis=1)]
         if samples.size == 0 and dimension_range is None:
             raise ValueError(
-                "`data_samples` has no valid points and no `dimension_range` given.",
+                "`positions` has no valid points and no `dimension_range` given.",
             )
     else:
         samples = None
         if dimension_range is None:
-            raise ValueError(
-                "dimension_range must be provided when data_samples is None"
-            )
+            raise ValueError("dimension_range must be provided when positions is None")
         n_dims = len(dimension_range)
 
     # 2) Normalize & validate bin_size
@@ -362,20 +351,55 @@ def _create_regular_grid(
     # Check for NaN or Inf values
     if np.any(np.isnan(bin_sizes)):
         raise ValueError(
-            f"bin_size contains NaN (Not a Number) values (got {bin_size}). "
+            f"[E1002] bin_size contains NaN (Not a Number) values (got {bin_size}). "
             "bin_size must be finite numeric values."
         )
     if np.any(np.isinf(bin_sizes)):
         raise ValueError(
-            f"bin_size contains infinite values (got {bin_size}). "
+            f"[E1002] bin_size contains infinite values (got {bin_size}). "
             "bin_size must be finite numeric values."
         )
 
     if np.any(bin_sizes <= 0.0):
         raise ValueError(
-            f"All elements of `bin_size` must be positive (got {bin_size})."
+            f"[E1002] All elements of `bin_size` must be positive (got {bin_size})."
         )
 
+    return samples, n_dims, bin_sizes
+
+
+def _compute_dimension_ranges(
+    samples: NDArray[np.float64] | None,
+    dimension_range: Sequence[tuple[float, float]] | None,
+    n_dims: int,
+    bin_sizes: NDArray[np.float64],
+) -> list[tuple[float, float]]:
+    """Compute dimension ranges from explicit specification or data samples.
+
+    Parameters
+    ----------
+    samples : NDArray[np.float64] or None
+        Cleaned data samples (NaNs already removed).
+    dimension_range : sequence of (min, max) tuples or None
+        Explicit dimension ranges.
+    n_dims : int
+        Number of dimensions.
+    bin_sizes : NDArray[np.float64], shape (n_dims,)
+        Bin sizes for each dimension.
+
+    Returns
+    -------
+    ranges : list of (float, float) tuples
+        Computed dimension ranges for each dimension.
+
+    Raises
+    ------
+    ValueError
+        If dimension_range length doesn't match n_dims, or if ranges cannot be inferred.
+    TypeError
+        If dimension_range contains non-numeric values.
+
+    """
     # 3) Determine dimension ranges
     if dimension_range is not None:
         if len(dimension_range) != n_dims:
@@ -412,6 +436,45 @@ def _create_regular_grid(
                 hi_f += 0.5 * bin_sizes[dim]
             ranges.append((lo_f, hi_f))
 
+    return ranges
+
+
+def _build_grid_structure(
+    samples: NDArray[np.float64] | None,
+    n_dims: int,
+    bin_sizes: NDArray[np.float64],
+    ranges: list[tuple[float, float]],
+    add_boundary_bins: bool,
+) -> tuple[
+    tuple[NDArray[np.float64], ...],
+    NDArray[np.float64],
+    tuple[int, ...],
+]:
+    """Build the grid structure (edges, centers, shape).
+
+    Parameters
+    ----------
+    samples : NDArray[np.float64] or None
+        Cleaned data samples (NaNs already removed).
+    n_dims : int
+        Number of dimensions.
+    bin_sizes : NDArray[np.float64], shape (n_dims,)
+        Bin sizes for each dimension.
+    ranges : list of (float, float) tuples
+        Dimension ranges for each dimension.
+    add_boundary_bins : bool
+        Whether to add boundary bins.
+
+    Returns
+    -------
+    edges_tuple : tuple of ndarrays
+        Each element is a 1D array of bin-edge coordinates for that dimension.
+    bin_centers : NDArray[np.float64], shape (n_total_bins, n_dims)
+        Cartesian product of centers of each bin (flattened).
+    centers_shape : tuple of ints
+        Number of bins along each dimension.
+
+    """
     # 4) Compute number of bins in each dimension
     data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
     # Convert bin_sizes to list to match get_n_bins signature
@@ -446,6 +509,61 @@ def _create_regular_grid(
     bin_centers = np.stack([m.ravel() for m in mesh], axis=-1)
 
     return edges_tuple, bin_centers, centers_shape
+
+
+def _create_regular_grid(
+    positions: NDArray[np.float64] | None = None,
+    bin_size: float | Sequence[float] = 2.0,
+    dimension_range: Sequence[tuple[float, float]] | None = None,
+    add_boundary_bins: bool = False,
+) -> tuple[
+    tuple[NDArray[np.float64], ...],  # edges_tuple
+    NDArray[np.float64],  # bin_centers
+    tuple[int, ...],  # centers_shape
+]:
+    """Define bin edges and centers for a regular N-D Cartesian grid.
+
+    Parameters
+    ----------
+    positions : ndarray of shape (n_samples, n_dims), optional
+        Used to infer dimension ranges if `dimension_range` is None.
+        NaNs are ignored. If None, `dimension_range` must be provided.
+    bin_size : float or sequence of floats, default=2.0
+        If float, same bin size along every dimension. If sequence, must match `n_dims`.
+    dimension_range : sequence of (min, max) tuples, length `n_dims`, optional
+        Explicit bounding box for each dimension, used if `positions` is None.
+    add_boundary_bins : bool, default=False
+        If True, extends each axis by one extra bin on both ends.
+
+    Returns
+    -------
+    edges_tuple : tuple of ndarrays
+        Each element is a 1D array of bin-edge coordinates for that dimension,
+        length = n_bins_dim + 1.
+    bin_centers : ndarray, shape (∏(n_bins_dim), n_dims)
+        Cartesian product of centers of each bin (flattened).
+    centers_shape : tuple of ints
+        Number of bins along each dimension, e.g. (n_x, n_y, n_z).
+
+    Raises
+    ------
+    ValueError
+        - If both `positions` and `dimension_range` are None.
+        - If `positions` is provided but not a 2D array.
+        - If `dimension_range` length ≠ inferred `n_dims`.
+        - If `bin_size` sequence length ≠ `n_dims`, or any `bin_size` ≤ 0.
+
+    """
+    # Validate inputs and prepare normalized parameters
+    samples, n_dims, bin_sizes = _validate_and_prepare_inputs(
+        positions, bin_size, dimension_range
+    )
+
+    # Compute dimension ranges from explicit specification or data
+    ranges = _compute_dimension_ranges(samples, dimension_range, n_dims, bin_sizes)
+
+    # Build the grid structure (edges, centers, shape)
+    return _build_grid_structure(samples, n_dims, bin_sizes, ranges, add_boundary_bins)
 
 
 def _points_to_regular_grid_bin_ind(

@@ -147,7 +147,7 @@ class TestDimensionRangeTypeValidation:
         """dimension_range containing numeric string tuples should work (float() converts)."""
         # Python's float() can convert numeric strings, so this should work
         _edges_tuple, bin_centers, _centers_shape = _create_regular_grid(
-            data_samples=None,
+            positions=None,
             dimension_range=[("0", "10"), (0, 10)],
             bin_size=2.0,
         )
@@ -158,7 +158,7 @@ class TestDimensionRangeTypeValidation:
         # This should fail because dimension_range needs to be unpacked as (lo, hi)
         with pytest.raises((TypeError, ValueError)) as exc_info:
             _create_regular_grid(
-                data_samples=None,
+                positions=None,
                 dimension_range=[0, 10, 0, 10],  # Should be [(0, 10), (0, 10)]
                 bin_size=2.0,
             )
@@ -270,7 +270,7 @@ class TestEdgeCases:
         assert len(error_msg) > 0
 
     def test_data_samples_none_raises_helpful_error(self):
-        """data_samples=None should raise helpful error."""
+        """positions=None should raise helpful error."""
         with pytest.raises((TypeError, ValueError)) as exc_info:
             Environment.from_samples(None, bin_size=2.0)
 

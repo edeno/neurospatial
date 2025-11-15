@@ -134,9 +134,11 @@ def _validate_path_safety(path: str | Path) -> Path:
     # Must check before resolve() because resolve() normalizes away the '..'
     if ".." in path_obj.parts:
         raise ValueError(
-            f"Path traversal detected in path: {path}. "
+            f"[E1005] Path traversal detected in path: {path}. "
             f"Use absolute paths or paths without '..' components. "
-            f"This restriction helps prevent security vulnerabilities."
+            f"This restriction helps prevent security vulnerabilities.\n\n"
+            f"For more information, see: "
+            f"https://neurospatial.readthedocs.io/errors/#e1005"
         )
 
     # Now resolve to absolute path
