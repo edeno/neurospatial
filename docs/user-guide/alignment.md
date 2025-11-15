@@ -110,7 +110,7 @@ aligned_probs_2d = map_probabilities_to_nearest_target_bin(
     target_env=env2,
     source_probabilities=probs1,
     source_rotation_matrix=get_2d_rotation_matrix(angle_degrees=45),
-    source_scale_factor=1.2
+    source_scale=1.2
 )
 
 # 3D alignment with rotation (v0.3.0+)
@@ -120,7 +120,7 @@ aligned_probs_3d = map_probabilities_to_nearest_target_bin(
     target_env=env_3d_2,
     source_probabilities=probs_3d,
     source_rotation_matrix=R_3d,
-    source_scale_factor=0.9,
+    source_scale=0.9,
     source_translation_vector=[10, 20, 30]
 )
 ```

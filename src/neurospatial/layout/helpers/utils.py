@@ -626,22 +626,7 @@ def multi_index_to_flat(
         If the number of input arrays does not match len(grid_shape), or if input arrays cannot broadcast.
 
     """
-    # Note: The following code path is currently unreachable due to type signature
-    # (nd_idx_per_dim elements are typed as int | NDArray, not list/tuple).
-    # This code is commented out but preserved for potential future use if the
-    # signature is updated to allow list/tuple inputs.
-    # if len(nd_idx_per_dim) == 1 and isinstance(nd_idx_per_dim[0], (list, tuple)):
-    #     temp = np.asarray(nd_idx_per_dim[0])
-    #     if temp.ndim == 2 and temp.shape[0] == len(grid_shape):
-    #         nd_idx_per_dim = tuple(temp[d] for d in range(len(grid_shape)))
-    #     elif temp.ndim == 2 and temp.shape[1] == len(grid_shape):
-    #         nd_idx_per_dim = tuple(temp[:, d] for d in range(len(grid_shape)))
-    #     elif temp.ndim == 1 and temp.shape[0] == len(grid_shape):
-    #         nd_idx_per_dim = tuple(np.array([int(val)]) for val in temp)
-    #     else:
-    #         raise ValueError("Invalid format for single argument N-D index.")
-
-    # Now expect len(nd_idx_per_dim) == len(grid_shape)
+    # Expect len(nd_idx_per_dim) == len(grid_shape)
     if len(nd_idx_per_dim) != len(grid_shape):
         raise ValueError(
             f"Expected {len(grid_shape)} index arrays, got {len(nd_idx_per_dim)}.",

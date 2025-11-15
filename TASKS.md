@@ -186,7 +186,7 @@ This file tracks concrete implementation tasks for the code review action items.
 
 ## Milestone 2: Code Quality & Performance (v1.0-beta)
 
-**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: In Progress (11/12 tasks completed - 92%)
+**Target**: Week 3-5 | **Estimated**: 45 hours | **Status**: ✅ COMPLETED (12/12 tasks - 100%)
 
 **Goal**: Improve code quality, reduce duplication, add performance tests, improve API consistency.
 
@@ -397,12 +397,14 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.12 | **Effort**: 1h | **Files**: `layout/helpers/utils.py`
 
-- [ ] Remove commented code at lines 629-642 in `utils.py`
-- [ ] Check for other commented code blocks
-- [ ] Remove any other dead code found
-- [ ] Run: `uv run pytest tests/layout/ -v`
+- [x] Remove commented code at lines 629-642 in `utils.py`
+- [x] Check for other commented code blocks
+- [x] Remove any other dead code found
+- [x] Run: `uv run pytest tests/layout/ -v` (175/175 pass)
+- [x] Ruff and mypy pass
 
-**Verification**: No commented-out code blocks in production files
+**Verification**: No commented-out code blocks in production files ✅
+**Status**: ✅ COMPLETED (2025-11-15)
 
 ---
 
@@ -573,11 +575,11 @@ git diff TASKS.md
 ## Progress Tracking
 
 **Milestone 1**: ☐ 0/8 tasks (0%)
-**Milestone 2**: ☑ 9/12 tasks (75%)
+**Milestone 2**: ✅ 12/12 tasks (100%) - COMPLETED
 **Milestone 3**: ☐ 0/10 tasks (0%)
 **Milestone 4**: ☐ 0/2 tasks (0%)
 
-**Overall**: ☐ 0/32 major tasks (0%)
+**Overall**: ✅ 12/32 major tasks (38%)
 
 ---
 

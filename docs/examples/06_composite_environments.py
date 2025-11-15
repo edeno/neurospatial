@@ -79,17 +79,13 @@ n_samples_room1 = 2000
 room1_data = np.random.randn(n_samples_room1, 2) * 8 + np.array([25, 25])
 room1_data = np.clip(room1_data, 5, 45)
 
-env_room1 = Environment.from_samples(
-    positions=room1_data, bin_size=4.0, name="Room1"
-)
+env_room1 = Environment.from_samples(positions=room1_data, bin_size=4.0, name="Room1")
 
 # Room 2: Different location, 40x60 cm rectangular arena
 n_samples_room2 = 1500
 room2_data = np.random.uniform(low=[60, 10], high=[95, 65], size=(n_samples_room2, 2))
 
-env_room2 = Environment.from_samples(
-    positions=room2_data, bin_size=4.0, name="Room2"
-)
+env_room2 = Environment.from_samples(positions=room2_data, bin_size=4.0, name="Room2")
 
 print(f"Room 1: {env_room1.n_bins} bins, range {env_room1.dimension_ranges}")
 print(f"Room 2: {env_room2.n_bins} bins, range {env_room2.dimension_ranges}")
