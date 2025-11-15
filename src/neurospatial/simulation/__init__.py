@@ -73,6 +73,8 @@ from neurospatial.simulation.spikes import (
     generate_population_spikes,
 )
 from neurospatial.simulation.trajectory import (
+    simulate_trajectory_coverage,
+    simulate_trajectory_goal_directed,
     simulate_trajectory_laps,
     simulate_trajectory_ou,
     simulate_trajectory_sinusoidal,
@@ -104,6 +106,8 @@ __all__ = [
     "open_field_session",
     "plot_session_summary",
     "simulate_session",
+    "simulate_trajectory_coverage",
+    "simulate_trajectory_goal_directed",
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
