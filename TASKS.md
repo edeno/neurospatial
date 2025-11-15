@@ -337,22 +337,29 @@
 
 ---
 
-## Milestone 3: API Simplification (Phase 3)
+## Milestone 3: API Simplification (Phase 3) ⏸️ SKIPPED
 
-**Goal**: Consolidate bin_at() to handle all point-to-bin mapping
-**Priority**: 🔴 HIGH
-**Estimated Time**: 2-3 days
-**Dependencies**: None (can run in parallel with Milestone 2)
+**Goal**: ~~Consolidate bin_at() to handle all point-to-bin mapping~~
+**Decision**: **KEEP DUAL API** - Functions have distinct semantics
+**Priority**: 🔴 HIGH → ✅ COMPLETE (Analysis)
+**Status**: Analysis complete, consolidation not needed
 
-### 3.1 Design bin_at() Enhancement
+### 3.1 API Analysis and Documentation ✅ COMPLETE
 
-- [ ] Read current `bin_at()` in `src/neurospatial/environment/queries.py`
-- [ ] Read current `map_points_to_bins()` in `src/neurospatial/spatial.py`
-- [ ] Design unified API accepting both single and batch inputs
-- [ ] Decide return type: int for single, array for batch
-- [ ] Document design in comments or design doc
+- [x] Read current `bin_at()` in `src/neurospatial/environment/queries.py`
+- [x] Read current `map_points_to_bins()` in `src/neurospatial/spatial.py`
+- [x] Analyzed semantic differences (geometric vs nearest-neighbor)
+- [x] **Decision**: Keep both functions with distinct purposes
+- [x] Updated docstrings to clarify when to use each
+- [x] Added cross-references and performance notes
 
-**Acceptance**: Design documented, ready to implement
+**Acceptance**: Documentation clarifies function purposes ✅
+
+**Rationale**:
+- `bin_at()`: Geometric containment (layout-specific, exact)
+- `map_points_to_bins()`: Nearest-neighbor (KDTree, fast, cached)
+- Different semantics serve different use cases
+- Consolidation would lose important functionality
 
 ### 3.2 Implement Enhanced bin_at()
 

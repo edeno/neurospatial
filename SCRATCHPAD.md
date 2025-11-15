@@ -586,3 +586,41 @@ detection in place field analysis:
 **Next Steps**:
 - [x] Tasks 2.8-2.12 COMPLETE ✅
 - [ ] Optional: Task 2.13 (Add performance notes to docstrings, cleanup investigation files)
+
+---
+
+### Milestone 3: API Simplification - Analysis Complete (2025-11-15)
+
+**Status**: ✅ COMPLETE - Decision made to keep dual API
+
+**Original Goal**: Consolidate `bin_at()` and `map_points_to_bins()` into single API
+
+**Decision**: **KEEP DUAL API** - Functions have fundamentally different semantics
+
+**Analysis**:
+
+1. **Semantic Difference Discovered**:
+   - `bin_at()`: Geometric containment - "which bin contains this point?"
+     - Uses layout-specific logic (grid cells, hexagons, triangles)
+     - Exact geometric determination
+
+   - `map_points_to_bins()`: Nearest-neighbor - "which bin center is closest?"
+     - Uses KDTree for O(log N) lookups with caching
+     - Tie-breaking and distance thresholds
+
+2. **Where They Differ**:
+   - Points on bin boundaries
+   - Points slightly outside environment
+   - Irregular geometries (hexagons, triangles) where nearest center ≠ containing cell
+
+3. **Consolidation Attempt**:
+   - Attempted to merge into `bin_at()` with KDTree (commits 72365f0, b6800bd)
+   - Discovered this would break geometric containment semantics
+   - Reverted changes
+
+**Actions**:
+- Updated both docstrings to explain semantic differences
+- Added cross-references and usage guidance
+- Committed: `docs(M3): clarify bin_at() vs map_points_to_bins() semantics`
+
+**Conclusion**: Both APIs needed. Milestone 3 complete with decision to keep separate.
