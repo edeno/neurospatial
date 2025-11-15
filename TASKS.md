@@ -330,13 +330,14 @@ This file tracks concrete implementation tasks for the code review action items.
 
 **Ref**: PLAN.md §2.8 | **Effort**: 2h | **Files**: `environment/transforms.py`
 
-- [ ] Remove `self: SelfEnv` from `SubsetLayout.__init__()`
-- [ ] Add proper type hints to all SubsetLayout methods
-- [ ] Run mypy: `uv run mypy src/neurospatial/environment/transforms.py`
-- [ ] Verify no type errors
-- [ ] Run tests: `uv run pytest tests/test_transforms.py -v`
+- [x] Remove `self: SelfEnv` from `SubsetLayout.__init__()`
+- [x] Add proper type hints to all SubsetLayout methods
+- [x] Run mypy: `uv run mypy src/neurospatial/environment/transforms.py`
+- [x] Verify no type errors
+- [x] Run tests: `uv run pytest tests/test_subset.py -v` (24/24 pass)
 
-**Verification**: Mypy passes with no errors on transforms.py
+**Verification**: Mypy passes with no errors on transforms.py ✅
+**Status**: ✅ COMPLETED (2025-11-14)
 
 ---
 
@@ -564,7 +565,7 @@ git diff TASKS.md
 ## Progress Tracking
 
 **Milestone 1**: ☐ 0/8 tasks (0%)
-**Milestone 2**: ☑ 7/12 tasks (58%)
+**Milestone 2**: ☑ 8/12 tasks (67%)
 **Milestone 3**: ☐ 0/10 tasks (0%)
 **Milestone 4**: ☐ 0/2 tasks (0%)
 

@@ -563,8 +563,12 @@ class EnvironmentTransforms:
             """Minimal layout for subset environment."""
 
             def __init__(
-                self: SelfEnv, bin_centers, connectivity, dimension_ranges, build_params
-            ):
+                self,
+                bin_centers: NDArray[np.float64],
+                connectivity,
+                dimension_ranges: tuple[tuple[float, float], ...],
+                build_params: dict,
+            ) -> None:
                 self.bin_centers = bin_centers
                 self.connectivity = connectivity
                 self.dimension_ranges = dimension_ranges
@@ -572,10 +576,10 @@ class EnvironmentTransforms:
                 self._build_params_used = build_params
                 self.is_1d = False
 
-            def build(self: SelfEnv):
+            def build(self) -> None:
                 pass  # Already built
 
-            def point_to_bin_index(self: SelfEnv, point):
+            def point_to_bin_index(self, point: NDArray[np.float64]) -> int:
                 # Use KDTree for nearest neighbor
                 from scipy.spatial import cKDTree
 
@@ -583,7 +587,7 @@ class EnvironmentTransforms:
                 _, idx = tree.query(point)
                 return int(idx)
 
-            def bin_sizes(self: SelfEnv):
+            def bin_sizes(self) -> NDArray[np.float64]:
                 # Estimate from connectivity graph
                 # Use edge distances to estimate bin sizes
                 sizes = np.ones(len(self.bin_centers))
@@ -596,7 +600,7 @@ class EnvironmentTransforms:
                         sizes[node] = np.mean(distances)
                 return sizes
 
-            def plot(self: SelfEnv, ax=None, **kwargs):
+            def plot(self, ax=None, **kwargs):
                 import matplotlib.pyplot as plt
 
                 if ax is None:
