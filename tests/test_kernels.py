@@ -430,3 +430,181 @@ class TestKernelEdgeCases:
         for col in range(5):
             column_std = np.std(kernel[:, col])
             assert column_std < 0.3, "Large bandwidth should spread mass uniformly"
+
+
+class TestComputeDiffusionKernelsValidation:
+    """Test parameter validation for compute_diffusion_kernels."""
+
+    def test_invalid_mode_raises_error(self):
+        """Test that invalid mode raises ValueError."""
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0,))
+        graph.add_node(1, pos=(1.0,))
+        graph.add_edge(0, 1, distance=1.0)
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="invalid")
+
+
+class TestApplyKernel:
+    """Test apply_kernel function for forward and adjoint operations."""
+
+    @pytest.fixture
+    def simple_kernel(self):
+        """Create a simple 3x3 kernel for testing."""
+        # Simple normalized kernel
+        kernel = np.array(
+            [[0.5, 0.2, 0.1], [0.3, 0.6, 0.2], [0.2, 0.2, 0.7]], dtype=np.float64
+        )
+        return kernel
+
+    @pytest.fixture
+    def simple_field(self):
+        """Create a simple test field."""
+        return np.array([1.0, 0.0, 0.0], dtype=np.float64)
+
+    @pytest.fixture
+    def bin_sizes_3(self):
+        """Create simple bin sizes for 3 bins."""
+        return np.array([1.0, 2.0, 1.0], dtype=np.float64)
+
+    def test_forward_mode_basic(self, simple_kernel, simple_field):
+        """Test basic forward mode application."""
+        from neurospatial.kernels import apply_kernel
+
+        result = apply_kernel(simple_field, simple_kernel, mode="forward")
+
+        # Should compute kernel @ field
+        expected = simple_kernel @ simple_field
+        np.testing.assert_allclose(result, expected, rtol=1e-10)
+
+    def test_adjoint_mode_no_bin_sizes(self, simple_kernel, simple_field):
+        """Test adjoint mode without bin_sizes (simple transpose)."""
+        from neurospatial.kernels import apply_kernel
+
+        result = apply_kernel(simple_field, simple_kernel, mode="adjoint")
+
+        # Should compute kernel.T @ field
+        expected = simple_kernel.T @ simple_field
+        np.testing.assert_allclose(result, expected, rtol=1e-10)
+
+    def test_adjoint_mode_with_bin_sizes(
+        self, simple_kernel, simple_field, bin_sizes_3
+    ):
+        """Test adjoint mode with bin_sizes (mass-weighted)."""
+        from neurospatial.kernels import apply_kernel
+
+        result = apply_kernel(
+            simple_field, simple_kernel, mode="adjoint", bin_sizes=bin_sizes_3
+        )
+
+        # Should compute M^{-1} K.T M @ field
+        # where M = diag(bin_sizes)
+        m_field = bin_sizes_3 * simple_field
+        kt_m_field = simple_kernel.T @ m_field
+        expected = kt_m_field / bin_sizes_3
+
+        np.testing.assert_allclose(result, expected, rtol=1e-10)
+
+    def test_invalid_mode_raises(self, simple_kernel, simple_field):
+        """Test that invalid mode raises ValueError."""
+        from neurospatial.kernels import apply_kernel
+
+        with pytest.raises(ValueError, match="mode must be"):
+            apply_kernel(simple_field, simple_kernel, mode="invalid")
+
+    def test_non_square_kernel_raises(self, simple_field):
+        """Test that non-square kernel raises ValueError."""
+        from neurospatial.kernels import apply_kernel
+
+        # Create non-square kernel
+        bad_kernel = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64)
+
+        with pytest.raises(ValueError, match="Kernel must be square"):
+            apply_kernel(simple_field, bad_kernel, mode="forward")
+
+    def test_field_size_mismatch_raises(self, simple_kernel):
+        """Test that field size mismatch raises ValueError."""
+        from neurospatial.kernels import apply_kernel
+
+        # Field has wrong size
+        bad_field = np.array([1.0, 2.0], dtype=np.float64)
+
+        with pytest.raises(ValueError, match=r"Field size.*does not match"):
+            apply_kernel(bad_field, simple_kernel, mode="forward")
+
+    def test_bin_sizes_mismatch_raises(self, simple_kernel, simple_field):
+        """Test that bin_sizes size mismatch raises ValueError."""
+        from neurospatial.kernels import apply_kernel
+
+        # bin_sizes has wrong size
+        bad_bin_sizes = np.array([1.0, 2.0], dtype=np.float64)
+
+        with pytest.raises(ValueError, match=r"bin_sizes size.*does not match"):
+            apply_kernel(
+                simple_field, simple_kernel, mode="adjoint", bin_sizes=bad_bin_sizes
+            )
+
+    def test_non_positive_bin_sizes_raises(self, simple_kernel, simple_field):
+        """Test that non-positive bin_sizes raises ValueError in adjoint mode."""
+        from neurospatial.kernels import apply_kernel
+
+        # bin_sizes with zero/negative values
+        bad_bin_sizes = np.array([1.0, 0.0, -1.0], dtype=np.float64)
+
+        with pytest.raises(ValueError, match="bin_sizes must have strictly positive"):
+            apply_kernel(
+                simple_field, simple_kernel, mode="adjoint", bin_sizes=bad_bin_sizes
+            )
+
+    def test_forward_adjoint_duality_no_bin_sizes(self, simple_kernel):
+        """Test that forward and adjoint are dual without bin_sizes."""
+        from neurospatial.kernels import apply_kernel
+
+        # Create two random fields
+        u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+        v = np.array([0.5, 1.5, 0.8], dtype=np.float64)
+
+        # Compute <K u, v> and <u, K^T v>
+        ku = apply_kernel(u, simple_kernel, mode="forward")
+        ktv = apply_kernel(v, simple_kernel, mode="adjoint")
+
+        inner1 = np.dot(ku, v)
+        inner2 = np.dot(u, ktv)
+
+        # Should be equal (within numerical precision)
+        np.testing.assert_allclose(inner1, inner2, rtol=1e-10)
+
+    def test_forward_adjoint_duality_with_bin_sizes(self, simple_kernel, bin_sizes_3):
+        """Test that forward and adjoint are dual with bin_sizes."""
+        from neurospatial.kernels import apply_kernel
+
+        # Create two random fields
+        u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+        v = np.array([0.5, 1.5, 0.8], dtype=np.float64)
+
+        # Compute weighted inner products <K u, v>_M and <u, K^* v>_M
+        ku = apply_kernel(u, simple_kernel, mode="forward")
+        kstar_v = apply_kernel(v, simple_kernel, mode="adjoint", bin_sizes=bin_sizes_3)
+
+        # Weighted inner product: <x, y>_M = sum(x * M * y)
+        inner1 = np.dot(ku * bin_sizes_3, v)
+        inner2 = np.dot(u * bin_sizes_3, kstar_v)
+
+        # Should be equal (within numerical precision)
+        np.testing.assert_allclose(inner1, inner2, rtol=1e-10)
+
+    def test_bin_sizes_allowed_in_forward_mode(
+        self, simple_kernel, simple_field, bin_sizes_3
+    ):
+        """Test that bin_sizes is allowed but ignored in forward mode."""
+        from neurospatial.kernels import apply_kernel
+
+        # Should not raise error
+        result = apply_kernel(
+            simple_field, simple_kernel, mode="forward", bin_sizes=bin_sizes_3
+        )
+
+        # Result should be same as without bin_sizes
+        expected = simple_kernel @ simple_field
+        np.testing.assert_allclose(result, expected, rtol=1e-10)

@@ -116,7 +116,54 @@ result: np.ndarray = np.asarray(gradient_field, dtype=np.float64).ravel()
 
 **Next Steps**:
 - [x] Task 1.2 COMPLETE ✅
-- [ ] Move to Task 1.3 (kernels.py coverage audit)
+- [x] Task 1.3 COMPLETE ✅
+- [ ] Move to Task 1.4 (place_fields.py coverage audit)
+
+---
+
+### Milestone 1: Test Coverage Audit - kernels.py (Task 1.3)
+
+**Status**: ✅ Coverage achieved through comprehensive test suite
+
+**Coverage Results**:
+- Initial: **60% coverage** (60 statements, 21 missed, 34 branches, 1 partial)
+- Final: **100% coverage** (60 statements, 0 missed, 34 branches, 0 partial)
+
+**Missing Coverage Identified**:
+1. Line 117: Invalid mode error in `compute_diffusion_kernels()`
+2. Lines 280-330: **Entire `apply_kernel()` function** (0% coverage)
+
+**Tests Added** (13 new tests, 22 → 34 total):
+
+1. **TestComputeDiffusionKernelsValidation** (1 test):
+   - test_invalid_mode_raises_error: Tests ValueError for invalid mode parameter
+
+2. **TestApplyKernel** (12 tests):
+   - test_forward_mode_basic: Basic forward kernel application (K @ field)
+   - test_adjoint_mode_no_bin_sizes: Adjoint without bin_sizes (K.T @ field)
+   - test_adjoint_mode_with_bin_sizes: Mass-weighted adjoint (M^{-1} K.T M @ field)
+   - test_invalid_mode_raises: ValueError for invalid mode
+   - test_non_square_kernel_raises: ValueError for non-square kernel
+   - test_field_size_mismatch_raises: ValueError for mismatched field size
+   - test_bin_sizes_mismatch_raises: ValueError for mismatched bin_sizes
+   - test_non_positive_bin_sizes_raises: ValueError for non-positive bin_sizes
+   - test_forward_adjoint_duality_no_bin_sizes: Tests <Ku, v> = <u, K^T v>
+   - test_forward_adjoint_duality_with_bin_sizes: Tests weighted inner product duality
+   - test_bin_sizes_allowed_in_forward_mode: bin_sizes parameter allowed but ignored in forward mode
+
+**Test Coverage Details**:
+- Forward mode: K @ field
+- Adjoint mode (transition): K.T @ field
+- Adjoint mode (density): M^{-1} K.T M @ field
+- All validation branches (5 error cases)
+- Mathematical properties (adjoint duality)
+
+**Files Modified**:
+- tests/test_kernels.py: +163 lines (13 new tests)
+
+**Next Steps**:
+- [x] Task 1.3 COMPLETE ✅
+- [ ] Move to Task 1.4 (place_fields.py coverage audit)
 
 **Test Command Used**:
 ```bash

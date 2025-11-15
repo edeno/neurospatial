@@ -63,17 +63,20 @@
 
 **Acceptance**: All functions in differential.py have ≥95% line coverage ✅ **EXCEEDED: 100% coverage**
 
-### 1.3 Coverage Audit: kernels.py
+### 1.3 Coverage Audit: kernels.py ✅ COMPLETE
 
-- [ ] Run coverage report for kernels.py
-  ```bash
-  uv run pytest tests/ --cov=src/neurospatial/kernels.py --cov-report=html
-  ```
-- [ ] Verify coverage for `compute_diffusion_kernels()` - transition mode ≥95%
-- [ ] Verify coverage for `compute_diffusion_kernels()` - density mode ≥95%
-- [ ] Verify kernel caching mechanism tested ≥95%
+- [x] Run coverage report for kernels.py ✅ (Final: **100% coverage**)
+- [x] Verify coverage for `compute_diffusion_kernels()` - transition mode ≥95% ✅ (100%)
+- [x] Verify coverage for `compute_diffusion_kernels()` - density mode ≥95% ✅ (100%)
+- [x] Verify kernel caching mechanism tested ≥95% ✅ (100%)
+- [x] Added comprehensive tests for `apply_kernel()` function ✅ (was 0% coverage)
 
-**Acceptance**: All functions in kernels.py have ≥95% line coverage
+**Tests Added**: 13 new tests (22 → 34 total)
+
+- `TestComputeDiffusionKernelsValidation` (1 test): Invalid mode validation
+- `TestApplyKernel` (12 tests): Forward/adjoint modes, validation, mathematical properties
+
+**Acceptance**: All functions in kernels.py have ≥95% line coverage ✅ **EXCEEDED: 100% coverage**
 
 ### 1.4 Coverage Audit: place_fields.py
 
