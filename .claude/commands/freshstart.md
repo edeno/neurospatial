@@ -9,6 +9,7 @@ Your workflow MUST be:
         SCRATCHPAD.md (notes and current status)
         TASKS.md (current tasks)
         PLAN.md (overall project plan for specific context)
+        COMPREHENSIVE_CODE_REVIEW.md (to understand existing code quality)
 
     Find the FIRST unchecked [ ] task in TASKS.md
 
