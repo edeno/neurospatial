@@ -457,14 +457,25 @@
 **Estimated Time**: 4-5 days
 **Dependencies**: None (can run in parallel)
 
-### 4.1 Add pathlib Support - Type Definitions
+### 4.1 Add pathlib Support - Type Definitions ✅ COMPLETE
 
-- [ ] Open `src/neurospatial/io.py`
-- [ ] Add imports: `from pathlib import Path` and `from typing import Union`
-- [ ] Create type alias: `PathLike = Union[str, Path]`
-- [ ] Update all function signatures to use `PathLike`
+- [x] Open `src/neurospatial/io.py` ✅
+- [x] Add imports: `from pathlib import Path` and `from typing import Union` ✅ (Path already imported, Union not needed - used `str | Path`)
+- [x] Create type alias: `PathLike = str | Path` ✅
+- [x] Update all function signatures to use `PathLike` ✅
+- [x] Add comprehensive tests for pathlib support (9 new tests) ✅
+- [x] Run tests - all 26 tests pass ✅
+- [x] Run ruff check and format - passes ✅
+- [x] Run mypy type checking - passes ✅
 
-**Acceptance**: Type hints updated
+**Acceptance**: Type hints updated ✅
+
+**Tests Added**: 9 comprehensive tests in `TestPathlibSupport` class
+
+**Files Modified**:
+
+- `src/neurospatial/io.py`: Added `PathLike` type alias, updated 3 function signatures
+- `tests/test_io.py`: Added 9 new tests for explicit pathlib support
 
 ### 4.2 Add pathlib Support - Implementation
 

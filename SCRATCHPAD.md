@@ -624,3 +624,46 @@ detection in place field analysis:
 - Committed: `docs(M3): clarify bin_at() vs map_points_to_bins() semantics`
 
 **Conclusion**: Both APIs needed. Milestone 3 complete with decision to keep separate.
+
+---
+
+### Milestone 4: UX Improvements - Task 4.1 PathLike Type Definitions (2025-11-15)
+
+**Status**: ✅ COMPLETE
+
+**Goal**: Add `PathLike` type alias to io.py and update function signatures
+
+**Implementation**:
+
+1. **Added `PathLike` type alias**:
+   - Line 37 in `src/neurospatial/io.py`: `PathLike = str | Path`
+   - Used modern Python 3.10+ syntax (`str | Path` instead of `Union[str, Path]`)
+
+2. **Updated function signatures**:
+   - `_validate_path_safety(path: PathLike) -> Path`
+   - `to_file(env: Environment, path: PathLike) -> None`
+   - `from_file(path: PathLike) -> Environment`
+
+3. **Added comprehensive tests** (`tests/test_io.py`):
+   - 9 new tests in `TestPathlibSupport` class
+   - Tests for str paths, Path objects, mixed types, relative paths
+   - Tests for Environment.to_file() and Environment.from_file() methods with Path objects
+
+**Discovery**: io.py already had full pathlib support (`str | Path` in signatures), but:
+- No explicit `PathLike` type alias (now added for clarity)
+- No comprehensive tests for pathlib functionality (now added)
+
+**Results**:
+- ✅ All 26 tests pass (12 original + 9 new + 5 security tests)
+- ✅ Ruff check and format pass
+- ✅ Mypy type checking passes
+
+**Files Modified**:
+- `src/neurospatial/io.py`: +1 type alias, 3 function signature updates
+- `tests/test_io.py`: +9 comprehensive pathlib tests (107 lines)
+
+**Next Steps**:
+- [ ] Task 4.2: pathlib Support - Implementation (SKIP - already implemented)
+- [ ] Task 4.3: pathlib Support - Environment Serialization (SKIP - already delegated)
+- [ ] Task 4.4: pathlib Support - Regions I/O (check if needed)
+- [ ] Task 4.5: pathlib Support - Testing (COMPLETE - 9 tests added)

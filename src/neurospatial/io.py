@@ -33,6 +33,9 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial import Environment
 
+# Type alias for file paths (supports both str and pathlib.Path)
+PathLike = str | Path
+
 # Schema version for serialization format
 _SCHEMA_VERSION = "Environment-v1"
 
@@ -102,7 +105,7 @@ def _get_library_version() -> str:
         return "unknown"
 
 
-def _validate_path_safety(path: str | Path) -> Path:
+def _validate_path_safety(path: PathLike) -> Path:
     """Validate that a path is safe from directory traversal attacks.
 
     Parameters
@@ -147,7 +150,7 @@ def _validate_path_safety(path: str | Path) -> Path:
     return path_obj
 
 
-def to_file(env: Environment, path: str | Path) -> None:
+def to_file(env: Environment, path: PathLike) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
     Creates two files:
@@ -265,7 +268,7 @@ def to_file(env: Environment, path: str | Path) -> None:
     np.savez_compressed(str(npz_path), **cast("Any", arrays_to_save))
 
 
-def from_file(path: str | Path) -> Environment:
+def from_file(path: PathLike) -> Environment:
     """Load Environment from a versioned JSON + npz file pair.
 
     Parameters
