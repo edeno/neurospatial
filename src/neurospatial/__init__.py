@@ -14,6 +14,7 @@ from neurospatial.field_ops import (
     kl_divergence,
     normalize_field,
 )
+from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.kernels import apply_kernel, compute_diffusion_kernels
 from neurospatial.layout.factories import (
     LayoutType,
@@ -22,9 +23,11 @@ from neurospatial.layout.factories import (
 )
 from neurospatial.layout.validation import validate_environment
 from neurospatial.primitives import convolve, neighbor_reduce
+from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.spatial import (
     TieBreakStrategy,
+    clear_kdtree_cache,
     map_points_to_bins,
     regions_to_mask,
     resample_field,
@@ -38,13 +41,25 @@ from neurospatial.transforms import (
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
+# ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
+    # Core classes
     "CompositeEnvironment",
     "Environment",
+    "Region",
+    "Regions",
+    # Enums and types
     "LayoutType",
     "TieBreakStrategy",
+    # I/O functions
+    "from_dict",
+    "from_file",
+    "to_dict",
+    "to_file",
+    # Spatial operations and queries
     "apply_kernel",
     "apply_transform_to_environment",
+    "clear_kdtree_cache",
     "clamp",
     "combine_fields",
     "compute_diffusion_kernels",

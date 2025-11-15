@@ -207,7 +207,7 @@ from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 # Utility functions
 from neurospatial.alignment import get_2d_rotation_matrix, map_probabilities_to_nearest_target_bin
-from neurospatial.transforms import Affine2D, translate, rotate, scale
+from neurospatial.transforms import Affine2D, translate, scale_2d
 ```
 
 ## Important Patterns & Constraints
