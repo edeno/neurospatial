@@ -1,16 +1,85 @@
 # neurospatial Development Scratchpad
 
-**Last Updated**: 2025-11-14
+**Last Updated**: 2025-11-15
 **Current Session**: Milestone 2 - Code Quality & Performance
 
 ## Current Status
 
-**Milestone 2 Progress**: 10/12 tasks completed (83%)
+**Milestone 2 Progress**: 11/12 tasks completed (92%)
 
-Completed: **Task 2.10 - Consistency: Scale Parameter Naming [LOW]** ✅
-Next: **Task 2.11 - Memory: Cache Management [MEDIUM]**
+Completed: **Task 2.11 - Memory: Cache Management [MEDIUM]** ✅
+Next: **Task 2.12 - Cleanup: Remove Dead Code [LOW]**
 
 ## Session Notes
+
+### 2025-11-15: Task 2.11 - Memory: Cache Management ✅ COMPLETED
+
+**Status**: Complete
+
+**Summary**:
+Successfully implemented comprehensive cache management system with `clear_cache()` method that clears ALL caches (explicit caches + @cached_property values).
+
+**Implementation Details**:
+- **Added `clear_cache()` instance method** to Environment (core.py:1102-1186)
+  - Clears explicit caches: _kdtree_cache, _kernel_cache
+  - Clears ALL 7 @cached_property values:
+    - core.py: differential_operator, _source_flat_to_active_node_id_map
+    - queries.py: bin_sizes
+    - metrics.py: boundary_bins, bin_attributes, edge_attributes, linearization_properties
+- **Added `_clear_explicit_caches()` helper** for DRY principle
+  - Used by both `clear_cache()` and `copy()` methods
+- **Removed confusing `clear_caches()` method** per user feedback (one method is better)
+- **Updated `clear_kdtree_cache()` docstring** in spatial.py to recommend `clear_cache()`
+- **Added maintenance comments** to remind developers to update the cached_properties list
+
+**Tests Added** (9 new tests in TestCacheManagement class):
+1. `test_clear_cache_method_exists()` - Verifies method exists
+2. `test_clear_cache_clears_kdtree()` - Tests KDTree cache clearing
+3. `test_clear_cache_clears_cached_properties()` - Tests boundary_bins + bin_sizes
+4. `test_clear_cache_clears_differential_operator()` - Tests expensive cached property
+5. `test_clear_cache_idempotent()` - Tests calling multiple times is safe
+6. `test_clear_cache_allows_recomputation()` - Tests properties can be recomputed
+7. `test_clear_cache_with_all_cached_properties()` - Tests ALL 7 cached properties
+8. `test_clear_cache_clears_linearization_properties()` - Tests 1D environment property
+9. `test_clear_kdtree_cache_still_works()` - Tests backward compatibility
+
+**Test Results**:
+- ✅ All 9 cache management tests PASS
+- ✅ Ruff check: All checks passed
+- ✅ Ruff format: 3 files left unchanged
+- ✅ Mypy: Success (no issues found in 2 source files)
+
+**Code Review Feedback** (code-reviewer agent):
+- Initial review: **REQUEST_CHANGES** - Missing `bin_attributes` and `edge_attributes`
+- After fixes: **APPROVED** - Production-ready
+- **Critical bug found and fixed**: Initial implementation only cleared 5/7 cached properties
+- **Fixes applied**:
+  1. Added `bin_attributes` and `edge_attributes` to clearing list
+  2. Updated test to verify ALL cached properties are cleared
+  3. Updated docstring to document all 7 properties
+  4. Added maintenance comments for future developers
+
+**User Feedback Incorporated**:
+- User requested "just one method" - removed confusing `clear_caches()` method
+- Kept only `clear_cache()` as the single public API
+- `_clear_explicit_caches()` as internal helper
+
+**TDD Process Followed**:
+1. ✅ Read existing caching code to understand system
+2. ✅ Wrote 8 comprehensive tests - verified they FAIL
+3. ✅ Fixed fixture name (simple_env → grid_env_from_samples)
+4. ✅ Implemented `clear_cache()` method
+5. ✅ All tests PASS
+6. ✅ Applied code-reviewer agent - found missing properties
+7. ✅ Fixed critical bug (added bin_attributes, edge_attributes)
+8. ✅ Added test for linearization_properties on 1D environments
+9. ✅ All 9 tests PASS
+10. ✅ Ruff and mypy pass
+
+**Time**: ~2 hours (within 3h estimate)
+
+---
+
 
 ### 2025-11-14: Task 2.10 - Consistency: Scale Parameter Naming ✅ COMPLETED
 

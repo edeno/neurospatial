@@ -315,6 +315,16 @@ def clear_kdtree_cache(env: Environment) -> None:
     env : EnvironmentProtocol
         Environment whose KD-tree cache should be cleared.
 
+    See Also
+    --------
+    Environment.clear_cache : Clear all caches (KDTree + cached properties + kernels)
+
+    Notes
+    -----
+    For most use cases, prefer `env.clear_cache()` which clears all caches
+    including the KDTree cache and cached properties. This function is provided
+    for backward compatibility and fine-grained control.
+
     Examples
     --------
     >>> from neurospatial.spatial import clear_kdtree_cache

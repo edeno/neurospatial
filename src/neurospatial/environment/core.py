@@ -1087,37 +1087,59 @@ class Environment(
 
         # Always clear caches (regardless of deep/shallow)
         # This ensures caches are rebuilt for the new environment object
-        env_copy._kdtree_cache = None
-        env_copy._kernel_cache = {}
+        env_copy._clear_explicit_caches()
 
         return env_copy
 
-    def clear_caches(self) -> None:
-        """Clear all transient caches (KDTree and kernel caches).
+    def _clear_explicit_caches(self) -> None:
+        """Internal method to clear explicit caches (KDTree, kernels).
 
-        This method invalidates cached data structures that are built on-demand
-        for performance optimization. Caches will be automatically rebuilt the
-        next time they are needed.
+        This is called by clear_cache() and copy().
+        """
+        self._kdtree_cache = None
+        self._kernel_cache = {}
 
-        Caches cleared:
-            - KDTree cache: Used by spatial query methods like `bin_at()`
-            - Kernel cache: Used by `smooth()` and `occupancy()`
+    def clear_cache(self) -> None:
+        """Clear all caches including explicit caches and cached properties.
+
+        This method clears both explicit caches (KDTree, kernels) and all
+        @cached_property values.
+
+        Caches cleared
+        --------------
+        **Explicit caches**:
+            - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
+            - Kernel cache (_kernel_cache): Used by smooth() and occupancy()
+
+        **Cached properties**:
+            - differential_operator: Graph differential operator matrix
+            - boundary_bins: Bins on environment boundary
+            - bin_sizes: Area/volume of each bin
+            - bin_attributes: DataFrame with bin properties (position, degree, etc.)
+            - edge_attributes: DataFrame with edge properties (distance, angle, etc.)
+            - linearization_properties: 1D linearization metadata
+            - _source_flat_to_active_node_id_map: Grid index mapping
 
         Notes
         -----
-        This method is typically not needed in normal usage since caches are
-        automatically managed. However, it can be useful when:
+        This method is useful when:
 
-        - You want to free memory after intensive spatial queries
-        - You're profiling cache rebuild performance
-        - You need to ensure a clean state for testing
+        - **Memory management**: Free memory after intensive computations
+        - **Testing**: Ensure clean state between test runs
+        - **Profiling**: Measure cache rebuild performance
+        - **Manual modifications**: Clear stale caches if environment was
+          modified (not recommended - create new Environment instead)
 
-        The `copy()` method automatically clears caches on the new instance.
+        Cached properties are automatically recomputed on next access.
+
+        **Performance impact**: Clearing caches has minimal overhead, but
+        recomputing cached properties (especially differential_operator) can
+        be expensive for large environments (>100,000 bins).
 
         See Also
         --------
-        copy : Create a copy of the environment (also clears caches).
-        neurospatial.spatial.clear_kdtree_cache : Clear global KDTree cache.
+        copy : Create environment copy (also clears caches)
+        neurospatial.spatial.clear_kdtree_cache : Clear only KDTree cache
 
         Examples
         --------
@@ -1125,10 +1147,40 @@ class Environment(
         >>> from neurospatial import Environment
         >>> data = np.random.rand(1000, 2) * 100
         >>> env = Environment.from_samples(data, bin_size=5.0)
-        >>> # Perform some spatial queries (builds caches)
-        >>> _ = env.bin_at(np.array([[10.0, 20.0]]))
-        >>> # Clear caches to free memory
-        >>> env.clear_caches()
+        >>>
+        >>> # Access some cached properties
+        >>> _ = env.differential_operator
+        >>> _ = env.boundary_bins
+        >>>
+        >>> # Clear all caches
+        >>> env.clear_cache()
+        >>>
+        >>> # Properties will be recomputed on next access
+        >>> _ = env.differential_operator  # Triggers recomputation
         """
-        self._kdtree_cache = None
-        self._kernel_cache = {}
+        # Clear explicit caches (KDTree, kernels)
+        self._clear_explicit_caches()
+
+        # Clear @cached_property values from instance __dict__
+        # IMPORTANT: When adding new @cached_property methods to Environment or its mixins,
+        # you MUST add them to this list to ensure they're cleared by clear_cache().
+        # Current @cached_property methods across all mixins:
+        #   - core.py: differential_operator, _source_flat_to_active_node_id_map
+        #   - queries.py: bin_sizes
+        #   - metrics.py: boundary_bins, bin_attributes, edge_attributes, linearization_properties
+        cached_properties = [
+            # core.py
+            "differential_operator",
+            "_source_flat_to_active_node_id_map",
+            # queries.py
+            "bin_sizes",
+            # metrics.py
+            "boundary_bins",
+            "bin_attributes",
+            "edge_attributes",
+            "linearization_properties",
+        ]
+
+        for prop_name in cached_properties:
+            # Remove from __dict__ if present (cached_property stores value here)
+            self.__dict__.pop(prop_name, None)
