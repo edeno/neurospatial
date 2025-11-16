@@ -15,6 +15,9 @@ class TestSpikesToField:
 
     def test_spikes_to_field_synthetic(self):
         """Test spikes_to_field with known spike rate produces expected field."""
+        # Use local RNG for test isolation
+        rng = np.random.default_rng(42)
+
         # Create a 10x10 environment (0-100 range, bin_size=10)
         x = np.linspace(0, 100, 1000)
         y = np.linspace(0, 100, 1000)
@@ -27,7 +30,7 @@ class TestSpikesToField:
         # Expected: ~10 spikes per bin per second of occupancy
         spike_rate = 10.0  # Hz
         n_spikes = int(spike_rate * times[-1])
-        spike_times = np.sort(np.random.uniform(times[0], times[-1], n_spikes))
+        spike_times = np.sort(rng.uniform(times[0], times[-1], n_spikes))
 
         # Compute firing rate field
         field = spikes_to_field(env, spike_times, times, positions)
@@ -35,9 +38,10 @@ class TestSpikesToField:
         # Should have shape (n_bins,)
         assert field.shape == (env.n_bins,)
 
-        # Mean firing rate should be close to spike_rate (within 20% for randomness)
+        # With fixed seed, mean firing rate should be close to spike_rate
+        # Using 5% tolerance (much tighter than previous 20%)
         mean_rate = np.nanmean(field)
-        assert 0.8 * spike_rate <= mean_rate <= 1.2 * spike_rate
+        assert mean_rate == pytest.approx(spike_rate, rel=0.05)
 
     def test_spikes_to_field_min_occupancy(self):
         """Test that low occupancy bins are set to NaN."""
@@ -194,48 +198,37 @@ class TestSpikesToField:
         # All bins should be NaN (insufficient occupancy)
         assert np.all(np.isnan(field))
 
-    def test_spikes_to_field_matches_manual(self):
-        """Test that spikes_to_field matches manual computation."""
-        # Simple case: uniform trajectory and spikes
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
+    def test_spikes_to_field_known_firing_rate(self):
+        """Test against analytically computed firing rate with stationary position.
+
+        This test uses ground truth: animal stationary at one location,
+        producing spikes at known rate. Expected firing rate is analytically
+        computable without reimplementing the algorithm.
+        """
+        # Animal stationary at (50, 50) for 10 seconds
+        positions = np.full((1000, 2), [50.0, 50.0])
         times = np.linspace(0, 10, 1000)
 
+        # Create environment
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        # Spikes at known times
+        # Neuron fires exactly 5 spikes at this location
+        # Analytical ground truth: 5 spikes / 10 seconds = 0.5 Hz
         spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
-        # Compute using function (with default min_occupancy_seconds=0.0)
+        # Compute field
         field = spikes_to_field(env, spike_times, times, positions)
 
-        # Compute manually
-        # 1. Compute occupancy
-        occupancy = env.occupancy(times, positions, return_seconds=True)
+        # Find bin containing (50, 50)
+        bin_at_50_50 = env.bin_at(np.array([[50.0, 50.0]]))[0]
 
-        # 2. Interpolate spike positions
-        spike_x = np.interp(spike_times, times, positions[:, 0])
-        spike_y = np.interp(spike_times, times, positions[:, 1])
-        spike_positions = np.column_stack([spike_x, spike_y])
+        # Verify firing rate at the occupied bin is 0.5 Hz
+        assert field[bin_at_50_50] == pytest.approx(0.5, rel=0.01)
 
-        # 3. Assign to bins
-        spike_bins = env.bin_at(spike_positions)
-
-        # 4. Count spikes per bin
-        spike_counts = np.bincount(spike_bins, minlength=env.n_bins)
-
-        # 5. Normalize (no threshold with default min_occupancy_seconds=0.0)
-        manual_field = np.zeros(env.n_bins)
-        valid_mask = occupancy > 0  # Avoid division by zero
-        manual_field[valid_mask] = spike_counts[valid_mask] / occupancy[valid_mask]
-        # Bins with zero occupancy remain 0 (no NaN with default)
-
-        # Should match
-        assert_array_almost_equal(field, manual_field)
+        # Verify all other bins have zero firing (no occupancy)
+        other_bins = np.arange(env.n_bins) != bin_at_50_50
+        # Other bins should be 0 (default behavior with zero occupancy)
+        assert np.allclose(field[other_bins], 0.0)
 
     def test_spikes_to_field_parameter_order(self):
         """Test that parameter order is env first (matches existing API)."""
@@ -304,35 +297,39 @@ class TestComputePlaceField:
 
         assert_array_equal(field_default, field_explicit)
 
-    def test_all_methods_produce_valid_output(self):
+    @pytest.mark.parametrize(
+        "method",
+        ["diffusion_kde", "gaussian_kde", "binned"],
+        ids=["diffusion_kde", "gaussian_kde", "binned"],
+    )
+    def test_all_methods_produce_valid_output(self, method):
         """Test that all three methods produce valid firing rate maps."""
-        np.random.seed(42)
-        positions = np.random.uniform(20, 80, (500, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(20, 80, (500, 2))
         times = np.linspace(0, 50, 500)
-        spike_times = np.random.uniform(0, 50, 25)
+        spike_times = rng.uniform(0, 50, 25)
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
-            field = compute_place_field(
-                env, spike_times, times, positions, method=method, bandwidth=5.0
-            )
+        field = compute_place_field(
+            env, spike_times, times, positions, method=method, bandwidth=5.0
+        )
 
-            # Check shape
-            assert field.shape == (env.n_bins,), f"Method {method} has wrong shape"
+        # Check shape
+        assert field.shape == (env.n_bins,)
 
-            # Check non-negative firing rates (where not NaN)
-            valid_bins = ~np.isnan(field)
-            assert np.all(field[valid_bins] >= 0), f"Method {method} has negative rates"
+        # Check non-negative firing rates (where not NaN)
+        valid_bins = ~np.isnan(field)
+        assert np.all(field[valid_bins] >= 0)
 
-            # Check that we have some valid bins
-            assert np.sum(valid_bins) > 0, f"Method {method} has all NaN"
+        # Check that we have some valid bins
+        assert np.sum(valid_bins) > 0
 
     def test_diffusion_kde_no_nan_bins(self):
         """Test that diffusion_kde naturally handles sparse occupancy without NaN."""
-        np.random.seed(42)
-        positions = np.random.uniform(20, 80, (500, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(20, 80, (500, 2))
         times = np.linspace(0, 50, 500)
-        spike_times = np.random.uniform(0, 50, 25)
+        spike_times = rng.uniform(0, 50, 25)
         env = Environment.from_samples(positions, bin_size=5.0)
 
         field = compute_place_field(
@@ -378,13 +375,17 @@ class TestComputePlaceField:
             np.isnan(field_low_threshold)
         )
 
+    @pytest.mark.slow
     def test_methods_give_similar_results_open_field(self):
-        """Test that all methods give similar results for open field (no boundaries)."""
-        np.random.seed(42)
+        """Test that all methods give similar results for open field (no boundaries).
+
+        Marked slow: Computes place fields with 3 different methods and correlates results.
+        """
+        rng = np.random.default_rng(42)
         # Uniform coverage open field
-        positions = np.random.uniform(20, 80, (1000, 2))
+        positions = rng.uniform(20, 80, (1000, 2))
         times = np.linspace(0, 100, 1000)
-        spike_times = np.random.uniform(0, 100, 50)
+        spike_times = rng.uniform(0, 100, 50)
         env = Environment.from_samples(positions, bin_size=8.0)
 
         # Compute with all three methods
@@ -422,7 +423,12 @@ class TestComputePlaceField:
                 "Diffusion and Binned should be similar for open field"
             )
 
-    def test_empty_spikes(self):
+    @pytest.mark.parametrize(
+        "method",
+        ["diffusion_kde", "gaussian_kde", "binned"],
+        ids=["diffusion_kde", "gaussian_kde", "binned"],
+    )
+    def test_empty_spikes(self, method):
         """Test that all methods handle empty spike train correctly."""
         positions = np.column_stack(
             [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
@@ -431,19 +437,16 @@ class TestComputePlaceField:
         env = Environment.from_samples(positions, bin_size=10.0)
         spike_times = np.array([])
 
-        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
-            field = compute_place_field(
-                env, spike_times, times, positions, method=method, bandwidth=5.0
-            )
+        field = compute_place_field(
+            env, spike_times, times, positions, method=method, bandwidth=5.0
+        )
 
-            # Should have valid shape
-            assert field.shape == (env.n_bins,)
+        # Should have valid shape
+        assert field.shape == (env.n_bins,)
 
-            # All valid bins should be zero
-            valid_bins = ~np.isnan(field)
-            assert np.allclose(field[valid_bins], 0.0), (
-                f"Method {method} failed empty spikes test"
-            )
+        # All valid bins should be zero
+        valid_bins = ~np.isnan(field)
+        assert np.allclose(field[valid_bins], 0.0)
 
     def test_parameter_validation(self):
         """Test that invalid parameters raise appropriate errors."""
@@ -500,30 +503,32 @@ class TestComputePlaceField:
                 bandwidth=5.0,
             )
 
-    def test_1d_trajectory_all_methods(self):
+    @pytest.mark.parametrize(
+        "method",
+        ["diffusion_kde", "gaussian_kde", "binned"],
+        ids=["diffusion_kde", "gaussian_kde", "binned"],
+    )
+    def test_1d_trajectory_all_methods(self, method):
         """Test that all methods handle 1D trajectories correctly."""
         positions = np.linspace(0, 100, 1000).reshape(-1, 1)
         times = np.linspace(0, 10, 1000)
         env = Environment.from_samples(positions, bin_size=10.0)
         spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
-        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
-            field = compute_place_field(
-                env, spike_times, times, positions, method=method, bandwidth=5.0
-            )
+        field = compute_place_field(
+            env, spike_times, times, positions, method=method, bandwidth=5.0
+        )
 
-            assert field.shape == (env.n_bins,), f"Method {method} failed for 1D"
-            assert not np.all(np.isnan(field)), (
-                f"Method {method} produced all NaN for 1D"
-            )
+        assert field.shape == (env.n_bins,)
+        assert not np.all(np.isnan(field))
 
     def test_diffusion_kde_spread_before_normalize(self):
         """Test that diffusion_kde spreads mass before normalizing (correct order)."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         # Create environment with some bins that have low occupancy
-        positions = np.random.uniform(20, 80, (500, 2))
+        positions = rng.uniform(20, 80, (500, 2))
         times = np.linspace(0, 50, 500)
-        spike_times = np.random.uniform(0, 50, 25)
+        spike_times = rng.uniform(0, 50, 25)
         env = Environment.from_samples(positions, bin_size=5.0)
 
         field_diffusion = compute_place_field(
@@ -556,13 +561,17 @@ class TestComputePlaceField:
         mean_rate = np.mean(field_diffusion[~np.isnan(field_diffusion)])
         assert max_neighbor_diff < 5 * mean_rate  # Heuristic: max diff < 5x mean
 
+    @pytest.mark.slow
     def test_gaussian_kde_slow_but_works(self):
-        """Test that gaussian_kde works (even if slower) and produces valid results."""
-        np.random.seed(42)
+        """Test that gaussian_kde works (even if slower) and produces valid results.
+
+        Marked slow: Uses gaussian_kde method which is computationally expensive.
+        """
+        rng = np.random.default_rng(42)
         # Small dataset to keep test fast
-        positions = np.random.uniform(20, 80, (200, 2))
+        positions = rng.uniform(20, 80, (200, 2))
         times = np.linspace(0, 20, 200)
-        spike_times = np.random.uniform(0, 20, 10)
+        spike_times = rng.uniform(0, 20, 10)
         env = Environment.from_samples(positions, bin_size=8.0)
 
         field = compute_place_field(
@@ -618,3 +627,114 @@ class TestComputePlaceField:
 
         # Should match
         assert_array_almost_equal(field_new, field_old_normalized)
+
+    def test_boundary_very_small_bin_size(self):
+        """Test numerical stability with very small bin sizes."""
+        # Small bin size (0.5 cm) should not cause numerical issues
+        positions = np.column_stack(
+            [np.linspace(0, 10, 1000), np.linspace(0, 10, 1000)]
+        )
+        times = np.linspace(0, 10, 1000)
+        spike_times = np.array([1.0, 2.0, 3.0])
+
+        # Very small bin size
+        env = Environment.from_samples(positions, bin_size=0.5)
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=1.0
+        )
+
+        # Should produce valid output
+        assert field.shape == (env.n_bins,)
+        assert not np.all(np.isnan(field))
+        assert np.all(field[~np.isnan(field)] >= 0)
+
+    def test_boundary_very_sparse_spikes(self):
+        """Test with very few spikes (< 10 spikes)."""
+        positions = np.column_stack(
+            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
+        )
+        times = np.linspace(0, 100, 1000)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Only 3 spikes in 100 seconds
+        spike_times = np.array([10.0, 50.0, 90.0])
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Should handle sparse spikes gracefully
+        assert field.shape == (env.n_bins,)
+        n_active_bins = np.sum(field > 0)
+        assert n_active_bins > 0, "Should have at least some active bins"
+
+    def test_boundary_single_spike(self):
+        """Test extreme sparsity: single spike."""
+        positions = np.column_stack(
+            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
+        )
+        times = np.linspace(0, 10, 1000)
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Single spike
+        spike_times = np.array([5.0])
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Should produce valid field with single spike
+        assert field.shape == (env.n_bins,)
+        assert np.sum(field > 0) > 0, "Should have at least one bin with activity"
+
+    def test_boundary_3d_environment(self):
+        """Test place field computation in 3D space."""
+        # 3D trajectory
+        positions = np.column_stack(
+            [
+                np.linspace(0, 100, 500),
+                np.linspace(0, 100, 500),
+                np.linspace(0, 100, 500),
+            ]
+        )
+        times = np.linspace(0, 50, 500)
+        spike_times = np.array([10.0, 20.0, 30.0, 40.0])
+
+        env = Environment.from_samples(positions, bin_size=20.0)
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=10.0
+        )
+
+        # Should handle 3D correctly
+        assert field.shape == (env.n_bins,)
+        assert env.n_dims == 3
+        assert not np.all(np.isnan(field))
+
+    def test_boundary_single_bin(self):
+        """Test edge case: environment with only one bin."""
+        # All positions in small area (will create ~1 bin)
+        positions = np.full((100, 2), [50.0, 50.0])
+        positions += np.random.randn(100, 2) * 0.1  # Tiny variation
+
+        times = np.linspace(0, 10, 100)
+        spike_times = np.array([1.0, 5.0, 9.0])
+
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Should have very few bins
+        assert env.n_bins < 10, "Small area should have few bins"
+
+        field = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Should handle single/few bin case
+        assert field.shape == (env.n_bins,)
+        firing_rate = field[~np.isnan(field)]
+        if len(firing_rate) > 0:
+            # If any valid bins, firing rate should be reasonable
+            assert np.all(firing_rate >= 0)

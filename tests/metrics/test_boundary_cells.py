@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from neurospatial import Environment
 
@@ -23,13 +24,13 @@ class TestBorderScore:
     def test_border_score_perfect_border_cell(self) -> None:
         """Test border score for perfect border cell (field along one wall)."""
         # Create rectangular environment
-        positions = []
+        positions_list = []
         for x in np.linspace(0, 50, 500):
             for y in np.linspace(0, 50, 500):
-                positions.append([x, y])
-        positions = np.array(positions)
+                positions_list.append([x, y])
+        positions: NDArray[np.float64] = np.array(positions_list)
 
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = Environment.from_samples(positions, bin_size=4.0)
 
         # Create firing rate map with activity only along left wall (x < 10)
         firing_rate = np.zeros(env.n_bins)

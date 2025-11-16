@@ -281,6 +281,9 @@ class TestReprEdgeCases:
         """_repr_html_() should handle many regions without becoming unwieldy."""
         from shapely.geometry import Point
 
+        # Clear any existing regions first (fixture may be shared)
+        grid_env_from_samples.regions.clear()
+
         # Add 20 regions
         for i in range(20):
             grid_env_from_samples.regions.add(

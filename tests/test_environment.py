@@ -149,15 +149,35 @@ class TestEnvironmentFromGraph:
     def test_plot_methods(
         self, graph_env: Environment, plus_maze_positions: NDArray[np.float64]
     ):  # Corrected fixture name
-        """Test plotting methods run without error."""
+        """Test plotting methods produce expected visual elements."""
         import matplotlib.pyplot as plt
 
+        # Test standard plot
         fig, ax = plt.subplots()
         graph_env.plot(ax=ax)
+
+        # Verify plot contains visual elements (nodes, edges, or paths)
+        has_visual_content = (
+            len(ax.collections) > 0  # Scatter plots, paths
+            or len(ax.lines) > 0  # Lines
+            or len(ax.patches) > 0  # Patches
+        )
+        assert has_visual_content, "Plot should contain visual elements"
+
+        # Verify axis labels or title exist (good practice for scientific plots)
+        has_labels = bool(ax.get_xlabel() or ax.get_ylabel() or ax.get_title())
+        assert has_labels, "Plot should have axis labels or title"
+
         plt.close(fig)
 
+        # Test 1D plot
         fig, ax = plt.subplots()
         graph_env.plot_1d(ax=ax)
+
+        # 1D plot should have lines or markers
+        has_1d_content = len(ax.lines) > 0 or len(ax.collections) > 0
+        assert has_1d_content, "1D plot should contain visual elements"
+
         plt.close(fig)
 
     def test_graph_attributes_dataframe(self, graph_env: Environment):

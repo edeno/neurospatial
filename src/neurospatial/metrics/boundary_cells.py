@@ -19,12 +19,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def border_score(
     firing_rate: NDArray[np.float64],
-    env: Environment,
+    env: EnvironmentProtocol,
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
@@ -291,7 +291,7 @@ def border_score(
 
 def compute_region_coverage(
     field_bins: NDArray[np.int64],
-    env: Environment,
+    env: EnvironmentProtocol,
     *,
     regions: list[str] | None = None,
 ) -> dict[str, float]:

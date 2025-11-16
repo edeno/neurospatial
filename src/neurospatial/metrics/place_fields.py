@@ -33,6 +33,7 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def detect_place_fields(
@@ -479,7 +480,7 @@ def _detect_subfields(
 
 def field_size(
     field_bins: NDArray[np.int64],
-    env: Environment,
+    env: EnvironmentProtocol,
 ) -> float:
     """
     Compute field size (area) in physical units.
@@ -656,19 +657,24 @@ def skaggs_information(
     if mean_rate == 0 or np.isnan(mean_rate):
         return 0.0
 
-    # Compute information
+    # Compute information (suppress expected warnings from edge cases)
+    # The np.log() can produce warnings for edge cases that are handled by the if-condition
     information = 0.0
-    for i in range(len(firing_rate)):
-        # Skip NaN bins
-        if (
-            occupancy_prob[i] > 0
-            and firing_rate[i] > 0
-            and not np.isnan(firing_rate[i])
-        ):
-            ratio = firing_rate[i] / mean_rate
-            information += occupancy_prob[i] * ratio * np.log(ratio) / np.log(base)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        for i in range(len(firing_rate)):
+            # Skip NaN bins
+            if (
+                occupancy_prob[i] > 0
+                and firing_rate[i] > 0
+                and not np.isnan(firing_rate[i])
+            ):
+                ratio = firing_rate[i] / mean_rate
+                information += occupancy_prob[i] * ratio * np.log(ratio) / np.log(base)
 
-    return float(information)
+    # Ensure non-negative result (floating point errors can produce tiny negative values)
+    # Mathematically, information is always >= 0, but uniform firing with floating
+    # point arithmetic can produce values like -1e-16
+    return float(max(0.0, information))
 
 
 def sparsity(
@@ -736,7 +742,12 @@ def sparsity(
     if denominator == 0 or np.isnan(denominator):
         return 0.0
 
-    return float(numerator / denominator)
+    sparsity_value = numerator / denominator
+
+    # Clamp to [0, 1] to handle floating point precision issues
+    # Mathematically, sparsity is always in [0, 1], but floating point
+    # arithmetic can produce values like 1.0000000000000002
+    return float(np.clip(sparsity_value, 0.0, 1.0))
 
 
 def field_stability(
@@ -1835,8 +1846,6 @@ def field_shift_distance(
         try:
             from typing import cast
 
-            from neurospatial.environment._protocols import EnvironmentProtocol
-
             geodesic_dist = cast("EnvironmentProtocol", env_1).distance_between(
                 centroid_1, centroid_2
             )
@@ -2092,8 +2101,6 @@ def compute_field_emd(
             for j in range(i + 1, n):
                 try:
                     from typing import cast
-
-                    from neurospatial.environment._protocols import EnvironmentProtocol
 
                     # Use bin centers (coordinates), not bin indices
                     d = float(

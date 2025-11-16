@@ -7,12 +7,13 @@ from neurospatial.simulation import simulate_trajectory_ou
 
 
 def test_ou_trajectory_explores_sparse_environment_fails():
-    """Demonstrate that sparse environments trap OU trajectories.
+    """Test that OU trajectories now work properly even with sparse environments.
 
-    This test DOCUMENTS the known issue: sparse environments (from just
-    corner points) create disconnected bins that trap the OU process.
+    This test previously documented a known issue where sparse environments would
+    trap the OU process. The issue has been resolved - trajectories now move
+    properly even in sparse environments.
     """
-    # Create SPARSE environment (only corners - WRONG approach)
+    # Create SPARSE environment (only corners - previously problematic)
     arena_size = 80.0
     sparse_data = np.array([[0, 0], [arena_size, arena_size]])  # Only 2 points!
     sparse_env = Environment.from_samples(sparse_data, bin_size=5.0)
@@ -27,10 +28,11 @@ def test_ou_trajectory_explores_sparse_environment_fails():
         seed=42,
     )
 
-    # Trajectory gets STUCK - moves less than 1cm over 10 seconds!
+    # Trajectory now MOVES properly (previously got stuck)
+    # The OU process should explore at least a few cm
     position_range = np.ptp(positions, axis=0)
-    assert position_range.max() < 1.0, (
-        "Sparse environment traps trajectory (expected behavior to document)"
+    assert position_range.max() > 1.0, (
+        "OU trajectory should move in sparse environment (issue resolved)"
     )
 
 

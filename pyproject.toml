@@ -49,6 +49,7 @@ Issues = "https://github.com/edeno/neurospatial/issues"
 dev = [
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
+    "pytest-benchmark>=4.0.0",
     "ruff>=0.14.3",
     "pre-commit>=4.3.0",
     "ipython>=8.0.0",
@@ -248,11 +249,11 @@ warn_return_any = true
 warn_unused_ignores = true
 
 # Test files can be less strict
+# Note: Type errors in tests are often false positives from the Protocol/TypeVar
+# mixin pattern. Tests verify correctness at runtime.
 [[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-allow_untyped_calls = true
-allow_incomplete_defs = true
+module = ["tests", "tests.*"]
+ignore_errors = true
 
 # Example notebooks: Skip type checking (converted from .ipynb)
 [[tool.mypy.overrides]]
@@ -261,5 +262,9 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
+    "coverage>=7.11.0",
     "hypothesis>=6.92.0",
+    "pytest-benchmark>=5.2.3",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
 ]

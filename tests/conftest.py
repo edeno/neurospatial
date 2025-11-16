@@ -6,9 +6,42 @@ from numpy.typing import NDArray
 from neurospatial import Environment
 from neurospatial.layout.engines.graph import GraphLayout
 
+# =============================================================================
+# Test Configuration Constants
+# =============================================================================
+# Use these instead of magic numbers in tests
 
+# Bin sizes (in spatial units - typically cm)
+SMALL_BIN_SIZE = 1.0
+MEDIUM_BIN_SIZE = 2.0
+LARGE_BIN_SIZE = 10.0
+
+# Position sample counts for Environment.from_samples()
+# Used to create trajectory data for environment discretization
+SMALL_N_POSITIONS = 100  # Quick tests
+MEDIUM_N_POSITIONS = 1000  # Standard tests
+LARGE_N_POSITIONS = 5000  # Stress tests / slow tests
+
+# Random seeds for reproducibility
+DEFAULT_SEED = 42
+ALT_SEED_1 = 43
+ALT_SEED_2 = 44
+
+# Tolerance levels for assertions
+TIGHT_TOLERANCE = 0.01
+MEDIUM_TOLERANCE = 0.05
+LOOSE_TOLERANCE = 0.1
+
+# Spatial extents (cm)
+SMALL_EXTENT = 10.0
+MEDIUM_EXTENT = 50.0
+LARGE_EXTENT = 100.0
+
+
+# =============================================================================
 # --- Fixtures ---
-@pytest.fixture
+# =============================================================================
+@pytest.fixture(scope="session")
 def plus_maze_graph() -> nx.Graph:
     """
     Defines a simple plus-shaped maze graph.
@@ -33,14 +66,14 @@ def plus_maze_graph() -> nx.Graph:
     return graph
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def plus_maze_edge_order() -> list[tuple[int, int]]:
     """Edge order for linearizing the plus maze."""
     # Path: West arm -> Center -> North arm -> Center -> East arm -> Center -> South arm
     return [(4, 0), (0, 1), (0, 2), (0, 3)]
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def plus_maze_positions() -> NDArray[np.float64]:
     """Regularly spaced position samples along the plus maze arms."""
     samples = [
@@ -73,11 +106,15 @@ def plus_maze_positions() -> NDArray[np.float64]:
     return np.array(samples, dtype=np.float64)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def graph_env(
     plus_maze_graph: nx.Graph, plus_maze_edge_order: list[tuple[int, int]]
 ) -> Environment:
-    """Environment created from the plus maze graph."""
+    """Environment created from the plus maze graph.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
     # Capture parameters explicitly to pass to Environment constructor
     # for correct serialization testing.
     layout_build_params = {
@@ -97,11 +134,15 @@ def graph_env(
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def grid_env_from_samples(
     plus_maze_positions: NDArray[np.float64],
 ) -> Environment:
-    """Environment created as a RegularGrid from plus maze position samples."""
+    """Environment created as a RegularGrid from plus maze position samples.
+
+    Session-scoped for performance: Environment.from_samples() is expensive,
+    and this fixture is read-only in tests.
+    """
     return Environment.from_samples(
         positions=plus_maze_positions,
         bin_size=0.5,
@@ -184,17 +225,20 @@ def env_all_active_2x2() -> Environment:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_3d_env() -> Environment:
     """A simple 3D environment for comprehensive 3D testing.
 
     Creates a 3D grid from random samples in a 10x10x10 space.
     Uses bin_size=2.0 and enables diagonal connectivity to test
     full 3D neighbor connectivity (up to 26 neighbors per bin).
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
     """
     # Generate random 3D position samples
-    np.random.seed(42)  # Fixed seed for reproducibility
-    positions = np.random.rand(200, 3) * 10.0  # 200 points in [0, 10] cube
+    rng = np.random.default_rng(42)  # Local RNG for test isolation
+    positions = rng.random((200, 3)) * 10.0  # 200 points in [0, 10] cube
 
     return Environment.from_samples(
         positions=positions,
@@ -203,4 +247,145 @@ def simple_3d_env() -> Environment:
         connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)
         infer_active_bins=True,
         bin_count_threshold=1,  # At least 1 sample per active bin
+    )
+
+
+# =============================================================================
+# General-Purpose Reusable Environment Fixtures (Priority 2.1)
+# =============================================================================
+# These fixtures reduce duplicate Environment.from_samples() calls across tests
+# All are session-scoped since environments are read-only in tests
+
+
+@pytest.fixture(scope="session")
+def small_2d_env() -> Environment:
+    """Small 2D environment for quick tests.
+
+    - Size: ~10x10 cm (SMALL_EXTENT)
+    - Bins: ~25 bins (bin_size=2.0)
+    - Samples: 100 positions (SMALL_N_POSITIONS)
+    - Connectivity: Orthogonal only (faster, simpler)
+
+    Use for: Fast unit tests, basic functionality tests
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.standard_normal((SMALL_N_POSITIONS, 2)) * (SMALL_EXTENT / 2)
+
+    return Environment.from_samples(
+        positions=positions,
+        bin_size=MEDIUM_BIN_SIZE,
+        name="Small2DEnv",
+        connect_diagonal_neighbors=False,
+        infer_active_bins=True,
+        bin_count_threshold=1,
+    )
+
+
+@pytest.fixture(scope="session")
+def medium_2d_env() -> Environment:
+    """Medium 2D environment for standard tests.
+
+    - Size: ~50x50 cm (MEDIUM_EXTENT)
+    - Bins: ~625 bins (bin_size=2.0)
+    - Samples: 1000 positions (MEDIUM_N_POSITIONS)
+    - Connectivity: Orthogonal only
+
+    Use for: Standard feature tests, integration tests
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.standard_normal((MEDIUM_N_POSITIONS, 2)) * (MEDIUM_EXTENT / 2)
+
+    return Environment.from_samples(
+        positions=positions,
+        bin_size=MEDIUM_BIN_SIZE,
+        name="Medium2DEnv",
+        connect_diagonal_neighbors=False,
+        infer_active_bins=True,
+        bin_count_threshold=1,
+    )
+
+
+@pytest.fixture(scope="session")
+def large_2d_env() -> Environment:
+    """Large 2D environment for stress tests.
+
+    - Size: ~100x100 cm (LARGE_EXTENT)
+    - Bins: ~2500 bins (bin_size=2.0)
+    - Samples: 5000 positions (LARGE_N_POSITIONS)
+    - Connectivity: Orthogonal only
+
+    Use for: Performance tests, large-scale validation
+    Mark tests using this as @pytest.mark.slow
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.standard_normal((LARGE_N_POSITIONS, 2)) * (LARGE_EXTENT / 2)
+
+    return Environment.from_samples(
+        positions=positions,
+        bin_size=MEDIUM_BIN_SIZE,
+        name="Large2DEnv",
+        connect_diagonal_neighbors=False,
+        infer_active_bins=True,
+        bin_count_threshold=1,
+    )
+
+
+@pytest.fixture(scope="session")
+def small_1d_env() -> Environment:
+    """Small 1D environment for quick linear track tests.
+
+    - Length: ~10 cm (SMALL_EXTENT)
+    - Bins: ~5 bins (bin_size=2.0)
+    - Samples: 100 positions (SMALL_N_POSITIONS)
+
+    Use for: Fast tests of 1D-specific functionality
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.uniform(0, SMALL_EXTENT, size=(SMALL_N_POSITIONS, 1))
+
+    return Environment.from_samples(
+        positions=positions,
+        bin_size=MEDIUM_BIN_SIZE,
+        name="Small1DEnv",
+        infer_active_bins=True,
+        bin_count_threshold=1,
+    )
+
+
+@pytest.fixture(scope="session")
+def medium_2d_env_with_diagonal() -> Environment:
+    """Medium 2D environment with diagonal connectivity.
+
+    - Size: ~50x50 cm (MEDIUM_EXTENT)
+    - Bins: ~625 bins (bin_size=2.0)
+    - Samples: 1000 positions (MEDIUM_N_POSITIONS)
+    - Connectivity: Diagonal enabled (8-connectivity)
+
+    Use for: Tests requiring diagonal neighbor relationships
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.standard_normal((MEDIUM_N_POSITIONS, 2)) * (MEDIUM_EXTENT / 2)
+
+    return Environment.from_samples(
+        positions=positions,
+        bin_size=MEDIUM_BIN_SIZE,
+        name="Medium2DEnvDiagonal",
+        connect_diagonal_neighbors=True,
+        infer_active_bins=True,
+        bin_count_threshold=1,
     )

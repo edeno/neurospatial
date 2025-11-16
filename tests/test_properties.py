@@ -4,6 +4,9 @@ Property-based tests using Hypothesis to verify mathematical invariants.
 These tests use randomized inputs to verify that key mathematical properties
 hold across a wide range of scenarios. Property-based testing is particularly
 valuable for scientific code where mathematical constraints must be maintained.
+
+Priority 3.1: Property-based testing with Hypothesis
+- Added neuroscience metrics property tests (sparsity, selectivity, skaggs_information, coherence)
 """
 
 import networkx as nx
@@ -16,6 +19,12 @@ from numpy.typing import NDArray
 
 from neurospatial import Environment, normalize_field
 from neurospatial.alignment import get_2d_rotation_matrix
+from neurospatial.metrics import (
+    rate_map_coherence,
+    selectivity,
+    skaggs_information,
+    sparsity,
+)
 from neurospatial.transforms import AffineND, from_rotation_matrix
 
 
@@ -427,4 +436,436 @@ class TestTransformProperties:
             rtol=1e-10,
             atol=1e-10,
             err_msg=f"R({angle}) ∘ R({-angle}) ≠ I",
+        )
+
+
+# =============================================================================
+# Hypothesis Strategies for Neuroscience Metrics
+# =============================================================================
+
+
+@st.composite
+def valid_firing_rate_and_occupancy(
+    draw: st.DrawFn,
+    min_bins: int = 10,
+    max_bins: int = 100,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Generate matching firing rate and occupancy arrays.
+
+    Parameters
+    ----------
+    draw : st.DrawFn
+        Hypothesis draw function.
+    min_bins : int, default=10
+        Minimum number of bins.
+    max_bins : int, default=100
+        Maximum number of bins.
+
+    Returns
+    -------
+    tuple[NDArray[np.float64], NDArray[np.float64]]
+        (firing_rate, occupancy) with same shape and valid values.
+    """
+    n_bins = draw(st.integers(min_value=min_bins, max_value=max_bins))
+
+    # Generate firing rate (non-negative)
+    firing_rate = draw(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=n_bins,
+            elements=st.floats(
+                min_value=0.0,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+
+    # Generate occupancy (positive, will be normalized)
+    occupancy = draw(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=n_bins,
+            elements=st.floats(
+                min_value=0.01,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+
+    # Sanity check: arrays must have matching shapes
+    # This is guaranteed by using n_bins for both, but defensive programming
+    assert firing_rate.shape == occupancy.shape == (n_bins,), (
+        f"Shape mismatch: firing_rate {firing_rate.shape}, "
+        f"occupancy {occupancy.shape}, expected ({n_bins},)"
+    )
+
+    return firing_rate, occupancy
+
+
+# =============================================================================
+# Property Tests for Neuroscience Metrics
+# =============================================================================
+
+
+class TestSparsityProperties:
+    """Property-based tests for sparsity metric.
+
+    Sparsity measures what fraction of the environment elicits significant firing.
+    Formula: sparsity = (sum p_i * r_i)^2 / (sum p_i * r_i^2)
+
+    Mathematical properties:
+    - Range: [0, 1]
+    - Uniform firing → sparsity ≈ 1.0
+    - Single-bin firing → sparsity ≈ 1/n_bins
+    """
+
+    @given(valid_firing_rate_and_occupancy())
+    @settings(max_examples=100, deadline=None)
+    def test_sparsity_range_property(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: sparsity is always in [0, 1] for valid inputs."""
+        firing_rate, occupancy = data
+
+        sp = sparsity(firing_rate, occupancy)
+
+        # Property: 0 <= sparsity <= 1 (strict, guaranteed by implementation)
+        assert 0.0 <= sp <= 1.0, f"Sparsity {sp} outside valid range [0, 1]"
+
+    @given(
+        valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
+        st.floats(min_value=0.1, max_value=100.0),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_uniform_firing_high_sparsity(
+        self,
+        data: tuple[NDArray[np.float64], NDArray[np.float64]],
+        uniform_rate: float,
+    ):
+        """Property: uniform firing produces high sparsity (close to 1.0)."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create uniform firing at the given rate
+        firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
+
+        sp = sparsity(firing_rate, occupancy)
+
+        # Property: uniform firing → sparsity very close to 1.0
+        # Allow small numerical tolerance
+        assert sp >= 0.95, f"Uniform firing sparsity {sp} should be close to 1.0"
+
+    @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
+    @settings(max_examples=50, deadline=None)
+    def test_single_peak_low_sparsity(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: firing in single bin produces low sparsity."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create firing only in one bin
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        peak_idx = n_bins // 2
+        firing_rate[peak_idx] = 100.0
+
+        sp = sparsity(firing_rate, occupancy)
+
+        # Property: single-bin firing → sparsity < 0.5 (sparse)
+        assert sp < 0.5, f"Single-peak sparsity {sp} should be low (< 0.5)"
+
+
+class TestSelectivityProperties:
+    """Property-based tests for selectivity metric.
+
+    Selectivity measures how spatially selective firing is.
+    Formula: selectivity = peak_rate / mean_rate
+
+    Mathematical properties:
+    - Range: [1.0, ∞) (always >= 1.0)
+    - Uniform firing → selectivity = 1.0
+    - Sparse firing → selectivity >> 1.0
+    """
+
+    @given(valid_firing_rate_and_occupancy())
+    @settings(max_examples=100, deadline=None)
+    def test_selectivity_minimum_value(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: selectivity is always >= 1.0."""
+        firing_rate, occupancy = data
+
+        # Skip all-zero firing rate (undefined selectivity)
+        if np.all(firing_rate == 0):
+            pytest.skip("All-zero firing rate")
+
+        sel = selectivity(firing_rate, occupancy)
+
+        # Property: selectivity >= 1.0 always
+        # (peak rate is always >= mean rate by definition)
+        if not np.isnan(sel) and not np.isinf(sel):
+            assert sel >= 1.0, f"Selectivity {sel} should be >= 1.0"
+
+    @given(
+        valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
+        st.floats(min_value=0.1, max_value=100.0),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_uniform_firing_selectivity_one(
+        self,
+        data: tuple[NDArray[np.float64], NDArray[np.float64]],
+        uniform_rate: float,
+    ):
+        """Property: uniform firing produces selectivity = 1.0."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create uniform firing
+        firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
+
+        sel = selectivity(firing_rate, occupancy)
+
+        # Property: uniform firing → selectivity = 1.0
+        # Allow small numerical tolerance
+        assert np.abs(sel - 1.0) < 0.01, (
+            f"Uniform firing selectivity {sel} should be 1.0"
+        )
+
+    @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
+    @settings(max_examples=50, deadline=None)
+    def test_sparse_firing_high_selectivity(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: firing in few bins produces high selectivity."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create firing in only 10% of bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        n_active = max(2, n_bins // 10)  # At least 2 bins
+        firing_rate[:n_active] = 100.0
+
+        sel = selectivity(firing_rate, occupancy)
+
+        # Property: sparse firing → selectivity > 1.0 (higher than uniform)
+        # Note: Exact value depends on occupancy distribution
+        # Hypothesis found cases where uneven occupancy reduces selectivity
+        assert sel > 1.0, f"Sparse firing selectivity {sel} should be > 1.0"
+
+
+class TestSkaggsInformationProperties:
+    """Property-based tests for Skaggs spatial information metric.
+
+    Skaggs information quantifies how much each spike conveys about location.
+    Formula: I = sum p_i * (r_i / mean_r) * log2(r_i / mean_r)
+
+    Mathematical properties:
+    - Range: [0, ∞) (always non-negative)
+    - Uniform firing → information ≈ 0.0
+    - Selective firing → information > 0
+    """
+
+    @given(valid_firing_rate_and_occupancy())
+    @settings(max_examples=100, deadline=None)
+    def test_information_non_negative(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: Skaggs information is always non-negative."""
+        firing_rate, occupancy = data
+
+        info = skaggs_information(firing_rate, occupancy)
+
+        # Property: information >= 0.0 always (strict, guaranteed by implementation)
+        assert info >= 0.0, f"Information {info} should be >= 0.0"
+
+    @given(
+        valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
+        st.floats(min_value=0.1, max_value=100.0),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_uniform_firing_zero_information(
+        self,
+        data: tuple[NDArray[np.float64], NDArray[np.float64]],
+        uniform_rate: float,
+    ):
+        """Property: uniform firing produces zero spatial information."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create uniform firing
+        firing_rate = np.ones(n_bins, dtype=np.float64) * uniform_rate
+
+        info = skaggs_information(firing_rate, occupancy)
+
+        # Property: uniform firing → information ≈ 0.0
+        assert info < 0.01, f"Uniform firing information {info} should be close to 0.0"
+
+    @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
+    @settings(max_examples=50, deadline=None)
+    def test_selective_firing_positive_information(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: selective firing produces positive information."""
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create selective firing (Gaussian-like)
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        peak_idx = n_bins // 2
+        # Add firing in center bin and neighbors
+        firing_rate[max(0, peak_idx - 2) : min(n_bins, peak_idx + 3)] = 10.0
+        firing_rate[peak_idx] = 50.0  # Peak
+
+        info = skaggs_information(firing_rate, occupancy)
+
+        # Property: selective firing → information > 0
+        # Note: For highly non-uniform occupancy (which Hypothesis can generate),
+        # the information can be very small but should be positive
+        assert info > 0.0, (
+            f"Selective firing information {info} should be positive (> 0)"
+        )
+
+
+class TestRateMapCoherenceProperties:
+    """Property-based tests for rate map coherence metric.
+
+    Coherence measures spatial smoothness of firing.
+    Formula: correlation between each bin and mean of its neighbors
+
+    Mathematical properties:
+    - Range: [-1, 1] (correlation coefficient)
+    - Smooth fields → high coherence (> 0.5)
+    - Random noise → low coherence (~ 0)
+    """
+
+    @given(
+        st.integers(min_value=50, max_value=200),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_coherence_range_property(self, n_positions: int, seed: int):
+        """Property: coherence is in [-1, 1] for all valid inputs."""
+        # Create simple environment
+        rng = np.random.default_rng(seed)
+        positions = rng.standard_normal((n_positions, 2)) * 10
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=2.0, connect_diagonal_neighbors=False
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        # Create random firing rate
+        firing_rate = rng.uniform(0, 10, size=env.n_bins)
+
+        coherence = rate_map_coherence(firing_rate, env)
+
+        # Property: -1 <= coherence <= 1 (correlation coefficient range)
+        if not np.isnan(coherence):
+            assert -1.0 <= coherence <= 1.0, (
+                f"Coherence {coherence} outside valid range [-1, 1]"
+            )
+
+    @given(
+        st.integers(min_value=100, max_value=300),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_smooth_field_high_coherence(self, n_positions: int, seed: int):
+        """Property: smooth Gaussian field produces high coherence."""
+        # Create environment
+        rng = np.random.default_rng(seed)
+        positions = rng.standard_normal((n_positions, 2)) * 20
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=2.0, connect_diagonal_neighbors=False
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 10:
+            pytest.skip("Not enough bins for coherence test")
+
+        # Create smooth Gaussian field
+        firing_rate = np.zeros(env.n_bins, dtype=np.float64)
+        for i in range(env.n_bins):
+            dist = np.linalg.norm(env.bin_centers[i])
+            firing_rate[i] = 10.0 * np.exp(-(dist**2) / (2 * 5.0**2))
+
+        coherence = rate_map_coherence(firing_rate, env)
+
+        # Property: smooth field → high coherence (> 0.4)
+        # Threshold is conservative because random environment topology can reduce
+        # correlation between bins and neighbors even for smooth Gaussian fields.
+        # Empirically observed range for random 2D environments: [0.4, 0.8]
+        if not np.isnan(coherence):
+            assert coherence > 0.4, (
+                f"Smooth field coherence {coherence} should be > 0.4"
+            )
+
+
+class TestCrossMetricProperties:
+    """Property-based tests for relationships between metrics.
+
+    Tests mathematical relationships that should hold between different metrics.
+    """
+
+    @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
+    @settings(max_examples=50, deadline=None)
+    def test_sparsity_selectivity_inverse_relationship(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: high sparsity (uniform firing) implies low selectivity.
+
+        For uniform-like firing patterns (sparsity > 0.9), selectivity
+        should be close to 1.0 since peak rate ≈ mean rate. This tests
+        the mathematical relationship between spatial spread (sparsity)
+        and peak-to-mean ratio (selectivity).
+        """
+        firing_rate, occupancy = data
+
+        # Skip all-zero case
+        if np.all(firing_rate == 0):
+            pytest.skip("All-zero firing rate")
+
+        sp = sparsity(firing_rate, occupancy)
+        sel = selectivity(firing_rate, occupancy)
+
+        # For uniform firing (high sparsity ~ 1.0):
+        # - sparsity should be high
+        # - selectivity should be low (~ 1.0)
+        if (
+            sp > 0.9 and not np.isnan(sel) and not np.isinf(sel)
+        ):  # High sparsity (uniform-like)
+            assert sel < 2.0, (
+                f"High sparsity ({sp}) should imply low selectivity, got {sel}"
+            )
+
+    @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
+    @settings(max_examples=50, deadline=None)
+    def test_uniform_firing_implies_zero_information(
+        self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
+    ):
+        """Property: uniform firing → zero information (not vice versa).
+
+        Note: The reverse is NOT true - zero information doesn't imply
+        uniform firing (e.g., one high-firing bin with low occupancy).
+        """
+        _, occupancy = data
+        n_bins = len(occupancy)
+
+        # Create uniform firing
+        firing_rate = np.ones(n_bins, dtype=np.float64) * 10.0
+
+        info = skaggs_information(firing_rate, occupancy)
+
+        # Property: uniform firing → information ≈ 0.0
+        assert info < 0.01, (
+            f"Uniform firing should produce zero information, got {info}"
         )
