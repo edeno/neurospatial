@@ -102,19 +102,22 @@ def compute_diffusion_kernels(
     # 7) Final normalization:
     #   - If mode="transition":  ∑_i K[i,j] = 1  (pure discrete)
     #   - If mode="density":     ∑_i [K[i,j] * areas[i]] = 1  (continuous KDE)
-    if mode == "transition":
-        # Just normalize each column so it sums to 1
-        mass_out = kernel.sum(axis=0)  # shape = (n_bins,)
-        # scale = 1 / mass_out[j]  (so that ∑_i K[i,j] = 1)
-    elif mode == "density":
-        if bin_sizes is None:
-            raise ValueError("bin_sizes is required when mode='density'.")
-        # Compute mass_out[j] = ∑_i [kernel[i,j] * areas[i]]
-        # shape = (n_bins,)
-        mass_out = (kernel * bin_sizes[:, None]).sum(axis=0)
-        # scale[j] = 1 / mass_out[j]  (so that ∑_i [K[i,j]*areas[i]] = 1)
-    else:
-        raise ValueError(f"Invalid mode '{mode}'. Choose 'transition' or 'density'.")
+    match mode:
+        case "transition":
+            # Just normalize each column so it sums to 1
+            mass_out = kernel.sum(axis=0)  # shape = (n_bins,)
+            # scale = 1 / mass_out[j]  (so that ∑_i K[i,j] = 1)
+        case "density":
+            if bin_sizes is None:
+                raise ValueError("bin_sizes is required when mode='density'.")
+            # Compute mass_out[j] = ∑_i [kernel[i,j] * areas[i]]
+            # shape = (n_bins,)
+            mass_out = (kernel * bin_sizes[:, None]).sum(axis=0)
+            # scale[j] = 1 / mass_out[j]  (so that ∑_i [K[i,j]*areas[i]] = 1)
+        case _:
+            raise ValueError(
+                f"Invalid mode '{mode}'. Choose 'transition' or 'density'."
+            )
 
     # Avoid division by zero
     scale = np.where(mass_out == 0.0, 0.0, 1.0 / mass_out)

@@ -452,17 +452,7 @@ plt.show()
 | Use case | RL policy gradients, flow analysis | Place field smoothing |
 | Kernel | N/A (differential operator) | Gaussian (distance-based) |
 
-### `divergence()` vs. `kl_divergence()`
-
-| Feature | `divergence()` | `kl_divergence()` |
-|---------|----------------|-------------------|
-| Domain | Graph signal processing | Information theory |
-| Input | Edge field | Two probability distributions |
-| Output | Scalar field (net outflow) | Scalar (statistical divergence) |
-| Purpose | Detect sources and sinks | Compare distributions |
-| Use case | Flow field analysis, replay | Place field remapping, similarity |
-
-**Note**: `divergence()` was added in v0.3.0. The statistical divergence function was renamed from `divergence()` to `kl_divergence()` to avoid naming conflicts.
+**Note**: `divergence()` was added in v0.3.0 as a graph signal processing operator for detecting sources and sinks in flow fields. For comparing probability distributions (KL divergence, JS divergence), use `scipy.stats.entropy()` or `scipy.spatial.distance.jensenshannon()`.
 
 ## References
 
@@ -486,7 +476,6 @@ plt.show()
 - `neurospatial.compute_differential_operator(env)` - Build differential operator matrix
 - `neurospatial.gradient(field, env)` - Compute gradient (scalar → edge field)
 - `neurospatial.divergence(edge_field, env)` - Compute divergence (edge → scalar field)
-- `neurospatial.kl_divergence(p, q, *, kind='kl', eps=1e-12)` - Statistical divergence (renamed in v0.3.0)
 - `env.differential_operator` - Cached differential operator property
 - `neurospatial.distance_field(graph, sources)` - Multi-source geodesic distances
 - `env.smooth(field, bandwidth)` - Gaussian smoothing on graph

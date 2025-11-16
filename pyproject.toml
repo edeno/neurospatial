@@ -14,9 +14,6 @@ dependencies = [
     "scikit-learn>=1.2.0",
     "shapely>=2.0.0",
     "track-linearization>=2.4.0",
-    "jupyter>=1.1.1",
-    "nbconvert>=7.16.6",
-    "ipykernel>=6.0.0",
     "tqdm>=4.67.1",
 ]
 authors = [{ name = "Eric Denovellis", email = "eric.denovellis@ucsf.edu" }]
@@ -66,6 +63,12 @@ docs = [
     "mkdocs-literate-nav>=0.6.0",
     "mkdocs-section-index>=0.3.0",
     "mkdocs-jupyter>=0.25.0",
+    "jupytext>=1.16.0",
+]
+notebooks = [
+    "jupyter>=1.1.1",
+    "nbconvert>=7.16.6",
+    "ipykernel>=6.0.0",
     "jupytext>=1.16.0",
 ]
 opencv = [

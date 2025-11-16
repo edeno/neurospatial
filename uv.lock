@@ -2124,10 +2124,7 @@ name = "neurospatial"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "ipykernel" },
-    { name = "jupyter" },
     { name = "matplotlib" },
-    { name = "nbconvert" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2162,6 +2159,12 @@ docs = [
     { name = "mkdocs-section-index" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
+notebooks = [
+    { name = "ipykernel" },
+    { name = "jupyter" },
+    { name = "jupytext" },
+    { name = "nbconvert" },
+]
 opencv = [
     { name = "opencv-python" },
 ]
@@ -2174,10 +2177,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.92.0" },
-    { name = "ipykernel", specifier = ">=6.0.0" },
+    { name = "ipykernel", marker = "extra == 'notebooks'", specifier = ">=6.0.0" },
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "jupyter", marker = "extra == 'notebooks'", specifier = ">=1.1.1" },
     { name = "jupytext", marker = "extra == 'docs'", specifier = ">=1.16.0" },
+    { name = "jupytext", marker = "extra == 'notebooks'", specifier = ">=1.16.0" },
     { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5.0" },
@@ -2187,7 +2191,7 @@ requires-dist = [
     { name = "mkdocs-section-index", marker = "extra == 'docs'", specifier = ">=0.3.0" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.26.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
-    { name = "nbconvert", specifier = ">=7.16.6" },
+    { name = "nbconvert", marker = "extra == 'notebooks'", specifier = ">=7.16.6" },
     { name = "networkx", specifier = ">=3.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "opencv-python", marker = "extra == 'opencv'", specifier = ">=4.11.0.86" },
@@ -2202,7 +2206,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "track-linearization", specifier = ">=2.4.0" },
 ]
-provides-extras = ["dev", "docs", "opencv"]
+provides-extras = ["dev", "docs", "notebooks", "opencv"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "hypothesis", specifier = ">=6.92.0" }]

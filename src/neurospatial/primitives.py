@@ -161,30 +161,32 @@ def neighbor_reduce(
         # Apply reduction operation
         if weights is None:
             # Unweighted operations
-            if op == "sum":
-                result[bin_id] = np.sum(neighbor_values)
-            elif op == "mean":
-                result[bin_id] = np.mean(neighbor_values)
-            elif op == "max":
-                result[bin_id] = np.max(neighbor_values)
-            elif op == "min":
-                result[bin_id] = np.min(neighbor_values)
-            elif op == "std":
-                result[bin_id] = np.std(neighbor_values)
+            match op:
+                case "sum":
+                    result[bin_id] = np.sum(neighbor_values)
+                case "mean":
+                    result[bin_id] = np.mean(neighbor_values)
+                case "max":
+                    result[bin_id] = np.max(neighbor_values)
+                case "min":
+                    result[bin_id] = np.min(neighbor_values)
+                case "std":
+                    result[bin_id] = np.std(neighbor_values)
         else:
             # Weighted operations (only sum and mean)
             neighbor_weights = weights[neighbors]
-            if op == "sum":
-                result[bin_id] = np.sum(neighbor_values * neighbor_weights)
-            elif op == "mean":
-                # Weighted mean: sum(w * v) / sum(w)
-                weight_sum = np.sum(neighbor_weights)
-                if weight_sum > 0:
-                    result[bin_id] = (
-                        np.sum(neighbor_values * neighbor_weights) / weight_sum
-                    )
-                else:
-                    result[bin_id] = np.nan
+            match op:
+                case "sum":
+                    result[bin_id] = np.sum(neighbor_values * neighbor_weights)
+                case "mean":
+                    # Weighted mean: sum(w * v) / sum(w)
+                    weight_sum = np.sum(neighbor_weights)
+                    if weight_sum > 0:
+                        result[bin_id] = (
+                            np.sum(neighbor_values * neighbor_weights) / weight_sum
+                        )
+                    else:
+                        result[bin_id] = np.nan
 
     return result
 

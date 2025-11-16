@@ -622,14 +622,15 @@ def compute_place_field(
         )
 
     # Dispatch to appropriate backend
-    if method == "diffusion_kde":
-        return _diffusion_kde(env, spike_times, times, positions, bandwidth)
-    elif method == "gaussian_kde":
-        return _gaussian_kde(env, spike_times, times, positions, bandwidth)
-    elif method == "binned":
-        return _binned(
-            env, spike_times, times, positions, bandwidth, min_occupancy_seconds
-        )
-    else:
-        # Should never reach here due to validation above
-        raise ValueError(f"Unknown method: {method}")
+    match method:
+        case "diffusion_kde":
+            return _diffusion_kde(env, spike_times, times, positions, bandwidth)
+        case "gaussian_kde":
+            return _gaussian_kde(env, spike_times, times, positions, bandwidth)
+        case "binned":
+            return _binned(
+                env, spike_times, times, positions, bandwidth, min_occupancy_seconds
+            )
+        case _:
+            # Should never reach here due to validation above
+            raise ValueError(f"Unknown method: {method}")

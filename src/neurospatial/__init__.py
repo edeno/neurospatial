@@ -32,11 +32,24 @@ Trajectory Analysis:
     Environment.occupancy : Compute spatial occupancy from trajectory
     Environment.bin_sequence : Extract bin sequence from positions
 
+Neuroscience Metrics:
+    detect_place_fields : Detect place fields from firing rate map
+    skaggs_information : Spatial information content (bits/spike)
+    sparsity : Measure of spatial selectivity
+    selectivity : Place field selectivity metric
+    border_score : Boundary cell border score
+    grid_score : Grid cell grid score
+    population_vector_correlation : Correlation between population vectors
+
+Behavioral Segmentation:
+    detect_laps : Detect laps on circular tracks
+    segment_trials : Segment trajectory into behavioral trials
+    detect_region_crossings : Detect region entry/exit events
+
 Field Operations:
     normalize_field : Normalize field to sum to 1
     combine_fields : Weighted combination of multiple fields
     clamp : Clamp field values to range
-    kl_divergence : KL divergence between fields
     Environment.smooth : Graph-based field smoothing
     Environment.interpolate : Interpolate field values
 
@@ -186,7 +199,6 @@ from neurospatial.environment import Environment, EnvironmentNotFittedError
 from neurospatial.field_ops import (
     clamp,
     combine_fields,
-    kl_divergence,
     normalize_field,
 )
 from neurospatial.io import from_dict, from_file, to_dict, to_file
@@ -197,9 +209,25 @@ from neurospatial.layout.factories import (
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
+
+# Neuroscience metrics and behavioral analysis
+from neurospatial.metrics import (
+    border_score,
+    detect_place_fields,
+    grid_score,
+    population_vector_correlation,
+    selectivity,
+    skaggs_information,
+    sparsity,
+)
 from neurospatial.primitives import convolve, neighbor_reduce
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
+from neurospatial.segmentation import (
+    detect_laps,
+    detect_region_crossings,
+    segment_trials,
+)
 from neurospatial.spatial import (
     TieBreakStrategy,
     clear_kdtree_cache,
@@ -232,6 +260,18 @@ __all__ = [
     "from_file",
     "to_dict",
     "to_file",
+    # Neuroscience metrics
+    "border_score",
+    "detect_place_fields",
+    "grid_score",
+    "population_vector_correlation",
+    "selectivity",
+    "skaggs_information",
+    "sparsity",
+    # Behavioral segmentation
+    "detect_laps",
+    "detect_region_crossings",
+    "segment_trials",
     # Spatial operations and queries
     "apply_kernel",
     "apply_transform_to_environment",
@@ -248,7 +288,6 @@ __all__ = [
     "get_layout_parameters",
     "goal_reward_field",
     "gradient",
-    "kl_divergence",
     "list_available_layouts",
     "map_points_to_bins",
     "map_probabilities_to_nearest_target_bin",
