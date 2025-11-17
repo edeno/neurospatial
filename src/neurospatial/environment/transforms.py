@@ -16,10 +16,10 @@ from numpy.typing import NDArray
 from neurospatial.environment._protocols import SelfEnv
 
 if TYPE_CHECKING:
-    pass
     import shapely
 
     from neurospatial.environment.core import Environment
+    from neurospatial.transforms import Affine2D, AffineND
 
 from neurospatial.regions import Regions
 
@@ -657,3 +657,170 @@ class EnvironmentTransforms:
         # Note: Regions are intentionally dropped (as documented)
 
         return sub_env
+
+    def apply_transform(
+        self: SelfEnv,
+        transform: AffineND | Affine2D,
+        *,
+        name: str | None = None,
+    ) -> Environment:
+        """Apply affine transformation to environment, returning a new instance.
+
+        Transforms the environment's bin centers, connectivity graph, and regions
+        using an affine transformation. Supports both 2D (Affine2D) and N-D
+        (AffineND) transforms. The transformation must match the environment's
+        dimensionality.
+
+        Parameters
+        ----------
+        transform : AffineND or Affine2D
+            Affine transformation to apply. Must match environment dimensionality:
+
+            - For 2D environments: use Affine2D or AffineND with n_dims=2
+            - For 3D environments: use AffineND with n_dims=3
+            - For N-D environments: use AffineND with n_dims=N
+
+            Create transforms using factory functions like `translate()`,
+            `scale_2d()`, `from_rotation_matrix()`, or compose using `@` operator.
+        name : str, optional
+            Name for the transformed environment. If None, appends "_transformed"
+            to the original name.
+
+        Returns
+        -------
+        transformed_env : Environment
+            New Environment instance with transformed coordinates. The transformation
+            is applied to:
+
+            - `bin_centers`: All bin positions are transformed
+            - `connectivity`: Node 'pos' attributes updated, edge distances/vectors recomputed
+            - `regions`: Point and polygon regions are transformed
+            - `metadata`: Units preserved, frame updated with "_transformed" suffix
+
+            All other properties are copied from the source environment.
+
+        Raises
+        ------
+        RuntimeError
+            If environment is not fitted (use factory methods like
+            `Environment.from_samples()`).
+        ValueError
+            If transform dimensionality doesn't match environment dimensionality.
+
+        See Also
+        --------
+        estimate_transform : Estimate transformation from point correspondences
+        neurospatial.transforms.Affine2D : 2D affine transformation class
+        neurospatial.transforms.AffineND : N-D affine transformation class
+        neurospatial.transforms.translate : Create translation transform
+        neurospatial.transforms.scale_2d : Create scaling transform
+        neurospatial.transforms.from_rotation_matrix : Create rotation transform
+
+        Notes
+        -----
+        **Pure function**: This method does not modify the source environment;
+        it returns a new Environment instance.
+
+        **Transformation order**: When composing transforms, use the `@` operator.
+        `T1 @ T2` applies T2 first, then T1:
+
+            >>> composed = rotation @ translation  # translation first, then rotation
+            >>> transformed = env.apply_transform(composed)
+
+        **Edge attributes**: After transformation:
+
+        - `distance`: Recomputed from transformed positions
+        - `vector`: Recomputed as displacement between transformed positions
+        - `angle_2d`: Recomputed for 2D environments only
+
+        **Dimension ranges**: Bounding box is recomputed by transforming all
+        corner points of the original bounding box.
+
+        Examples
+        --------
+        Translation (2D):
+
+        >>> from neurospatial import Environment
+        >>> from neurospatial.transforms import translate
+        >>> import numpy as np
+        >>> # Create 2D environment
+        >>> data = np.random.rand(200, 2) * 100
+        >>> env = Environment.from_samples(data, bin_size=5.0, name="session1")
+        >>> # Translate by (10, 20) cm
+        >>> transform = translate(10, 20)
+        >>> env_shifted = env.apply_transform(transform, name="session1_aligned")
+        >>> # Bin centers are translated
+        >>> np.allclose(env_shifted.bin_centers, env.bin_centers + [10, 20])
+        True
+
+        Rotation (2D):
+
+        >>> from neurospatial.transforms import Affine2D
+        >>> # 45-degree rotation
+        >>> angle = np.pi / 4
+        >>> R = np.array(
+        ...     [
+        ...         [np.cos(angle), -np.sin(angle), 0],
+        ...         [np.sin(angle), np.cos(angle), 0],
+        ...         [0, 0, 1],
+        ...     ]
+        ... )
+        >>> transform = Affine2D(R)
+        >>> env_rotated = env.apply_transform(transform)
+        >>> # Distances preserved under rotation
+        >>> assert env_rotated.n_bins == env.n_bins
+
+        Composed transforms (scale → rotate → translate):
+
+        >>> from neurospatial.transforms import scale_2d, translate
+        >>> # Build transformation pipeline
+        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
+        >>> env_aligned = env.apply_transform(T, name="aligned")
+
+        Cross-session alignment using landmarks:
+
+        >>> from neurospatial.transforms import estimate_transform
+        >>> # Session 1 landmarks (e.g., arena corners)
+        >>> landmarks_s1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]])
+        >>> # Session 2 landmarks (same physical locations, different coordinates)
+        >>> landmarks_s2 = np.array([[5, 10], [95, 15], [90, 105], [0, 100]])
+        >>> # Estimate rigid transform (rotation + translation)
+        >>> T = estimate_transform(landmarks_s1, landmarks_s2, kind="rigid")
+        >>> # Transform session 1 environment to session 2 coordinates
+        >>> env_s1_aligned = env_s1.apply_transform(T, name="session1_in_s2_coords")
+
+        3D transformation:
+
+        >>> from scipy.spatial.transform import Rotation
+        >>> from neurospatial.transforms import from_rotation_matrix, translate_3d
+        >>> # Create 3D environment
+        >>> data_3d = np.random.randn(500, 3) * 20
+        >>> env_3d = Environment.from_samples(data_3d, bin_size=3.0)
+        >>> # Rotate 45 degrees around z-axis and translate
+        >>> R_3d = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+        >>> rotation = from_rotation_matrix(R_3d)
+        >>> translation = translate_3d(10, 20, 30)
+        >>> T_3d = translation @ rotation
+        >>> env_3d_transformed = env_3d.apply_transform(T_3d)
+
+        With regions (regions are automatically transformed):
+
+        >>> env.regions.add("goal", point=[80, 90])
+        >>> env_transformed = env.apply_transform(translate(10, 10))
+        >>> # Region is transformed along with environment
+        >>> goal_region = env_transformed.regions["goal"]
+        >>> np.allclose(goal_region.data, [90, 100])
+        True
+
+        """
+        # Import here to avoid circular dependency
+        # (transforms.py imports Environment, which imports this mixin)
+        # Delegate to free function
+        # Cast self to Environment for type checking
+        from neurospatial.transforms import (
+            apply_transform_to_environment as _apply_transform_impl,
+        )
+
+        env = cast("Environment", self)
+
+        return _apply_transform_impl(env, transform, name=name)

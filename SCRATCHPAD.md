@@ -106,4 +106,54 @@
 - "No changes required before merge"
 - "Production-ready code"
 
-**Ready for next task**: Milestone 1.3 - Add `env.apply_transform()` method
+**Ready for next task**: Milestone 2.1 - Rename `shortest_path()` → `path_between()`
+
+---
+
+### 2025-11-17: Milestone 1.3 - COMPLETED ✅
+
+**Task**: Add `env.apply_transform()` method with AffineND/Affine2D support
+
+**Status**: ✅ COMPLETE
+
+**What was accomplished**:
+
+1. **Added `apply_transform()` method** ([transforms.py:661-827](src/neurospatial/environment/transforms.py#L661-L827)):
+   - Method signature: `apply_transform(self, transform: AffineND | Affine2D, *, name: str | None = None) -> Environment`
+   - Accepts both 2D (Affine2D) and N-D (AffineND) transform objects
+   - Returns new Environment (functional, not in-place)
+   - Optional `name` parameter for renamed environment
+   - Clean delegation pattern to `apply_transform_to_environment()` free function
+   - Comprehensive NumPy-style docstring with 7 usage examples (167 lines)
+
+2. **Comprehensive test suite** ([test_transforms.py:653-1013](tests/environment/test_transforms.py#L653-L1013)):
+   - 19 new tests covering all scenarios
+   - All tests pass ✅
+   - Test classes:
+     - Basic transformations (identity, translation, rotation, scaling)
+     - Advanced scenarios (composition, N-D transforms)
+     - Data integrity (connectivity, nodes, edges, functional behavior)
+     - Metadata preservation (units, frame, naming)
+     - Region transformation (point and polygon)
+     - Error handling (dimension mismatch, unfitted environment)
+
+3. **Quality checks**:
+   - ✅ All 19 tests pass
+   - ✅ Ruff linter passes
+   - ✅ Mypy type checker passes
+   - ✅ Code reviewer APPROVED (production-ready)
+
+**Files modified**:
+- `src/neurospatial/environment/transforms.py` (added apply_transform method)
+- `tests/environment/test_transforms.py` (added 19 comprehensive tests)
+- `TASKS.md` (marked task 1.3 complete)
+
+**Code reviewer highlights**:
+- "Perfect adherence to project patterns (mixin + delegation)"
+- "Comprehensive documentation (best among the three milestones)"
+- "Thorough test coverage (19 tests, all passing)"
+- "Type-safe (mypy passes)"
+- "Excellent API design (discoverable, ergonomic, consistent)"
+- "Production-ready code"
+
+**Ready for next task**: Milestone 2.1 - Rename `shortest_path()` → `path_between()`

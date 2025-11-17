@@ -648,3 +648,368 @@ class TestSubsetIntegration:
             )
             assert isinstance(path, list)
             assert len(path) > 0
+
+
+class TestApplyTransform:
+    """Tests for Environment.apply_transform() method.
+
+    Tests affine transformation application to environments, supporting both
+    2D (Affine2D) and N-D (AffineND) transforms.
+    """
+
+    def test_apply_transform_identity_2d(self, medium_2d_env: Environment) -> None:
+        """Test applying identity transform leaves environment unchanged."""
+        from neurospatial.transforms import Affine2D
+
+        # Identity transform (no change)
+        transform = Affine2D(np.eye(3))
+
+        transformed = medium_2d_env.apply_transform(transform)
+
+        # Bin centers should be identical
+        assert_allclose(transformed.bin_centers, medium_2d_env.bin_centers, atol=1e-10)
+        assert transformed.n_bins == medium_2d_env.n_bins
+        assert transformed.n_dims == medium_2d_env.n_dims
+
+    def test_apply_transform_translation_2d(self, medium_2d_env: Environment) -> None:
+        """Test applying 2D translation transform."""
+        from neurospatial.transforms import translate
+
+        # Translate by (10, 20)
+        transform = translate(10, 20)
+
+        transformed = medium_2d_env.apply_transform(transform)
+
+        # Bin centers should be translated
+        expected_centers = medium_2d_env.bin_centers + np.array([10, 20])
+        assert_allclose(transformed.bin_centers, expected_centers, atol=1e-10)
+
+    def test_apply_transform_rotation_2d(self, medium_2d_env: Environment) -> None:
+        """Test applying 2D rotation transform."""
+        from neurospatial.transforms import Affine2D
+
+        # 45-degree rotation
+        angle = np.pi / 4
+        R = np.array(
+            [
+                [np.cos(angle), -np.sin(angle), 0],
+                [np.sin(angle), np.cos(angle), 0],
+                [0, 0, 1],
+            ]
+        )
+        transform = Affine2D(R)
+
+        transformed = medium_2d_env.apply_transform(transform)
+
+        # Should preserve number of bins and connectivity
+        assert transformed.n_bins == medium_2d_env.n_bins
+        assert (
+            transformed.connectivity.number_of_edges()
+            == medium_2d_env.connectivity.number_of_edges()
+        )
+
+        # Distances should be preserved under rotation
+        orig_dists = [
+            medium_2d_env.connectivity.edges[u, v]["distance"]
+            for u, v in medium_2d_env.connectivity.edges()
+        ]
+        new_dists = [
+            transformed.connectivity.edges[u, v]["distance"]
+            for u, v in transformed.connectivity.edges()
+        ]
+        assert_allclose(sorted(new_dists), sorted(orig_dists), atol=1e-10)
+
+    def test_apply_transform_scaling_2d(self, small_2d_env: Environment) -> None:
+        """Test applying 2D scaling transform."""
+        from neurospatial.transforms import scale_2d
+
+        # Scale by factor of 2
+        transform = scale_2d(2.0)
+
+        transformed = small_2d_env.apply_transform(transform)
+
+        # Bin centers should be scaled
+        expected_centers = small_2d_env.bin_centers * 2.0
+        assert_allclose(transformed.bin_centers, expected_centers, atol=1e-10)
+
+    def test_apply_transform_composition_2d(self, small_2d_env: Environment) -> None:
+        """Test applying composed transforms (rotation @ translation)."""
+        from neurospatial.transforms import Affine2D, translate
+
+        # Compose: translate then rotate
+        rotation_angle = np.pi / 6
+        R = np.array(
+            [
+                [np.cos(rotation_angle), -np.sin(rotation_angle), 0],
+                [np.sin(rotation_angle), np.cos(rotation_angle), 0],
+                [0, 0, 1],
+            ]
+        )
+        rotation = Affine2D(R)
+        translation = translate(5, 10)
+
+        # Apply composed transform (rotation @ translation applies translation first)
+        composed = rotation @ translation
+        transformed = small_2d_env.apply_transform(composed)
+
+        assert transformed.n_bins == small_2d_env.n_bins
+        assert transformed.n_dims == small_2d_env.n_dims
+
+    def test_apply_transform_affine_nd_2d(self, medium_2d_env: Environment) -> None:
+        """Test applying AffineND transform to 2D environment."""
+        from neurospatial.transforms import translate_3d
+
+        # Can't use 3D transform on 2D environment
+        transform_3d = translate_3d(10, 20, 30)
+
+        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+            medium_2d_env.apply_transform(transform_3d)
+
+    def test_apply_transform_affine_nd_3d(self, simple_3d_env: Environment) -> None:
+        """Test applying AffineND transform to 3D environment."""
+        from neurospatial.transforms import translate_3d
+
+        # 3D translation
+        transform = translate_3d(10, 20, 30)
+
+        transformed = simple_3d_env.apply_transform(transform)
+
+        # Bin centers should be translated
+        expected_centers = simple_3d_env.bin_centers + np.array([10, 20, 30])
+        assert_allclose(transformed.bin_centers, expected_centers, atol=1e-10)
+        assert transformed.n_dims == 3
+
+    def test_apply_transform_preserves_connectivity(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """Test that transformation preserves connectivity structure."""
+        from neurospatial.transforms import translate
+
+        transform = translate(5, 5)
+        transformed = medium_2d_env.apply_transform(transform)
+
+        # Should preserve number of nodes and edges
+        assert transformed.connectivity.number_of_nodes() == medium_2d_env.n_bins
+        assert (
+            transformed.connectivity.number_of_edges()
+            == medium_2d_env.connectivity.number_of_edges()
+        )
+
+        # Node IDs should remain the same
+        assert set(transformed.connectivity.nodes()) == set(
+            medium_2d_env.connectivity.nodes()
+        )
+
+    def test_apply_transform_updates_node_positions(
+        self, small_2d_env: Environment
+    ) -> None:
+        """Test that node 'pos' attributes are updated."""
+        from neurospatial.transforms import translate
+
+        transform = translate(10, 20)
+        transformed = small_2d_env.apply_transform(transform)
+
+        # Check that node positions are updated
+        for node_id in transformed.connectivity.nodes():
+            old_pos = np.array(small_2d_env.connectivity.nodes[node_id]["pos"])
+            new_pos = np.array(transformed.connectivity.nodes[node_id]["pos"])
+
+            expected_pos = old_pos + np.array([10, 20])
+            assert_allclose(new_pos, expected_pos, atol=1e-10)
+
+    def test_apply_transform_updates_edge_attributes(
+        self, small_2d_env: Environment
+    ) -> None:
+        """Test that edge attributes (distance, vector, angle_2d) are updated."""
+        from neurospatial.transforms import translate
+
+        transform = translate(5, 5)
+        transformed = small_2d_env.apply_transform(transform)
+
+        # Check one edge
+        edges_list = list(transformed.connectivity.edges())
+        if edges_list:
+            u, v = edges_list[0]
+
+            # Get edge data
+            edge_data = transformed.connectivity.edges[u, v]
+
+            # Should have required attributes
+            assert "distance" in edge_data
+            assert "vector" in edge_data
+
+            # For 2D, should have angle_2d
+            if transformed.n_dims == 2:
+                assert "angle_2d" in edge_data
+
+    def test_apply_transform_functional_not_inplace(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """Test that apply_transform returns new environment (functional)."""
+        from neurospatial.transforms import translate
+
+        transform = translate(10, 20)
+
+        # Store original bin centers
+        original_centers = medium_2d_env.bin_centers.copy()
+
+        # Apply transform
+        transformed = medium_2d_env.apply_transform(transform)
+
+        # Original should be unchanged
+        assert_allclose(medium_2d_env.bin_centers, original_centers)
+
+        # Transformed should be different
+        assert not np.allclose(transformed.bin_centers, original_centers)
+
+        # They should be different objects
+        assert transformed is not medium_2d_env
+
+    def test_apply_transform_with_custom_name(self, small_2d_env: Environment) -> None:
+        """Test applying transform with custom name."""
+        from neurospatial.transforms import translate
+
+        transform = translate(5, 5)
+
+        transformed = small_2d_env.apply_transform(transform, name="rotated_env")
+
+        assert transformed.name == "rotated_env"
+
+    def test_apply_transform_default_name(self, medium_2d_env: Environment) -> None:
+        """Test that default name appends '_transformed'."""
+        from neurospatial.transforms import translate
+
+        # Set original name
+        medium_2d_env.name = "OriginalEnv"
+
+        transform = translate(5, 5)
+        transformed = medium_2d_env.apply_transform(transform)
+
+        assert "transformed" in transformed.name.lower()
+
+    def test_apply_transform_preserves_units(self, medium_2d_env: Environment) -> None:
+        """Test that units metadata is preserved."""
+        # Create isolated copy to avoid mutating fixture
+        import copy
+
+        env_copy = copy.copy(medium_2d_env)
+        env_copy.units = "cm"
+
+        from neurospatial.transforms import translate
+
+        transform = translate(5, 5)
+        transformed = env_copy.apply_transform(transform)
+
+        assert transformed.units == "cm"
+
+    def test_apply_transform_updates_frame(self, medium_2d_env: Environment) -> None:
+        """Test that frame is updated with '_transformed' suffix."""
+        # Create isolated copy
+        import copy
+
+        env_copy = copy.copy(medium_2d_env)
+        env_copy.frame = "session1"
+
+        from neurospatial.transforms import translate
+
+        transform = translate(5, 5)
+        transformed = env_copy.apply_transform(transform)
+
+        assert "transformed" in transformed.frame
+
+    def test_apply_transform_with_regions(self, medium_2d_env: Environment) -> None:
+        """Test that regions are transformed along with environment."""
+        # Create isolated copy
+        import copy
+
+        env_copy = copy.copy(medium_2d_env)
+        env_copy.regions = Regions()  # Fresh regions
+
+        # Add a point region
+        env_copy.regions.add("goal", point=np.array([10.0, 20.0]))
+
+        from neurospatial.transforms import translate
+
+        # Translate by (5, 10)
+        transform = translate(5, 10)
+        transformed = env_copy.apply_transform(transform)
+
+        # Region should exist and be transformed
+        assert "goal" in transformed.regions
+
+        # Point should be translated
+        region_data = transformed.regions["goal"].data
+        expected_point = np.array([15.0, 30.0])
+        assert_allclose(region_data, expected_point, atol=1e-10)
+
+    def test_apply_transform_with_polygon_region(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """Test that polygon regions are transformed."""
+        # Create isolated copy
+        import copy
+
+        from shapely.geometry import box
+
+        env_copy = copy.copy(medium_2d_env)
+        env_copy.regions = Regions()  # Fresh regions
+
+        # Add a polygon region
+        poly = box(0, 0, 10, 10)
+        env_copy.regions.add("area", polygon=poly)
+
+        from neurospatial.transforms import translate
+
+        # Translate by (5, 5)
+        transform = translate(5, 5)
+        transformed = env_copy.apply_transform(transform)
+
+        # Region should exist
+        assert "area" in transformed.regions
+
+        # Polygon should be transformed
+        transformed_poly = transformed.regions["area"].data
+        assert transformed_poly is not None
+
+        # Check that bounds are translated
+        orig_bounds = poly.bounds  # (minx, miny, maxx, maxy)
+        new_bounds = transformed_poly.bounds
+
+        assert_allclose(
+            new_bounds,
+            [
+                orig_bounds[0] + 5,
+                orig_bounds[1] + 5,
+                orig_bounds[2] + 5,
+                orig_bounds[3] + 5,
+            ],
+            atol=1e-10,
+        )
+
+    def test_apply_transform_dimension_mismatch_raises_error(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """Test that dimension mismatch raises ValueError."""
+        from neurospatial.transforms import translate_3d
+
+        # Try to apply 3D transform to 2D environment
+        transform_3d = translate_3d(10, 20, 30)
+
+        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+            medium_2d_env.apply_transform(transform_3d)
+
+    def test_apply_transform_unfitted_env_raises_error(
+        self, small_2d_env: Environment
+    ) -> None:
+        """Test that applying transform to unfitted environment raises error."""
+        from neurospatial.transforms import translate
+
+        # Create a fitted environment and then mark it as unfitted
+        # (simulates an environment that hasn't been properly initialized)
+        env = small_2d_env
+        env._is_fitted = False
+
+        transform = translate(5, 5)
+
+        with pytest.raises(RuntimeError, match="must be fitted"):
+            env.apply_transform(transform)
