@@ -439,6 +439,22 @@ Environments can be 1D (linearized tracks) or N-D (grids):
 
 Check `env.is_1d` before calling linearization methods.
 
+### Methods vs Free Functions
+
+**When to use Environment methods vs module-level functions:**
+
+- **Methods on Environment** answer questions about that environment or perform local transforms.
+  - Examples: `env.bin_at()`, `env.neighbors()`, `env.distance_between()`, `env.rebin()`
+  - Use when: Working with a single environment's structure and properties
+
+- **Free functions** take environments/graphs/fields as input and perform higher-level analysis (neural metrics, segmentation, alignment).
+  - Examples: `distance_field()`, `map_points_to_bins()`, `estimate_transform()`, `compute_place_field()`
+  - Use when: Cross-environment operations, neural/behavioral analysis, or batch processing
+
+**If you're unsure:** Start from the object you have (Environment, field array, graph) and use autocomplete. If it's about cross-environment, neural, or behavioral analysis, look under the free functions in `neurospatial.__init__`.
+
+**Design principle:** This separation keeps the `Environment` class focused on spatial structure while providing specialized functions for domain-specific analyses (neuroscience, navigation, etc.).
+
 ## Development Commands
 
 **IMPORTANT: All commands below MUST be prefixed with `uv run` to ensure they execute in the correct virtual environment. Run all commands from the project root directory.**
