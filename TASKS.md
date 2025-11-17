@@ -313,6 +313,18 @@ Breaking changes to module-level function names.
 - [ ] `src/neurospatial/__init__.py` module docstring
 - [ ] README.md if present
 
+**Notebooks**:
+
+- [ ] Use `jupyter-notebook-editor` skill to update all notebooks
+  - Search for `compute_place_field` calls in notebooks
+  - Replace with `place_field` using the skill's systematic approach
+  - Update both code cells and markdown documentation
+- [ ] Verify notebooks are valid JSON after updates:
+
+  ```bash
+  for nb in *.ipynb; do python3 -c "import json; json.load(open('$nb'))"; done
+  ```
+
 **Verification**:
 
 ```bash
@@ -347,6 +359,14 @@ uv run python -c "from neurospatial import place_field; print(place_field.__name
 - [ ] CLAUDE.md
 - [ ] Alignment module docstring
 
+**Notebooks**:
+
+- [ ] Use `jupyter-notebook-editor` skill to update all notebooks
+  - Search for `map_probabilities_to_nearest_target_bin` calls in notebooks
+  - Replace with `map_probabilities` using the skill's systematic approach
+  - Update both code cells and markdown documentation
+- [ ] Verify notebooks are valid JSON after updates
+
 **Verification**:
 
 ```bash
@@ -376,6 +396,14 @@ uv run python -c "from neurospatial import map_probabilities; print(map_probabil
 **Documentation**:
 
 - [ ] Update CLAUDE.md if mentioned
+
+**Notebooks**:
+
+- [ ] Use `jupyter-notebook-editor` skill to update all notebooks
+  - Search for `compute_diffusion_kernels` calls in notebooks
+  - Replace with `diffusion_kernels` using the skill's systematic approach
+  - Update both code cells and markdown documentation
+- [ ] Verify notebooks are valid JSON after updates
 
 **Verification**:
 
@@ -423,6 +451,14 @@ uv run python -c "from neurospatial import diffusion_kernels; print(diffusion_ke
 rg "^def compute_" src/neurospatial/
 rg "^    compute_.*=" src/neurospatial/  # Assignments too
 ```
+
+**Notebooks**:
+
+- [ ] Use `jupyter-notebook-editor` skill to update all notebooks
+  - Search for any `compute_*` metric function calls in notebooks (e.g., `compute_home_range`, `compute_step_lengths`, etc.)
+  - Replace with shortened names using the skill's systematic approach
+  - Update both code cells and markdown documentation
+- [ ] Verify notebooks are valid JSON after updates
 
 **Verification**:
 
