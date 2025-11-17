@@ -52,3 +52,58 @@
 - `TASKS.md` (marked task 1.1 complete)
 
 **Ready for next task**: Milestone 1.2 - Add `env.region_mask()` method
+
+---
+
+### 2025-11-16: Milestone 1.2 - COMPLETED ✅
+
+**Task**: Add `env.region_mask()` method with full feature parity to `regions_to_mask()` function
+
+**Status**: ✅ COMPLETE
+
+**What was accomplished**:
+
+1. **Added `region_mask()` method** ([regions.py:401-539](src/neurospatial/environment/regions.py#L401-L539)):
+   - Method signature: `region_mask(self, regions: str | list[str] | object, *, include_boundary: bool = True) -> NDArray[np.bool_]`
+   - Accepts single region name, multiple region names, Region object, or Regions container
+   - `include_boundary` parameter for boundary semantics (True=covers, False=contains)
+   - Clean delegation pattern to `regions_to_mask()` free function
+   - Proper mypy compatibility using `cast("Environment", self)`
+   - Comprehensive NumPy-style docstring with 7 usage examples
+
+2. **Comprehensive test suite** ([test_region_mask_method.py](tests/environment/test_region_mask_method.py)):
+   - 21 new tests covering all scenarios
+   - All tests pass ✅
+   - Test classes:
+     - TestRegionMaskBasic (5 tests) - single/multiple names, Region, Regions
+     - TestRegionMaskBoundary (3 tests) - include_boundary behavior
+     - TestRegionMaskEdgeCases (4 tests) - empty, outside, point regions
+     - TestRegionMaskInputValidation (4 tests) - error handling
+     - TestRegionMaskFeatureParity (5 tests) - matches `regions_to_mask()` exactly
+
+3. **Fixed pre-existing test pollution bug**:
+   - Fixed `test_info_shows_regions_count` in [test_info.py:77-93](tests/environment/test_info.py#L77-L93)
+   - Test was modifying session-scoped `grid_env_from_samples` fixture
+   - Changed to create own environment instead
+   - All 23 info tests now pass
+
+4. **Quality checks**:
+   - ✅ All 21 new tests pass
+   - ✅ No regressions (all existing tests pass)
+   - ✅ Ruff linter passes (auto-fixed cast to string form)
+   - ✅ Mypy type checker passes
+   - ✅ Code reviewer APPROVED with no critical issues
+
+**Files modified**:
+- `src/neurospatial/environment/regions.py` (added region_mask method, updated class docstring)
+- `tests/environment/test_region_mask_method.py` (new file, 349 lines, 21 tests)
+- `tests/environment/test_info.py` (fixed test pollution bug)
+
+**Code reviewer highlights**:
+- "Outstanding NumPy-style docstring"
+- "Comprehensive test suite"
+- "Excellent delegation pattern"
+- "No changes required before merge"
+- "Production-ready code"
+
+**Ready for next task**: Milestone 1.3 - Add `env.apply_transform()` method

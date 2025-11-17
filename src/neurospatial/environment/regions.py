@@ -37,6 +37,10 @@ class EnvironmentRegions:
         Get active bin indices that fall within a specified named region.
     mask_for_region(region_name)
         Get a boolean mask over active bins indicating membership in a region.
+    region_mask(regions, *, include_boundary=True)
+        Get boolean mask for one or more regions (accepts names, Region, or Regions).
+    region_membership(regions=None, *, include_boundary=True)
+        Check which bins belong to which regions (returns 2D array).
 
     Notes
     -----
@@ -397,3 +401,139 @@ class EnvironmentRegions:
                 membership[:, region_idx] = mask
 
         return membership
+
+    @check_fitted
+    def region_mask(
+        self: SelfEnv,
+        regions: str | list[str] | object,  # Will be Region | Regions after import
+        *,
+        include_boundary: bool = True,
+    ) -> NDArray[np.bool_]:
+        """Get boolean mask over bins for one or more regions.
+
+        This method provides a convenient interface to rasterize continuous regions
+        onto discrete environment bins. It accepts multiple input types and returns
+        a boolean mask indicating which bins fall within the region(s).
+
+        This is the method-based interface to the `regions_to_mask()` free function,
+        providing better discoverability and ergonomics when working with a single
+        environment.
+
+        Parameters
+        ----------
+        regions : str, list[str], Region, or Regions
+            Region(s) to rasterize. Can be:
+            - A single region name (str) from self.regions
+            - A list of region names (list[str]) from self.regions
+            - A single Region object
+            - A Regions collection
+        include_boundary : bool, default=True
+            Whether to include bins whose centers lie on region boundaries:
+            - True: Include boundary bins (uses shapely.covers)
+            - False: Exclude boundary bins (uses shapely.contains)
+
+        Returns
+        -------
+        mask : NDArray[np.bool_], shape (n_bins,)
+            Boolean mask where True indicates bin center is inside region(s).
+            For multiple regions, returns the union (logical OR).
+            Point regions always return all False (points have no area).
+
+        Raises
+        ------
+        KeyError
+            If a region name is not found in self.regions.
+        TypeError
+            If regions parameter has invalid type or include_boundary is not bool.
+
+        Notes
+        -----
+        **Region Types**:
+        - Polygon regions: Rasterized using Shapely containment checks
+        - Point regions: Always return all False (points have no area)
+
+        **Multiple Regions**:
+
+        When multiple regions are provided, the result is their **union** (logical OR).
+        Bins are included if they fall inside ANY of the regions. Overlapping
+        regions are counted only once.
+
+        For intersection or difference, use boolean operations on separate masks:
+
+        >>> left_mask = env.region_mask("left")  # doctest: +SKIP
+        >>> right_mask = env.region_mask("right")  # doctest: +SKIP
+        >>> intersection = left_mask & right_mask  # doctest: +SKIP
+        >>> difference = left_mask & ~right_mask  # doctest: +SKIP
+
+        **Boundary Semantics**:
+
+        - include_boundary=True: Uses shapely.covers (includes boundary)
+        - include_boundary=False: Uses shapely.contains (excludes boundary)
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment
+
+        Create environment with regions:
+
+        >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
+        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> env.regions.add("center", polygon=box(3, 3, 7, 7))
+        >>> env.regions.add("left", polygon=box(0, 0, 4, 10))
+        >>> env.regions.add("right", polygon=box(6, 0, 10, 10))
+
+        Single region by name:
+
+        >>> mask = env.region_mask("center")
+        >>> mask.shape
+        (36,)
+        >>> mask.dtype
+        dtype('bool')
+
+        Multiple regions (union):
+
+        >>> mask = env.region_mask(["left", "right"])
+        >>> np.any(mask)
+        True
+
+        All regions in environment:
+
+        >>> mask = env.region_mask(env.regions)
+        >>> mask.shape
+        (36,)
+
+        Exclude boundary bins:
+
+        >>> mask_no_boundary = env.region_mask("center", include_boundary=False)
+        >>> mask_with_boundary = env.region_mask("center", include_boundary=True)
+        >>> bool(mask_no_boundary.sum() <= mask_with_boundary.sum())
+        True
+
+        Use with external Region object:
+
+        >>> from neurospatial.regions import Region
+        >>> external_region = Region(name="ext", kind="polygon", data=box(4, 4, 6, 6))
+        >>> mask = env.region_mask(external_region)
+        >>> mask.shape
+        (36,)
+
+        See Also
+        --------
+        region_membership : 2D membership array for all regions
+        bins_in_region : Get bin indices for a specific region
+        mask_for_region : Get boolean mask for a single region name
+        neurospatial.spatial.regions_to_mask : Free function version
+
+        """
+        # Import here to avoid circular dependency
+        from typing import cast
+
+        from neurospatial.environment.core import Environment
+        from neurospatial.spatial import regions_to_mask
+
+        # Delegate to the free function (cast for mypy compatibility)
+        return regions_to_mask(
+            cast("Environment", self), regions, include_boundary=include_boundary
+        )

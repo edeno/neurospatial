@@ -71,12 +71,12 @@ uv run python -c "from neurospatial import clear_kdtree_cache" 2>&1 | grep "Impo
 
 ---
 
-### 1.2 Add `env.region_mask()` method
+### 1.2 Add `env.region_mask()` method ✅ COMPLETE
 
 **Priority**: P1 - Convenience method, improves discoverability
 
 **Files to modify**:
-- [ ] `src/neurospatial/environment/regions.py` (EnvironmentRegions mixin)
+- [x] `src/neurospatial/environment/regions.py` (EnvironmentRegions mixin)
   - Add `region_mask(self, regions: str | list[str] | Region | Regions, *, include_boundary: bool = True) -> NDArray[np.bool_]` method
   - Accepts:
     - Single region name (str)
@@ -86,10 +86,11 @@ uv run python -c "from neurospatial import clear_kdtree_cache" 2>&1 | grep "Impo
   - Returns boolean mask of shape (n_bins,)
   - `include_boundary` parameter matches `regions_to_mask` behavior
   - Add NumPy-style docstring with multiple examples
-- [ ] Update `__all__` if needed
+- [x] Update `__all__` if needed (not needed - method on Environment)
 
 **Tests**:
-- [ ] `tests/environment/test_regions.py` or add to existing regions tests
+
+- [x] `tests/environment/test_region_mask_method.py` (new file)
   - Test `env.region_mask('goal')` with single region name
   - Test `env.region_mask(['left', 'right'])` with multiple region names
   - Test `env.region_mask(env.regions['goal'])` with Region object
@@ -97,11 +98,12 @@ uv run python -c "from neurospatial import clear_kdtree_cache" 2>&1 | grep "Impo
   - Test `include_boundary=False` parameter
   - Test error on nonexistent region name
   - Test with point regions and polygon regions
+  - Test feature parity with `regions_to_mask()` function (5 tests)
 
 **Documentation**:
-- [ ] Add comprehensive examples to Environment.region_mask() docstring
-- [ ] Show single region, multiple regions, and boundary parameter usage
-- [ ] Note relationship to `regions_to_mask()` free function
+- [x] Add comprehensive examples to Environment.region_mask() docstring
+- [x] Show single region, multiple regions, and boundary parameter usage
+- [x] Note relationship to `regions_to_mask()` free function
 
 **Verification**:
 ```python
@@ -121,6 +123,15 @@ assert mask.sum() >= 2  # At least the two bins
 # All regions
 mask = env.region_mask(env.regions)
 ```
+
+**Results**:
+
+- ✅ All 21 tests pass
+- ✅ Feature parity confirmed with `regions_to_mask()`
+- ✅ Ruff passes
+- ✅ Mypy passes
+- ✅ Code reviewer: APPROVED
+- ✅ Fixed pre-existing test pollution bug in test_info.py
 
 ---
 

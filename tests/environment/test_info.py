@@ -74,17 +74,21 @@ class TestEnvironmentInfo:
         # Should mention bin size
         assert "bin size" in result.lower() or "bin_size" in result.lower()
 
-    def test_info_shows_regions_count(self, grid_env_from_samples):
+    def test_info_shows_regions_count(self):
         """info() should show region count."""
+        # Create own environment instead of modifying shared fixture
+        data = np.random.rand(100, 2) * 10
+        env = Environment.from_samples(data, bin_size=2.0)
+
         # Start with no regions
-        result = grid_env_from_samples.info()
+        result = env.info()
         assert "region" in result.lower()
 
         # Add a region
         from shapely.geometry import Point
 
-        grid_env_from_samples.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
-        result_with_region = grid_env_from_samples.info()
+        env.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        result_with_region = env.info()
         assert "region" in result_with_region.lower()
         assert "1" in result_with_region or "TestRegion" in result_with_region
 
