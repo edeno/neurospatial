@@ -239,8 +239,10 @@ module = [
     "cv2.*",
     "shapely.*",
     "matplotlib.*",
+    "mpl_toolkits.*",
     "networkx.*",
     "pandas.*",
+    "tqdm.*",
     "track_linearization.*",
 ]
 ignore_missing_imports = true
