@@ -1091,27 +1091,53 @@ class Environment(
 
         return env_copy
 
-    def _clear_explicit_caches(self) -> None:
+    def _clear_explicit_caches(
+        self, *, kdtree: bool = True, kernels: bool = True
+    ) -> None:
         """Internal method to clear explicit caches (KDTree, kernels).
 
         This is called by clear_cache() and copy().
+
+        Parameters
+        ----------
+        kdtree : bool, default=True
+            Whether to clear the KDTree cache.
+        kernels : bool, default=True
+            Whether to clear the kernel cache.
         """
-        self._kdtree_cache = None
-        self._kernel_cache = {}
+        if kdtree:
+            self._kdtree_cache = None
+        if kernels:
+            self._kernel_cache = {}
 
-    def clear_cache(self) -> None:
-        """Clear all caches including explicit caches and cached properties.
+    def clear_cache(
+        self,
+        *,
+        kdtree: bool = True,
+        kernels: bool = True,
+        cached_properties: bool = True,
+    ) -> None:
+        """Clear caches with optional selective clearing.
 
-        This method clears both explicit caches (KDTree, kernels) and all
-        @cached_property values.
+        This method clears explicit caches (KDTree, kernels) and/or
+        @cached_property values. By default, all caches are cleared.
 
-        Caches cleared
-        --------------
-        **Explicit caches**:
+        Parameters
+        ----------
+        kdtree : bool, default=True
+            Whether to clear the KDTree cache used by map_points_to_bins().
+        kernels : bool, default=True
+            Whether to clear the kernel cache used by smooth() and occupancy().
+        cached_properties : bool, default=True
+            Whether to clear all @cached_property values.
+
+        Caches available for clearing
+        ------------------------------
+        **Explicit caches** (kdtree, kernels):
             - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
             - Kernel cache (_kernel_cache): Used by smooth() and occupancy()
 
-        **Cached properties**:
+        **Cached properties** (cached_properties):
             - differential_operator: Graph differential operator matrix
             - boundary_bins: Bins on environment boundary
             - bin_sizes: Area/volume of each bin
@@ -1127,6 +1153,7 @@ class Environment(
         - **Memory management**: Free memory after intensive computations
         - **Testing**: Ensure clean state between test runs
         - **Profiling**: Measure cache rebuild performance
+        - **Selective clearing**: Clear only specific cache types
         - **Manual modifications**: Clear stale caches if environment was
           modified (not recommended - create new Environment instead)
 
@@ -1139,10 +1166,11 @@ class Environment(
         See Also
         --------
         copy : Create environment copy (also clears caches)
-        neurospatial.spatial.clear_kdtree_cache : Clear only KDTree cache
 
         Examples
         --------
+        Clear all caches (default behavior):
+
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> data = np.random.rand(1000, 2) * 100
@@ -1157,30 +1185,42 @@ class Environment(
         >>>
         >>> # Properties will be recomputed on next access
         >>> _ = env.differential_operator  # Triggers recomputation
+
+        Clear only specific cache types:
+
+        >>> # Clear only KDTree cache (keep kernels and cached properties)
+        >>> env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+        >>>
+        >>> # Clear only cached properties (keep KDTree and kernels)
+        >>> env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        >>>
+        >>> # Clear KDTree and kernels, keep cached properties
+        >>> env.clear_cache(kdtree=True, kernels=True, cached_properties=False)
         """
-        # Clear explicit caches (KDTree, kernels)
-        self._clear_explicit_caches()
+        # Clear explicit caches (KDTree, kernels) selectively
+        self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
 
-        # Clear @cached_property values from instance __dict__
-        # IMPORTANT: When adding new @cached_property methods to Environment or its mixins,
-        # you MUST add them to this list to ensure they're cleared by clear_cache().
-        # Current @cached_property methods across all mixins:
-        #   - core.py: differential_operator, _source_flat_to_active_node_id_map
-        #   - queries.py: bin_sizes
-        #   - metrics.py: boundary_bins, bin_attributes, edge_attributes, linearization_properties
-        cached_properties = [
-            # core.py
-            "differential_operator",
-            "_source_flat_to_active_node_id_map",
-            # queries.py
-            "bin_sizes",
-            # metrics.py
-            "boundary_bins",
-            "bin_attributes",
-            "edge_attributes",
-            "linearization_properties",
-        ]
+        # Clear @cached_property values from instance __dict__ if requested
+        if cached_properties:
+            # IMPORTANT: When adding new @cached_property methods to Environment or its mixins,
+            # you MUST add them to this list to ensure they're cleared by clear_cache().
+            # Current @cached_property methods across all mixins:
+            #   - core.py: differential_operator, _source_flat_to_active_node_id_map
+            #   - queries.py: bin_sizes
+            #   - metrics.py: boundary_bins, bin_attributes, edge_attributes, linearization_properties
+            cached_property_names = [
+                # core.py
+                "differential_operator",
+                "_source_flat_to_active_node_id_map",
+                # queries.py
+                "bin_sizes",
+                # metrics.py
+                "boundary_bins",
+                "bin_attributes",
+                "edge_attributes",
+                "linearization_properties",
+            ]
 
-        for prop_name in cached_properties:
-            # Remove from __dict__ if present (cached_property stores value here)
-            self.__dict__.pop(prop_name, None)
+            for prop_name in cached_property_names:
+                # Remove from __dict__ if present (cached_property stores value here)
+                self.__dict__.pop(prop_name, None)

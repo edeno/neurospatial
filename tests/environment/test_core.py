@@ -1416,17 +1416,3 @@ class TestCacheManagement:
 
         # Verify cleared
         assert "linearization_properties" not in simple_graph_env.__dict__
-
-    def test_clear_kdtree_cache_still_works(self, grid_env_from_samples):
-        """Test that standalone clear_kdtree_cache() function still works."""
-        from neurospatial.spatial import clear_kdtree_cache, map_points_to_bins
-
-        # Create cache
-        map_points_to_bins(np.array([[5.0, 5.0]]), grid_env_from_samples)
-        assert grid_env_from_samples._kdtree_cache is not None
-
-        # Use standalone function
-        clear_kdtree_cache(grid_env_from_samples)
-
-        # Should be cleared
-        assert grid_env_from_samples._kdtree_cache is None

@@ -5,11 +5,8 @@ Start now by reading the files and telling me which task you'll work on first.
 Your workflow MUST be:
 
     First, read these files IN ORDER:
-        CLAUDE.md (implementation guide)
         SCRATCHPAD.md (notes and current status)
         TASKS.md (current tasks)
-        PLAN.md (overall project plan for specific context)
-        COMPREHENSIVE_CODE_REVIEW.md (to understand existing code quality)
 
     Find the FIRST unchecked [ ] task in TASKS.md
 

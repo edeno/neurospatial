@@ -39,16 +39,6 @@ class TestTopLevelImports:
         assert Region is not None
         assert Regions is not None
 
-    def test_spatial_utilities_import(self):
-        """Test that spatial utility functions can be imported from top level.
-
-        These are documented in CLAUDE.md §13 (Import Patterns):
-        from neurospatial import clear_kdtree_cache
-        """
-        from neurospatial import clear_kdtree_cache
-
-        assert clear_kdtree_cache is not None
-
     def test_public_api_functions_import(self):
         """Test that public API functions can be imported from top level.
 
@@ -91,7 +81,6 @@ class TestTopLevelImports:
             Region,
             Regions,
             apply_transform_to_environment,
-            clear_kdtree_cache,
             distance_field,
             estimate_transform,
             from_dict,
@@ -119,7 +108,6 @@ class TestTopLevelImports:
             distance_field,
             pairwise_distances,
             validate_environment,
-            clear_kdtree_cache,
         ]
 
         for imported in imports:
@@ -160,7 +148,6 @@ class TestDunderAll:
             "from_file",
             "to_dict",
             "from_dict",
-            "clear_kdtree_cache",
             "validate_environment",
             "map_points_to_bins",
             "estimate_transform",

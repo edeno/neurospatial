@@ -105,22 +105,22 @@ env._kdtree_cache = None
 
 ```python
 from neurospatial import map_points_to_bins
-from neurospatial.spatial import clear_kdtree_cache
 
-# Uses global cache
+# Uses cached KDTree
 bin_indices = map_points_to_bins(points, env)
 
-# Clear global cache (affects all environments)
-clear_kdtree_cache()
+# Clear only KDTree cache (selective clearing)
+env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
-# Or clear specific environment from cache
-clear_kdtree_cache(env)
+# Or clear all caches
+env.clear_cache()
 ```
 
 **When to clear**:
 - When processing many different environments sequentially
 - Before long-running processes to free memory
 - After environment modifications (rare - environments are immutable)
+- Use selective clearing to preserve specific caches
 
 ---
 

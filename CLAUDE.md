@@ -226,8 +226,9 @@ from neurospatial import (
 # Serialization (v0.1.0+)
 from neurospatial.io import to_file, from_file, to_dict, from_dict
 
-# Spatial utilities (v0.1.0+)
-from neurospatial.spatial import clear_kdtree_cache
+# Cache management (v0.3.0+)
+# Use env.clear_cache() for all cache clearing operations
+# Example: env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 
 # Layout engines and factories
 from neurospatial.layout.factories import create_layout, list_available_layouts

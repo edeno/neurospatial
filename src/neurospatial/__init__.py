@@ -85,7 +85,6 @@ I/O and Serialization:
 
 Validation and Utilities:
     validate_environment : Validate environment structure
-    clear_kdtree_cache : Clear KDTree cache for memory management
     list_available_layouts : List all available layout types
     get_layout_parameters : Get parameters for layout type
 
@@ -230,7 +229,6 @@ from neurospatial.segmentation import (
 )
 from neurospatial.spatial import (
     TieBreakStrategy,
-    clear_kdtree_cache,
     map_points_to_bins,
     regions_to_mask,
     resample_field,
@@ -275,7 +273,6 @@ __all__ = [
     # Spatial operations and queries
     "apply_kernel",
     "apply_transform_to_environment",
-    "clear_kdtree_cache",
     "clamp",
     "combine_fields",
     "compute_diffusion_kernels",

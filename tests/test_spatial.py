@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.spatial import clear_kdtree_cache, map_points_to_bins
+from neurospatial.spatial import map_points_to_bins
 
 
 class TestMapPointsToBins:
@@ -80,13 +80,14 @@ class TestMapPointsToBins:
         assert grid_env._kdtree_cache is not None
 
     def test_clear_kdtree_cache(self, grid_env):
-        """Test clearing KD-tree cache."""
+        """Test clearing KD-tree cache using env.clear_cache()."""
         points = np.array([[5.0, 5.0]])
         map_points_to_bins(points, grid_env)
 
         assert grid_env._kdtree_cache is not None
 
-        clear_kdtree_cache(grid_env)
+        # Use env.clear_cache() with selective clearing
+        grid_env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
         assert grid_env._kdtree_cache is None
 
     def test_out_of_bounds_points(self, grid_env):
@@ -116,3 +117,200 @@ class TestMapPointsToBins:
 
         assert bins.shape == (1,)
         assert bins[0] >= 0
+
+
+class TestEnvironmentClearCache:
+    """Test Environment.clear_cache() method with selective clearing."""
+
+    @pytest.fixture
+    def env_with_caches(self):
+        """Create environment and populate various caches."""
+        np.random.seed(42)
+        data = np.random.rand(100, 2) * 100
+        env = Environment.from_samples(data, bin_size=5.0)
+
+        # Populate KDTree cache
+        points = np.array([[50.0, 50.0]])
+        map_points_to_bins(points, env)
+
+        # Populate kernel cache
+        _ = env.compute_kernel(bandwidth=10.0)
+
+        # Populate cached properties
+        _ = env.differential_operator
+        _ = env.boundary_bins
+        _ = env.bin_sizes
+
+        return env
+
+    def test_clear_cache_clears_all_by_default(self, env_with_caches):
+        """Test that clear_cache() with no args clears all caches."""
+        env = env_with_caches
+
+        # Verify caches exist
+        assert hasattr(env, "_kdtree_cache") and env._kdtree_cache is not None
+        assert len(env._kernel_cache) > 0
+        assert "differential_operator" in env.__dict__
+        assert "boundary_bins" in env.__dict__
+
+        # Clear all caches
+        env.clear_cache()
+
+        # Verify all caches cleared
+        assert env._kdtree_cache is None
+        assert len(env._kernel_cache) == 0
+        assert "differential_operator" not in env.__dict__
+        assert "boundary_bins" not in env.__dict__
+
+    def test_clear_cache_kdtree_only(self, env_with_caches):
+        """Test selective clearing of KDTree cache only."""
+        env = env_with_caches
+
+        # Verify caches exist
+        assert env._kdtree_cache is not None
+        assert len(env._kernel_cache) > 0
+        assert "differential_operator" in env.__dict__
+
+        # Clear only KDTree cache
+        env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+
+        # Verify only KDTree cache cleared
+        assert env._kdtree_cache is None
+        assert len(env._kernel_cache) > 0  # Should still exist
+        assert "differential_operator" in env.__dict__  # Should still exist
+
+    def test_clear_cache_kernels_only(self, env_with_caches):
+        """Test selective clearing of kernel cache only."""
+        env = env_with_caches
+
+        # Verify caches exist
+        assert env._kdtree_cache is not None
+        assert len(env._kernel_cache) > 0
+        assert "differential_operator" in env.__dict__
+
+        # Clear only kernel cache
+        env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+
+        # Verify only kernel cache cleared
+        assert env._kdtree_cache is not None  # Should still exist
+        assert len(env._kernel_cache) == 0  # Should be cleared
+        assert "differential_operator" in env.__dict__  # Should still exist
+
+    def test_clear_cache_cached_properties_only(self, env_with_caches):
+        """Test selective clearing of cached properties only."""
+        env = env_with_caches
+
+        # Verify caches exist
+        assert env._kdtree_cache is not None
+        assert len(env._kernel_cache) > 0
+        assert "differential_operator" in env.__dict__
+        assert "boundary_bins" in env.__dict__
+
+        # Clear only cached properties
+        env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+
+        # Verify only cached properties cleared
+        assert env._kdtree_cache is not None  # Should still exist
+        assert len(env._kernel_cache) > 0  # Should still exist
+        assert "differential_operator" not in env.__dict__  # Should be cleared
+        assert "boundary_bins" not in env.__dict__  # Should be cleared
+
+    def test_clear_cache_multiple_selective(self, env_with_caches):
+        """Test clearing multiple cache types selectively."""
+        env = env_with_caches
+
+        # Clear KDTree and kernels, keep cached properties
+        env.clear_cache(kdtree=True, kernels=True, cached_properties=False)
+
+        # Verify correct caches cleared
+        assert env._kdtree_cache is None
+        assert len(env._kernel_cache) == 0
+        assert "differential_operator" in env.__dict__  # Should still exist
+
+    def test_clear_cache_none_selected(self, env_with_caches):
+        """Test that clear_cache() with all False doesn't clear anything."""
+        env = env_with_caches
+
+        # Store initial state
+        kdtree_before = env._kdtree_cache
+        kernel_count_before = len(env._kernel_cache)
+        has_diff_op_before = "differential_operator" in env.__dict__
+
+        # Clear nothing
+        env.clear_cache(kdtree=False, kernels=False, cached_properties=False)
+
+        # Verify nothing changed
+        assert env._kdtree_cache is kdtree_before
+        assert len(env._kernel_cache) == kernel_count_before
+        assert ("differential_operator" in env.__dict__) == has_diff_op_before
+
+    def test_clear_cache_multiple_calls(self, env_with_caches):
+        """Test that multiple clear_cache() calls work correctly."""
+        env = env_with_caches
+
+        # First clear: kdtree only
+        env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+        assert env._kdtree_cache is None
+        assert len(env._kernel_cache) > 0
+
+        # Second clear: kernels only
+        env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+        assert env._kdtree_cache is None  # Still None
+        assert len(env._kernel_cache) == 0  # Now cleared
+
+        # Third clear: cached properties
+        env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        assert "differential_operator" not in env.__dict__
+
+    def test_clear_cache_on_fresh_environment(self):
+        """Test clear_cache() on environment with no caches populated."""
+        data = np.random.rand(50, 2) * 50
+        env = Environment.from_samples(data, bin_size=5.0)
+
+        # Should not raise error on fresh environment
+        env.clear_cache()
+
+        # Verify state is clean
+        assert not hasattr(env, "_kdtree_cache") or env._kdtree_cache is None
+        assert len(env._kernel_cache) == 0
+
+    def test_clear_cache_recomputes_cached_properties(self, env_with_caches):
+        """Test that cached properties are recomputed after clearing."""
+        env = env_with_caches
+
+        # Get values before clearing
+        diff_op_before = env.differential_operator
+        boundary_before = env.boundary_bins.copy()
+
+        # Clear cached properties
+        env.clear_cache(cached_properties=True)
+        assert "differential_operator" not in env.__dict__
+
+        # Access should recompute
+        diff_op_after = env.differential_operator
+        boundary_after = env.boundary_bins
+
+        # Values should be the same (recomputed correctly)
+        assert np.array_equal(diff_op_before.toarray(), diff_op_after.toarray())
+        assert np.array_equal(boundary_before, boundary_after)
+
+    def test_clear_cache_different_environments_independent(self):
+        """Test that clearing cache on one environment doesn't affect another."""
+        data1 = np.random.rand(50, 2) * 50
+        env1 = Environment.from_samples(data1, bin_size=5.0)
+        data2 = np.random.rand(50, 2) * 50
+        env2 = Environment.from_samples(data2, bin_size=5.0)
+
+        # Populate caches on both
+        map_points_to_bins(np.array([[25.0, 25.0]]), env1)
+        map_points_to_bins(np.array([[25.0, 25.0]]), env2)
+
+        assert env1._kdtree_cache is not None
+        assert env2._kdtree_cache is not None
+
+        # Clear only env1
+        env1.clear_cache()
+
+        # env1 should be cleared, env2 should still have cache
+        assert env1._kdtree_cache is None
+        assert env2._kdtree_cache is not None
