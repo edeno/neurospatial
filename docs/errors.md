@@ -115,7 +115,7 @@ if nan_count > 0:
 
 **See Also:**
 - [Environment.from_samples() documentation](../api/environment/#neurospatial.environment.Environment.from_samples)
-- [Quickstart Guide](../getting-started/quickstart.md)
+- [Quickstart Guide](getting-started/quickstart.md)
 
 ---
 
@@ -260,7 +260,7 @@ composite_3d = CompositeEnvironment.from_environments(envs_3d)
 
 **See Also:**
 - [CompositeEnvironment documentation](../api/composite/#neurospatial.composite.CompositeEnvironment)
-- [3D Environment Support](../dimensionality_support.md)
+- [3D Environment Support](dimensionality_support.md)
 
 ---
 
@@ -343,7 +343,7 @@ env.bin_at([10.0, 20.0])  # Works!
 
 **See Also:**
 - [Environment Factory Methods](../api/environment/#factory-methods)
-- [Quickstart Guide](../getting-started/quickstart.md)
+- [Quickstart Guide](getting-started/quickstart.md)
 
 ---
 
@@ -420,7 +420,7 @@ This restriction is intentional and cannot be disabled. If you have a legitimate
 
 **See Also:**
 - [I/O Module Documentation](../api/io/#neurospatial.io)
-- [Environment Serialization Guide](../user-guide/workflows.md#saving-and-loading)
+- [Environment Serialization Guide](user-guide/workflows.md#saving-and-loading)
 
 ---
 
