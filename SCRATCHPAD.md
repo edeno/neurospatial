@@ -213,4 +213,14 @@
 
 **Rationale**: Method name `shortest_path()` suggested it returns distance (like NetworkX's function of same name), but actually returns path sequence. New name `path_between()` matches the actual return type and is more discoverable.
 
-**Ready for next task**: Milestone 2.2 - Rename `compute_kernel()` → `diffusion_kernel()`
+---
+
+### 2025-11-17: Milestone 2.2 - SKIPPED ⏭️
+
+**Task**: Rename `compute_kernel()` → `diffusion_kernel()`
+
+**Status**: ⏭️ SKIPPED (per user request)
+
+**Reason**: User decided to skip this milestone.
+
+**Ready for next task**: Check TASKS.md for next uncompleted milestone

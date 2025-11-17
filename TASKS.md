@@ -10,17 +10,20 @@
 This plan implements a systematic API cleanup to make neurospatial more intuitive and consistent:
 
 **Core Principles**:
+
 - **Methods = Primitives**: Environment methods answer questions about that environment or perform local transforms
 - **Free Functions = Analysis**: Module-level functions perform higher-level analysis (neural metrics, behavioral segmentation, alignment)
 - **Short, noun-oriented names**: Remove redundant `compute_` prefixes, use descriptive nouns/verbs
 
 **Key Improvements**:
+
 1. **Add missing primitive methods**: `clear_cache()`, `region_mask()`, `apply_transform()` - Currently only available as awkward free functions
 2. **Fix confusing names**: `shortest_path()` → `path_between()` (returns path, not distance), `map_probabilities_to_nearest_target_bin` → `map_probabilities()` (39 chars → 18 chars)
 3. **Systematic cleanup**: Remove generic `compute_` prefix from `compute_place_field()`, `compute_diffusion_kernels()`, and metrics functions
 4. **Type-aligned signatures**: Use proper `AffineND/Affine2D` types, expand `region_mask()` to match `regions_to_mask()` flexibility
 
 **API Design Refinements** (incorporated from review):
+
 - `clear_cache()` is canonical API; `clear_kdtree_cache()` removed from public surface
 - `region_mask()` accepts single/multiple regions and `include_boundary` parameter for full feature parity with `regions_to_mask()`
 - `apply_transform()` uses `AffineND/Affine2D` transform objects (not raw matrices) to align with existing transform API
@@ -37,6 +40,7 @@ Core primitive methods that should exist on Environment but are currently only a
 **Priority**: P0 - Currently documented in CLAUDE.md but doesn't exist
 
 **Files to modify**:
+
 - [x] `src/neurospatial/environment/core.py` or appropriate mixin
   - Add `clear_cache(self, *, kdtree: bool = True, kernels: bool = True, cached_properties: bool = True) -> None` method
   - Clear KDTree cache entries for this environment
@@ -50,6 +54,7 @@ Core primitive methods that should exist on Environment but are currently only a
   - Remove `clear_kdtree_cache` if exported
 
 **Tests**:
+
 - [x] `tests/test_spatial.py` or new `tests/environment/test_cache.py`
   - Test `env.clear_cache()` removes cached data
   - Test caching behavior before/after clear
@@ -58,11 +63,13 @@ Core primitive methods that should exist on Environment but are currently only a
 - [x] Update any tests using `clear_kdtree_cache()` to use `env.clear_cache()`
 
 **Documentation**:
+
 - [x] Update CLAUDE.md examples to use `env.clear_cache()`
 - [x] Add docstring example showing when to clear cache
 - [x] Note that `clear_kdtree_cache()` is removed in v0.3.0
 
 **Verification**:
+
 ```bash
 uv run python -c "from neurospatial import Environment; import numpy as np; env = Environment.from_samples(np.random.rand(100, 2), bin_size=1.0); env.clear_cache()"
 # Should NOT be importable:
@@ -76,6 +83,7 @@ uv run python -c "from neurospatial import clear_kdtree_cache" 2>&1 | grep "Impo
 **Priority**: P1 - Convenience method, improves discoverability
 
 **Files to modify**:
+
 - [x] `src/neurospatial/environment/regions.py` (EnvironmentRegions mixin)
   - Add `region_mask(self, regions: str | list[str] | Region | Regions, *, include_boundary: bool = True) -> NDArray[np.bool_]` method
   - Accepts:
@@ -101,11 +109,13 @@ uv run python -c "from neurospatial import clear_kdtree_cache" 2>&1 | grep "Impo
   - Test feature parity with `regions_to_mask()` function (5 tests)
 
 **Documentation**:
+
 - [x] Add comprehensive examples to Environment.region_mask() docstring
 - [x] Show single region, multiple regions, and boundary parameter usage
 - [x] Note relationship to `regions_to_mask()` free function
 
 **Verification**:
+
 ```python
 env = Environment.from_samples(positions, bin_size=2.0)
 env.regions.add('goal', point=[50, 50])
@@ -206,6 +216,7 @@ Breaking changes to method names for clarity.
 **Priority**: P0 - Current name suggests distance, not path sequence
 
 **Files to modify**:
+
 - [x] `src/neurospatial/environment/queries.py` (EnvironmentQueries mixin)
   - Rename method: `shortest_path()` → `path_between()`
   - Update docstring references
@@ -215,16 +226,19 @@ Breaking changes to method names for clarity.
 - [x] Update `__all__` exports if method is exported
 
 **Tests**:
+
 - [x] `tests/environment/test_queries.py` or similar
   - Rename all test functions: `test_shortest_path*` → `test_path_between*`
   - Update all `env.shortest_path()` calls to `env.path_between()`
 
 **Documentation**:
+
 - [x] CLAUDE.md: Update all references
 - [x] README.md: Update examples if present
 - [x] Example notebooks: Search and replace
 
 **Verification**:
+
 ```bash
 # Ensure old name doesn't exist
 uv run python -c "from neurospatial import Environment; import numpy as np; env = Environment.from_samples(np.random.rand(100, 2), bin_size=1.0); assert not hasattr(env, 'shortest_path')"
@@ -234,11 +248,13 @@ uv run python -c "from neurospatial import Environment; import numpy as np; env 
 
 ---
 
-### 2.2 Rename `compute_kernel()` → `diffusion_kernel()`
+### 2.2 Rename `compute_kernel()` → `diffusion_kernel()` ⏭️ SKIPPED
 
 **Priority**: P1 - More specific name, clearer algorithm
+**Status**: SKIPPED (per user request)
 
 **Files to modify**:
+
 - [ ] `src/neurospatial/environment/fields.py` (EnvironmentFields mixin)
   - Rename method: `compute_kernel()` → `diffusion_kernel()`
   - Update all docstring references
@@ -246,15 +262,18 @@ uv run python -c "from neurospatial import Environment; import numpy as np; env 
 - [ ] Search codebase for calls to `compute_kernel()`
 
 **Tests**:
+
 - [ ] `tests/environment/test_fields.py`
   - Rename tests: `test_compute_kernel*` → `test_diffusion_kernel*`
   - Update all method calls
 
 **Documentation**:
+
 - [ ] Update CLAUDE.md
 - [ ] Update docstring examples
 
 **Verification**:
+
 ```python
 env = Environment.from_samples(np.random.rand(100, 2) * 100, bin_size=5.0)
 kernel = env.diffusion_kernel(bandwidth=10.0)
@@ -272,6 +291,7 @@ Breaking changes to module-level function names.
 **Priority**: P0 - High visibility function, remove redundant prefix
 
 **Files to modify**:
+
 - [ ] `src/neurospatial/spike_field.py`
   - Rename function: `compute_place_field()` → `place_field()`
   - Update all docstring references
@@ -281,17 +301,20 @@ Breaking changes to module-level function names.
 - [ ] Search all files for `compute_place_field` references
 
 **Tests**:
+
 - [ ] `tests/test_spike_field.py`
   - Rename tests: `test_compute_place_field*` → `test_place_field*`
   - Update all function calls
   - Update imports
 
 **Documentation**:
+
 - [ ] CLAUDE.md: Update all examples (multiple locations)
 - [ ] `src/neurospatial/__init__.py` module docstring
 - [ ] README.md if present
 
 **Verification**:
+
 ```bash
 uv run python -c "from neurospatial import place_field; print(place_field.__name__)"
 # Should print: place_field
@@ -304,6 +327,7 @@ uv run python -c "from neurospatial import place_field; print(place_field.__name
 **Priority**: P0 - 39 character name is unusable
 
 **Files to modify**:
+
 - [ ] `src/neurospatial/alignment.py`
   - Rename function
   - Update docstring
@@ -312,16 +336,19 @@ uv run python -c "from neurospatial import place_field; print(place_field.__name
 - [ ] Search for all uses of old name
 
 **Tests**:
+
 - [ ] `tests/test_alignment.py`
   - Rename tests
   - Update all calls
   - Update imports
 
 **Documentation**:
+
 - [ ] CLAUDE.md
 - [ ] Alignment module docstring
 
 **Verification**:
+
 ```bash
 uv run python -c "from neurospatial import map_probabilities; print(map_probabilities.__name__)"
 ```
@@ -333,6 +360,7 @@ uv run python -c "from neurospatial import map_probabilities; print(map_probabil
 **Priority**: P1 - Systematic prefix removal
 
 **Files to modify**:
+
 - [ ] `src/neurospatial/kernels.py`
   - Rename function
   - Update docstring
@@ -340,14 +368,17 @@ uv run python -c "from neurospatial import map_probabilities; print(map_probabil
   - Update import and `__all__`
 
 **Tests**:
+
 - [ ] `tests/test_kernels.py`
   - Update function calls
   - Rename tests
 
 **Documentation**:
+
 - [ ] Update CLAUDE.md if mentioned
 
 **Verification**:
+
 ```bash
 uv run python -c "from neurospatial import diffusion_kernels; print(diffusion_kernels.__name__)"
 ```
@@ -361,6 +392,7 @@ uv run python -c "from neurospatial import diffusion_kernels; print(diffusion_ke
 **Rationale**: Same as `compute_place_field` → `place_field` - generic `compute_` prefix adds no information.
 
 **Files to modify**:
+
 - [ ] Search `src/neurospatial/` for additional `compute_*` functions
 - [ ] Likely candidates based on naming pattern:
   - `metrics.py`: `compute_home_range()` → `home_range()`
@@ -372,17 +404,20 @@ uv run python -c "from neurospatial import diffusion_kernels; print(diffusion_ke
 - [ ] Update `src/neurospatial/__init__.py` if these are re-exported
 
 **Tests**:
+
 - [ ] `tests/test_metrics.py` or equivalent
   - Rename test functions to match new names
   - Update all function calls
   - Update imports
 
 **Documentation**:
+
 - [ ] Update docstrings
 - [ ] Update CLAUDE.md if these functions are mentioned
 - [ ] Update examples
 
 **Search for candidates**:
+
 ```bash
 # Find all compute_* functions
 rg "^def compute_" src/neurospatial/
@@ -390,6 +425,7 @@ rg "^    compute_.*=" src/neurospatial/  # Assignments too
 ```
 
 **Verification**:
+
 ```bash
 # Verify new names are importable (example)
 uv run python -c "from neurospatial import home_range, step_lengths, turn_angles, field_emd"
@@ -409,10 +445,12 @@ Comprehensive verification and documentation updates.
 - [ ] Check for any remaining references to old names
 
 **API Surface Testing** (add to test suite):
+
 - [ ] Create or update `tests/test_api.py`
   - Assert new names are in public API
   - Assert old names are NOT in public API
   - Example:
+
     ```python
     import neurospatial
 
@@ -442,9 +480,11 @@ Comprehensive verification and documentation updates.
     assert not hasattr(env, 'shortest_path')
     assert not hasattr(env, 'compute_kernel')
     ```
+
 - [ ] Create or update `tests/test_import_paths.py`
   - Test canonical import paths work
   - Example:
+
     ```python
     # Canonical imports should work
     from neurospatial import (
@@ -457,6 +497,7 @@ Comprehensive verification and documentation updates.
     ```
 
 **Search for old names**:
+
 ```bash
 # Check source code (these should return NO matches)
 rg "def shortest_path" src/
@@ -494,6 +535,7 @@ rg "clear_kdtree_cache\(" docs/
 - [ ] Update troubleshooting examples
 
 **Verification**:
+
 ```bash
 # No old names should remain
 rg "shortest_path" CLAUDE.md
@@ -511,6 +553,7 @@ rg "map_probabilities_to_nearest_target_bin" CLAUDE.md
   - Update module docstring (lines 1-187)
   - Update function categorization comments
 - [ ] Verify public API with:
+
   ```python
   import neurospatial
   print(dir(neurospatial))
@@ -544,6 +587,7 @@ Final steps for v0.3.0 release.
 - [ ] Update README.md version references
 
 **CHANGELOG.md template**:
+
 ```markdown
 # Changelog
 
@@ -589,6 +633,7 @@ Final steps for v0.3.0 release.
 - [ ] No old function names in codebase
 
 **Final grep verification**:
+
 ```bash
 # Should return NO matches in src/
 rg "def shortest_path" src/
@@ -603,6 +648,7 @@ rg "map_probabilities_to_nearest_target_bin" src/
 ### 5.3 Create release commit and tag
 
 - [ ] Commit all changes with conventional commit message:
+
   ```bash
   git add .
   git commit -m "feat!: v0.3.0 breaking API cleanup
@@ -622,6 +668,7 @@ rg "map_probabilities_to_nearest_target_bin" src/
   See CHANGELOG.md for migration guide.
   "
   ```
+
 - [ ] Tag release: `git tag -a v0.3.0 -m "Version 0.3.0 - Breaking API cleanup"`
 - [ ] Push: `git push origin main --tags`
 
@@ -639,11 +686,13 @@ rg "map_probabilities_to_nearest_target_bin" src/
 ## Post-Release Tasks
 
 ### Documentation
+
 - [ ] Update GitHub release notes with CHANGELOG content
 - [ ] Update documentation site (if hosted)
 - [ ] Post migration guide to discussions/issues
 
 ### User Communication
+
 - [ ] Announce breaking release on relevant channels
 - [ ] Provide migration examples
 - [ ] Respond to user migration questions
@@ -679,6 +728,7 @@ rg "map_probabilities_to_nearest_target_bin" src/
 - 5.3 (Release commit) depends on: 5.2 complete
 
 **Suggested execution order**:
+
 1. Milestone 1 (new methods) - Can be done in parallel
 2. Milestone 2 (method renames) - Can be done in parallel with M1
 3. Milestone 3 (function renames) - Can be done in parallel with M1/M2
