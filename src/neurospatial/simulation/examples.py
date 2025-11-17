@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -16,6 +16,7 @@ def open_field_session(
     bin_size: float = 2.0,
     n_place_cells: int = 50,
     seed: int | None = None,
+    **kwargs: Any,
 ) -> SimulationSession:
     """Generate standard open field arena simulation.
 
@@ -35,6 +36,11 @@ def open_field_session(
         Number of place cells (default: 50).
     seed : int | None, optional
         Random seed for reproducibility (default: None).
+    **kwargs : Any
+        Additional parameters passed to PlaceCellModel. Common options:
+        - max_rate : float - Peak firing rate in Hz (default: 20.0)
+        - width : float - Place field width in cm (default: 3*bin_size)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
 
     Returns
     -------
@@ -159,6 +165,7 @@ def open_field_session(
         coverage="uniform",
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
+        **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 
     return session

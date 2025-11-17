@@ -94,6 +94,7 @@ def large_env(benchmark_data_large):
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestEnvironmentCreationPerformance:
     """Benchmark Environment creation from samples."""
 
@@ -134,6 +135,7 @@ class TestEnvironmentCreationPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestPlaceFieldComputationPerformance:
     """Benchmark place field computation methods."""
 
@@ -197,6 +199,7 @@ class TestPlaceFieldComputationPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestSpatialQueryPerformance:
     """Benchmark spatial query operations."""
 
@@ -247,6 +250,7 @@ class TestSpatialQueryPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestGraphOperationPerformance:
     """Benchmark graph-based operations."""
 
@@ -288,6 +292,7 @@ class TestGraphOperationPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestMetricComputationPerformance:
     """Benchmark neuroscience metric computations."""
 
@@ -333,6 +338,7 @@ class TestMetricComputationPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestFieldOperationPerformance:
     """Benchmark spatial field operations."""
 
@@ -364,6 +370,7 @@ class TestFieldOperationPerformance:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestTrajectoryAnalysisPerformance:
     """Benchmark trajectory analysis operations."""
 

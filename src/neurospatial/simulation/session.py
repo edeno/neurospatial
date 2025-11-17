@@ -165,9 +165,37 @@ def simulate_session(
         Show progress bars during generation (default: True).
     seed : int | None, optional
         Random seed for reproducibility.
-    **kwargs
+    **kwargs : Any
         Additional parameters passed to trajectory and model functions.
-        Examples: speed_mean, coherence_time, max_rate, etc.
+
+        **Trajectory parameters** (all trajectory methods):
+
+        - speed_mean : float - Mean speed for OU process (default varies by method)
+        - coherence_time : float - Temporal coherence for OU process
+        - n_laps : int - Number of laps for 'laps' trajectory method
+
+        **Place cell parameters** (cell_type='place' or 'mixed'):
+
+        - max_rate : float - Peak firing rate in Hz (default: 20.0)
+        - width : float | NDArray - Field width in environment units (default: 3*bin_size)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+        - condition : Callable - Optional conditional firing function
+
+        **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
+
+        - distance : float - Preferred distance from boundary (default: random)
+        - width : float - Distance tolerance (default: 5.0)
+        - max_rate : float - Peak firing rate in Hz (default: 10.0)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+
+        **Grid cell parameters** (cell_type='grid' or 'mixed'):
+
+        - spacing : float - Grid spacing in environment units (default: 30.0)
+        - orientation : float - Grid orientation angle in radians (default: 0.0)
+        - max_rate : float - Peak firing rate in Hz (default: 15.0)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
 
     Returns
     -------
@@ -205,7 +233,7 @@ def simulate_session(
     >>> spike_trains = session.spike_trains  # IDE autocomplete
     >>> ground_truth = session.ground_truth  # Discoverable
 
-    >>> # Mixed cell types with custom parameters
+    >>> # Mixed cell types with custom trajectory parameters
     >>> session = simulate_session(
     ...     env,
     ...     duration=2.0,
@@ -214,6 +242,17 @@ def simulate_session(
     ...     trajectory_method="ou",
     ...     speed_mean=0.1,
     ...     coherence_time=0.8,
+    ...     show_progress=False,
+    ... )
+
+    >>> # Place cells with increased firing rate (useful for faster tests)
+    >>> session = simulate_session(
+    ...     env,
+    ...     duration=2.0,
+    ...     n_cells=5,
+    ...     cell_type="place",
+    ...     max_rate=50.0,  # Increased from default 20.0 Hz
+    ...     width=8.0,  # Custom field width
     ...     show_progress=False,
     ... )
 
@@ -273,6 +312,31 @@ def simulate_session(
     if duration <= 0:
         raise ValueError(f"duration must be positive, got {duration}")
 
+    # Extract model-specific parameters from kwargs BEFORE trajectory generation
+    # PlaceCellModel parameters
+    place_cell_params = {}
+    for param in ["width", "max_rate", "baseline_rate", "distance_metric", "condition"]:
+        if param in kwargs:
+            place_cell_params[param] = kwargs.pop(param)
+
+    # BoundaryCellModel parameters
+    boundary_cell_params = {}
+    for param in [
+        "distance",
+        "width",
+        "max_rate",
+        "baseline_rate",
+        "distance_metric",
+    ]:
+        if param in kwargs:
+            boundary_cell_params[param] = kwargs.pop(param)
+
+    # GridCellModel parameters
+    grid_cell_params = {}
+    for param in ["spacing", "orientation", "max_rate", "baseline_rate"]:
+        if param in kwargs:
+            grid_cell_params[param] = kwargs.pop(param)
+
     # Generate trajectory (use seed directly for reproducibility)
     if trajectory_method == "ou":
         positions, times = simulate_trajectory_ou(
@@ -318,14 +382,14 @@ def simulate_session(
     models: list[NeuralModel] = []
     if cell_type == "place":
         for center in field_centers:
-            models.append(PlaceCellModel(env, center=center))
+            models.append(PlaceCellModel(env, center=center, **place_cell_params))
     elif cell_type == "boundary":
         for _ in range(n_cells):
-            models.append(BoundaryCellModel(env))
+            models.append(BoundaryCellModel(env, **boundary_cell_params))
     elif cell_type == "grid":
         for center in field_centers:
             # Use center for phase offset
-            models.append(GridCellModel(env, phase_offset=center))
+            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
     elif cell_type == "mixed":
         # 60% place, 20% boundary, 20% grid
         n_place = int(0.6 * n_cells)
@@ -334,15 +398,15 @@ def simulate_session(
 
         # Create place cells
         for center in field_centers[:n_place]:
-            models.append(PlaceCellModel(env, center=center))
+            models.append(PlaceCellModel(env, center=center, **place_cell_params))
 
         # Create boundary cells
         for _ in range(n_boundary):
-            models.append(BoundaryCellModel(env))
+            models.append(BoundaryCellModel(env, **boundary_cell_params))
 
         # Create grid cells
         for center in field_centers[n_place : n_place + n_grid]:
-            models.append(GridCellModel(env, phase_offset=center))
+            models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
     else:
         raise ValueError(f"Unknown cell_type: {cell_type}")
 

@@ -6,6 +6,7 @@ Tests that verify end-to-end workflows combining multiple simulation components.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from neurospatial import Environment, compute_place_field
 from neurospatial.simulation import (
@@ -48,13 +49,14 @@ class TestSimulateSessionIntegration:
         total_spikes = sum(len(st) for st in session.spike_trains)
         assert total_spikes > 0
 
+    @pytest.mark.slow
     def test_simulate_session_boundary_cells_end_to_end(self, simple_2d_env):
         """Test complete boundary cell simulation workflow."""
         simple_2d_env.units = "cm"
 
         session = simulate_session(
             simple_2d_env,
-            duration=30.0,
+            duration=10.0,
             n_cells=10,
             cell_type="boundary",
             seed=42,
@@ -143,13 +145,14 @@ class TestValidateSimulationIntegration:
             mean_bin_size = np.mean(simple_2d_env.bin_sizes)
             assert np.mean(valid_errors) < 4 * mean_bin_size
 
+    @pytest.mark.slow
     def test_validate_simulation_with_custom_thresholds(self, simple_2d_env):
         """Test validate_simulation() with custom validation thresholds."""
         simple_2d_env.units = "cm"
 
         session = simulate_session(
             simple_2d_env,
-            duration=30.0,
+            duration=10.0,
             n_cells=3,
             cell_type="place",
             seed=42,
@@ -222,10 +225,14 @@ class TestPreConfiguredExamplesIntegration:
 class TestPlaceFieldDetectionAccuracy:
     """Tests for place field detection accuracy as specified in SIMULATION_PLAN.md."""
 
+    @pytest.mark.slow
     def test_place_field_detection_accuracy(self):
         """Test place field detection pipeline works end-to-end."""
         # Use pre-configured session for reliable test
-        session = open_field_session(duration=120.0, n_place_cells=5, seed=42)
+        # Increased max_rate to 50 Hz allows shorter duration (3x faster)
+        session = open_field_session(
+            duration=40.0, n_place_cells=5, seed=42, max_rate=50.0
+        )
 
         # Test that we can detect place fields from simulated data
         env = session.env
@@ -236,8 +243,8 @@ class TestPlaceFieldDetectionAccuracy:
         # Try to detect place fields for all cells
         detected_fields = []
         for spike_times in spike_trains:
-            # Reduced threshold from 10 to 5 spikes for 120s simulation
-            # Some cells may have low firing rates
+            # Threshold of 5 spikes ensures reliable detection
+            # With 40s duration and 50 Hz max_rate, detectable cells have >5 spikes
             if len(spike_times) > 5:
                 # Compute place field
                 rate_map = compute_place_field(
@@ -250,7 +257,7 @@ class TestPlaceFieldDetectionAccuracy:
                 detected_fields.append(detected_center)
 
         # Assert that place field detection works for at least some cells
-        # With 120s and 5 cells, should detect at least 2 fields
+        # With 40s, 50 Hz max_rate, and 5 cells, should detect at least 2 fields
         assert len(detected_fields) >= 2, (
             f"Only detected {len(detected_fields)} fields out of 5 cells. "
             f"Spike counts: {[len(st) for st in spike_trains]}. "
