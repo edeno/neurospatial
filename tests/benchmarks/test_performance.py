@@ -230,14 +230,14 @@ class TestSpatialQueryPerformance:
 
         assert len(result) == len(positions)
 
-    def test_shortest_path(self, benchmark, medium_env):
-        """Benchmark shortest_path() computation."""
+    def test_path_between(self, benchmark, medium_env):
+        """Benchmark path_between() computation."""
         # Get two random bins from environment
         rng = np.random.default_rng(42)
         start_bin = rng.integers(0, medium_env.n_bins)
         end_bin = rng.integers(0, medium_env.n_bins)
 
-        result = benchmark(medium_env.shortest_path, start_bin, end_bin)
+        result = benchmark(medium_env.path_between, start_bin, end_bin)
 
         assert isinstance(result, list)
 

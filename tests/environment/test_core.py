@@ -114,7 +114,7 @@ class TestEnvironmentFromGraph:
         bin_idx_west = graph_env.bin_at(np.array([[-1.5, 0.0]]))[0]
         bin_idx_north = graph_env.bin_at(np.array([[0.0, 1.5]]))[0]
 
-        path = graph_env.shortest_path(bin_idx_west, bin_idx_north)
+        path = graph_env.path_between(bin_idx_west, bin_idx_north)
         assert isinstance(path, list)
         assert len(path) > 1
         assert path[0] == bin_idx_west
@@ -122,11 +122,11 @@ class TestEnvironmentFromGraph:
         for bin_idx_path in path:  # Renamed variable to avoid conflict
             assert 0 <= bin_idx_path < 16
 
-        path_to_self = graph_env.shortest_path(bin_idx_west, bin_idx_west)
+        path_to_self = graph_env.path_between(bin_idx_west, bin_idx_west)
         assert path_to_self == [bin_idx_west]
 
         with pytest.raises(nx.NodeNotFound):
-            graph_env.shortest_path(0, 100)
+            graph_env.path_between(0, 100)
 
     def test_linearized_coordinates(self, graph_env: Environment):
         """Test linearization and mapping back to N-D."""

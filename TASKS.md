@@ -201,28 +201,28 @@ uv run mypy src/neurospatial/environment/transforms.py
 
 Breaking changes to method names for clarity.
 
-### 2.1 Rename `shortest_path()` → `path_between()` ⚡ CRITICAL
+### 2.1 Rename `shortest_path()` → `path_between()` ⚡ CRITICAL ✅ COMPLETE
 
 **Priority**: P0 - Current name suggests distance, not path sequence
 
 **Files to modify**:
-- [ ] `src/neurospatial/environment/queries.py` (EnvironmentQueries mixin)
+- [x] `src/neurospatial/environment/queries.py` (EnvironmentQueries mixin)
   - Rename method: `shortest_path()` → `path_between()`
   - Update docstring references
-- [ ] Search codebase for all calls to `shortest_path()`
+- [x] Search codebase for all calls to `shortest_path()`
   - Update internal calls
   - Update examples in docstrings
-- [ ] Update `__all__` exports if method is exported
+- [x] Update `__all__` exports if method is exported
 
 **Tests**:
-- [ ] `tests/environment/test_queries.py` or similar
+- [x] `tests/environment/test_queries.py` or similar
   - Rename all test functions: `test_shortest_path*` → `test_path_between*`
   - Update all `env.shortest_path()` calls to `env.path_between()`
 
 **Documentation**:
-- [ ] CLAUDE.md: Update all references
-- [ ] README.md: Update examples if present
-- [ ] Example notebooks: Search and replace
+- [x] CLAUDE.md: Update all references
+- [x] README.md: Update examples if present
+- [x] Example notebooks: Search and replace
 
 **Verification**:
 ```bash

@@ -65,7 +65,7 @@ distance = env.distance_between(bin_a, bin_b)
 print(f"Distance between bins {bin_a} and {bin_b}: {distance:.2f}")
 
 # Find shortest path
-path = env.shortest_path(bin_a, bin_b)
+path = env.path_between(bin_a, bin_b)
 print(f"Shortest path: {path}")
 ```
 

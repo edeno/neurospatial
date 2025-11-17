@@ -378,49 +378,49 @@ class TestDistanceBetween:
             assert dist_default >= 0
 
 
-class TestShortestPath:
-    """Tests for Environment.shortest_path() method."""
+class TestPathBetween:
+    """Tests for Environment.path_between() method."""
 
-    def test_shortest_path_to_self(self, small_2d_env):
-        """Test shortest path from bin to itself."""
-        path = small_2d_env.shortest_path(0, 0)
+    def test_path_between_to_self(self, small_2d_env):
+        """Test path from bin to itself."""
+        path = small_2d_env.path_between(0, 0)
 
         # Path to self should contain only that bin
         assert path == [0]
 
-    def test_shortest_path_to_neighbor(self, small_2d_env):
-        """Test shortest path to neighboring bin."""
+    def test_path_between_to_neighbor(self, small_2d_env):
+        """Test path to neighboring bin."""
         bin_a = 0
         neighbors = small_2d_env.neighbors(bin_a)
 
         if len(neighbors) > 0:
             bin_b = neighbors[0]
-            path = small_2d_env.shortest_path(bin_a, bin_b)
+            path = small_2d_env.path_between(bin_a, bin_b)
 
             # Path should be [bin_a, bin_b] (direct connection)
             assert len(path) == 2
             assert path[0] == bin_a
             assert path[-1] == bin_b
 
-    def test_shortest_path_contains_endpoints(self, medium_2d_env):
-        """Test that shortest path contains both source and target."""
-        path = medium_2d_env.shortest_path(0, 10)
+    def test_path_between_contains_endpoints(self, medium_2d_env):
+        """Test that path contains both source and target."""
+        path = medium_2d_env.path_between(0, 10)
 
         if len(path) > 0:  # If path exists
             assert path[0] == 0  # Starts at source
             assert path[-1] == 10  # Ends at target
 
-    def test_shortest_path_all_valid_bins(self, small_2d_env):
+    def test_path_between_all_valid_bins(self, small_2d_env):
         """Test that all bins in path are valid."""
-        path = small_2d_env.shortest_path(0, 5)
+        path = small_2d_env.path_between(0, 5)
 
         # All bins in path should be valid indices
         for bin_idx in path:
             assert 0 <= bin_idx < small_2d_env.n_bins
 
-    def test_shortest_path_consecutive_bins_are_neighbors(self, small_2d_env):
+    def test_path_between_consecutive_bins_are_neighbors(self, small_2d_env):
         """Test that consecutive bins in path are neighbors."""
-        path = small_2d_env.shortest_path(0, 5)
+        path = small_2d_env.path_between(0, 5)
 
         if len(path) > 1:
             # Each consecutive pair should be neighbors

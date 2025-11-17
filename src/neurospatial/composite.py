@@ -5,7 +5,7 @@ This class exposes the same public interface as the base `Environment` class:
   - Properties: n_dims, n_bins, bin_centers, connectivity, is_1d, dimension_ranges,
                 grid_edges, grid_shape, active_mask, regions
   - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
-                bins_in_region, mask_for_region, shortest_path, info,
+                bins_in_region, mask_for_region, path_between, info,
                 save, load, bin_attributes, edge_attributes, plot
 
 (Note: factory methods like from_layout are not included, since CompositeEnvironment
@@ -756,7 +756,7 @@ class CompositeEnvironment:
         mask[bins] = True
         return mask
 
-    def shortest_path(
+    def path_between(
         self, source_bin: int, target_bin: int, edge_weight: str = "distance"
     ) -> list[int]:
         """Find shortest path between two bin indices in the composite graph.
@@ -795,7 +795,7 @@ class CompositeEnvironment:
         Examples
         --------
         >>> comp = CompositeEnvironment([env1, env2], auto_bridge=True)
-        >>> path = comp.shortest_path(0, 100)  # Path from bin 0 to bin 100
+        >>> path = comp.path_between(0, 100)  # Path from bin 0 to bin 100
         >>> print(f"Path length: {len(path)} bins")
 
         """

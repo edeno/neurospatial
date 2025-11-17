@@ -136,17 +136,17 @@ class TestMaskForRegion:
             comp.mask_for_region("nonexistent")
 
 
-class TestShortestPath:
-    """Tests for shortest_path() method."""
+class TestPathBetween:
+    """Tests for path_between() method."""
 
     def test_shortest_path_within_environment(self, two_simple_2d_envs):
-        """Test shortest_path between bins in same sub-environment."""
+        """Test path_between between bins in same sub-environment."""
         env1, env2 = two_simple_2d_envs
         comp = CompositeEnvironment([env1, env2], auto_bridge=True)
 
         # Path within first environment
         if env1.n_bins >= 2:
-            path = comp.shortest_path(0, 1)
+            path = comp.path_between(0, 1)
 
             assert isinstance(path, list)
             assert len(path) >= 2
@@ -154,7 +154,7 @@ class TestShortestPath:
             assert path[-1] == 1
 
     def test_shortest_path_across_bridge(self, two_simple_2d_envs):
-        """Test shortest_path crosses bridge between environments."""
+        """Test path_between crosses bridge between environments."""
         env1, env2 = two_simple_2d_envs
         comp = CompositeEnvironment([env1, env2], auto_bridge=True)
 
@@ -162,7 +162,7 @@ class TestShortestPath:
         source_bin = 0  # First bin of env1
         target_bin = comp.n_bins - 1  # Last bin of env2
 
-        path = comp.shortest_path(source_bin, target_bin)
+        path = comp.path_between(source_bin, target_bin)
 
         assert isinstance(path, list)
         # Path should exist if bridge was created
@@ -174,16 +174,16 @@ class TestShortestPath:
             assert any(b >= env1.n_bins for b in path)
 
     def test_shortest_path_same_node(self, two_simple_2d_envs):
-        """Test shortest_path from node to itself."""
+        """Test path_between from node to itself."""
         env1, env2 = two_simple_2d_envs
         comp = CompositeEnvironment([env1, env2])
 
-        path = comp.shortest_path(0, 0)
+        path = comp.path_between(0, 0)
 
         assert path == [0]
 
     def test_shortest_path_no_path_warns(self, two_simple_2d_envs):
-        """Test shortest_path warns when no path exists."""
+        """Test path_between warns when no path exists."""
         env1, env2 = two_simple_2d_envs
         # No auto-bridge, so environments are disconnected
         comp = CompositeEnvironment([env1, env2], auto_bridge=False)
@@ -192,17 +192,17 @@ class TestShortestPath:
         target_bin = env1.n_bins  # In env2 (disconnected)
 
         with pytest.warns(UserWarning, match="No path found"):
-            path = comp.shortest_path(source_bin, target_bin)
+            path = comp.path_between(source_bin, target_bin)
 
         assert path == []
 
     def test_shortest_path_invalid_nodes(self, two_simple_2d_envs):
-        """Test shortest_path with invalid bin indices raises."""
+        """Test path_between with invalid bin indices raises."""
         env1, env2 = two_simple_2d_envs
         comp = CompositeEnvironment([env1, env2])
 
         with pytest.raises(nx.NodeNotFound):
-            comp.shortest_path(comp.n_bins + 10, 0)
+            comp.path_between(comp.n_bins + 10, 0)
 
 
 class TestInfo:
@@ -367,5 +367,5 @@ class TestIntegration:
             loaded = CompositeEnvironment.load(str(filepath))
 
             # Pathfinding should work
-            path = loaded.shortest_path(0, 0)
+            path = loaded.path_between(0, 0)
             assert path == [0]

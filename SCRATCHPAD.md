@@ -157,3 +157,60 @@
 - "Production-ready code"
 
 **Ready for next task**: Milestone 2.1 - Rename `shortest_path()` → `path_between()`
+
+---
+
+### 2025-11-17: Milestone 2.1 - COMPLETED ✅
+
+**Task**: Rename `shortest_path()` → `path_between()` (P0 CRITICAL breaking change)
+
+**Status**: ✅ COMPLETE
+
+**What was accomplished**:
+
+1. **Renamed method in source files**:
+   - [queries.py:335](src/neurospatial/environment/queries.py#L335) - EnvironmentQueries mixin
+   - [composite.py:759](src/neurospatial/composite.py#L759) - CompositeEnvironment class
+   - Updated method signatures, docstrings, and examples
+
+2. **Updated all tests** (28 tests, all passing ✅):
+   - Renamed test class: `TestShortestPath` → `TestPathBetween`
+   - Renamed test class: `TestShortestPathErrorPaths` → `TestPathBetweenErrorPaths`
+   - Updated method calls in:
+     - tests/environment/test_queries.py (5 tests)
+     - tests/test_composite_new_methods.py (6 calls)
+     - tests/environment/test_error_paths.py (7 calls)
+     - tests/environment/test_transforms.py (1 call)
+     - tests/benchmarks/test_performance.py (1 test renamed)
+     - tests/test_performance.py (1 call)
+     - tests/environment/test_core.py (3 calls)
+
+3. **Updated all documentation and examples**:
+   - CLAUDE.md - Updated spatial queries list
+   - docs/dimensionality_support.md - Updated feature list and examples
+   - docs/user-guide/environments.md - Updated section header and code
+   - docs/getting-started/quickstart.md - Updated example code
+   - docs/examples/*.py - Updated method calls in 3 example scripts
+   - examples/*.ipynb - Updated 3 notebooks (5 code cells + 3 markdown refs)
+   - src/neurospatial/__init__.py - Updated package docstring examples
+
+4. **Fixed critical issues from code review**:
+   - Updated module docstrings (queries.py, composite.py, test_error_paths.py)
+   - Fixed test method name in test_import_paths.py
+   - Verified NetworkX library calls (`nx.shortest_path()`) left unchanged
+
+5. **Quality checks**:
+   - ✅ All 28 tests pass
+   - ✅ Ruff linter passes
+   - ✅ Mypy type checker passes
+   - ✅ Code reviewer APPROVED after fixes
+
+**Files modified**: 29+ files total
+- Source: queries.py, composite.py, __init__.py
+- Tests: 7 test files
+- Docs: CLAUDE.md, 4 doc files, 3 example scripts, 3 notebooks
+- TASKS.md (marked task 2.1 complete)
+
+**Rationale**: Method name `shortest_path()` suggested it returns distance (like NetworkX's function of same name), but actually returns path sequence. New name `path_between()` matches the actual return type and is more discoverable.
+
+**Ready for next task**: Milestone 2.2 - Rename `compute_kernel()` → `diffusion_kernel()`

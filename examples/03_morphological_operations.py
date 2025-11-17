@@ -160,7 +160,7 @@ print("\nNotice: Animal spends most time near walls, rarely visits center")
 # %%
 # Create environment with default settings
 env_default = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, name="Default_Sparse"
+    data_samples=sparse_data, bin_size=5.0, name="Default_Sparse"
 )
 
 print(env_default.info())
@@ -185,7 +185,7 @@ print("- Spatial analysis will be limited to edges only")
 # Let's verify that the environment is indeed disconnected:
 
 # %%
-import networkx as nx
+import networkx as nx  # noqa: E402
 
 # Check if environment is connected
 is_connected = nx.is_connected(env_default.connectivity)
@@ -217,7 +217,7 @@ if not is_connected:
 # %%
 # Create environment with dilation
 env_dilated = Environment.from_samples(
-    positions=sparse_data,
+    data_samples=sparse_data,
     bin_size=5.0,
     dilate=True,  # Enable dilation
     name="Dilated",
@@ -253,7 +253,7 @@ print(f"\nIs dilated environment connected? {is_connected}")
 # %%
 # Create environment with hole filling
 env_filled = Environment.from_samples(
-    positions=sparse_data,
+    data_samples=sparse_data,
     bin_size=5.0,
     fill_holes=True,  # Enable hole filling
     name="Filled",
@@ -272,7 +272,7 @@ print(f"\nBins added by fill_holes: {env_filled.n_bins - env_default.n_bins}")
 # %%
 # Create environment with gap closing
 env_closed = Environment.from_samples(
-    positions=sparse_data,
+    data_samples=sparse_data,
     bin_size=5.0,
     close_gaps=True,  # Enable closing
     name="Closed",
@@ -291,7 +291,7 @@ print(
 # %%
 # Combine all operations
 env_combined = Environment.from_samples(
-    positions=sparse_data,
+    data_samples=sparse_data,
     bin_size=5.0,
     dilate=True,
     fill_holes=True,
@@ -343,7 +343,7 @@ env_thresholds = {}
 
 for thresh in thresholds:
     env = Environment.from_samples(
-        positions=sparse_data,
+        data_samples=sparse_data,
         bin_size=5.0,
         bin_count_threshold=thresh,
         name=f"Threshold_{thresh}",
@@ -492,7 +492,7 @@ plt.show()
 # %%
 # Create fixed environment
 env_fixed = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, dilate=True, fill_holes=True, name="Fixed"
+    data_samples=sparse_data, bin_size=5.0, dilate=True, fill_holes=True, name="Fixed"
 )
 
 print(f"Fixed environment: {env_fixed.n_bins} bins")
@@ -618,7 +618,7 @@ print("\nFixed! Now we can see the complete place field")
 # %%
 # Multiple rounds of dilation
 env_over_dilated = Environment.from_samples(
-    positions=sparse_data, bin_size=5.0, dilate=True, name="OverDilated"
+    data_samples=sparse_data, bin_size=5.0, dilate=True, name="OverDilated"
 )
 
 # Apply dilation multiple times manually (not recommended!)

@@ -1,7 +1,7 @@
 """Tests for error paths in Environment class.
 
 This module tests error handling and edge cases that were previously untested,
-particularly for methods like shortest_path() and bins_in_region().
+particularly for methods like path_between() and bins_in_region().
 """
 
 import networkx as nx
@@ -14,11 +14,11 @@ from neurospatial.environment import Environment
 SAMPLE_DATA_2D = np.random.randn(100, 2) * 10
 
 
-class TestShortestPathErrorPaths:
-    """Test error handling in Environment.shortest_path()."""
+class TestPathBetweenErrorPaths:
+    """Test error handling in Environment.path_between()."""
 
     def test_shortest_path_no_path_disconnected_components(self):
-        """Test shortest_path when nodes are in disconnected components."""
+        """Test path_between when nodes are in disconnected components."""
         # Create environment with two disconnected regions
         data1 = np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
         data2 = np.array([[100, 100], [101, 100], [100, 101], [101, 101]])
@@ -37,51 +37,51 @@ class TestShortestPathErrorPaths:
 
         # Should warn and return empty path when no path exists
         with pytest.warns(UserWarning, match="No path found"):
-            path = env.shortest_path(bin1, bin2)
+            path = env.path_between(bin1, bin2)
 
         assert path == []
         assert isinstance(path, list)
 
     def test_shortest_path_invalid_source_node(self):
-        """Test shortest_path with invalid source node index."""
+        """Test path_between with invalid source node index."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         invalid_source = env.n_bins + 100  # Way out of range
         valid_target = 0
 
         with pytest.raises(nx.NodeNotFound, match=r"Source.*not in"):
-            env.shortest_path(invalid_source, valid_target)
+            env.path_between(invalid_source, valid_target)
 
     def test_shortest_path_invalid_target_node(self):
-        """Test shortest_path with invalid target node index."""
+        """Test path_between with invalid target node index."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         valid_source = 0
         invalid_target = -999  # Negative index
 
         with pytest.raises(nx.NodeNotFound, match=r"Target.*not in"):
-            env.shortest_path(valid_source, invalid_target)
+            env.path_between(valid_source, invalid_target)
 
     def test_shortest_path_both_nodes_invalid(self):
-        """Test shortest_path when both nodes are invalid."""
+        """Test path_between when both nodes are invalid."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         invalid_source = env.n_bins + 50
         invalid_target = env.n_bins + 100
 
         with pytest.raises(nx.NodeNotFound):
-            env.shortest_path(invalid_source, invalid_target)
+            env.path_between(invalid_source, invalid_target)
 
     def test_shortest_path_same_node(self):
-        """Test shortest_path when source and target are the same."""
+        """Test path_between when source and target are the same."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         # Path from node to itself should work
-        path = env.shortest_path(5, 5)
+        path = env.path_between(5, 5)
         assert path == [5]
 
     def test_shortest_path_adjacent_nodes(self):
-        """Test shortest_path between adjacent nodes."""
+        """Test path_between between adjacent nodes."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         # Get first node and one of its neighbors
@@ -90,7 +90,7 @@ class TestShortestPathErrorPaths:
 
         if len(neighbors) > 0:
             target = neighbors[0]
-            path = env.shortest_path(source, target)
+            path = env.path_between(source, target)
 
             assert len(path) == 2
             assert path[0] == source

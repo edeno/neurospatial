@@ -158,12 +158,12 @@ distance = env.distance_between(bin_a=10, bin_b=20)
 # Returns: float distance
 ```
 
-### shortest_path()
+### path_between()
 
 Find shortest path between bins:
 
 ```python
-path = env.shortest_path(start_bin=0, end_bin=50)
+path = env.path_between(start_bin=0, end_bin=50)
 # Returns: list of bin indices forming path
 ```
 

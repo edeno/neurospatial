@@ -643,7 +643,7 @@ class TestSubsetIntegration:
 
         # Should be able to compute paths (if connected)
         if nx.is_connected(subset_env.connectivity):
-            path = subset_env.shortest_path(
+            path = subset_env.path_between(
                 subset_env.bin_centers[0], subset_env.bin_centers[-1]
             )
             assert isinstance(path, list)

@@ -74,7 +74,7 @@ Kernels and Convolution:
 Graph Operations:
     gradient : Spatial gradient on graph
     divergence : Spatial divergence on graph
-    Environment.shortest_path : Find shortest path between bins
+    Environment.path_between : Find shortest path between bins
     Environment.neighbors : Get neighboring bins
 
 I/O and Serialization:
@@ -164,7 +164,7 @@ Create 2D environment and compute shortest path::
     ...     positions, bin_size=5.0, units='cm',
     ...     connect_diagonal_neighbors=True
     ... )
-    >>> path = env.shortest_path(start_bin=0, goal_bin=100)
+    >>> path = env.path_between(start_bin=0, goal_bin=100)
     >>> distance = env.distance_between(0, 100)
 
 Create 3D environment::

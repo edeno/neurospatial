@@ -185,7 +185,7 @@ def test_all_public_methods_present():
         "neighbors",
         "distance_between",
         "bin_center_of",
-        "shortest_path",
+        "path_between",
         "bin_sizes",
     ]
 

@@ -188,7 +188,7 @@ The codebase follows a three-layer architecture:
      - `Environment.from_mask()` - Pre-defined N-D boolean mask
      - `Environment.from_image()` - Binary image mask
      - `Environment.from_layout()` - Direct layout specification
-   - Provides spatial queries: `bin_at()`, `contains()`, `neighbors()`, `distance_between()`, `shortest_path()`
+   - Provides spatial queries: `bin_at()`, `contains()`, `neighbors()`, `distance_between()`, `path_between()`
    - Integrates `Regions` for defining named ROIs (regions of interest)
    - Uses `@check_fitted` decorator ([environment/decorators.py](src/neurospatial/environment/decorators.py)) to ensure methods are only called after initialization
 

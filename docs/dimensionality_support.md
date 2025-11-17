@@ -73,7 +73,7 @@ env = Environment.from_image("arena_mask.png", bin_size_cm=2.0, pixels_per_cm=10
 - ✅ 2D affine transforms (rotation, scaling, translation)
 - ✅ Polygon regions
 - ✅ Image mask layouts
-- ✅ All spatial queries (bin_at, contains, neighbors, shortest_path)
+- ✅ All spatial queries (bin_at, contains, neighbors, path_between)
 - ✅ Alignment and probability mapping between environments
 - ✅ Full visualization suite
 
@@ -98,7 +98,7 @@ env_3d = Environment.from_samples(data_3d, bin_size=2.0)
 bins = env_3d.bin_at(points_3d)
 mask = env_3d.contains(points_3d)
 neighbors = env_3d.neighbors(bin_idx)
-path = env_3d.shortest_path(source_bin, target_bin)
+path = env_3d.path_between(source_bin, target_bin)
 dist = env_3d.distance_between(bin1, bin2)
 ```
 

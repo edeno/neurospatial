@@ -9,7 +9,7 @@ for querying spatial properties of an environment:
 - neighbors: Find neighboring bins for a given bin
 - bin_sizes: Get area/volume of each active bin (cached property)
 - distance_between: Calculate geodesic distance between two points
-- shortest_path: Find shortest path between two bins
+- path_between: Find shortest path between two bins
 """
 
 from __future__ import annotations
@@ -332,7 +332,7 @@ class EnvironmentQueries:
             return np.inf
 
     @check_fitted
-    def shortest_path(
+    def path_between(
         self: SelfEnv,
         source_active_bin_idx: int,
         target_active_bin_idx: int,
@@ -373,7 +373,7 @@ class EnvironmentQueries:
         >>> from neurospatial import Environment
         >>> data = np.random.rand(100, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> path = env.shortest_path(0, 5)
+        >>> path = env.path_between(0, 5)
         >>> print(len(path) > 0)  # doctest: +SKIP
         True
 
