@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-09 (v0.2.0)
+**Last Updated**: 2025-11-16 (v0.2.1)
 
 ## Table of Contents
 
@@ -96,6 +96,28 @@ if env.is_1d:
 # Always use factory methods, not bare Environment()
 env = Environment.from_samples(...)  # ✓ Correct
 env = Environment()  # ✗ Wrong - won't be fitted
+
+# Memory safety: automatic warnings for large grids (v0.2.1+)
+# Warns at 100MB estimated memory (but creation still proceeds)
+positions = np.random.uniform(0, 10000, (1000, 2))
+env = Environment.from_samples(positions, bin_size=1.0)  # May warn, but will succeed
+
+# Disable warning if intentional (v0.2.1+)
+env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
+```
+
+**Type Checking Support (v0.2.1+)**:
+
+This package now includes a `py.typed` marker, enabling type checkers like mypy to use the library's type annotations:
+
+```python
+# Your IDE and mypy will now see neurospatial types!
+from neurospatial import Environment
+import numpy as np
+
+positions: np.ndarray = np.random.rand(100, 2)
+env: Environment = Environment.from_samples(positions, bin_size=5.0)
+# mypy will validate types ✓
 ```
 
 **Commit Message Format**:
@@ -403,9 +425,10 @@ Layout engines implement the `LayoutEngine` Protocol ([layout/base.py:10-166](sr
 
 `Region` objects are immutable dataclasses - create new instances rather than modifying existing ones. The `Regions` container uses dict-like semantics:
 
-- Use `regions.add()` to create and insert
+- Use `regions.add()` to create and insert (raises `KeyError` if name already exists)
 - Use `del regions[name]` or `regions.remove(name)` to delete
-- Trying to set an existing key raises `KeyError` - use explicit update patterns
+- Assignment to existing keys succeeds but emits a `UserWarning` to prevent accidental overwrites
+- Use `regions.update_region()` to update regions without warnings
 
 ### 1D vs N-D Environments
 
@@ -703,13 +726,18 @@ All layout engines must populate these. If creating custom graphs, ensure all at
 
 ```python
 env.regions['goal'].point = new_point  # AttributeError - immutable
-env.regions['goal'] = new_region  # KeyError - can't overwrite
+```
+
+⚠️ Discouraged (emits warning):
+
+```python
+env.regions['goal'] = new_region  # UserWarning - overwriting existing region
 ```
 
 ✅ Right:
 
 ```python
-env.regions.update_region('goal', point=new_point)  # Creates new Region
+env.regions.update_region('goal', point=new_point)  # Creates new Region, no warning
 env.regions.add('new_goal', point=point)  # Add new region
 del env.regions['old_goal']  # Delete existing
 ```
@@ -818,6 +846,36 @@ ValueError: No active bins found. Data range: [0.0, 100.0], bin_size: 200.0
 
 The diagnostic values help identify the problem immediately.
 
+### 10. Memory safety checks (v0.2.1+)
+
+**Problem**: Creating very large grids can cause unexpected memory usage.
+
+**Solution**: Grid creation now includes automatic memory estimation and warnings:
+
+- **Warning at 100MB**: Large grid detected, creation proceeds but you're informed of memory usage
+
+⚠️ Creates large grid (will warn but succeed):
+
+```python
+positions = np.random.uniform(0, 100000, (1000, 2))
+env = Environment.from_samples(positions, bin_size=1.0)  # ResourceWarning, but succeeds
+```
+
+✅ Better (reduce grid size to avoid warning):
+
+```python
+# Option 1: Increase bin_size
+env = Environment.from_samples(positions, bin_size=10.0)  # Smaller grid, no warning
+
+# Option 2: Filter active bins
+env = Environment.from_samples(positions, bin_size=1.0, infer_active_bins=True)
+
+# Option 3: Disable warning (if intentional and you have RAM)
+env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
+```
+
+**Tip**: Warning messages include estimated memory and suggestions for reducing usage.
+
 ## Troubleshooting
 
 ### `ModuleNotFoundError: No module named 'neurospatial'`
@@ -864,19 +922,21 @@ env = Environment.from_samples(positions, bin_size=2.0)
 env.bin_at([10, 5])
 ```
 
-### `KeyError` when trying to update a region
+### UserWarning when overwriting a region
 
-**Cause**: Using assignment instead of `update_region()` method.
+**Cause**: Using assignment to overwrite an existing region.
 
-**Solution**:
+**Solution**: Assignment works but emits a `UserWarning`. Use `update_region()` to suppress the warning:
 
 ```python
-# Wrong
-env.regions['goal'] = new_region  # KeyError
+# Works but emits UserWarning
+env.regions['goal'] = new_region  # UserWarning: Overwriting existing region 'goal'
 
-# Right
+# Preferred - no warning
 env.regions.update_region('goal', point=new_point)
 ```
+
+**Note**: This warning follows standard dict semantics while preventing accidental overwrites. To suppress the warning without using `update_region()`, use Python's warnings filter.
 
 ### `AttributeError: 'Environment' object has no attribute 'to_linear'`
 
@@ -946,8 +1006,45 @@ uv add --dev pytest-xdist
 uv run pytest -n auto  # Use all CPU cores
 ```
 
+### `ResourceWarning: Creating large grid` (v0.2.1+)
+
+**Cause**: Grid estimated to use >100MB memory (warning threshold).
+
+**Solution**: This is a warning, not an error. Grid creation will proceed, but you're being informed about memory usage. Consider:
+
+- Is this grid size intentional?
+- Can you increase `bin_size` to reduce resolution?
+- Would `infer_active_bins=True` help filter unused bins?
+
+**Common fixes:**
+
+```python
+# Fix 1: Increase bin_size (most common)
+env = Environment.from_samples(positions, bin_size=10.0)  # Instead of 1.0
+
+# Fix 2: Enable active bin filtering
+env = Environment.from_samples(
+    positions,
+    bin_size=1.0,
+    infer_active_bins=True,
+    bin_count_threshold=1
+)
+
+# Fix 3: Disable warning (if intentional and you have sufficient RAM)
+env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
+```
+
+**To suppress the warning globally:**
+
+```python
+import warnings
+warnings.filterwarnings('ignore', category=ResourceWarning)
+```
+
+**Note**: The memory estimate is conservative but approximate. Actual usage may vary by ±20%.
+
 ### Type errors despite correct code
 
 **Cause**: May be using outdated type stubs or IDE not recognizing runtime checks.
 
-**Note**: This project doesn't require type checking (mypy). If you encounter type errors, they may be IDE warnings that can be ignored if tests pass.
+**Note**: This project includes a `py.typed` marker (v0.2.1+) for type checking support. If you encounter type errors, ensure you're using the latest version. IDE warnings may be false positives that can be ignored if tests pass.

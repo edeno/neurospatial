@@ -13,6 +13,7 @@ from neurospatial.layout.helpers.regular_grid import (
 )
 from neurospatial.layout.helpers.utils import (
     _infer_dimension_ranges_from_samples,
+    check_grid_size_safety,
 )
 from neurospatial.layout.mixins import _GridMixin
 from neurospatial.layout.validation import validate_connectivity_graph
@@ -126,6 +127,10 @@ class RegularGridLayout(_GridMixin):
             dimension_range=self.dimension_ranges,
             add_boundary_bins=add_boundary_bins,
         )
+
+        # Safety check: warn or error if grid is very large
+        n_dims = len(self.grid_shape)
+        check_grid_size_safety(self.grid_shape, n_dims)
 
         if infer_active_bins and positions is not None:
             self.active_mask = _infer_active_bins_from_regular_grid(

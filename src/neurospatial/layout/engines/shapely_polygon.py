@@ -14,6 +14,7 @@ from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
 )
+from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
 from neurospatial.layout.validation import validate_connectivity_graph
 
@@ -102,6 +103,10 @@ class ShapelyPolygonLayout(_GridMixin):
             dimension_range=self.dimension_ranges,
             add_boundary_bins=False,
         )
+
+        # Safety check: warn or error if grid is very large
+        n_dims = 2  # ShapelyPolygon is always 2D
+        check_grid_size_safety(self.grid_shape, n_dims)
 
         # 1. Intrinsic mask from Shapely
         pts_to_check = (

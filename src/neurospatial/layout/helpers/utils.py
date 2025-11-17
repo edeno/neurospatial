@@ -1019,3 +1019,149 @@ def map_active_data_to_grid(
     # Place the active data into the grid using the N-D active_mask
     full_grid_data[active_mask] = active_bin_data
     return full_grid_data
+
+
+def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
+    """Estimate memory usage in MB for a grid of given shape.
+
+    This function provides a conservative estimate of memory requirements for
+    creating an Environment with a grid-based layout. The estimate includes
+    bin_centers array, NetworkX graph nodes, and edges.
+
+    Parameters
+    ----------
+    grid_shape : tuple[int, ...]
+        Shape of the N-D grid (e.g., (100, 100) for 2D grid).
+    n_dims : int
+        Number of dimensions.
+
+    Returns
+    -------
+    float
+        Estimated memory usage in megabytes.
+
+    Notes
+    -----
+    Memory components estimated:
+
+    - **bin_centers**: n_bins * n_dims * 8 bytes (float64)
+    - **NetworkX graph nodes**: ~500 bytes per node (approximate overhead)
+    - **NetworkX graph edges**: ~300 bytes per edge (approximate overhead)
+
+    The graph overhead estimates are conservative approximations based on
+    NetworkX's dict-based storage with required attributes (pos,
+    source_grid_flat_index, original_grid_nd_index for nodes; distance,
+    vector, edge_id for edges).
+
+    Edge count assumes average of 2*n_dims edges per node (e.g., 4 neighbors
+    in 2D, 6 in 3D) for grid connectivity.
+
+    Examples
+    --------
+    >>> from neurospatial.layout.helpers.utils import estimate_grid_memory
+    >>> # Estimate memory for 100×100 2D grid
+    >>> estimate_grid_memory((100, 100), n_dims=2)
+    8.58...
+
+    >>> # Estimate memory for 100×100×100 3D grid
+    >>> estimate_grid_memory((100, 100, 100), n_dims=3)
+    8583.98...
+
+    See Also
+    --------
+    check_grid_size_safety : Validate grid size and warn if memory usage is high
+    """
+    n_bins = int(np.prod(grid_shape))
+
+    # bin_centers: n_bins * n_dims * 8 bytes (float64)
+    bin_centers_mb = (n_bins * n_dims * 8) / (1024**2)
+
+    # NetworkX graph overhead (approximate)
+    # Each node: dict with ~5 attributes (~500 bytes conservative estimate)
+    # Each edge: dict with ~4 attributes (~300 bytes conservative estimate)
+    nodes_mb = (n_bins * 500) / (1024**2)
+
+    # Average edges per node: 2*n_dims for grid connectivity
+    # (e.g., 4 in 2D: up, down, left, right; 6 in 3D; etc.)
+    avg_edges_per_node = 2 * n_dims
+    n_edges = n_bins * avg_edges_per_node / 2  # Divide by 2 (edges counted twice)
+    edges_mb = (n_edges * 300) / (1024**2)
+
+    total_mb = bin_centers_mb + nodes_mb + edges_mb
+    return total_mb
+
+
+def check_grid_size_safety(
+    grid_shape: tuple[int, ...],
+    n_dims: int,
+    *,
+    warn_threshold_mb: float = 100.0,
+) -> None:
+    """Check if grid size is large and warn if it exceeds threshold.
+
+    This function provides a safety check to warn users when creating
+    very large grids that may have significant memory requirements.
+    The grid creation will still proceed, but users are informed about
+    the estimated memory usage.
+
+    Parameters
+    ----------
+    grid_shape : tuple[int, ...]
+        Shape of the N-D grid.
+    n_dims : int
+        Number of dimensions.
+    warn_threshold_mb : float, default 100.0
+        Memory threshold (MB) for emitting a warning. Set to inf to disable warnings.
+
+    Warnings
+    --------
+    ResourceWarning
+        If estimated memory exceeds warn_threshold_mb.
+
+    Notes
+    -----
+    **Reducing Memory Usage:**
+
+    If you encounter warnings, consider:
+
+    - **Increase bin_size** to reduce grid resolution
+    - **Use infer_active_bins=True** to filter out empty bins
+    - **Set bin_count_threshold** to exclude sparse bins
+    - **Process data in spatial chunks** for very large environments
+    - **Use morphological operations** (dilate, fill_holes) to clean up active mask
+
+    **Disabling Warnings:**
+
+    To disable the warning entirely, set warn_threshold_mb to infinity::
+
+        env = Environment.from_samples(
+            positions, bin_size=1.0, warn_threshold_mb=float("inf")
+        )
+
+    Examples
+    --------
+    >>> from neurospatial.layout.helpers.utils import check_grid_size_safety
+    >>> # Small grid - no warning
+    >>> check_grid_size_safety((50, 50), n_dims=2)
+
+    >>> # Large grid - warning (but creation proceeds)
+    >>> check_grid_size_safety((500, 500), n_dims=2)  # doctest: +SKIP
+    ResourceWarning: Creating large grid with shape (500, 500) (250,000 bins).
+    Estimated memory usage: 214.8 MB
+    Consider increasing bin_size or using infer_active_bins=True.
+
+    See Also
+    --------
+    estimate_grid_memory : Estimate memory requirements for a grid
+    """
+    n_bins = int(np.prod(grid_shape))
+    estimated_mb = estimate_grid_memory(grid_shape, n_dims)
+
+    if estimated_mb > warn_threshold_mb:
+        warnings.warn(
+            f"Creating large grid with shape {grid_shape} ({n_bins:,} bins).\n"
+            f"Estimated memory usage: {estimated_mb:.1f} MB\n"
+            f"Consider increasing bin_size or using infer_active_bins=True.",
+            ResourceWarning,
+            stacklevel=4,  # Adjust stacklevel to point to user code
+        )

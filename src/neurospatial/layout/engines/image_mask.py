@@ -9,6 +9,7 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
+from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
 from neurospatial.layout.validation import validate_connectivity_graph
 
@@ -111,6 +112,11 @@ class ImageMaskLayout(_GridMixin):
 
         n_rows, n_cols = image_mask.shape
         self.grid_shape = (n_rows, n_cols)  # Note: (rows, cols) often (y_dim, x_dim)
+
+        # Safety check: warn or error if grid is very large
+        n_dims = 2  # ImageMask is always 2D
+        check_grid_size_safety(self.grid_shape, n_dims)
+
         y_edges = np.arange(n_rows + 1) * bin_size_y
         x_edges = np.arange(n_cols + 1) * bin_size_x
         self.grid_edges = (y_edges, x_edges)

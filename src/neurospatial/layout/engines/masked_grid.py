@@ -9,7 +9,7 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
-from neurospatial.layout.helpers.utils import get_centers
+from neurospatial.layout.helpers.utils import check_grid_size_safety, get_centers
 from neurospatial.layout.mixins import _GridMixin
 from neurospatial.layout.validation import validate_connectivity_graph
 
@@ -85,6 +85,10 @@ class MaskedGridLayout(_GridMixin):
                 f"active_mask shape {self.active_mask.shape} must match "
                 f"the shape implied by grid_edges {self.grid_shape}.",
             )
+
+        # Safety check: warn or error if grid is very large
+        n_dims = len(self.grid_shape)
+        check_grid_size_safety(self.grid_shape, n_dims)
 
         # Create full_grid_bin_centers as (N_total_bins, N_dims) array
         centers_per_dim = [get_centers(edge_dim) for edge_dim in self.grid_edges]

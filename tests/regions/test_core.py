@@ -126,11 +126,37 @@ def test_regions_setitem_key_mismatch():
 
 
 def test_regions_setitem_duplicate():
+    """Test that overwriting a region emits a warning but succeeds."""
+
     regs = Regions()
     r = Region(name="foo", kind="point", data=[1, 2])
     regs["foo"] = r
-    with pytest.raises(KeyError):
-        regs["foo"] = r
+
+    # Overwriting should emit a warning but succeed
+    with pytest.warns(UserWarning, match="Overwriting existing region 'foo'"):
+        r2 = Region(name="foo", kind="point", data=[3, 4])
+        regs["foo"] = r2
+
+    # Verify the region was actually overwritten
+    assert np.allclose(regs["foo"].data, [3, 4])
+
+
+def test_regions_setitem_warning_can_be_suppressed():
+    """Test that overwrite warning can be suppressed with warnings filter."""
+    import warnings
+
+    regs = Regions()
+    r = Region(name="foo", kind="point", data=[1, 2])
+    regs["foo"] = r
+
+    # Suppress the warning - should not raise or warn
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        r2 = Region(name="foo", kind="point", data=[3, 4])
+        regs["foo"] = r2  # Should not emit warning
+
+    # Verify the region was still overwritten
+    assert np.allclose(regs["foo"].data, [3, 4])
 
 
 @pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")

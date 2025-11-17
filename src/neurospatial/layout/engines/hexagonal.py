@@ -17,7 +17,10 @@ from neurospatial.layout.helpers.hexagonal import (
     _infer_active_bins_from_hex_grid,
     _points_to_hex_bin_ind,
 )
-from neurospatial.layout.helpers.utils import _generic_graph_plot
+from neurospatial.layout.helpers.utils import (
+    _generic_graph_plot,
+    check_grid_size_safety,
+)
 from neurospatial.layout.validation import validate_connectivity_graph
 
 
@@ -113,6 +116,11 @@ class HexagonalLayout:
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
+
+        # Safety check: warn or error if grid is very large
+        n_dims = 2  # Hexagonal is always 2D
+        check_grid_size_safety(self.grid_shape, n_dims)
+
         if infer_active_bins and positions is not None:
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(
                 positions=positions,

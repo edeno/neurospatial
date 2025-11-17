@@ -178,12 +178,61 @@ class Regions(MutableMapping[str, Region]):
         return self._store[key]
 
     def __setitem__(self, key: str, value: Region) -> None:
-        if key in self._store:
-            raise KeyError(
-                f"Region {key!r} already exists — use update_region() instead."
-            )
+        """Assign a region to a key, following standard dict semantics.
+
+        Parameters
+        ----------
+        key : str
+            Key to assign to. Must match the Region's name.
+        value : Region
+            Region object to store.
+
+        Raises
+        ------
+        ValueError
+            If key does not match the Region's name attribute.
+
+        Warns
+        -----
+        UserWarning
+            If overwriting an existing region. To suppress this warning,
+            use `update_region()` instead.
+
+        Notes
+        -----
+        This method follows standard dictionary semantics - assignment to an
+        existing key succeeds but emits a warning to prevent accidental overwrites.
+
+        Examples
+        --------
+        >>> regions = Regions()
+        >>> r1 = Region(name="goal", kind="point", data=[10.0, 20.0])
+        >>> regions["goal"] = r1  # No warning - first assignment
+        >>> r2 = Region(name="goal", kind="point", data=[15.0, 25.0])
+        >>> regions["goal"] = r2  # UserWarning - overwriting existing region
+
+        To suppress the warning, use `update_region()`:
+
+        >>> regions.update_region("goal", point=[15.0, 25.0])  # No warning
+
+        See Also
+        --------
+        update_region : Explicit method for updating regions without warnings
+        add : Add a new region (raises KeyError if already exists)
+
+        """
         if key != value.name:
-            raise ValueError("Key must match Region.name")
+            raise ValueError(
+                f"Key {key!r} must match Region.name {value.name!r}. "
+                f"Cannot assign region with name {value.name!r} to key {key!r}."
+            )
+        if key in self._store:
+            warnings.warn(
+                f"Overwriting existing region {key!r}. "
+                "Use update_region() to suppress this warning.",
+                UserWarning,
+                stacklevel=2,
+            )
         self._store[key] = value
 
     def __delitem__(self, key: str) -> None:
