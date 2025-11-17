@@ -224,3 +224,65 @@
 **Reason**: User decided to skip this milestone.
 
 **Ready for next task**: Check TASKS.md for next uncompleted milestone
+
+---
+
+### 2025-11-17: Milestone 3.2 - COMPLETED ✅
+
+**Task**: Rename `map_probabilities_to_nearest_target_bin()` → `map_probabilities()`
+
+**Status**: ✅ COMPLETE
+
+**What was accomplished**:
+
+1. **Renamed function** ([alignment.py:430](src/neurospatial/alignment.py#L430)):
+   - Function name: `map_probabilities_to_nearest_target_bin()` → `map_probabilities()`
+   - Updated module docstring (line 18)
+   - Updated function docstring examples (lines 494, 502, 514)
+
+2. **Updated public API** ([__init__.py](src/neurospatial/__init__.py)):
+   - Import statement (line 192)
+   - `__all__` export (line 290)
+   - Module docstring (line 60)
+
+3. **Comprehensive test updates** ([test_alignment.py](tests/test_alignment.py)):
+   - 17 tests all passing ✅
+   - Import statement updated (line 7)
+   - All test function names updated (test_map_probabilities_*)
+   - All 11 function calls updated throughout tests
+
+4. **Updated all documentation**:
+   - ✅ `docs/api/index.md` (line 57)
+   - ✅ `docs/user-guide/workflows.md` (lines 295, 315)
+   - ✅ `docs/user-guide/alignment.md` (lines 104, 108, 118)
+   - ✅ `CLAUDE.md` (line 238)
+
+5. **Updated all examples**:
+   - ✅ `examples/07_advanced_operations.py` (3 occurrences)
+   - ✅ `docs/examples/07_advanced_operations.py` (3 occurrences)
+   - ✅ `examples/07_advanced_operations.ipynb` (synced via jupytext)
+   - ✅ `docs/examples/07_advanced_operations.ipynb` (synced via jupytext)
+
+6. **Quality checks**:
+   - ✅ All 17 tests pass
+   - ✅ Ruff linter passes
+   - ✅ Mypy type checker passes
+   - ✅ Code reviewer APPROVED (production-ready)
+   - ✅ TDD followed (updated tests first, verified FAIL, then implementation, verified PASS)
+
+**Files modified**: 11 files total
+- Source: `alignment.py`, `__init__.py`
+- Tests: `test_alignment.py`
+- Docs: `docs/api/index.md`, `docs/user-guide/workflows.md`, `docs/user-guide/alignment.md`, `CLAUDE.md`
+- Examples: `examples/07_advanced_operations.py`, `docs/examples/07_advanced_operations.py`, `examples/07_advanced_operations.ipynb`, `docs/examples/07_advanced_operations.ipynb`
+
+**Code reviewer highlights**:
+- "No critical issues - All requirements met perfectly"
+- "Systematic approach - TDD followed"
+- "Comprehensive coverage - All necessary files updated"
+- "Full verification - Tests pass, types validate, imports work"
+- "APPROVE - Ready to merge"
+
+**Rationale**: Function name `map_probabilities_to_nearest_target_bin` is 39 characters long and unusable. New name `map_probabilities()` is concise (18 chars), clear, and follows established naming patterns from M3.1.
+
+---

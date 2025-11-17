@@ -292,7 +292,7 @@ Comparing environments across recording sessions.
 
 ```python
 from neurospatial import Environment
-from neurospatial.alignment import map_probabilities_to_nearest_target_bin
+from neurospatial.alignment import map_probabilities
 import numpy as np
 
 # Session 1 (reference)
@@ -312,7 +312,7 @@ env2 = Environment.from_samples(
 firing_rate2 = compute_firing_rate(env2, session2_position, session2_spikes)
 
 # Align session 2 to session 1 coordinate frame
-firing_rate2_aligned = map_probabilities_to_nearest_target_bin(
+firing_rate2_aligned = map_probabilities(
     source_env=env2,
     target_env=env1,
     source_probabilities=firing_rate2

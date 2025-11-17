@@ -15,7 +15,7 @@ Core capabilities include:
     * For 3D rotations, use `scipy.spatial.transform.Rotation`.
 
 2.  **Probability Mapping**:
-    * The primary method, `map_probabilities_to_nearest_target_bin`,
+    * The primary method, `map_probabilities`,
         transfers probabilities from a source environment to a target environment.
         For each bin in the (optionally transformed) source environment, its
         probability is assigned to the spatially nearest bin in the target
@@ -427,7 +427,7 @@ def _map_inverse_distance_weighted(
     return target_probs
 
 
-def map_probabilities_to_nearest_target_bin(
+def map_probabilities(
     source_env: Environment,
     target_env: Environment,
     source_probs: NDArray[np.float64],
@@ -491,7 +491,7 @@ def map_probabilities_to_nearest_target_bin(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.alignment import map_probabilities_to_nearest_target_bin
+    >>> from neurospatial.alignment import map_probabilities
     >>> # Create two environments with different bin sizes
     >>> data = np.random.rand(1000, 2) * 100
     >>> source_env = Environment.from_samples(data, bin_size=5.0)
@@ -499,9 +499,7 @@ def map_probabilities_to_nearest_target_bin(
     >>> # Create probability distribution for source
     >>> source_probs = np.ones(source_env.n_bins) / source_env.n_bins
     >>> # Map to target environment
-    >>> target_probs = map_probabilities_to_nearest_target_bin(
-    ...     source_env, target_env, source_probs
-    ... )
+    >>> target_probs = map_probabilities(source_env, target_env, source_probs)
     >>> target_probs.shape[0] == target_env.n_bins
     True
     >>> np.allclose(target_probs.sum(), 1.0)
@@ -511,7 +509,7 @@ def map_probabilities_to_nearest_target_bin(
 
     >>> from neurospatial.alignment import get_2d_rotation_matrix
     >>> rotation = get_2d_rotation_matrix(45)  # 45 degree rotation
-    >>> target_probs = map_probabilities_to_nearest_target_bin(
+    >>> target_probs = map_probabilities(
     ...     source_env,
     ...     target_env,
     ...     source_probs,

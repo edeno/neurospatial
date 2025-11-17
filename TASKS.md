@@ -334,38 +334,38 @@ uv run python -c "from neurospatial import place_field; print(place_field.__name
 
 ---
 
-### 3.2 Rename `map_probabilities_to_nearest_target_bin` → `map_probabilities()` ⚡ CRITICAL
+### 3.2 Rename `map_probabilities_to_nearest_target_bin` → `map_probabilities()` ⚡ CRITICAL ✅ COMPLETE
 
 **Priority**: P0 - 39 character name is unusable
 
 **Files to modify**:
 
-- [ ] `src/neurospatial/alignment.py`
+- [x] `src/neurospatial/alignment.py`
   - Rename function
   - Update docstring
-- [ ] `src/neurospatial/__init__.py`
+- [x] `src/neurospatial/__init__.py`
   - Update import and `__all__`
-- [ ] Search for all uses of old name
+- [x] Search for all uses of old name
 
 **Tests**:
 
-- [ ] `tests/test_alignment.py`
+- [x] `tests/test_alignment.py`
   - Rename tests
   - Update all calls
   - Update imports
 
 **Documentation**:
 
-- [ ] CLAUDE.md
-- [ ] Alignment module docstring
+- [x] CLAUDE.md
+- [x] Alignment module docstring
 
 **Notebooks**:
 
-- [ ] Use `jupyter-notebook-editor` skill to update all notebooks
+- [x] Use `jupyter-notebook-editor` skill to update all notebooks
   - Search for `map_probabilities_to_nearest_target_bin` calls in notebooks
   - Replace with `map_probabilities` using the skill's systematic approach
   - Update both code cells and markdown documentation
-- [ ] Verify notebooks are valid JSON after updates
+- [x] Verify notebooks are valid JSON after updates
 
 **Verification**:
 

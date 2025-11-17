@@ -54,7 +54,7 @@ from shapely.geometry import Point, Polygon
 from neurospatial import Environment
 from neurospatial.alignment import (
     get_2d_rotation_matrix,
-    map_probabilities_to_nearest_target_bin,
+    map_probabilities,
 )
 from neurospatial.transforms import Affine2D, scale_2d, translate
 
@@ -457,7 +457,7 @@ plt.show()
 
 # %%
 # Map the probabilities to the coarse grid
-firing_probs_coarse = map_probabilities_to_nearest_target_bin(
+firing_probs_coarse = map_probabilities(
     source_env=env_fine,
     target_env=env_coarse,
     source_probs=firing_probs_fine,
@@ -754,7 +754,7 @@ print("✓ Use test points with known expected results")
 #    - Every transform has `.inverse()` to undo it
 #
 # 4. **Probability mapping** transfers distributions between environments
-#    - Use `map_probabilities_to_nearest_target_bin()`
+#    - Use `map_probabilities()`
 #    - Preserves total probability while changing discretization
 #    - Useful for comparing place fields across sessions
 #

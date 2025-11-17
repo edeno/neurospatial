@@ -101,11 +101,11 @@ env_transformed = apply_transform_to_environment(env_3d, T, name="shifted")
 Map probability distributions between environments (works for 2D or 3D):
 
 ```python
-from neurospatial.alignment import map_probabilities_to_nearest_target_bin, get_2d_rotation_matrix
+from neurospatial.alignment import map_probabilities, get_2d_rotation_matrix
 from scipy.spatial.transform import Rotation
 
 # 2D alignment with rotation and scaling
-aligned_probs_2d = map_probabilities_to_nearest_target_bin(
+aligned_probs_2d = map_probabilities(
     source_env=env1,
     target_env=env2,
     source_probabilities=probs1,
@@ -115,7 +115,7 @@ aligned_probs_2d = map_probabilities_to_nearest_target_bin(
 
 # 3D alignment with rotation (v0.3.0+)
 R_3d = Rotation.from_euler('xyz', [45, 30, 60], degrees=True).as_matrix()
-aligned_probs_3d = map_probabilities_to_nearest_target_bin(
+aligned_probs_3d = map_probabilities(
     source_env=env_3d_1,
     target_env=env_3d_2,
     source_probabilities=probs_3d,

@@ -4,7 +4,7 @@ import pytest
 from neurospatial.alignment import (
     apply_similarity_transform,
     get_2d_rotation_matrix,
-    map_probabilities_to_nearest_target_bin,
+    map_probabilities,
 )
 
 
@@ -71,18 +71,18 @@ def test_apply_similarity_transform_invalid_shapes():
         apply_similarity_transform(points, R, s, t)
 
 
-def test_map_probabilities_to_nearest_target_bin_basic():
+def test_map_probabilities_basic():
     # 2D, 3 bins each, no transform
     src_bins = np.array([[0, 0], [1, 0], [0, 1]])
     tgt_bins = np.array([[0, 0], [1, 0], [0, 1]])
     src_probs = np.array([0.2, 0.5, 0.3])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
-    tgt_probs = map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
     np.testing.assert_allclose(tgt_probs, src_probs)
 
 
-def test_map_probabilities_to_nearest_target_bin_with_transform():
+def test_map_probabilities_with_transform():
     # Rotate source by 90 deg, so [1,0] -> [0,1], [0,1] -> [-1,0]
     src_bins = np.array([[1, 0], [0, 1]])
     tgt_bins = np.array([[0, 1], [-1, 0]])
@@ -90,72 +90,70 @@ def test_map_probabilities_to_nearest_target_bin_with_transform():
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
     R = get_2d_rotation_matrix(90)
-    tgt_probs = map_probabilities_to_nearest_target_bin(
-        src_env, tgt_env, src_probs, source_rotation_matrix=R
-    )
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs, source_rotation_matrix=R)
     # After rotation: [1,0]->[0,1], [0,1]->[-1,0]
     np.testing.assert_allclose(tgt_probs, [0.7, 0.3])
 
 
-def test_map_probabilities_to_nearest_target_bin_duplicate_mapping():
+def test_map_probabilities_duplicate_mapping():
     # Two source bins map to same target bin
     src_bins = np.array([[0, 0], [0.1, 0]])
     tgt_bins = np.array([[0, 0]])
     src_probs = np.array([0.4, 0.6])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
-    tgt_probs = map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
     np.testing.assert_allclose(tgt_probs, [1.0])
 
 
-def test_map_probabilities_to_nearest_target_bin_empty_source():
+def test_map_probabilities_empty_source():
     src_bins = np.empty((0, 2))
     tgt_bins = np.array([[0, 0], [1, 1]])
     src_probs = np.array([])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
-    tgt_probs = map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
     np.testing.assert_allclose(tgt_probs, [0, 0])
 
 
-def test_map_probabilities_to_nearest_target_bin_empty_target():
+def test_map_probabilities_empty_target():
     src_bins = np.array([[0, 0]])
     tgt_bins = np.empty((0, 2))
     src_probs = np.array([1.0])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
-    tgt_probs = map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
     assert tgt_probs.size == 0
 
 
-def test_map_probabilities_to_nearest_target_bin_not_fitted():
+def test_map_probabilities_not_fitted():
     src_bins = np.array([[0, 0]])
     tgt_bins = np.array([[0, 0]])
     src_probs = np.array([1.0])
     src_env = MockEnvironment(src_bins, 2, is_fitted=False)
     tgt_env = MockEnvironment(tgt_bins, 2)
     with pytest.raises(ValueError):
-        map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+        map_probabilities(src_env, tgt_env, src_probs)
 
 
-def test_map_probabilities_to_nearest_target_bin_shape_mismatch():
+def test_map_probabilities_shape_mismatch():
     src_bins = np.array([[0, 0], [1, 1]])
     tgt_bins = np.array([[0, 0], [1, 1]])
     src_probs = np.array([1.0])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 2)
     with pytest.raises(ValueError):
-        map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+        map_probabilities(src_env, tgt_env, src_probs)
 
 
-def test_map_probabilities_to_nearest_target_bin_dim_mismatch():
+def test_map_probabilities_dim_mismatch():
     src_bins = np.array([[0, 0]])
     tgt_bins = np.array([[0, 0, 0]])
     src_probs = np.array([1.0])
     src_env = MockEnvironment(src_bins, 2)
     tgt_env = MockEnvironment(tgt_bins, 3)
     with pytest.raises(ValueError):
-        map_probabilities_to_nearest_target_bin(src_env, tgt_env, src_probs)
+        map_probabilities(src_env, tgt_env, src_probs)
 
 
 def test_map_probabilities_with_source_scale_keyword():
@@ -168,9 +166,7 @@ def test_map_probabilities_with_source_scale_keyword():
     tgt_env = MockEnvironment(tgt_bins, 2)
 
     # Use source_scale keyword argument (NEW STANDARDIZED NAME)
-    tgt_probs = map_probabilities_to_nearest_target_bin(
-        src_env, tgt_env, src_probs, source_scale=2.0
-    )
+    tgt_probs = map_probabilities(src_env, tgt_env, src_probs, source_scale=2.0)
 
     # After scaling source by 2, [1,0]->[2,0] and [0,1]->[0,2]
     np.testing.assert_allclose(tgt_probs, [0.6, 0.4])

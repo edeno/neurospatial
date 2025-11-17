@@ -57,7 +57,7 @@ Transforms and Alignment:
     estimate_transform : Estimate affine transform from point pairs
     apply_transform_to_environment : Transform entire environment
     get_2d_rotation_matrix : Create 2D rotation matrix
-    map_probabilities_to_nearest_target_bin : Align probability distributions
+    map_probabilities : Align probability distributions
 
 Regions:
     Environment.region_membership : Compute region membership for bins
@@ -189,7 +189,7 @@ import logging
 
 from neurospatial.alignment import (
     get_2d_rotation_matrix,
-    map_probabilities_to_nearest_target_bin,
+    map_probabilities,
 )
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
@@ -287,7 +287,7 @@ __all__ = [
     "gradient",
     "list_available_layouts",
     "map_points_to_bins",
-    "map_probabilities_to_nearest_target_bin",
+    "map_probabilities",
     "neighbor_reduce",
     "neighbors_within",
     "normalize_field",

@@ -54,7 +54,7 @@ Transform and align spatial representations.
 
 **Key Functions:**
 
-- `map_probabilities_to_nearest_target_bin()`: Align probability distributions between environments
+- `map_probabilities()`: Align probability distributions between environments
 - `get_2d_rotation_matrix()`: Create 2D rotation matrices
 
 ### [neurospatial.transforms](neurospatial/transforms.md)
