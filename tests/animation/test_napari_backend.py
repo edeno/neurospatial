@@ -543,30 +543,24 @@ def test_render_napari_playback_controls(simple_env, simple_fields):
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        patch(
+            "neurospatial.animation.backends.napari_backend.get_settings"
+        ) as mock_get_settings,
+    ):
         # Create mock viewer with playback controls
         mock_viewer = _create_mock_viewer()
-
-        # Mock dims with current_step (starts at middle frame by default)
-        mock_viewer.dims = MagicMock()
         mock_viewer.dims.current_step = (5, 0, 0)  # Start at frame 5
-        mock_viewer.dims.ndim = 3  # 3 dimensions (time, height, width)
-
-        # Mock Qt viewer structure for FPS control
-        mock_qt_viewer = MagicMock()
-        mock_qt_dims = MagicMock()
-        mock_time_slider = MagicMock()
-        mock_time_slider.fps = 10  # Default FPS
-
-        mock_qt_dims.slider_widgets = [mock_time_slider]
-        mock_qt_viewer.dims = mock_qt_dims
-        mock_window = MagicMock()
-        mock_window.qt_viewer = mock_qt_viewer
-        mock_viewer.window = mock_window
 
         mock_viewer_class.return_value = mock_viewer
+
+        # Mock napari settings for FPS control
+        mock_settings = MagicMock()
+        mock_settings.application.playback_fps = 10  # Default FPS
+        mock_get_settings.return_value = mock_settings
 
         # Render with custom FPS
         render_napari(
@@ -578,5 +572,5 @@ def test_render_napari_playback_controls(simple_env, simple_fields):
         # Verify initial frame set to 0
         assert mock_viewer.dims.current_step == (0, 0, 0)
 
-        # Verify FPS configured
-        assert mock_time_slider.fps == 25
+        # Verify FPS configured via settings (not qt_viewer)
+        assert mock_settings.application.playback_fps == 25

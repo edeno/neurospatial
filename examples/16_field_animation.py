@@ -169,11 +169,15 @@ print(f"Generated {len(fields)} trial fields (remapping at trial {remap_trial})"
 # %%
 try:
     import napari
+    from IPython import get_ipython
 
     print("Launching Napari viewer...")
-    print("  - Use slider to scrub through trials")
-    print("  - Instant seeking through all frames")
-    print("  - GPU accelerated")
+    print("CONTROLS (bottom-left corner):")
+    print("  ▶ Play button - Start/stop animation")
+    print("  ━ Time slider - Scrub through frames")
+    print("  ⚙ Gear icon - Adjust playback speed")
+    print("  ← → Arrow keys - Step through frames")
+    print("")
 
     viewer = env.animate_fields(
         fields,
@@ -183,8 +187,15 @@ try:
         title="Place Field Remapping",
     )
 
-    print("✓ Napari viewer launched")
-    print("  (Close the viewer window to continue)")
+    print("✓ Napari viewer opened")
+
+    # Only call napari.run() when running as a script (not in Jupyter)
+    # In Jupyter, the viewer stays open without blocking execution
+    if get_ipython() is None:
+        print("  (Running as script - window will block until closed)")
+        napari.run()
+    else:
+        print("  (Running in Jupyter - window stays open, execution continues)")
 
 except ImportError:
     print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
@@ -382,7 +393,10 @@ print("  Napari loads frames on-demand - would handle 900K frames efficiently")
 
 try:
     # Import napari only if attempting to use it
-    import napari  # noqa: F401
+    import napari
+    from IPython import get_ipython
+
+    print("CONTROLS: Look for playback controls at bottom-left of window")
 
     viewer = env.animate_fields(
         fields_mmap,
@@ -390,9 +404,15 @@ try:
         fps=250,  # Match recording rate
         title="Large Session Demo (1000 frames)",
     )
-    print("✓ Napari viewer launched!")
+    print("✓ Napari viewer opened!")
     print("  (Same technique works for 60K-900K frame sessions)")
-    print("  (Close the viewer window to continue)")
+
+    # Only call napari.run() when running as a script (not in Jupyter)
+    if get_ipython() is None:
+        print("  (Running as script - window will block until closed)")
+        napari.run()
+    else:
+        print("  (Running in Jupyter - window stays open, execution continues)")
 
 except ImportError:
     print("⊗ Napari not available (install: pip install 'napari[all]>=0.4.18')")

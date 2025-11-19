@@ -189,14 +189,15 @@ def render_napari(
         # Set displayed order: show dimensions 1 and 2 (height, width)
         viewer.dims.order = tuple(range(viewer.dims.ndim))
 
-    # 3. Configure FPS on the Qt dims slider widget
-    if hasattr(viewer, "window") and hasattr(viewer.window, "qt_viewer"):
-        qt_dims = viewer.window.qt_viewer.dims
-        # Set FPS for the time dimension slider (first slider)
-        if hasattr(qt_dims, "slider_widgets") and qt_dims.slider_widgets:
-            time_slider = qt_dims.slider_widgets[0]  # First dimension is time
-            if hasattr(time_slider, "fps"):
-                time_slider.fps = fps
+    # 3. Configure FPS via napari settings (avoids deprecated qt_viewer access)
+    try:
+        from napari.settings import get_settings
+
+        settings = get_settings()
+        settings.application.playback_fps = fps
+    except ImportError:
+        # Fallback for older napari versions
+        pass
 
     # Add trajectory overlay if provided
     if overlay_trajectory is not None:
