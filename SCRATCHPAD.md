@@ -956,6 +956,67 @@ User reported: "The napari example doesn't render correctly in the viewer. It do
 **Blockers:**
 - None currently
 
+### 2025-11-19 - User Guide Creation (Session 13)
+
+**Completed:**
+- ✅ Created comprehensive user guide: `docs/user-guide/animation.md` (550+ lines)
+  1. ✅ Quick start section with 5-line examples for all backends
+  2. ✅ Backend comparison table with max frames, dependencies, output types
+  3. ✅ Remote server workflow (HTML export, video export, X11 forwarding)
+  4. ✅ Large-scale data guide (memory-mapped arrays, subsampling, performance tips)
+  5. ✅ Troubleshooting section (10 common issues with solutions)
+- ✅ Updated TASKS.md to mark all user guide tasks as complete (lines 391-396)
+
+**User Guide Structure:**
+- **Quick Start** (17 lines): 4 one-liners for each backend
+- **Overview** (11 lines): Use cases and what gets animated
+- **Backend Comparison** (33 lines): Table + auto-selection logic
+- **Napari Backend** (60 lines): Interactive viewer, trajectory overlays, performance, controls
+- **Video Backend** (95 lines): Parallel rendering, dry-run mode, codec selection, ffmpeg installation
+- **HTML Backend** (58 lines): File size limits, controls, browser compatibility
+- **Widget Backend** (28 lines): Jupyter integration, caching strategy
+- **Common Parameters** (22 lines): Complete parameter table
+- **Large-Scale Data** (75 lines): Memory-mapped arrays, subsampling, performance tips, typical workflow
+- **Remote Server Workflow** (46 lines): 3 options for remote visualization
+- **Layout Support** (14 lines): Table showing all supported layouts
+- **Troubleshooting** (123 lines): 10 common errors with detailed solutions
+- **Examples** (10 lines): Cross-reference to notebook
+- **API Reference** (7 lines): Links to API docs
+
+**Documentation Quality:**
+- Follows existing user guide style (checked environments.md)
+- Complete code examples for every feature
+- Tables for quick reference (backends, parameters, codecs, layouts)
+- Clear solutions for common errors
+- Cross-references to examples notebook and API docs
+- Covers all requirements from TASKS.md
+
+**Why This Guide Matters:**
+- Animation is a major new feature (v0.3.0) with 4 backends
+- Users need guidance on backend selection for their use case
+- Large-scale data workflows require special techniques (memory-mapping, subsampling)
+- Remote server usage is common in neuroscience (no display available)
+- Troubleshooting section prevents common pitfalls (pickle errors, ffmpeg missing, etc.)
+
+**Files Modified:**
+- [docs/user-guide/animation.md](docs/user-guide/animation.md) - New file (550+ lines)
+- [TASKS.md](TASKS.md) - Marked user guide tasks complete
+
+**Next Steps (Milestone 7 remaining tasks):**
+- Update README.md with animation feature overview
+- Create example GIF/video demonstrating backends (optional per TASKS.md)
+- Add installation instructions for optional dependencies to README
+
+**Milestone 7 Status:**
+- ✅ Examples notebook created and working (Session 9-10)
+- ✅ Napari rendering bug fixed (Session 11)
+- ✅ CLAUDE.md updated with animation docs (Session 12)
+- ✅ User guide created (Session 13)
+- ⏳ README updates remaining
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference

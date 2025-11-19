@@ -388,12 +388,12 @@ Implement animation capabilities supporting four backends:
   - [x] Document `subsample_frames` import
   - [x] Add pickle-ability requirement
   - [x] Add example usage patterns
-- [ ] Create `docs/user-guide/animation.md`
-  - [ ] Quick start (5 lines)
-  - [ ] Backend comparison table
-  - [ ] Remote server workflow
-  - [ ] Large-scale data guide (memory-mapped arrays)
-  - [ ] Troubleshooting section
+- [x] Create `docs/user-guide/animation.md`
+  - [x] Quick start (5 lines)
+  - [x] Backend comparison table
+  - [x] Remote server workflow
+  - [x] Large-scale data guide (memory-mapped arrays)
+  - [x] Troubleshooting section
 
 ### README Updates
 
