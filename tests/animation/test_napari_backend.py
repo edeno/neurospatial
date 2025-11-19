@@ -547,9 +547,10 @@ def test_render_napari_playback_controls(simple_env, simple_fields):
         patch(
             "neurospatial.animation.backends.napari_backend.napari.Viewer"
         ) as mock_viewer_class,
+        patch("napari.settings.get_settings") as mock_get_settings,
         patch(
-            "neurospatial.animation.backends.napari_backend.get_settings"
-        ) as mock_get_settings,
+            "neurospatial.animation.backends.napari_backend._add_speed_control_widget"
+        ),
     ):
         # Create mock viewer with playback controls
         mock_viewer = _create_mock_viewer()
@@ -574,3 +575,60 @@ def test_render_napari_playback_controls(simple_env, simple_fields):
 
         # Verify FPS configured via settings (not qt_viewer)
         assert mock_settings.application.playback_fps == 25
+
+
+@pytest.mark.napari
+def test_speed_control_widget_added(simple_env, simple_fields):
+    """Test that interactive speed control widget is added to viewer."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        patch("napari.settings.get_settings") as mock_get_settings,
+        patch(
+            "neurospatial.animation.backends.napari_backend._add_speed_control_widget"
+        ) as mock_add_widget,
+    ):
+        # Create mock viewer
+        mock_viewer = _create_mock_viewer()
+        mock_viewer_class.return_value = mock_viewer
+
+        # Mock napari settings
+        mock_settings = MagicMock()
+        mock_settings.application.playback_fps = 10
+        mock_get_settings.return_value = mock_settings
+
+        # Render napari viewer
+        render_napari(simple_env, simple_fields, fps=30)
+
+        # Verify speed control widget was called
+        mock_add_widget.assert_called_once_with(mock_viewer, initial_fps=30)
+
+
+@pytest.mark.napari
+def test_speed_control_widget_graceful_fallback(simple_env, simple_fields):
+    """Test that napari backend works even if magicgui is not available."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import (
+        _add_speed_control_widget,
+    )
+
+    # Create mock viewer
+    mock_viewer = _create_mock_viewer()
+    mock_viewer.window = MagicMock()
+    mock_viewer.window.add_dock_widget = MagicMock()
+
+    # Mock magicgui import failure
+    with patch(
+        "builtins.__import__", side_effect=ImportError("magicgui not available")
+    ):
+        # Should not raise error - gracefully handles missing magicgui
+        _add_speed_control_widget(mock_viewer, initial_fps=30)
+
+        # Widget should not have been added
+        mock_viewer.window.add_dock_widget.assert_not_called()

@@ -177,9 +177,9 @@ try:
     print("  ━ Time slider - Scrub through frames")
     print("  ← → Arrow keys - Step through frames")
     print("")
-    print("ADJUST SPEED:")
-    print("  File → Preferences → Application → Playback frames per second")
-    print("  (or set fps parameter when calling animate_fields)")
+    print("SPEED CONTROL (left sidebar):")
+    print("  📊 'Playback Speed' widget - Drag slider to adjust FPS (1-120)")
+    print("  Updates in real-time as you drag")
     print("")
 
     viewer = env.animate_fields(
@@ -399,9 +399,9 @@ try:
     import napari
     from IPython import get_ipython
 
-    print("PLAYBACK CONTROLS (bottom-left):")
-    print("  ▶ Play button, time slider, arrow keys")
-    print("  Adjust speed: File → Preferences → Application → Playback FPS")
+    print("PLAYBACK CONTROLS:")
+    print("  Bottom-left: ▶ Play button, time slider, arrow keys")
+    print("  Left sidebar: 📊 'Playback Speed' widget (drag slider for 1-120 FPS)")
 
     viewer = env.animate_fields(
         fields_mmap,

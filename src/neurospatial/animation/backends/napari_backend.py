@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +20,58 @@ try:
     NAPARI_AVAILABLE = True
 except ImportError:
     NAPARI_AVAILABLE = False
+
+
+def _add_speed_control_widget(viewer: Any, initial_fps: int = 30) -> None:
+    """Add interactive playback speed control widget to napari viewer.
+
+    Creates a docked widget with an FPS slider that updates playback speed
+    in real-time. Requires magicgui for widget creation.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance to add widget to
+    initial_fps : int, default=30
+        Initial playback speed in frames per second
+
+    Notes
+    -----
+    If magicgui is not available, this function silently returns without
+    adding the widget. This ensures the napari backend works even if
+    magicgui is not installed.
+    """
+    try:
+        from magicgui import magicgui
+        from napari.settings import get_settings
+    except ImportError:
+        # magicgui or napari.settings not available - skip widget
+        return
+
+    # Create speed control widget using magicgui
+    @magicgui(
+        auto_call=True,
+        fps={
+            "widget_type": "Slider",
+            "min": 1,
+            "max": 120,
+            "value": initial_fps,
+            "label": "Playback Speed (FPS)",
+        },
+    )
+    def speed_control(fps: int = initial_fps) -> None:
+        """Update playback speed in real-time."""
+        settings = get_settings()
+        settings.application.playback_fps = fps
+
+    # Add widget as dock to viewer
+    # If docking fails (e.g., no Qt window), silently skip
+    with contextlib.suppress(Exception):
+        viewer.window.add_dock_widget(
+            speed_control,
+            name="Playback Speed",
+            area="left",  # Dock on left side
+        )
 
 
 def render_napari(
@@ -107,9 +160,18 @@ def render_napari(
     - **Frame counter** - Shows "1/N" indicating current frame
     - **Keyboard shortcuts** - Arrow keys to step forward/backward
 
-    The animation starts at frame 0 (beginning) with playback speed set by the
-    `fps` parameter. To adjust speed after opening, use File → Preferences → Application
-    → "Playback frames per second".
+    **Playback Speed Control:**
+
+    An interactive "Playback Speed" widget is automatically added to the left side
+    of the viewer (requires magicgui, which is included with napari[all]):
+
+    - **FPS Slider** - Drag slider to adjust playback speed from 1-120 FPS in real-time
+    - **Current FPS** - Shows current speed setting
+    - Updates instantly as you drag the slider
+
+    The animation starts at frame 0 with playback speed set by the `fps` parameter.
+    If magicgui is not available, the speed can still be changed via
+    File → Preferences → Application → "Playback frames per second".
 
     **Note:** Only the time dimension slider is shown. Spatial dimensions (height, width)
     are displayed in the 2D viewport, not as separate sliders.
@@ -195,6 +257,9 @@ def render_napari(
 
         settings = get_settings()
         settings.application.playback_fps = fps
+
+        # 4. Add interactive speed control widget (if magicgui available)
+        _add_speed_control_widget(viewer, initial_fps=fps)
     except ImportError:
         # Fallback for older napari versions
         pass
