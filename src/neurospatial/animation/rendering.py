@@ -39,10 +39,8 @@ def compute_global_colormap_range(
 
     Returns
     -------
-    vmin : float
-        Minimum value for color scale
-    vmax : float
-        Maximum value for color scale
+    vmin, vmax : tuple of float
+        (vmin, vmax) - Minimum and maximum values for color scale
 
     Examples
     --------
@@ -228,6 +226,11 @@ def field_to_rgb_for_napari(
     rgb : ndarray, shape (height, width, 3) or (n_bins, 3)
         RGB image for napari
 
+    Raises
+    ------
+    ValueError
+        If field shape does not match env.n_bins
+
     Examples
     --------
     >>> import numpy as np
@@ -243,6 +246,13 @@ def field_to_rgb_for_napari(
     >>> rgb.dtype
     dtype('uint8')
     """
+    # Validate field shape early for clear error messages
+    if len(field) != env.n_bins:
+        raise ValueError(
+            f"Field has {len(field)} values but environment has {env.n_bins} bins. "
+            f"Expected shape: ({env.n_bins},)"
+        )
+
     # Normalize to [0, 1]
     normalized = (field - vmin) / (vmax - vmin)
     normalized = np.clip(normalized, 0, 1)

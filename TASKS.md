@@ -32,23 +32,24 @@ Implement animation capabilities supporting four backends:
 
 ### Module Structure
 
-- [ ] Create `src/neurospatial/animation/` directory
-- [ ] Create `src/neurospatial/animation/__init__.py`
-- [ ] Create `src/neurospatial/animation/backends/` directory
-- [ ] Create `src/neurospatial/animation/backends/__init__.py`
+- [x] Create `src/neurospatial/animation/` directory
+- [x] Create `src/neurospatial/animation/__init__.py`
+- [x] Create `src/neurospatial/animation/backends/` directory
+- [x] Create `src/neurospatial/animation/backends/__init__.py`
 
 ### Rendering Utilities (`rendering.py`)
 
-- [ ] Create `src/neurospatial/animation/rendering.py`
-- [ ] Implement `compute_global_colormap_range()` (single-pass optimization)
-- [ ] Implement `render_field_to_rgb()` (matplotlib → RGB array)
-- [ ] Implement `render_field_to_png_bytes()` (for HTML embedding)
-- [ ] Implement `field_to_rgb_for_napari()` (fast colormap lookup)
-- [ ] Add NumPy docstrings for all functions
-- [ ] Write unit tests for rendering utilities
-  - [ ] Test colormap range with edge cases (all same values, NaN handling)
-  - [ ] Test RGB conversion accuracy
-  - [ ] Test PNG byte encoding
+- [x] Create `src/neurospatial/animation/rendering.py`
+- [x] Implement `compute_global_colormap_range()` (single-pass optimization)
+- [x] Implement `render_field_to_rgb()` (matplotlib → RGB array)
+- [x] Implement `render_field_to_png_bytes()` (for HTML embedding)
+- [x] Implement `field_to_rgb_for_napari()` (fast colormap lookup)
+- [x] Add NumPy docstrings for all functions
+- [x] Write unit tests for rendering utilities
+  - [x] Test colormap range with edge cases (all same values, partial overrides)
+  - [x] Test RGB conversion accuracy
+  - [x] Test PNG byte encoding
+  - [x] Test field shape validation (added in code review)
 
 ### Core Dispatcher (`core.py`)
 
@@ -96,8 +97,8 @@ Implement animation capabilities supporting four backends:
 ### Type Checking
 
 - [ ] Run `uv run mypy src/neurospatial/animation/core.py`
-- [ ] Run `uv run mypy src/neurospatial/animation/rendering.py`
-- [ ] Fix any type errors
+- [x] Run `uv run mypy src/neurospatial/animation/rendering.py`
+- [x] Fix any type errors (all passing)
 
 ---
 

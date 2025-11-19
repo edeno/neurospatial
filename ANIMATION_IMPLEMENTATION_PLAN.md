@@ -698,8 +698,14 @@ def render_field_to_rgb(
 
     # Convert figure to RGB array
     fig.canvas.draw()
-    rgb = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    rgb = rgb.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+    # IMPLEMENTATION NOTE: The original plan used tostring_rgb(), but the
+    # actual implementation uses buffer_rgba() for better retina/HiDPI display
+    # support. This change was made during implementation to handle modern
+    # matplotlib versions and high-resolution displays correctly.
+    # See commit d801f41 for details.
+    rgba_buffer = np.asarray(fig.canvas.buffer_rgba())
+    rgb = rgba_buffer[:, :, :3].copy()  # Drop alpha channel
 
     plt.close(fig)
     return rgb
