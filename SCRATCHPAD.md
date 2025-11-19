@@ -224,6 +224,116 @@
 **Blockers:**
 - None currently
 
+### 2025-11-19 - Video Backend Implementation (Session 4)
+
+**Completed:**
+- ✅ Implemented video backend with full TDD workflow:
+  1. ✅ Created comprehensive test file first (`tests/animation/test_video_backend.py`) with 19 test cases
+  2. ✅ Watched all tests fail (RED phase)
+  3. ✅ Implemented 3 core functions:
+     - `check_ffmpeg_available()` - ffmpeg availability check with graceful error handling
+     - `render_video()` - 267-line main function with parallel rendering, dry-run mode, codec selection
+     - `parallel_render_frames()` - 143-line parallel frame renderer with worker partitioning
+     - `_render_worker_frames()` - 91-line worker function with matplotlib figure management
+  4. ✅ Fixed frame indexing (0-indexed for ffmpeg compatibility)
+  5. ✅ Fixed h264 dimension issue (added scale filter for even dimensions)
+  6. ✅ All 18 tests passing (GREEN phase)
+  7. ✅ Fixed mypy type error (os.cpu_count() returns None)
+  8. ✅ Fixed ruff linting issues (import order, variable naming)
+  9. ✅ Code review completed (9.5/10)
+  10. ✅ Applied code review fixes:
+      - Added n_total_frames to docstring
+      - Documented empirical constant for file size estimation
+      - Added n_workers validation (must be positive)
+      - Added test for negative n_workers
+  11. ✅ All 19 tests passing final (100%)
+
+**Functions Implemented:**
+- `check_ffmpeg_available()` in `video_backend.py` - 24-line availability check
+- `render_video()` in `video_backend.py` - 267-line parallel video export:
+  - Dry-run mode with time/size estimation (renders 1 test frame)
+  - Auto worker count selection (cpu_count // 2)
+  - n_workers validation (must be positive)
+  - Codec selection (h264, h265, vp9, mpeg4)
+  - Temporary directory management with cleanup
+  - ffmpeg scale filter (ensures even dimensions for h264)
+  - Progress feedback during rendering
+  - Pickle validation for parallel rendering
+- `parallel_render_frames()` in `_parallel.py` - 143-line parallelization:
+  - Frame partitioning across workers
+  - Worker task dictionary creation
+  - ProcessPoolExecutor with tqdm progress
+  - Pickle-ability validation with helpful error
+  - Returns ffmpeg-compatible filename pattern
+- `_render_worker_frames()` in `_parallel.py` - 91-line worker:
+  - Creates own matplotlib figure (avoids threading issues)
+  - 0-indexed frame numbering for ffmpeg
+  - Consistent filename padding across workers
+  - Finally block for figure cleanup (prevents leaks)
+
+**Test Suite Quality (19 tests):**
+- **ffmpeg availability** (3 tests): success, not found, error
+- **Dry run mode** (2 tests): estimation output, no worker spawn
+- **Serial rendering** (3 tests): basic export, labels, custom parameters
+- **Parallel rendering** (2 tests): n_workers=2, auto worker count
+- **Error handling** (5 tests): missing ffmpeg, pickle failure, no pickle for serial, encoding failure, negative n_workers
+- **Parallel utilities** (3 tests): frame partitioning, unpicklable env, worker rendering
+- **Codec selection** (2 tests): h264, mpeg4
+
+**Code Review Results (9.5/10):**
+- Zero critical issues
+- **Quality issues fixed:**
+  - Added n_total_frames to _render_worker_frames() docstring
+  - Documented empirical constant (50 KB per 100x100 DPI frame)
+  - Added n_workers validation (ValueError for n < 1)
+  - Added test_video_negative_workers
+- **Design excellence noted:**
+  - Clean separation of concerns (orchestration vs parallelization)
+  - Process-level parallelism avoids matplotlib threading issues
+  - Frame indexing correctness (0-indexed)
+  - Fail-fast validation with helpful messages
+  - Proper resource cleanup (finally blocks)
+- **Documentation excellence:**
+  - NumPy docstrings with comprehensive examples
+  - Notes sections explain parallel mechanics
+  - Attribution to original gist
+
+**Technical Decisions:**
+- 0-indexed frame numbering (frame_00000.png) matches ffmpeg expectations
+- Added ffmpeg `-vf scale=ceil(iw/2)*2:ceil(ih/2)*2` filter for h264 even dimension requirement
+- Worker count default: `max(1, os.cpu_count() // 2)` leaves headroom for system
+- Handles `os.cpu_count()` returning None (defaults to 2)
+- Each worker creates own figure to avoid matplotlib threading issues
+- Temporary directory automatically cleaned up with shutil.rmtree
+- Dry-run renders 1 frame to measure timing
+- File size estimation: `(dpi/100)^2 * 50 * n_frames / 1024 * (bitrate/5000)` MB
+
+**Key Fixes Applied:**
+1. **Frame indexing**: Changed from 1-indexed to 0-indexed (ffmpeg compatibility)
+2. **Even dimensions**: Added ffmpeg scale filter for h264 codec requirement
+3. **CPU count**: Handle None return value from os.cpu_count()
+4. **Variable naming**: frame_size_base_kb (lowercase per ruff)
+5. **Documentation**: Complete parameter list in worker function
+6. **Validation**: Negative n_workers raises ValueError with diagnostic
+
+**Milestone 3 Status: COMPLETE ✅**
+- Video backend fully implemented with parallel rendering
+- 19/19 tests passing (100%)
+- Type checking clean (mypy)
+- Linting clean (ruff)
+- Code review approved (9.5/10) with all quality fixes applied
+- Actual video rendering verified (h264, mpeg4 codecs)
+- Ready for Milestone 4 (Napari Backend) or commit & continue
+
+**Integration Notes:**
+- Tests use `animate_fields()` from core.py (not env.animate_fields() - Milestone 6)
+- Tests skip if ffmpeg not installed (CI-friendly)
+- Serial rendering (n_workers=1) bypasses pickle validation
+- Parallel rendering validates pickle-ability before spawning workers
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference
