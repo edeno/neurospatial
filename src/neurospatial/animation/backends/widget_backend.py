@@ -1,16 +1,20 @@
-"""Jupyter notebook widget backend (stub for testing)."""
+"""Jupyter notebook widget backend."""
 
 from __future__ import annotations
 
+import base64
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 # Check ipywidgets availability
 try:
-    import ipywidgets  # noqa: F401
-    from IPython.display import HTML, display  # noqa: F401
+    import ipywidgets
+    from IPython.display import HTML, display
 
     IPYWIDGETS_AVAILABLE = True
 except ImportError:
@@ -19,19 +23,40 @@ except ImportError:
 
 def render_widget(
     env: Environment,
-    fields: list,
-    **kwargs: Any,
+    fields: list[NDArray[np.float64]],
+    *,
+    fps: int = 30,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    frame_labels: list[str] | None = None,
+    dpi: int = 100,
+    **kwargs: Any,  # Accept other parameters gracefully
 ) -> Any:
     """Create interactive Jupyter widget with slider control.
+
+    Pre-renders a subset of frames (first 500) for responsive scrubbing,
+    then renders remaining frames on-demand when accessed.
 
     Parameters
     ----------
     env : Environment
         Environment defining spatial structure
-    fields : list
-        List of field arrays to animate
+    fields : list of arrays
+        List of field arrays to animate, each with shape (n_bins,)
+    fps : int, default=30
+        Frames per second for playback
+    cmap : str, default="viridis"
+        Matplotlib colormap name
+    vmin, vmax : float, optional
+        Color scale limits. If None, computed from all fields.
+    frame_labels : list of str, optional
+        Frame labels (e.g., ["Trial 1", "Trial 2", ...]). If None,
+        generates default labels "Frame 1", "Frame 2", etc.
+    dpi : int, default=100
+        Resolution for frame rendering
     **kwargs : dict
-        Additional rendering parameters
+        Additional parameters (accepted for backend compatibility, ignored)
 
     Returns
     -------
@@ -42,6 +67,40 @@ def render_widget(
     ------
     ImportError
         If ipywidgets is not installed
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.animation.backends.widget_backend import render_widget
+    >>>
+    >>> # Create environment
+    >>> positions = np.random.randn(100, 2) * 50
+    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>>
+    >>> # Create fields
+    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]
+    >>>
+    >>> # In Jupyter notebook:
+    >>> widget = render_widget(env, fields, fps=10)
+    >>> # Widget displays automatically with play/pause and slider controls
+
+    Notes
+    -----
+    **Performance Strategy:**
+    - Pre-renders first 500 frames during initialization
+    - Remaining frames rendered on-demand when accessed
+    - Balances responsiveness (pre-cached frames) with memory efficiency
+
+    **Widget Controls:**
+    - Play button: Automatic playback at specified FPS
+    - Slider: Manual frame scrubbing (continuous_update=True for smooth scrubbing)
+    - Frame counter: Shows current frame and total frames
+    - Frame label: Displays custom label if provided
+
+    **Memory Considerations:**
+    - 500 pre-rendered frames ≈ 50-100 MB (depends on DPI and environment size)
+    - Larger datasets can still be used; uncached frames render on-demand
     """
     if not IPYWIDGETS_AVAILABLE:
         raise ImportError(
@@ -51,5 +110,80 @@ def render_widget(
             "  uv add ipywidgets"
         )
 
-    # TODO: Full implementation in Milestone 5
-    raise NotImplementedError("Widget backend not yet implemented")
+    from neurospatial.animation.rendering import (
+        compute_global_colormap_range,
+        render_field_to_png_bytes,
+    )
+
+    # Compute global color scale
+    vmin, vmax = compute_global_colormap_range(fields, vmin, vmax)
+
+    # Pre-render subset of frames for responsive scrubbing
+    cache_size = min(len(fields), 500)
+    print(f"Pre-rendering {cache_size} frames for widget...")
+
+    cached_frames: dict[int, str] = {}
+    for i in range(cache_size):
+        png_bytes = render_field_to_png_bytes(env, fields[i], cmap, vmin, vmax, dpi)
+        b64 = base64.b64encode(png_bytes).decode("utf-8")
+        cached_frames[i] = b64
+
+    # Generate frame labels
+    if frame_labels is None:
+        frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
+
+    # On-demand rendering for uncached frames
+    def get_frame_b64(idx: int) -> str:
+        """Get base64-encoded frame, using cache or rendering on-demand."""
+        if idx in cached_frames:
+            return cached_frames[idx]
+        else:
+            # Render on-demand
+            png_bytes = render_field_to_png_bytes(
+                env, fields[idx], cmap, vmin, vmax, dpi
+            )
+            return base64.b64encode(png_bytes).decode("utf-8")
+
+    # Create widget display function
+    def show_frame(frame_idx: int) -> None:
+        """Display frame at given index."""
+        b64 = get_frame_b64(frame_idx)
+        label = frame_labels[frame_idx]
+
+        html = f"""
+        <div style="text-align: center;">
+            <h3>{label}</h3>
+            <img src="data:image/png;base64,{b64}" style="max-width: 800px;" />
+        </div>
+        """
+        display(HTML(html))
+
+    # Create slider control
+    slider = ipywidgets.IntSlider(
+        min=0,
+        max=len(fields) - 1,
+        step=1,
+        value=0,
+        description="Frame:",
+        continuous_update=True,  # Update while dragging for smooth scrubbing
+    )
+
+    # Create play button
+    play = ipywidgets.Play(
+        interval=int(1000 / fps),  # Convert fps to milliseconds
+        min=0,
+        max=len(fields) - 1,
+        step=1,
+        value=0,
+    )
+
+    # Link play button to slider (JavaScript-level linking for performance)
+    ipywidgets.jslink((play, "value"), (slider, "value"))
+
+    # Create interactive widget
+    widget = ipywidgets.interact(show_frame, frame_idx=slider)
+
+    # Display controls (play button + slider)
+    display(ipywidgets.HBox([play, slider]))
+
+    return widget
