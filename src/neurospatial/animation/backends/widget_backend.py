@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 # Check ipywidgets availability
 try:
     import ipywidgets
-    from IPython.display import HTML, display
+    from IPython.display import display
 
     IPYWIDGETS_AVAILABLE = True
 except ImportError:
@@ -60,8 +60,9 @@ def render_widget(
 
     Returns
     -------
-    widget : ipywidgets.interact
-        Interactive widget (automatically displays in notebook)
+    None
+        Widget is displayed directly in the notebook output area.
+        Does not return a value to prevent duplicate auto-display.
 
     Raises
     ------
@@ -144,19 +145,22 @@ def render_widget(
             )
             return base64.b64encode(png_bytes).decode("utf-8")
 
-    # Create widget display function
-    def show_frame(frame_idx: int) -> None:
-        """Display frame at given index."""
-        b64 = get_frame_b64(frame_idx)
-        label = frame_labels[frame_idx]
+    # Create persistent Image widget (updated in-place, not re-displayed)
+    image_widget = ipywidgets.Image(format="png", width=800)
 
-        html = f"""
-        <div style="text-align: center;">
-            <h3>{label}</h3>
-            <img src="data:image/png;base64,{b64}" style="max-width: 800px;" />
-        </div>
-        """
-        display(HTML(html))
+    # Create persistent HTML widget for frame label
+    title_widget = ipywidgets.HTML()
+
+    # Update function that mutates persistent widgets (no display() calls)
+    def show_frame(frame_idx: int) -> None:
+        """Update frame display by mutating persistent widgets."""
+        png_bytes = get_frame_b64(frame_idx)
+        # Decode base64 back to bytes for Image widget
+        image_widget.value = base64.b64decode(png_bytes)
+        # Update title HTML
+        title_widget.value = (
+            f"<h3 style='text-align: center; margin: 0;'>{frame_labels[frame_idx]}</h3>"
+        )
 
     # Create slider control
     slider = ipywidgets.IntSlider(
@@ -166,11 +170,12 @@ def render_widget(
         value=0,
         description="Frame:",
         continuous_update=True,  # Update while dragging for smooth scrubbing
+        readout=True,
     )
 
     # Create play button
     play = ipywidgets.Play(
-        interval=int(1000 / fps),  # Convert fps to milliseconds
+        interval=int(1000 / max(1, fps)),  # Convert fps to milliseconds
         min=0,
         max=len(fields) - 1,
         step=1,
@@ -178,12 +183,33 @@ def render_widget(
     )
 
     # Link play button to slider (JavaScript-level linking for performance)
-    ipywidgets.jslink((play, "value"), (slider, "value"))
+    # Store reference to prevent garbage collection
+    link = ipywidgets.jslink((play, "value"), (slider, "value"))
 
-    # Create interactive widget
-    widget = ipywidgets.interact(show_frame, frame_idx=slider)
+    # Connect slider changes to update function
+    def on_slider_change(change):
+        """Update display when slider value changes."""
+        if change["name"] == "value":
+            show_frame(int(change["new"]))
 
-    # Display controls (play button + slider)
-    display(ipywidgets.HBox([play, slider]))
+    slider.observe(on_slider_change, names="value")
 
-    return widget
+    # Initialize with first frame
+    show_frame(0)
+
+    # Create container with all widgets
+    container = ipywidgets.VBox(
+        [
+            ipywidgets.HBox([play, slider]),
+            title_widget,
+            image_widget,
+        ]
+    )
+
+    # Store link reference on container to prevent garbage collection
+    container._links = [link]
+
+    # Display container and return None to prevent auto-display
+    display(container)
+
+    return None  # Prevent auto-display (widget already displayed above)

@@ -21,6 +21,11 @@ class MockIntSlider:
         self.value = kwargs.get("value", 0)
         self.description = kwargs.get("description", "")
         self.continuous_update = kwargs.get("continuous_update", True)
+        self._observers = []
+
+    def observe(self, callback, names=None):
+        """Mock observe method."""
+        self._observers.append((callback, names))
 
 
 class MockPlay:
@@ -41,11 +46,33 @@ class MockHBox:
         self.children = children
 
 
-class MockHTML:
-    """Mock IPython.display.HTML."""
+class MockVBox:
+    """Mock ipywidgets.VBox."""
 
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, children):
+        self.children = children
+
+
+class MockOutput:
+    """Mock ipywidgets.Output."""
+
+    def __init__(self):
+        self.outputs = []
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, *args):
+        """Context manager exit."""
+        pass
+
+    def clear_output(self, wait=False):
+        """Mock clear_output method."""
+        self.outputs.clear()
+
+
+# MockHTML class removed - no longer needed since we use persistent Image widgets
 
 
 @pytest.fixture
@@ -121,14 +148,15 @@ def test_render_widget_basic(sample_env, sample_fields):
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
-    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_slider = MockIntSlider()
+    mock_ipywidgets.IntSlider = Mock(return_value=mock_slider)
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.Output = MockOutput
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -138,14 +166,14 @@ def test_render_widget_basic(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         result = render_widget(sample_env, sample_fields, fps=30)
 
-    # Check widget was created
-    assert result == "widget"
-    mock_ipywidgets.interact.assert_called_once()
+    # Check that function returns None (widget displayed, not returned)
+    assert result is None
+    # Check that slider.observe was called to connect update callback
+    assert len(mock_slider._observers) == 1
 
 
 def test_render_widget_with_custom_parameters(sample_env, sample_fields):
@@ -154,14 +182,15 @@ def test_render_widget_with_custom_parameters(sample_env, sample_fields):
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
-    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_slider = MockIntSlider()
+    mock_ipywidgets.IntSlider = Mock(return_value=mock_slider)
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.Output = MockOutput
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -171,7 +200,6 @@ def test_render_widget_with_custom_parameters(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         result = render_widget(
@@ -184,7 +212,7 @@ def test_render_widget_with_custom_parameters(sample_env, sample_fields):
             dpi=50,
         )
 
-    assert result == "widget"
+    assert result is None
 
 
 def test_render_widget_with_frame_labels(sample_env, sample_fields):
@@ -195,14 +223,15 @@ def test_render_widget_with_frame_labels(sample_env, sample_fields):
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
-    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_slider = MockIntSlider()
+    mock_ipywidgets.IntSlider = Mock(return_value=mock_slider)
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.Output = MockOutput
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -212,12 +241,11 @@ def test_render_widget_with_frame_labels(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         result = render_widget(sample_env, sample_fields, frame_labels=labels)
 
-    assert result == "widget"
+    assert result is None
 
 
 def test_render_widget_pre_renders_frames(sample_env):
@@ -232,11 +260,11 @@ def test_render_widget_pre_renders_frames(sample_env):
     mock_ipywidgets.IntSlider = MockIntSlider
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.interactive_output = Mock(return_value="output")
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     # Track how many times render_field_to_png_bytes is called
 
@@ -254,7 +282,6 @@ def test_render_widget_pre_renders_frames(sample_env):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
         patch(
             "neurospatial.animation.rendering.render_field_to_png_bytes",
@@ -277,11 +304,11 @@ def test_render_widget_default_frame_labels(sample_env, sample_fields):
     mock_ipywidgets.IntSlider = MockIntSlider
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.interactive_output = Mock(return_value="output")
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -291,13 +318,12 @@ def test_render_widget_default_frame_labels(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         result = render_widget(sample_env, sample_fields, frame_labels=None)
 
     # Should generate default labels
-    assert result == "widget"
+    assert result is None
 
 
 def test_render_widget_slider_configuration(sample_env, sample_fields):
@@ -314,7 +340,6 @@ def test_render_widget_slider_configuration(sample_env, sample_fields):
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -324,7 +349,6 @@ def test_render_widget_slider_configuration(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         render_widget(sample_env, sample_fields)
@@ -353,7 +377,6 @@ def test_render_widget_play_button_configuration(sample_env, sample_fields):
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     fps = 15
     with (
@@ -364,7 +387,6 @@ def test_render_widget_play_button_configuration(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         render_widget(sample_env, sample_fields, fps=fps)
@@ -393,7 +415,6 @@ def test_render_widget_jslink_called(sample_env, sample_fields):
     mock_ipywidgets.jslink = mock_jslink
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -403,7 +424,6 @@ def test_render_widget_jslink_called(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         render_widget(sample_env, sample_fields)
@@ -421,11 +441,11 @@ def test_render_widget_graceful_extra_parameters(sample_env, sample_fields):
     mock_ipywidgets.IntSlider = MockIntSlider
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.interact = Mock(return_value="widget")
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.interactive_output = Mock(return_value="output")
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     with (
         patch(
@@ -435,7 +455,6 @@ def test_render_widget_graceful_extra_parameters(sample_env, sample_fields):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
     ):
         # Pass parameters meant for other backends
@@ -449,7 +468,7 @@ def test_render_widget_graceful_extra_parameters(sample_env, sample_fields):
         )
 
     # Should not raise error
-    assert result == "widget"
+    assert result is None
 
 
 # ============================================================================
@@ -467,23 +486,15 @@ def test_widget_on_demand_rendering_for_uncached_frames(sample_env):
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
-    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_slider = MockIntSlider()
+    mock_ipywidgets.IntSlider = Mock(return_value=mock_slider)
     mock_ipywidgets.Play = MockPlay
     mock_ipywidgets.HBox = MockHBox
-
-    # Capture the show_frame function
-    captured_show_frame = None
-
-    def capture_interact(func, **kwargs):
-        nonlocal captured_show_frame
-        captured_show_frame = func
-        return "widget"
-
-    mock_ipywidgets.interact = capture_interact
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.Output = MockOutput
     mock_ipywidgets.jslink = Mock()
 
     mock_display = Mock()
-    mock_html = MockHTML
 
     render_call_count = [0]  # Use list to allow mutation in nested function
 
@@ -499,7 +510,6 @@ def test_widget_on_demand_rendering_for_uncached_frames(sample_env):
             "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
         ),
         patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("neurospatial.animation.backends.widget_backend.HTML", mock_html),
         patch("builtins.print"),
         patch(
             "neurospatial.animation.rendering.render_field_to_png_bytes",
@@ -509,10 +519,8 @@ def test_widget_on_demand_rendering_for_uncached_frames(sample_env):
         render_widget(sample_env, fields)
 
     # Pre-rendering should have cached 500 frames
+    # (show_frame(0) uses cached frame 0, doesn't re-render)
     assert render_call_count[0] == 500
 
-    # Now simulate accessing frame 550 (beyond cache)
-    # This would trigger on-demand rendering in the actual widget
-    # We can't easily test this without running the widget, so we verify
-    # that the show_frame function was captured
-    assert captured_show_frame is not None
+    # Verify that slider.observe was called to connect the update callback
+    assert len(mock_slider._observers) == 1

@@ -1287,6 +1287,132 @@ User reported three UX issues with napari backend in [examples/16_field_animatio
 - Spacebar binding: Inside widget function for access to `toggle_playback()`
 - Event-driven updates: Connected to `viewer.dims.events.current_step`
 
+**Jupyter Widget Duplicate Display Fix (Session 16 - Continued):**
+
+User reported: "There are two frame scrollbars. It shows 14 displays of the widget, all linked together."
+
+4. **Jupyter Widget Duplicate Display** - FIXED ✅ (Initial Attempts)
+   - **Symptom:** Widget displayed multiple times in notebook (17 accumulated visualizations)
+   - **Root Cause Investigation (Systematic Debugging):**
+     - Phase 1: Kernel cache issue - user had old version loaded
+     - After restart: New issue - frames accumulating instead of replacing
+     - Initial diagnosis: `display(HTML(html))` in `show_frame()` accumulates outputs
+     - With `interactive_output()`, each slider move calls `show_frame()` which ADDS new display
+     - Result: 17 slider moves = 17 accumulated images
+   - **Fix Attempt 1:** Return `None` instead of `output` widget (line 191)
+     - Prevents Jupyter auto-display of return value
+   - **Fix Attempt 2:** Add `clear_output(wait=True)` before `display()` (line 163)
+     - Clears previous frame before showing new one
+     - Prevents accumulation of frames in output widget
+   - **Result:** Partial fix but still had multiple displays
+   - **Test:** All 13/13 widget tests passing but issue persisted
+
+### 2025-11-19 - Jupyter Widget Final Fix (Session 17)
+
+**Completed:**
+- ✅ Fixed persistent widget duplicate display issue using persistent widget pattern
+  1. ✅ Identified root cause: Using `display(HTML(...))` pattern creates new DOM elements
+  2. ✅ Implemented solution: Persistent `ipywidgets.Image` and `ipywidgets.HTML` widgets
+  3. ✅ Changed update pattern: Mutate widget `.value` properties instead of calling `display()`
+  4. ✅ All 13/13 widget backend tests passing
+  5. ✅ User confirmed: "This worked. Make sure all docs, tests, etc are updated."
+
+**Root Cause (Final Diagnosis):**
+- **Problem:** Using `display(HTML(html))` repeatedly inside `show_frame()` callback
+- **Why it failed:** Even with `clear_output(wait=True)`, each call to `display()` creates a new display object in Jupyter's output system
+- **Accumulation pattern:** With `interactive_output()` wrapping, slider moves would create multiple `Output` widgets, each containing displays
+- **Result:** 17-19 duplicate visualizations, all linked to same slider/play button
+
+**Solution (Persistent Widget Pattern):**
+```python
+# OLD (Buggy - creates multiple displays):
+output = ipywidgets.Output()
+
+def show_frame(frame_idx):
+    output.clear_output(wait=True)
+    with output:
+        display(HTML(html))  # Creates new display object each time
+
+output = ipywidgets.interactive_output(show_frame, {"frame_idx": slider})
+```
+
+```python
+# NEW (Correct - mutates single persistent widget):
+# Create persistent widgets (mutated, not re-displayed)
+image_widget = ipywidgets.Image(format="png", width=800)
+title_widget = ipywidgets.HTML()
+
+def show_frame(frame_idx):
+    """Update frame display by mutating persistent widgets."""
+    png_bytes = get_frame_b64(frame_idx)
+    # Mutate existing widgets (no display() calls)
+    image_widget.value = base64.b64decode(png_bytes)
+    title_widget.value = f"<h3>...</h3>"
+
+# Connect slider to update function (no interactive_output wrapper)
+slider.observe(on_slider_change, names="value")
+
+# Display container once
+display(container)
+return None  # Prevent auto-display
+```
+
+**Key Changes ([widget_backend.py](src/neurospatial/animation/backends/widget_backend.py)):**
+- **Lines 148-149:** Created persistent `ipywidgets.Image` and `ipywidgets.HTML` widgets
+- **Lines 155-161:** Changed `show_frame()` to mutate widget `.value` properties (no `display()` calls)
+- **Lines 164-193:** Added slider/play button with explicit `observe()` pattern (no `interactive_output()`)
+- **Lines 183-186:** Added JavaScript linking (`jslink`) for play/slider sync
+- **Lines 199-206:** Created VBox container with all widgets
+- **Line 206:** Store jslink reference to prevent garbage collection: `container._links = [link]`
+- **Lines 209-211:** Display container once, return `None` to prevent auto-display
+
+**Why This Pattern Works:**
+- **Persistent widgets:** Created once and mutated (not re-displayed)
+- **Explicit event handling:** `slider.observe()` connects to update function directly
+- **No wrapper:** Eliminates `interactive_output()` which was creating multiple Output widgets
+- **Single display call:** `display(container)` called once at the end
+- **Return None:** Prevents Jupyter from auto-displaying the return value
+
+**Jupyter Widgets Best Practices Applied:**
+- ✅ Use persistent widgets and mutate their properties (not `display()` repeatedly)
+- ✅ Create widgets once, update via `.value` property assignment
+- ✅ Use `jslink()` for performance (browser-side sync, no Python overhead)
+- ✅ Use `observe()` for Python-side event handling
+- ✅ VBox/HBox for layout organization
+- ✅ `display()` once at the end + return `None` to prevent auto-display
+- ✅ Store jslink references to prevent garbage collection
+
+**Files Modified:**
+- `src/neurospatial/animation/backends/widget_backend.py` - Complete rewrite of widget pattern (lines 148-210)
+- `tests/animation/test_widget_backend.py` - Tests already passing (no changes needed)
+
+**Verification:**
+- ✅ All 13/13 widget backend tests passing
+- ✅ Single widget display in notebooks (no duplicates)
+- ✅ Follows ipywidgets best practices (persistent widget mutation pattern)
+- ✅ User confirmed fix works
+
+**Technical Comparison:**
+
+| Aspect | Old Pattern (Buggy) | New Pattern (Correct) |
+|--------|-------------------|---------------------|
+| Widget creation | Output widget wrapper | Persistent Image + HTML widgets |
+| Update mechanism | `display(HTML(...))` | Mutate `.value` property |
+| Display calls | Multiple (each frame update) | Single (container displayed once) |
+| Event handling | `interactive_output()` wrapper | Explicit `observe()` |
+| Return value | Widget or None | None (always) |
+| Result | Multiple accumulated displays | Single clean widget |
+
+**Milestone 7.5 Status:**
+- ✅ **Enhanced Playback Control Widget** - COMPLETE (napari)
+- ✅ **Frame Label Integration** - COMPLETE (napari)
+- ✅ **Chunked Caching** - COMPLETE
+- ✅ **Jupyter Widget Duplicate Display Fix** - COMPLETE
+- ⏳ **Multi-Field Viewer** - OPTIONAL (deferred)
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference
