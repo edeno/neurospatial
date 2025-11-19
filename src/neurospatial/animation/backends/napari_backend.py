@@ -100,15 +100,19 @@ def render_napari(
     -----
     **Playback Controls:**
 
-    Napari provides built-in playback controls:
-    - **Play/Pause button** - Click to start/stop animation
-    - **Frame slider** - Drag to scrub through frames
-    - **FPS setting** - Click the gear icon to adjust playback speed
-    - **Keyboard shortcuts** - Use arrow keys to step through frames
-    - **Initial frame** - Animation starts at frame 0 (beginning)
+    Napari provides built-in playback controls at the **bottom-left** of the viewer window:
 
-    The `fps` parameter sets the default playback speed, which can be
-    adjusted interactively via the slider controls.
+    - **Frame slider** - Horizontal slider showing current frame position
+    - **Play button (▶)** - Triangle icon to start/stop animation (next to slider)
+    - **FPS control** - Click gear icon (⚙) to adjust playback speed
+    - **Frame counter** - Shows "1/N" indicating current frame
+    - **Keyboard shortcuts** - Arrow keys to step forward/backward
+
+    The animation starts at frame 0 (beginning) with playback speed set by the
+    `fps` parameter. The speed can be adjusted interactively via the gear icon.
+
+    **Note:** Only the time dimension slider is shown. Spatial dimensions (height, width)
+    are displayed in the 2D viewport, not as separate sliders.
 
     **Memory Efficiency:**
 
@@ -175,7 +179,17 @@ def render_napari(
     # 1. Set initial frame to 0 (start at beginning, not middle)
     viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
 
-    # 2. Configure FPS on the Qt dims slider widget
+    # 2. Configure which dimensions to display
+    # For RGB images with shape (time, height, width, 3):
+    # - Dimension 0 (time): slider (not displayed)
+    # - Dimensions 1, 2 (height, width): displayed in 2D view
+    # This ensures only the time slider appears, not height/width sliders
+    viewer.dims.ndisplay = 2  # Display 2 spatial dimensions
+    if viewer.dims.ndim >= 3:
+        # Set displayed order: show dimensions 1 and 2 (height, width)
+        viewer.dims.order = tuple(range(viewer.dims.ndim))
+
+    # 3. Configure FPS on the Qt dims slider widget
     if hasattr(viewer, "window") and hasattr(viewer.window, "qt_viewer"):
         qt_dims = viewer.window.qt_viewer.dims
         # Set FPS for the time dimension slider (first slider)

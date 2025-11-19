@@ -16,6 +16,20 @@ import pytest
 from neurospatial import Environment
 
 
+# Helper function for creating properly configured mock viewers
+def _create_mock_viewer():
+    """Create a properly configured mock napari viewer for testing."""
+    mock_viewer = MagicMock()
+    mock_viewer.add_image = MagicMock(return_value=None)
+
+    # Configure dims (needed for playback control configuration)
+    mock_viewer.dims = MagicMock()
+    mock_viewer.dims.ndim = 3  # 3 dimensions (time, height, width)
+    mock_viewer.dims.current_step = (0, 0, 0)
+
+    return mock_viewer
+
+
 # Test data fixtures
 @pytest.fixture
 def simple_env():
@@ -286,8 +300,7 @@ def test_render_napari_basic(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         render_napari(
@@ -324,8 +337,7 @@ def test_render_napari_custom_vmin_vmax(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         render_napari(
@@ -357,8 +369,7 @@ def test_render_napari_rgb_no_contrast_limits(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         render_napari(
@@ -386,8 +397,7 @@ def test_render_napari_trajectory_overlay_2d(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer.add_tracks = MagicMock(return_value=None)
         mock_viewer_class.return_value = mock_viewer
 
@@ -418,8 +428,7 @@ def test_render_napari_trajectory_overlay_high_dim(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer.add_points = MagicMock(return_value=None)
         mock_viewer_class.return_value = mock_viewer
 
@@ -463,8 +472,7 @@ def test_render_napari_frame_labels(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         render_napari(
@@ -488,8 +496,7 @@ def test_render_napari_gracefully_accepts_extra_params(simple_env, simple_fields
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         # Should not raise error even with video/html-specific params
@@ -518,8 +525,7 @@ def test_render_napari_invalid_trajectory_shape(simple_env, simple_fields):
     with patch(
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
         with pytest.raises(ValueError, match="overlay_trajectory must be 2D"):
@@ -541,12 +547,12 @@ def test_render_napari_playback_controls(simple_env, simple_fields):
         "neurospatial.animation.backends.napari_backend.napari.Viewer"
     ) as mock_viewer_class:
         # Create mock viewer with playback controls
-        mock_viewer = MagicMock()
-        mock_viewer.add_image = MagicMock(return_value=None)
+        mock_viewer = _create_mock_viewer()
 
         # Mock dims with current_step (starts at middle frame by default)
         mock_viewer.dims = MagicMock()
         mock_viewer.dims.current_step = (5, 0, 0)  # Start at frame 5
+        mock_viewer.dims.ndim = 3  # 3 dimensions (time, height, width)
 
         # Mock Qt viewer structure for FPS control
         mock_qt_viewer = MagicMock()
