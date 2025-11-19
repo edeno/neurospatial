@@ -65,32 +65,28 @@ def test_napari_available_flag_when_installed():
 
 def test_napari_available_flag_when_not_installed():
     """Test NAPARI_AVAILABLE flag when napari is not installed."""
-    # Mock ImportError during module import
+    import importlib
     import sys
 
-    # Save original napari if it exists
+    # Save original modules
     original_napari = sys.modules.get("napari")
+    original_backend = sys.modules.get("neurospatial.animation.backends.napari_backend")
 
     try:
-        # Remove napari from sys.modules to simulate not installed
-        if "napari" in sys.modules:
-            del sys.modules["napari"]
-
-        # Force reimport of napari_backend with napari unavailable
-        if "neurospatial.animation.backends.napari_backend" in sys.modules:
-            del sys.modules["neurospatial.animation.backends.napari_backend"]
-
         # Mock napari import to raise ImportError
         with patch.dict("sys.modules", {"napari": None}):
-            # Force reload to pick up the mock
-            import importlib
+            # Delete backend module WITHIN patch context to force re-import with mocked napari
+            if "neurospatial.animation.backends.napari_backend" in sys.modules:
+                del sys.modules["neurospatial.animation.backends.napari_backend"]
 
-            from neurospatial.animation.backends import napari_backend
+            # Import with patched napari (avoids reload() which has test isolation issues)
+            napari_backend = importlib.import_module(
+                "neurospatial.animation.backends.napari_backend"
+            )
 
-            importlib.reload(napari_backend)
-
-            # Should be False when import fails
+            # Should be False when napari is not available
             assert hasattr(napari_backend, "NAPARI_AVAILABLE")
+            assert napari_backend.NAPARI_AVAILABLE is False
 
     finally:
         # Restore original state
@@ -99,8 +95,11 @@ def test_napari_available_flag_when_not_installed():
         elif "napari" in sys.modules:
             del sys.modules["napari"]
 
-        # Reload napari_backend to original state
-        if "neurospatial.animation.backends.napari_backend" in sys.modules:
+        if original_backend is not None:
+            sys.modules["neurospatial.animation.backends.napari_backend"] = (
+                original_backend
+            )
+        elif "neurospatial.animation.backends.napari_backend" in sys.modules:
             del sys.modules["neurospatial.animation.backends.napari_backend"]
 
 
@@ -462,16 +461,21 @@ def test_render_napari_not_available():
 
 @pytest.mark.napari
 def test_render_napari_frame_labels(simple_env, simple_fields):
-    """Test napari rendering with frame labels."""
+    """Test napari rendering with frame labels in enhanced playback widget."""
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
     labels = [f"Trial {i + 1}" for i in range(len(simple_fields))]
 
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        patch(
+            "neurospatial.animation.backends.napari_backend._add_speed_control_widget"
+        ) as mock_add_widget,
+    ):
         mock_viewer = _create_mock_viewer()
         mock_viewer_class.return_value = mock_viewer
 
@@ -479,11 +483,19 @@ def test_render_napari_frame_labels(simple_env, simple_fields):
             simple_env,
             simple_fields,
             frame_labels=labels,
+            fps=25,
         )
 
-        # Frame labels currently not displayed in napari
-        # (could be future enhancement with custom widget)
-        # For now, just verify no error
+        # Verify enhanced playback widget was called with frame_labels
+        mock_add_widget.assert_called_once()
+        call_args = mock_add_widget.call_args
+
+        # Check positional arg (viewer)
+        assert call_args[0][0] == mock_viewer
+
+        # Check keyword args (initial_fps and frame_labels)
+        assert call_args[1]["initial_fps"] == 25
+        assert call_args[1]["frame_labels"] == labels
 
 
 @pytest.mark.napari
@@ -605,8 +617,10 @@ def test_speed_control_widget_added(simple_env, simple_fields):
         # Render napari viewer
         render_napari(simple_env, simple_fields, fps=30)
 
-        # Verify speed control widget was called
-        mock_add_widget.assert_called_once_with(mock_viewer, initial_fps=30)
+        # Verify speed control widget was called (with frame_labels=None by default)
+        mock_add_widget.assert_called_once_with(
+            mock_viewer, initial_fps=30, frame_labels=None
+        )
 
 
 @pytest.mark.napari
@@ -635,8 +649,8 @@ def test_speed_control_widget_graceful_fallback(simple_env, simple_fields):
 
 
 @pytest.mark.napari
-def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
-    """Test that spacebar is bound to toggle playback."""
+def test_speed_control_widget_high_fps(simple_env, simple_fields):
+    """Test that speed control widget works with high FPS values (>120)."""
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
@@ -648,7 +662,37 @@ def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
         patch("napari.settings.get_settings") as mock_get_settings,
         patch(
             "neurospatial.animation.backends.napari_backend._add_speed_control_widget"
-        ),
+        ) as mock_add_widget,
+    ):
+        mock_viewer = _create_mock_viewer()
+        mock_viewer_class.return_value = mock_viewer
+
+        # Mock napari settings
+        mock_settings = MagicMock()
+        mock_settings.application.playback_fps = 10
+        mock_get_settings.return_value = mock_settings
+
+        # Render with high FPS (250 Hz - common for neuroscience recordings)
+        render_napari(simple_env, simple_fields, fps=250)
+
+        # Verify speed control widget was called with high FPS
+        mock_add_widget.assert_called_once_with(
+            mock_viewer, initial_fps=250, frame_labels=None
+        )
+
+
+@pytest.mark.napari
+def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
+    """Test that spacebar is bound to toggle playback."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        patch("napari.settings.get_settings") as mock_get_settings,
     ):
         # Create mock viewer
         mock_viewer = _create_mock_viewer()
@@ -660,10 +704,10 @@ def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
         mock_settings.application.playback_fps = 10
         mock_get_settings.return_value = mock_settings
 
-        # Render napari viewer
+        # Render napari viewer (spacebar bound inside _add_speed_control_widget)
         render_napari(simple_env, simple_fields, fps=30)
 
-        # Verify spacebar was bound
+        # Verify spacebar was bound (inside _add_speed_control_widget or fallback)
         mock_viewer.bind_key.assert_called_once()
         # Get the call arguments
         call_args = mock_viewer.bind_key.call_args
