@@ -16,6 +16,7 @@ Place-field analysis → an object with field, fields (list of bin-index arrays)
     - integrating with video of animal behavior (could be different sampling rates)
     - should be able to display head direction
     - should be able to display multiple body parts (e.g., nose, tail base)
+    - multiple synced environments
 - [ ] Head direction
   - [ ] Implement head direction cell analysis, including circular occupancy, tuning curves, and metrics like mean vector length and preferred direction.
   - [ ] Add utilities for circular statistics (e.g., Rayleigh test) to assess significance of head direction tuning.

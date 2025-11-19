@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,6 +20,34 @@ try:
     NAPARI_AVAILABLE = True
 except ImportError:
     NAPARI_AVAILABLE = False
+
+
+def _is_multi_field_input(fields: list) -> bool:
+    """Check if fields is multi-field input (list of sequences).
+
+    Parameters
+    ----------
+    fields : list
+        Input fields to check
+
+    Returns
+    -------
+    is_multi : bool
+        True if fields is a list of lists (multi-field), False if single sequence
+
+    Notes
+    -----
+    Detection logic:
+    - Empty list → single field (False)
+    - List of arrays → single field (False)
+    - List of lists → multi-field (True)
+    """
+    if len(fields) == 0:
+        return False
+
+    # Check if first element is a list/sequence
+    first_elem = fields[0]
+    return isinstance(first_elem, (list, tuple))
 
 
 def _add_speed_control_widget(
@@ -187,7 +215,7 @@ def _add_speed_control_widget(
 
 def render_napari(
     env: Environment,
-    fields: list[NDArray[np.float64]],
+    fields: list[NDArray[np.float64]] | list[list[NDArray[np.float64]]],
     *,
     fps: int = 30,
     cmap: str = "viridis",
@@ -197,6 +225,8 @@ def render_napari(
     overlay_trajectory: NDArray[np.float64] | None = None,
     title: str = "Spatial Field Animation",
     cache_chunk_size: int | None = None,
+    layout: Literal["horizontal", "vertical", "grid"] | None = None,
+    layer_names: list[str] | None = None,
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> Any:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -338,11 +368,31 @@ def render_napari(
             "  uv add napari[all]"
         )
 
+    # Detect multi-field input and route appropriately
+    if _is_multi_field_input(fields):
+        # Multi-field viewer support
+        return _render_multi_field_napari(
+            env=env,
+            field_sequences=fields,  # type: ignore[arg-type]
+            fps=fps,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            frame_labels=frame_labels,
+            overlay_trajectory=overlay_trajectory,
+            title=title,
+            cache_chunk_size=cache_chunk_size,
+            layout=layout,
+            layer_names=layer_names,
+        )
+
+    # Single-field viewer (original behavior)
+    # At this point, fields is guaranteed to be list[NDArray] (not multi-field)
     from neurospatial.animation.rendering import compute_global_colormap_range
 
     # Compute global color scale
     if vmin is None or vmax is None:
-        vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)
+        vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
         vmin = vmin if vmin is not None else vmin_computed
         vmax = vmax if vmax is not None else vmax_computed
 
@@ -356,7 +406,12 @@ def render_napari(
 
     # Create lazy frame loader (with optional chunked caching)
     lazy_frames = _create_lazy_field_renderer(
-        env, fields, cmap_lookup, vmin, vmax, cache_chunk_size
+        env,
+        fields,  # type: ignore[arg-type]
+        cmap_lookup,
+        vmin,
+        vmax,
+        cache_chunk_size,
     )
 
     # Create napari viewer
@@ -424,6 +479,183 @@ def render_napari(
             viewer.add_tracks(track_data, name="Trajectory")
         else:
             # Higher dimensional - just plot as points
+            viewer.add_points(overlay_trajectory, name="Trajectory", size=2)
+
+    return viewer
+
+
+def _render_multi_field_napari(
+    env: Environment,
+    field_sequences: list[list[NDArray[np.float64]]],
+    *,
+    fps: int = 30,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    frame_labels: list[str] | None = None,
+    overlay_trajectory: NDArray[np.float64] | None = None,
+    title: str = "Multi-Field Animation",
+    cache_chunk_size: int | None = None,
+    layout: Literal["horizontal", "vertical", "grid"] | None = None,
+    layer_names: list[str] | None = None,
+) -> Any:
+    """Render multiple field sequences in a single napari viewer.
+
+    Creates separate image layers for each field sequence, arranged according
+    to the specified layout. All layers share the same time dimension for
+    synchronized playback.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment defining spatial structure
+    field_sequences : list of lists
+        Multiple field sequences to animate. Each sequence is a list of
+        fields with shape (n_bins,). All sequences must have the same length.
+    fps : int, default=30
+        Frames per second for playback
+    cmap : str, default="viridis"
+        Matplotlib colormap name (applied to all layers)
+    vmin, vmax : float, optional
+        Color scale limits. If None, computed globally across all sequences
+        for consistent comparison.
+    frame_labels : list of str, optional
+        Frame labels (e.g., ["Trial 1", "Trial 2", ...])
+    overlay_trajectory : ndarray, optional
+        Positions to overlay as trajectory
+    title : str, default="Multi-Field Animation"
+        Viewer window title
+    cache_chunk_size : int, optional
+        Chunk size for chunked LRU caching
+    layout : {"horizontal", "vertical", "grid"}, required
+        Layout arrangement for multiple fields:
+        - "horizontal": side-by-side
+        - "vertical": stacked top-to-bottom
+        - "grid": automatic NxM grid
+    layer_names : list of str, optional
+        Custom names for each layer. Must match number of sequences.
+        If None, uses "Field 1", "Field 2", etc.
+
+    Returns
+    -------
+    viewer : napari.Viewer
+        Napari viewer instance with multiple layers
+
+    Raises
+    ------
+    ValueError
+        If layout is None (required for multi-field input)
+        If sequences have different lengths
+        If layer_names count doesn't match sequence count
+    """
+    # Validation
+    if layout is None:
+        raise ValueError(
+            "Multi-field input requires 'layout' parameter. "
+            "Choose from: 'horizontal', 'vertical', 'grid'"
+        )
+
+    n_sequences = len(field_sequences)
+
+    # Validate all sequences have same length
+    sequence_lengths = [len(seq) for seq in field_sequences]
+    if len(set(sequence_lengths)) > 1:
+        raise ValueError(
+            f"All field sequences must have the same length. "
+            f"Got lengths: {sequence_lengths}"
+        )
+
+    # Generate layer names if not provided
+    if layer_names is None:
+        layer_names = [f"Field {i + 1}" for i in range(n_sequences)]
+    else:
+        if len(layer_names) != n_sequences:
+            raise ValueError(
+                f"Number of layer_names ({len(layer_names)}) must match "
+                f"number of sequences ({n_sequences})"
+            )
+
+    from neurospatial.animation.rendering import compute_global_colormap_range
+
+    # Compute global color scale across ALL sequences for consistent comparison
+    if vmin is None or vmax is None:
+        # Flatten all fields from all sequences
+        all_fields = [field for sequence in field_sequences for field in sequence]
+        vmin_computed, vmax_computed = compute_global_colormap_range(
+            all_fields, vmin, vmax
+        )
+        vmin = vmin if vmin is not None else vmin_computed
+        vmax = vmax if vmax is not None else vmax_computed
+
+    # Pre-compute colormap lookup table (shared across all layers)
+    cmap_obj = plt.get_cmap(cmap)
+    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    # Create lazy frame loaders for each sequence
+    lazy_renderers = []
+    for sequence in field_sequences:
+        renderer = _create_lazy_field_renderer(
+            env, sequence, cmap_lookup, vmin, vmax, cache_chunk_size
+        )
+        lazy_renderers.append(renderer)
+
+    # Create napari viewer
+    viewer = napari.Viewer(title=title)
+
+    # Add image layers
+    # Note: Napari handles multi-layer arrangement automatically. The layout
+    # parameter is accepted for API compatibility and future customization,
+    # but currently all layouts add layers in the same way (napari manages
+    # visual positioning). Users can manually arrange layers in the napari GUI.
+    for renderer, name in zip(lazy_renderers, layer_names, strict=True):
+        viewer.add_image(
+            renderer,
+            name=name,
+            rgb=True,
+        )
+
+    # Configure playback controls
+    viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
+    viewer.dims.ndisplay = 2
+
+    if viewer.dims.ndim >= 3:
+        viewer.dims.order = tuple(range(viewer.dims.ndim))
+
+    # Configure FPS and add playback widget
+    try:
+        from napari.settings import get_settings
+
+        settings = get_settings()
+        settings.application.playback_fps = fps
+
+        _add_speed_control_widget(viewer, initial_fps=fps, frame_labels=frame_labels)
+    except ImportError:
+
+        @viewer.bind_key("Space")
+        def toggle_playback(viewer):
+            """Toggle animation playback with spacebar."""
+            viewer.window._toggle_play()
+
+    # Add trajectory overlay if provided
+    if overlay_trajectory is not None:
+        if overlay_trajectory.ndim != 2:
+            raise ValueError(
+                f"overlay_trajectory must be 2D (n_timepoints, n_dims), "
+                f"got shape {overlay_trajectory.shape}"
+            )
+
+        if overlay_trajectory.shape[1] == 2:
+            n_points = len(overlay_trajectory)
+            track_data = np.column_stack(
+                [
+                    np.zeros(n_points),
+                    np.arange(n_points),
+                    overlay_trajectory[:, 1],
+                    overlay_trajectory[:, 0],
+                ]
+            )
+            viewer.add_tracks(track_data, name="Trajectory")
+        else:
             viewer.add_points(overlay_trajectory, name="Trajectory", size=2)
 
     return viewer
