@@ -360,14 +360,26 @@ Implement animation capabilities supporting four backends:
   - [x] Napari lazy loading
   - [x] Subsample for video export
   - [x] Dry run estimation
-- [x] Run all examples to verify: Tested Python script version of all key examples
-- [x] Verify all outputs generated (HTML: 584 KB, Video: 941 KB/6s h264)
-  - [x] Improved environment: Random sparse → 100x100 cm grid (441 bins, full coverage)
-  - [x] Fixed goal position: [80,80] (invalid) → [60,70] cm (upper-right quadrant)
+- [x] Run all examples to verify: Python script + Jupyter notebook both tested
+- [x] Verify all outputs generated and notebook execution works
+  - [x] Circular arena: 50 cm radius (1264 bins, 2.5 cm resolution) using `from_polygon()`
+  - [x] Place field remapping: Location A (trials 1-15) → Location B (trials 16-30)
+  - [x] Models real hippocampal phenomena (context-dependent remapping)
+  - [x] Fixed notebook execution issues:
+    - [x] Output paths use `output_dir = Path.cwd()` (works from any directory)
+    - [x] Large-scale example uses `initial_bin = env.n_bins // 2` (no external dependencies)
+    - [x] Higher resolution bins (2.5 cm vs 4.0 cm) for better visualization
+    - [x] Reduced demo file size: 900K frames (4.55 GB) → 1000 frames (5.1 MB)
   - [x] Reorganized imports to top (following pattern of other examples)
   - [x] Converted to Path API (removed os.path usage)
   - [x] Ruff linting: 0 errors
   - [x] Mypy: 4 expected warnings (mixin false positives, missing stubs)
+- [x] **Fixed Napari rendering bug (Session 11)**
+  - [x] Root cause: `contrast_limits` incorrectly passed for RGB images
+  - [x] Fix: Removed `contrast_limits` parameter entirely from `render_napari()`
+  - [x] Updated 2 tests to verify correct behavior (no contrast_limits for RGB)
+  - [x] All 16 napari backend tests passing (16 passed, 1 skipped)
+  - [x] Verified fix works in practice with example notebook
 
 ### Documentation Updates
 

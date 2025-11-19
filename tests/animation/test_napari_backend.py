@@ -312,7 +312,11 @@ def test_render_napari_basic(simple_env, simple_fields):
 
 @pytest.mark.napari
 def test_render_napari_custom_vmin_vmax(simple_env, simple_fields):
-    """Test napari rendering with custom color scale."""
+    """Test napari rendering with custom color scale.
+
+    Note: vmin/vmax control colormap range during RGB conversion,
+    not napari's contrast_limits (RGB images are already in [0, 255]).
+    """
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
@@ -333,14 +337,19 @@ def test_render_napari_custom_vmin_vmax(simple_env, simple_fields):
             vmax=2.0,
         )
 
-        # Verify contrast_limits passed correctly
+        # Verify RGB image added without contrast_limits
         call_args = mock_viewer.add_image.call_args
-        assert call_args[1]["contrast_limits"] == (-1.0, 2.0)
+        assert call_args[1]["rgb"] is True
+        assert "contrast_limits" not in call_args[1]  # RGB images don't need this
 
 
 @pytest.mark.napari
-def test_render_napari_with_contrast_limits(simple_env, simple_fields):
-    """Test napari rendering with explicit contrast_limits parameter."""
+def test_render_napari_rgb_no_contrast_limits(simple_env, simple_fields):
+    """Test napari rendering correctly omits contrast_limits for RGB images.
+
+    RGB images are already in [0, 255] range and don't need contrast adjustment.
+    Only grayscale images use contrast_limits in napari.
+    """
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
@@ -355,12 +364,13 @@ def test_render_napari_with_contrast_limits(simple_env, simple_fields):
         render_napari(
             simple_env,
             simple_fields,
-            contrast_limits=(0.5, 1.5),
+            cmap="viridis",
         )
 
-        # Verify contrast_limits used directly
+        # Verify RGB rendering without contrast_limits
         call_args = mock_viewer.add_image.call_args
-        assert call_args[1]["contrast_limits"] == (0.5, 1.5)
+        assert call_args[1]["rgb"] is True
+        assert "contrast_limits" not in call_args[1]
 
 
 @pytest.mark.napari

@@ -31,7 +31,6 @@ def render_napari(
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
     overlay_trajectory: NDArray[np.float64] | None = None,
-    contrast_limits: tuple[float, float] | None = None,
     title: str = "Spatial Field Animation",
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> Any:
@@ -62,7 +61,10 @@ def render_napari(
         - 2D trajectories: rendered as tracks
         - Higher dimensions: rendered as points
     contrast_limits : tuple of float, optional
-        Napari-specific contrast limits (overrides vmin/vmax)
+        **Note**: This parameter is kept for API compatibility but is
+        not used for RGB images. RGB images are already in [0, 255] range
+        and don't need contrast adjustment. Use `vmin`/`vmax` to control
+        the colormap range instead.
     title : str, default="Spatial Field Animation"
         Viewer window title
     **kwargs : dict
@@ -140,8 +142,9 @@ def render_napari(
         vmin = vmin if vmin is not None else vmin_computed
         vmax = vmax if vmax is not None else vmax_computed
 
-    if contrast_limits is None:
-        contrast_limits = (vmin, vmax)
+    # Note: contrast_limits parameter is ignored for RGB images
+    # RGB images are already in [0, 255] range and don't need normalization
+    # We keep the parameter for API compatibility but don't use it
 
     # Pre-compute colormap lookup table (256 RGB values)
     cmap_obj = plt.get_cmap(cmap)
@@ -153,12 +156,12 @@ def render_napari(
     # Create napari viewer
     viewer = napari.Viewer(title=title)
 
-    # Add image layer
+    # Add image layer (RGB - no contrast_limits needed)
     viewer.add_image(
         lazy_frames,
         name="Spatial Fields",
         rgb=True,  # Already RGB
-        contrast_limits=contrast_limits,
+        # Don't pass contrast_limits for RGB images - they're already [0, 255]
     )
 
     # Add trajectory overlay if provided

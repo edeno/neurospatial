@@ -790,21 +790,116 @@ After completing M6 (Environment Integration), user asked clarifying questions a
 - ⚠️ Mypy has 4 warnings (expected for example notebooks: mixin pattern false positives, missing stubs for napari/IPython)
 
 **Improvements Made:**
-1. **Better Environment Creation** (following example 11 pattern):
-   - Changed from random sparse points → 100x100 cm grid with full coverage
-   - Reduced bins: 695 → 441 (more efficient, no wasted space)
-   - Added realistic arena dimensions and metadata (units, frame)
-2. **Fixed Goal Position:**
-   - Original: Invalid `[80, 80]` (out of bounds)
-   - Temporary fix: Dynamic center (worked but arbitrary)
-   - Final: Sensible location `[60, 70]` cm in upper-right quadrant
+1. **Circular Arena** (user request):
+   - Changed from rectangular grid → circular arena (50 cm radius)
+   - Uses `Environment.from_polygon()` with `Point().buffer()` pattern
+   - 489 bins covering circular boundary (no wasted space)
+   - Common experimental setup in neuroscience
+2. **Place Field Remapping** (user request):
+   - Changed from "gradual sharpening" → "context-dependent remapping"
+   - Field active at location A (60, 65) cm for trials 1-15
+   - Field remaps to location B (40, 35) cm for trials 16-30
+   - Models real hippocampal phenomena (environmental context changes, reward learning)
+   - Much more interesting demonstration than gradual learning
 3. **Code Quality:**
    - Reorganized imports to top of notebook (following pattern of other examples)
    - Converted to Path API (removed os.path usage)
    - Ruff linting: 0 errors
+   - Updated all titles and file paths to reflect "remapping" theme
+
+**Notebook Execution Fixes (Session 10):**
+1. **File Path Issues** - Fixed output paths to use `output_dir = Path.cwd()`:
+   - Changed `save_path="examples/..."` → `save_path=output_dir / "..."`
+   - Works correctly whether running as script or in Jupyter
+   - Prevents "No such file or directory" errors
+2. **Variable Scope Issue** - Fixed `goal_bin` reference in large-scale example:
+   - Was trying to use `goal_bin` from earlier cell (undefined in that scope)
+   - Changed to `initial_bin = env.n_bins // 2` (computed locally)
+   - Large-scale example now independent of remapping example
+3. **Higher Resolution** - Reduced bin size for better visualization:
+   - Changed from 4.0 cm → 2.5 cm bins
+   - Increased from 489 bins → 1264 bins
+   - Much better spatial resolution for animations
+
+**File Size Optimization:**
+- Reduced large-scale example from 900K frames (4.55 GB) → 1000 frames (5.1 MB)
+- Still demonstrates all memory-mapped techniques
+- Comments explain scaling to real 60K-900K frame sessions
+- Prevents filling users' disks during notebook execution
+
+**Verification:**
+- ✅ All notebook cells tested and working
+- ✅ HTML export: works from any directory
+- ✅ Video export: path resolution correct
+- ✅ Large-scale example: no variable dependencies, reasonable file size
+- ✅ Remapping visible with higher resolution
 
 **Next Steps (Milestone 7 remaining tasks):**
 - Continue with remaining M7 tasks (update CLAUDE.md, create user guide, update README)
+
+**Blockers:**
+- None currently
+
+### 2025-11-19 - Napari Rendering Bug Fix (Session 11)
+
+**Issue Reported:**
+User reported: "The napari example doesn't render correctly in the viewer. It does render correctly in the layer display which is confusing."
+
+**Debugging Process (Systematic Debugging Skill):**
+1. **Phase 1: Root Cause Investigation**
+   - Analyzed napari backend implementation ([napari_backend.py](src/neurospatial/animation/backends/napari_backend.py))
+   - Discovered `contrast_limits` parameter being passed to `viewer.add_image()` for RGB images
+   - **Root Cause:** RGB images are already in [0, 255] range and don't need `contrast_limits`
+   - Napari's `contrast_limits` is only for grayscale images (scaling pixel values to display range)
+   - Passing `contrast_limits` to RGB images causes incorrect rendering behavior
+
+2. **Phase 2: Understanding the Bug**
+   - Traced parameter flow: `vmin/vmax` → `contrast_limits=(vmin, vmax)` → `add_image(contrast_limits=...)`
+   - Confirmed with napari docs: RGB images should NOT have `contrast_limits`
+   - Our RGB conversion happens BEFORE napari: field values → colormap lookup → RGB [0,255]
+
+3. **Phase 3: Fix Implementation**
+   - User asked: "Why include contrast_limits at all in the napari_backend.py?"
+   - **Fix:** Removed `contrast_limits` parameter entirely from `render_napari()` function
+   - Updated docstring to clarify RGB images are already [0, 255]
+   - Updated function signature ([napari_backend.py:24-36](src/neurospatial/animation/backends/napari_backend.py:24-36))
+
+4. **Phase 4: Test Updates**
+   - Updated 2 failing tests in [test_napari_backend.py](tests/animation/test_napari_backend.py):
+     - `test_render_napari_custom_vmin_vmax` (lines 314-343): Now verifies RGB rendering without `contrast_limits`
+     - Renamed `test_render_napari_with_contrast_limits` → `test_render_napari_rgb_no_contrast_limits` (lines 347-373): Now tests correct behavior (no contrast_limits)
+   - All 16 napari tests passing, 1 skipped (test_render_napari_not_available - expected when napari installed)
+
+**Files Modified:**
+1. `src/neurospatial/animation/backends/napari_backend.py`:
+   - Removed `contrast_limits` parameter from function signature (line 33)
+   - Removed `contrast_limits` computation logic
+   - Removed `contrast_limits` from `add_image()` call (line 164)
+   - Updated docstring to document RGB [0, 255] behavior
+2. `tests/animation/test_napari_backend.py`:
+   - Updated `test_render_napari_custom_vmin_vmax` (lines 314-343)
+   - Renamed and updated `test_render_napari_rgb_no_contrast_limits` (lines 347-373)
+
+**Verification:**
+- ✅ All 16 napari backend tests passing (16 passed, 1 skipped)
+- ✅ Fix verified in practice (RGB images render without contrast_limits)
+- ✅ Skipped test is correct behavior (tests "not installed" case when napari IS installed)
+
+**Technical Explanation:**
+- **vmin/vmax:** Control colormap range DURING RGB conversion (field → RGB)
+- **contrast_limits:** Napari display parameter for GRAYSCALE images only
+- **Our pipeline:** Field → colormap lookup (vmin/vmax) → RGB [0,255] → Napari display
+- **Correct:** RGB images are already display-ready [0,255], no further scaling needed
+
+**Why the Bug Happened:**
+- Incorrectly assumed `contrast_limits` was needed to communicate color scale to napari
+- But napari's `contrast_limits` is for pixel value → display scaling, not color mapping
+- We already do color mapping in `field_to_rgb_for_napari()` using `vmin/vmax`
+
+**Milestone 7 Status:**
+- ✅ Examples notebook created and verified
+- ✅ Napari rendering bug fixed
+- ⏳ Remaining tasks: Update CLAUDE.md, create user guide, update README
 
 **Blockers:**
 - None currently

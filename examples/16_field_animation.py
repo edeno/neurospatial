@@ -60,6 +60,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from shapely.geometry import Point
 
 from neurospatial import Environment
 from neurospatial.animation import subsample_frames
@@ -68,66 +69,89 @@ from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 # Set random seed for reproducibility
 np.random.seed(42)
 
+# Determine output directory (works whether running as script or notebook)
+output_dir = Path.cwd()
+print(f"Output directory: {output_dir}")
+
 # %% [markdown]
-# ## Setup: Create Environment and Simulate Learning
+# ## Setup: Create Environment and Simulate Remapping
 #
-# We'll simulate place field formation over 30 trials, where the field:
-# - Gradually sharpens (decreasing spatial width)
-# - Becomes more reliable (decreasing noise)
-# - Centers on a goal location
+# We'll simulate place field remapping across 30 trials, where the field:
+# - Starts with activity at location A (trials 1-15)
+# - Undergoes remapping to location B (trials 16-30)
+# - Demonstrates context-dependent spatial coding
+#
+# This models real phenomena like:
+# - Environmental context changes
+# - Learning new reward locations
+# - Hippocampal remapping events
 
 # %%
-print("Creating environment...")
+print("Creating circular arena environment...")
 
-# Create a 100x100 cm open field arena with full coverage
-# This ensures no wasted space and realistic spatial structure
-arena_size = 100.0  # cm
-n_grid = 50
+# Create a circular arena (50 cm radius, 100 cm diameter)
+# This is a common neuroscience experimental setup
+center = Point(50, 50)
+radius = 50.0
+circle = center.buffer(radius)
 
-x = np.linspace(0, arena_size, n_grid)
-y = np.linspace(0, arena_size, n_grid)
-xx, yy = np.meshgrid(x, y)
-arena_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-env = Environment.from_samples(
-    arena_data,
-    bin_size=5.0,
-    bin_count_threshold=1,
-)
+env = Environment.from_polygon(polygon=circle, bin_size=2.5, name="CircularArena")
 env.units = "cm"
 env.frame = "open_field"
 
-print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm open field")
+print(f"Environment: Circular arena (radius={radius:.0f} cm)")
 print(f"  {env.n_bins} bins, {env.n_dims}D")
 
 # %%
-# Simulate place field formation over trials
-print("\nSimulating place field learning...")
+# Simulate place field remapping across trials
+print("\nSimulating place field remapping...")
 
 n_trials = 30
-# Place goal in upper-right quadrant of the arena (60, 70) cm
-goal_position = np.array([60.0, 70.0])
-goal_bin = env.bin_at(goal_position.reshape(1, -1))[0]
+remap_trial = 15  # Field remaps halfway through
+
+# Location A: Upper-right quadrant (60, 65) cm
+location_a = np.array([60.0, 65.0])
+bin_a = env.bin_at(location_a.reshape(1, -1))[0]
+
+# Location B: Lower-left quadrant (40, 35) cm
+location_b = np.array([40.0, 35.0])
+bin_b = env.bin_at(location_b.reshape(1, -1))[0]
+
 print(
-    f"Goal bin: {goal_bin} at position [{goal_position[0]:.1f}, {goal_position[1]:.1f}] cm"
+    f"Location A (trials 1-{remap_trial}): bin {bin_a} at [{location_a[0]:.1f}, {location_a[1]:.1f}] cm"
+)
+print(
+    f"Location B (trials {remap_trial + 1}-{n_trials}): bin {bin_b} at [{location_b[0]:.1f}, {location_b[1]:.1f}] cm"
 )
 
 fields = []
 for trial in range(n_trials):
-    # Field gradually sharpens
-    sigma = 30 - trial * 0.5  # Decreasing width
-    distances = env.distance_to([goal_bin])
+    # Determine which location is active
+    if trial < remap_trial:
+        # Before remapping: field at location A
+        active_bin = bin_a
+        field_strength = 1.0  # Full strength at A
+    else:
+        # After remapping: field at location B
+        active_bin = bin_b
+        # Gradual emergence at new location
+        field_strength = min(1.0, (trial - remap_trial + 1) / 5)
 
-    # Add noise that decreases over trials
-    noise_level = 0.3 * (1 - trial / n_trials)
-    noise = np.random.randn(env.n_bins) * noise_level
+    # Compute distances from active location
+    distances = env.distance_to([active_bin])
 
-    field = np.exp(-(distances**2) / (2 * sigma**2)) + noise
-    field = np.maximum(field, 0)  # Non-negative
+    # Gaussian place field with consistent width
+    sigma = 8.0  # cm (typical place field size)
+    field = field_strength * np.exp(-(distances**2) / (2 * sigma**2))
+
+    # Add realistic noise
+    noise = np.random.randn(env.n_bins) * 0.15
+    field = field + noise
+    field = np.maximum(field, 0)  # Non-negative firing rates
 
     fields.append(field)
 
-print(f"Generated {len(fields)} trial fields")
+print(f"Generated {len(fields)} trial fields (remapping at trial {remap_trial})")
 
 # %% [markdown]
 # ## Example 1: Interactive Napari Viewer
@@ -156,7 +180,7 @@ try:
         backend="napari",
         fps=10,
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
-        title="Place Field Learning",
+        title="Place Field Remapping",
     )
 
     print("✓ Napari viewer launched")
@@ -188,7 +212,7 @@ if check_ffmpeg_available():
     output_path = env.animate_fields(
         fields,
         backend="video",
-        save_path="examples/16_place_field_learning.mp4",
+        save_path=output_dir / "16_place_field_remapping.mp4",
         fps=5,
         cmap="hot",
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
@@ -221,7 +245,7 @@ print("Generating HTML player...")
 html_path = env.animate_fields(
     fields,
     backend="html",
-    save_path="examples/16_place_field_learning.html",
+    save_path=output_dir / "16_place_field_remapping.html",
     fps=10,
     cmap="viridis",
     frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
@@ -267,7 +291,7 @@ except ImportError:
     print("⊗ IPython not available - widget skipped")
 
 # %% [markdown]
-# ## Example 5: Large-Scale Session (900K frames)
+# ## Example 5: Large-Scale Session Pattern
 #
 # **Best for**: Hour-long recordings at high sampling rates (e.g., 250 Hz)
 #
@@ -277,21 +301,23 @@ except ImportError:
 # - Frame subsampling for video export
 # - Dry-run estimation before rendering
 #
-# This example demonstrates handling a realistic neuroscience session:
-# - 1 hour of recording
-# - 250 Hz sampling rate
-# - 900,000 total frames
-# - ~3.6 GB of data (float32)
+# **This example demonstrates the pattern** for handling large sessions:
+# - Real sessions: 60K-900K frames (4 min - 1 hour at 250 Hz)
+# - Real file sizes: 300 MB - 4.5 GB
+# - Demo version: 1000 frames (~5 MB) to avoid filling your disk
+#
+# The techniques shown here scale to arbitrarily large datasets!
 
 # %%
 print("=" * 80)
-print("Example 5: Large-Scale Session (900K frames)")
+print("Example 5: Large-Scale Session Pattern")
 print("=" * 80)
 
-print("\nFor hour-long sessions with 900K frames:")
+print("\nDemonstrating techniques for large datasets (60K-900K frames):")
 print("  - Use memory-mapped data (don't load into RAM)")
 print("  - Use Napari for exploration (lazy loading)")
 print("  - Subsample for video export")
+print("\nNote: Using 1000 frames (~5 MB) for demo; scales to hours of data")
 
 # %% [markdown]
 # ### Step 1: Create Memory-Mapped Data File
@@ -301,7 +327,9 @@ print("  - Subsample for video export")
 # %%
 # Create memory-mapped data file (simulating neural recording)
 print("\nCreating memory-mapped data file...")
-n_frames_large = 900_000  # 1 hour at 250 Hz
+# For demo purposes, use a small file (1000 frames ~5 MB)
+# In practice, this would be 60K-900K frames for real sessions
+n_frames_large = 1000  # Demo size (real: 60K-900K frames)
 
 # Use temporary directory for demo (in practice, use your data directory)
 tmpdir = Path(tempfile.mkdtemp(prefix="neurospatial_demo_"))
@@ -318,15 +346,18 @@ print("Populating with sample data (in practice, this is your recording)...")
 print("  (Writing in chunks to avoid memory issues)")
 
 # Populate with simulated data (in practice, this is your neural recording)
+# For this example, we'll simulate a slowly drifting place field
+initial_bin = env.n_bins // 2  # Start at center of environment
+
 chunk_size = 10000
 for i in range(0, n_frames_large, chunk_size):
     # Simulate place field that drifts slowly over time
     chunk_end = min(i + chunk_size, n_frames_large)
     chunk_len = chunk_end - i
 
-    # Slowly drifting center
-    drift = (i / n_frames_large) * 20  # Drifts 20 bins over session
-    center_bin = goal_bin + int(drift)
+    # Slowly drifting center (drifts 20 bins over the full session)
+    drift = int((i / n_frames_large) * 20)
+    center_bin = initial_bin + drift
     if center_bin >= env.n_bins:
         center_bin = env.n_bins - 1
 
@@ -343,11 +374,11 @@ print("  RAM usage: ~0 MB (memory-mapped, not loaded)")
 # %% [markdown]
 # ### Step 2: Interactive Exploration with Napari
 #
-# Napari loads frames on-demand, making it efficient for exploring 900K+ frames.
+# Napari loads frames on-demand, making it efficient for exploring large datasets.
 
 # %%
 print("\nOption 1: Interactive exploration (Napari)")
-print("  Napari loads frames on-demand - handles 900K frames efficiently")
+print("  Napari loads frames on-demand - would handle 900K frames efficiently")
 
 try:
     # Import napari only if attempting to use it
@@ -357,9 +388,10 @@ try:
         fields_mmap,
         backend="napari",
         fps=250,  # Match recording rate
-        title="Hour-Long Session (900K frames)",
+        title="Large Session Demo (1000 frames)",
     )
-    print("✓ Napari viewer launched - scrub through 900K frames instantly!")
+    print("✓ Napari viewer launched!")
+    print("  (Same technique works for 60K-900K frame sessions)")
     print("  (Close the viewer window to continue)")
 
 except ImportError:
@@ -372,12 +404,15 @@ except ImportError:
 
 # %%
 print("\nOption 2: Export subsampled video")
-print("  900K frames → 30 fps video requires subsampling")
+print("  For large sessions: 250 Hz → 30 fps requires subsampling")
 
 # Subsample 250 Hz → 30 fps
+# For 900K frames, this would produce 108K subsampled frames (1 hour video)
+# For our 1000 frame demo, this produces ~120 frames
 fields_subsampled = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
 print(f"  Subsampled: {len(fields_subsampled):,} frames (every {250 // 30}th frame)")
 print(f"  Video duration: {len(fields_subsampled) / 30:.1f} seconds")
+print("  (For 900K frames, would produce ~1 hour video)")
 
 # %% [markdown]
 # ### Step 4: Dry Run to Estimate Render Time
@@ -390,7 +425,7 @@ if check_ffmpeg_available():
     env.animate_fields(
         fields_subsampled,
         backend="video",
-        save_path="examples/16_large_session_summary.mp4",
+        save_path=output_dir / "16_large_session_summary.mp4",
         fps=30,
         n_workers=8,
         dry_run=True,  # Estimate first
