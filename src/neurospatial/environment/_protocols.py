@@ -212,6 +212,32 @@ class EnvironmentProtocol(Protocol):
         points: NDArray[np.float64],
     ) -> NDArray[np.float64]: ...
 
+    # Visualization and animation methods
+    def animate_fields(
+        self,
+        fields: Any,  # Sequence[NDArray[np.float64]] | NDArray[np.float64]
+        *,
+        backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+        save_path: str | None = None,
+        fps: int = 30,
+        cmap: str = "viridis",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        frame_labels: Any = None,  # Sequence[str] | None
+        overlay_trajectory: NDArray[np.float64] | None = None,
+        title: str = "Spatial Field Animation",
+        dpi: int = 100,
+        codec: str = "h264",
+        bitrate: int = 5000,
+        n_workers: int | None = None,
+        dry_run: bool = False,
+        image_format: Literal["png", "jpeg"] = "png",
+        max_html_frames: int = 500,
+        contrast_limits: tuple[float, float] | None = None,
+        show_colorbar: bool = False,
+        colorbar_label: str = "",
+    ) -> Any: ...
+
 
 # TypeVar bound to EnvironmentProtocol for use in mixin self annotations
 # This allows mixins to access Protocol attributes while still accepting

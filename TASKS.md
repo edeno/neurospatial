@@ -290,40 +290,55 @@ Implement animation capabilities supporting four backends:
 
 ---
 
-## Milestone 6: Environment Integration
+## Milestone 6: Environment Integration ✅
 
 **Goal:** Add animate_fields() method to Environment
 **Dependencies:** Milestones 1-5
 **Estimated Time:** 1 day
+**Status:** COMPLETE
 
 ### Mixin Implementation
 
-- [ ] Open `src/neurospatial/environment/visualization.py`
-- [ ] Add `animate_fields()` method to EnvironmentVisualization mixin
-  - [ ] Use `self: EnvironmentProtocol` type annotation
-  - [ ] Add complete parameter list (all backends)
-  - [ ] Add comprehensive NumPy docstring
-  - [ ] Delegate to `neurospatial.animation.core.animate_fields()`
-- [ ] Add method signature to EnvironmentProtocol
-  - [ ] Open `src/neurospatial/environment/_protocols.py`
-  - [ ] Add `animate_fields` method stub
+- [x] Open `src/neurospatial/environment/visualization.py`
+- [x] Add `animate_fields()` method to EnvironmentVisualization mixin
+  - [x] Use `self: SelfEnv` type annotation (EnvironmentProtocol TypeVar)
+  - [x] Add complete parameter list (all backends)
+  - [x] Add comprehensive NumPy docstring (172 lines)
+  - [x] Delegate to `neurospatial.animation.core.animate_fields()`
+- [x] Add method signature to EnvironmentProtocol
+  - [x] Open `src/neurospatial/environment/_protocols.py`
+  - [x] Add `animate_fields` method stub (lines 216-239)
+- [x] Update core dispatcher to accept EnvironmentProtocol
 
 ### Type Checking
 
-- [ ] Run `uv run mypy src/neurospatial/environment/visualization.py`
-- [ ] Fix any type errors
-- [ ] Verify mixin pattern works with Protocol
+- [x] Run `uv run mypy src/neurospatial/environment/visualization.py`
+- [x] Fix any type errors (all passing)
+- [x] Verify mixin pattern works with Protocol
+- [x] Add `type: ignore` comments for backend calls
 
 ### Testing
 
-- [ ] Test method exists on Environment
+- [x] Test method exists on Environment (test_method_exists)
+- [x] Test delegation works (test_delegates_to_core_dispatcher)
+- [x] Test parameter forwarding (test_forwards_all_parameters)
+- [x] Test return value propagation (test_returns_dispatcher_result)
+- [x] Test with grid layout (test_works_with_grid_layout)
+- [x] Test with hexagonal layout (test_works_with_hexagonal_layout)
+- [x] Test with 1D layout (test_works_with_1d_layout)
+- [x] Test with masked grid (test_works_with_masked_grid)
+- [x] Test ndarray input (test_accepts_ndarray_input)
+- [x] Test default backend (test_default_backend_auto)
+- [x] Test overlay trajectory (test_overlay_trajectory_parameter)
+- [x] Test fitted state requirement (test_requires_fitted_environment)
 
-  ```python
-  env = Environment.from_samples(positions, bin_size=5.0)
-  assert hasattr(env, 'animate_fields')
-  ```
+### Code Quality
 
-- [ ] Test delegation works (call through Environment)
+- [x] All 12 integration tests passing
+- [x] mypy type checking clean
+- [x] ruff linting clean
+- [x] Fixed docstring example bug (line 619)
+- [x] Code reviewer rating: 9/10
 
 ---
 

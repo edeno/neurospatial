@@ -19,7 +19,8 @@ forward references.
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Literal
 
 import matplotlib
 import matplotlib.axes
@@ -445,6 +446,240 @@ class EnvironmentVisualization:
                 ax.set_ylim(self.dimension_ranges[1])
 
         return ax
+
+    @check_fitted
+    def animate_fields(
+        self: SelfEnv,
+        fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+        *,
+        backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+        save_path: str | None = None,
+        fps: int = 30,
+        cmap: str = "viridis",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        frame_labels: Sequence[str] | None = None,
+        overlay_trajectory: NDArray[np.float64] | None = None,
+        title: str = "Spatial Field Animation",
+        dpi: int = 100,
+        codec: str = "h264",
+        bitrate: int = 5000,
+        n_workers: int | None = None,
+        dry_run: bool = False,
+        image_format: Literal["png", "jpeg"] = "png",
+        max_html_frames: int = 500,
+        contrast_limits: tuple[float, float] | None = None,
+        show_colorbar: bool = False,
+        colorbar_label: str = "",
+    ) -> Any:
+        """Animate spatial fields over time with multiple backend options.
+
+        Creates animations of spatial field data across different time points,
+        with support for four different backends optimized for different use cases:
+        Napari (GPU-accelerated interactive viewing), Video (MP4/WebM export),
+        HTML (standalone shareable player), and Jupyter Widget (notebook integration).
+
+        Parameters
+        ----------
+        fields : Sequence[NDArray[np.float64]] or NDArray[np.float64]
+            Spatial field data to animate. Can be:
+            - List of arrays: Each array shape (n_bins,) represents one frame
+            - Single ndarray: Shape (n_frames, n_bins) with first dimension as time
+            Each field must match the number of bins in this environment.
+        backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
+            Animation backend to use:
+            - "auto": Automatically selects based on context and data size
+            - "napari": GPU-accelerated interactive viewer (best for large datasets)
+            - "video": Export MP4/WebM with parallel rendering (best for publications)
+            - "html": Standalone HTML player with instant scrubbing (best for sharing)
+            - "widget": Jupyter widget with slider control (best for notebooks)
+        save_path : str, optional
+            Output file path. If provided, file extension determines format:
+            - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
+            - .html: standalone HTML player (no dependencies)
+            - None: display interactively (napari or widget depending on context)
+        fps : int, default=30
+            Playback frame rate in frames per second
+        cmap : str, default="viridis"
+            Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
+        vmin : float, optional
+            Minimum value for colormap normalization. If None, computed from all frames.
+        vmax : float, optional
+            Maximum value for colormap normalization. If None, computed from all frames.
+        frame_labels : Sequence[str], optional
+            Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
+            auto-generated as "Frame 1", "Frame 2", etc.
+        overlay_trajectory : NDArray[np.float64], optional
+            Trajectory to overlay on animation. Shape: (n_timepoints, n_dims).
+            For 2D environments: rendered as track line. For higher dimensions:
+            rendered as point cloud. Only supported by napari backend.
+        title : str, default="Spatial Field Animation"
+            Animation title shown in player controls or window title
+        dpi : int, default=100
+            Resolution for rendering frames (video and HTML backends). Higher values
+            produce sharper images but larger file sizes.
+        codec : str, default="h264"
+            Video codec for MP4 export. Options: "h264", "h265", "vp9", "mpeg4".
+            Only used with video backend.
+        bitrate : int, default=5000
+            Video bitrate in kbps. Higher values produce better quality but larger
+            files. Only used with video backend.
+        n_workers : int, optional
+            Number of parallel workers for video rendering. If None, uses
+            CPU count / 2. Set to 1 for serial rendering. Requires environment
+            to be pickle-able (call `env.clear_cache()` if pickle errors occur).
+            Only used with video backend.
+        dry_run : bool, default=False
+            If True, estimate rendering time and file size without actually rendering.
+            Only used with video backend.
+        image_format : {"png", "jpeg"}, default="png"
+            Image format for frame embedding in HTML. JPEG produces smaller files
+            but with lossy compression. Only used with HTML backend.
+        max_html_frames : int, default=500
+            Maximum number of frames allowed for HTML export. Prevents creating
+            huge files that crash browsers. Only used with HTML backend.
+        contrast_limits : tuple[float, float], optional
+            Napari contrast limits (min, max). If provided, overrides vmin/vmax.
+            Only used with napari backend.
+        show_colorbar : bool, default=False
+            Whether to include colorbar in rendered frames (not yet implemented)
+        colorbar_label : str, default=""
+            Label for colorbar axis (not yet implemented)
+
+        Returns
+        -------
+        viewer or path or widget
+            Return value depends on backend:
+            - napari: napari.Viewer instance (blocking - shows window)
+            - video: Path to saved video file
+            - html: Path to saved HTML file
+            - widget: ipywidgets.interact instance (displays automatically in notebook)
+
+        Raises
+        ------
+        RuntimeError
+            If environment is not fitted (use factory methods like
+            Environment.from_samples())
+        ValueError
+            If field shapes don't match environment n_bins
+        ImportError
+            If required backend dependencies are not installed
+        RuntimeError
+            If ffmpeg is not available for video backend
+
+        See Also
+        --------
+        plot_field : Plot static spatial field
+        plot : Plot environment structure
+        neurospatial.animation.subsample_frames : Subsample frames for large datasets
+
+        Notes
+        -----
+        **Backend Selection (auto mode):**
+        When backend="auto", the selection logic is:
+        - If save_path has video extension (.mp4, .webm, etc.) → video backend
+        - If save_path is .html → HTML backend
+        - If >10,000 frames → napari backend (GPU acceleration needed)
+        - If in Jupyter notebook → widget backend
+        - Otherwise → napari backend (if available) or error
+
+        **Layout Support:**
+        All layout types are supported:
+        - Grid layouts (RegularGrid, MaskedGrid, etc.): Direct rendering
+        - Hexagonal/Triangular: Layout-aware rendering with proper shapes
+        - Graph layouts (1D): Rendered as 1D line plots
+        The animation automatically uses the appropriate renderer based on layout type.
+
+        **Performance Tips:**
+        - For large datasets (>10K frames), use memory-mapped arrays to avoid loading
+          all data into RAM
+        - Use napari backend for interactive exploration of large datasets
+        - For video export, increase n_workers for faster parallel rendering
+        - For HTML, use image_format="jpeg" to reduce file size (with quality loss)
+        - Use subsample_frames() utility to downsample high-frequency recordings
+
+        **Memory Considerations:**
+        - Napari backend: Frames loaded on-demand (LRU cache), handles 900K+ frames
+        - Video backend: Renders in chunks, temporary files cleaned up automatically
+        - HTML backend: All frames embedded in single file (limit: 500 frames default)
+        - Widget backend: Pre-renders first 500 frames, on-demand for rest
+
+        Examples
+        --------
+        Create environment and simulate field evolution:
+
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> positions = np.random.uniform(0, 100, (1000, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> # Simulate place field formation over 20 trials
+        >>> fields = []
+        >>> center_bin = env.n_bins // 2  # Use middle bin
+        >>> for trial in range(20):
+        ...     distances = env.distance_to([center_bin])
+        ...     field = np.exp(-distances / (10 + trial))
+        ...     fields.append(field)
+
+        Interactive exploration with Napari:
+
+        >>> viewer = env.animate_fields(fields, backend="napari")  # doctest: +SKIP
+
+        Video export for publication:
+
+        >>> env.animate_fields(
+        ...     fields,
+        ...     save_path="place_field_learning.mp4",
+        ...     fps=5,
+        ...     frame_labels=[f"Trial {i + 1}" for i in range(20)],
+        ...     cmap="hot",
+        ... )  # doctest: +SKIP
+
+        Shareable HTML with instant scrubbing:
+
+        >>> env.animate_fields(
+        ...     fields, save_path="exploration.html", fps=10
+        ... )  # doctest: +SKIP
+
+        Quick notebook check with widget:
+
+        >>> env.animate_fields(fields, backend="widget")  # doctest: +SKIP
+
+        Large-scale session (memory-mapped data):
+
+        >>> # For hour-long recording (900K frames at 250 Hz)
+        >>> from neurospatial.animation import subsample_frames
+        >>> # Subsample to 30 fps for video export
+        >>> fields_sub = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
+        >>> env.animate_fields(
+        ...     fields_sub, save_path="session_summary.mp4", n_workers=8
+        ... )  # doctest: +SKIP
+
+        """
+        from neurospatial.animation.core import animate_fields as _animate
+
+        return _animate(
+            env=self,
+            fields=fields,
+            backend=backend,
+            save_path=save_path,
+            fps=fps,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            frame_labels=frame_labels,
+            overlay_trajectory=overlay_trajectory,
+            title=title,
+            dpi=dpi,
+            codec=codec,
+            bitrate=bitrate,
+            n_workers=n_workers,
+            dry_run=dry_run,
+            image_format=image_format,
+            max_html_frames=max_html_frames,
+            contrast_limits=contrast_limits,
+            show_colorbar=show_colorbar,
+            colorbar_label=colorbar_label,
+        )
 
 
 # Helper functions for layout-specific rendering

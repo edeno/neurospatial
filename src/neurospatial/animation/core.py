@@ -15,11 +15,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def animate_fields(
-    env: Environment,
+    env: EnvironmentProtocol,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
@@ -109,7 +109,7 @@ def animate_fields(
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        return render_napari(env, fields, **kwargs)
+        return render_napari(env, fields, **kwargs)  # type: ignore[arg-type]
 
     elif backend == "video":
         from neurospatial.animation.backends.video_backend import (
@@ -154,19 +154,19 @@ def animate_fields(
                     f"  3. Use backend='html' instead (no pickling)\n"
                 ) from e
 
-        return render_video(env, fields, save_path, **kwargs)
+        return render_video(env, fields, save_path, **kwargs)  # type: ignore[arg-type]
 
     elif backend == "html":
         from neurospatial.animation.backends.html_backend import render_html
 
         if save_path is None:
             save_path = "animation.html"
-        return render_html(env, fields, save_path, **kwargs)
+        return render_html(env, fields, save_path, **kwargs)  # type: ignore[arg-type]
 
     elif backend == "widget":
         from neurospatial.animation.backends.widget_backend import render_widget
 
-        return render_widget(env, fields, **kwargs)
+        return render_widget(env, fields, **kwargs)  # type: ignore[arg-type]
 
     else:
         raise ValueError(f"Unknown backend: {backend}")
