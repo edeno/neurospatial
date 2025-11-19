@@ -172,11 +172,14 @@ try:
     from IPython import get_ipython
 
     print("Launching Napari viewer...")
-    print("CONTROLS (bottom-left corner):")
+    print("PLAYBACK CONTROLS (bottom-left corner):")
     print("  ▶ Play button - Start/stop animation")
     print("  ━ Time slider - Scrub through frames")
-    print("  ⚙ Gear icon - Adjust playback speed")
     print("  ← → Arrow keys - Step through frames")
+    print("")
+    print("ADJUST SPEED:")
+    print("  File → Preferences → Application → Playback frames per second")
+    print("  (or set fps parameter when calling animate_fields)")
     print("")
 
     viewer = env.animate_fields(
@@ -396,7 +399,9 @@ try:
     import napari
     from IPython import get_ipython
 
-    print("CONTROLS: Look for playback controls at bottom-left of window")
+    print("PLAYBACK CONTROLS (bottom-left):")
+    print("  ▶ Play button, time slider, arrow keys")
+    print("  Adjust speed: File → Preferences → Application → Playback FPS")
 
     viewer = env.animate_fields(
         fields_mmap,

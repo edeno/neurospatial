@@ -104,12 +104,12 @@ def render_napari(
 
     - **Frame slider** - Horizontal slider showing current frame position
     - **Play button (▶)** - Triangle icon to start/stop animation (next to slider)
-    - **FPS control** - Click gear icon (⚙) to adjust playback speed
     - **Frame counter** - Shows "1/N" indicating current frame
     - **Keyboard shortcuts** - Arrow keys to step forward/backward
 
     The animation starts at frame 0 (beginning) with playback speed set by the
-    `fps` parameter. The speed can be adjusted interactively via the gear icon.
+    `fps` parameter. To adjust speed after opening, use File → Preferences → Application
+    → "Playback frames per second".
 
     **Note:** Only the time dimension slider is shown. Spatial dimensions (height, width)
     are displayed in the 2D viewport, not as separate sliders.
