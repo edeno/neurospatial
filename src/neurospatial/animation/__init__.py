@@ -16,7 +16,6 @@ subsample_frames : function
     Subsample frames to target frame rate for large-scale sessions
 """
 
-# Import will be enabled once core.py is created
-# from neurospatial.animation.core import subsample_frames
+from neurospatial.animation.core import subsample_frames
 
-__all__: list[str] = []  # Will add "subsample_frames" once core.py exists
+__all__: list[str] = ["subsample_frames"]
