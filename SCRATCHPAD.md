@@ -666,6 +666,149 @@ env.animate_fields(fields, backend='widget')
 **Blockers:**
 - None currently
 
+### 2025-11-19 - Test Coverage Enhancement (Session 8)
+
+**Context:**
+After completing M6 (Environment Integration), user asked clarifying questions about layout support:
+- "How does this work with different layouts? different dimensions?"
+- "What about napari?"
+- "Do we have integration tests for all these layout scenarios?"
+
+**Analysis Performed:**
+- Explained delegation pattern: `env.animate_fields()` → `core.animate_fields()` → backends → `env.plot_field()`
+- Documented layout support matrix:
+  - Grid (RegularGrid) - ✅ Full support
+  - Hexagonal - ✅ Full support (via patches)
+  - 1D (GraphLayout) - ✅ Full support (via line plot)
+  - Triangular - ✅ Full support (via patches)
+  - Masked Grid - ✅ Full support
+- Explained Napari's special RGB conversion layer
+- Identified test coverage gap:
+  - **M6 tests:** Verify delegation only (mocked backends)
+  - **Backend tests:** Only test with RegularGrid for end-to-end
+  - **Gap:** No end-to-end tests for hexagonal, 1D, triangular layouts
+
+**Test Coverage Matrix:**
+| Layout Type | Delegation Test (M6) | End-to-End Test |
+|-------------|---------------------|-----------------|
+| Grid        | ✅ test_works_with_grid_layout | ✅ All backend integration tests |
+| Hexagonal   | ✅ test_works_with_hexagonal_layout | ❌ Not covered |
+| 1D Graph    | ✅ test_works_with_1d_layout | ❌ Not covered |
+| Masked Grid | ✅ test_works_with_masked_grid | ❌ Not covered |
+| Triangular  | ❌ Not covered | ❌ Not covered |
+
+**Recommended Tests (added to TASKS.md M8):**
+1. **Hexagonal with Video backend**
+   - Create hexagonal environment
+   - Render to MP4
+   - Verify hexagonal patches render properly
+2. **1D Graph with HTML backend**
+   - Create 1D track environment
+   - Render to HTML
+   - Verify 1D line plot renders properly
+3. **Triangular Mesh (comprehensive)**
+   - Create triangular environment
+   - Render with any backend
+   - Verify triangular patches render properly
+4. **Masked Grid with Napari**
+   - Create masked grid with active bins
+   - Render with GPU acceleration
+   - Verify only active bins render
+
+**Action Taken:**
+- ✅ Updated TASKS.md Milestone 8 with new section "End-to-End Layout Integration Tests"
+- ✅ Added 4 specific test scenarios with sub-tasks
+- ✅ Documented goal: "Verify full rendering pipeline works across different layout types (M6 tests only verified delegation, not actual rendering)"
+- ✅ Updated SCRATCHPAD.md with session notes
+
+**Files Modified:**
+- [TASKS.md](TASKS.md) - Added "End-to-End Layout Integration Tests" section to M8 (lines 417-440)
+- [SCRATCHPAD.md](SCRATCHPAD.md) - Added Session 8 notes
+
+**Why This Matters:**
+- M6 tests verify **delegation** (method calls correct function with right parameters)
+- Backend tests verify **rendering** but only with RegularGrid
+- New tests will verify **end-to-end pipeline** (Environment → core → backend → plot_field) for diverse layouts
+- Ensures hexagonal/1D/triangular layouts work correctly with animation feature
+
+**Status:**
+- Documentation updated
+- Ready to proceed with Milestone 7 (Examples and Documentation)
+
+**Blockers:**
+- None currently
+
+### 2025-11-19 - Examples Notebook Creation (Session 9)
+
+**Completed:**
+- ✅ Created `examples/16_field_animation.ipynb` using jupytext paired mode
+  - Resolved naming conflict (08 already taken by spike_field_basics)
+  - Used number 16 following existing examples numbering scheme
+  - Set up jupytext pairing with percent format (ipynb,py:percent)
+  - Created comprehensive notebook with 27 cells
+- ✅ Implemented all 5 examples from ANIMATION_IMPLEMENTATION_PLAN.md:
+  1. ✅ Example 1: Napari interactive viewer with GPU acceleration
+  2. ✅ Example 2: Video export (MP4) with parallel rendering
+  3. ✅ Example 3: HTML standalone player with instant scrubbing
+  4. ✅ Example 4: Jupyter widget for notebook integration
+  5. ✅ Example 5: Large-scale session (900K frames) with memory-mapped arrays
+- ✅ Added comprehensive documentation:
+  - Learning objectives
+  - Prerequisites and installation instructions
+  - Backend selection guide (comparison table)
+  - Performance tips
+  - Common patterns
+  - Key takeaways
+
+**Notebook Structure:**
+- Header with learning objectives and prerequisites
+- Setup: Environment creation and place field simulation (30 trials)
+- 5 examples demonstrating all backends
+- Backend comparison table and performance tips
+- Common usage patterns
+- Next steps section
+
+**Technical Details:**
+- Used jupytext v1.18.1 for paired mode (ipynb + py:percent)
+- Simulates place field learning over 30 trials (gradually sharpening field)
+- Large-scale example creates 900K frames (~3.6 GB) memory-mapped file
+- Demonstrates subsampling from 250 Hz → 30 fps for video export
+- Includes dry-run mode demonstration for time/size estimation
+- Graceful fallbacks when optional dependencies not installed
+
+**Files Created:**
+- `examples/16_field_animation.ipynb` (19 KB, 27 cells)
+- `examples/16_field_animation.py` (13 KB, synced .py file)
+
+**Verification Results:**
+- ✅ All dependencies available (ffmpeg 8.0, napari 0.5.6, ipywidgets 8.1.8)
+- ✅ Basic environment setup and field generation working
+- ✅ HTML export tested successfully (690 KB file)
+- ✅ Video export tested successfully (652 KB, 6s duration, h264 codec)
+- ✅ All output files verified
+- ✅ Ruff linting passing (0 errors)
+- ⚠️ Mypy has 4 warnings (expected for example notebooks: mixin pattern false positives, missing stubs for napari/IPython)
+
+**Improvements Made:**
+1. **Better Environment Creation** (following example 11 pattern):
+   - Changed from random sparse points → 100x100 cm grid with full coverage
+   - Reduced bins: 695 → 441 (more efficient, no wasted space)
+   - Added realistic arena dimensions and metadata (units, frame)
+2. **Fixed Goal Position:**
+   - Original: Invalid `[80, 80]` (out of bounds)
+   - Temporary fix: Dynamic center (worked but arbitrary)
+   - Final: Sensible location `[60, 70]` cm in upper-right quadrant
+3. **Code Quality:**
+   - Reorganized imports to top of notebook (following pattern of other examples)
+   - Converted to Path API (removed os.path usage)
+   - Ruff linting: 0 errors
+
+**Next Steps (Milestone 7 remaining tasks):**
+- Continue with remaining M7 tasks (update CLAUDE.md, create user guide, update README)
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference
