@@ -528,3 +528,49 @@ def test_render_napari_invalid_trajectory_shape(simple_env, simple_fields):
                 simple_fields,
                 overlay_trajectory=invalid_trajectory,
             )
+
+
+@pytest.mark.napari
+def test_render_napari_playback_controls(simple_env, simple_fields):
+    """Test that playback controls are configured correctly."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with patch(
+        "neurospatial.animation.backends.napari_backend.napari.Viewer"
+    ) as mock_viewer_class:
+        # Create mock viewer with playback controls
+        mock_viewer = MagicMock()
+        mock_viewer.add_image = MagicMock(return_value=None)
+
+        # Mock dims with current_step (starts at middle frame by default)
+        mock_viewer.dims = MagicMock()
+        mock_viewer.dims.current_step = (5, 0, 0)  # Start at frame 5
+
+        # Mock Qt viewer structure for FPS control
+        mock_qt_viewer = MagicMock()
+        mock_qt_dims = MagicMock()
+        mock_time_slider = MagicMock()
+        mock_time_slider.fps = 10  # Default FPS
+
+        mock_qt_dims.slider_widgets = [mock_time_slider]
+        mock_qt_viewer.dims = mock_qt_dims
+        mock_window = MagicMock()
+        mock_window.qt_viewer = mock_qt_viewer
+        mock_viewer.window = mock_window
+
+        mock_viewer_class.return_value = mock_viewer
+
+        # Render with custom FPS
+        render_napari(
+            simple_env,
+            simple_fields,
+            fps=25,
+        )
+
+        # Verify initial frame set to 0
+        assert mock_viewer.dims.current_step == (0, 0, 0)
+
+        # Verify FPS configured
+        assert mock_time_slider.fps == 25

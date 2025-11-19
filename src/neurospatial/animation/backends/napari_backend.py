@@ -60,11 +60,6 @@ def render_napari(
         Positions to overlay as trajectory (shape: n_timepoints, n_dims)
         - 2D trajectories: rendered as tracks
         - Higher dimensions: rendered as points
-    contrast_limits : tuple of float, optional
-        **Note**: This parameter is kept for API compatibility but is
-        not used for RGB images. RGB images are already in [0, 255] range
-        and don't need contrast adjustment. Use `vmin`/`vmax` to control
-        the colormap range instead.
     title : str, default="Spatial Field Animation"
         Viewer window title
     **kwargs : dict
@@ -103,6 +98,18 @@ def render_napari(
 
     Notes
     -----
+    **Playback Controls:**
+
+    Napari provides built-in playback controls:
+    - **Play/Pause button** - Click to start/stop animation
+    - **Frame slider** - Drag to scrub through frames
+    - **FPS setting** - Click the gear icon to adjust playback speed
+    - **Keyboard shortcuts** - Use arrow keys to step through frames
+    - **Initial frame** - Animation starts at frame 0 (beginning)
+
+    The `fps` parameter sets the default playback speed, which can be
+    adjusted interactively via the slider controls.
+
     **Memory Efficiency:**
 
     Napari backend uses lazy loading with LRU caching:
@@ -163,6 +170,19 @@ def render_napari(
         rgb=True,  # Already RGB
         # Don't pass contrast_limits for RGB images - they're already [0, 255]
     )
+
+    # Configure playback controls
+    # 1. Set initial frame to 0 (start at beginning, not middle)
+    viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
+
+    # 2. Configure FPS on the Qt dims slider widget
+    if hasattr(viewer, "window") and hasattr(viewer.window, "qt_viewer"):
+        qt_dims = viewer.window.qt_viewer.dims
+        # Set FPS for the time dimension slider (first slider)
+        if hasattr(qt_dims, "slider_widgets") and qt_dims.slider_widgets:
+            time_slider = qt_dims.slider_widgets[0]  # First dimension is time
+            if hasattr(time_slider, "fps"):
+                time_slider.fps = fps
 
     # Add trajectory overlay if provided
     if overlay_trajectory is not None:
