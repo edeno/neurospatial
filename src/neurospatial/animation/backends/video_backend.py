@@ -244,10 +244,14 @@ def render_video(
             "scale=ceil(iw/2)*2:ceil(ih/2)*2",  # Ensure even dimensions for h264
             "-c:v",
             ffmpeg_codec,
-            "-b:v",
-            f"{bitrate}k",
             "-pix_fmt",
             "yuv420p",  # Compatibility
+            "-r",
+            str(fps),  # Output framerate
+            "-b:v",
+            f"{bitrate}k",
+            "-threads",
+            str(n_workers),  # Encoding threads
             str(output_path),
         ]
 
