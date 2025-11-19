@@ -6,6 +6,7 @@ Your workflow MUST be:
 
     First, read these files IN ORDER:
         SCRATCHPAD.md (notes and current status)
+        ANIMATION_IMPLEMENTATION_PLAN.md (overall plan)
         TASKS.md (current tasks)
 
     Find the FIRST unchecked [ ] task in TASKS.md

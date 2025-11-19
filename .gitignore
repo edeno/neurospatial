@@ -180,3 +180,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .DS_Store
+
+# Research/experimental code (not for distribution)
+examples/research/
+docs/research/

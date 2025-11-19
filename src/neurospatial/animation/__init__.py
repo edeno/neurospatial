@@ -1,0 +1,22 @@
+"""Animation module for neurospatial.
+
+This module provides multi-backend animation capabilities for visualizing
+spatial fields over time (place field learning, replay sequences, value
+function evolution).
+
+Available backends:
+- Napari: GPU-accelerated interactive viewer (large-scale exploration)
+- Video (MP4): Parallel video export (publications, presentations)
+- HTML: Standalone interactive files (sharing, remote viewing)
+- Jupyter Widget: Notebook integration (quick exploration)
+
+Public API
+----------
+subsample_frames : function
+    Subsample frames to target frame rate for large-scale sessions
+"""
+
+# Import will be enabled once core.py is created
+# from neurospatial.animation.core import subsample_frames
+
+__all__: list[str] = []  # Will add "subsample_frames" once core.py exists
