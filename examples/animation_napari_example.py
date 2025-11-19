@@ -13,6 +13,7 @@ Requirements:
     # or: uv add "napari[all]>=0.4.18,<0.6"
 """
 
+import napari
 import numpy as np
 
 from neurospatial import Environment
@@ -49,7 +50,10 @@ print("  - Pan: Click and drag")
 print("\nClose the napari window to continue.")
 
 # Launch napari viewer (interactive GUI window)
-render_napari(env, fields, title="Basic Napari Animation", fps=30)
+viewer = render_napari(env, fields, title="Basic Napari Animation", fps=30)
+
+# IMPORTANT: Call napari.run() to block and keep window open
+napari.run()
 
 print("\nViewer closed.")
 
@@ -80,7 +84,7 @@ print("\nLaunching napari viewer with trajectory overlay...")
 print("Note: Blue line shows the animal's path through the environment")
 
 # Launch with trajectory
-render_napari(
+viewer = render_napari(
     env,
     fields_with_traj,
     trajectory=trajectory,
@@ -88,6 +92,8 @@ render_napari(
     fps=30,
     cmap="hot",
 )
+
+napari.run()
 
 print("\nViewer closed.")
 
@@ -118,13 +124,15 @@ print("\nLaunching napari with lazy loading...")
 print("Note: First 500 frames are cached, remaining frames render on-demand")
 print("Try seeking to different frames - performance should be consistent!")
 
-render_napari(
+viewer = render_napari(
     env,
     fields_large,
     title=f"Large Dataset ({n_frames_large} frames)",
     fps=60,  # Higher FPS for smooth playback
     cmap="viridis",
 )
+
+napari.run()
 
 print("\nViewer closed.")
 
@@ -150,7 +158,7 @@ print(f"Color scale: [{vmin}, {vmax}]")
 print("Colormap: plasma")
 print("\nLaunching napari with custom color scale...")
 
-render_napari(
+viewer = render_napari(
     env,
     fields_mixed,
     title="Custom Color Scale",
@@ -159,6 +167,8 @@ render_napari(
     vmin=vmin,
     vmax=vmax,
 )
+
+napari.run()
 
 print("\nViewer closed.")
 
