@@ -75,6 +75,15 @@ notebooks = [
 opencv = [
     "opencv-python>=4.11.0.86",
 ]
+animation = [
+    "napari[all]>=0.4.18,<0.6",  # GPU-accelerated interactive viewer
+    "ipywidgets>=8.0,<9.0",      # Jupyter notebook widget backend
+    # Note: ffmpeg is required for video backend but must be
+    # installed separately as a system dependency. Install with:
+    #   - macOS: brew install ffmpeg
+    #   - Ubuntu: apt-get install ffmpeg
+    #   - Windows: Download from https://ffmpeg.org/download.html
+]
 
 [build-system]
 requires = ["hatchling"]

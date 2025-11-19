@@ -214,6 +214,13 @@
 - Code review approved (9.4/10) with critical security fix applied
 - Ready for Milestone 3 (Video Backend) or commit & documentation
 
+**Dependencies Installed:**
+- ✅ Added `[project.optional-dependencies]` animation section to pyproject.toml
+- ✅ Installed napari[all]>=0.4.18,<0.6 (GPU-accelerated viewer)
+- ✅ Installed ipywidgets>=8.0,<9.0 (Jupyter widget backend)
+- ✅ Documented ffmpeg system dependency with install instructions
+- ✅ Removed milestone references from comments (cleaner code)
+
 **Blockers:**
 - None currently
 

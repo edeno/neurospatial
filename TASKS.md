@@ -53,36 +53,36 @@ Implement animation capabilities supporting four backends:
 
 ### Core Dispatcher (`core.py`)
 
-- [ ] Create `src/neurospatial/animation/core.py`
-- [ ] Implement `animate_fields()` dispatcher function
-  - [ ] Add environment fitted state validation
-  - [ ] Add field shape validation (must match env.n_bins)
-  - [ ] Add early ffmpeg availability check (fail fast)
-  - [ ] Add pickle-ability validation for parallel rendering
-- [ ] Implement `_select_backend()` with transparent logging
-  - [ ] Add file extension detection (.mp4, .html)
-  - [ ] Add large dataset detection (>10K frames → Napari)
-  - [ ] Add Jupyter detection (use widget backend)
-  - [ ] Add clear error messages when no backend available
-- [ ] Implement `subsample_frames()` utility function
-  - [ ] Support both ndarray and list inputs
-  - [ ] Preserve input type in output
-  - [ ] Add validation (target_fps ≤ source_fps)
-- [ ] Add unit tests for core functions
-  - [ ] Test backend auto-selection logic
-  - [ ] Test subsample_frames with memory-mapped arrays
-  - [ ] Test pickle validation error messages
+- [x] Create `src/neurospatial/animation/core.py`
+- [x] Implement `animate_fields()` dispatcher function
+  - [x] Add environment fitted state validation
+  - [x] Add field shape validation (must match env.n_bins)
+  - [x] Add early ffmpeg availability check (fail fast)
+  - [x] Add pickle-ability validation for parallel rendering
+- [x] Implement `_select_backend()` with transparent logging
+  - [x] Add file extension detection (.mp4, .html)
+  - [x] Add large dataset detection (>10K frames → Napari)
+  - [x] Add Jupyter detection (use widget backend)
+  - [x] Add clear error messages when no backend available
+- [x] Implement `subsample_frames()` utility function
+  - [x] Support both ndarray and list inputs
+  - [x] Preserve input type in output
+  - [x] Add validation (target_fps ≤ source_fps)
+- [x] Add unit tests for core functions
+  - [x] Test backend auto-selection logic
+  - [x] Test subsample_frames with memory-mapped arrays
+  - [x] Test pickle validation error messages
 
 ### Public API Export
 
-- [ ] Update `src/neurospatial/animation/__init__.py`
-  - [ ] Export `subsample_frames`
-  - [ ] Add `__all__` list
-- [ ] Verify import works: `from neurospatial.animation import subsample_frames`
+- [x] Update `src/neurospatial/animation/__init__.py`
+  - [x] Export `subsample_frames`
+  - [x] Add `__all__` list
+- [x] Verify import works: `from neurospatial.animation import subsample_frames`
 
 ### Dependencies
 
-- [ ] Update `pyproject.toml` with optional dependencies
+- [x] Update `pyproject.toml` with optional dependencies
 
   ```toml
   [project.optional-dependencies]
@@ -92,11 +92,11 @@ Implement animation capabilities supporting four backends:
   ]
   ```
 
-- [ ] Document ffmpeg as system dependency (user installs)
+- [x] Document ffmpeg as system dependency (user installs)
 
 ### Type Checking
 
-- [ ] Run `uv run mypy src/neurospatial/animation/core.py`
+- [x] Run `uv run mypy src/neurospatial/animation/core.py`
 - [x] Run `uv run mypy src/neurospatial/animation/rendering.py`
 - [x] Fix any type errors (all passing)
 
