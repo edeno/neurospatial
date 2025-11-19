@@ -403,10 +403,97 @@ Implement animation capabilities supporting four backends:
 
 ---
 
+## Milestone 7.5: Enhanced Napari UX (nwb_data_viewer Patterns)
+
+**Goal:** Improve napari viewer interactivity and large-dataset performance
+**Dependencies:** Milestone 7
+**Estimated Time:** 1-2 days
+**Inspiration:** <https://github.com/samuelbray32/nwb_data_viewer>
+
+### Enhanced Playback Control Widget
+
+- [ ] Combine speed slider with playback controls in single widget
+  - [ ] Add Play/Pause button to widget (larger, more visible than bottom-left button)
+  - [ ] Add current frame counter (e.g., "Frame: 15 / 30")
+  - [ ] Add frame label display (e.g., "Trial 15" if frame_labels provided)
+  - [ ] Sync button state with viewer playback state
+  - [ ] Update frame counter in real-time as animation plays
+
+### Frame Label Integration
+
+- [ ] Display current frame label in playback widget
+- [ ] Connect to viewer.dims events to track frame changes
+- [ ] Update label text dynamically during playback
+- [ ] Handle missing frame_labels gracefully (show frame number only)
+
+### Chunked Caching for Large Datasets
+
+- [ ] Implement ChunkedLRUCache class similar to nwb_data_viewer pattern
+  - [ ] Cache frames in chunks of 100 (configurable)
+  - [ ] Use `@functools.lru_cache` with chunk-based keys
+  - [ ] More efficient memory management for 100K+ frame datasets
+  - [ ] Predictive pre-fetching for sequential playback
+- [ ] Update LazyFieldRenderer to use chunked caching
+- [ ] Add cache_chunk_size parameter to render_napari()
+- [ ] Benchmark performance improvement with large datasets
+
+### Multi-Field Viewer Support
+
+- [ ] Design API for multiple field sequences
+
+  ```python
+  env.animate_fields(
+      fields=[field_seq1, field_seq2, field_seq3],
+      backend="napari",
+      layout="grid"  # or "horizontal", "vertical"
+  )
+  ```
+
+- [ ] Implement multi-layer rendering in napari
+  - [ ] Create separate image layers for each field sequence
+  - [ ] Support grid layout (NxM arrangement)
+  - [ ] Support horizontal/vertical stacking
+  - [ ] Synchronize playback across all layers
+- [ ] Add layer visibility toggles
+- [ ] Update docstrings and examples
+
+### Milestone 7.5 Testing
+
+- [ ] Test enhanced playback widget
+  - [ ] Play/pause button functionality
+  - [ ] Frame counter updates
+  - [ ] Frame label display
+- [ ] Test chunked caching
+  - [ ] Verify cache efficiency with large datasets
+  - [ ] Test chunk boundaries
+  - [ ] Benchmark memory usage
+- [ ] Test multi-field viewer
+  - [ ] Multiple layers render correctly
+  - [ ] Synchronized playback
+  - [ ] Layout options work
+- [ ] Run all napari backend tests: `uv run pytest tests/animation/test_napari_backend.py`
+
+### Documentation
+
+- [ ] Update napari backend docstring with new features
+- [ ] Update examples/16_field_animation.py
+  - [ ] Show enhanced playback widget controls
+  - [ ] Demonstrate multi-field viewer (if implemented)
+- [ ] Add notes about chunked caching performance benefits
+
+### Code Quality
+
+- [ ] All tests passing
+- [ ] Mypy type checking clean
+- [ ] Ruff linting clean
+- [ ] NumPy docstrings complete
+
+---
+
 ## Milestone 8: Testing and Polish
 
 **Goal:** Comprehensive tests, benchmarks, error handling
-**Dependencies:** Milestone 7
+**Dependencies:** Milestone 7.5
 **Estimated Time:** 2-3 days
 
 ### Unit Tests

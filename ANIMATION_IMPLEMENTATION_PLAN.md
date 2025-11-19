@@ -1924,6 +1924,355 @@ def render_widget(
 ```
 
 ---
+## 6.5. Enhanced Napari Features (nwb_data_viewer Patterns)
+
+**Goal:** Improve napari viewer interactivity, usability, and large-dataset performance by adopting proven patterns from [nwb_data_viewer](https://github.com/samuelbray32/nwb_data_viewer).
+
+**Rationale:** The nwb_data_viewer project has excellent UX patterns for time-series visualization in napari that directly address user feedback:
+- Integrated playback controls in custom widget (vs. small bottom-left button)
+- Real-time frame tracking and label display
+- Efficient chunked caching for large datasets
+- Multi-layer synchronization for comparing data
+
+### 6.5.1. Enhanced Playback Control Widget
+
+**Current State:**
+- Speed slider in left sidebar (200px wide, easy to drag)
+- Spacebar toggles playback
+- Built-in napari play button (bottom-left, small)
+
+**Enhancement:** Combine all playback controls into single unified widget
+
+**Implementation:**
+
+```python
+def _create_enhanced_playback_widget(
+    viewer: Any,
+    initial_fps: int = 30,
+    frame_labels: list[str] | None = None,
+) -> Any:
+    """Create comprehensive playback widget with all controls.
+
+    Widget contains:
+    - Play/Pause button (large, prominent)
+    - FPS slider (1-120 range)
+    - Frame counter ("Frame: 15 / 30")
+    - Frame label (if provided: "Trial 15")
+
+    Uses magicgui @magicgui decorator for declarative UI.
+    """
+    try:
+        from magicgui import magicgui
+        from napari.settings import get_settings
+    except ImportError:
+        return None
+
+    # Track playback state
+    playback_state = {"is_playing": False}
+
+    @magicgui(
+        auto_call=True,
+        fps={
+            "widget_type": "Slider",
+            "min": 1,
+            "max": 120,
+            "value": initial_fps,
+            "label": "Playback Speed (FPS)",
+        },
+        play={"widget_type": "PushButton", "text": "▶ Play"},
+        frame_info={"widget_type": "Label", "label": "Frame: 0 / 0"},
+    )
+    def playback_widget(
+        fps: int = initial_fps,
+        play: bool = False,
+        frame_info: str = "Frame: 0 / 0",
+    ) -> None:
+        """Unified playback control widget."""
+        # Update FPS setting
+        settings = get_settings()
+        settings.application.playback_fps = fps
+
+    # Make slider larger
+    try:
+        playback_widget.fps.native.setMinimumWidth(200)
+    except Exception:
+        pass
+
+    # Connect play button to toggle playback
+    def toggle_play(event):
+        playback_state["is_playing"] = not playback_state["is_playing"]
+        if playback_state["is_playing"]:
+            playback_widget.play.text = "⏸ Pause"
+            viewer.window._toggle_play()
+        else:
+            playback_widget.play.text = "▶ Play"
+            viewer.window._toggle_play()
+
+    playback_widget.play.changed.connect(toggle_play)
+
+    # Update frame counter when dims change
+    def update_frame_info(event=None):
+        current_frame = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
+        total_frames = viewer.dims.range[0][2] if viewer.dims.ndim > 0 else 0
+
+        # Update counter
+        frame_text = f"Frame: {current_frame + 1} / {total_frames}"
+
+        # Add label if provided
+        if frame_labels and current_frame < len(frame_labels):
+            frame_text += f" ({frame_labels[current_frame]})"
+
+        playback_widget.frame_info.value = frame_text
+
+    # Connect to dims events
+    viewer.dims.events.current_step.connect(update_frame_info)
+
+    # Initialize frame info
+    update_frame_info()
+
+    return playback_widget
+```
+
+**Benefits:**
+- All controls in one place (less eye movement)
+- Larger play button (easier to click)
+- Real-time frame tracking (know where you are)
+- Frame labels visible (contextual information)
+
+### 6.5.2. Chunked Caching for Large Datasets
+
+**Current State:**
+- Simple LRU cache (1000 frames, OrderedDict-based)
+- Works well for small datasets (<10K frames)
+- May be inefficient for very large datasets (100K+ frames)
+
+**Enhancement:** Implement chunked caching pattern from nwb_data_viewer
+
+**Rationale:**
+- 900K frame sessions (1 hour at 250 Hz) benefit from chunk-based access patterns
+- Sequential playback accesses frames in predictable chunks
+- Reduces cache evictions and re-rendering
+
+**Implementation:**
+
+```python
+import functools
+from typing import Any
+
+CHUNK_SIZE = 100  # Frames per chunk (configurable)
+
+
+class ChunkedLazyFieldRenderer:
+    """Lazy field renderer with chunked LRU caching.
+
+    Instead of caching individual frames, cache chunks of frames.
+    This is more efficient for sequential playback patterns.
+    """
+
+    def __init__(
+        self,
+        env: Environment,
+        fields: list[NDArray[np.float64]],
+        cmap_lookup: NDArray[np.uint8],
+        vmin: float,
+        vmax: float,
+        chunk_size: int = 100,
+    ):
+        self.env = env
+        self.fields = fields
+        self.cmap_lookup = cmap_lookup
+        self.vmin = vmin
+        self.vmax = vmax
+        self.chunk_size = chunk_size
+        self._cache_size = max(1, 10000 // chunk_size)  # Cache ~10K frames worth
+
+    @functools.lru_cache(maxsize=None)  # Decorator caches by chunk_index
+    def _get_chunk(self, chunk_index: int) -> list[NDArray[np.uint8]]:
+        """Render and cache a chunk of frames.
+
+        Parameters
+        ----------
+        chunk_index : int
+            Index of chunk to load (chunk_index * chunk_size is first frame)
+
+        Returns
+        -------
+        chunk : list of RGB arrays
+            Rendered frames for this chunk
+        """
+        from neurospatial.animation.rendering import field_to_rgb_for_napari
+
+        start_idx = chunk_index * self.chunk_size
+        end_idx = min(start_idx + self.chunk_size, len(self.fields))
+
+        chunk = []
+        for idx in range(start_idx, end_idx):
+            rgb = field_to_rgb_for_napari(
+                self.env,
+                self.fields[idx],
+                self.cmap_lookup,
+                self.vmin,
+                self.vmax,
+            )
+            chunk.append(rgb)
+
+        # Manage cache size manually
+        if len(self._get_chunk.cache_info()) > self._cache_size:
+            self._get_chunk.cache_clear()
+
+        return chunk
+
+    def __getitem__(self, idx: int | tuple) -> NDArray[np.uint8]:
+        """Get frame by index (retrieves from chunked cache)."""
+        # Handle tuple indexing
+        if isinstance(idx, tuple):
+            frame_idx = idx[0]
+            spatial_slices = idx[1:]
+        else:
+            frame_idx = idx
+            spatial_slices = None
+
+        # Handle negative indexing
+        if frame_idx < 0:
+            frame_idx = len(self.fields) + frame_idx
+
+        # Get chunk containing this frame
+        chunk_index = frame_idx // self.chunk_size
+        offset_in_chunk = frame_idx % self.chunk_size
+
+        chunk = self._get_chunk(chunk_index)
+        frame = chunk[offset_in_chunk]
+
+        # Apply spatial slicing if needed
+        if spatial_slices:
+            frame = frame[spatial_slices]
+
+        return frame
+
+    def __len__(self) -> int:
+        return len(self.fields)
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        sample = self[0]
+        return (len(self.fields), *sample.shape)
+
+    @property
+    def dtype(self) -> type:
+        return np.uint8
+
+    @property
+    def ndim(self) -> int:
+        return len(self.shape)
+```
+
+**Benefits:**
+- Reduced cache evictions for sequential playback
+- Better memory locality (chunks loaded together)
+- Configurable chunk size for different access patterns
+- Maintains same interface as current LazyFieldRenderer
+
+### 6.5.3. Multi-Field Viewer Support
+
+**Use Case:** Compare multiple field sequences side-by-side
+
+**Example:**
+```python
+# Compare place fields from 3 neurons
+env.animate_fields(
+    fields=[neuron1_fields, neuron2_fields, neuron3_fields],
+    backend="napari",
+    layout="grid",  # Show in grid layout
+    titles=["Neuron 1", "Neuron 2", "Neuron 3"],
+)
+```
+
+**Implementation:**
+
+```python
+def render_napari_multi(
+    env: Environment,
+    field_sequences: list[list[NDArray[np.float64]]],
+    *,
+    layout: Literal["grid", "horizontal", "vertical"] = "grid",
+    titles: list[str] | None = None,
+    **kwargs: Any,
+) -> Any:
+    """Render multiple field sequences in synchronized layers.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment (same for all sequences)
+    field_sequences : list of field lists
+        Multiple sequences to compare (must have same length)
+    layout : {"grid", "horizontal", "vertical"}
+        How to arrange layers
+    titles : list of str, optional
+        Title for each sequence
+    **kwargs
+        Other parameters passed to render_napari
+
+    Returns
+    -------
+    viewer : napari.Viewer
+        Viewer with multiple synchronized image layers
+    """
+    # Validate all sequences have same length
+    n_frames = len(field_sequences[0])
+    if not all(len(seq) == n_frames for seq in field_sequences):
+        raise ValueError("All field sequences must have same length")
+
+    # Create viewer
+    viewer = napari.Viewer(title=kwargs.get("title", "Multi-Field Animation"))
+
+    # Add each sequence as separate layer
+    for i, fields in enumerate(field_sequences):
+        layer_name = titles[i] if titles and i < len(titles) else f"Field {i + 1}"
+
+        # Create lazy renderer for this sequence
+        lazy_frames = _create_lazy_field_renderer(env, fields, ...)
+
+        viewer.add_image(
+            lazy_frames,
+            name=layer_name,
+            rgb=True,
+        )
+
+    # Configure grid layout if requested
+    if layout == "grid":
+        viewer.grid.enabled = True
+        n_cols = int(np.ceil(np.sqrt(len(field_sequences))))
+        viewer.grid.shape = (-1, n_cols)
+
+    # Synchronize playback
+    # (dims are already shared across all layers in same viewer)
+
+    return viewer
+```
+
+**Benefits:**
+- Compare multiple neurons/trials/conditions
+- Synchronized playback across all views
+- Flexible layout options
+
+### 6.5.4. Summary of Enhancements
+
+| Feature | Current | Enhanced | Benefit |
+|---------|---------|----------|---------|
+| Playback controls | Small bottom button + slider | Unified widget with play/pause/counter/labels | Improved UX |
+| Caching | 1000-frame LRU | Chunked LRU (100 frames/chunk) | Better performance for large datasets |
+| Frame tracking | None | Real-time counter + labels | Better context awareness |
+| Multi-field | Not supported | Grid/horizontal/vertical layouts | Enable comparisons |
+
+**Implementation Time:** 1-2 days
+**Testing Time:** 0.5 days
+**Documentation Time:** 0.5 days
+
+**Total Milestone 7.5 Effort:** 2-3 days
+
+
+---
 
 ## 7. Testing Strategy
 
