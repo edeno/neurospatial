@@ -18,6 +18,41 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
+def _validate_env_pickleable(env: EnvironmentProtocol) -> None:
+    """Validate that environment can be pickled for parallel processing.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment to validate
+
+    Raises
+    ------
+    ValueError
+        If environment cannot be pickled, with helpful error message
+
+    Notes
+    -----
+    This helper provides a single source of truth for pickle validation
+    with user-friendly error messages and solutions.
+    """
+    import pickle
+
+    try:
+        pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception as e:
+        raise ValueError(
+            f"Video backend with parallel rendering requires environment to be pickle-able.\n"
+            f"\n"
+            f"Error: {e}\n"
+            f"\n"
+            f"Solutions:\n"
+            f"  1. Clear caches: env.clear_cache() before animating\n"
+            f"  2. Use n_workers=1 for serial rendering (slower)\n"
+            f"  3. Use backend='html' instead (no pickling required)\n"
+        ) from e
+
+
 def animate_fields(
     env: EnvironmentProtocol,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
@@ -50,7 +85,7 @@ def animate_fields(
         Backend-specific return value:
         - Napari: napari.Viewer instance
         - Video/HTML: Path to saved file
-        - Widget: ipywidgets.interact instance
+        - Widget: None (displays in-place, no return value)
 
     Raises
     ------
@@ -112,25 +147,9 @@ def animate_fields(
         return render_napari(env, fields, **kwargs)  # type: ignore[arg-type]
 
     elif backend == "video":
-        from neurospatial.animation.backends.video_backend import (
-            check_ffmpeg_available,
-            render_video,
-        )
+        from neurospatial.animation.backends.video_backend import render_video
 
-        # Check ffmpeg availability IMMEDIATELY (fail fast)
-        if not check_ffmpeg_available():
-            raise RuntimeError(
-                "Video backend requires ffmpeg.\n"
-                "\n"
-                "Install ffmpeg:\n"
-                "  macOS:   brew install ffmpeg\n"
-                "  Ubuntu:  sudo apt install ffmpeg\n"
-                "  Windows: https://ffmpeg.org/download.html\n"
-                "\n"
-                "Or use a different backend:\n"
-                "  backend='html'    (no dependencies, instant scrubbing)\n"
-                "  backend='napari'  (pip install napari[all])\n"
-            )
+        # Note: ffmpeg check is done inside render_video for single source of truth
 
         if save_path is None:
             raise ValueError("save_path required for video backend")
@@ -138,21 +157,7 @@ def animate_fields(
         # Validate environment pickle-ability for parallel rendering
         n_workers = kwargs.get("n_workers")
         if n_workers and n_workers > 1:
-            import pickle
-
-            try:
-                pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
-            except Exception as e:
-                raise ValueError(
-                    f"Video backend with parallel rendering requires environment to be pickle-able.\n"
-                    f"\n"
-                    f"Error: {e}\n"
-                    f"\n"
-                    f"Solutions:\n"
-                    f"  1. Clear caches: env.clear_cache() before animating\n"
-                    f"  2. Use n_workers=1 for serial rendering (slower)\n"
-                    f"  3. Use backend='html' instead (no pickling)\n"
-                ) from e
+            _validate_env_pickleable(env)
 
         return render_video(env, fields, save_path, **kwargs)  # type: ignore[arg-type]
 
@@ -272,6 +277,39 @@ def _select_backend(
     )
 
 
+def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.int_]:
+    """Compute indices for frame subsampling with proper rounding.
+
+    Avoids duplicate or skipped frames by using rounding instead of truncation,
+    and ensures strictly increasing indices.
+
+    Parameters
+    ----------
+    n : int
+        Total number of frames
+    source_fps : int
+        Original sampling rate
+    target_fps : int
+        Desired output frame rate
+
+    Returns
+    -------
+    indices : ndarray
+        Frame indices to keep (strictly increasing, no duplicates)
+    """
+    rate = source_fps / target_fps
+    # Use rounding to avoid drift from floating-point truncation
+    idx = np.rint(np.arange(0, n, rate)).astype(np.int64)
+    # Clamp to valid range
+    idx = idx[idx < n]
+    # Ensure strictly increasing by removing duplicates (preserves order)
+    result: NDArray[np.int_] = np.unique(idx)
+    # Ensure first frame is always included
+    if result.size > 0 and result[0] != 0:
+        result = np.concatenate([[0], result[result != 0]])
+    return result
+
+
 def subsample_frames(
     fields: NDArray | list,
     target_fps: int,
@@ -312,19 +350,23 @@ def subsample_frames(
 
     Notes
     -----
-    Subsampling rate is source_fps / target_fps. For example:
-    - 250 Hz → 30 fps: every 8.3 frames (rounds to 8)
-    - 1000 Hz → 60 fps: every 16.7 frames (rounds to 17)
+    Subsampling uses proper rounding to avoid frame drift over long sequences.
+    The algorithm ensures:
+    - No duplicate frames (strictly increasing indices)
+    - No skipped frames due to floating-point truncation
+    - First frame (index 0) is always included
+    - Works efficiently with memory-mapped arrays
 
-    This function works with memory-mapped arrays without loading all data.
+    For example:
+    - 250 Hz → 30 fps: takes frames at indices [0, 8, 17, 25, ...]
+    - 1000 Hz → 60 fps: takes frames at indices [0, 17, 33, 50, ...]
     """
     if target_fps > source_fps:
         raise ValueError(
             f"target_fps ({target_fps}) cannot exceed source_fps ({source_fps})"
         )
 
-    subsample_rate = source_fps / target_fps
-    indices = np.arange(0, len(fields), subsample_rate).astype(int)
+    indices = _subsample_indices(len(fields), source_fps, target_fps)
 
     if isinstance(fields, np.ndarray):
         result: NDArray | list = fields[indices]

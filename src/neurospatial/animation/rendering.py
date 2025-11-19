@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 __all__ = [
     "compute_global_colormap_range",
     "field_to_rgb_for_napari",
+    "render_field_to_image_bytes",
     "render_field_to_png_bytes",
     "render_field_to_rgb",
 ]
@@ -139,6 +140,125 @@ def render_field_to_rgb(
     return rgb
 
 
+def render_field_to_image_bytes(
+    env: Environment,
+    field: NDArray[np.float64],
+    cmap: str,
+    vmin: float,
+    vmax: float,
+    dpi: int = 100,
+    image_format: str = "png",
+) -> bytes:
+    """Render field to image bytes (PNG or JPEG) for HTML embedding.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment defining spatial structure
+    field : ndarray
+        Field values
+    cmap : str
+        Colormap name
+    vmin, vmax : float
+        Color scale limits
+    dpi : int, default=100
+        Resolution
+    image_format : {"png", "jpeg"}, default="png"
+        Image format. PNG is lossless, JPEG is smaller but lossy.
+
+    Returns
+    -------
+    image_bytes : bytes
+        PNG or JPEG image data
+
+    Raises
+    ------
+    ValueError
+        If image_format is not "png" or "jpeg"
+    ImportError
+        If image_format="jpeg" but Pillow is not installed
+
+    Notes
+    -----
+    Uses default bbox (no "tight") to ensure all frames have identical
+    dimensions. This is critical for animations and video encoding.
+
+    For JPEG output, uses quality=85 and optimize=True for good
+    compression with minimal quality loss. Note that JPEG is most effective
+    for large, high-DPI images; for small images (DPI < 75), PNG may actually
+    be smaller due to JPEG header overhead.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> positions = np.random.randn(100, 2) * 50
+    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>> field = np.random.rand(env.n_bins)
+    >>> png_bytes = render_field_to_image_bytes(
+    ...     env, field, "viridis", 0, 1, image_format="png"
+    ... )
+    >>> png_bytes[:8]  # PNG signature
+    b'\\x89PNG\\r\\n\\x1a\\n'
+    >>> jpg_bytes = render_field_to_image_bytes(
+    ...     env, field, "viridis", 0, 1, image_format="jpeg"
+    ... )
+    >>> jpg_bytes[:3]  # JPEG signature
+    b'\\xff\\xd8\\xff'
+    """
+    # Validate format early (defense in depth)
+    image_format = image_format.lower()
+    if image_format not in ("png", "jpeg"):
+        raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
+
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+
+    env.plot_field(
+        field,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=False,
+    )
+
+    buf = io.BytesIO()
+
+    # IMPORTANT: Do NOT use bbox_inches="tight" - it creates content-dependent
+    # crop that yields inconsistent frame sizes across animation sequences.
+    # All frames must have identical pixel dimensions for video encoding.
+    if image_format.lower() == "jpeg":
+        # For JPEG, render to RGB array then save with PIL
+        fig.canvas.draw()
+        rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+        rgb = rgba[:, :, :3]  # Drop alpha channel
+
+        # Use PIL for JPEG compression
+        try:
+            from PIL import Image
+
+            img = Image.fromarray(rgb)
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+        except ImportError as e:
+            plt.close(fig)
+            raise ImportError(
+                "JPEG support requires Pillow. Install with:\n"
+                "  pip install pillow\n"
+                "or\n"
+                "  uv add pillow\n"
+                "\n"
+                "Alternatively, use image_format='png' (no dependencies)"
+            ) from e
+    else:
+        # PNG format (lossless)
+        fig.savefig(buf, format="png")
+
+    plt.close(fig)
+
+    buf.seek(0)
+    return buf.read()
+
+
 def render_field_to_png_bytes(
     env: Environment,
     field: NDArray[np.float64],
@@ -148,6 +268,9 @@ def render_field_to_png_bytes(
     dpi: int = 100,
 ) -> bytes:
     """Render field to PNG bytes (for HTML embedding).
+
+    This is a convenience wrapper around render_field_to_image_bytes
+    that always outputs PNG format.
 
     Parameters
     ----------
@@ -167,6 +290,11 @@ def render_field_to_png_bytes(
     png_bytes : bytes
         PNG image data
 
+    Notes
+    -----
+    Uses default bbox (no "tight") to ensure all frames have identical
+    dimensions. This is critical for animations and video encoding.
+
     Examples
     --------
     >>> import numpy as np
@@ -178,24 +306,9 @@ def render_field_to_png_bytes(
     >>> png_bytes[:8]  # PNG signature
     b'\\x89PNG\\r\\n\\x1a\\n'
     """
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-
-    env.plot_field(
-        field,
-        ax=ax,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        colorbar=False,
+    return render_field_to_image_bytes(
+        env, field, cmap, vmin, vmax, dpi, image_format="png"
     )
-
-    # Save to bytes buffer
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
-
-    buf.seek(0)
-    return buf.read()
 
 
 def field_to_rgb_for_napari(

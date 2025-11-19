@@ -325,7 +325,7 @@ class TestAnimateFieldsBackendRouting:
                 "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
                 return_value=False,
             ),
-            pytest.raises(RuntimeError, match="Video backend requires ffmpeg"),
+            pytest.raises(RuntimeError, match="Video export requires ffmpeg"),
         ):
             animate_fields(env, fields, backend="video", save_path="test.mp4")
 

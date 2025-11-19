@@ -108,13 +108,24 @@ def render_html(
     """
     from neurospatial.animation.rendering import (
         compute_global_colormap_range,
-        render_field_to_png_bytes,
+        render_field_to_image_bytes,
     )
 
     n_frames = len(fields)
 
+    # Normalize image_format
+    image_format = image_format.lower()
+    if image_format not in ("png", "jpeg"):
+        raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
+
     # Estimate file size BEFORE rendering
-    estimated_mb = n_frames * 0.1 * (dpi / 100) ** 2  # ~100KB per frame at 100 DPI
+    # JPEG compression effectiveness depends on image size and content:
+    # - Large images (DPI >= 100): 5-10x smaller than PNG
+    # - Medium images (DPI 75-100): 2-5x smaller
+    # - Small images (DPI < 75): PNG may be smaller due to JPEG overhead
+    # Use conservative estimate that works across range
+    size_factor = 0.05 if image_format == "jpeg" else 0.1
+    estimated_mb = n_frames * size_factor * (dpi / 100) ** 2
 
     # Hard limit check
     if n_frames > max_html_frames:
@@ -137,14 +148,19 @@ def render_html(
             f"     env.animate_fields(fields, backend='html', max_html_frames={n_frames})\n"
         )
 
-    # Warn about large files
+    # Warn about large files (with JPEG recommendation)
     if estimated_mb > 50:
+        jpeg_hint = (
+            ""
+            if image_format == "jpeg"
+            else "  - Use image_format='jpeg' (typically 2-10x smaller, best for DPI >= 100)\n"
+        )
         warnings.warn(
-            f"\nHTML export will create a large file (~{estimated_mb:.0f} MB).\n"
+            f"\nHTML export will create a large file (~{estimated_mb:.0f} MB with {image_format.upper()}).\n"
             f"Consider:\n"
             f"  - Reduce DPI: dpi=50 (current: {dpi})\n"
             f"  - Subsample frames: fields[::5]\n"
-            f"  - Use image_format='jpeg' (lossy but smaller)\n",
+            f"{jpeg_hint}",
             UserWarning,
             stacklevel=2,
         )
@@ -159,10 +175,12 @@ def render_html(
     frames_b64 = []
 
     for field in tqdm(fields, desc="Encoding frames"):
-        png_bytes = render_field_to_png_bytes(env, field, cmap, vmin, vmax, dpi)
+        image_bytes = render_field_to_image_bytes(
+            env, field, cmap, vmin, vmax, dpi, image_format=image_format
+        )
 
         # Convert to base64
-        b64 = base64.b64encode(png_bytes).decode("utf-8")
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
         frames_b64.append(b64)
 
     # Generate frame labels
@@ -421,7 +439,8 @@ def _generate_html_player(
             currentFrame = idx;
 
             // Update image (instant - just changes src)
-            img.src = 'data:image/png;base64,' + frames[idx];
+            // Use dynamic MIME type based on format
+            img.src = 'data:image/{image_format};base64,' + frames[idx];
 
             // Update UI
             slider.value = idx;
