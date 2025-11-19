@@ -64,6 +64,15 @@ def _add_speed_control_widget(viewer: Any, initial_fps: int = 30) -> None:
         settings = get_settings()
         settings.application.playback_fps = fps
 
+    # Make slider larger and easier to interact with
+    try:
+        # Access the native Qt slider widget and set minimum width
+        fps_slider = speed_control.fps.native
+        fps_slider.setMinimumWidth(200)  # Make slider 200px wide (easier to drag)
+    except Exception:
+        # If we can't access the native widget, continue anyway
+        pass
+
     # Add widget as dock to viewer
     # If docking fails (e.g., no Qt window), silently skip
     with contextlib.suppress(Exception):
@@ -158,16 +167,18 @@ def render_napari(
     - **Frame slider** - Horizontal slider showing current frame position
     - **Play button (▶)** - Triangle icon to start/stop animation (next to slider)
     - **Frame counter** - Shows "1/N" indicating current frame
-    - **Keyboard shortcuts** - Arrow keys to step forward/backward
+    - **Keyboard shortcuts**:
+        - **Spacebar** - Play/pause animation (toggle)
+        - **← →** Arrow keys - Step forward/backward through frames
 
     **Playback Speed Control:**
 
     An interactive "Playback Speed" widget is automatically added to the left side
     of the viewer (requires magicgui, which is included with napari[all]):
 
-    - **FPS Slider** - Drag slider to adjust playback speed from 1-120 FPS in real-time
+    - **FPS Slider** - Large slider (200px wide) to adjust playback speed from 1-120 FPS
+    - **Real-time updates** - Drag slider and speed changes instantly
     - **Current FPS** - Shows current speed setting
-    - Updates instantly as you drag the slider
 
     The animation starts at frame 0 with playback speed set by the `fps` parameter.
     If magicgui is not available, the speed can still be changed via
@@ -263,6 +274,16 @@ def render_napari(
     except ImportError:
         # Fallback for older napari versions
         pass
+
+    # 5. Add spacebar keyboard shortcut to toggle playback
+    @viewer.bind_key("Space")
+    def toggle_playback(viewer):
+        """Toggle animation playback with spacebar."""
+        # Get current animation state from dims
+        if viewer.dims.is_playing:
+            viewer.dims.stop()
+        else:
+            viewer.dims.play()
 
     # Add trajectory overlay if provided
     if overlay_trajectory is not None:

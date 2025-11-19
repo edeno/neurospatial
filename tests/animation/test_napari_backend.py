@@ -632,3 +632,40 @@ def test_speed_control_widget_graceful_fallback(simple_env, simple_fields):
 
         # Widget should not have been added
         mock_viewer.window.add_dock_widget.assert_not_called()
+
+
+@pytest.mark.napari
+def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
+    """Test that spacebar is bound to toggle playback."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        patch("napari.settings.get_settings") as mock_get_settings,
+        patch(
+            "neurospatial.animation.backends.napari_backend._add_speed_control_widget"
+        ),
+    ):
+        # Create mock viewer
+        mock_viewer = _create_mock_viewer()
+        mock_viewer.bind_key = MagicMock()  # Mock bind_key method
+        mock_viewer_class.return_value = mock_viewer
+
+        # Mock napari settings
+        mock_settings = MagicMock()
+        mock_settings.application.playback_fps = 10
+        mock_get_settings.return_value = mock_settings
+
+        # Render napari viewer
+        render_napari(simple_env, simple_fields, fps=30)
+
+        # Verify spacebar was bound
+        mock_viewer.bind_key.assert_called_once()
+        # Get the call arguments
+        call_args = mock_viewer.bind_key.call_args
+        # Check that "Space" was passed as the key
+        assert call_args[0][0] == "Space"

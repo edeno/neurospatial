@@ -172,14 +172,18 @@ try:
     from IPython import get_ipython
 
     print("Launching Napari viewer...")
-    print("PLAYBACK CONTROLS (bottom-left corner):")
+    print("")
+    print("PLAYBACK CONTROLS (bottom-left):")
     print("  ▶ Play button - Start/stop animation")
     print("  ━ Time slider - Scrub through frames")
+    print("")
+    print("KEYBOARD SHORTCUTS:")
+    print("  Spacebar - Play/pause (toggle)")
     print("  ← → Arrow keys - Step through frames")
     print("")
     print("SPEED CONTROL (left sidebar):")
-    print("  📊 'Playback Speed' widget - Drag slider to adjust FPS (1-120)")
-    print("  Updates in real-time as you drag")
+    print("  📊 'Playback Speed' widget - Large slider (easy to drag)")
+    print("  Drag to adjust FPS (1-120) - updates instantly")
     print("")
 
     viewer = env.animate_fields(
@@ -400,8 +404,9 @@ try:
     from IPython import get_ipython
 
     print("PLAYBACK CONTROLS:")
-    print("  Bottom-left: ▶ Play button, time slider, arrow keys")
-    print("  Left sidebar: 📊 'Playback Speed' widget (drag slider for 1-120 FPS)")
+    print("  Bottom-left: ▶ Play button, time slider")
+    print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
+    print("  Left sidebar: 📊 'Playback Speed' widget (large slider, 1-120 FPS)")
 
     viewer = env.animate_fields(
         fields_mmap,
