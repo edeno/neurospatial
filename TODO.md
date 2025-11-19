@@ -11,6 +11,9 @@ Place-field analysis → an object with field, fields (list of bin-index arrays)
   - [ ]Stability plots (e.g., correlation between first and second half).
   - [ ]Occupancy maps with spike overlays.
   - [ ]Fields over time for dynamic analyses.
+    - rendering of regions
+    - how does this work with different layouts? different dimensions?
+    - integrating with video of animal behavior (could be different sampling rates)
 - [ ] Head direction
   - [ ] Implement head direction cell analysis, including circular occupancy, tuning curves, and metrics like mean vector length and preferred direction.
   - [ ] Add utilities for circular statistics (e.g., Rayleigh test) to assess significance of head direction tuning.
