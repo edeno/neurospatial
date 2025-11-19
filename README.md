@@ -29,6 +29,17 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 - **Field Utilities**: Normalize, clamp, combine fields; compute KL/JS divergence and cosine distance
 - **Environment Operations**: Subset/crop environments by regions or polygons, rebin grids, copy with cache management
 
+### Field Animation (v0.3.0+)
+
+- **Multi-Backend Animation**: Visualize spatial fields over time with 4 specialized backends
+  - **Napari**: GPU-accelerated interactive viewer with lazy loading (100K+ frames)
+  - **Video**: Parallel MP4/WebM export with ffmpeg (unlimited frames)
+  - **HTML**: Standalone player with instant scrubbing (up to 500 frames)
+  - **Jupyter Widget**: Notebook integration with play/pause controls
+- **Auto-Selection**: Intelligent backend selection based on file extension, dataset size, and environment
+- **Large-Scale Support**: Memory-mapped arrays, LRU caching, frame subsampling for hour-long sessions
+- **Trajectory Overlays**: Overlay animal trajectories on animated fields (Napari backend)
+
 ## Installation
 
 ### From PyPI
@@ -76,6 +87,33 @@ neurospatial v0.2.0 has been tested with the following dependency versions:
 | track-linearization | 2.4.0 |
 
 These versions represent the tested configuration. neurospatial likely works with a range of versions for each dependency, but these specific versions have full test coverage.
+
+### Optional Dependencies
+
+For animation features (v0.3.0+), install optional dependencies:
+
+```bash
+# Napari backend (GPU-accelerated interactive viewer)
+pip install "napari[all]>=0.4.18,<0.6"
+
+# Jupyter widget backend (notebook integration)
+pip install "ipywidgets>=8.0,<9.0"
+
+# Video backend (requires system ffmpeg installation)
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# Windows (via chocolatey)
+choco install ffmpeg
+
+# Conda
+conda install -c conda-forge ffmpeg
+```
+
+**Note**: HTML backend requires no additional dependencies. Video backend performance scales with CPU cores (use `n_workers` parameter for parallel rendering).
 
 ## Quickstart
 
@@ -358,6 +396,71 @@ See the comprehensive tutorial: **[Simulation Workflows Notebook](examples/15_si
 - Validation and visualization
 - Performance tips and customization
 
+## Animation (v0.3.0+)
+
+Visualize how spatial fields evolve over time with multi-backend animation support.
+
+### Quick Example
+
+```python
+from neurospatial import Environment
+from neurospatial.animation import subsample_frames
+
+# Create environment and compute fields over time
+env = Environment.from_samples(positions, bin_size=2.5)
+fields = [compute_place_field(env, spikes[i], times, positions) for i in range(30)]
+
+# Interactive Napari viewer (best for exploration)
+env.animate_fields(fields, backend="napari")
+
+# Video export with parallel rendering (best for presentations)
+env.clear_cache()  # Required for parallel rendering
+env.animate_fields(fields, save_path="animation.mp4", fps=30, n_workers=4)
+
+# HTML standalone player (best for sharing)
+env.animate_fields(fields, save_path="animation.html")
+
+# Jupyter widget (best for notebooks)
+env.animate_fields(fields, backend="widget")
+```
+
+### Backend Selection Guide
+
+| Backend | Best For | Max Frames | Output |
+|---------|----------|-----------|--------|
+| **Napari** | Large datasets (100K+), interactive exploration | Unlimited* | Live viewer |
+| **Video** | Presentations, publications | Unlimited | .mp4, .webm |
+| **HTML** | Sharing, web embedding | 500 | .html |
+| **Widget** | Jupyter notebooks | ~1000 | Interactive widget |
+
+\* Limited only by disk space (lazy loading with LRU cache)
+
+### Large-Scale Datasets
+
+For sessions with 100K+ frames (e.g., 1-hour recording at 250 Hz):
+
+```python
+import numpy as np
+
+# Use memory-mapped arrays (doesn't load into RAM)
+fields = np.memmap('fields.dat', dtype='float32', mode='w+',
+                   shape=(900_000, env.n_bins))
+
+# Napari lazy-loads from disk (no data loading)
+env.animate_fields(fields, backend="napari")
+
+# Or subsample for video export (250 Hz → 30 fps)
+subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
+env.clear_cache()
+env.animate_fields(subsampled, save_path="replay.mp4", n_workers=4)
+```
+
+### Learn More
+
+- **[Animation User Guide](https://edeno.github.io/neurospatial/user-guide/animation/)**: Complete documentation with troubleshooting
+- **[Animation Examples Notebook](examples/16_field_animation.ipynb)**: Working examples for all backends
+- Common use cases: place field dynamics, theta sequences, remapping, population activity
+
 ## Documentation
 
 - **[Documentation Home](https://edeno.github.io/neurospatial/)**: Complete documentation site
@@ -384,8 +487,17 @@ neurospatial/
 │   │   ├── metrics.py         # Environment metrics and properties
 │   │   ├── serialization.py   # Save/load methods
 │   │   ├── regions.py         # Region operations
-│   │   ├── visualization.py   # Plotting methods
+│   │   ├── visualization.py   # Plotting methods (includes animate_fields)
 │   │   └── decorators.py      # check_fitted decorator
+│   ├── animation/              # Field animation (v0.3.0+)
+│   │   ├── core.py            # Main dispatcher and subsample_frames utility
+│   │   ├── rendering.py       # Rendering utilities (colormap, RGB conversion)
+│   │   ├── _parallel.py       # Parallel frame rendering for video backend
+│   │   └── backends/          # Backend implementations
+│   │       ├── napari_backend.py   # GPU-accelerated interactive viewer
+│   │       ├── video_backend.py    # Parallel MP4/WebM export with ffmpeg
+│   │       ├── html_backend.py     # Standalone HTML player
+│   │       └── widget_backend.py   # Jupyter widget integration
 │   ├── composite.py            # CompositeEnvironment for multi-env merging
 │   ├── alignment.py            # Probability distribution transforms
 │   ├── transforms.py           # 2D affine transformations
@@ -396,7 +508,7 @@ neurospatial/
 │   └── regions/
 │       ├── core.py            # Region and Regions classes
 │       └── serialization.py   # JSON I/O for regions
-└── tests/                      # Comprehensive test suite (1,076 tests)
+└── tests/                      # Comprehensive test suite (1,185+ tests)
 ```
 
 ## Requirements
@@ -436,7 +548,7 @@ If you use neurospatial in your research, please cite:
   title = {neurospatial: Spatial environment discretization for neuroscience},
   year = {2025},
   url = {https://github.com/edeno/neurospatial},
-  version = {0.1.0}
+  version = {0.3.0}
 }
 ```
 

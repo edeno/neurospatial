@@ -397,9 +397,9 @@ Implement animation capabilities supporting four backends:
 
 ### README Updates
 
-- [ ] Add animation feature to main README
-- [ ] Create example GIF/video demonstrating each backend
-- [ ] Add installation instructions for optional dependencies
+- [x] Add animation feature to main README
+- [ ] Create example GIF/video demonstrating each backend (optional - deferred)
+- [x] Add installation instructions for optional dependencies
 
 ---
 

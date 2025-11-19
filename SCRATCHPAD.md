@@ -1017,6 +1017,80 @@ User reported: "The napari example doesn't render correctly in the viewer. It do
 **Blockers:**
 - None currently
 
+### 2025-11-19 - README Updates (Session 14)
+
+**Completed:**
+- ✅ Updated README.md with comprehensive animation documentation
+  1. ✅ Added "Field Animation (v0.3.0+)" section to Key Features (lines 32-41)
+     - Multi-backend animation (4 backends)
+     - Auto-selection logic
+     - Large-scale support features
+     - Trajectory overlays
+  2. ✅ Added optional dependencies installation section (lines 91-116)
+     - Napari backend installation
+     - ipywidgets installation
+     - ffmpeg installation for all platforms (macOS, Ubuntu, Windows, Conda)
+     - Note about HTML backend (no dependencies)
+  3. ✅ Added "Animation (v0.3.0+)" section with examples (lines 399-462)
+     - Quick example showing all 4 backends
+     - Backend selection guide (comparison table)
+     - Large-scale dataset workflow (memory-mapped arrays, subsampling)
+     - Links to user guide and examples notebook
+  4. ✅ Updated project structure to show animation module (lines 492-500)
+     - Core dispatcher, rendering utilities, parallel support
+     - All 4 backend implementations
+  5. ✅ Updated citation version from 0.1.0 to 0.3.0 (line 551)
+  6. ✅ Updated test count from 1,076 to 1,185+ tests (line 511)
+- ✅ Updated TASKS.md to mark README tasks as complete (lines 400-402)
+  - Marked example GIF/video creation as optional (deferred)
+
+**README Changes Summary:**
+- **Key Features**: Added 9-line animation feature description
+- **Optional Dependencies**: Added 25-line installation guide
+- **Animation Section**: Added 63-line complete section with examples
+- **Project Structure**: Added animation/ module (8 lines)
+- **Citation**: Updated version to 0.3.0
+
+**Documentation Quality:**
+- Follows existing README style and structure
+- Complete code examples for all 4 backends
+- Backend comparison table for quick reference
+- Installation instructions for all platforms
+- Cross-references to user guide and examples
+- Highlights key features (lazy loading, parallel rendering, auto-selection)
+
+**Why These Updates Matter:**
+- README is the first thing users see on GitHub
+- Animation is a major new feature (v0.3.0) that needs visibility
+- Installation instructions prevent common setup issues
+- Backend comparison helps users choose the right tool
+- Examples provide immediate copy-paste usage
+
+**Files Modified:**
+- [README.md](README.md) - Added animation documentation (~105 new lines)
+- [TASKS.md](TASKS.md) - Marked README tasks complete
+
+**Milestone 7 Status: COMPLETE ✅**
+- ✅ Examples notebook created and working (Session 9-10)
+- ✅ Napari rendering bug fixed (Session 11)
+- ✅ CLAUDE.md updated with animation docs (Session 12)
+- ✅ User guide created (Session 13)
+- ✅ README updated with animation feature (Session 14)
+
+**All Milestone 7 Tasks Complete:**
+- [x] Example script with all 5 examples
+- [x] Updated CLAUDE.md (import patterns, example usage)
+- [x] Created docs/user-guide/animation.md (590 lines)
+- [x] Updated README (feature list, installation, examples)
+- [ ] GIF/video demos (optional, deferred)
+
+**Next Steps:**
+- Ready for Milestone 8 (Testing and Polish) or Milestone 7.5 (Enhanced Napari UX)
+- Can proceed with final commit and move to next milestone
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference
