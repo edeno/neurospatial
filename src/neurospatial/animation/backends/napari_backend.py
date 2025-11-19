@@ -292,13 +292,55 @@ class LazyFieldRenderer:
         """Return number of frames."""
         return len(self.fields)
 
-    def __getitem__(self, idx: int) -> NDArray[np.uint8]:
+    def __getitem__(self, idx: int | tuple) -> NDArray[np.uint8]:
         """Render frame on-demand when Napari requests it.
 
         Implements true LRU caching:
         1. If frame in cache, move to end (mark as recently used)
         2. If frame not in cache, render it and add to end
         3. If cache full, evict oldest frame (first item)
+
+        Parameters
+        ----------
+        idx : int or tuple
+            Frame index (supports negative indexing) or tuple of slices
+            (napari passes tuples like (0, :, :, :) for slicing)
+
+        Returns
+        -------
+        rgb : ndarray
+            Rendered RGB frame or sliced data
+        """
+        # Handle tuple indexing from napari (e.g., data[0, :, :, :])
+        if isinstance(idx, tuple):
+            # Extract frame index (first element)
+            frame_idx = idx[0]
+            spatial_slices = idx[1:]  # (height_slice, width_slice, channel_slice)
+
+            # Handle slice objects for frame index
+            if isinstance(frame_idx, slice):
+                # Return multiple frames as array
+                start, stop, step = frame_idx.indices(len(self.fields))
+                frames = [self._get_frame(i) for i in range(start, stop, step)]
+                result = np.stack(frames, axis=0)
+
+                # Apply spatial slices if provided
+                if spatial_slices:
+                    result = result[(slice(None), *spatial_slices)]
+                return result
+            else:
+                # Single frame with spatial slices
+                frame = self._get_frame(frame_idx)
+                if spatial_slices:
+                    sliced: NDArray[np.uint8] = frame[spatial_slices]
+                    return sliced
+                return frame
+
+        # Handle integer indexing (original behavior)
+        return self._get_frame(idx)
+
+    def _get_frame(self, idx: int) -> NDArray[np.uint8]:
+        """Get a single frame by integer index (internal helper).
 
         Parameters
         ----------
@@ -356,3 +398,8 @@ class LazyFieldRenderer:
     def dtype(self) -> type:
         """Return dtype (always uint8 for RGB)."""
         return np.uint8
+
+    @property
+    def ndim(self) -> int:
+        """Return number of dimensions (always 4: time, height, width, channels)."""
+        return len(self.shape)
