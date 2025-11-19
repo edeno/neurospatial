@@ -279,11 +279,8 @@ def render_napari(
     @viewer.bind_key("Space")
     def toggle_playback(viewer):
         """Toggle animation playback with spacebar."""
-        # Get current animation state from dims
-        if viewer.dims.is_playing:
-            viewer.dims.stop()
-        else:
-            viewer.dims.play()
+        # Use the window's toggle_play method (same as clicking play button)
+        viewer.window._toggle_play()
 
     # Add trajectory overlay if provided
     if overlay_trajectory is not None:
