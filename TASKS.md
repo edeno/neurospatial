@@ -383,11 +383,11 @@ Implement animation capabilities supporting four backends:
 
 ### Documentation Updates
 
-- [ ] Update `CLAUDE.md`
-  - [ ] Add animation section to "Import Patterns"
-  - [ ] Document `subsample_frames` import
-  - [ ] Add pickle-ability requirement
-  - [ ] Add example usage patterns
+- [x] Update `CLAUDE.md`
+  - [x] Add animation section to "Import Patterns"
+  - [x] Document `subsample_frames` import
+  - [x] Add pickle-ability requirement
+  - [x] Add example usage patterns
 - [ ] Create `docs/user-guide/animation.md`
   - [ ] Quick start (5 lines)
   - [ ] Backend comparison table

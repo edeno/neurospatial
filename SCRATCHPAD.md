@@ -904,6 +904,58 @@ User reported: "The napari example doesn't render correctly in the viewer. It do
 **Blockers:**
 - None currently
 
+### 2025-11-19 - CLAUDE.md Documentation Update (Session 12)
+
+**Completed:**
+- ✅ Updated CLAUDE.md with comprehensive animation documentation:
+  1. ✅ Added animation examples to "Quick Reference" section (lines 108-131)
+     - Interactive Napari viewer usage
+     - Video export with parallel rendering
+     - HTML standalone player
+     - Jupyter widget
+     - Auto-backend selection
+     - subsample_frames() utility
+     - Pickle-ability requirement with env.clear_cache()
+  2. ✅ Added animation imports to "Import Patterns" section (lines 254-255)
+     - Documented subsample_frames import
+     - Added pickle-ability note to cache management section (line 260)
+  3. ✅ Updated "Last Updated" field to 2025-11-19 (v0.3.0 - Animation feature)
+- ✅ Updated TASKS.md to mark CLAUDE.md documentation tasks as complete
+  - All 4 sub-tasks checked off (lines 386-390)
+
+**Documentation Changes:**
+- **Quick Reference section**: Added 23 lines of animation usage examples
+  - Covers all 4 backends (Napari, Video, HTML, Widget)
+  - Shows auto-selection pattern
+  - Documents subsample_frames() for large datasets
+  - Highlights pickle-ability requirement (critical for parallel rendering)
+- **Import Patterns section**: Added animation import with inline comments
+  - Documents subsample_frames as the only public API import
+  - Reinforces env.clear_cache() requirement for parallel rendering
+
+**Why These Examples Matter:**
+- Animation is a major new feature (v0.3.0)
+- Users need quick reference for backend selection
+- Pickle-ability is non-obvious and critical for parallel rendering
+- subsample_frames() solves common use case (250 Hz → 30 fps video)
+
+**Files Modified:**
+- [CLAUDE.md](CLAUDE.md) - Added animation documentation (3 sections updated)
+- [TASKS.md](TASKS.md) - Marked documentation tasks complete
+
+**Next Steps (Milestone 7 remaining tasks):**
+- Create `docs/user-guide/animation.md` (comprehensive user guide)
+- Update README with animation feature
+
+**Milestone 7 Status:**
+- ✅ Examples notebook created and working (Session 9-10)
+- ✅ Napari rendering bug fixed (Session 11)
+- ✅ CLAUDE.md updated with animation docs (Session 12)
+- ⏳ User guide and README updates remaining
+
+**Blockers:**
+- None currently
+
 ---
 
 ## Quick Reference

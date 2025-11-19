@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-16 (v0.2.1)
+**Last Updated**: 2025-11-19 (v0.3.0 - Animation feature)
 
 ## Table of Contents
 
@@ -104,6 +104,31 @@ env = Environment.from_samples(positions, bin_size=1.0)  # May warn, but will su
 
 # Disable warning if intentional (v0.2.1+)
 env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
+
+# Animate spatial fields over time (v0.3.0+)
+from neurospatial.animation import subsample_frames
+
+# Interactive Napari viewer (best for 100K+ frames)
+env.animate_fields(fields, backend="napari")
+
+# Video export with parallel rendering (requires ffmpeg)
+env.animate_fields(fields, backend="video", save_path="animation.mp4", fps=30, n_workers=4)
+
+# HTML standalone player (max 500 frames)
+env.animate_fields(fields, backend="html", save_path="animation.html")
+
+# Jupyter widget (notebook integration)
+env.animate_fields(fields, backend="widget")
+
+# Auto-select backend based on save_path or context
+env.animate_fields(fields, save_path="animation.mp4")  # Detects .mp4 → video backend
+
+# Subsample large datasets for video export (e.g., 250 Hz → 30 fps)
+subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
+
+# IMPORTANT: Clear caches before parallel rendering (pickle-ability requirement)
+env.clear_cache()  # Makes environment pickle-able for multiprocessing
+env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
 ```
 
 **Type Checking Support (v0.2.1+)**:
@@ -226,9 +251,13 @@ from neurospatial import (
 # Serialization (v0.1.0+)
 from neurospatial.io import to_file, from_file, to_dict, from_dict
 
+# Animation (v0.3.0+)
+from neurospatial.animation import subsample_frames
+
 # Cache management (v0.3.0+)
 # Use env.clear_cache() for all cache clearing operations
 # Example: env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
+# IMPORTANT: Call env.clear_cache() before parallel rendering (makes environment pickle-able)
 
 # Layout engines and factories
 from neurospatial.layout.factories import create_layout, list_available_layouts
