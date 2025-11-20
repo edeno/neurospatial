@@ -437,25 +437,31 @@ Implement animation capabilities supporting four backends:
 - [x] Add cache_chunk_size parameter to render_napari()
 - [x] Benchmark performance improvement with large datasets (tested with 100K frames simulation)
 
-### Multi-Field Viewer Support
+### Multi-Field Viewer Support ✅ COMPLETE
 
-- [ ] Design API for multiple field sequences
+- [x] Design API for multiple field sequences
 
   ```python
-  env.animate_fields(
+  # Implemented in render_napari() with auto-detection
+  viewer = render_napari(
+      env,
       fields=[field_seq1, field_seq2, field_seq3],
-      backend="napari",
-      layout="grid"  # or "horizontal", "vertical"
+      layout="horizontal",  # or "vertical", "grid"
+      layer_names=["Neuron 1", "Neuron 2", "Neuron 3"]
   )
   ```
 
-- [ ] Implement multi-layer rendering in napari
-  - [ ] Create separate image layers for each field sequence
-  - [ ] Support grid layout (NxM arrangement)
-  - [ ] Support horizontal/vertical stacking
-  - [ ] Synchronize playback across all layers
-- [ ] Add layer visibility toggles
-- [ ] Update docstrings and examples
+- [x] Implement multi-layer rendering in napari
+  - [x] Create separate image layers for each field sequence
+  - [x] Support grid layout (NxM arrangement)
+  - [x] Support horizontal/vertical stacking
+  - [x] Synchronize playback across all layers
+  - [x] Global color scale across all sequences for fair comparison
+  - [x] Custom layer names support
+  - [x] Comprehensive validation (sequence lengths, layer names count)
+- [ ] Add layer visibility toggles (deferred - napari provides this in GUI)
+- [x] Update docstrings (NumPy format, complete)
+- [ ] Update examples (deferred to M8 Documentation)
 
 ### Milestone 7.5 Testing
 
@@ -470,10 +476,15 @@ Implement animation capabilities supporting four backends:
   - [x] Benchmark memory usage (100K frame simulation)
   - [x] LRU eviction behavior
   - [x] Sequential playback optimization
-- [ ] Test multi-field viewer
-  - [ ] Multiple layers render correctly
-  - [ ] Synchronized playback
-  - [ ] Layout options work
+- [x] Test multi-field viewer (tests/animation/test_napari_multi_field.py - 17/17 tests passing)
+  - [x] Multiple layers render correctly
+  - [x] Synchronized playback
+  - [x] Layout options work (horizontal, vertical, grid)
+  - [x] Auto-detection of single vs multi-field input
+  - [x] Validation (sequence lengths, layer names, layout requirement)
+  - [x] Global color scale across sequences
+  - [x] Backwards compatibility (single-field still works)
+  - [x] Added xdist_group marker to prevent Qt/GUI crashes
 - [x] Run all napari backend tests: `uv run pytest tests/animation/test_napari_backend.py`
   - [x] All 22 tests passing (21 passed, 1 skipped)
   - [x] Fixed pre-existing test isolation bug in test_napari_available_flag_when_not_installed

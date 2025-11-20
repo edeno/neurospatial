@@ -15,6 +15,9 @@ import pytest
 
 from neurospatial import Environment
 
+# Mark napari GUI tests to run in same worker (prevent Qt crashes)
+pytestmark = pytest.mark.xdist_group(name="napari_gui")
+
 
 # Helper function for creating properly configured mock viewers
 def _create_mock_viewer():
