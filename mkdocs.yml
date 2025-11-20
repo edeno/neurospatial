@@ -153,6 +153,7 @@ nav:
       - Composite Environments: user-guide/composite-environments.md
       - Alignment & Transforms: user-guide/alignment.md
       - Spatial Analysis: user-guide/spatial-analysis.md
+      - Field Animation: user-guide/animation.md
       - Complete Workflows: user-guide/workflows.md
   - API Reference:
       - api/index.md
@@ -173,5 +174,6 @@ nav:
       - Trajectory Analysis: examples/13_trajectory_analysis.ipynb
       - Behavioral Segmentation: examples/14_behavioral_segmentation.ipynb
       - Simulation Workflows: examples/15_simulation_workflows.ipynb
+      - Field Animation: examples/16_field_animation.ipynb
   - Contributing: contributing.md
   - Changelog: changelog.md

@@ -573,7 +573,7 @@ jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
 ## Examples
 
-See [`examples/16_field_animation.ipynb`](../../examples/16_field_animation.ipynb) for complete working examples:
+See [`examples/16_field_animation.ipynb`](../examples/16_field_animation.ipynb) for complete working examples:
 
 - **Example 1**: Interactive Napari viewer with circular arena
 - **Example 2**: Video export with place field remapping
@@ -585,6 +585,6 @@ See [`examples/16_field_animation.ipynb`](../../examples/16_field_animation.ipyn
 
 For complete parameter documentation, see:
 
-- [`Environment.animate_fields()`](../api/environment.md#animate_fields)
-- [`subsample_frames()`](../api/animation.md#subsample_frames)
-- [Animation backends](../api/animation.md)
+- `Environment.animate_fields()` - Main animation method
+- `subsample_frames()` - Frame subsampling utility
+- Animation backend modules in `neurospatial.animation.backends`
