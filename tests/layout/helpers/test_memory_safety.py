@@ -147,8 +147,12 @@ class TestMemorySafetyIntegration:
 
         assert env.n_bins > 0
 
+    @pytest.mark.slow
     def test_large_environment_warning(self):
-        """Test creating large environment triggers warning."""
+        """Test creating large environment triggers warning.
+
+        Marked as slow because creating 2.25M bins takes significant time on CI.
+        """
         from neurospatial import Environment
 
         # Create positions that will result in large grid

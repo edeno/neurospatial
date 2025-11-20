@@ -17,8 +17,12 @@ from neurospatial import Environment
 # =============================================================================
 
 
+@pytest.mark.slow
 def test_place_field_workflow_integration():
-    """Test complete workflow: detect → measure size/centroid → compute metrics."""
+    """Test complete workflow: detect → measure size/centroid → compute metrics.
+
+    Marked as slow because creating environment from 10,000 samples takes time on CI.
+    """
     # Create synthetic place cell data
     positions = np.random.randn(10000, 2) * 15
     env = Environment.from_samples(positions, bin_size=2.0)
