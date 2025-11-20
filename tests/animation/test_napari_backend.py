@@ -386,64 +386,6 @@ def test_render_napari_rgb_no_contrast_limits(simple_env, simple_fields):
         assert "contrast_limits" not in call_args[1]
 
 
-@pytest.mark.napari
-def test_render_napari_trajectory_overlay_2d(simple_env, simple_fields):
-    """Test napari rendering with 2D trajectory overlay."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    # Create 2D trajectory
-    trajectory = np.random.randn(50, 2) * 20
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer.add_tracks = MagicMock(return_value=None)
-        mock_viewer_class.return_value = mock_viewer
-
-        render_napari(
-            simple_env,
-            simple_fields,
-            overlay_trajectory=trajectory,
-        )
-
-        # Verify add_tracks was called for 2D trajectory
-        mock_viewer.add_tracks.assert_called_once()
-        track_data = mock_viewer.add_tracks.call_args[0][0]
-
-        # Track data should be (track_id, time, y, x)
-        assert track_data.shape[1] == 4
-
-
-@pytest.mark.napari
-def test_render_napari_trajectory_overlay_high_dim(simple_env, simple_fields):
-    """Test napari rendering with high-dimensional trajectory (falls back to points)."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    # Create 3D trajectory (higher dimensional)
-    trajectory = np.random.randn(50, 3) * 20
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer.add_points = MagicMock(return_value=None)
-        mock_viewer_class.return_value = mock_viewer
-
-        render_napari(
-            simple_env,
-            simple_fields,
-            overlay_trajectory=trajectory,
-        )
-
-        # Verify add_points was called for high-dim trajectory
-        mock_viewer.add_points.assert_called_once()
-
-
 def test_render_napari_not_available():
     """Test error message when napari is not installed."""
     from neurospatial.animation.backends.napari_backend import (
@@ -525,30 +467,6 @@ def test_render_napari_gracefully_accepts_extra_params(simple_env, simple_fields
 
         # Should still work
         assert viewer is not None
-
-
-@pytest.mark.napari
-def test_render_napari_invalid_trajectory_shape(simple_env, simple_fields):
-    """Test error handling for invalid trajectory shape."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    # 1D trajectory should raise error
-    invalid_trajectory = np.random.randn(50)
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        with pytest.raises(ValueError, match="overlay_trajectory must be 2D"):
-            render_napari(
-                simple_env,
-                simple_fields,
-                overlay_trajectory=invalid_trajectory,
-            )
 
 
 @pytest.mark.napari

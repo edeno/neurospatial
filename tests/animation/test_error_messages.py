@@ -340,27 +340,6 @@ def test_no_backend_available_error_message(test_env, test_fields):
 # ============================================================================
 
 
-def test_trajectory_shape_error_message(test_env, test_fields):
-    """Verify trajectory shape validation shows actual shape."""
-    pytest.importorskip("napari")
-
-    # 1D trajectory (invalid)
-    invalid_trajectory = np.random.rand(100)
-
-    with pytest.raises(ValueError) as exc_info:
-        animate_fields(
-            test_env,
-            test_fields,
-            backend="napari",
-            overlay_trajectory=invalid_trajectory,
-        )
-
-    error_msg = str(exc_info.value)
-    assert "overlay_trajectory" in error_msg
-    assert "2D" in error_msg
-    assert str(invalid_trajectory.shape) in error_msg
-
-
 def test_multi_field_layout_required_error_message():
     """Verify multi-field layout requirement is clear."""
     pytest.importorskip("napari")

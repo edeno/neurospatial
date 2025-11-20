@@ -314,7 +314,6 @@ def test_html_export_gracefully_accepts_unused_parameters(tmp_path):
         save_path=str(output_path),
         n_workers=4,  # Video-specific
         contrast_limits=(0, 1),  # Napari-specific
-        overlay_trajectory=None,  # Not yet implemented
     )
 
     assert output_path.exists()
