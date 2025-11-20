@@ -537,26 +537,42 @@ Implement animation capabilities supporting four backends:
 
 ### Unit Tests
 
-- [ ] Test `subsample_frames()` with arrays and lists
-- [ ] Test pickle-ability validation
-- [ ] Test field shape validation
-- [ ] Test HTML file size limits
-- [ ] Test dry_run mode
-- [ ] Run all tests: `uv run pytest tests/animation/`
-- [ ] Achieve >90% coverage: `uv run pytest --cov=src/neurospatial/animation`
+- [x] Test `subsample_frames()` with arrays and lists
+- [x] Test pickle-ability validation
+- [x] Test field shape validation
+- [x] Test HTML file size limits
+- [x] Test dry_run mode
+- [x] Run all tests: `uv run pytest tests/animation/` (137 passed, 1 skipped)
+- [ ] Achieve >90% coverage: `uv run pytest --cov=src/neurospatial/animation` (currently 88%, improved from 87%)
 
 ### Integration Tests
 
-- [ ] Test with memory-mapped arrays (large-scale)
+- [x] Test with memory-mapped arrays (large-scale)
+  - Created `tests/animation/test_integration_memmap.py` with 5 tests
+  - All tests marked `@pytest.mark.slow` (excluded from CI by default)
+  - Napari tests use `xdist_group="napari_gui"` to prevent Qt crashes
+  - Tests cover: napari lazy loading, subsample_frames, HTML export, cleanup, chunked cache
+  - Run with: `uv run pytest tests/animation/test_integration_memmap.py -m slow`
 
-  ```python
-  fields = np.memmap('test.dat', dtype='float32', mode='w+',
-                     shape=(100000, env.n_bins))
-  ```
+- [x] Test all backends with same data
+  - Created `tests/animation/test_backend_consistency.py` with 7 tests
+  - Shared fixture provides consistent test environment and fields
+  - Tests verify: napari, HTML, video, widget backends handle identical data
+  - Tests verify: custom vmin/vmax, colormap, FPS settings respected across backends
+  - All tests use `xdist_group="napari_gui"` to prevent Qt crashes
 
-- [ ] Test all backends with same data
-- [ ] Test backend auto-selection logic
-- [ ] Test error messages (missing dependencies)
+- [x] Test backend auto-selection logic
+  - Tests already exist in `tests/animation/test_core.py::TestBackendSelection`
+  - 8 tests covering: file extension detection (.mp4, .webm, .html), large dataset handling, Jupyter detection, fallback logic, error cases
+  - All tests passing (8/8)
+
+- [x] Test error messages (missing dependencies)
+  - Tests already exist for all three backends
+  - `test_render_napari_not_available` - Tests ImportError when napari missing
+  - `test_video_missing_ffmpeg` - Tests RuntimeError when ffmpeg missing
+  - `test_widget_backend_not_available_error` - Tests ImportError when ipywidgets missing
+  - All tests verify helpful error messages with installation instructions
+  - 2 passed, 1 skipped (napari installed in test environment)
 
 ### End-to-End Layout Integration Tests
 
