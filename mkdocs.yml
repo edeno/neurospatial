@@ -5,6 +5,11 @@ repo_url: https://github.com/edeno/neurospatial
 repo_name: edeno/neurospatial
 edit_uri: edit/main/docs/
 
+# Exclude research notes and internal docs from build
+not_in_nav: ignore
+exclude_docs: |
+  research/
+
 theme:
   name: material
   palette:
