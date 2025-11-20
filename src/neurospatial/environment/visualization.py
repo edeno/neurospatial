@@ -711,6 +711,111 @@ class EnvironmentVisualization:
         ...     fields_sub, save_path="session_summary.mp4", n_workers=8
         ... )  # doctest: +SKIP
 
+        **Overlay Examples (v0.4.0+):**
+
+        Position overlay with trail:
+
+        >>> from neurospatial.animation import PositionOverlay
+        >>> trajectory = np.random.uniform(0, 100, (100, 2))
+        >>> position_overlay = PositionOverlay(
+        ...     data=trajectory,
+        ...     color="red",
+        ...     size=12.0,
+        ...     trail_length=10,  # Show last 10 frames as trail
+        ... )
+        >>> env.animate_fields(
+        ...     fields, overlays=[position_overlay], backend="napari"
+        ... )  # doctest: +SKIP
+
+        Pose tracking with skeleton:
+
+        >>> from neurospatial.animation import BodypartOverlay
+        >>> pose_data = {
+        ...     "nose": np.random.uniform(0, 100, (100, 2)),
+        ...     "ear_left": np.random.uniform(0, 100, (100, 2)),
+        ...     "ear_right": np.random.uniform(0, 100, (100, 2)),
+        ...     "tail_base": np.random.uniform(0, 100, (100, 2)),
+        ... }
+        >>> bodypart_overlay = BodypartOverlay(
+        ...     data=pose_data,
+        ...     skeleton=[
+        ...         ("nose", "ear_left"),
+        ...         ("nose", "ear_right"),
+        ...         ("nose", "tail_base"),
+        ...     ],
+        ...     colors={
+        ...         "nose": "red",
+        ...         "ear_left": "blue",
+        ...         "ear_right": "blue",
+        ...         "tail_base": "green",
+        ...     },
+        ...     skeleton_color="white",
+        ... )
+        >>> env.animate_fields(
+        ...     fields,
+        ...     overlays=[bodypart_overlay],
+        ...     backend="video",
+        ...     save_path="pose.mp4",
+        ... )  # doctest: +SKIP
+
+        Head direction visualization:
+
+        >>> from neurospatial.animation import HeadDirectionOverlay
+        >>> angles = np.linspace(0, 2 * np.pi, 100)
+        >>> direction_overlay = HeadDirectionOverlay(
+        ...     data=angles,
+        ...     color="yellow",
+        ...     length=15.0,  # Arrow length in environment units
+        ... )
+        >>> env.animate_fields(
+        ...     fields, overlays=[direction_overlay], backend="napari"
+        ... )  # doctest: +SKIP
+
+        Multi-animal tracking (multiple overlays):
+
+        >>> animal1_pos = PositionOverlay(
+        ...     data=trajectory1, color="red", size=12.0, trail_length=10
+        ... )
+        >>> animal2_pos = PositionOverlay(
+        ...     data=trajectory2, color="blue", size=12.0, trail_length=10
+        ... )
+        >>> env.animate_fields(
+        ...     fields, overlays=[animal1_pos, animal2_pos], backend="napari"
+        ... )  # doctest: +SKIP
+
+        All overlay types combined with regions:
+
+        >>> from neurospatial.regions import Region
+        >>> env.regions.add("goal", point=np.array([80.0, 80.0]))
+        >>> env.animate_fields(
+        ...     fields,
+        ...     overlays=[position_overlay, bodypart_overlay, direction_overlay],
+        ...     show_regions=True,
+        ...     region_alpha=0.4,
+        ...     backend="video",
+        ...     save_path="comprehensive.mp4",
+        ... )  # doctest: +SKIP
+
+        Temporal alignment with mixed sampling rates:
+
+        >>> # Trajectory sampled at 250 Hz, fields at 30 fps
+        >>> trajectory_250hz = np.random.uniform(0, 100, (2500, 2))
+        >>> timestamps = np.linspace(0, 10, 2500)  # 10 seconds at 250 Hz
+        >>> position_overlay = PositionOverlay(
+        ...     data=trajectory_250hz,
+        ...     times=timestamps,  # Temporal alignment
+        ...     color="red",
+        ...     trail_length=15,
+        ... )
+        >>> frame_times = np.linspace(0, 10, 100)  # 100 frames over 10 seconds
+        >>> env.animate_fields(
+        ...     fields,
+        ...     overlays=[position_overlay],
+        ...     frame_times=frame_times,  # Interpolation aligns overlay to frames
+        ...     backend="video",
+        ...     save_path="aligned.mp4",
+        ... )  # doctest: +SKIP
+
         """
         from neurospatial.animation.core import animate_fields as _animate
 

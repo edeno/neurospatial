@@ -375,12 +375,12 @@
 
 ### 7.2 Docstring Updates
 
-- [ ] Add comprehensive NumPy docstrings to `PositionOverlay`
-- [ ] Add comprehensive NumPy docstrings to `BodypartOverlay`
-- [ ] Add comprehensive NumPy docstrings to `HeadDirectionOverlay`
-- [ ] Add comprehensive NumPy docstrings to `animate_fields()` updated signature
-- [ ] Add examples to all public overlay API docstrings
-- [ ] Run doctests: `uv run pytest --doctest-modules src/neurospatial/animation/overlays.py`
+- [x] Add comprehensive NumPy docstrings to `PositionOverlay`
+- [x] Add comprehensive NumPy docstrings to `BodypartOverlay`
+- [x] Add comprehensive NumPy docstrings to `HeadDirectionOverlay`
+- [x] Add comprehensive NumPy docstrings to `animate_fields()` updated signature
+- [x] Add examples to all public overlay API docstrings
+- [x] Run doctests: `uv run pytest --doctest-modules src/neurospatial/animation/overlays.py`
 
 ### 7.3 Example Notebook
 
