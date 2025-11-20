@@ -1,8 +1,8 @@
 # Animation Overlays v0.4.0 - Development Scratchpad
 
 **Started:** 2025-11-20
-**Current Milestone:** Milestone 2 COMPLETE ✅ (Protocol & Core Dispatcher)
-**Status:** Ready for Milestone 3: Napari Backend Updates
+**Current Milestone:** Milestone 6 COMPLETE ✅ (Integration & Cross-Backend Tests)
+**Status:** Ready for Milestone 7: Documentation
 
 ---
 
@@ -648,7 +648,64 @@ HOW: Choose one of these solutions:
 - tests/animation/test_overlay_visual_regression.py (556 lines, 7 tests)
 - tests/animation/baseline/*.png (7 baseline images, ~195KB total)
 
+**Status:** ✅ **MILESTONE 6.3 COMPLETE** - Backend Capability Matrix Tests
+
+**Completed:**
+1. ✅ Created comprehensive test file with 26 tests (test_backend_capabilities.py)
+2. ✅ Verified tests fail (RED phase) - 6 failures as expected
+3. ✅ Fixed test assertions (GREEN phase):
+   - HTML render_html returns Path object, not string
+   - Widget render_widget returns None but calls display
+4. ✅ All 26 tests passing (100% pass rate)
+5. ✅ Fixed ruff issues:
+   - Changed unused `result =` to `_ =` (6 locations)
+6. ✅ Ruff clean, mypy clean
+7. ✅ Applied code-reviewer agent - APPROVE rating (no changes required)
+8. ✅ Updated TASKS.md checkboxes (Milestone 6.3 complete)
+
+**Test Coverage Summary:**
+
+- **Test Classes:** 5 well-organized classes
+  - TestNapariCapabilities (5 tests) - Full support verification
+  - TestVideoCapabilities (5 tests) - Full support verification
+  - TestHTMLCapabilities (4 tests) - Partial support + warnings
+  - TestWidgetCapabilities (5 tests) - Full support verification
+  - TestCapabilityMatrix (7 tests) - Matrix validation
+
+**Capability Matrix Verified:**
+
+| Backend | Position | Bodypart | HeadDirection | Regions |
+|---------|----------|----------|---------------|---------|
+| Napari  | ✓        | ✓        | ✓             | ✓       |
+| Video   | ✓        | ✓        | ✓             | ✓       |
+| HTML    | ✓        | ✗        | ✗             | ✓       |
+| Widget  | ✓        | ✓        | ✓             | ✓       |
+
+**Code Review Highlights:**
+
+- **Rating:** APPROVE (production-ready, no changes required)
+- **Strengths:**
+  - Systematic coverage of all backends × overlay types
+  - Clear separation from warning tests (in test_html_overlays.py)
+  - Centralized `BACKEND_CAPABILITIES` constant
+  - Proper mocking and skip markers
+  - Fast execution (26 tests in ~14s)
+- **Suggestions:** Enhancement ideas only (parametrized tests, edge cases) - all optional
+
+**Design Validation:**
+
+- Positive capability tests (this file) complement negative warning tests (test_html_overlays.py)
+- ASCII capability matrix in module docstring provides instant reference
+- Matrix validation tests ensure documentation matches implementation
+- All backends tested with all overlay types
+
+**Files Modified:**
+
+- tests/animation/test_backend_capabilities.py (700+ lines, 26 tests)
+- TASKS.md (marked Milestone 6.3 complete, updated progress to 67%)
+
 **Next Steps:**
 
-- Commit Milestone 6.2 completion with conventional commit message
-- Continue with Milestone 6.3: Backend Capability Matrix Tests
+- Commit Milestone 6.3 completion with conventional commit message
+- **MILESTONE 6 COMPLETE** - All integration and cross-backend tests finished
+- Continue with Milestone 7: Documentation

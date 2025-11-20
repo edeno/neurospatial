@@ -352,12 +352,12 @@
 
 ### 6.3 Backend Capability Matrix Tests
 
-- [ ] Test each backend reports capabilities correctly
-- [ ] Verify Napari supports: positions, bodyparts, head direction, regions
-- [ ] Verify video supports: positions, bodyparts, head direction, regions
-- [ ] Verify HTML supports: positions, regions only
-- [ ] Verify widget supports: positions, bodyparts, head direction, regions
-- [ ] Test warnings when unsupported overlay used with backend
+- [x] Test each backend reports capabilities correctly
+- [x] Verify Napari supports: positions, bodyparts, head direction, regions
+- [x] Verify video supports: positions, bodyparts, head direction, regions
+- [x] Verify HTML supports: positions, regions only
+- [x] Verify widget supports: positions, bodyparts, head direction, regions
+- [x] Test warnings when unsupported overlay used with backend
 
 ---
 
@@ -550,12 +550,12 @@
 - [x] Milestone 3: Napari Backend (Full Overlays) (Weeks 3-4)
 - [x] Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
 - [x] Milestone 5: HTML & Widget Backends (Partial Overlays) (Week 7)
-- [ ] Milestone 6: Integration & Cross-Backend Tests (Week 7)
+- [x] Milestone 6: Integration & Cross-Backend Tests (Week 7)
 - [ ] Milestone 7: Documentation (Week 8)
 - [ ] Milestone 8: Final Quality Assurance (Week 8)
 - [ ] Milestone 9: Release Preparation (Post-Implementation)
 
-**Overall Progress:** 56% (5/9 milestones completed)
+**Overall Progress:** 67% (6/9 milestones completed)
 
 ---
 
