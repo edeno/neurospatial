@@ -365,13 +365,13 @@
 
 ### 7.1 Overlay API Documentation
 
-- [ ] Create `docs/animation_overlays.md`
-- [ ] Add quickstart section with three overlay types
-- [ ] Document multi-animal support (multiple overlay instances)
-- [ ] Create backend capability comparison table
-- [ ] Document HTML backend limitations clearly
-- [ ] Add common errors section (WHAT/WHY/HOW format)
-- [ ] Add troubleshooting guide with validation error fixes
+- [x] Create `docs/animation_overlays.md`
+- [x] Add quickstart section with three overlay types
+- [x] Document multi-animal support (multiple overlay instances)
+- [x] Create backend capability comparison table
+- [x] Document HTML backend limitations clearly
+- [x] Add common errors section (WHAT/WHY/HOW format)
+- [x] Add troubleshooting guide with validation error fixes
 
 ### 7.2 Docstring Updates
 

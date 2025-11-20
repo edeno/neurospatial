@@ -1,8 +1,8 @@
 # Animation Overlays v0.4.0 - Development Scratchpad
 
 **Started:** 2025-11-20
-**Current Milestone:** Milestone 6 COMPLETE ✅ (Integration & Cross-Backend Tests)
-**Status:** Ready for Milestone 7: Documentation
+**Current Milestone:** Milestone 7 IN PROGRESS (Documentation)
+**Status:** Working on Milestone 7.1: Overlay API Documentation
 
 ---
 
@@ -704,8 +704,44 @@ HOW: Choose one of these solutions:
 - tests/animation/test_backend_capabilities.py (700+ lines, 26 tests)
 - TASKS.md (marked Milestone 6.3 complete, updated progress to 67%)
 
+**Status:** ✅ **MILESTONE 7.1 COMPLETE** - Overlay API Documentation
+
+**Completed:**
+1. ✅ Created comprehensive `docs/animation_overlays.md` (933 lines)
+2. ✅ Added quickstart section with all three overlay types
+3. ✅ Documented multi-animal support with examples
+4. ✅ Created backend capability comparison table
+5. ✅ Documented HTML backend limitations with clear warnings
+6. ✅ Added common errors section with WHAT/WHY/HOW format (8 errors)
+7. ✅ Added troubleshooting guide with practical solutions
+
+**Documentation Highlights:**
+
+- **Comprehensive coverage:** All overlay types with complete examples
+- **Quick Start:** Copy-paste examples for immediate use
+- **Backend Capabilities Table:** Clear matrix showing support
+- **Common Errors:** 8 common issues with actionable solutions
+- **Troubleshooting:** 4 problem scenarios with debug steps
+- **Advanced Usage:** Subsampling, custom frame times, cache clearing
+- **API Reference:** Complete parameter documentation
+- **Migration Guide:** From legacy overlay_trajectory to new API
+
+**Structure:**
+- Quick Start (immediate value)
+- Overview (conceptual understanding)
+- Overlay Types (PositionOverlay, BodypartOverlay, HeadDirectionOverlay)
+- Multi-Animal Support
+- Temporal Alignment (with/without timestamps, interpolation)
+- Regions Overlay
+- Backend Capabilities (comparison table + limitations)
+- Complete Example (kitchen sink demo)
+- Common Errors (WHAT/WHY/HOW format)
+- Troubleshooting Guide (practical solutions)
+- Advanced Usage (power user features)
+- API Reference (complete signatures)
+- Migration Guide (v0.3.x → v0.4.0)
+
 **Next Steps:**
 
-- Commit Milestone 6.3 completion with conventional commit message
-- **MILESTONE 6 COMPLETE** - All integration and cross-backend tests finished
-- Continue with Milestone 7: Documentation
+- Commit Milestone 7.1 completion
+- Continue with Milestone 7.2: Docstring Updates
