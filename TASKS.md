@@ -679,7 +679,7 @@ Implement animation capabilities supporting four backends:
 - [x] Run `uv run ruff check src/neurospatial/animation/`
 - [x] Run `uv run ruff format src/neurospatial/animation/`
 - [x] Fix all linting issues
-- [ ] Review all docstrings (NumPy format)
+- [x] Review all docstrings (NumPy format)
 
 ---
 
