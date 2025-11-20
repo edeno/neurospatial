@@ -437,6 +437,53 @@ HOW: Choose one of these solutions:
 - 2 quality suggestions (type annotations, doctest examples) - non-blocking
 - 4 enhancement suggestions (memory tracking, arrow caching) - future work
 
+**Status:** ✅ **MILESTONE 5.1 COMPLETE** - HTML Backend (Positions + Regions Only)
+
+**Completed:**
+1. ✅ Created comprehensive test file with 23 tests (test_html_overlays.py)
+2. ✅ Verified tests fail (RED phase) - overlay_data parameter not in signature
+3. ✅ Implemented HTML backend overlay rendering (GREEN phase):
+   - Helper function: _serialize_overlay_data() - converts overlays to JSON
+   - Added overlay_data, show_regions, region_alpha parameters
+   - Canvas-based rendering for positions and regions
+   - Coordinate scaling from data space to canvas pixels
+   - Trail rendering with decaying alpha
+   - Region rendering for points and polygons
+   - Capability warnings for unsupported overlay types
+4. ✅ All 23 tests passing (100% pass rate)
+5. ✅ Fixed ruff and mypy issues:
+   - Added Any import and proper type annotations
+   - Fixed dimension_ranges conversion (tuple → list)
+   - Added type: ignore for Shapely polygon access
+6. ✅ Applied code-reviewer agent - REQUEST_CHANGES with critical issues identified
+7. ✅ Fixed all critical issues from code review:
+   - Added bounds checking in coordinate scaling (prevents division by zero)
+   - Fixed trail alpha calculation (reversed: newer = opaque, older = faded)
+   - Added renderOverlays() call in non-embedded mode with async image loading
+8. ✅ Final verification - All tests pass, ruff clean, mypy clean
+
+**Design highlights:**
+
+- Clean JSON serialization for positions and regions
+- Client-side canvas rendering with proper coordinate transformation
+- Warnings for unsupported overlay types with actionable guidance
+- Support for both embedded and non-embedded modes
+- Trail visualization with temporal decay
+- Region filtering by name list
+- NumPy-style docstrings for all functions
+
+**Code review fixes applied:**
+
+- ✅ Bounds checking prevents NaN/Infinity in coordinate scaling
+- ✅ Trail alpha now correctly shows temporal progression (newer points prominent)
+- ✅ Non-embedded mode now renders overlays correctly (critical bug fix)
+
+**Files modified:**
+
+- src/neurospatial/animation/backends/html_backend.py (added 180+ lines for overlay support)
+- tests/animation/test_html_overlays.py (748 lines, 23 tests)
+- TASKS.md (marked Milestone 5.1 checkboxes complete)
+
 **Next Steps:**
-- Commit Milestones 4.3 and 4.5 completion
-- Continue with Milestone 5: HTML & Widget Backends (Partial Overlays)
+- Commit Milestone 5.1 completion with conventional commit message
+- Continue with Milestone 5.2: HTML File Size Guardrails

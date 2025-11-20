@@ -276,22 +276,22 @@
 
 ## Milestone 5: HTML & Widget Backends (Partial Overlays) (Week 7)
 
-### 5.1 HTML Backend (Positions + Regions Only)
+### 5.1 HTML Backend (Positions + Regions Only) ✅
 
-- [ ] Update `src/neurospatial/animation/backends/html_backend.py`
-- [ ] Accept `overlay_data: OverlayData | None` parameter
-- [ ] Implement client-side canvas rendering for positions
-  - [ ] Serialize position data to compact JSON
-  - [ ] Render position markers in JavaScript canvas
-  - [ ] Implement trails with decaying opacity
-- [ ] Implement region rendering in HTML canvas
-  - [ ] Serialize region polygons to JSON
-  - [ ] Render with alpha transparency
-- [ ] Emit capability warnings when bodyparts/head direction provided
-  - [ ] Clear message: "HTML backend supports positions and regions only"
-  - [ ] Suggest using video or napari backend for full features
-- [ ] Enforce `max_html_frames` limit (default 500)
-- [ ] Auto-disable oversized overlays with user-facing warning
+- [x] Update `src/neurospatial/animation/backends/html_backend.py`
+- [x] Accept `overlay_data: OverlayData | None` parameter
+- [x] Implement client-side canvas rendering for positions
+  - [x] Serialize position data to compact JSON
+  - [x] Render position markers in JavaScript canvas
+  - [x] Implement trails with decaying opacity
+- [x] Implement region rendering in HTML canvas
+  - [x] Serialize region polygons to JSON
+  - [x] Render with alpha transparency
+- [x] Emit capability warnings when bodyparts/head direction provided
+  - [x] Clear message: "HTML backend supports positions and regions only"
+  - [x] Suggest using video or napari backend for full features
+- [x] Enforce `max_html_frames` limit (default 500)
+- [x] Auto-disable oversized overlays with user-facing warning
 
 ### 5.2 HTML File Size Guardrails
 

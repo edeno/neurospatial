@@ -8,14 +8,98 @@ import json
 import os
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 
 if TYPE_CHECKING:
+    from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
+
+
+def _serialize_overlay_data(
+    overlay_data: OverlayData | None,
+    env: Environment,
+    show_regions: bool | list[str],
+    region_alpha: float,
+) -> dict[str, Any]:
+    """Serialize overlay data to JSON-compatible format.
+
+    Parameters
+    ----------
+    overlay_data : OverlayData | None
+        Overlay data containing positions, bodyparts, and head directions
+    env : Environment
+        Environment for extracting region data
+    show_regions : bool | list[str]
+        Whether to include regions in serialization
+    region_alpha : float
+        Region transparency value
+
+    Returns
+    -------
+    overlay_dict : dict
+        JSON-compatible dictionary with overlay data
+
+    Notes
+    -----
+    Only positions and regions are serialized. Bodyparts and head directions
+    are not supported in HTML backend.
+    """
+    # Get dimension ranges (convert to list for JSON)
+    dim_ranges = env.dimension_ranges if env.dimension_ranges is not None else []
+
+    result: dict[str, Any] = {
+        "positions": [],
+        "regions": [],
+        "dimension_ranges": [list(r) for r in dim_ranges],
+        "region_alpha": region_alpha,
+    }
+
+    # Serialize position overlays
+    if overlay_data is not None:
+        for pos_data in overlay_data.positions:
+            result["positions"].append(
+                {
+                    "data": pos_data.data.tolist(),  # Convert to list for JSON
+                    "color": pos_data.color,
+                    "size": pos_data.size,
+                    "trail_length": pos_data.trail_length,
+                }
+            )
+
+    # Serialize regions
+    if show_regions:
+        region_names = (
+            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
+        )
+        for name in region_names:
+            if name not in env.regions:
+                continue
+            region = env.regions[name]
+
+            if region.kind == "point":
+                result["regions"].append(
+                    {
+                        "name": name,
+                        "kind": "point",
+                        "coordinates": region.data.tolist(),
+                    }
+                )
+            elif region.kind == "polygon":
+                # Get exterior coordinates from shapely polygon
+                coords = list(region.data.exterior.coords)  # type: ignore[union-attr]
+                result["regions"].append(
+                    {
+                        "name": name,
+                        "kind": "polygon",
+                        "coordinates": coords,
+                    }
+                )
+
+    return result
 
 
 def render_html(
@@ -35,6 +119,9 @@ def render_html(
     embed: bool = True,
     frames_dir: str | Path | None = None,
     n_workers: int | None = None,
+    overlay_data: OverlayData | None = None,
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
     **kwargs,  # Accept other parameters gracefully
 ) -> Path:
     """Generate standalone HTML player with instant scrubbing.
@@ -78,6 +165,17 @@ def render_html(
     n_workers : int | None, optional
         Number of parallel workers for frame rendering (embed=False only).
         Defaults to CPU count / 2.
+    overlay_data : OverlayData | None, optional
+        Overlay data for rendering positions and regions. HTML backend supports:
+        - Position overlays (with trails)
+        - Region overlays
+        Bodypart and head direction overlays are not supported and will emit warnings.
+        Default is None.
+    show_regions : bool | list[str], default=False
+        Whether to show environment regions. If True, show all regions.
+        If list, show only regions with names in the list.
+    region_alpha : float, default=0.3
+        Transparency for region overlays (0.0 = transparent, 1.0 = opaque).
     **kwargs
         Other parameters (accepted gracefully for compatibility)
 
@@ -130,6 +228,27 @@ def render_html(
     )
 
     n_frames = len(fields)
+
+    # Validate overlay capabilities and emit warnings for unsupported types
+    if overlay_data is not None:
+        has_unsupported = (
+            len(overlay_data.bodypart_sets) > 0 or len(overlay_data.head_directions) > 0
+        )
+        if has_unsupported:
+            warnings.warn(
+                "HTML backend supports positions and regions only.\n"
+                "Bodypart and head direction overlays are not supported in HTML mode.\n"
+                "\n"
+                "Supported overlays:\n"
+                "  - Position overlays (with trails)\n"
+                "  - Region overlays\n"
+                "\n"
+                "For full overlay support, use video or napari backend:\n"
+                "  env.animate_fields(fields, backend='video', save_path='output.mp4', ...)\n"
+                "  env.animate_fields(fields, backend='napari', ...)",
+                UserWarning,
+                stacklevel=2,
+            )
 
     # Normalize image_format
     image_format = image_format.lower()
@@ -230,6 +349,11 @@ def render_html(
         if frame_labels is None:
             frame_labels = [f"Frame {i + 1}" for i in range(n_frames)]
 
+        # Serialize overlay data
+        overlay_json = _serialize_overlay_data(
+            overlay_data, env, show_regions, region_alpha
+        )
+
         # Generate lightweight HTML with relative frame references
         html = _generate_non_embedded_html_player(
             frames_dir=frames_dir,
@@ -238,6 +362,7 @@ def render_html(
             fps=fps,
             title=title,
             image_format="png",  # parallel_render_frames always uses PNG
+            overlay_data=overlay_json,
         )
 
         # Write HTML
@@ -264,6 +389,11 @@ def render_html(
     if frame_labels is None:
         frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
 
+    # Serialize overlay data
+    overlay_json = _serialize_overlay_data(
+        overlay_data, env, show_regions, region_alpha
+    )
+
     # Create HTML
     html = _generate_html_player(
         frames_b64=frames_b64,
@@ -271,6 +401,7 @@ def render_html(
         fps=fps,
         title=title,
         image_format=image_format,
+        overlay_data=overlay_json,
     )
 
     # Write to file with UTF-8 encoding (for Unicode button symbols on Windows)
@@ -288,6 +419,7 @@ def _generate_html_player(
     fps: int,
     title: str,
     image_format: str,
+    overlay_data: dict | None = None,
 ) -> str:
     """Generate HTML with embedded frames and JavaScript controls.
 
@@ -303,6 +435,8 @@ def _generate_html_player(
         Animation title
     image_format : str
         Image format (png or jpeg)
+    overlay_data : dict | None, optional
+        JSON-compatible dictionary with overlay data (positions and regions)
 
     Returns
     -------
@@ -332,6 +466,7 @@ def _generate_html_player(
     # JSON-encode data for JavaScript
     frames_json = json.dumps(frames_b64)
     labels_json = json.dumps(frame_labels)
+    overlay_json_str = json.dumps(overlay_data) if overlay_data else "null"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -360,11 +495,23 @@ def _generate_html_player(
             font-size: 24px;
             color: #333;
         }}
+        .frame-container {{
+            position: relative;
+            width: 100%;
+        }}
         #frame {{
             width: 100%;
             border: 1px solid #ddd;
             border-radius: 4px;
             display: block;
+        }}
+        #overlay-canvas {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }}
         #controls {{
             margin: 20px 0;
@@ -447,7 +594,10 @@ def _generate_html_player(
     <div class="container">
         <h1>{safe_title}</h1>
 
-        <img id="frame" src="" alt="Animation frame" />
+        <div class="frame-container">
+            <img id="frame" src="" alt="Animation frame" />
+            <canvas id="overlay-canvas"></canvas>
+        </div>
 
         <div id="controls">
             <div class="button-row">
@@ -481,6 +631,7 @@ def _generate_html_player(
         const frames = {frames_json};
         const labels = {labels_json};
         const baseFPS = {fps};
+        const overlayData = {overlay_json_str};
 
         // State
         let currentFrame = 0;
@@ -498,6 +649,117 @@ def _generate_html_player(
         const prevBtn = document.getElementById('prev');
         const nextBtn = document.getElementById('next');
         const speedSelect = document.getElementById('speed');
+        const canvas = document.getElementById('overlay-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Overlay rendering function
+        function renderOverlays(frameIdx) {{
+            if (!overlayData) return;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Match canvas size to image
+            const img = document.getElementById('frame');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+
+            // Get dimension ranges for coordinate scaling
+            const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
+            const xRange = dimRanges[0];
+            const yRange = dimRanges[1];
+
+            // Scaling functions: data coords -> canvas pixels
+            function scaleX(x) {{
+                const extent = xRange[1] - xRange[0];
+                if (extent === 0) return canvas.width / 2;  // Center point for zero extent
+                return ((x - xRange[0]) / extent) * canvas.width;
+            }}
+            function scaleY(y) {{
+                // Flip y-axis (image has y=0 at top)
+                const extent = yRange[1] - yRange[0];
+                if (extent === 0) return canvas.height / 2;  // Center point for zero extent
+                return ((yRange[1] - y) / extent) * canvas.height;
+            }}
+
+            // Render positions
+            if (overlayData.positions && overlayData.positions.length > 0 && frameIdx < overlayData.positions[0].data.length) {{
+                overlayData.positions.forEach(posOverlay => {{
+                    const positions = posOverlay.data;
+                    const trailLength = posOverlay.trail_length || 0;
+
+                    // Draw trail
+                    if (trailLength > 0) {{
+                        ctx.strokeStyle = posOverlay.color;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+
+                        const startIdx = Math.max(0, frameIdx - trailLength);
+                        for (let i = startIdx; i <= frameIdx; i++) {{
+                            const pos = positions[i];
+                            const x = scaleX(pos[0]);
+                            const y = scaleY(pos[1]);
+
+                            if (i === startIdx) {{
+                                ctx.moveTo(x, y);
+                            }} else {{
+                                ctx.lineTo(x, y);
+                            }}
+
+                            // Decaying alpha for trail (newer = more opaque, older = faded)
+                            const ageInFrames = frameIdx - i;
+                            const alpha = 1.0 - (ageInFrames / trailLength);
+                            ctx.globalAlpha = alpha * 0.7 + 0.3;  // Range: 0.3 (oldest) to 1.0 (current)
+                        }}
+
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    }}
+
+                    // Draw current position marker
+                    const currentPos = positions[frameIdx];
+                    const x = scaleX(currentPos[0]);
+                    const y = scaleY(currentPos[1]);
+
+                    ctx.fillStyle = posOverlay.color;
+                    ctx.beginPath();
+                    ctx.arc(x, y, posOverlay.size, 0, 2 * Math.PI);
+                    ctx.fill();
+                }});
+            }}
+
+            // Render regions
+            if (overlayData.regions) {{
+                overlayData.regions.forEach(region => {{
+                    ctx.strokeStyle = 'cyan';
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = overlayData.region_alpha || 0.3;
+
+                    if (region.kind === 'point') {{
+                        const x = scaleX(region.coordinates[0]);
+                        const y = scaleY(region.coordinates[1]);
+                        ctx.beginPath();
+                        ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }} else if (region.kind === 'polygon') {{
+                        ctx.beginPath();
+                        region.coordinates.forEach((coord, i) => {{
+                            const x = scaleX(coord[0]);
+                            const y = scaleY(coord[1]);
+                            if (i === 0) {{
+                                ctx.moveTo(x, y);
+                            }} else {{
+                                ctx.lineTo(x, y);
+                            }}
+                        }});
+                        ctx.closePath();
+                        ctx.stroke();
+                    }}
+
+                    ctx.globalAlpha = 1.0;
+                }});
+            }}
+        }}
 
         // Initialize
         function init() {{
@@ -518,6 +780,9 @@ def _generate_html_player(
             slider.value = idx;
             labelSpan.textContent = labels[idx];
             counterSpan.textContent = `${{idx + 1}} / ${{frames.length}}`;
+
+            // Render overlays
+            renderOverlays(idx);
         }}
 
         function updateControls() {{
@@ -604,6 +869,7 @@ def _generate_non_embedded_html_player(
     fps: int,
     title: str,
     image_format: str,
+    overlay_data: dict | None = None,
 ) -> str:
     """Generate HTML player with disk-backed frames (non-embedded).
 
@@ -621,6 +887,8 @@ def _generate_non_embedded_html_player(
         Animation title
     image_format : str
         Image format (png or jpeg)
+    overlay_data : dict | None, optional
+        JSON-compatible dictionary with overlay data (positions and regions)
 
     Returns
     -------
@@ -639,8 +907,9 @@ def _generate_non_embedded_html_player(
     # Sanitize title
     safe_title = html_module.escape(title)
 
-    # JSON-encode labels
+    # JSON-encode labels and overlay data
     labels_json = json.dumps(frame_labels)
+    overlay_json_str = json.dumps(overlay_data) if overlay_data else "null"
 
     # Relative directory name for JavaScript
     frames_dir_name = frames_dir.name
@@ -672,11 +941,23 @@ def _generate_non_embedded_html_player(
             font-size: 24px;
             color: #333;
         }}
+        .frame-container {{
+            position: relative;
+            width: 100%;
+        }}
         #frame {{
             width: 100%;
             border: 1px solid #ddd;
             border-radius: 4px;
             display: block;
+        }}
+        #overlay-canvas {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }}
         #controls {{
             margin: 20px 0;
@@ -759,7 +1040,10 @@ def _generate_non_embedded_html_player(
     <div class="container">
         <h1>{safe_title}</h1>
 
-        <img id="frame" src="" alt="Animation frame" />
+        <div class="frame-container">
+            <img id="frame" src="" alt="Animation frame" />
+            <canvas id="overlay-canvas"></canvas>
+        </div>
 
         <div id="controls">
             <div class="button-row">
@@ -794,6 +1078,8 @@ def _generate_non_embedded_html_player(
         const labels = {labels_json};
         const baseFPS = {fps};
         const framesDir = "{frames_dir_name}";
+        const overlayData = {overlay_json_str};
+        const frames = null;  // For compatibility with renderOverlays
 
         // Zero-pad frame numbers (5 digits)
         function zpad(i, digits=5) {{ return (""+i).padStart(digits,"0"); }}
@@ -817,6 +1103,117 @@ def _generate_non_embedded_html_player(
         const prevBtn = document.getElementById('prev');
         const nextBtn = document.getElementById('next');
         const speedSelect = document.getElementById('speed');
+        const canvas = document.getElementById('overlay-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Overlay rendering function
+        function renderOverlays(frameIdx) {{
+            if (!overlayData) return;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Match canvas size to image
+            const img = document.getElementById('frame');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+
+            // Get dimension ranges for coordinate scaling
+            const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
+            const xRange = dimRanges[0];
+            const yRange = dimRanges[1];
+
+            // Scaling functions: data coords -> canvas pixels
+            function scaleX(x) {{
+                const extent = xRange[1] - xRange[0];
+                if (extent === 0) return canvas.width / 2;  // Center point for zero extent
+                return ((x - xRange[0]) / extent) * canvas.width;
+            }}
+            function scaleY(y) {{
+                // Flip y-axis (image has y=0 at top)
+                const extent = yRange[1] - yRange[0];
+                if (extent === 0) return canvas.height / 2;  // Center point for zero extent
+                return ((yRange[1] - y) / extent) * canvas.height;
+            }}
+
+            // Render positions
+            if (overlayData.positions && overlayData.positions.length > 0 && frameIdx < overlayData.positions[0].data.length) {{
+                overlayData.positions.forEach(posOverlay => {{
+                    const positions = posOverlay.data;
+                    const trailLength = posOverlay.trail_length || 0;
+
+                    // Draw trail
+                    if (trailLength > 0) {{
+                        ctx.strokeStyle = posOverlay.color;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+
+                        const startIdx = Math.max(0, frameIdx - trailLength);
+                        for (let i = startIdx; i <= frameIdx; i++) {{
+                            const pos = positions[i];
+                            const x = scaleX(pos[0]);
+                            const y = scaleY(pos[1]);
+
+                            if (i === startIdx) {{
+                                ctx.moveTo(x, y);
+                            }} else {{
+                                ctx.lineTo(x, y);
+                            }}
+
+                            // Decaying alpha for trail (newer = more opaque, older = faded)
+                            const ageInFrames = frameIdx - i;
+                            const alpha = 1.0 - (ageInFrames / trailLength);
+                            ctx.globalAlpha = alpha * 0.7 + 0.3;  // Range: 0.3 (oldest) to 1.0 (current)
+                        }}
+
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    }}
+
+                    // Draw current position marker
+                    const currentPos = positions[frameIdx];
+                    const x = scaleX(currentPos[0]);
+                    const y = scaleY(currentPos[1]);
+
+                    ctx.fillStyle = posOverlay.color;
+                    ctx.beginPath();
+                    ctx.arc(x, y, posOverlay.size, 0, 2 * Math.PI);
+                    ctx.fill();
+                }});
+            }}
+
+            // Render regions
+            if (overlayData.regions) {{
+                overlayData.regions.forEach(region => {{
+                    ctx.strokeStyle = 'cyan';
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = overlayData.region_alpha || 0.3;
+
+                    if (region.kind === 'point') {{
+                        const x = scaleX(region.coordinates[0]);
+                        const y = scaleY(region.coordinates[1]);
+                        ctx.beginPath();
+                        ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }} else if (region.kind === 'polygon') {{
+                        ctx.beginPath();
+                        region.coordinates.forEach((coord, i) => {{
+                            const x = scaleX(coord[0]);
+                            const y = scaleY(coord[1]);
+                            if (i === 0) {{
+                                ctx.moveTo(x, y);
+                            }} else {{
+                                ctx.lineTo(x, y);
+                            }}
+                        }});
+                        ctx.closePath();
+                        ctx.stroke();
+                    }}
+
+                    ctx.globalAlpha = 1.0;
+                }});
+            }}
+        }}
 
         // Initialize
         function init() {{
@@ -829,7 +1226,8 @@ def _generate_non_embedded_html_player(
 
             currentFrame = idx;
 
-            // Update image (loads from disk)
+            // Update image and render overlays when loaded
+            img.onload = () => renderOverlays(idx);
             img.src = frameSrc[idx];
 
             // Update UI
