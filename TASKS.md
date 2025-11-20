@@ -691,11 +691,11 @@ Implement animation capabilities supporting four backends:
 
 ### Code Review
 
-- [ ] Self-review all code changes
-- [ ] Check for TODO/FIXME comments
-- [ ] Verify all functions have docstrings
-- [ ] Verify all tests pass: `uv run pytest`
-- [ ] Verify type checking passes: `uv run mypy src/neurospatial/`
+- [x] Self-review all code changes
+- [x] Check for TODO/FIXME comments
+- [x] Verify all functions have docstrings
+- [x] Verify all tests pass: `uv run pytest`
+- [x] Verify type checking passes: `uv run mypy src/neurospatial/`
 
 ### Documentation Review
 
