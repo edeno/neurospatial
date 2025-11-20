@@ -240,8 +240,11 @@ def render_napari(
     ----------
     env : Environment
         Environment defining spatial structure
-    fields : list of arrays
-        Fields to animate, each with shape (n_bins,)
+    fields : list of arrays or list of lists
+        Single-field mode: List of 1D arrays, each with shape (n_bins,)
+        Multi-field mode: List of field sequences, where each sequence
+        is a list of 1D arrays. Automatically detected based on input structure.
+        All sequences must have the same length (same number of frames).
     fps : int, default=30
         Frames per second for playback (Napari slider speed)
     cmap : str, default="viridis"
@@ -262,6 +265,17 @@ def render_napari(
         Chunk size for chunked LRU caching. If None, auto-selects based
         on dataset size (>10K frames uses chunking). Set to 1 to disable
         chunking (equivalent to per-frame caching).
+    layout : {"horizontal", "vertical", "grid"}, optional
+        Multi-field mode only: Layout arrangement for multiple field sequences.
+        Required when providing multiple field sequences. Options:
+        - "horizontal": side-by-side arrangement
+        - "vertical": stacked top-to-bottom
+        - "grid": automatic NxM grid layout
+        Single-field mode: ignored
+    layer_names : list of str, optional
+        Multi-field mode only: Custom names for each layer. Must match the
+        number of field sequences. If None, uses "Field 1", "Field 2", etc.
+        Single-field mode: ignored
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -289,12 +303,26 @@ def render_napari(
     >>> positions = np.random.randn(100, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=10.0)
     >>>
-    >>> # Create field sequence
+    >>> # Single-field animation
     >>> fields = [np.random.rand(env.n_bins) for _ in range(100)]
     >>>
     >>> # Launch viewer
     >>> viewer = render_napari(env, fields, fps=30, cmap="viridis")
     >>> # napari.run()  # Uncomment to block until window closed
+    >>>
+    >>> # Multi-field animation (e.g., comparing 3 neurons)
+    >>> seq1 = [np.random.rand(env.n_bins) for _ in range(50)]
+    >>> seq2 = [np.random.rand(env.n_bins) for _ in range(50)]
+    >>> seq3 = [np.random.rand(env.n_bins) for _ in range(50)]
+    >>>
+    >>> # View side-by-side with custom names
+    >>> viewer = render_napari(
+    ...     env,
+    ...     fields=[seq1, seq2, seq3],
+    ...     layout="horizontal",
+    ...     layer_names=["Neuron A", "Neuron B", "Neuron C"],
+    ...     fps=10,
+    ... )
 
     Notes
     -----
@@ -355,6 +383,29 @@ def render_napari(
 
     2D trajectories are rendered as tracks with temporal dimension.
     Higher-dimensional trajectories fall back to point cloud rendering.
+
+    **Multi-Field Viewer Mode:**
+
+    Napari backend supports comparing multiple field sequences side-by-side
+    in a single viewer. Automatically detected when ``fields`` is a list of
+    lists (each inner list is a field sequence).
+
+    Key features:
+    - **Auto-detection**: No special API needed, just pass list of sequences
+    - **Global color scale**: Computed across ALL sequences for fair comparison
+    - **Synchronized playback**: All layers share the same time dimension
+    - **Layout options**: horizontal, vertical, or grid arrangement
+    - **Custom names**: Use ``layer_names`` parameter for meaningful labels
+
+    Example use cases:
+    - Comparing place fields across multiple neurons
+    - Visualizing learning across trials
+    - Side-by-side condition comparison
+
+    Requirements:
+    - All sequences must have the same length (number of frames)
+    - Must provide ``layout`` parameter when using multi-field mode
+    - Optional: ``layer_names`` for custom layer labels
 
     See Also
     --------
