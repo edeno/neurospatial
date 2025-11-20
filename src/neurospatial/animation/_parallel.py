@@ -15,7 +15,6 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -34,6 +33,7 @@ def parallel_render_frames(
     frame_labels: list[str] | None,
     dpi: int,
     n_workers: int,
+    reuse_artists: bool = True,
 ) -> str:
     """Render frames in parallel across worker processes.
 
@@ -55,6 +55,10 @@ def parallel_render_frames(
         Resolution
     n_workers : int
         Number of parallel workers
+    reuse_artists : bool, default=True
+        If True, reuse the same AxesImage artist across frames (fast path).
+        Updates image data only, avoiding layout/allocation overhead.
+        If False, clear and redraw each frame (original behavior).
 
     Returns
     -------
@@ -127,6 +131,7 @@ def parallel_render_frames(
                 "frame_labels": worker_frame_labels,
                 "dpi": dpi,
                 "digits": max(5, len(str(max(0, n_frames - 1)))),  # Pass to workers
+                "reuse_artists": reuse_artists,
             }
         )
 
@@ -215,6 +220,10 @@ def _render_worker_frames(task: dict) -> None:
     except Exception:
         pass
 
+    # Import pyplot only AFTER backend is set (avoids GUI backend binding in workers)
+    import matplotlib.pyplot as plt
+    from matplotlib.image import AxesImage
+
     env = task["env"]
     fields = task["fields"]
     start_idx = task["start_frame_idx"]
@@ -226,37 +235,104 @@ def _render_worker_frames(task: dict) -> None:
     dpi = task["dpi"]
     # Get digits from task, fallback for backward compatibility with tests
     digits = task.get("digits", 5)
+    reuse_flag = task.get("reuse_artists", True)
+
+    # Lean rcParams for bulk rasterization
+    import matplotlib
+
+    matplotlib.rcParams.update(
+        {
+            "figure.dpi": dpi,
+            "savefig.dpi": dpi,
+            "axes.xmargin": 0,
+            "axes.ymargin": 0,
+            "path.simplify": True,
+            "path.simplify_threshold": 0.5,
+            "agg.path.chunksize": 10000,
+        }
+    )
 
     # Create figure once for this worker
     fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+    ax.set_axis_off()
+
+    # Render first frame normally to establish artists and limits
+    env.plot_field(
+        fields[0],
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        colorbar=False,
+    )
+
+    # Add label for first frame if provided
+    if frame_labels and frame_labels[0]:
+        ax.set_title(frame_labels[0], fontsize=14)
+
+    # Try to identify the primary image artist to update
+    # This assumes env.plot_field uses imshow/Images; otherwise we fall back
+    primary_im: AxesImage | None = ax.images[0] if ax.images else None
+    reuse_artists = bool(reuse_flag and primary_im is not None)
+
+    # Freeze autoscale to avoid changing extents while updating data
+    if reuse_artists:
+        ax.set_autoscale_on(False)
 
     try:
-        for local_idx, field in enumerate(fields):
-            global_idx = start_idx + local_idx
+        # Save frame 0
+        frame_number = start_idx
+        filename = f"frame_{frame_number:0{digits}d}.png"
+        filepath = Path(output_dir) / filename
+        fig.savefig(filepath)
 
-            # Clear previous frame
-            ax.clear()
+        if reuse_artists:
+            # Fast path: update the image data only
+            # Type checker: reuse_artists=True guarantees primary_im is not None
+            assert primary_im is not None
+            for local_idx in range(1, len(fields)):
+                field = fields[local_idx]
 
-            # Render field using environment's plot_field
-            env.plot_field(
-                field,
-                ax=ax,
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-                colorbar=False,
-            )
+                # Matplotlib wants array-like; ensure C-order to avoid copies later
+                # If `field` is masked or not C-contiguous, ascontiguousarray avoids hidden copies
+                if not isinstance(field, np.ndarray) or not field.flags["C_CONTIGUOUS"]:
+                    data = np.ascontiguousarray(np.array(field))
+                else:
+                    data = field
 
-            # Add label if provided
-            if frame_labels and frame_labels[local_idx]:
-                ax.set_title(frame_labels[local_idx], fontsize=14)
+                primary_im.set_data(data)  # reuse the same artist
 
-            # Save frame (0-indexed for ffmpeg compatibility)
-            frame_number = global_idx
-            filename = f"frame_{frame_number:0{digits}d}.png"
-            filepath = Path(output_dir) / filename
+                # Update title if labels provided
+                if frame_labels and frame_labels[local_idx]:
+                    ax.set_title(frame_labels[local_idx], fontsize=14)
 
-            fig.savefig(filepath, dpi=dpi)
+                # No need to clear or re-layout. Draw and save.
+                frame_number = start_idx + local_idx
+                filename = f"frame_{frame_number:0{digits}d}.png"
+                filepath = Path(output_dir) / filename
+                fig.savefig(filepath)
+        else:
+            # Fallback: redraw per frame (original behavior)
+            for local_idx in range(1, len(fields)):
+                ax.clear()
+                ax.set_axis_off()
+                env.plot_field(
+                    fields[local_idx],
+                    ax=ax,
+                    cmap=cmap,
+                    vmin=vmin,
+                    vmax=vmax,
+                    colorbar=False,
+                )
+
+                # Add label if provided
+                if frame_labels and frame_labels[local_idx]:
+                    ax.set_title(frame_labels[local_idx], fontsize=14)
+
+                frame_number = start_idx + local_idx
+                filename = f"frame_{frame_number:0{digits}d}.png"
+                filepath = Path(output_dir) / filename
+                fig.savefig(filepath)
     finally:
         # Clean up figure (prevent memory leaks)
         plt.close(fig)

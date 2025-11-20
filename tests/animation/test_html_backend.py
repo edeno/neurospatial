@@ -345,3 +345,158 @@ def test_html_title_escaping(tmp_path):
     # Should NOT contain raw HTML/JS
     assert "<script>alert" not in html
     assert "alert('xss')" not in html
+
+
+def test_html_export_non_embedded_mode(tmp_path):
+    """Test HTML export with embed=False (disk-backed frames)."""
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+    output_path = tmp_path / "non_embedded.html"
+
+    result = render_html(
+        env,
+        fields,
+        save_path=str(output_path),
+        embed=False,
+        n_workers=1,
+    )
+
+    # Check HTML file created
+    assert output_path.exists()
+    assert isinstance(result, Path)
+
+    # Check HTML is lightweight (not embedded)
+    html = output_path.read_text()
+    assert "<html" in html
+
+    # Should NOT contain embedded base64 images
+    assert "data:image/png;base64," not in html
+
+    # Should reference external frame files
+    assert "frame_" in html
+    assert ".png" in html
+
+    # Check frames directory created
+    frames_dir = output_path.with_suffix("")  # Default: "non_embedded/"
+    assert frames_dir.exists()
+    assert frames_dir.is_dir()
+
+    # Check frame files exist
+    png_files = list(frames_dir.glob("frame_*.png"))
+    assert len(png_files) == 10
+
+    # Check files are valid PNGs (non-zero size)
+    for png_file in png_files:
+        assert png_file.stat().st_size > 0
+
+
+def test_html_export_non_embedded_custom_frames_dir(tmp_path):
+    """Test HTML export with embed=False and custom frames_dir."""
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+
+    output_path = tmp_path / "custom.html"
+    frames_dir = tmp_path / "my_frames"
+
+    render_html(
+        env,
+        fields,
+        save_path=str(output_path),
+        embed=False,
+        frames_dir=str(frames_dir),
+        n_workers=1,
+    )
+
+    # Check HTML file created
+    assert output_path.exists()
+
+    # Check custom frames directory created
+    assert frames_dir.exists()
+    assert frames_dir.is_dir()
+
+    # Check frame files exist in custom directory
+    png_files = list(frames_dir.glob("frame_*.png"))
+    assert len(png_files) == 5
+
+
+def test_html_export_non_embedded_with_labels(tmp_path):
+    """Test HTML export with embed=False and frame labels."""
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    labels = [f"Trial {i + 1}" for i in range(5)]
+
+    output_path = tmp_path / "labeled.html"
+
+    render_html(
+        env,
+        fields,
+        save_path=str(output_path),
+        embed=False,
+        frame_labels=labels,
+        n_workers=1,
+    )
+
+    # Check HTML file created
+    assert output_path.exists()
+
+    # Check labels appear in HTML
+    html = output_path.read_text()
+    for label in labels:
+        assert label in html
+
+
+def test_html_export_non_embedded_auto_workers(tmp_path):
+    """Test HTML export with embed=False and n_workers=None (auto-select)."""
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+
+    output_path = tmp_path / "auto_workers.html"
+
+    # n_workers=None should auto-select based on CPU count
+    render_html(
+        env,
+        fields,
+        save_path=str(output_path),
+        embed=False,
+        n_workers=None,
+    )
+
+    # Check HTML file created
+    assert output_path.exists()
+
+    # Check frames directory created
+    frames_dir = output_path.with_suffix("")
+    assert frames_dir.exists()
+
+    # Check frame files exist
+    png_files = list(frames_dir.glob("frame_*.png"))
+    assert len(png_files) == 5
+
+
+def test_html_export_non_embedded_negative_workers(tmp_path):
+    """Test HTML export with embed=False raises error for negative n_workers."""
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+
+    output_path = tmp_path / "test.html"
+
+    # Should raise ValueError for negative n_workers
+    with pytest.raises(ValueError, match="n_workers must be positive"):
+        render_html(
+            env,
+            fields,
+            save_path=str(output_path),
+            embed=False,
+            n_workers=-1,
+        )

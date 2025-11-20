@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import html as html_module
 import json
+import os
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -31,11 +32,15 @@ def render_html(
     image_format: str = "png",
     max_html_frames: int = 500,
     title: str = "Spatial Field Animation",
+    embed: bool = True,
+    frames_dir: str | Path | None = None,
+    n_workers: int | None = None,
     **kwargs,  # Accept other parameters gracefully
 ) -> Path:
     """Generate standalone HTML player with instant scrubbing.
 
-    Pre-renders all frames as base64-encoded images embedded in HTML.
+    Pre-renders all frames as base64-encoded images embedded in HTML (default),
+    or writes frames to disk and references them (embed=False for large sequences).
     JavaScript provides play/pause/scrub controls with zero latency.
 
     Parameters
@@ -63,6 +68,16 @@ def render_html(
         that crash browsers.
     title : str, default="Spatial Field Animation"
         Animation title
+    embed : bool, default=True
+        If True, embed frames as base64 data URLs (self-contained HTML).
+        If False, write frames to disk and reference via relative paths
+        (smaller HTML, suitable for 500+ frames).
+    frames_dir : str | Path | None, optional
+        Directory to write frames when embed=False. Defaults to a sibling
+        directory based on save_path name (e.g., "animation_frames/").
+    n_workers : int | None, optional
+        Number of parallel workers for frame rendering (embed=False only).
+        Defaults to CPU count / 2.
     **kwargs
         Other parameters (accepted gracefully for compatibility)
 
@@ -173,6 +188,65 @@ def render_html(
     vmin = vmin if vmin is not None else vmin_computed
     vmax = vmax if vmax is not None else vmax_computed
 
+    # Set default save path if None
+    if save_path is None:
+        save_path = "animation.html"
+    output_path = Path(save_path)
+
+    # ---- Non-embedded mode: write frames to disk, lightweight HTML ----
+    if not embed:
+        from neurospatial.animation._parallel import parallel_render_frames
+
+        # Default frames directory: sibling folder based on HTML name
+        if frames_dir is None:
+            frames_dir = output_path.with_suffix(
+                ""
+            )  # e.g., "animation.html" -> "animation/"
+        frames_dir = Path(frames_dir)
+        frames_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine number of workers
+        if n_workers is None:
+            cpu_count = os.cpu_count() or 2  # Default to 2 if cpu_count() returns None
+            n_workers = max(1, cpu_count // 2)
+        elif n_workers < 1:
+            raise ValueError(f"n_workers must be positive (got {n_workers})")
+
+        # Use parallel renderer for speed & consistency
+        print(f"Rendering {n_frames} frames to {frames_dir}...")
+        _ = parallel_render_frames(
+            env=env,
+            fields=fields,
+            output_dir=str(frames_dir),
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            frame_labels=frame_labels,
+            dpi=dpi,
+            n_workers=n_workers,
+        )
+
+        # Generate frame labels if not provided
+        if frame_labels is None:
+            frame_labels = [f"Frame {i + 1}" for i in range(n_frames)]
+
+        # Generate lightweight HTML with relative frame references
+        html = _generate_non_embedded_html_player(
+            frames_dir=frames_dir,
+            n_frames=n_frames,
+            frame_labels=frame_labels,
+            fps=fps,
+            title=title,
+            image_format="png",  # parallel_render_frames always uses PNG
+        )
+
+        # Write HTML
+        output_path.write_text(html, encoding="utf-8")
+
+        print(f"✓ HTML saved to {output_path} (frames in {frames_dir})")
+        return output_path
+
+    # ---- Embedded mode (original behavior) ----
     # Pre-render all frames to base64
     print(f"Rendering {n_frames} frames to {image_format.upper()}...")
     frames_b64 = []
@@ -199,12 +273,7 @@ def render_html(
         image_format=image_format,
     )
 
-    # Set default save path if None
-    if save_path is None:
-        save_path = "animation.html"
-
     # Write to file with UTF-8 encoding (for Unicode button symbols on Windows)
-    output_path = Path(save_path)
     output_path.write_text(html, encoding="utf-8")
 
     file_size_mb = output_path.stat().st_size / 1e6
@@ -479,6 +548,324 @@ def _generate_html_player(
         function stepForward() {{
             pause();
             updateFrame(Math.min(frames.length - 1, currentFrame + 1));
+        }}
+
+        function stepBackward() {{
+            pause();
+            updateFrame(Math.max(0, currentFrame - 1));
+        }}
+
+        // Event listeners
+        slider.oninput = (e) => {{
+            pause();
+            updateFrame(parseInt(e.target.value));
+        }};
+
+        playBtn.onclick = play;
+        pauseBtn.onclick = pause;
+        nextBtn.onclick = stepForward;
+        prevBtn.onclick = stepBackward;
+
+        speedSelect.onchange = (e) => {{
+            speedMultiplier = parseFloat(e.target.value);
+            if (playing) {{
+                pause();
+                play();  // Restart with new speed
+            }}
+        }};
+
+        // Keyboard shortcuts
+        document.onkeydown = (e) => {{
+            if (e.key === ' ') {{
+                e.preventDefault();
+                playing ? pause() : play();
+            }} else if (e.key === 'ArrowLeft') {{
+                e.preventDefault();
+                stepBackward();
+            }} else if (e.key === 'ArrowRight') {{
+                e.preventDefault();
+                stepForward();
+            }}
+        }};
+
+        // Start
+        init();
+    </script>
+</body>
+</html>"""
+
+    return html
+
+
+def _generate_non_embedded_html_player(
+    frames_dir: Path,
+    n_frames: int,
+    frame_labels: list[str],
+    fps: int,
+    title: str,
+    image_format: str,
+) -> str:
+    """Generate HTML player with disk-backed frames (non-embedded).
+
+    Parameters
+    ----------
+    frames_dir : Path
+        Directory containing frame images
+    n_frames : int
+        Number of frames
+    frame_labels : list of str
+        Frame labels for display
+    fps : int
+        Frames per second for playback
+    title : str
+        Animation title
+    image_format : str
+        Image format (png or jpeg)
+
+    Returns
+    -------
+    html : str
+        Complete HTML document referencing external frames
+
+    Notes
+    -----
+    This generates a lightweight HTML file that references frames via relative
+    paths instead of embedding them as base64. Suitable for large sequences
+    (500+ frames) where embedded mode would create huge HTML files.
+
+    The frames must exist in frames_dir with zero-padded names:
+    frame_00000.png, frame_00001.png, etc.
+    """
+    # Sanitize title
+    safe_title = html_module.escape(title)
+
+    # JSON-encode labels
+    labels_json = json.dumps(frame_labels)
+
+    # Relative directory name for JavaScript
+    frames_dir_name = frames_dir.name
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{safe_title}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        .container {{
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 900px;
+        }}
+        h1 {{
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            color: #333;
+        }}
+        #frame {{
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: block;
+        }}
+        #controls {{
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }}
+        .button-row {{
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }}
+        button {{
+            padding: 10px 20px;
+            font-size: 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            transition: background 0.2s;
+        }}
+        button:hover {{
+            background: #0056b3;
+        }}
+        button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+        #slider {{
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #ddd;
+            border-radius: 3px;
+            outline: none;
+        }}
+        #slider::-webkit-slider-thumb {{
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+        }}
+        #slider::-moz-range-thumb {{
+            width: 18px;
+            height: 18px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }}
+        .info {{
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 14px;
+        }}
+        .speed-control {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .speed-control label {{
+            font-size: 14px;
+            color: #666;
+        }}
+        .speed-control select {{
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{safe_title}</h1>
+
+        <img id="frame" src="" alt="Animation frame" />
+
+        <div id="controls">
+            <div class="button-row">
+                <button id="play" aria-label="Play animation">▶ Play</button>
+                <button id="pause" aria-label="Pause animation">⏸ Pause</button>
+                <button id="prev" aria-label="Previous frame">⏮ Prev</button>
+                <button id="next" aria-label="Next frame">⏭ Next</button>
+                <div class="speed-control">
+                    <label for="speed">Speed:</label>
+                    <select id="speed" aria-label="Playback speed">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="4">4x</option>
+                    </select>
+                </div>
+            </div>
+
+            <input type="range" id="slider" min="0" max="{n_frames - 1}" value="0" aria-label="Frame slider" />
+
+            <div class="info">
+                <span id="label" aria-live="polite"></span>
+                <span id="frame-counter" aria-live="polite"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Frame data (disk-backed)
+        const N = {n_frames};
+        const labels = {labels_json};
+        const baseFPS = {fps};
+        const framesDir = "{frames_dir_name}";
+
+        // Zero-pad frame numbers (5 digits)
+        function zpad(i, digits=5) {{ return (""+i).padStart(digits,"0"); }}
+
+        // Build frame URLs dynamically
+        const frameSrc = Array.from({{length: N}}, (_,i) => `${{framesDir}}/frame_${{zpad(i)}}.{image_format}`);
+
+        // State
+        let currentFrame = 0;
+        let playing = false;
+        let interval = null;
+        let speedMultiplier = 1.0;
+
+        // Elements
+        const img = document.getElementById('frame');
+        const slider = document.getElementById('slider');
+        const labelSpan = document.getElementById('label');
+        const counterSpan = document.getElementById('frame-counter');
+        const playBtn = document.getElementById('play');
+        const pauseBtn = document.getElementById('pause');
+        const prevBtn = document.getElementById('prev');
+        const nextBtn = document.getElementById('next');
+        const speedSelect = document.getElementById('speed');
+
+        // Initialize
+        function init() {{
+            updateFrame(0);
+            updateControls();
+        }}
+
+        function updateFrame(idx) {{
+            if (idx < 0 || idx >= N) return;
+
+            currentFrame = idx;
+
+            // Update image (loads from disk)
+            img.src = frameSrc[idx];
+
+            // Update UI
+            slider.value = idx;
+            labelSpan.textContent = labels[idx];
+            counterSpan.textContent = `${{idx + 1}} / ${{N}}`;
+        }}
+
+        function updateControls() {{
+            playBtn.disabled = playing;
+            pauseBtn.disabled = !playing;
+        }}
+
+        function play() {{
+            if (playing) return;
+            playing = true;
+            updateControls();
+
+            const frameDelay = (1000 / baseFPS) / speedMultiplier;
+
+            interval = setInterval(() => {{
+                currentFrame = (currentFrame + 1) % N;
+                updateFrame(currentFrame);
+            }}, frameDelay);
+        }}
+
+        function pause() {{
+            if (!playing) return;
+            playing = false;
+            updateControls();
+            clearInterval(interval);
+        }}
+
+        function stepForward() {{
+            pause();
+            updateFrame(Math.min(N - 1, currentFrame + 1));
         }}
 
         function stepBackward() {{

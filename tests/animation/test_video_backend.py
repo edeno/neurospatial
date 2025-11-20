@@ -558,6 +558,138 @@ class TestParallelRendering:
         png_files = sorted(tmp_path.glob("frame_*.png"))
         assert len(png_files) == 3
 
+    def test_parallel_render_with_artist_reuse(self, tmp_path):
+        """Test parallel rendering with artist reuse enabled (fast path)."""
+        from neurospatial.animation._parallel import parallel_render_frames
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # 10 frames for test
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        pattern = parallel_render_frames(
+            env=env,
+            fields=fields,
+            output_dir=str(tmp_path),
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            frame_labels=None,
+            dpi=50,
+            n_workers=1,
+            reuse_artists=True,  # Enable artist reuse
+        )
+
+        # Check pattern returned
+        assert "frame_" in pattern
+        assert ".png" in pattern
+
+        # Check all frames were created
+        png_files = list(tmp_path.glob("frame_*.png"))
+        assert len(png_files) == 10
+
+        # Check files are valid PNGs (non-zero size)
+        for png_file in png_files:
+            assert png_file.stat().st_size > 0
+
+    def test_parallel_render_with_artist_reuse_disabled(self, tmp_path):
+        """Test parallel rendering with artist reuse disabled (fallback path)."""
+        from neurospatial.animation._parallel import parallel_render_frames
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+
+        pattern = parallel_render_frames(
+            env=env,
+            fields=fields,
+            output_dir=str(tmp_path),
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            frame_labels=None,
+            dpi=50,
+            n_workers=1,
+            reuse_artists=False,  # Disable artist reuse (use fallback)
+        )
+
+        # Check pattern returned
+        assert "frame_" in pattern
+
+        # Check all frames were created
+        png_files = list(tmp_path.glob("frame_*.png"))
+        assert len(png_files) == 5
+
+        # Check files are valid
+        for png_file in png_files:
+            assert png_file.stat().st_size > 0
+
+    def test_worker_frame_rendering_with_artist_reuse(self, tmp_path):
+        """Test worker function with artist reuse enabled."""
+        from neurospatial.animation._parallel import _render_worker_frames
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # 5 frames for this worker
+        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+
+        task = {
+            "env": env,
+            "fields": fields,
+            "start_frame_idx": 0,
+            "output_dir": str(tmp_path),
+            "cmap": "viridis",
+            "vmin": 0.0,
+            "vmax": 1.0,
+            "frame_labels": None,
+            "dpi": 50,
+            "reuse_artists": True,  # Enable artist reuse
+        }
+
+        # Call worker function
+        _render_worker_frames(task)
+
+        # Check frames were created
+        png_files = list(tmp_path.glob("frame_*.png"))
+        assert len(png_files) == 5
+
+        # Check files are valid PNGs
+        for png_file in png_files:
+            assert png_file.stat().st_size > 0
+
+    def test_artist_reuse_with_frame_labels(self, tmp_path):
+        """Test artist reuse works correctly with frame labels."""
+        from neurospatial.animation._parallel import _render_worker_frames
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        labels = [f"Trial {i + 1}" for i in range(5)]
+
+        task = {
+            "env": env,
+            "fields": fields,
+            "start_frame_idx": 0,
+            "output_dir": str(tmp_path),
+            "cmap": "viridis",
+            "vmin": 0.0,
+            "vmax": 1.0,
+            "frame_labels": labels,
+            "dpi": 50,
+            "reuse_artists": True,
+        }
+
+        # Call worker function
+        _render_worker_frames(task)
+
+        # Check frames were created
+        png_files = list(tmp_path.glob("frame_*.png"))
+        assert len(png_files) == 5
+
 
 class TestCodecSelection:
     """Test video codec selection."""
