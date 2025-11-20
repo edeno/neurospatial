@@ -98,10 +98,10 @@ def animate_fields(
 
     Examples
     --------
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]
-    >>> env.animate_fields(fields, backend="napari")  # Interactive viewer
+    >>> positions = np.random.randn(100, 2) * 50  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]  # doctest: +SKIP
+    >>> env.animate_fields(fields, backend="napari")  # doctest: +SKIP
 
     Notes
     -----
@@ -342,11 +342,17 @@ def subsample_frames(
     Examples
     --------
     >>> # 250 Hz recording → 30 fps video
-    >>> fields_video = subsample_frames(fields_full, target_fps=30, source_fps=250)
-    >>> env.animate_fields(fields_video, save_path="output.mp4", fps=30)
+    >>> fields_video = subsample_frames(
+    ...     fields_full, target_fps=30, source_fps=250
+    ... )  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields_video, save_path="output.mp4", fps=30
+    ... )  # doctest: +SKIP
 
     >>> # 1000 Hz → 60 fps
-    >>> fields_video = subsample_frames(fields_full, target_fps=60, source_fps=1000)
+    >>> fields_video = subsample_frames(
+    ...     fields_full, target_fps=60, source_fps=1000
+    ... )  # doctest: +SKIP
 
     Notes
     -----

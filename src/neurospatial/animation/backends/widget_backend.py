@@ -72,20 +72,22 @@ def render_widget(
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.animation.backends.widget_backend import render_widget
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>>
-    >>> # Create fields
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]
-    >>>
-    >>> # In Jupyter notebook:
-    >>> render_widget(env, fields, fps=10)
-    >>> # Widget displays automatically with play/pause and slider controls
+    .. code-block:: python
+
+        import numpy as np
+        from neurospatial import Environment
+        from neurospatial.animation.backends.widget_backend import render_widget
+
+        # Create environment
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create fields
+        fields = [np.random.rand(env.n_bins) for _ in range(20)]
+
+        # In Jupyter notebook:
+        render_widget(env, fields, fps=10)
+        # Widget displays automatically with play/pause and slider controls
 
     Notes
     -----
