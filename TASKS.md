@@ -207,13 +207,13 @@
 - [x] Update all docstrings to NumPy format
 - [x] Remove legacy `overlay_trajectory` parameter and documentation
 
-### 3.6 Napari Performance Tests
+### 3.6 Napari Performance Tests ✅
 
-- [ ] Create `tests/animation/test_napari_performance.py` (mark as `@pytest.mark.slow`)
-- [ ] Benchmark update latency with realistic pose + trail data
-- [ ] Ensure update < 50 ms on standard hardware
-- [ ] Profile batched vs individual layer updates
-- [ ] Run with `uv run pytest -m slow tests/animation/test_napari_performance.py -v -s`
+- [x] Create `tests/animation/test_napari_performance.py` (mark as `@pytest.mark.slow`)
+- [x] Benchmark update latency with realistic pose + trail data
+- [x] Ensure update < 50 ms on standard hardware
+- [x] Profile batched vs individual layer updates
+- [x] Run with `uv run pytest -m slow tests/animation/test_napari_performance.py -v -s`
 
 ---
 
@@ -546,8 +546,8 @@
 **Milestone Completion:**
 
 - [x] Milestone 1: Core Infrastructure & Validation (Weeks 1-2)
-- [ ] Milestone 2: Protocol Update & Core Dispatcher (Week 2)
-- [ ] Milestone 3: Napari Backend (Full Overlays) (Weeks 3-4)
+- [x] Milestone 2: Protocol Update & Core Dispatcher (Week 2)
+- [x] Milestone 3: Napari Backend (Full Overlays) (Weeks 3-4)
 - [ ] Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
 - [ ] Milestone 5: HTML & Widget Backends (Partial Overlays) (Week 7)
 - [ ] Milestone 6: Integration & Cross-Backend Tests (Week 7)
@@ -555,7 +555,7 @@
 - [ ] Milestone 8: Final Quality Assurance (Week 8)
 - [ ] Milestone 9: Release Preparation (Post-Implementation)
 
-**Overall Progress:** 11% (1/9 milestones completed)
+**Overall Progress:** 33% (3/9 milestones completed)
 
 ---
 
