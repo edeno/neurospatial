@@ -39,15 +39,21 @@ jobs:
       - name: Run ruff check
         run: |
           uv run ruff check .
+        env:
+          UV_PYTHON: python${{ matrix.python-version }}
 
       - name: Run ruff format check
         run: |
           uv run ruff format --check .
+        env:
+          UV_PYTHON: python${{ matrix.python-version }}
 
       - name: Run mypy
         run: |
           uv run mypy src/neurospatial
         continue-on-error: true  # Don't fail build on type errors (yet)
+        env:
+          UV_PYTHON: python${{ matrix.python-version }}
 
       - name: Run tests with coverage
         run: |

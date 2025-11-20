@@ -121,7 +121,7 @@ def test_html_backend_with_memmap_and_subsample(tmp_path):
     assert output_path.stat().st_size > 0
 
     # Verify HTML contains frames
-    html_content = output_path.read_text()
+    html_content = output_path.read_text(encoding="utf-8")
     assert "data:image/png;base64" in html_content
     assert len(fields_subsampled) < 100  # Verify subsampling worked
 

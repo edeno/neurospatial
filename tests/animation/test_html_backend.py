@@ -31,7 +31,7 @@ def test_html_export_basic(tmp_path):
     assert result == output_path
 
     # Check HTML content
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
     assert "<html" in html
     assert "data:image/png;base64," in html
     assert "Trial 1" in html
@@ -59,7 +59,7 @@ def test_html_export_without_labels(tmp_path):
         save_path=str(output_path),
     )
 
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
     # Should have default labels
     assert "Frame 1" in html
     assert "Frame 2" in html
@@ -161,7 +161,7 @@ def test_html_player_javascript_controls(tmp_path):
         save_path=str(output_path),
     )
 
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
 
     # Check for control buttons
     assert "play" in html.lower()
@@ -198,7 +198,7 @@ def test_html_player_keyboard_shortcuts(tmp_path):
         save_path=str(output_path),
     )
 
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
 
     # Check for keyboard event handlers
     assert "keydown" in html.lower() or "onkeydown" in html.lower()
@@ -224,7 +224,7 @@ def test_html_export_custom_parameters(tmp_path):
         dpi=50,
     )
 
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
 
     # Check title appears
     assert "Custom Title" in html
@@ -336,7 +336,7 @@ def test_html_title_escaping(tmp_path):
         title="Test <script>alert('xss')</script> & Title",
     )
 
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
 
     # Should escape HTML entities
     assert "&lt;script&gt;" in html
@@ -369,7 +369,7 @@ def test_html_export_non_embedded_mode(tmp_path):
     assert isinstance(result, Path)
 
     # Check HTML is lightweight (not embedded)
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
     assert "<html" in html
 
     # Should NOT contain embedded base64 images
@@ -447,7 +447,7 @@ def test_html_export_non_embedded_with_labels(tmp_path):
     assert output_path.exists()
 
     # Check labels appear in HTML
-    html = output_path.read_text()
+    html = output_path.read_text(encoding="utf-8")
     for label in labels:
         assert label in html
 

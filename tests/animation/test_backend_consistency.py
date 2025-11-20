@@ -66,7 +66,7 @@ def test_html_backend_with_shared_data(shared_test_data, tmp_path):
     assert output_path.stat().st_size > 0
 
     # Verify frames are embedded in JavaScript
-    html_content = output_path.read_text()
+    html_content = output_path.read_text(encoding="utf-8")
     assert "const frames = [" in html_content
     # HTML uses base64-encoded frames in an array
     assert len(fields) == 10  # Verify we're testing the right number of frames

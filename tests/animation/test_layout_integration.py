@@ -141,7 +141,7 @@ def test_1d_graph_layout_with_html_backend(tmp_path):
     assert output_path.stat().st_size > 0
 
     # Verify HTML contains expected structure
-    html_content = output_path.read_text()
+    html_content = output_path.read_text(encoding="utf-8")
     assert "const frames = [" in html_content  # JavaScript frames array
     assert "data:image/png;base64" in html_content  # Base64 encoded frames
 

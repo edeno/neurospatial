@@ -202,7 +202,7 @@ class TestErrorCodeDocumentation:
         errors_doc_path = Path(__file__).parent.parent / "docs" / "errors.md"
         assert errors_doc_path.exists(), "docs/errors.md should exist"
 
-        with errors_doc_path.open() as f:
+        with errors_doc_path.open(encoding="utf-8") as f:
             content = f.read()
 
         # Check that all 5 error codes are documented
@@ -219,7 +219,7 @@ class TestErrorCodeDocumentation:
 
         errors_doc_path = Path(__file__).parent.parent / "docs" / "errors.md"
 
-        with errors_doc_path.open() as f:
+        with errors_doc_path.open(encoding="utf-8") as f:
             content = f.read()
 
         # Each error should have "Solutions:" or "Solution" section
