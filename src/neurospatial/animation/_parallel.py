@@ -288,6 +288,38 @@ def _render_regions_matplotlib(
             ax.add_patch(patch)
 
 
+def _clear_overlay_artists(ax: Any) -> None:
+    """Clear overlay artists from axes while preserving the primary image.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to clear overlay artists from
+
+    Notes
+    -----
+    Removes collections (LineCollection, PathCollection) added by overlays,
+    but keeps the first image artist (the field visualization).
+    This enables artist reuse for the field while properly clearing overlays.
+    """
+    # Remove all collections (trails, skeletons, scatter points)
+    # Collections are added by LineCollection and scatter calls
+    while len(ax.collections) > 0:
+        ax.collections[-1].remove()
+
+    # Remove all patches (regions)
+    # Patches are added by PathPatch and Circle calls
+    while len(ax.patches) > 0:
+        ax.patches[-1].remove()
+
+    # Remove all quiver/arrow artists (head direction)
+    # These are stored as separate artists
+    for artist in ax.get_children():
+        # quiver creates FancyArrow or FancyArrowPatch objects
+        if hasattr(artist, "arrow_patch") or type(artist).__name__ == "FancyArrow":
+            artist.remove()
+
+
 def _render_all_overlays(
     ax: Any,
     env: Any,
@@ -683,6 +715,9 @@ def _render_worker_frames(task: dict) -> None:
                 # Update title if labels provided
                 if frame_labels and frame_labels[local_idx]:
                     ax.set_title(frame_labels[local_idx], fontsize=14)
+
+                # Clear overlay artists from previous frame (keep primary image)
+                _clear_overlay_artists(ax)
 
                 # Render overlays for this frame
                 _render_all_overlays(

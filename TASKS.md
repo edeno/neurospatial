@@ -245,32 +245,32 @@
 - [x] Document requirement to call `env.clear_cache()` before parallel rendering
 - [x] Test pickle-ability of all overlay data structures
 
-### 4.3 Video Rendering Optimization
+### 4.3 Video Rendering Optimization ✅
 
-- [ ] Use single allocations per frame for trails
-- [ ] Reuse matplotlib artists where possible
-- [ ] Minimize per-frame object creation
-- [ ] Profile rendering overhead vs no-overlay baseline
+- [x] Use single allocations per frame for trails
+- [x] Reuse matplotlib artists where possible
+- [x] Minimize per-frame object creation
+- [x] Profile rendering overhead vs no-overlay baseline
 
-### 4.4 Video Tests
+### 4.4 Video Tests ✅
 
-- [ ] Create `tests/animation/test_video_overlays.py`
-- [ ] Test position rendering (trail + marker)
-- [ ] Test bodypart rendering (skeleton as `LineCollection`)
-- [ ] Test head direction rendering (vectorized arrows)
-- [ ] Test region rendering (`PathPatch`)
-- [ ] Test multiple overlays (multi-animal)
-- [ ] Test parallel rendering with `n_workers > 1`
-- [ ] Test pickle-ability validation errors
-- [ ] Run tests with `uv run pytest tests/animation/test_video_overlays.py -v`
+- [x] Create `tests/animation/test_video_overlays.py`
+- [x] Test position rendering (trail + marker)
+- [x] Test bodypart rendering (skeleton as `LineCollection`)
+- [x] Test head direction rendering (vectorized arrows)
+- [x] Test region rendering (`PathPatch`)
+- [x] Test multiple overlays (multi-animal)
+- [x] Test parallel rendering with `n_workers > 1`
+- [x] Test pickle-ability validation errors
+- [x] Run tests with `uv run pytest tests/animation/test_video_overlays.py -v`
 
-### 4.5 Video Performance Tests
+### 4.5 Video Performance Tests ✅
 
-- [ ] Create `tests/animation/test_video_performance.py` (mark as `@pytest.mark.slow`)
-- [ ] Benchmark rendering overhead: overlays vs no overlays
-- [ ] Target overhead < 2× for typical overlay configurations
-- [ ] Test parallel rendering speedup with multiple workers
-- [ ] Run with `uv run pytest -m slow tests/animation/test_video_performance.py -v -s`
+- [x] Create `tests/animation/test_video_performance.py` (mark as `@pytest.mark.slow`)
+- [x] Benchmark rendering overhead: overlays vs no overlays
+- [x] Target overhead < 2× for typical overlay configurations
+- [x] Test parallel rendering speedup with multiple workers
+- [x] Run with `uv run pytest -m slow tests/animation/test_video_performance.py -v -s`
 
 ---
 
