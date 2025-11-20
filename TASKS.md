@@ -384,15 +384,15 @@
 
 ### 7.3 Example Notebook
 
-- [ ] Create `examples/08_animation_with_overlays.ipynb`
-- [ ] Example 1: Trajectory with trail overlay
-- [ ] Example 2: Pose tracking with skeleton
-- [ ] Example 3: Head direction visualization
-- [ ] Example 4: Multi-animal tracking (multiple overlays)
-- [ ] Example 5: Regions overlay with spatial fields
-- [ ] Example 6: Mixed-rate alignment using `frame_times`
-- [ ] Example 7: Backend comparison (same data, different backends)
-- [ ] Test notebook executes without errors
+- [x] Create `examples/17_animation_with_overlays.ipynb` (updated from 08 to avoid conflict)
+- [x] Example 1: Trajectory with trail overlay
+- [x] Example 2: Pose tracking with skeleton
+- [x] Example 3: Head direction visualization
+- [x] Example 4: Multi-animal tracking (multiple overlays)
+- [x] Example 5: Regions overlay with spatial fields
+- [x] Example 6: Mixed-rate alignment using `frame_times`
+- [x] Example 7: Backend comparison (same data, different backends)
+- [x] Test notebook executes without errors
 
 ### 7.4 CLAUDE.md Updates
 

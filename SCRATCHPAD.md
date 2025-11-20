@@ -745,3 +745,50 @@ HOW: Choose one of these solutions:
 
 - Commit Milestone 7.1 completion
 - Continue with Milestone 7.2: Docstring Updates
+
+**Status:** ✅ **MILESTONE 7.3 COMPLETE** - Example Notebook
+
+**Completed:**
+1. ✅ Created comprehensive example notebook (examples/17_animation_with_overlays.ipynb)
+   - Note: Created as example 17 instead of 08 to avoid conflict with existing 08_spike_field_basics.ipynb
+   - 25 cells total (10 markdown, 15 code)
+   - All 7 required examples implemented
+2. ✅ Example 1: Position overlay with trail (10-frame decaying trail)
+3. ✅ Example 2: Pose tracking with skeleton (nose-body-tail with white skeleton)
+4. ✅ Example 3: Head direction visualization (yellow arrows)
+5. ✅ Example 4: Multi-animal tracking (2 animals with different colors)
+6. ✅ Example 5: Regions overlay (reward zone with 30% alpha)
+7. ✅ Example 6: Mixed-rate temporal alignment (120 Hz position → 10 Hz fields)
+8. ✅ Example 7: Backend comparison (all 4 backends with same data)
+9. ✅ Validated notebook structure (JSON valid, 25 cells)
+10. ✅ Validated Python syntax (all 15 code cells compile without errors)
+11. ✅ Tested imports and overlay creation (all dataclasses instantiate correctly)
+12. ✅ Updated TASKS.md checkboxes (Milestone 7.3 complete)
+
+**Notebook Structure:**
+- Introduction with learning objectives and prerequisites
+- Setup: Circular arena with simulated trajectory, pose, and fields
+- 7 comprehensive examples covering all overlay features
+- Key Takeaways section with:
+  - Overlay type summaries
+  - Temporal alignment explanation
+  - Backend capability matrix
+  - Multi-animal patterns
+  - Common code snippets
+  - Performance tips
+- Next Steps and references
+
+**Design Highlights:**
+- Follows style of example 16 (field animation)
+- All Napari calls wrapped in try/except for graceful failure
+- Realistic behavioral data (spiral trajectory, pose with skeleton)
+- Progressive complexity (simple → multi-animal → mixed-rate)
+- Backend-specific notes (HTML limitations documented)
+- Ready-to-run code with reproducible results (seed=42)
+
+**Files Created:**
+- examples/17_animation_with_overlays.ipynb (comprehensive overlay tutorial)
+
+**Next Steps:**
+- Continue with Milestone 7.4: CLAUDE.md Updates
+- Then Milestone 7.5: CHANGELOG Update
