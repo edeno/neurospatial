@@ -401,7 +401,14 @@ class TestVideoErrors:
 
         output_path = tmp_path / "test.mp4"
 
-        with pytest.raises(ValueError, match="n_workers must be positive"):
+        # Mock ffmpeg availability to test n_workers validation
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
+                return_value=True,
+            ),
+            pytest.raises(ValueError, match="n_workers must be positive"),
+        ):
             animate_fields(
                 env,
                 fields,

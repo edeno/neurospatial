@@ -250,13 +250,18 @@ def test_n_workers_validation_error_message(test_env, test_fields, tmp_path):
     """Verify n_workers validation shows actual value."""
     from neurospatial.animation.backends.video_backend import render_video
 
-    with pytest.raises(ValueError) as exc_info:
-        render_video(test_env, test_fields, tmp_path / "out.mp4", n_workers=-1)
+    # Mock ffmpeg availability to test n_workers validation
+    with patch(
+        "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            render_video(test_env, test_fields, tmp_path / "out.mp4", n_workers=-1)
 
-    error_msg = str(exc_info.value)
-    assert "n_workers" in error_msg
-    assert "positive" in error_msg.lower()
-    assert "-1" in error_msg
+        error_msg = str(exc_info.value)
+        assert "n_workers" in error_msg
+        assert "positive" in error_msg.lower()
+        assert "-1" in error_msg
 
 
 def test_image_format_validation_error_message(test_env, test_fields):

@@ -97,6 +97,8 @@ def test_video_backend_with_shared_data(shared_test_data, tmp_path):
 
 def test_widget_backend_with_shared_data(shared_test_data):
     """Test widget backend handles shared test data."""
+    pytest.importorskip("ipywidgets")
+
     from neurospatial.animation.backends.widget_backend import render_widget
 
     env, fields = shared_test_data
@@ -128,12 +130,14 @@ def test_widget_backend_with_shared_data(shared_test_data):
 
 def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path):
     """Test all backends respect the same vmin/vmax color scale."""
+    pytest.importorskip("napari")
+    pytest.importorskip("ipywidgets")
+
     env, fields = shared_test_data
 
     vmin, vmax = -0.5, 1.5  # Explicit range outside [0, 1]
 
     # Test napari
-    pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
     viewer = render_napari(env, fields, vmin=vmin, vmax=vmax, fps=10)
@@ -169,12 +173,14 @@ def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path):
 
 def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path):
     """Test all backends respect custom colormap."""
+    pytest.importorskip("napari")
+    pytest.importorskip("ipywidgets")
+
     env, fields = shared_test_data
 
     cmap = "plasma"  # Non-default colormap
 
     # Test napari
-    pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
     viewer = render_napari(env, fields, cmap=cmap, fps=10)
@@ -210,12 +216,14 @@ def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path):
 
 def test_all_backends_handle_custom_fps(shared_test_data, tmp_path):
     """Test all backends respect custom FPS setting."""
+    pytest.importorskip("napari")
+    pytest.importorskip("ipywidgets")
+
     env, fields = shared_test_data
 
     fps = 60  # High frame rate
 
     # Test napari
-    pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
     viewer = render_napari(env, fields, fps=fps)
