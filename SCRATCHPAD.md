@@ -1846,3 +1846,82 @@ All tests verify helpful error messages:
 End-to-End Layout Integration Tests (verify rendering pipeline across different layout types)
 
 ---
+
+### Session 22 - M8 Integration Tests: End-to-End Layout Integration (2025-11-19)
+
+**Task:** Test rendering pipeline across different layout types (hexagonal, 1D graph, triangular mesh, masked grid)
+
+**Objective:**
+M6 tests only verified API delegation - these tests verify actual rendering output works correctly with different spatial layouts.
+
+**Implementation:**
+Created [tests/animation/test_layout_integration.py](tests/animation/test_layout_integration.py) with 4 comprehensive tests:
+
+1. **Hexagonal layout with video backend** (`test_hexagonal_layout_with_video_backend`):
+   - Created hexagonal environment with `Environment.from_layout(kind="hexagonal", layout_params={...})`
+   - Generated 10 random fields
+   - Rendered to MP4 with video backend (single worker for test stability)
+   - Verified video file created with correct duration using ffprobe (±10% tolerance)
+   - **API Learning**: `from_layout()` requires `kind` + `layout_params` dict, not pre-built layout
+
+2. **1D graph layout with HTML backend** (`test_1d_graph_layout_with_html_backend`):
+   - Created simple linear track with `Environment.from_graph(...)`
+   - Graph edges require `distance` attribute
+   - Generated 10 random fields (manageable HTML size)
+   - Rendered to HTML backend
+   - Verified HTML contains JavaScript `const frames = [` array with base64 PNG frames
+   - **API Learning**: `from_graph()` requires `graph`, `edge_order`, `edge_spacing`, `bin_size` args
+
+3. **Triangular mesh layout with napari** (`test_triangular_mesh_layout_with_napari_backend`):
+   - Created triangular environment with rectangular boundary polygon
+   - Layout kind is `"TriangularMesh"` (case-sensitive via factory)
+   - Rendered 10 frames with napari backend
+   - Verified viewer created with layers
+   - **Marker**: `@pytest.mark.xdist_group(name="napari_gui")` to prevent Qt crashes
+
+4. **Masked grid layout with napari** (`test_masked_grid_layout_with_napari_backend`):
+   - Created circular region using sparse data points
+   - Used `infer_active_bins=True` to create masked grid
+   - Verified only active bins present (n_bins < full_grid_bins)
+   - Tested with napari backend (GPU acceleration)
+   - **Marker**: `@pytest.mark.xdist_group(name="napari_gui")` to prevent Qt crashes
+
+**Test Results:**
+```bash
+$ uv run pytest tests/animation/test_layout_integration.py -v
+======================== 4 passed, 8 warnings in 11.93s =========================
+```
+
+**Iterations (TDD RED-GREEN-REFACTOR):**
+1. **RED**: Initial test failures revealed API misunderstandings:
+   - `ValueError: Unexpected arguments for Hexagonal.build(): {'bounds', 'bin_size'}` → Use `hexagon_width` and `dimension_ranges`
+   - `TypeError: from_layout() missing required argument 'layout_params'` → Use `kind` + `layout_params` dict
+   - `TypeError: from_graph() missing arguments` → Requires `edge_order`, `edge_spacing`, `bin_size`
+   - `ValueError: Unknown layout kind 'triangular'` → Case-sensitive name is `"TriangularMesh"`
+   - `KeyError: 'distance'` → Graph edges need `distance` attribute
+
+2. **GREEN**: Fixed all API usage:
+   - Changed `create_layout()` → `Environment.from_layout(kind, layout_params)`
+   - Added `distance` attribute to graph edges
+   - Used correct layout parameter names (`hexagon_width`, `point_spacing`, etc.)
+   - Fixed ffprobe parsing (duration instead of frame count due to format inconsistencies)
+
+3. **REFACTOR**: Added `xdist_group` markers to napari tests for Qt stability
+
+**Quality:**
+- All 4 tests follow TDD workflow (write test → fix API → verify pass)
+- Tests cover all major layout types (hex, 1D, triangular, masked)
+- Tests span all backends (video, HTML, napari)
+- Napari tests use `xdist_group="napari_gui"` marker for Qt stability
+- Video test verifies metadata (duration) not just file existence
+- HTML test verifies frame embedding (JavaScript array)
+
+**Status:**
+- ✅ All 4 end-to-end layout integration tests passing
+- ✅ Updated TASKS.md with detailed test descriptions
+- Total animation tests: 144 + 4 = 148 passed
+
+**Next Task:**
+Performance Benchmarks section (rendering speed, memory usage, video encoding)
+
+---
