@@ -205,7 +205,7 @@ def _select_backend(
 
     # Check if in Jupyter
     try:
-        from IPython import get_ipython
+        from IPython import get_ipython  # type: ignore[attr-defined]
 
         in_jupyter = get_ipython() is not None
     except ImportError:

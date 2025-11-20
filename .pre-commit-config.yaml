@@ -34,5 +34,6 @@ repos:
           - scipy
           - scikit-learn
           - shapely
+          - ipython
         args: [--ignore-missing-imports, --warn-unused-ignores]
         exclude: '^(docs/examples/.*\.py|examples/.*\.py|tests/.*)$'

@@ -238,6 +238,11 @@ allow_untyped_calls = true
 allow_incomplete_defs = true
 check_untyped_defs = false
 
+# Ignore missing imports for libraries without type stubs
+# (napari, ipywidgets, IPython, etc. don't have complete type stubs)
+# This matches the pre-commit hook behavior: --ignore-missing-imports
+ignore_missing_imports = true
+
 # Note: numpy.typing.mypy_plugin is deprecated in NumPy 2.3+
 # NumPy now has built-in type stubs that work without plugins
 
@@ -254,6 +259,12 @@ module = [
     "pandas.*",
     "tqdm.*",
     "track_linearization.*",
+    "IPython",
+    "IPython.*",
+    "napari",
+    "napari.*",
+    "ipywidgets",
+    "ipywidgets.*",
 ]
 ignore_missing_imports = true
 
