@@ -191,6 +191,11 @@ from neurospatial.alignment import (
     get_2d_rotation_matrix,
     map_probabilities,
 )
+from neurospatial.animation.overlays import (
+    BodypartOverlay,
+    HeadDirectionOverlay,
+    PositionOverlay,
+)
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
@@ -250,6 +255,10 @@ __all__ = [
     "EnvironmentNotFittedError",
     "Region",
     "Regions",
+    # Animation overlays
+    "BodypartOverlay",
+    "HeadDirectionOverlay",
+    "PositionOverlay",
     # Enums and types
     "LayoutType",
     "TieBreakStrategy",

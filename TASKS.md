@@ -10,48 +10,48 @@
 
 ### 1.1 Public API Dataclasses
 
-- [ ] Create `src/neurospatial/animation/overlays.py` module
-- [ ] Implement `PositionOverlay` dataclass with NumPy docstrings
-  - [ ] `data: NDArray[np.float64]` with shape `(n_samples, n_dims)`
-  - [ ] `times: NDArray[np.float64] | None`
-  - [ ] `color: str = "red"`
-  - [ ] `size: float = 10.0`
-  - [ ] `trail_length: int | None = None`
-- [ ] Implement `BodypartOverlay` dataclass with NumPy docstrings
-  - [ ] `data: dict[str, NDArray[np.float64]]` for multi-keypoint poses
-  - [ ] `times: NDArray[np.float64] | None`
-  - [ ] `skeleton: list[tuple[str, str]] | None`
-  - [ ] `colors: dict[str, str] | None`
-  - [ ] `skeleton_color: str = "white"`
-  - [ ] `skeleton_width: float = 2.0`
-- [ ] Implement `HeadDirectionOverlay` dataclass with NumPy docstrings
-  - [ ] `data: NDArray[np.float64]` for angles (rad) or unit vectors
-  - [ ] `times: NDArray[np.float64] | None`
-  - [ ] `color: str = "yellow"`
-  - [ ] `length: float = 20.0`
-- [ ] Export overlay dataclasses in `src/neurospatial/__init__.py`
-- [ ] Add type annotations to satisfy mypy (use `EnvironmentProtocol` pattern)
+- [x] Create `src/neurospatial/animation/overlays.py` module
+- [x] Implement `PositionOverlay` dataclass with NumPy docstrings
+  - [x] `data: NDArray[np.float64]` with shape `(n_samples, n_dims)`
+  - [x] `times: NDArray[np.float64] | None`
+  - [x] `color: str = "red"`
+  - [x] `size: float = 10.0`
+  - [x] `trail_length: int | None = None`
+- [x] Implement `BodypartOverlay` dataclass with NumPy docstrings
+  - [x] `data: dict[str, NDArray[np.float64]]` for multi-keypoint poses
+  - [x] `times: NDArray[np.float64] | None`
+  - [x] `skeleton: list[tuple[str, str]] | None`
+  - [x] `colors: dict[str, str] | None`
+  - [x] `skeleton_color: str = "white"`
+  - [x] `skeleton_width: float = 2.0`
+- [x] Implement `HeadDirectionOverlay` dataclass with NumPy docstrings
+  - [x] `data: NDArray[np.float64]` for angles (rad) or unit vectors
+  - [x] `times: NDArray[np.float64] | None`
+  - [x] `color: str = "yellow"`
+  - [x] `length: float = 20.0`
+- [x] Export overlay dataclasses in `src/neurospatial/__init__.py`
+- [x] Add type annotations to satisfy mypy (use `EnvironmentProtocol` pattern)
 
 ### 1.2 Internal Data Model
 
-- [ ] Implement `PositionData` internal dataclass in `overlays.py`
-- [ ] Implement `BodypartData` internal dataclass in `overlays.py`
-- [ ] Implement `HeadDirectionData` internal dataclass in `overlays.py`
-- [ ] Implement `OverlayData` container dataclass with:
-  - [ ] `positions: list[PositionData]`
-  - [ ] `bodypart_sets: list[BodypartData]`
-  - [ ] `head_directions: list[HeadDirectionData]`
-  - [ ] `regions: list[str] | dict[int, list[str]] | None`
-  - [ ] `__post_init__()` pickle-ability check with actionable error messages
+- [x] Implement `PositionData` internal dataclass in `overlays.py`
+- [x] Implement `BodypartData` internal dataclass in `overlays.py`
+- [x] Implement `HeadDirectionData` internal dataclass in `overlays.py`
+- [x] Implement `OverlayData` container dataclass with:
+  - [x] `positions: list[PositionData]`
+  - [x] `bodypart_sets: list[BodypartData]`
+  - [x] `head_directions: list[HeadDirectionData]`
+  - [x] `regions: list[str] | dict[int, list[str]] | None`
+  - [x] `__post_init__()` pickle-ability check with actionable error messages
 
 ### 1.3 Timeline & Interpolation Helpers
 
-- [ ] Implement private `_build_frame_times()` function
-  - [ ] Accept `frame_times` (preferred) or synthesize from `fps` and `n_frames`
-  - [ ] Validate monotonicity
-- [ ] Implement `_interp_linear(t_src, x_src, t_frame)` vectorized interpolation
-- [ ] Implement `_interp_nearest(t_src, x_src, t_frame)` vectorized interpolation
-- [ ] Handle edge cases: extrapolate as NaN for out-of-bounds
+- [x] Implement private `_build_frame_times()` function
+  - [x] Accept `frame_times` (preferred) or synthesize from `fps` and `n_frames`
+  - [x] Validate monotonicity
+- [x] Implement `_interp_linear(t_src, x_src, t_frame)` vectorized interpolation
+- [x] Implement `_interp_nearest(t_src, x_src, t_frame)` vectorized interpolation
+- [x] Handle edge cases: extrapolate as NaN for out-of-bounds
 
 ### 1.4 Validation Functions (WHAT/WHY/HOW)
 
