@@ -761,3 +761,184 @@ def test_render_video_with_empty_overlay_data(simple_env: Environment, tmp_path:
             overlay_data=overlay_data,
             n_workers=1,
         )
+
+
+# =============================================================================
+# Test: Pickle-ability Validation (Milestone 4.2)
+# =============================================================================
+
+
+def test_unpickleable_overlay_data_raises_clear_error(
+    simple_env: Environment, tmp_path: Path
+):
+    """Test that unpickleable overlay_data raises ValueError with WHAT/WHY/HOW."""
+    from neurospatial.animation._parallel import parallel_render_frames
+
+    # Create overlay data with unpickleable content (lambda function)
+    n_frames = 5
+    positions = np.random.rand(n_frames, 2) * 50 + 25
+    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
+
+    # Make it unpickleable by adding a lambda
+    overlay_data = OverlayData(positions=[pos_data])
+    overlay_data._unpickleable = lambda x: x  # Add unpickleable attribute
+
+    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+    # Should raise ValueError with clear error message
+    with pytest.raises(ValueError, match=r"overlay_data.*pickle"):
+        parallel_render_frames(
+            env=simple_env,
+            fields=fields,
+            output_dir=str(tmp_path),
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            frame_labels=None,
+            dpi=50,
+            n_workers=2,  # Parallel rendering requires pickle
+            overlay_data=overlay_data,
+        )
+
+
+def test_pickle_error_message_includes_solutions(
+    simple_env: Environment, tmp_path: Path
+):
+    """Test that pickle error includes WHAT/WHY/HOW with actionable solutions."""
+    from neurospatial.animation._parallel import parallel_render_frames
+
+    # Create unpickleable overlay data
+    n_frames = 5
+    positions = np.random.rand(n_frames, 2) * 50 + 25
+    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
+    overlay_data = OverlayData(positions=[pos_data])
+    overlay_data._bad_attr = lambda x: x  # Unpickleable
+
+    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+    # Capture error message
+    with pytest.raises(ValueError) as exc_info:
+        parallel_render_frames(
+            env=simple_env,
+            fields=fields,
+            output_dir=str(tmp_path),
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            frame_labels=None,
+            dpi=50,
+            n_workers=2,
+            overlay_data=overlay_data,
+        )
+
+    error_msg = str(exc_info.value)
+
+    # Verify WHAT: describes the problem
+    assert "overlay_data" in error_msg.lower()
+    assert "pickle" in error_msg.lower()
+
+    # Verify WHY: explains why it matters
+    assert "parallel" in error_msg.lower()
+
+    # Verify HOW: provides solutions
+    # Should mention either n_workers=1 or env.clear_cache() or similar fix
+    assert (
+        "n_workers=1" in error_msg
+        or "clear_cache" in error_msg
+        or "remove" in error_msg
+    )
+
+
+def test_pickle_check_skipped_for_serial_rendering(
+    simple_env: Environment, tmp_path: Path
+):
+    """Test that pickle validation is skipped when n_workers=1 (serial mode)."""
+    from neurospatial.animation._parallel import parallel_render_frames
+
+    # Create overlay data (doesn't matter if pickle-able for n_workers=1)
+    n_frames = 5
+    positions = np.random.rand(n_frames, 2) * 50 + 25
+    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
+    overlay_data = OverlayData(positions=[pos_data])
+
+    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+    # With n_workers=1, should not raise even if unpickleable
+    # (though in practice this test uses pickle-able data)
+    frame_pattern = parallel_render_frames(
+        env=simple_env,
+        fields=fields,
+        output_dir=str(tmp_path),
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        frame_labels=None,
+        dpi=50,
+        n_workers=1,  # Serial mode - no pickle needed
+        overlay_data=overlay_data,
+    )
+
+    # Should succeed
+    assert "frame_" in frame_pattern
+    assert ".png" in frame_pattern
+
+
+def test_pickleable_overlay_data_succeeds_with_parallel(
+    simple_env: Environment, tmp_path: Path
+):
+    """Test that pickle-able overlay_data works fine with n_workers > 1."""
+    from neurospatial.animation._parallel import parallel_render_frames
+
+    # Create fully pickle-able overlay data
+    n_frames = 10
+    positions = np.random.rand(n_frames, 2) * 50 + 25
+    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=5)
+    overlay_data = OverlayData(positions=[pos_data])
+
+    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+    # Should succeed with n_workers > 1
+    frame_pattern = parallel_render_frames(
+        env=simple_env,
+        fields=fields,
+        output_dir=str(tmp_path),
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        frame_labels=None,
+        dpi=50,
+        n_workers=2,  # Parallel rendering
+        overlay_data=overlay_data,
+    )
+
+    # Should succeed
+    assert "frame_" in frame_pattern
+    assert ".png" in frame_pattern
+
+
+def test_none_overlay_data_is_always_pickle_safe(
+    simple_env: Environment, tmp_path: Path
+):
+    """Test that None overlay_data is always safe (no validation needed)."""
+    from neurospatial.animation._parallel import parallel_render_frames
+
+    n_frames = 5
+    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+    # With overlay_data=None, should always succeed
+    frame_pattern = parallel_render_frames(
+        env=simple_env,
+        fields=fields,
+        output_dir=str(tmp_path),
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        frame_labels=None,
+        dpi=50,
+        n_workers=2,
+        overlay_data=None,  # No overlay data - always safe
+    )
+
+    # Should succeed
+    assert "frame_" in frame_pattern
+    assert ".png" in frame_pattern

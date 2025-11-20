@@ -11,6 +11,7 @@
 **Task:** Update Napari backend for overlay rendering (`src/neurospatial/animation/backends/napari_backend.py`)
 
 **Approach:**
+
 - Following TDD: Write tests first, then implementation
 - Using NumPy docstring format for all documentation
 - Ensuring mypy type checking passes
@@ -23,6 +24,7 @@
 ### 2025-11-20
 
 **Starting Point:**
+
 - Read ANIMATION_IMPLEMENTATION_PLAN.md - comprehensive design for overlay feature
 - Read TASKS.md - detailed checklist with 9 milestones
 - Created SCRATCHPAD.md to track progress
@@ -31,12 +33,13 @@
 **Status:** ✅ **MILESTONE 1 COMPLETE** (All sub-milestones: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)
 
 **Completed:**
+
 1. ✅ Created comprehensive test file with 19 tests (Milestone 1.1 & 1.2)
 2. ✅ Verified tests fail (RED phase) - ModuleNotFoundError
 3. ✅ Implemented all dataclasses (GREEN phase) - all 19 tests pass
 4. ✅ Added comprehensive NumPy docstrings with examples
 5. ✅ Applied code review and fixed all issues
-6. ✅ Exported dataclasses in main __init__.py
+6. ✅ Exported dataclasses in main **init**.py
 7. ✅ Implemented timeline & interpolation helpers (Milestone 1.3)
    - _build_frame_times() with monotonicity validation
    - _interp_linear() vectorized linear interpolation
@@ -72,32 +75,35 @@
 10. ✅ Updated TASKS.md checkboxes (Milestone 1 complete - 11% overall progress)
 
 11. ✅ Updated EnvironmentProtocol and implementation (Milestone 2.1)
-   - Added `overlays` parameter to `animate_fields()` signature
-   - Added `frame_times`, `show_regions`, and `region_alpha` parameters
-   - Updated `src/neurospatial/environment/_protocols.py` protocol
-   - Updated `src/neurospatial/environment/visualization.py` implementation
-   - Added comprehensive NumPy docstrings for all new parameters
-   - Imports overlay types with TYPE_CHECKING guard
-   - Mypy and ruff pass
-   - All 73 overlay tests still pass
+
+- Added `overlays` parameter to `animate_fields()` signature
+- Added `frame_times`, `show_regions`, and `region_alpha` parameters
+- Updated `src/neurospatial/environment/_protocols.py` protocol
+- Updated `src/neurospatial/environment/visualization.py` implementation
+- Added comprehensive NumPy docstrings for all new parameters
+- Imports overlay types with TYPE_CHECKING guard
+- Mypy and ruff pass
+- All 73 overlay tests still pass
 
 12. ✅ Updated Core Dispatcher (Milestone 2.2 & 2.3 COMPLETE)
-   - Updated `src/neurospatial/animation/core.py` dispatcher signature
-   - Added overlay type imports with TYPE_CHECKING guard
-   - Implemented frame_times building/verification using _build_frame_times()
-   - Added conversion funnel call when overlays provided
-   - Updated all 4 backend routing calls (napari, video, html, widget) to pass:
-     - overlay_data parameter
-     - show_regions parameter
-     - region_alpha parameter
-   - Added comprehensive dispatcher docstring with NumPy format
-   - Added 7 new integration tests in TestDispatcherOverlayIntegration class
-   - All 35 tests passing (28 existing + 7 new)
-   - Mypy and ruff pass
-   - Code review rating: APPROVE (no critical issues, minor docstring update addressed)
-   - Test summary: 35 passed in test_core.py
+
+- Updated `src/neurospatial/animation/core.py` dispatcher signature
+- Added overlay type imports with TYPE_CHECKING guard
+- Implemented frame_times building/verification using_build_frame_times()
+- Added conversion funnel call when overlays provided
+- Updated all 4 backend routing calls (napari, video, html, widget) to pass:
+  - overlay_data parameter
+  - show_regions parameter
+  - region_alpha parameter
+- Added comprehensive dispatcher docstring with NumPy format
+- Added 7 new integration tests in TestDispatcherOverlayIntegration class
+- All 35 tests passing (28 existing + 7 new)
+- Mypy and ruff pass
+- Code review rating: APPROVE (no critical issues, minor docstring update addressed)
+- Test summary: 35 passed in test_core.py
 
 **Next Steps:**
+
 - Commit Milestone 2.2 completion with conventional commit message
 - Continue with Milestone 3: Napari Backend Updates
 
@@ -106,6 +112,7 @@
 ## Decisions & Design Notes
 
 ### Overlay Dataclasses Design
+
 - Three public dataclasses: PositionOverlay, BodypartOverlay, HeadDirectionOverlay
 - All support optional timestamps for temporal alignment
 - Immutable where appropriate (consider frozen=True)
@@ -114,19 +121,22 @@
 - See Also cross-references between public and internal containers
 
 **Code Review Fixes Applied:**
+
 - ✅ Fixed doctest failure in PositionOverlay (undefined variables)
-- ✅ Updated OverlayData.__post_init__ docstring (clarified placeholder status)
+- ✅ Updated OverlayData.**post_init** docstring (clarified placeholder status)
 - ✅ Added Attributes sections to all internal data containers
 - ✅ Added Notes section to OverlayData explaining usage
 - ✅ Added See Also cross-references to internal containers
 
 ### Validation Strategy
+
 - WHAT/WHY/HOW format for all error messages
 - Actionable guidance in every error
 - Warnings vs errors: errors block rendering, warnings inform user
 - Intelligent suggestions using difflib.get_close_matches() for typo detection
 
 ### Conversion Funnel Design (Milestone 1.5)
+
 - Single function `_convert_overlays_to_data()` handles all overlay types
 - Three-section structure: PositionOverlay → BodypartOverlay → HeadDirectionOverlay
 - Consistent pattern for each overlay type:
@@ -183,6 +193,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 **Status:** ✅ **MILESTONE 3.1 COMPLETE** - Napari Overlay Rendering
 
 **Completed:**
+
 1. ✅ Created comprehensive test file with 28 tests (test_napari_overlays.py)
 2. ✅ Verified tests fail (RED phase) - parameter not in signature, rendering not implemented
 3. ✅ Implemented overlay rendering (GREEN phase):
@@ -211,6 +222,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 9. ✅ Final verification - All 25 tests pass, ruff clean, mypy clean
 
 **Design highlights:**
+
 - Clean separation of concerns (one function per overlay type)
 - Consistent coordinate transformation (single source of truth)
 - Proper use of Napari layer types (tracks, points, shapes, vectors)
@@ -220,12 +232,14 @@ git commit -m "feat(animation): add overlay dataclasses"
 - Comprehensive test coverage (all overlay types, multi-overlay, edge cases)
 
 **Files modified:**
+
 - src/neurospatial/animation/backends/napari_backend.py (370+ lines of overlay code)
 - tests/animation/test_napari_overlays.py (695 lines, 25 tests)
 
 **Status:** ✅ **MILESTONE 3.6 COMPLETE** - Napari Performance Benchmarks
 
 **Completed:**
+
 1. ✅ Created comprehensive performance test suite (test_napari_performance.py)
 2. ✅ Implemented 5 performance benchmarks:
    - Update latency with pose + trail data (50 frames tested)
@@ -237,6 +251,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 4. ✅ Code quality: ruff clean, mypy clean
 
 **Performance Results (Mock-Based):**
+
 - **Pose + Trail Update:** Mean 0.05 ms, Median 0.05 ms, P95 0.07 ms, Max 0.15 ms
 - **All Overlays Update:** Mean 0.05 ms, Median 0.05 ms, P95 0.06 ms, Max 0.14 ms
 - **Multi-Animal (3 animals):** Mean 0.05 ms, Median 0.05 ms, P95 0.06 ms, Max 0.14 ms
@@ -245,20 +260,24 @@ git commit -m "feat(animation): add overlay dataclasses"
 - **Target:** < 50 ms per frame ✅ **ACHIEVED** (even with mocks, well below target)
 
 **Design validation:**
+
 - Batched updates confirmed efficient (single callback reduces overhead)
 - Update complexity O(1) with respect to frame count (only updates visible data)
 - Multi-animal support scales well (3 animals, 30+ layers)
 
 **Notes:**
+
 - Tests use mocks, so absolute times are very fast (~0.05 ms)
 - In real napari with GPU rendering, expect higher latencies but still well below 50 ms target
 - Mock-based tests validate the update logic and demonstrate design choices
 - Performance tests marked with `@pytest.mark.slow` for selective execution
 
 **Files created:**
+
 - tests/animation/test_napari_performance.py (589 lines, 5 benchmarks)
 
 **Next steps:**
+
 - **MILESTONE 3 COMPLETE ✅** (All sub-milestones 3.1-3.6 finished)
 - Proceed to Milestone 4: Video Backend (Full Overlays)
 - Video backend will be next major feature implementation
@@ -266,6 +285,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 **Status:** ✅ **MILESTONE 4.1 COMPLETE** - Video Backend Overlay Rendering
 
 **Completed:**
+
 1. ✅ Created comprehensive test file with 17 tests (test_video_overlays.py)
 2. ✅ Verified tests fail (RED phase) - overlay_data parameter not in signature
 3. ✅ Implemented video backend overlay rendering (GREEN phase):
@@ -295,6 +315,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 8. ✅ Final verification - All tests pass, ruff clean, mypy clean
 
 **Design highlights:**
+
 - Efficient matplotlib primitives (LineCollection for skeletons, not loops)
 - Decaying alpha for trail visualization (smooth appearance)
 - Vectorized rendering with quiver for head direction arrows
@@ -304,6 +325,7 @@ git commit -m "feat(animation): add overlay dataclasses"
 - NumPy-style docstrings for all functions
 
 **Technical decisions:**
+
 - Used matplotlib.collections.LineCollection for efficient skeleton rendering
 - Implemented per-segment alpha decay for position trails
 - Used ax.quiver() for vectorized arrow rendering
@@ -312,7 +334,58 @@ git commit -m "feat(animation): add overlay dataclasses"
 - Workers extract overlay parameters from task dict for parallel safety
 
 **Files modified:**
+
 - src/neurospatial/animation/backends/video_backend.py (added overlay_data, show_regions, region_alpha params)
 - src/neurospatial/animation/_parallel.py (280+ lines of overlay rendering helpers)
 - tests/animation/test_video_overlays.py (704 lines, 17 tests)
 - TASKS.md (marked Milestone 4.1 checkboxes complete)
+
+**Status:** ✅ **MILESTONE 4.2 COMPLETE** - Video Parallel Safety
+
+**Completed:**
+1. ✅ Created 5 comprehensive pickle-ability tests (test_video_overlays.py lines 766-940)
+2. ✅ Verified tests fail (RED phase) - unpickleable overlay_data not caught
+3. ✅ Implemented pickle-ability validation (GREEN phase):
+   - Added pickle check for overlay_data when n_workers > 1
+   - Skip validation for serial rendering (n_workers=1)
+   - Error messages follow WHAT/WHY/HOW format with actionable solutions
+   - Updated environment pickle error to match improved format
+4. ✅ All 22 tests passing (17 existing + 5 new pickle tests)
+5. ✅ Code quality: ruff clean, mypy clean
+6. ✅ Applied code-reviewer improvements:
+   - Changed "must be pickle-able" to "is not pickle-able" for clarity
+   - Changed "Try one" to "Choose one" for better actionability
+   - Improved documentation prominence in video_backend.py
+   - Used "serializing" terminology consistently
+7. ✅ Updated documentation:
+   - Enhanced render_video() docstring with "Parallel Rendering Requirements" section
+   - Updated parallel_render_frames() Raises section to document both validations
+   - Mentioned pickle-ability is automatically validated
+
+**Design highlights:**
+- Validation only runs when n_workers > 1 (performance-conscious)
+- Clear WHAT/WHY/HOW error messages with multiple solution paths
+- Consistent with existing environment pickle validation pattern
+- Comprehensive test coverage of all edge cases
+- Documentation emphasizes automatic validation
+
+**Error message format:**
+```
+WHAT: overlay_data is not pickle-able for parallel rendering.
+WHY: Parallel rendering (n_workers=2) requires serializing
+     overlay_data to send to worker processes.
+HOW: Choose one of these solutions:
+  1. Remove unpickleable objects (lambdas, closures, local functions)
+  2. Ensure overlay_data uses only standard types (numpy arrays, strings, numbers)
+  3. Use n_workers=1 for serial rendering (no pickling required)
+```
+
+**Files modified:**
+- src/neurospatial/animation/_parallel.py (added pickle validation for overlay_data)
+- src/neurospatial/animation/backends/video_backend.py (enhanced documentation)
+- tests/animation/test_video_overlays.py (added 5 pickle-ability tests, now 22 total)
+- TASKS.md (marked Milestone 4.2 checkboxes complete)
+
+**Next steps:**
+- Continue with Milestone 4.3: Video Rendering Optimization (optional optimizations)
+- Or proceed to Milestone 4.4: Video Tests (comprehensive testing)

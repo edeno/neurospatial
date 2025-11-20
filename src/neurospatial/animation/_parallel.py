@@ -402,7 +402,10 @@ def parallel_render_frames(
     Raises
     ------
     ValueError
-        If environment is not pickle-able
+        If environment or overlay_data is not pickle-able when n_workers > 1.
+        Error message includes WHAT/WHY/HOW format with actionable solutions:
+        - For environment: Call env.clear_cache() or use n_workers=1
+        - For overlay_data: Remove unpickleable objects or use n_workers=1
 
     Examples
     --------
@@ -430,13 +433,44 @@ def parallel_render_frames(
     # Cap workers to available frames
     n_workers = min(n_workers, max(1, n_frames))
 
-    # Validate environment is pickle-able
-    try:
-        pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception as e:
-        raise ValueError(
-            f"Environment must be pickle-able for parallel rendering: {e}"
-        ) from e
+    # Validate pickle-ability for parallel rendering (n_workers > 1)
+    if n_workers > 1:
+        # Validate environment is pickle-able
+        try:
+            pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as e:
+            # WHAT: Environment not pickle-able
+            # WHY: Parallel rendering requires pickling to send to workers
+            # HOW: Call env.clear_cache() or use n_workers=1
+            raise ValueError(
+                f"WHAT: Environment is not pickle-able for parallel rendering.\n"
+                f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
+                f"the environment to send to worker processes.\n"
+                f"HOW: Choose one of these solutions:\n"
+                f"  1. Call env.clear_cache() to remove unpickleable cached objects\n"
+                f"  2. Use n_workers=1 for serial rendering (no pickling required)\n"
+                f"Original error: {e}"
+            ) from e
+
+        # Validate overlay_data is pickle-able (if provided)
+        if overlay_data is not None:
+            try:
+                pickle.dumps(overlay_data, protocol=pickle.HIGHEST_PROTOCOL)
+            except Exception as e:
+                # WHAT: overlay_data not pickle-able
+                # WHY: Parallel rendering requires pickling overlay data
+                # HOW: Remove unpickleable objects or use n_workers=1
+                raise ValueError(
+                    f"WHAT: overlay_data is not pickle-able for parallel rendering.\n"
+                    f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
+                    f"overlay_data to send to worker processes.\n"
+                    f"HOW: Choose one of these solutions:\n"
+                    f"  1. Remove unpickleable objects (lambdas, closures, local functions)\n"
+                    f"  2. Ensure overlay_data uses only standard types (numpy arrays, "
+                    f"strings, numbers)\n"
+                    f"  3. Use n_workers=1 for serial rendering (no pickling required)\n"
+                    f"Original error: {e}"
+                ) from e
 
     # Partition frames across workers
     frames_per_worker = n_frames // n_workers

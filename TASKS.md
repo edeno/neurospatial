@@ -238,12 +238,12 @@
   - [x] Use `PathPatch` for region polygons
   - [x] Apply alpha transparency and filtering
 
-### 4.2 Video Parallel Safety
+### 4.2 Video Parallel Safety ✅
 
-- [ ] Validate `OverlayData` pickle-ability before parallel rendering
-- [ ] Emit clear error if pickle check fails with `n_workers > 1`
-- [ ] Document requirement to call `env.clear_cache()` before parallel rendering
-- [ ] Test pickle-ability of all overlay data structures
+- [x] Validate `OverlayData` pickle-ability before parallel rendering
+- [x] Emit clear error if pickle check fails with `n_workers > 1`
+- [x] Document requirement to call `env.clear_cache()` before parallel rendering
+- [x] Test pickle-ability of all overlay data structures
 
 ### 4.3 Video Rendering Optimization
 

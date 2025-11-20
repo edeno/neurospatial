@@ -192,10 +192,18 @@ def render_video(
     - Constant bitrate mode: Specify bitrate parameter to override CRF
     - Web compatibility: Uses yuv420p pixel format and faststart flag
 
-    **Memory Management:**
-    - Environment must be pickle-able for parallel rendering
-    - Call env.clear_cache() if pickle errors occur
-    - Use n_workers=1 for serial rendering (no pickle needed)
+    **Parallel Rendering Requirements:**
+    When using ``n_workers > 1``, both environment and overlay_data must be
+    pickle-able to send to worker processes. Pickle-ability is automatically
+    validated before parallel rendering begins.
+
+    If you encounter pickle errors:
+
+    1. **For environment**: Call ``env.clear_cache()`` before rendering
+    2. **For overlay_data**: Remove unpickleable objects (lambdas, closures)
+    3. **Alternative**: Use ``n_workers=1`` for serial rendering (no pickle needed)
+
+    Serial rendering (``n_workers=1``) does not require pickle-ability.
     """
     from neurospatial.animation._parallel import parallel_render_frames
     from neurospatial.animation.rendering import (
