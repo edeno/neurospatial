@@ -606,26 +606,28 @@ Implement animation capabilities supporting four backends:
 ### Performance Benchmarks
 
 - [x] Create `tests/animation/test_benchmarks.py` (5 comprehensive benchmarks, all passing)
-- [x] Benchmark Napari seek performance
-  - [x] Target: <100ms for 100K frames → **Actual: 0.06ms (1600x better!)** ✅
-  - [x] Test with 100K frames, 100 random seeks
-  - [x] Results: Mean 0.06ms, Median 0.05ms, P95 0.06ms, Max 0.08ms
-- [x] Benchmark parallel rendering scalability
-  - [x] Test 1, 2, 4, 8 workers
+- [x] Benchmark Napari seek performance (100K frames, **500 seeks**)
+  - [x] Target: <100ms for 100K frames → **Actual: 0.05ms (2000x better!)** ✅
+  - [x] Results: Mean 0.05ms, Median 0.05ms, P95 0.06ms, Max 0.15ms
+- [x] Benchmark parallel rendering scalability (**200 frames**, 1/2/4/8 workers)
+  - [x] **Key Finding:** Larger workloads show much better scaling!
   - [x] Realistic targets (accounting for process/pickle/ffmpeg overhead):
-    - [x] 2 workers: ≥1.2x speedup → **Actual: 1.35x** ✅
-    - [x] 4 workers: ≥1.4x speedup → **Actual: 1.49x** ✅
-  - [x] Results show expected scaling with Amdahl's law (8 workers: 1.20x)
-- [x] Benchmark HTML generation
-  - [x] Target: <20s for 100 frames → **Actual: 2.97s (7x faster!)** ✅
-  - [x] Per-frame encoding: 29.67ms/frame
-- [x] Benchmark chunked cache performance (50K frames, informational)
+    - [x] 2 workers: ≥1.2x speedup → **Actual: 1.46x (73% efficiency)** ✅
+    - [x] 4 workers: ≥1.4x speedup → **Actual: 1.93x (48% efficiency)** ✅
+  - [x] Results: 1 worker: 7.70s | 2 workers: 5.27s | 4 workers: 3.98s | 8 workers: 4.33s (1.78x)
+  - [x] **Nearly 2x speedup with 4 workers** (vs 1.49x with 100 frames)
+- [x] Benchmark HTML generation (100 frames)
+  - [x] Target: <20s for 100 frames → **Actual: 3.03s (6.6x faster!)** ✅
+  - [x] Per-frame encoding: 30.31ms/frame
+- [x] Benchmark chunked cache performance (**100K frames, 500 seeks**, informational)
   - [x] Documents trade-offs between regular and chunked caching
+  - [x] Sequential: Regular 0.026s vs Chunked 0.031s
+  - [x] Random: Regular 0.027s vs Chunked 2.453s
   - [x] Note: Overhead visible for unpopulated memmap (instant rendering)
   - [x] Real-world benefit: Pre-loading for expensive rendering operations
-- [x] Benchmark subsample_frames performance
-  - [x] Target: <3s for 900K frames → **Actual: 0.94s** ✅
-  - [x] Throughput: 953K frames/second (lazy evaluation working correctly)
+- [x] Benchmark subsample_frames performance (900K frames)
+  - [x] Target: <3s for 900K frames → **Actual: 0.958s** ✅
+  - [x] Throughput: 939K frames/second (lazy evaluation working correctly)
 
 ### Memory Profiling
 

@@ -2036,3 +2036,60 @@ All benchmarks meet or far exceed targets:
 
 **Next Task:**
 Memory Profiling section (M8 Testing and Polish)
+
+---
+
+### Session 23b - Larger Benchmark Samples (2025-11-19)
+
+**Task:** Re-run benchmarks with larger sample sizes for more robust baselines
+
+**Motivation:**
+User requested larger samples to get more statistically significant performance baselines.
+
+**Changes:**
+- Napari seek: 100 → **500 seeks** (5x larger)
+- Parallel rendering: 100 → **200 frames** (2x larger)
+- Chunked cache: 50K → **100K frames**, 200 → **500 seeks**
+
+**Improved Baseline Results:**
+
+1. **Napari Seek Performance (100K frames, 500 seeks):**
+   - Mean: **0.05ms** (improved from 0.06ms)
+   - Median: 0.05ms | P95: 0.06ms | Max: 0.15ms
+   - **2000x better than 100ms target!** (vs 1600x before)
+
+2. **Parallel Rendering Scalability (200 frames):**
+   - **KEY FINDING:** Larger workloads show much better scaling!
+   - 1 worker: 7.70s (baseline)
+   - 2 workers: 5.27s → **1.46x speedup** (73% efficiency) ← improved from 1.35x
+   - 4 workers: 3.98s → **1.93x speedup** (48% efficiency) ← improved from 1.49x
+   - 8 workers: 4.33s → **1.78x speedup** (22% efficiency) ← improved from 1.20x
+   - **Nearly 2x speedup with 4 workers!**
+   - Demonstrates overhead becomes proportionally smaller with larger workloads
+
+3. **HTML Generation (100 frames):**
+   - Total: 3.03s | Per-frame: 30.31ms
+   - **6.6x faster than target** (consistent with smaller sample)
+
+4. **Chunked Cache (100K frames, 500 seeks):**
+   - Sequential: Regular 0.026s vs Chunked 0.031s
+   - Random: Regular 0.027s vs Chunked 2.453s
+   - Consistent overhead pattern (as expected for unpopulated data)
+
+5. **Subsample Frames (900K frames):**
+   - Time: 0.958s | Throughput: 939K frames/sec
+   - Consistent performance (lazy evaluation verified)
+
+**Total Runtime:** 29.20s (vs 20.83s with smaller samples)
+
+**Conclusion:**
+Larger samples validate the implementation and reveal **significantly better parallel scaling** than initially measured. The 1.93x speedup with 4 workers (48% efficiency) is excellent for scientific computing workloads with matplotlib rendering overhead.
+
+**Commits:**
+- `ded4c69` - test(animation): increase benchmark sample sizes for robust baselines
+
+**Status:**
+- ✅ Comprehensive performance baselines established
+- ✅ Parallel scaling validated for real-world workloads
+- ✅ All targets exceeded by large margins
+- ✅ Updated TASKS.md with improved results
