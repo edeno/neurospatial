@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -31,6 +30,8 @@ def render_widget(
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
     dpi: int = 100,
+    initial_cache_size: int | None = None,
+    cache_limit: int = 1000,
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> None:
     """Create interactive Jupyter widget with slider control.
@@ -56,6 +57,13 @@ def render_widget(
         generates default labels "Frame 1", "Frame 2", etc.
     dpi : int, default=100
         Resolution for frame rendering
+    initial_cache_size : int, optional
+        Number of frames to pre-render during initialization. If None,
+        defaults to min(len(fields), 500). Increase for faster initial
+        scrubbing with larger datasets.
+    cache_limit : int, default=1000
+        Maximum number of frames to keep in LRU cache. Increase for
+        larger datasets if memory allows (~30-100 MB per 1000 frames).
     **kwargs : dict
         Additional parameters (accepted for backend compatibility, ignored)
 
@@ -92,9 +100,10 @@ def render_widget(
     Notes
     -----
     **Performance Strategy:**
-    - Pre-renders first 500 frames during initialization
-    - Remaining frames rendered on-demand with LRU caching (1000 frame limit)
-    - Slider updates throttled to ~30 Hz to prevent decode storms
+    - Pre-renders configurable number of frames (default: 500) during initialization
+    - Remaining frames rendered on-demand with LRU caching
+    - Caches raw PNG bytes (not base64 strings) for efficiency
+    - Slider updates throttled to ~30 Hz to prevent UI stutter
     - Balances responsiveness (pre-cached frames) with memory efficiency
 
     **Widget Controls:**
@@ -104,7 +113,8 @@ def render_widget(
     - Frame label: Displays custom label if provided
 
     **Memory Considerations:**
-    - LRU cache: up to 1000 frames (~30-100 MB depending on DPI)
+    - LRU cache: configurable size (default: 1000 frames, ~30-100 MB depending on DPI)
+    - Caches raw PNG bytes directly (no base64 encoding/decoding overhead)
     - Automatic eviction of least-recently-used frames
     - Works efficiently with very large datasets (100K+ frames)
     """
@@ -127,33 +137,34 @@ def render_widget(
     # Compute global color scale
     vmin, vmax = compute_global_colormap_range(fields, vmin, vmax)
 
-    # LRU cache with configurable size
-    cache_limit = 1000  # Max frames to cache
-    cached_frames: OrderedDict[int, str] = OrderedDict()
+    # LRU cache storing raw PNG bytes (not base64 strings)
+    cached_frames: OrderedDict[int, bytes] = OrderedDict()
 
-    def cache_put(i: int, b64: str) -> None:
+    def cache_put(i: int, png_bytes: bytes) -> None:
         """Add frame to cache with LRU eviction."""
-        cached_frames[i] = b64
+        cached_frames[i] = png_bytes
         cached_frames.move_to_end(i)
         if len(cached_frames) > cache_limit:
             cached_frames.popitem(last=False)  # Remove oldest
 
     # Pre-render subset of frames for responsive scrubbing
-    initial_cache_size = min(len(fields), 500)
+    if initial_cache_size is None:
+        initial_cache_size = min(len(fields), 500)
+    else:
+        initial_cache_size = min(initial_cache_size, len(fields))
     print(f"Pre-rendering {initial_cache_size} frames for widget...")
 
     for i in range(initial_cache_size):
         png_bytes = render_field_to_png_bytes(env, fields[i], cmap, vmin, vmax, dpi)
-        b64 = base64.b64encode(png_bytes).decode("utf-8")
-        cache_put(i, b64)
+        cache_put(i, png_bytes)
 
     # Generate frame labels
     if frame_labels is None:
         frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
 
     # On-demand rendering with LRU cache
-    def get_frame_b64(idx: int) -> str:
-        """Get base64-encoded frame, using cache or rendering on-demand."""
+    def get_frame_bytes(idx: int) -> bytes:
+        """Get PNG bytes for frame, using cache or rendering on-demand."""
         if idx in cached_frames:
             # Move to end (mark as recently used)
             cached_frames.move_to_end(idx)
@@ -163,9 +174,8 @@ def render_widget(
             png_bytes = render_field_to_png_bytes(
                 env, fields[idx], cmap, vmin, vmax, dpi
             )
-            b64 = base64.b64encode(png_bytes).decode("utf-8")
-            cache_put(idx, b64)
-            return b64
+            cache_put(idx, png_bytes)
+            return png_bytes
 
     # Create persistent Image widget (updated in-place, not re-displayed)
     image_widget = ipywidgets.Image(format="png", width=800)
@@ -176,9 +186,9 @@ def render_widget(
     # Update function that mutates persistent widgets (no display() calls)
     def show_frame(frame_idx: int) -> None:
         """Update frame display by mutating persistent widgets."""
-        png_bytes = get_frame_b64(frame_idx)
-        # Decode base64 back to bytes for Image widget
-        image_widget.value = base64.b64decode(png_bytes)
+        png_bytes = get_frame_bytes(frame_idx)
+        # Set bytes directly to Image widget (no encoding/decoding needed)
+        image_widget.value = png_bytes
         # Update title HTML
         title_widget.value = (
             f"<h3 style='text-align: center; margin: 0;'>{frame_labels[frame_idx]}</h3>"

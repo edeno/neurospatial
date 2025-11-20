@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
 import matplotlib.pyplot as plt
@@ -224,7 +225,9 @@ def render_napari(
     frame_labels: list[str] | None = None,
     overlay_trajectory: NDArray[np.float64] | None = None,
     title: str = "Spatial Field Animation",
-    cache_chunk_size: int | None = None,
+    cache_size: int = 1000,
+    chunk_size: int = 10,
+    max_chunks: int = 100,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
     **kwargs: Any,  # Accept other parameters gracefully
@@ -261,10 +264,19 @@ def render_napari(
         - Higher dimensions: rendered as points
     title : str, default="Spatial Field Animation"
         Viewer window title
-    cache_chunk_size : int, optional
-        Chunk size for chunked LRU caching. If None, auto-selects based
-        on dataset size (>10K frames uses chunking). Set to 1 to disable
-        chunking (equivalent to per-frame caching).
+    cache_size : int, default=1000
+        Maximum number of frames to cache for per-frame caching strategy.
+        Allows callers to tune cache size per dataset to prevent thrashing
+        (too small) or RAM blow-ups (too large). Typical usage: 30KB per
+        frame for 100x100 grids, so 1000 frames = ~30MB.
+    chunk_size : int, default=10
+        Number of frames per chunk for chunked caching strategy. Allows
+        tuning the granularity of chunk-based caching. Larger values improve
+        sequential access but increase memory per chunk.
+    max_chunks : int, default=100
+        Maximum number of chunks to cache for chunked caching strategy.
+        Controls total cache memory (cache_memory = chunk_size * max_chunks
+        * frame_size). Adjust based on available RAM.
     layout : {"horizontal", "vertical", "grid"}, optional
         Multi-field mode only: Layout arrangement for multiple field sequences.
         Required when providing multiple field sequences. Options:
@@ -364,14 +376,14 @@ def render_napari(
 
     1. **Per-frame caching** (default for <10K frames):
        - Caches individual frames
-       - Cache size: 1000 frames
+       - Cache size: 1000 frames (configurable via cache_size parameter)
        - Good for small to medium datasets
 
-    2. **Chunked caching** (default for >10K frames or when cache_chunk_size set):
-       - Caches frames in chunks (default: 100 frames/chunk)
+    2. **Chunked caching** (default for >10K frames):
+       - Caches frames in chunks (default: 10 frames/chunk, 100 max chunks)
        - More efficient for sequential playback (pre-loads neighboring frames)
        - Better for large datasets (100K+ frames)
-       - Configurable via cache_chunk_size parameter
+       - Configurable via chunk_size and max_chunks parameters
 
     Both strategies work efficiently with memory-mapped arrays.
 
@@ -434,7 +446,9 @@ def render_napari(
             frame_labels=frame_labels,
             overlay_trajectory=overlay_trajectory,
             title=title,
-            cache_chunk_size=cache_chunk_size,
+            cache_size=cache_size,
+            chunk_size=chunk_size,
+            max_chunks=max_chunks,
             layout=layout,
             layer_names=layer_names,
         )
@@ -464,7 +478,9 @@ def render_napari(
         cmap_lookup,
         vmin,
         vmax,
-        cache_chunk_size,
+        cache_size,
+        chunk_size,
+        max_chunks,
     )
 
     # Create napari viewer
@@ -548,7 +564,9 @@ def _render_multi_field_napari(
     frame_labels: list[str] | None = None,
     overlay_trajectory: NDArray[np.float64] | None = None,
     title: str = "Multi-Field Animation",
-    cache_chunk_size: int | None = None,
+    cache_size: int = 1000,
+    chunk_size: int = 10,
+    max_chunks: int = 100,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
 ) -> Any:
@@ -578,8 +596,12 @@ def _render_multi_field_napari(
         Positions to overlay as trajectory
     title : str, default="Multi-Field Animation"
         Viewer window title
-    cache_chunk_size : int, optional
-        Chunk size for chunked LRU caching
+    cache_size : int, default=1000
+        Maximum number of frames to cache for per-frame caching strategy
+    chunk_size : int, default=10
+        Number of frames per chunk for chunked caching strategy
+    max_chunks : int, default=100
+        Maximum number of chunks to cache for chunked caching strategy
     layout : {"horizontal", "vertical", "grid"}, required
         Layout arrangement for multiple fields:
         - "horizontal": side-by-side
@@ -648,7 +670,7 @@ def _render_multi_field_napari(
     lazy_renderers = []
     for sequence in field_sequences:
         renderer = _create_lazy_field_renderer(
-            env, sequence, cmap_lookup, vmin, vmax, cache_chunk_size
+            env, sequence, cmap_lookup, vmin, vmax, cache_size, chunk_size, max_chunks
         )
         lazy_renderers.append(renderer)
 
@@ -720,12 +742,15 @@ def _create_lazy_field_renderer(
     cmap_lookup: NDArray[np.uint8],
     vmin: float,
     vmax: float,
-    cache_chunk_size: int | None = None,
+    cache_size: int = 1000,
+    chunk_size: int = 10,
+    max_chunks: int = 100,
 ) -> LazyFieldRenderer | ChunkedLazyFieldRenderer:
     """Create lazy field renderer for Napari.
 
     Automatically selects between per-frame and chunked caching based on
-    dataset size and cache_chunk_size parameter.
+    dataset size. Uses per-frame caching for datasets ≤10K frames and
+    chunked caching for larger datasets.
 
     Parameters
     ----------
@@ -737,10 +762,12 @@ def _create_lazy_field_renderer(
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
         Color scale limits
-    cache_chunk_size : int, optional
-        Chunk size for chunked caching. If None, auto-selects based on
-        dataset size (>10K frames uses chunked caching). Set to 1 to
-        disable chunking.
+    cache_size : int, default=1000
+        Maximum number of frames to cache for per-frame caching strategy
+    chunk_size : int, default=10
+        Number of frames per chunk for chunked caching strategy
+    max_chunks : int, default=100
+        Maximum number of chunks to cache for chunked caching strategy
 
     Returns
     -------
@@ -750,23 +777,23 @@ def _create_lazy_field_renderer(
     """
     n_frames = len(fields)
 
-    # Auto-select caching strategy if not specified
-    if cache_chunk_size is None:
+    # Auto-select caching strategy based on dataset size
+    if n_frames <= 10_000:
+        # Use per-frame caching for small/medium datasets
+        return LazyFieldRenderer(
+            env, fields, cmap_lookup, vmin, vmax, cache_size=cache_size
+        )
+    else:
         # Use chunked caching for large datasets (>10K frames)
-        if n_frames > 10_000:
-            cache_chunk_size = 100  # Default chunk size
-        else:
-            # Use per-frame caching for small/medium datasets
-            return LazyFieldRenderer(env, fields, cmap_lookup, vmin, vmax)
-
-    # Disable chunking if chunk_size=1 (equivalent to per-frame)
-    if cache_chunk_size == 1:
-        return LazyFieldRenderer(env, fields, cmap_lookup, vmin, vmax)
-
-    # Use chunked caching
-    return ChunkedLazyFieldRenderer(
-        env, fields, cmap_lookup, vmin, vmax, chunk_size=cache_chunk_size
-    )
+        return ChunkedLazyFieldRenderer(
+            env,
+            fields,
+            cmap_lookup,
+            vmin,
+            vmax,
+            chunk_size=chunk_size,
+            max_chunks=max_chunks,
+        )
 
 
 class LazyFieldRenderer:
@@ -791,13 +818,17 @@ class LazyFieldRenderer:
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
         Color scale limits
+    cache_size : int, default=1000
+        Maximum number of frames to cache
 
     Attributes
     ----------
     _cache : OrderedDict
         LRU cache mapping frame index to rendered RGB array
     _cache_size : int
-        Maximum number of frames to cache (default: 1000)
+        Maximum number of frames to cache
+    _lock : Lock
+        Thread lock for thread-safe cache operations
 
     Notes
     -----
@@ -828,6 +859,7 @@ class LazyFieldRenderer:
         cmap_lookup: NDArray[np.uint8],
         vmin: float,
         vmax: float,
+        cache_size: int = 1000,
     ):
         """Initialize lazy field renderer."""
         self.env = env
@@ -836,25 +868,45 @@ class LazyFieldRenderer:
         self.vmin = vmin
         self.vmax = vmax
         self._cache: OrderedDict[int, NDArray[np.uint8]] = OrderedDict()
-        self._cache_size = 1000
+        self._cache_size = cache_size
+        self._lock = Lock()
 
     def __len__(self) -> int:
         """Return number of frames."""
         return len(self.fields)
 
     def __getitem__(self, idx: int | tuple) -> NDArray[np.uint8]:
-        """Render frame on-demand when Napari requests it.
+        """Render frame on-demand when Napari requests it (thread-safe).
 
-        Implements true LRU caching:
+        Implements true LRU caching with thread-safety:
         1. If frame in cache, move to end (mark as recently used)
         2. If frame not in cache, render it and add to end
         3. If cache full, evict oldest frame (first item)
+
+        Thread-safety is guaranteed by wrapping all cache operations in a lock,
+        preventing race conditions when Napari requests data from non-main threads.
 
         Parameters
         ----------
         idx : int or tuple
             Frame index (supports negative indexing) or tuple of slices
             (napari passes tuples like (0, :, :, :) for slicing)
+
+        Returns
+        -------
+        rgb : ndarray
+            Rendered RGB frame or sliced data
+        """
+        with self._lock:
+            return self._getitem_locked(idx)
+
+    def _getitem_locked(self, idx: int | tuple) -> NDArray[np.uint8]:
+        """Internal implementation of __getitem__ (assumes lock is held).
+
+        Parameters
+        ----------
+        idx : int or tuple
+            Frame index or tuple of slices
 
         Returns
         -------
@@ -989,6 +1041,8 @@ class ChunkedLazyFieldRenderer:
         Frames per chunk
     _max_chunks : int
         Max chunks to cache
+    _lock : Lock
+        Thread lock for thread-safe cache operations
 
     Notes
     -----
@@ -1043,6 +1097,7 @@ class ChunkedLazyFieldRenderer:
         self._chunk_size = chunk_size
         self._max_chunks = max_chunks
         self._chunk_cache: OrderedDict[int, list[NDArray[np.uint8]]] = OrderedDict()
+        self._lock = Lock()
 
     def __len__(self) -> int:
         """Return number of frames."""
@@ -1126,12 +1181,31 @@ class ChunkedLazyFieldRenderer:
         return self._chunk_cache[chunk_idx]
 
     def __getitem__(self, idx: int | tuple) -> NDArray[np.uint8]:
-        """Render frame on-demand from cached chunk.
+        """Render frame on-demand from cached chunk (thread-safe).
+
+        Thread-safety is guaranteed by wrapping all cache operations in a lock,
+        preventing race conditions when Napari requests data from non-main threads.
 
         Parameters
         ----------
         idx : int or tuple
             Frame index (supports negative indexing) or tuple of slices
+
+        Returns
+        -------
+        rgb : ndarray
+            Rendered RGB frame or sliced data
+        """
+        with self._lock:
+            return self._getitem_locked(idx)
+
+    def _getitem_locked(self, idx: int | tuple) -> NDArray[np.uint8]:
+        """Internal implementation of __getitem__ (assumes lock is held).
+
+        Parameters
+        ----------
+        idx : int or tuple
+            Frame index or tuple of slices
 
         Returns
         -------

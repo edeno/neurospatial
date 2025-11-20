@@ -236,6 +236,7 @@ class EnvironmentProtocol(Protocol):
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
+        **kwargs: Any,
     ) -> Any: ...
 
 

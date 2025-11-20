@@ -61,7 +61,9 @@ def render_video(
     frame_labels: list[str] | None = None,
     dpi: int = 100,
     codec: str = "h264",
-    bitrate: int = 5000,
+    crf: int = 18,
+    preset: str = "medium",
+    bitrate: int | None = None,
     n_workers: int | None = None,
     dry_run: bool = False,
     title: str = "Spatial Field Animation",
@@ -89,8 +91,26 @@ def render_video(
         Resolution for rendering
     codec : str, default="h264"
         Video codec (h264, h265, vp9, mpeg4)
-    bitrate : int, default=5000
-        Video bitrate in kbps
+    crf : int, default=18
+        Constant Rate Factor for quality control (0-51).
+        Lower values = higher quality and larger files.
+        - 0: Lossless (very large files)
+        - 18: "Visually lossless" - recommended default
+        - 23: Default for libx264 (good quality)
+        - 28: Noticeable quality loss
+        - 51: Worst quality
+        Only used when bitrate=None.
+    preset : str, default="medium"
+        Encoding speed preset (faster = larger file).
+        Options: ultrafast, superfast, veryfast, faster, fast,
+        medium, slow, slower, veryslow.
+        - ultrafast: Fastest encoding, largest file
+        - medium: Balanced speed/compression (default)
+        - veryslow: Best compression, slowest encoding
+    bitrate : int | None, optional
+        Video bitrate in kbps. If specified, overrides CRF-based
+        encoding and uses constant bitrate instead.
+        Default: None (uses CRF mode for better quality/size ratio)
     n_workers : int, optional
         Parallel workers for rendering (default: CPU count / 2)
     dry_run : bool, default=False
@@ -125,9 +145,19 @@ def render_video(
         # Dry run to estimate time/size
         render_video(env, fields, "output.mp4", dry_run=True, n_workers=4)
 
-        # Actual rendering
+        # Actual rendering with CRF mode (default)
         path = render_video(env, fields, "output.mp4", fps=10, n_workers=4)
         print(f"Video saved to {path}")
+
+        # High quality with slower encoding
+        path = render_video(
+            env, fields, "high_quality.mp4", crf=15, preset="slow", n_workers=4
+        )
+
+        # Use constant bitrate mode (legacy behavior)
+        path = render_video(
+            env, fields, "constant_bitrate.mp4", bitrate=5000, n_workers=4
+        )
 
     Notes
     -----
@@ -142,6 +172,12 @@ def render_video(
     - h265: Better compression, less compatible
     - vp9: Open source, good for web
     - mpeg4: Older, wider compatibility
+
+    **Quality Control:**
+    - CRF mode (default): Better quality/size ratio than constant bitrate
+    - CRF values: 18 (visually lossless), 23 (good), 28 (noticeable loss)
+    - Constant bitrate mode: Specify bitrate parameter to override CRF
+    - Web compatibility: Uses yuv420p pixel format and faststart flag
 
     **Memory Management:**
     - Environment must be pickle-able for parallel rendering
@@ -186,10 +222,19 @@ def render_video(
         total_time = frame_time * len(fields) / n_workers
 
         # Estimate file size (rough approximation)
-        # Empirical: ~50 KB per 100x100 DPI frame at default bitrate (5000 kbps)
-        frame_size_base_kb = 50
-        frame_size_kb = (dpi / 100) ** 2 * frame_size_base_kb
-        estimated_mb = frame_size_kb * len(fields) / 1024 * (bitrate / 5000)
+        if bitrate is not None:
+            # Constant bitrate mode
+            frame_size_base_kb = 50
+            frame_size_kb = (dpi / 100) ** 2 * frame_size_base_kb
+            estimated_mb = frame_size_kb * len(fields) / 1024 * (bitrate / 5000)
+        else:
+            # CRF mode (typically smaller files than constant bitrate)
+            # Empirical: CRF 18 produces ~30% smaller files than 5000 kbps
+            frame_size_base_kb = 35  # Lower base for CRF mode
+            frame_size_kb = (dpi / 100) ** 2 * frame_size_base_kb
+            # CRF scaling: lower CRF = larger files
+            crf_factor = 1.0 + (23 - crf) * 0.1  # 23 is libx264 default
+            estimated_mb = frame_size_kb * len(fields) / 1024 * crf_factor
 
         print(f"\n{'=' * 60}")
         print("Video Export Dry Run Estimate:")
@@ -250,15 +295,29 @@ def render_video(
             "-c:v",
             ffmpeg_codec,
             "-pix_fmt",
-            "yuv420p",  # Compatibility
-            "-r",
-            str(fps),  # Output framerate
-            "-b:v",
-            f"{bitrate}k",
-            "-threads",
-            str(n_workers),  # Encoding threads
-            str(output_path),
+            "yuv420p",  # Explicit pixel format for compatibility
+            "-preset",
+            preset,
         ]
+
+        # Add quality control (CRF mode by default, bitrate if specified)
+        if bitrate is not None:
+            cmd.extend(["-b:v", f"{bitrate}k"])
+        else:
+            cmd.extend(["-crf", str(crf)])
+
+        # Web-friendly flags
+        cmd.extend(
+            [
+                "-movflags",
+                "+faststart",  # Move moov atom to start for web streaming
+                "-r",
+                str(fps),  # Output framerate
+                "-threads",
+                str(n_workers),  # Encoding threads
+                str(output_path),
+            ]
+        )
 
         result = subprocess.run(
             cmd,

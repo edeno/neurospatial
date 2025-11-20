@@ -89,6 +89,9 @@ def parallel_render_frames(
 
     n_frames = len(fields)
 
+    # Cap workers to available frames
+    n_workers = min(n_workers, max(1, n_frames))
+
     # Validate environment is pickle-able
     try:
         pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
@@ -123,7 +126,7 @@ def parallel_render_frames(
                 "vmax": vmax,
                 "frame_labels": worker_frame_labels,
                 "dpi": dpi,
-                "n_total_frames": n_frames,  # For consistent filename padding
+                "digits": max(5, len(str(max(0, n_frames - 1)))),  # Pass to workers
             }
         )
 
@@ -139,7 +142,7 @@ def parallel_render_frames(
 
     # Return ffmpeg pattern (0-indexed for compatibility)
     # ffmpeg expects: frame_00000.png, frame_00001.png, etc.
-    digits = len(str(n_frames))
+    digits = max(5, len(str(max(0, n_frames - 1))))
     pattern = str(Path(output_dir) / f"frame_%0{digits}d.png")
 
     return pattern
@@ -162,7 +165,7 @@ def _render_worker_frames(task: dict) -> None:
         - cmap, vmin, vmax: colormap settings
         - frame_labels: optional frame labels
         - dpi: resolution
-        - n_total_frames: total frame count (for filename padding)
+        - digits: number of digits for frame padding
 
     Notes
     -----
@@ -193,13 +196,25 @@ def _render_worker_frames(task: dict) -> None:
                 "vmax": 1.0,
                 "frame_labels": None,
                 "dpi": 50,
-                "n_total_frames": 3,
+                "digits": 5,
             }
             _render_worker_frames(task)
             png_files = list(Path(tmpdir).glob("frame_*.png"))
             len(png_files)
             # 3
     """
+    # Set Agg backend BEFORE any pyplot imports
+    try:
+        import matplotlib
+
+        if matplotlib.get_backend().lower() not in (
+            "agg",
+            "module://matplotlib_inline.backend_inline",
+        ):
+            matplotlib.use("Agg", force=True)
+    except Exception:
+        pass
+
     env = task["env"]
     fields = task["fields"]
     start_idx = task["start_frame_idx"]
@@ -209,6 +224,8 @@ def _render_worker_frames(task: dict) -> None:
     vmax = task["vmax"]
     frame_labels = task["frame_labels"]
     dpi = task["dpi"]
+    # Get digits from task, fallback for backward compatibility with tests
+    digits = task.get("digits", 5)
 
     # Create figure once for this worker
     fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
@@ -236,14 +253,10 @@ def _render_worker_frames(task: dict) -> None:
 
             # Save frame (0-indexed for ffmpeg compatibility)
             frame_number = global_idx
-            # Get digits from task (passed from parallel_render_frames)
-            # Use safe default if not provided
-            n_total_frames = task.get("n_total_frames", len(fields) * 100)
-            digits = len(str(n_total_frames))
             filename = f"frame_{frame_number:0{digits}d}.png"
             filepath = Path(output_dir) / filename
 
-            fig.savefig(filepath, bbox_inches="tight", dpi=dpi)
+            fig.savefig(filepath, dpi=dpi)
     finally:
         # Clean up figure (prevent memory leaks)
         plt.close(fig)

@@ -471,6 +471,7 @@ class EnvironmentVisualization:
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
+        **kwargs: Any,
     ) -> Any:
         """Animate spatial fields over time with multiple backend options.
 
@@ -545,6 +546,32 @@ class EnvironmentVisualization:
             Whether to include colorbar in rendered frames (not yet implemented)
         colorbar_label : str, default=""
             Label for colorbar axis (not yet implemented)
+        **kwargs : dict
+            Backend-specific parameters. Common backend-specific options:
+
+            **Napari backend:**
+            - ``layout`` : {"horizontal", "vertical", "grid"}, optional
+              Layout for multi-field viewing (required when fields is a list of lists)
+            - ``layer_names`` : list of str, optional
+              Custom names for each layer in multi-field mode
+            - ``cache_size`` : int, default=1000
+              Maximum frames to cache (per-frame caching)
+            - ``chunk_size`` : int, default=10
+              Frames per chunk (chunked caching for >10K frames)
+            - ``max_chunks`` : int, default=100
+              Maximum chunks to cache
+
+            **Video backend:**
+            - ``crf`` : int, default=18
+              Constant rate factor for quality (0=lossless, 51=worst)
+            - ``preset`` : str, default="medium"
+              Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
+
+            **Widget backend:**
+            - ``initial_cache_size`` : int, optional
+              Number of frames to pre-render
+            - ``cache_limit`` : int, default=1000
+              Maximum cache size
 
         Returns
         -------
@@ -679,6 +706,7 @@ class EnvironmentVisualization:
             contrast_limits=contrast_limits,
             show_colorbar=show_colorbar,
             colorbar_label=colorbar_label,
+            **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
         )
 
 

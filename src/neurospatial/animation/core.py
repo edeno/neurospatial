@@ -126,15 +126,21 @@ def animate_fields(
             "Use Environment.from_samples() or other factory methods."
         )
 
-    # Validate field shapes
-    for i, field in enumerate(fields):
-        if len(field) != env.n_bins:
-            raise ValueError(
-                f"Field {i} has {len(field)} values but environment has {env.n_bins} bins. "
-                f"Expected shape: ({env.n_bins},)"
-            )
+    # Detect multi-field format (napari-specific feature)
+    # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])
+    is_multi_field = len(fields) > 0 and isinstance(fields[0], (list, tuple))
 
-    n_frames = len(fields)
+    # Validate field shapes (skip for multi-field - backend will validate)
+    if not is_multi_field:
+        for i, field in enumerate(fields):
+            if len(field) != env.n_bins:
+                raise ValueError(
+                    f"Field {i} has {len(field)} values but environment has {env.n_bins} bins. "
+                    f"Expected shape: ({env.n_bins},)"
+                )
+
+    # Compute n_frames (for multi-field, use length of first sequence)
+    n_frames = len(fields[0]) if is_multi_field else len(fields)
 
     # Auto-select backend
     if backend == "auto":
