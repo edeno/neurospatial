@@ -86,31 +86,31 @@
 
 ### 1.5 Conversion Funnel
 
-- [ ] Implement `_convert_overlays_to_data()` function signature
-  - [ ] Parameters: `overlays, frame_times, n_frames, env`
-  - [ ] Returns: `OverlayData`
-- [ ] Align each `PositionOverlay` to `n_frames` using Timeline
-- [ ] Align each `BodypartOverlay` (per keypoint) to `n_frames`
-- [ ] Align each `HeadDirectionOverlay` to `n_frames`
-- [ ] Ensure coordinate dimension matches `env.n_dims`
-- [ ] Run all validation functions during conversion
-- [ ] Return pickle-safe `OverlayData` instance
+- [x] Implement `_convert_overlays_to_data()` function signature
+  - [x] Parameters: `overlays, frame_times, n_frames, env`
+  - [x] Returns: `OverlayData`
+- [x] Align each `PositionOverlay` to `n_frames` using Timeline
+- [x] Align each `BodypartOverlay` (per keypoint) to `n_frames`
+- [x] Align each `HeadDirectionOverlay` to `n_frames`
+- [x] Ensure coordinate dimension matches `env.n_dims`
+- [x] Run all validation functions during conversion
+- [x] Return pickle-safe `OverlayData` instance
 
 ### 1.6 Unit Tests (Core & Validation)
 
-- [ ] Create `tests/animation/test_overlays.py`
-- [ ] Test monotonicity validation (error case)
-- [ ] Test finite values validation (NaN/Inf detection)
-- [ ] Test shape validation (dimension mismatch)
-- [ ] Test temporal alignment error (no overlap)
-- [ ] Test temporal alignment warning (partial overlap <50%)
-- [ ] Test bounds warning (>X% out of bounds)
-- [ ] Test skeleton consistency (missing parts, name suggestions)
-- [ ] Test pickle-ability validation (actionable messages)
-- [ ] Test `_interp_linear()` with edge cases
-- [ ] Test `_interp_nearest()` with edge cases
-- [ ] Test `_convert_overlays_to_data()` end-to-end
-- [ ] Run tests with `uv run pytest tests/animation/test_overlays.py -v`
+- [x] Create `tests/animation/test_overlays.py`
+- [x] Test monotonicity validation (error case)
+- [x] Test finite values validation (NaN/Inf detection)
+- [x] Test shape validation (dimension mismatch)
+- [x] Test temporal alignment error (no overlap)
+- [x] Test temporal alignment warning (partial overlap <50%)
+- [x] Test bounds warning (>X% out of bounds)
+- [x] Test skeleton consistency (missing parts, name suggestions)
+- [x] Test pickle-ability validation (actionable messages)
+- [x] Test `_interp_linear()` with edge cases
+- [x] Test `_interp_nearest()` with edge cases
+- [x] Test `_convert_overlays_to_data()` end-to-end
+- [x] Run tests with `uv run pytest tests/animation/test_overlays.py -v`
 
 ---
 
@@ -533,7 +533,7 @@
 
 **Milestone Completion:**
 
-- [ ] Milestone 1: Core Infrastructure & Validation (Weeks 1-2)
+- [x] Milestone 1: Core Infrastructure & Validation (Weeks 1-2)
 - [ ] Milestone 2: Protocol Update & Core Dispatcher (Week 2)
 - [ ] Milestone 3: Napari Backend (Full Overlays) (Weeks 3-4)
 - [ ] Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
@@ -543,7 +543,7 @@
 - [ ] Milestone 8: Final Quality Assurance (Week 8)
 - [ ] Milestone 9: Release Preparation (Post-Implementation)
 
-**Overall Progress:** 0% (0/9 milestones completed)
+**Overall Progress:** 11% (1/9 milestones completed)
 
 ---
 

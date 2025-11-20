@@ -14,6 +14,7 @@ The module contains:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1205,3 +1206,254 @@ def _interp_nearest(
         result[valid_mask, :] = x_src[nearest_indices, :]
 
     return result
+
+
+# =============================================================================
+# Conversion Funnel (Milestone 1.5)
+# =============================================================================
+
+
+def _convert_overlays_to_data(
+    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay],
+    frame_times: NDArray[np.float64],
+    n_frames: int,
+    env: Any,
+) -> OverlayData:
+    """Convert overlay configurations to aligned internal data representation.
+
+    This is the main conversion pipeline that:
+    1. Validates each overlay (monotonicity, finite values, shape, skeleton)
+    2. Aligns overlay data to animation frame times via interpolation
+    3. Aggregates all overlays into a single OverlayData container
+
+    Parameters
+    ----------
+    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+        List of overlay configurations to convert. Can be empty or contain
+        multiple instances of any overlay type.
+    frame_times : NDArray[np.float64]
+        Animation frame timestamps with shape (n_frames,). Used as interpolation
+        targets for aligning overlay data.
+    n_frames : int
+        Number of animation frames. Used for validation.
+    env : Any
+        Environment object with `n_dims` and `dimension_ranges` attributes.
+        Used for validating overlay coordinate dimensions and bounds.
+
+    Returns
+    -------
+    OverlayData
+        Aggregated container with all overlay data aligned to frame times.
+        Contains lists of PositionData, BodypartData, and HeadDirectionData
+        instances. Guaranteed to be pickle-safe.
+
+    Raises
+    ------
+    ValueError
+        If any validation fails:
+        - Non-monotonic timestamps in overlay.times
+        - NaN/Inf values in overlay data
+        - Shape mismatch between overlay and environment dimensions
+        - Skeleton references missing bodypart names
+        - No temporal overlap between overlay and frame times
+
+    Notes
+    -----
+    Temporal alignment behavior:
+
+    - If overlay.times is None, assumes overlay data is already aligned to
+      frame_times (same length and uniform spacing)
+    - If overlay.times is provided, uses linear interpolation to align
+    - Extrapolation outside overlay time range produces NaN values
+    - Warns if temporal overlap is less than 50%
+
+    For BodypartOverlay, each keypoint is interpolated separately, preserving
+    independent temporal dynamics of body parts.
+
+    Examples
+    --------
+    Convert single position overlay:
+
+    >>> from neurospatial import Environment
+    >>> import numpy as np
+    >>> from neurospatial.animation.overlays import (
+    ...     PositionOverlay,
+    ...     _convert_overlays_to_data,
+    ... )
+    >>>
+    >>> # Create environment
+    >>> positions_env = np.random.rand(100, 2) * 100
+    >>> env = Environment.from_samples(positions_env, bin_size=10.0)
+    >>>
+    >>> # Create overlay
+    >>> trajectory = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
+    >>> times = np.array([0.0, 1.0, 2.0])
+    >>> overlay = PositionOverlay(data=trajectory, times=times)
+    >>>
+    >>> # Convert
+    >>> frame_times = np.array([0.0, 1.0, 2.0])
+    >>> overlay_data = _convert_overlays_to_data(
+    ...     overlays=[overlay], frame_times=frame_times, n_frames=3, env=env
+    ... )
+    >>> len(overlay_data.positions)
+    1
+    >>> overlay_data.positions[0].data.shape
+    (3, 2)
+    """
+    # Initialize lists for each overlay type
+    position_data_list: list[PositionData] = []
+    bodypart_data_list: list[BodypartData] = []
+    head_direction_data_list: list[HeadDirectionData] = []
+
+    # Get environment dimensions
+    env_n_dims = env.n_dims
+    env_dim_ranges = env.dimension_ranges
+
+    # Process each overlay
+    for overlay in overlays:
+        if isinstance(overlay, PositionOverlay):
+            # Validate position data
+            _validate_finite_values(overlay.data, name="PositionOverlay.data")
+            _validate_shape(overlay.data, env_n_dims, name="PositionOverlay.data")
+
+            # Validate and align times
+            if overlay.times is not None:
+                _validate_monotonic_time(overlay.times, name="PositionOverlay.times")
+                _validate_temporal_alignment(
+                    overlay.times, frame_times, name="PositionOverlay"
+                )
+
+                # Interpolate to frame times
+                aligned_data = _interp_linear(overlay.times, overlay.data, frame_times)
+            else:
+                # No times provided - assume data matches frame times
+                if len(overlay.data) != n_frames:
+                    raise ValueError(
+                        f"PositionOverlay data length ({len(overlay.data)}) does not "
+                        f"match n_frames ({n_frames}). When times=None, data must "
+                        f"have exactly n_frames samples."
+                    )
+                aligned_data = overlay.data
+
+            # Validate bounds (warning only)
+            _validate_bounds(
+                aligned_data, env_dim_ranges, name="PositionOverlay.data", threshold=0.1
+            )
+
+            # Create PositionData
+            position_data = PositionData(
+                data=aligned_data,
+                color=overlay.color,
+                size=overlay.size,
+                trail_length=overlay.trail_length,
+            )
+            position_data_list.append(position_data)
+
+        elif isinstance(overlay, BodypartOverlay):
+            # Validate skeleton consistency first
+            bodypart_names = list(overlay.data.keys())
+            _validate_skeleton_consistency(
+                overlay.skeleton, bodypart_names, name="BodypartOverlay.skeleton"
+            )
+
+            # Validate and align times
+            if overlay.times is not None:
+                _validate_monotonic_time(overlay.times, name="BodypartOverlay.times")
+                _validate_temporal_alignment(
+                    overlay.times, frame_times, name="BodypartOverlay"
+                )
+
+            # Align each bodypart separately
+            aligned_bodyparts: dict[str, NDArray[np.float64]] = {}
+
+            for part_name, part_data in overlay.data.items():
+                # Validate each bodypart
+                _validate_finite_values(
+                    part_data, name=f"BodypartOverlay.data['{part_name}']"
+                )
+                _validate_shape(
+                    part_data, env_n_dims, name=f"BodypartOverlay.data['{part_name}']"
+                )
+
+                # Align to frame times
+                if overlay.times is not None:
+                    aligned_part = _interp_linear(overlay.times, part_data, frame_times)
+                else:
+                    # No times provided - assume data matches frame times
+                    if len(part_data) != n_frames:
+                        raise ValueError(
+                            f"BodypartOverlay.data['{part_name}'] length "
+                            f"({len(part_data)}) does not match n_frames ({n_frames}). "
+                            f"When times=None, all bodypart data must have exactly "
+                            f"n_frames samples."
+                        )
+                    aligned_part = part_data
+
+                # Validate bounds (warning only)
+                _validate_bounds(
+                    aligned_part,
+                    env_dim_ranges,
+                    name=f"BodypartOverlay.data['{part_name}']",
+                    threshold=0.1,
+                )
+
+                aligned_bodyparts[part_name] = aligned_part
+
+            # Create BodypartData
+            bodypart_data = BodypartData(
+                bodyparts=aligned_bodyparts,
+                skeleton=overlay.skeleton,
+                colors=overlay.colors,
+                skeleton_color=overlay.skeleton_color,
+                skeleton_width=overlay.skeleton_width,
+            )
+            bodypart_data_list.append(bodypart_data)
+
+        elif isinstance(overlay, HeadDirectionOverlay):
+            # Validate head direction data
+            _validate_finite_values(overlay.data, name="HeadDirectionOverlay.data")
+
+            # For head direction, validate shape only if 2D (vectors)
+            if overlay.data.ndim == 2:
+                _validate_shape(
+                    overlay.data, env_n_dims, name="HeadDirectionOverlay.data"
+                )
+
+            # Validate and align times
+            if overlay.times is not None:
+                _validate_monotonic_time(
+                    overlay.times, name="HeadDirectionOverlay.times"
+                )
+                _validate_temporal_alignment(
+                    overlay.times, frame_times, name="HeadDirectionOverlay"
+                )
+
+                # Interpolate to frame times
+                aligned_data = _interp_linear(overlay.times, overlay.data, frame_times)
+            else:
+                # No times provided - assume data matches frame times
+                if len(overlay.data) != n_frames:
+                    raise ValueError(
+                        f"HeadDirectionOverlay data length ({len(overlay.data)}) does "
+                        f"not match n_frames ({n_frames}). When times=None, data must "
+                        f"have exactly n_frames samples."
+                    )
+                aligned_data = overlay.data
+
+            # Create HeadDirectionData
+            head_direction_data = HeadDirectionData(
+                data=aligned_data,
+                color=overlay.color,
+                length=overlay.length,
+            )
+            head_direction_data_list.append(head_direction_data)
+
+    # Aggregate all overlay data
+    overlay_data = OverlayData(
+        positions=position_data_list,
+        bodypart_sets=bodypart_data_list,
+        head_directions=head_direction_data_list,
+        regions=None,  # Regions will be handled separately in v0.4.0
+    )
+
+    return overlay_data

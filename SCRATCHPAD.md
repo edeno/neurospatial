@@ -1,8 +1,8 @@
 # Animation Overlays v0.4.0 - Development Scratchpad
 
 **Started:** 2025-11-20
-**Current Milestone:** 1.1 Public API Dataclasses
-**Status:** Starting implementation
+**Current Milestone:** Milestone 1 COMPLETE ✅
+**Status:** Ready for Milestone 2: Protocol Update & Core Dispatcher
 
 ---
 
@@ -28,7 +28,7 @@
 - Created SCRATCHPAD.md to track progress
 - First task: Create overlay dataclasses (PositionOverlay, BodypartOverlay, HeadDirectionOverlay)
 
-**Status:** ✅ Milestones 1.1, 1.2, 1.3, and 1.4 COMPLETE
+**Status:** ✅ **MILESTONE 1 COMPLETE** (All sub-milestones: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6)
 
 **Completed:**
 1. ✅ Created comprehensive test file with 19 tests (Milestone 1.1 & 1.2)
@@ -56,11 +56,24 @@
    - All error messages follow WHAT/WHY/HOW format
    - Code review rating: APPROVE
    - Mypy and ruff pass
-9. ✅ Updated TASKS.md checkboxes
+9. ✅ Implemented conversion funnel (Milestone 1.5 & 1.6)
+   - _convert_overlays_to_data() function (249 lines)
+   - Converts all overlay types (Position, Bodypart, HeadDirection) to internal data
+   - Per-keypoint interpolation for BodypartOverlay
+   - Temporal alignment with linear interpolation
+   - NaN extrapolation outside source time range
+   - Handles overlays with and without timestamps
+   - Comprehensive validation during conversion
+   - 16 additional tests (73 total tests, all passing)
+   - Full NumPy docstring with examples
+   - Code review rating: APPROVE (no critical issues)
+   - Mypy and ruff pass
+   - Test summary: 73 passed, 1 warning (expected temporal overlap warning)
+10. ✅ Updated TASKS.md checkboxes (Milestone 1 complete - 11% overall progress)
 
 **Next Steps:**
-- Continue with Milestone 1.5: Conversion Funnel
-- Or commit current progress first
+- Commit Milestone 1 completion with conventional commit message
+- Continue with Milestone 2: Protocol Update & Core Dispatcher
 
 ---
 
@@ -85,6 +98,22 @@
 - WHAT/WHY/HOW format for all error messages
 - Actionable guidance in every error
 - Warnings vs errors: errors block rendering, warnings inform user
+- Intelligent suggestions using difflib.get_close_matches() for typo detection
+
+### Conversion Funnel Design (Milestone 1.5)
+- Single function `_convert_overlays_to_data()` handles all overlay types
+- Three-section structure: PositionOverlay → BodypartOverlay → HeadDirectionOverlay
+- Consistent pattern for each overlay type:
+  1. Validate finite values
+  2. Validate shape (dimensions)
+  3. Validate/align times (if provided)
+  4. Interpolate or length-check
+  5. Validate bounds (warning only)
+  6. Create internal data container
+- Per-keypoint interpolation preserves independent temporal dynamics
+- NaN extrapolation for scientifically correct handling of missing data
+- Pickle-safe OverlayData output for parallel rendering
+- Code review rating: APPROVE (249 lines justified for conversion pipeline)
 
 ---
 
