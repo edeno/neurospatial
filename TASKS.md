@@ -300,27 +300,27 @@
 - [x] Provide suggestions for subsampling or using video backend
 - [x] Test file size limits with large datasets
 
-### 5.3 Widget Backend (Reuse Video Renderer)
+### 5.3 Widget Backend (Reuse Video Renderer) ✅
 
-- [ ] Update `src/neurospatial/animation/backends/widget_backend.py`
-- [ ] Reuse video renderer to produce PNG frames with overlays
-- [ ] Implement LRU cache for responsive scrubbing
-- [ ] Pass `overlay_data` to video renderer
-- [ ] Test widget in notebook environment
+- [x] Update `src/neurospatial/animation/backends/widget_backend.py`
+- [x] Reuse video renderer to produce PNG frames with overlays
+- [x] Implement LRU cache for responsive scrubbing
+- [x] Pass `overlay_data` to video renderer
+- [x] Test widget in notebook environment
 
-### 5.4 HTML & Widget Tests
+### 5.4 HTML & Widget Tests ✅
 
-- [ ] Create `tests/animation/test_html_overlays.py`
-- [ ] Test position rendering in HTML backend
-- [ ] Test region rendering in HTML backend
-- [ ] Test capability warnings for bodyparts/head direction
-- [ ] Test `max_html_frames` enforcement
-- [ ] Test file size warnings
-- [ ] Run tests with `uv run pytest tests/animation/test_html_overlays.py -v`
-- [ ] Create `tests/animation/test_widget_overlays.py`
-- [ ] Test widget reuses video renderer correctly
-- [ ] Test LRU cache behavior
-- [ ] Run tests with `uv run pytest tests/animation/test_widget_overlays.py -v`
+- [x] Create `tests/animation/test_html_overlays.py`
+- [x] Test position rendering in HTML backend
+- [x] Test region rendering in HTML backend
+- [x] Test capability warnings for bodyparts/head direction
+- [x] Test `max_html_frames` enforcement
+- [x] Test file size warnings
+- [x] Run tests with `uv run pytest tests/animation/test_html_overlays.py -v`
+- [x] Create `tests/animation/test_widget_overlays.py`
+- [x] Test widget reuses video renderer correctly
+- [x] Test LRU cache behavior
+- [x] Run tests with `uv run pytest tests/animation/test_widget_overlays.py -v`
 
 ---
 
@@ -548,14 +548,14 @@
 - [x] Milestone 1: Core Infrastructure & Validation (Weeks 1-2)
 - [x] Milestone 2: Protocol Update & Core Dispatcher (Week 2)
 - [x] Milestone 3: Napari Backend (Full Overlays) (Weeks 3-4)
-- [ ] Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
-- [ ] Milestone 5: HTML & Widget Backends (Partial Overlays) (Week 7)
+- [x] Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
+- [x] Milestone 5: HTML & Widget Backends (Partial Overlays) (Week 7)
 - [ ] Milestone 6: Integration & Cross-Backend Tests (Week 7)
 - [ ] Milestone 7: Documentation (Week 8)
 - [ ] Milestone 8: Final Quality Assurance (Week 8)
 - [ ] Milestone 9: Release Preparation (Post-Implementation)
 
-**Overall Progress:** 33% (3/9 milestones completed)
+**Overall Progress:** 56% (5/9 milestones completed)
 
 ---
 
