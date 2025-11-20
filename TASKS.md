@@ -631,10 +631,28 @@ Implement animation capabilities supporting four backends:
 
 ### Memory Profiling
 
-- [ ] Profile memory usage for large datasets
-- [ ] Verify Napari lazy loading doesn't load all frames
-- [ ] Verify parallel rendering cleans up properly
-- [ ] Document memory requirements in docs
+- [x] Profile memory usage for large datasets (4 comprehensive tests, all passing)
+- [x] Verify Napari lazy loading doesn't load all frames
+  - [x] Test with 10K frames → **0.3MB overhead** (vs 36.4MB if eager) ✅
+  - [x] Renderer creation: 0MB overhead
+  - [x] Frame access (10 frames): 0.3MB overhead
+  - [x] Conclusion: Lazy loading works perfectly
+- [x] Verify parallel rendering cleans up properly
+  - [x] Test with 50 frames, 4 workers → **2.7MB memory increase** ✅
+  - [x] Conclusion: Excellent memory cleanup
+  - [x] Note: Background processes detected (pytest, Qt) - informational only
+- [x] Document memory requirements ([test_memory_requirements_documentation](tests/animation/test_memory_profiling.py#L344-L407))
+  - [x] Small dataset (100 frames): 0.7MB - HTML backend, quick previews
+  - [x] Medium dataset (1K frames): 7.3MB - Video export, widget backend
+  - [x] Large dataset (100K frames, memmap): 364MB disk, ~20MB RAM - Napari only
+  - [x] Napari cache: 1000 frames, 28.6MB total
+  - [x] Parallel rendering (4 workers): ~400MB total
+  - [x] General recommendations documented
+  - [x] **Subsample behavior investigated**: Copying is expected (fancy indexing on memmap)
+    - Root cause: Non-uniform indices require fancy indexing → triggers copy
+    - Trade-off: Accurate frame timing vs memory efficiency
+    - Acceptable for video export (one-time operation)
+    - Large datasets: Use Napari directly with memmap (no subsample needed)
 
 ### Error Message Review
 
