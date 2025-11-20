@@ -19,6 +19,80 @@ if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 
+def _estimate_overlay_json_size(
+    overlay_data: OverlayData | None,
+    env: Environment,
+    show_regions: bool | list[str],
+) -> float:
+    """Estimate size of overlay JSON in megabytes.
+
+    Parameters
+    ----------
+    overlay_data : OverlayData | None
+        Overlay data containing positions, bodyparts, and head directions
+    env : Environment
+        Environment for extracting region data
+    show_regions : bool | list[str]
+        Whether to include regions in serialization
+
+    Returns
+    -------
+    estimated_size_mb : float
+        Estimated JSON size in megabytes
+
+    Notes
+    -----
+    Estimation is based on:
+    - Position data: ~20 bytes per coordinate (JSON overhead + float representation)
+    - Regions: ~30 bytes per vertex (polygon coordinates)
+    - Small overhead for metadata (colors, names, etc.)
+
+    The estimate is conservative (slightly overestimates) to ensure warnings
+    trigger before actual size becomes problematic.
+    """
+    if overlay_data is None and not show_regions:
+        return 0.0
+
+    total_bytes = 0.0
+
+    # Estimate position overlay size
+    if overlay_data is not None:
+        for pos_data in overlay_data.positions:
+            # Each position: (n_frames, n_dims) floats
+            # JSON float: ~15 chars avg, plus brackets/commas
+            n_coords = pos_data.data.size  # Total number of coordinates
+            bytes_per_coord = 20  # Conservative estimate (includes JSON overhead)
+            total_bytes += n_coords * bytes_per_coord
+
+            # Add overhead for color, size, trail_length (small)
+            total_bytes += 100  # Metadata per overlay
+
+    # Estimate region size
+    if show_regions:
+        region_names = (
+            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
+        )
+        for name in region_names:
+            if name not in env.regions:
+                continue
+            region = env.regions[name]
+
+            if region.kind == "point":
+                # Point region: 2 coordinates
+                total_bytes += 2 * 20 + 50  # Coords + metadata
+            elif region.kind == "polygon":
+                # Polygon: estimate ~100 vertices (conservative)
+                coords = list(region.data.exterior.coords)  # type: ignore[union-attr]
+                n_vertices = len(coords)
+                bytes_per_vertex = 30  # Two floats + JSON overhead
+                total_bytes += n_vertices * bytes_per_vertex + 100  # Coords + metadata
+
+    # Add overhead for dimension_ranges and other metadata
+    total_bytes += 500  # Small fixed overhead
+
+    return total_bytes / 1e6  # Convert to MB
+
+
 def _serialize_overlay_data(
     overlay_data: OverlayData | None,
     env: Environment,
@@ -298,6 +372,31 @@ def render_html(
             f"  - Reduce DPI: dpi=50 (current: {dpi})\n"
             f"  - Subsample frames: fields[::5]\n"
             f"{jpeg_hint}",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Estimate overlay JSON size and warn if large (threshold: 1 MB)
+    # 1 MB of JSON is substantial for browser rendering - larger datasets
+    # should use video or napari backends for better performance
+    overlay_size_mb = _estimate_overlay_json_size(overlay_data, env, show_regions)
+    if overlay_size_mb > 1.0:
+        warnings.warn(
+            f"\nHTML overlay data will be large (~{overlay_size_mb:.1f} MB JSON).\n"
+            f"Large overlay datasets can slow down browser rendering.\n"
+            f"\n"
+            f"Consider these alternatives:\n"
+            f"  1. Subsample position data:\n"
+            f"     # Subsample overlay positions to match reduced frame rate\n"
+            f"     positions_subsampled = positions[::5]  # Every 5th position\n"
+            f"     overlay = PositionOverlay(data=positions_subsampled, ...)\n"
+            f"\n"
+            f"  2. Use video backend for full-fidelity overlays:\n"
+            f"     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+            f"                        overlays=[overlay], ...)\n"
+            f"\n"
+            f"  3. Use Napari for interactive viewing:\n"
+            f"     env.animate_fields(fields, backend='napari', overlays=[overlay], ...)\n",
             UserWarning,
             stacklevel=2,
         )

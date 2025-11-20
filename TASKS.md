@@ -293,12 +293,12 @@
 - [x] Enforce `max_html_frames` limit (default 500)
 - [x] Auto-disable oversized overlays with user-facing warning
 
-### 5.2 HTML File Size Guardrails
+### 5.2 HTML File Size Guardrails ✅
 
-- [ ] Calculate estimated JSON size for overlay data
-- [ ] Warn if overlay data exceeds reasonable size (e.g., 5MB)
-- [ ] Provide suggestions for subsampling or using video backend
-- [ ] Test file size limits with large datasets
+- [x] Calculate estimated JSON size for overlay data
+- [x] Warn if overlay data exceeds reasonable size (e.g., 5MB)
+- [x] Provide suggestions for subsampling or using video backend
+- [x] Test file size limits with large datasets
 
 ### 5.3 Widget Backend (Reuse Video Renderer)
 

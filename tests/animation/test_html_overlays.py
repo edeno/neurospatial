@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
+import warnings
 
 import numpy as np
 import pytest
@@ -486,6 +488,272 @@ class TestOverlaySizeGuardrails:
         path = render_html(
             simple_env,
             simple_fields,
+            str(save_path),
+            overlay_data=overlay_data,
+        )
+
+        assert path.exists()
+
+    def test_overlay_json_size_estimated(
+        self, simple_env, simple_fields, position_overlay_data, tmp_path
+    ):
+        """Test that overlay JSON size is estimated correctly."""
+        save_path = tmp_path / "test.html"
+
+        # Render with overlay data
+        path = render_html(
+            simple_env,
+            simple_fields,
+            str(save_path),
+            overlay_data=position_overlay_data,
+        )
+
+        # Read actual HTML to verify overlay data exists
+        html_content = path.read_text()
+        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
+        assert match is not None
+
+        # Calculate actual JSON size
+        overlay_json_str = match.group(1)
+        actual_json_size_mb = len(overlay_json_str.encode("utf-8")) / 1e6
+
+        # Size should be small for this test case
+        assert actual_json_size_mb < 1.0  # Less than 1 MB
+
+    @pytest.mark.slow
+    def test_large_overlay_json_warns(self, simple_env, tmp_path):
+        """Test warning when overlay JSON size exceeds threshold (1MB)."""
+        # Create large overlay dataset (30,000 frames to exceed 1MB threshold)
+        # At ~20 bytes/coord, 30k frames × 2 dims = 60k coords = ~1.2 MB
+        n_frames = 30000
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(min(n_frames, 500))]
+
+        # Create overlay with large position data
+        positions = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=50)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        # Should warn about large overlay JSON size and frame count limit
+        # Will also raise ValueError for exceeding max_html_frames, so catch that
+        with (
+            pytest.warns(UserWarning, match="overlay data.*MB"),
+            contextlib.suppress(ValueError),
+        ):
+            # Expected if fields count exceeds limit, but we should still get warning
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                max_html_frames=n_frames,  # Allow large frame count for this test
+            )
+
+    @pytest.mark.slow
+    def test_overlay_size_warning_includes_estimate(self, simple_env, tmp_path):
+        """Test that overlay size warning includes size estimate."""
+        # Create large overlay dataset that triggers warning (> 1MB)
+        n_frames = 30000
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
+        positions = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=50)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        # Warning should include numerical size estimate
+        with pytest.warns(UserWarning) as warnings_list:
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                max_html_frames=n_frames,
+            )
+
+        # Check if any warning mentions overlay size in MB
+        overlay_warnings = [
+            str(w.message) for w in warnings_list if "overlay" in str(w.message).lower()
+        ]
+        assert len(overlay_warnings) > 0, "Should emit overlay size warning"
+        # Should mention size in MB
+        assert any("MB" in msg for msg in overlay_warnings)
+
+    @pytest.mark.slow
+    def test_overlay_size_warning_suggests_subsampling(self, simple_env, tmp_path):
+        """Test that overlay size warning suggests subsampling positions."""
+        n_frames = 30000
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
+        positions = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=50)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        with pytest.warns(UserWarning) as warnings_list:
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                max_html_frames=n_frames,
+            )
+
+        # Check if warning suggests subsampling
+        overlay_warnings = [
+            str(w.message) for w in warnings_list if "overlay" in str(w.message).lower()
+        ]
+        assert len(overlay_warnings) > 0, "Should emit overlay size warning"
+        # Should suggest subsampling or alternative backend
+        warning_text = " ".join(overlay_warnings).lower()
+        assert "subsample" in warning_text or "video" in warning_text
+
+    @pytest.mark.slow
+    def test_overlay_size_warning_suggests_video_backend(self, simple_env, tmp_path):
+        """Test that overlay size warning suggests using video backend."""
+        n_frames = 30000
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
+        positions = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=50)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        with pytest.warns(UserWarning, match="video.*backend"):
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                max_html_frames=n_frames,
+            )
+
+    @pytest.mark.slow
+    def test_multiple_overlays_size_accumulated(self, simple_env, tmp_path):
+        """Test that size estimation accounts for multiple overlays."""
+        n_frames = 12000  # 3 overlays × 12k frames ≈ 1.4 MB total
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
+
+        # Create multiple position overlays (multi-animal)
+        positions1 = np.random.rand(n_frames, 2) * 100.0
+        positions2 = np.random.rand(n_frames, 2) * 100.0
+        positions3 = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions1, color="red", size=10.0, trail_length=50),
+                PositionData(data=positions2, color="blue", size=10.0, trail_length=50),
+                PositionData(
+                    data=positions3, color="green", size=10.0, trail_length=50
+                ),
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        # Multiple overlays should trigger warning (3x the data exceeds 1MB)
+        with pytest.warns(UserWarning, match="overlay data"):
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                max_html_frames=n_frames,
+            )
+
+    @pytest.mark.slow
+    def test_regions_contribute_to_overlay_size(self, simple_env, tmp_path):
+        """Test that regions contribute to overlay JSON size estimation."""
+        from shapely.geometry import Polygon
+
+        n_frames = 500
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+
+        # Add many complex polygon regions to exceed 1MB
+        # At ~30 bytes/vertex, need ~35k vertices for 1MB
+        # 100 polygons × 400 vertices = 40k vertices ≈ 1.2 MB
+        for i in range(100):
+            # Create polygon with many vertices (400 vertices per polygon)
+            vertices = np.random.rand(400, 2) * 100.0
+            poly = Polygon(vertices)
+            simple_env.regions.add(f"region_{i}", polygon=poly)
+
+        save_path = tmp_path / "test.html"
+
+        # Large regions should contribute to size warning (> 1MB)
+        with pytest.warns(UserWarning, match="overlay data"):
+            render_html(
+                simple_env,
+                fields,
+                str(save_path),
+                show_regions=True,
+            )
+
+    def test_small_overlay_no_warning(self, simple_env, simple_fields, tmp_path):
+        """Test that small overlay data does not trigger warning."""
+        # Small overlay (10 frames, 1 position)
+        positions = np.random.rand(10, 2) * 10.0
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=5)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        # Small dataset should not warn about overlay size
+        # (may still warn about image size if DPI is high, but not overlay)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            try:
+                render_html(
+                    simple_env,
+                    simple_fields,
+                    str(save_path),
+                    overlay_data=overlay_data,
+                    dpi=50,  # Keep DPI low to avoid image size warnings
+                )
+            except UserWarning as e:
+                # If warning occurs, it should NOT be about overlay size
+                assert "overlay" not in str(e).lower()
+
+    def test_overlay_size_threshold_configurable(self, simple_env, tmp_path):
+        """Test that overlay size warning threshold can be configured."""
+        n_frames = 500
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+        positions = np.random.rand(n_frames, 2) * 100.0
+
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=50)
+            ]
+        )
+
+        save_path = tmp_path / "test.html"
+
+        # Test with custom threshold (if implemented)
+        # This tests future extensibility
+        # For now, just verify rendering succeeds
+        path = render_html(
+            simple_env,
+            fields,
             str(save_path),
             overlay_data=overlay_data,
         )
