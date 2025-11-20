@@ -326,17 +326,17 @@
 
 ## Milestone 6: Integration & Cross-Backend Tests (Week 7)
 
-### 6.1 Integration Tests
+### 6.1 Integration Tests ✅
 
-- [ ] Create `tests/animation/test_animation_with_overlays.py`
-- [ ] Test Napari backend end-to-end with all overlay types
-- [ ] Test video backend end-to-end with all overlay types
-- [ ] Test HTML backend with positions + regions
-- [ ] Test widget backend with overlays
-- [ ] Test cross-backend consistency (same config, different backends)
-- [ ] Test multi-animal scenarios (multiple overlays of same type)
-- [ ] Test mixed overlay types in single animation
-- [ ] Run tests with `uv run pytest tests/animation/test_animation_with_overlays.py -v`
+- [x] Create `tests/animation/test_animation_with_overlays.py`
+- [x] Test Napari backend end-to-end with all overlay types
+- [x] Test video backend end-to-end with all overlay types
+- [x] Test HTML backend with positions + regions
+- [x] Test widget backend with overlays
+- [x] Test cross-backend consistency (same config, different backends)
+- [x] Test multi-animal scenarios (multiple overlays of same type)
+- [x] Test mixed overlay types in single animation
+- [x] Run tests with `uv run pytest tests/animation/test_animation_with_overlays.py -v`
 
 ### 6.2 Visual Regression Tests (pytest-mpl)
 

@@ -528,6 +528,68 @@ HOW: Choose one of these solutions:
 - tests/animation/test_widget_overlays.py (615 lines, 13 tests)
 - TASKS.md (marked Milestones 5.3 and 5.4 complete, updated overall progress to 56%)
 
+**Status:** ✅ **MILESTONE 6.1 COMPLETE** - Integration Tests
+
+**Completed:**
+1. ✅ Created comprehensive integration test file with 22 tests (test_animation_with_overlays.py)
+2. ✅ Verified tests fail (RED phase) - 13 failures as expected
+3. ✅ Fixed failing tests (GREEN phase) - Fixed Napari mock dims configuration
+4. ✅ Applied code-reviewer agent - APPROVE rating with minor fixes required
+5. ✅ Fixed all linting errors:
+   - Fixed 11 unused `result =` assignments → `_ =`
+   - Renamed unused loop variable `bodypart_name` → `_bodypart_name`
+6. ✅ All 22 tests passing (100% pass rate)
+7. ✅ Code quality: ruff clean, mypy clean
+8. ✅ Updated TASKS.md checkboxes (Milestone 6.1 complete)
+
+**Test Coverage Summary:**
+
+- **Test Classes:** 7 well-organized classes
+  - TestNapariBackendIntegration (6 tests)
+  - TestVideoBackendIntegration (4 tests)
+  - TestHTMLBackendIntegration (3 tests)
+  - TestWidgetBackendIntegration (2 tests)
+  - TestMultiAnimalScenarios (2 tests)
+  - TestCrossBackendConsistency (2 tests)
+  - TestMixedOverlayTypes (3 tests)
+  - TestErrorHandling (1 test)
+
+**Test Scenarios Covered:**
+
+- ✅ Napari backend with all overlay types individually
+- ✅ Napari backend with all overlay types combined
+- ✅ Napari backend with regions
+- ✅ Video backend with all overlay types
+- ✅ Video backend with regions
+- ✅ HTML backend with position overlays
+- ✅ HTML backend with regions
+- ✅ HTML backend warnings for unsupported overlays
+- ✅ Widget backend with position and all overlays
+- ✅ Multi-animal scenarios (multiple overlays of same type)
+- ✅ Cross-backend consistency verification
+- ✅ Mixed overlay types in single animation
+- ✅ Error handling for dimension mismatches
+
+**Code Review Highlights:**
+
+- **Rating:** APPROVE (with fixes applied)
+- **Strengths:** Clear test organization, comprehensive coverage, proper mocking, good documentation
+- **Fixed:** All critical linting errors (12 unused variables)
+- **Noted:** Widget backend tests could be stronger (future improvement)
+
+**Design Insights:**
+
+- Integration tests complement existing backend-specific unit tests
+- Mock strategy allows fast execution without requiring actual video encoding or GUI
+- Tests verify end-to-end workflow from Environment.animate_fields() to backend rendering
+- Proper Napari dims configuration critical for mock testing
+
+**Files Modified:**
+
+- tests/animation/test_animation_with_overlays.py (922 lines, 22 tests)
+- TASKS.md (marked Milestone 6.1 complete)
+
 **Next Steps:**
-- Commit Milestone 5.3 completion with conventional commit message
-- Continue with Milestone 6: Integration & Cross-Backend Tests
+
+- Commit Milestone 6.1 completion with conventional commit message
+- Continue with Milestone 6.2: Visual Regression Tests (pytest-mpl)
