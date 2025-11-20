@@ -173,17 +173,28 @@ try:
 
     print("Launching Napari viewer...")
     print("")
-    print("PLAYBACK CONTROLS (bottom-left):")
-    print("  ▶ Play button - Start/stop animation")
-    print("  ━ Time slider - Scrub through frames")
+    print("ENHANCED PLAYBACK CONTROLS:")
     print("")
-    print("KEYBOARD SHORTCUTS:")
+    print("Built-in Controls (bottom-left):")
+    print("  ▶ Play button - Start/stop animation")
+    print("  ━ Time slider - Scrub through frames with instant seeking")
+    print("  Frame counter - Shows current frame (e.g., '1/30')")
+    print("")
+    print("Enhanced Widget (left sidebar - auto-added):")
+    print("  ⏯ Large Play/Pause button - Toggle animation (synced with spacebar)")
+    print("  📊 Speed (FPS) slider - 200px wide, 1-120 FPS range")
+    print("  📋 Frame counter - 'Frame: 15 / 30' with trial label")
+    print("  ✓ Updates in real-time during playback")
+    print("")
+    print("Keyboard Shortcuts:")
     print("  Spacebar - Play/pause (toggle)")
     print("  ← → Arrow keys - Step through frames")
     print("")
-    print("SPEED CONTROL (left sidebar):")
-    print("  📊 'Playback Speed' widget - Large slider (easy to drag)")
-    print("  Drag to adjust FPS (1-120) - updates instantly")
+    print("Memory Efficiency:")
+    print("  - Lazy loading with LRU caching (1000 frame cache)")
+    print("  - Chunked caching for >10K frames (100 frames/chunk)")
+    print("  - Instant seeking even with 100K+ frames (<100ms)")
+    print("  - GPU-accelerated rendering")
     print("")
 
     viewer = env.animate_fields(
@@ -198,6 +209,119 @@ try:
 
     # Only call napari.run() when running as a script (not in Jupyter)
     # In Jupyter, the viewer stays open without blocking execution
+    if get_ipython() is None:
+        print("  (Running as script - window will block until closed)")
+        napari.run()
+    else:
+        print("  (Running in Jupyter - window stays open, execution continues)")
+
+except ImportError:
+    print("⊗ Napari not available. Install with: pip install 'napari[all]>=0.4.18'")
+
+# %% [markdown]
+# ## Example 1b: Multi-Field Viewer (Comparing Multiple Neurons)
+#
+# **Best for**: Comparing spatial fields across multiple neurons/conditions
+#
+# **New Features**:
+# - Side-by-side comparison of multiple field sequences
+# - Synchronized playback across all layers
+# - Global color scale for fair comparison
+# - Layout options: horizontal, vertical, or grid
+# - Custom layer names for clarity
+#
+# **Use cases**:
+# - Comparing place fields across neuron ensembles
+# - Visualizing learning across multiple trials
+# - Side-by-side condition comparison (pre/post manipulation)
+
+# %%
+try:
+    import napari
+    from IPython import get_ipython
+
+    print("Creating multi-field comparison...")
+    print("")
+    print("Simulating 3 neurons with different spatial tuning:")
+
+    # Create 3 different neurons with distinct spatial patterns
+    # Neuron A: Maintains stable field at location A
+    # Neuron B: Remaps from A to B (like our original example)
+    # Neuron C: Has field at location B throughout
+
+    fields_neuron_a = []  # Stable at location A
+    fields_neuron_b = []  # Remaps from A to B
+    fields_neuron_c = []  # Stable at location B
+
+    for trial in range(n_trials):
+        # Neuron A: Stable field at location A
+        distances_a = env.distance_to([bin_a])
+        field_a = np.exp(-(distances_a**2) / (2 * 8.0**2))
+        field_a = field_a + np.random.randn(env.n_bins) * 0.15
+        field_a = np.maximum(field_a, 0)
+        fields_neuron_a.append(field_a)
+
+        # Neuron B: Remapping neuron (from earlier example)
+        # This is the same remapping pattern as before
+        if trial < remap_trial:
+            active_bin = bin_a
+            field_strength = 1.0
+        else:
+            active_bin = bin_b
+            field_strength = min(1.0, (trial - remap_trial + 1) / 5)
+
+        distances_b = env.distance_to([active_bin])
+        field_b = field_strength * np.exp(-(distances_b**2) / (2 * 8.0**2))
+        field_b = field_b + np.random.randn(env.n_bins) * 0.15
+        field_b = np.maximum(field_b, 0)
+        fields_neuron_b.append(field_b)
+
+        # Neuron C: Stable field at location B
+        distances_c = env.distance_to([bin_b])
+        field_c = np.exp(-(distances_c**2) / (2 * 8.0**2))
+        field_c = field_c + np.random.randn(env.n_bins) * 0.15
+        field_c = np.maximum(field_c, 0)
+        fields_neuron_c.append(field_c)
+
+    print("  Neuron A: Stable field at location A")
+    print("  Neuron B: Remaps from A → B at trial 15")
+    print("  Neuron C: Stable field at location B")
+    print("")
+
+    # Launch multi-field viewer
+    print("Launching multi-field Napari viewer...")
+    print("")
+    print("LAYOUT: Horizontal (side-by-side comparison)")
+    print("  - All fields share same color scale (fair comparison)")
+    print("  - Synchronized playback across layers")
+    print("  - Custom layer names for clarity")
+    print("")
+    print("PLAYBACK CONTROLS (same as single-field viewer):")
+    print("  Bottom-left: ▶ Play button, time slider")
+    print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
+    print("  Left sidebar: 📊 'Playback Speed' widget")
+    print("")
+
+    viewer = env.animate_fields(
+        fields=[fields_neuron_a, fields_neuron_b, fields_neuron_c],  # List of sequences
+        backend="napari",
+        layout="horizontal",  # Side-by-side arrangement
+        layer_names=[
+            "Neuron A (Stable A)",
+            "Neuron B (Remap A→B)",
+            "Neuron C (Stable B)",
+        ],
+        fps=10,
+        frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
+        title="Multi-Neuron Comparison",
+    )
+
+    print("✓ Multi-field viewer opened!")
+    print("")
+    print("TIP: Watch how Neuron B remaps while A and C stay stable")
+    print("TIP: Try different layouts - change 'horizontal' to 'vertical' or 'grid'")
+
+    # Only call napari.run() when running as a script (not in Jupyter)
     if get_ipython() is None:
         print("  (Running as script - window will block until closed)")
         napari.run()
@@ -403,16 +527,32 @@ try:
     import napari
     from IPython import get_ipython
 
+    print("")
+    print("CHUNKED CACHING FOR LARGE DATASETS:")
+    print(
+        "  - Auto-enabled for >10K frames (this demo has 1000, but shows the pattern)"
+    )
+    print("  - Caches frames in chunks of 100 (not individual frames)")
+    print("  - Pre-loads neighboring frames for smooth sequential playback")
+    print("  - Reduces cache overhead: 900K frames → 9K chunks")
+    print("  - LRU eviction: keeps recently accessed chunks in memory")
+    print("  - Benefits:")
+    print("    • 10x fewer cache entries (faster lookups)")
+    print("    • Better sequential playback (pre-loaded neighbors)")
+    print("    • Same instant seeking (<100ms even for 900K frames)")
+    print("")
     print("PLAYBACK CONTROLS:")
     print("  Bottom-left: ▶ Play button, time slider")
     print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
     print("  Left sidebar: 📊 'Playback Speed' widget (large slider, 1-120 FPS)")
+    print("")
 
     viewer = env.animate_fields(
         fields_mmap,
         backend="napari",
         fps=250,  # Match recording rate
         title="Large Session Demo (1000 frames)",
+        # cache_chunk_size=100,  # Auto-detected (default for >10K frames)
     )
     print("✓ Napari viewer opened!")
     print("  (Same technique works for 60K-900K frame sessions)")
@@ -483,6 +623,7 @@ if mmap_path.exists():
 # | Use Case | Backend | Installation | Best For |
 # |----------|---------|--------------|----------|
 # | **Exploration** | Napari | `pip install napari[all]` | Large datasets (100K+ frames), interactive |
+# | **Comparison** | Napari (multi-field) | `pip install napari[all]` | Side-by-side neuron comparison |
 # | **Publication** | Video | `brew install ffmpeg` | High-quality renders, parallel speed |
 # | **Sharing** | HTML | No dependencies | Remote viewing, single file |
 # | **Quick check** | Widget | `pip install ipywidgets` | Notebook integration |
@@ -493,6 +634,10 @@ if mmap_path.exists():
 # - **Memory constraints**: Use memory-mapped arrays (`np.memmap`)
 # - **Parallel rendering**: Increase `n_workers` for faster video export
 # - **File size**: Use `image_format='jpeg'` for HTML to reduce size
+# - **Chunked caching**: Auto-enabled for >10K frames (100 frames/chunk)
+#   - 10x fewer cache entries → faster lookups
+#   - Pre-loads neighboring frames → smooth sequential playback
+#   - Customize with `cache_chunk_size` parameter
 #
 # ### Common Patterns
 #
@@ -502,6 +647,14 @@ if mmap_path.exists():
 #
 # # Quick Napari check
 # env.animate_fields(fields, backend='napari')
+#
+# # Compare multiple neurons side-by-side (multi-field viewer)
+# env.animate_fields(
+#     fields=[neuron1_fields, neuron2_fields, neuron3_fields],
+#     backend='napari',
+#     layout='horizontal',  # or 'vertical', 'grid'
+#     layer_names=['Neuron A', 'Neuron B', 'Neuron C']
+# )
 #
 # # Publication video
 # env.animate_fields(fields, save_path='video.mp4', fps=5, n_workers=8)

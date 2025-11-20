@@ -491,11 +491,34 @@ Implement animation capabilities supporting four backends:
 
 ### Documentation
 
-- [ ] Update napari backend docstring with new features
-- [ ] Update examples/16_field_animation.py
-  - [ ] Show enhanced playback widget controls
-  - [ ] Demonstrate multi-field viewer (if implemented)
-- [ ] Add notes about chunked caching performance benefits
+- [x] Update napari backend docstring with new features
+  - [x] Documented multi-field `fields` parameter (list of arrays or list of lists)
+  - [x] Documented `layout` parameter (horizontal, vertical, grid)
+  - [x] Documented `layer_names` parameter for custom naming
+  - [x] Added multi-field example in docstring
+  - [x] Added "Multi-Field Viewer Mode" section in Notes
+- [x] Update examples/16_field_animation.ipynb (via jupytext paired mode)
+  - [x] Enhanced playback widget controls documentation (Example 1)
+    - Built-in controls (play button, time slider, frame counter)
+    - Enhanced widget details (large play/pause button, FPS slider, frame labels)
+    - Keyboard shortcuts
+    - Memory efficiency notes (LRU caching, chunked caching)
+  - [x] Demonstrate multi-field viewer (new Example 1b)
+    - Side-by-side comparison of 3 neurons
+    - Neuron A: Stable field at location A
+    - Neuron B: Remaps from A → B at trial 15
+    - Neuron C: Stable field at location B
+    - Shows layout, layer_names, synchronized playback
+  - [x] Added notes about chunked caching performance benefits
+    - Auto-enabled for >10K frames
+    - 100 frames/chunk (customizable)
+    - 10x fewer cache entries → faster lookups
+    - Pre-loads neighboring frames for smooth playback
+    - Details in Example 5 (large-scale session pattern)
+  - [x] Updated Key Takeaways section
+    - Added multi-field viewer to backend selection guide
+    - Added chunked caching tips to performance section
+    - Added multi-field example to Common Patterns
 
 ### Code Quality
 
