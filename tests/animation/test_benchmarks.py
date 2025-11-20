@@ -49,7 +49,7 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
     from neurospatial.animation.rendering import compute_global_colormap_range
 
     n_frames = 100_000
-    n_seeks = 100
+    n_seeks = 500  # Increased from 100 for better statistics
 
     # Create memory-mapped array (don't populate - lazy loading)
     memmap_path = tmp_path / "benchmark_fields.dat"
@@ -127,8 +127,8 @@ def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
     if not check_ffmpeg_available():
         pytest.skip("ffmpeg not available")
 
-    # Create fields (100 frames for reasonable benchmark time)
-    n_frames = 100
+    # Create fields (200 frames for more robust statistics)
+    n_frames = 200
     fields = [np.random.rand(small_benchmark_env.n_bins) for _ in range(n_frames)]
 
     # Clear cache to ensure pickle-ability
@@ -241,8 +241,8 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
     )
     from neurospatial.animation.rendering import compute_global_colormap_range
 
-    n_frames = 50_000  # 50K frames for reasonable benchmark time
-    n_seeks = 200  # More seeks to test cache behavior
+    n_frames = 100_000  # 100K frames for realistic large dataset
+    n_seeks = 500  # More seeks for better statistics
 
     # Create memory-mapped array
     memmap_path = tmp_path / "chunked_benchmark_fields.dat"
