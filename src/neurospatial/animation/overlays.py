@@ -515,6 +515,414 @@ class OverlayData:
 
 
 # =============================================================================
+# Validation Functions (WHAT/WHY/HOW error messages)
+# =============================================================================
+
+
+def _validate_monotonic_time(times: NDArray[np.float64], *, name: str) -> None:
+    """Validate that timestamps are monotonically increasing.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64]
+        Array of timestamps to validate.
+    name : str
+        Name of the overlay for error messages.
+
+    Raises
+    ------
+    ValueError
+        If times are not strictly monotonically increasing, with actionable
+        WHAT/WHY/HOW guidance.
+
+    Notes
+    -----
+    Empty arrays or single-element arrays pass validation trivially.
+    """
+    if times.size <= 1:
+        return  # Empty or single element is trivially monotonic
+
+    # Check if strictly increasing
+    if not np.all(np.diff(times) > 0):
+        # Find first non-monotonic index
+        diffs = np.diff(times)
+        first_bad_idx = np.where(diffs <= 0)[0][0] + 1
+
+        # WHAT/WHY/HOW format
+        raise ValueError(
+            f"WHAT: Non-monotonic timestamps detected in '{name}'.\n"
+            f"  First violation at index {first_bad_idx}: "
+            f"times[{first_bad_idx - 1}]={times[first_bad_idx - 1]:.6f}, "
+            f"times[{first_bad_idx}]={times[first_bad_idx]:.6f}\n\n"
+            f"WHY: Interpolation requires strictly increasing timestamps to align "
+            f"overlay data with animation frames.\n\n"
+            f"HOW: Sort the times array using np.argsort(), or if duplicates exist, "
+            f"apply jitter or remove duplicates. Example:\n"
+            f"  sorted_indices = np.argsort(times)\n"
+            f"  times = times[sorted_indices]\n"
+            f"  data = data[sorted_indices]"
+        )
+
+
+def _validate_finite_values(data: NDArray[np.float64], *, name: str) -> None:
+    """Validate that array contains only finite values (no NaN/Inf).
+
+    Parameters
+    ----------
+    data : NDArray[np.float64]
+        Array to validate for finite values.
+    name : str
+        Name of the data for error messages.
+
+    Raises
+    ------
+    ValueError
+        If array contains NaN or Inf values, with count, first index, and
+        actionable WHAT/WHY/HOW guidance.
+    """
+    non_finite_mask = ~np.isfinite(data)
+    n_non_finite = np.sum(non_finite_mask)
+
+    if n_non_finite > 0:
+        # Find first non-finite index
+        first_bad_idx = np.unravel_index(np.argmax(non_finite_mask), data.shape)
+
+        # Count NaN vs Inf
+        n_nan = np.sum(np.isnan(data))
+        n_inf = np.sum(np.isinf(data))
+
+        raise ValueError(
+            f"WHAT: Found {n_non_finite} non-finite values in '{name}' "
+            f"({n_nan} NaN, {n_inf} Inf).\n"
+            f"  First occurrence at index {first_bad_idx}: "
+            f"value={data[first_bad_idx]}\n\n"
+            f"WHY: Rendering cannot place markers or draw paths at invalid "
+            f"coordinates (NaN/Inf).\n\n"
+            f"HOW: Clean the data by removing or masking invalid values, or use "
+            f"interpolation to fill gaps:\n"
+            f"  # Option 1: Remove invalid samples\n"
+            f"  valid_mask = np.isfinite(data).all(axis=-1)\n"
+            f"  data = data[valid_mask]\n"
+            f"  times = times[valid_mask]\n\n"
+            f"  # Option 2: Interpolate over gaps (pandas or scipy)\n"
+            f"  from scipy.interpolate import interp1d"
+        )
+
+
+def _validate_shape(
+    data: NDArray[np.float64],
+    expected_ndims: int,
+    *,
+    name: str,
+) -> None:
+    """Validate that data has the expected number of spatial dimensions.
+
+    Parameters
+    ----------
+    data : NDArray[np.float64]
+        Data array to validate. Expected shape is (n_samples, expected_ndims).
+    expected_ndims : int
+        Expected number of spatial dimensions (should match env.n_dims).
+    name : str
+        Name of the data for error messages.
+
+    Raises
+    ------
+    ValueError
+        If data dimensions don't match expected, with actual vs expected and
+        actionable WHAT/WHY/HOW guidance.
+    """
+    # Handle both 1D arrays (angles) and 2D arrays (coordinates)
+    if data.ndim == 1:
+        actual_ndims = 1
+    elif data.ndim == 2:
+        actual_ndims = data.shape[1]
+    else:
+        # Invalid shape (3D+ arrays)
+        raise ValueError(
+            f"WHAT: Invalid array shape for '{name}'.\n"
+            f"  Expected: (n_samples,) or (n_samples, n_dims)\n"
+            f"  Got: {data.shape} with {data.ndim} dimensions\n\n"
+            f"WHY: Data must be either 1D (angles) or 2D (coordinates) for overlay "
+            f"rendering.\n\n"
+            f"HOW: Reshape your data to 2D:\n"
+            f"  data = data.reshape(-1, {expected_ndims})  # Flatten to 2D"
+        )
+
+    if actual_ndims != expected_ndims:
+        raise ValueError(
+            f"WHAT: Shape mismatch for '{name}'.\n"
+            f"  Expected: (n_samples, {expected_ndims}) spatial dimensions\n"
+            f"  Got: {data.shape} with {actual_ndims} spatial dimension(s)\n\n"
+            f"WHY: Coordinate dimensionality must match the environment's spatial "
+            f"dimensions (env.n_dims={expected_ndims}) for proper rendering.\n\n"
+            f"HOW: Reformat your data to match the environment dimensions:\n"
+            f"  # If you have wrong dimensions, project or slice:\n"
+            f"  data = data[:, :{expected_ndims}]  # Use first {expected_ndims} columns\n"
+            f"  # Or ensure env.n_dims matches your data dimensions"
+        )
+
+
+def _validate_temporal_alignment(
+    overlay_times: NDArray[np.float64],
+    frame_times: NDArray[np.float64],
+    *,
+    name: str,
+) -> None:
+    """Validate temporal overlap between overlay and animation frame times.
+
+    Parameters
+    ----------
+    overlay_times : NDArray[np.float64]
+        Timestamps for overlay data samples.
+    frame_times : NDArray[np.float64]
+        Timestamps for animation frames.
+    name : str
+        Name of the overlay for error/warning messages.
+
+    Raises
+    ------
+    ValueError
+        If there is no temporal overlap between overlay_times and frame_times.
+
+    Warns
+    -----
+    UserWarning
+        If temporal overlap is less than 50%, indicating potential interpolation
+        issues or suboptimal alignment.
+    """
+    import warnings
+
+    overlay_min, overlay_max = overlay_times.min(), overlay_times.max()
+    frame_min, frame_max = frame_times.min(), frame_times.max()
+
+    # Check for any overlap
+    overlap_start = max(overlay_min, frame_min)
+    overlap_end = min(overlay_max, frame_max)
+
+    if overlap_start >= overlap_end:
+        # No overlap at all
+        raise ValueError(
+            f"WHAT: No temporal overlap between '{name}' and animation frames.\n"
+            f"  Overlay times: [{overlay_min:.3f}, {overlay_max:.3f}]\n"
+            f"  Frame times: [{frame_min:.3f}, {frame_max:.3f}]\n\n"
+            f"WHY: Interpolation domain is disjoint - cannot align overlay data "
+            f"to any animation frames.\n\n"
+            f"HOW: Ensure overlapping time ranges:\n"
+            f"  # Option 1: Adjust overlay timestamps to match animation\n"
+            f"  overlay_times = overlay_times + {frame_min - overlay_min:.3f}\n\n"
+            f"  # Option 2: Resample overlay data to animation time range\n"
+            f"  # Option 3: Adjust frame_times to include overlay range"
+        )
+
+    # Calculate overlap percentage relative to frame times
+    overlap_duration = overlap_end - overlap_start
+    frame_duration = frame_max - frame_min
+    overlap_pct = (overlap_duration / frame_duration) * 100
+
+    # Warn if overlap is less than 50%
+    if overlap_pct < 50.0:
+        warnings.warn(
+            f"Partial temporal overlap for '{name}': {overlap_pct:.1f}%\n"
+            f"  Overlap range: [{overlap_start:.3f}, {overlap_end:.3f}]\n"
+            f"  Overlay times: [{overlay_min:.3f}, {overlay_max:.3f}]\n"
+            f"  Frame times: [{frame_min:.3f}, {frame_max:.3f}]\n"
+            f"Frames outside overlap will have NaN values (extrapolation disabled).\n"
+            f"Consider adjusting time ranges for better coverage.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+def _validate_bounds(
+    data: NDArray[np.float64],
+    dim_ranges: list[tuple[float, float]],
+    *,
+    name: str,
+    threshold: float = 0.1,
+) -> None:
+    """Validate that overlay coordinates fall within environment bounds.
+
+    Parameters
+    ----------
+    data : NDArray[np.float64]
+        Coordinate array with shape (n_samples, n_dims).
+    dim_ranges : list[tuple[float, float]]
+        Environment dimension ranges [(min0, max0), (min1, max1), ...].
+    name : str
+        Name of the data for warning messages.
+    threshold : float, optional
+        Fraction of points allowed outside bounds before warning. Default is 0.1
+        (10%).
+
+    Warns
+    -----
+    UserWarning
+        If more than threshold fraction of points fall outside dimension_ranges,
+        with statistics and actionable guidance.
+    """
+    import warnings
+
+    # Check if data is 1D (angles) - skip bounds checking
+    if data.ndim == 1:
+        return
+
+    # Count points outside bounds
+    n_total = data.shape[0]
+    outside_mask = np.zeros(n_total, dtype=bool)
+
+    for dim_idx, (dim_min, dim_max) in enumerate(dim_ranges):
+        outside_mask |= (data[:, dim_idx] < dim_min) | (data[:, dim_idx] > dim_max)
+
+    n_outside = np.sum(outside_mask)
+    pct_outside = (n_outside / n_total) * 100
+
+    if pct_outside > (threshold * 100):
+        # Calculate actual data ranges
+        data_mins = data.min(axis=0)
+        data_maxs = data.max(axis=0)
+
+        # Format dimension ranges for display
+        env_ranges_str = ", ".join(
+            f"[{dmin:.2f}, {dmax:.2f}]" for dmin, dmax in dim_ranges
+        )
+        data_ranges_str = ", ".join(
+            f"[{dmin:.2f}, {dmax:.2f}]"
+            for dmin, dmax in zip(data_mins, data_maxs, strict=True)
+        )
+
+        warnings.warn(
+            f"{pct_outside:.1f}% of '{name}' coordinates fall outside environment "
+            f"bounds ({n_outside}/{n_total} points).\n"
+            f"  Environment ranges: {env_ranges_str}\n"
+            f"  Data ranges: {data_ranges_str}\n\n"
+            f"This may indicate:\n"
+            f"  1. Mismatched coordinate systems or units\n"
+            f"  2. Incorrect environment dimensions\n"
+            f"  3. Data from a different recording session\n\n"
+            f"HOW: Confirm that overlay coordinates use the same coordinate system "
+            f"and units as the environment (check env.units and env.frame).",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+def _validate_skeleton_consistency(
+    skeleton: list[tuple[str, str]] | None,
+    bodypart_names: list[str],
+    *,
+    name: str,
+) -> None:
+    """Validate that skeleton connections reference existing bodypart names.
+
+    Parameters
+    ----------
+    skeleton : list[tuple[str, str]] | None
+        List of (part1, part2) connections. Can be None or empty.
+    bodypart_names : list[str]
+        Available bodypart names in the overlay data.
+    name : str
+        Name of the skeleton for error messages.
+
+    Raises
+    ------
+    ValueError
+        If skeleton references missing bodypart names, with suggestions for
+        nearest matches and actionable WHAT/WHY/HOW guidance.
+    """
+    if skeleton is None or len(skeleton) == 0:
+        return  # Nothing to validate
+
+    # Collect all referenced parts
+    referenced_parts = set()
+    for part1, part2 in skeleton:
+        referenced_parts.add(part1)
+        referenced_parts.add(part2)
+
+    # Find missing parts
+    available_parts = set(bodypart_names)
+    missing_parts = referenced_parts - available_parts
+
+    if missing_parts:
+        # Find suggestions using simple string distance
+        from difflib import get_close_matches
+
+        suggestions = {}
+        for missing in missing_parts:
+            matches = get_close_matches(missing, bodypart_names, n=2, cutoff=0.6)
+            if matches:
+                suggestions[missing] = matches
+
+        # Format suggestions
+        suggestion_str = "\n".join(
+            f"    '{missing}' → did you mean {matches}?"
+            for missing, matches in suggestions.items()
+        )
+
+        raise ValueError(
+            f"WHAT: Skeleton for '{name}' references missing bodypart(s): "
+            f"{sorted(missing_parts)}\n"
+            f"  Available bodyparts: {sorted(bodypart_names)}\n\n"
+            f"WHY: Cannot draw skeleton edges without both endpoints defined in the "
+            f"bodypart data.\n\n"
+            f"HOW: Fix the bodypart names in your skeleton or data:\n"
+            f"{suggestion_str}\n"
+            f"  # Or update skeleton to only use available parts:\n"
+            f"  skeleton = [(p1, p2) for p1, p2 in skeleton "
+            f"if p1 in bodypart_names and p2 in bodypart_names]"
+        )
+
+
+def _validate_pickle_ability(
+    overlay_data: OverlayData,
+    *,
+    n_workers: int | None,
+) -> None:
+    """Validate that OverlayData can be pickled for parallel rendering.
+
+    Parameters
+    ----------
+    overlay_data : OverlayData
+        The overlay data container to validate.
+    n_workers : int | None
+        Number of parallel workers. Validation is skipped if n_workers is None
+        or 1 (no parallelization).
+
+    Raises
+    ------
+    ValueError
+        If overlay_data cannot be pickled and n_workers > 1, with details about
+        the unpickleable attribute and actionable WHAT/WHY/HOW guidance.
+    """
+    # Skip validation if not using parallel rendering
+    if n_workers is None or n_workers <= 1:
+        return
+
+    import pickle
+
+    try:
+        # Attempt to pickle the overlay data
+        pickle.dumps(overlay_data)
+    except (pickle.PicklingError, TypeError, AttributeError) as e:
+        raise ValueError(
+            f"WHAT: OverlayData is not pickle-able, preventing parallel video "
+            f"rendering.\n"
+            f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
+            f"WHY: Parallel video rendering (n_workers > 1) requires pickling "
+            f"OverlayData to pass it to worker processes. Unpickleable objects "
+            f"include lambdas, closures, local functions, and certain class instances.\n\n"
+            f"HOW: Fix the issue using one of these approaches:\n"
+            f"  # Option 1: Call env.clear_cache() before rendering\n"
+            f"  env.clear_cache()  # Remove cached unpickleable objects\n"
+            f"  env.animate_fields(..., n_workers={n_workers})\n\n"
+            f"  # Option 2: Use single-threaded rendering\n"
+            f"  env.animate_fields(..., n_workers=1)\n\n"
+            f"  # Option 3: Remove unpickleable attributes from OverlayData\n"
+            f"  # (check for lambdas, local functions, or cached methods)"
+        ) from e
+
+
+# =============================================================================
 # Timeline and interpolation helpers (private)
 # =============================================================================
 

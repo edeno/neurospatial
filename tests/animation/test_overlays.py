@@ -14,6 +14,13 @@ from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
     PositionOverlay,
+    _validate_bounds,
+    _validate_finite_values,
+    _validate_monotonic_time,
+    _validate_pickle_ability,
+    _validate_shape,
+    _validate_skeleton_consistency,
+    _validate_temporal_alignment,
 )
 
 
@@ -226,6 +233,462 @@ class TestMultiAnimalSupport:
         overlay2 = BodypartOverlay(data=animal2_data)
 
         assert not np.array_equal(overlay1.data["head"], overlay2.data["head"])
+
+
+# =============================================================================
+# Validation Functions Tests (Milestone 1.4)
+# =============================================================================
+
+
+class TestValidateMonotonicTime:
+    """Test _validate_monotonic_time() function."""
+
+    def test_valid_monotonic_increasing(self):
+        """Test that monotonically increasing times pass validation."""
+        times = np.array([0.0, 1.0, 2.0, 3.0])
+        # Should not raise any exception
+        _validate_monotonic_time(times, name="test_overlay")
+
+    def test_strictly_increasing_times(self):
+        """Test that strictly increasing times pass validation."""
+        times = np.array([0.5, 1.5, 3.0, 10.0])
+        _validate_monotonic_time(times, name="test_overlay")
+
+    def test_non_monotonic_decreasing(self):
+        """Test that decreasing times raise ValueError with actionable message."""
+        times = np.array([0.0, 2.0, 1.0, 3.0])  # Decreases at index 2
+        with pytest.raises(ValueError) as exc_info:
+            _validate_monotonic_time(times, name="test_overlay")
+
+        error_msg = str(exc_info.value)
+        # WHAT: Non-monotonic times detected
+        assert "non-monotonic" in error_msg.lower() or "monotonic" in error_msg.lower()
+        # WHY: Interpolation requires increasing timestamps
+        assert "interpolation" in error_msg.lower()
+        # HOW: Sort or call fix_monotonic_timestamps()
+        assert "sort" in error_msg.lower() or "fix" in error_msg.lower()
+
+    def test_duplicate_times(self):
+        """Test that duplicate consecutive times raise ValueError."""
+        times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at index 2
+        with pytest.raises(ValueError) as exc_info:
+            _validate_monotonic_time(times, name="test_overlay")
+
+        error_msg = str(exc_info.value)
+        assert "monotonic" in error_msg.lower()
+
+    def test_all_identical_times(self):
+        """Test that all identical times raise ValueError."""
+        times = np.array([1.0, 1.0, 1.0, 1.0])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_monotonic_time(times, name="test_overlay")
+
+        error_msg = str(exc_info.value)
+        assert "monotonic" in error_msg.lower()
+
+    def test_empty_times_array(self):
+        """Test validation with empty times array."""
+        times = np.array([])
+        # Empty array should pass (no validation needed)
+        _validate_monotonic_time(times, name="test_overlay")
+
+    def test_single_time_value(self):
+        """Test validation with single time value (trivially monotonic)."""
+        times = np.array([5.0])
+        _validate_monotonic_time(times, name="test_overlay")
+
+
+class TestValidateFiniteValues:
+    """Test _validate_finite_values() function."""
+
+    def test_all_finite_values(self):
+        """Test that arrays with all finite values pass validation."""
+        data = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
+        # Should not raise any exception
+        _validate_finite_values(data, name="test_data")
+
+    def test_contains_nan(self):
+        """Test that NaN values raise ValueError with count and index."""
+        data = np.array([[0.0, 1.0], [np.nan, 3.0], [4.0, np.nan]])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_finite_values(data, name="test_data")
+
+        error_msg = str(exc_info.value)
+        # WHAT: Found NaN in arrays
+        assert "nan" in error_msg.lower()
+        # Count of NaN values
+        assert "2" in error_msg  # 2 NaN values
+        # WHY: Rendering cannot place invalid coordinates
+        assert "render" in error_msg.lower() or "invalid" in error_msg.lower()
+        # HOW: Clean or mask; suggest interpolation
+        assert "clean" in error_msg.lower() or "mask" in error_msg.lower()
+
+    def test_contains_inf(self):
+        """Test that Inf values raise ValueError."""
+        data = np.array([[0.0, 1.0], [np.inf, 3.0], [4.0, 5.0]])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_finite_values(data, name="test_data")
+
+        error_msg = str(exc_info.value)
+        assert "inf" in error_msg.lower()
+        assert "1" in error_msg  # 1 Inf value
+
+    def test_contains_neg_inf(self):
+        """Test that -Inf values raise ValueError."""
+        data = np.array([[0.0, 1.0], [-np.inf, 3.0]])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_finite_values(data, name="test_data")
+
+        error_msg = str(exc_info.value)
+        assert "inf" in error_msg.lower()
+
+    def test_mixed_nan_and_inf(self):
+        """Test array with both NaN and Inf values."""
+        data = np.array([[np.nan, 1.0], [np.inf, 3.0], [4.0, -np.inf]])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_finite_values(data, name="test_data")
+
+        error_msg = str(exc_info.value)
+        # Should report total count of non-finite values
+        assert "3" in error_msg  # 3 non-finite values
+
+    def test_1d_array_with_nan(self):
+        """Test validation with 1D array containing NaN."""
+        data = np.array([0.0, 1.0, np.nan, 3.0])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_finite_values(data, name="test_data")
+
+        error_msg = str(exc_info.value)
+        assert "nan" in error_msg.lower()
+
+
+class TestValidateShape:
+    """Test _validate_shape() function."""
+
+    def test_correct_2d_shape(self):
+        """Test that correct shape passes validation."""
+        data = np.array([[0.0, 1.0], [2.0, 3.0]])
+        expected_ndims = 2
+        _validate_shape(data, expected_ndims, name="test_data")
+
+    def test_correct_3d_shape(self):
+        """Test validation with 3D data."""
+        data = np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
+        expected_ndims = 3
+        _validate_shape(data, expected_ndims, name="test_data")
+
+    def test_wrong_dimensions(self):
+        """Test that dimension mismatch raises ValueError."""
+        data = np.array([[0.0, 1.0], [2.0, 3.0]])  # 2D
+        expected_ndims = 3  # Expecting 3D
+        with pytest.raises(ValueError) as exc_info:
+            _validate_shape(data, expected_ndims, name="test_data")
+
+        error_msg = str(exc_info.value)
+        # WHAT: Shape mismatch
+        assert "shape" in error_msg.lower() or "dimension" in error_msg.lower()
+        # Expected vs actual
+        assert "2" in error_msg  # actual
+        assert "3" in error_msg  # expected
+        # WHY: Coordinate dimensionality must match environment
+        assert "environment" in error_msg.lower() or "match" in error_msg.lower()
+        # HOW: Project/reformat
+        assert "reformat" in error_msg.lower() or "project" in error_msg.lower()
+
+    def test_1d_array_wrong_shape(self):
+        """Test that 1D array raises error when 2D expected."""
+        data = np.array([0.0, 1.0, 2.0])  # 1D
+        expected_ndims = 2
+        with pytest.raises(ValueError) as exc_info:
+            _validate_shape(data, expected_ndims, name="test_data")
+
+        error_msg = str(exc_info.value)
+        assert "shape" in error_msg.lower() or "dimension" in error_msg.lower()
+
+    def test_empty_array(self):
+        """Test validation with empty array."""
+        data = np.array([]).reshape(0, 2)
+        expected_ndims = 2
+        # Empty array with correct shape should pass
+        _validate_shape(data, expected_ndims, name="test_data")
+
+    def test_3d_array_raises_clear_error(self):
+        """Test that 3D+ arrays raise clear error about invalid shape."""
+        data = np.array([[[0.0, 1.0], [2.0, 3.0]]])  # 3D array
+        expected_ndims = 2
+        with pytest.raises(ValueError) as exc_info:
+            _validate_shape(data, expected_ndims, name="test_data")
+
+        error_msg = str(exc_info.value)
+        # Should mention invalid shape
+        assert "invalid" in error_msg.lower() or "shape" in error_msg.lower()
+        # Should show actual dimensions
+        assert "3" in error_msg  # 3 dimensions
+        # Should mention it must be 1D or 2D
+        assert "1d" in error_msg.lower() or "2d" in error_msg.lower()
+
+
+class TestValidateTemporalAlignment:
+    """Test _validate_temporal_alignment() function."""
+
+    def test_full_overlap(self):
+        """Test that full temporal overlap passes validation."""
+        overlay_times = np.array([0.0, 1.0, 2.0, 3.0])
+        frame_times = np.array([0.0, 1.0, 2.0, 3.0])
+        # Should not raise any exception or warning
+        _validate_temporal_alignment(overlay_times, frame_times, name="test_overlay")
+
+    def test_overlay_subset_of_frames(self):
+        """Test when overlay times are subset of frame times."""
+        overlay_times = np.array([1.0, 2.0, 3.0])
+        frame_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        _validate_temporal_alignment(overlay_times, frame_times, name="test_overlay")
+
+    def test_frames_subset_of_overlay(self):
+        """Test when frame times are subset of overlay times."""
+        overlay_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        frame_times = np.array([1.0, 2.0, 3.0])
+        _validate_temporal_alignment(overlay_times, frame_times, name="test_overlay")
+
+    def test_no_overlap_error(self):
+        """Test that no temporal overlap raises ValueError."""
+        overlay_times = np.array([0.0, 1.0, 2.0])
+        frame_times = np.array([5.0, 6.0, 7.0])
+        with pytest.raises(ValueError) as exc_info:
+            _validate_temporal_alignment(
+                overlay_times, frame_times, name="test_overlay"
+            )
+
+        error_msg = str(exc_info.value)
+        # WHAT: No overlap
+        assert "overlap" in error_msg.lower()
+        # WHY: Interpolation domain is disjoint
+        assert "disjoint" in error_msg.lower() or "interpolation" in error_msg.lower()
+        # HOW: Provide overlapping time ranges
+        assert "overlapping" in error_msg.lower() or "resample" in error_msg.lower()
+
+    def test_partial_overlap_warning(self):
+        """Test that partial overlap <50% raises warning."""
+        overlay_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])  # 5 seconds
+        frame_times = np.array(
+            [3.5, 4.0, 4.5, 5.0, 5.5]
+        )  # Overlap: 3.5-4.0 = 0.5s (10%)
+
+        # Should emit UserWarning
+        with pytest.warns(UserWarning) as warn_info:
+            _validate_temporal_alignment(
+                overlay_times, frame_times, name="test_overlay"
+            )
+
+        warning_msg = str(warn_info[0].message)
+        # Should report overlap percentage
+        assert "overlap" in warning_msg.lower()
+        assert "%" in warning_msg  # Percentage reported
+
+    def test_good_overlap_no_warning(self):
+        """Test that >50% overlap does not warn."""
+        import warnings
+
+        overlay_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        frame_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])  # >50% overlap
+
+        # Should not warn
+        with warnings.catch_warnings(record=True) as warn_list:
+            warnings.simplefilter("always")
+            _validate_temporal_alignment(
+                overlay_times, frame_times, name="test_overlay"
+            )
+
+        # Check no UserWarnings were issued
+        user_warnings = [w for w in warn_list if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+
+class TestValidateBounds:
+    """Test _validate_bounds() function."""
+
+    def test_all_points_in_bounds(self):
+        """Test that all points within bounds pass without warning."""
+        import warnings
+
+        data = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        # Should not warn
+        with warnings.catch_warnings(record=True) as warn_list:
+            warnings.simplefilter("always")
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.1)
+
+        # Check no UserWarnings were issued
+        user_warnings = [w for w in warn_list if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    def test_some_points_out_of_bounds_below_threshold(self):
+        """Test that few out-of-bounds points below threshold don't warn."""
+        import warnings
+
+        data = np.array([[1.0, 2.0], [3.0, 4.0], [15.0, 16.0]])  # 1/3 = 33% out
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        # With threshold=0.5 (50%), should not warn
+        with warnings.catch_warnings(record=True) as warn_list:
+            warnings.simplefilter("always")
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.5)
+
+        # Check no UserWarnings were issued
+        user_warnings = [w for w in warn_list if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    def test_many_points_out_of_bounds_warning(self):
+        """Test that many out-of-bounds points raise warning."""
+        data = np.array([[15.0, 16.0], [20.0, 25.0], [3.0, 4.0]])  # 2/3 = 66% out
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        with pytest.warns(UserWarning) as warn_info:
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.5)
+
+        warning_msg = str(warn_info[0].message)
+        # WARN: >X% points outside dimension_ranges
+        assert "%" in warning_msg
+        assert "outside" in warning_msg.lower() or "out" in warning_msg.lower()
+        # HOW: Confirm coordinate system and units
+        assert "coordinate" in warning_msg.lower() or "unit" in warning_msg.lower()
+
+    def test_show_min_max_values(self):
+        """Test that warning shows min/max vs environment ranges."""
+        data = np.array([[15.0, 16.0], [20.0, 25.0]])
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        with pytest.warns(UserWarning) as warn_info:
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.0)
+
+        warning_msg = str(warn_info[0].message)
+        # Should show actual min/max
+        assert "15" in warning_msg or "20" in warning_msg or "25" in warning_msg
+        # Should show env ranges
+        assert "0" in warning_msg or "10" in warning_msg
+
+    def test_skip_validation_for_1d_angles(self):
+        """Test that 1D angle arrays skip bounds validation."""
+        import warnings
+
+        data = np.array([0.0, np.pi, 2 * np.pi, 10 * np.pi])  # Angles, no bounds
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        # Should not warn (1D data skips bounds checking)
+        with warnings.catch_warnings(record=True) as warn_list:
+            warnings.simplefilter("always")
+            _validate_bounds(data, dim_ranges, name="angles", threshold=0.0)
+
+        # Check no UserWarnings were issued
+        user_warnings = [w for w in warn_list if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+
+class TestValidateSkeletonConsistency:
+    """Test _validate_skeleton_consistency() function."""
+
+    def test_valid_skeleton(self):
+        """Test that skeleton with all valid part names passes."""
+        skeleton = [("head", "body"), ("body", "tail")]
+        bodypart_names = ["head", "body", "tail"]
+        # Should not raise
+        _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
+
+    def test_skeleton_with_missing_parts(self):
+        """Test that skeleton referencing missing parts raises ValueError."""
+        skeleton = [("head", "body"), ("body", "tail")]
+        bodypart_names = ["head", "body"]  # Missing 'tail'
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_skeleton_consistency(
+                skeleton, bodypart_names, name="test_skeleton"
+            )
+
+        error_msg = str(exc_info.value)
+        # WHAT: Skeleton references missing part(s)
+        assert "skeleton" in error_msg.lower()
+        assert "missing" in error_msg.lower()
+        # WHY: Cannot draw edges without endpoints
+        assert "edge" in error_msg.lower() or "endpoint" in error_msg.lower()
+        # Should mention 'tail'
+        assert "tail" in error_msg.lower()
+
+    def test_skeleton_with_suggestions(self):
+        """Test that error includes nearest match suggestions."""
+        skeleton = [("head", "body"), ("body", "tale")]  # Typo: 'tale' vs 'tail'
+        bodypart_names = ["head", "body", "tail"]
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_skeleton_consistency(
+                skeleton, bodypart_names, name="test_skeleton"
+            )
+
+        error_msg = str(exc_info.value)
+        # HOW: Should suggest nearest matches
+        assert "tail" in error_msg.lower()  # Suggestion for 'tale'
+
+    def test_empty_skeleton(self):
+        """Test that empty skeleton passes validation."""
+        skeleton = []
+        bodypart_names = ["head", "body", "tail"]
+        _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
+
+    def test_none_skeleton(self):
+        """Test that None skeleton passes validation."""
+        skeleton = None
+        bodypart_names = ["head", "body", "tail"]
+        _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
+
+
+class TestValidatePickleAbility:
+    """Test _validate_pickle_ability() function."""
+
+    def test_pickleable_overlay_data(self):
+        """Test that pickle-able OverlayData passes validation."""
+        # Import the internal data classes (will implement later)
+        from neurospatial.animation.overlays import OverlayData, PositionData
+
+        position_data = PositionData(
+            data=np.array([[0.0, 1.0], [2.0, 3.0]]),
+            color="red",
+            size=10.0,
+            trail_length=None,
+        )
+        overlay_data = OverlayData(positions=[position_data])
+
+        # Should not raise
+        _validate_pickle_ability(overlay_data, n_workers=4)
+
+    def test_unpickleable_with_lambda(self):
+        """Test that OverlayData with lambda raises ValueError."""
+        from neurospatial.animation.overlays import OverlayData
+
+        # Create OverlayData with unpickleable attribute
+        overlay_data = OverlayData()
+        overlay_data._unpickleable_func = lambda x: x * 2  # Add unpickleable attribute
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_pickle_ability(overlay_data, n_workers=4)
+
+        error_msg = str(exc_info.value)
+        # WHAT: OverlayData not pickle-able
+        assert "pickle" in error_msg.lower()
+        # WHY: Parallel video rendering requires pickling
+        assert "parallel" in error_msg.lower()
+        # HOW: Remove unpickleable obj or n_workers=1
+        assert "n_workers=1" in error_msg or "remove" in error_msg.lower()
+
+    def test_skip_validation_with_single_worker(self):
+        """Test that pickle validation is skipped when n_workers=1."""
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData()
+        overlay_data._unpickleable_func = lambda x: x * 2
+
+        # Should not raise when n_workers=1 or None
+        _validate_pickle_ability(overlay_data, n_workers=1)
+        _validate_pickle_ability(overlay_data, n_workers=None)
 
 
 if __name__ == "__main__":

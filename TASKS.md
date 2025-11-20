@@ -55,34 +55,34 @@
 
 ### 1.4 Validation Functions (WHAT/WHY/HOW)
 
-- [ ] Implement `_validate_monotonic_time()` with actionable error
-  - [ ] WHAT: Non-monotonic times detected
-  - [ ] WHY: Interpolation requires increasing timestamps
-  - [ ] HOW: Sort or call `fix_monotonic_timestamps()`
-- [ ] Implement `_validate_finite_values()` with count and first index
-  - [ ] WHAT: Found NaN/Inf in overlay arrays
-  - [ ] WHY: Rendering cannot place invalid coordinates
-  - [ ] HOW: Clean or mask; suggest interpolation over gaps
-- [ ] Implement `_validate_shape()` with expected vs actual
-  - [ ] WHAT: Shape mismatch
-  - [ ] WHY: Coordinate dimensionality must match environment
-  - [ ] HOW: Project/reformat to match `env.n_dims`
-- [ ] Implement `_validate_temporal_alignment()` with overlap percentage
-  - [ ] ERROR: No overlap between `overlay.times` and `frame_times`
-  - [ ] WARN: Partial overlap <50% (report percentage)
-  - [ ] HOW: Provide overlapping time ranges or resample
-- [ ] Implement `_validate_bounds()` warning with percentage stats
-  - [ ] WARN: >X% points outside `env.dimension_ranges`
-  - [ ] Show min/max vs env ranges
-  - [ ] HOW: Confirm coordinate system and units
-- [ ] Implement `_validate_skeleton_consistency()` with name suggestions
-  - [ ] WHAT: Skeleton references missing part(s)
-  - [ ] WHY: Cannot draw edges without endpoints
-  - [ ] HOW: Fix names; suggest nearest matches (fuzzy)
-- [ ] Implement `_validate_pickle_ability()` with attribute details
-  - [ ] WHAT: OverlayData not pickle-able
-  - [ ] WHY: Parallel video rendering requires pickling
-  - [ ] HOW: Remove unpickleable obj or `n_workers=1`; call `env.clear_cache()`
+- [x] Implement `_validate_monotonic_time()` with actionable error
+  - [x] WHAT: Non-monotonic times detected
+  - [x] WHY: Interpolation requires increasing timestamps
+  - [x] HOW: Sort or call `fix_monotonic_timestamps()`
+- [x] Implement `_validate_finite_values()` with count and first index
+  - [x] WHAT: Found NaN/Inf in overlay arrays
+  - [x] WHY: Rendering cannot place invalid coordinates
+  - [x] HOW: Clean or mask; suggest interpolation over gaps
+- [x] Implement `_validate_shape()` with expected vs actual
+  - [x] WHAT: Shape mismatch
+  - [x] WHY: Coordinate dimensionality must match environment
+  - [x] HOW: Project/reformat to match `env.n_dims`
+- [x] Implement `_validate_temporal_alignment()` with overlap percentage
+  - [x] ERROR: No overlap between `overlay.times` and `frame_times`
+  - [x] WARN: Partial overlap <50% (report percentage)
+  - [x] HOW: Provide overlapping time ranges or resample
+- [x] Implement `_validate_bounds()` warning with percentage stats
+  - [x] WARN: >X% points outside `env.dimension_ranges`
+  - [x] Show min/max vs env ranges
+  - [x] HOW: Confirm coordinate system and units
+- [x] Implement `_validate_skeleton_consistency()` with name suggestions
+  - [x] WHAT: Skeleton references missing part(s)
+  - [x] WHY: Cannot draw edges without endpoints
+  - [x] HOW: Fix names; suggest nearest matches (fuzzy)
+- [x] Implement `_validate_pickle_ability()` with attribute details
+  - [x] WHAT: OverlayData not pickle-able
+  - [x] WHY: Parallel video rendering requires pickling
+  - [x] HOW: Remove unpickleable obj or `n_workers=1`; call `env.clear_cache()`
 
 ### 1.5 Conversion Funnel
 
