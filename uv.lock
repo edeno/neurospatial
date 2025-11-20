@@ -2616,6 +2616,7 @@ dependencies = [
 animation = [
     { name = "ipywidgets" },
     { name = "napari", extra = ["all"] },
+    { name = "pillow" },
 ]
 dev = [
     { name = "hypothesis" },
@@ -2681,6 +2682,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "opencv-python", marker = "extra == 'opencv'", specifier = ">=4.11.0.86" },
     { name = "pandas", specifier = ">=2.0.0" },
+    { name = "pillow", marker = "extra == 'animation'", specifier = ">=10.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
     { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0.0" },

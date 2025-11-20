@@ -155,3 +155,36 @@ def test_field_to_rgb_for_napari_clipping():
     # Should not raise and should produce valid RGB
     assert rgb.dtype == np.uint8
     assert np.all((rgb >= 0) & (rgb <= 255))
+
+
+def test_render_field_to_image_bytes_jpeg_format():
+    """Test field rendering to JPEG bytes (requires Pillow)."""
+    pytest.importorskip("PIL")  # Skip if Pillow not available
+
+    from neurospatial.animation.rendering import render_field_to_image_bytes
+
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+
+    field = np.random.rand(env.n_bins)
+
+    # Test JPEG format
+    jpeg_bytes = render_field_to_image_bytes(
+        env, field, cmap="viridis", vmin=0, vmax=1, dpi=50, image_format="jpeg"
+    )
+
+    # Check output type
+    assert isinstance(jpeg_bytes, bytes)
+    assert len(jpeg_bytes) > 0
+
+    # Check JPEG signature (first 3 bytes: 0xFF 0xD8 0xFF)
+    assert jpeg_bytes[:3] == b"\xff\xd8\xff"
+
+    # Compare with PNG format
+    png_bytes = render_field_to_image_bytes(
+        env, field, cmap="viridis", vmin=0, vmax=1, dpi=50, image_format="png"
+    )
+    # Both should produce valid output
+    assert len(png_bytes) > 0
+    # PNG signature check
+    assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
