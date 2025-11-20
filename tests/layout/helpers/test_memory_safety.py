@@ -162,27 +162,3 @@ class TestMemorySafetyIntegration:
             )
 
         assert env.n_bins > 0
-
-    def test_very_large_environment_only_warns(self):
-        """Test creating very large environment only warns, doesn't error.
-
-        This test verifies that grid creation PROCEEDS despite the warning
-        (doesn't raise an exception). It's similar to test_large_environment_warning
-        but explicitly checks that the operation completes successfully.
-        """
-        from neurospatial import Environment
-
-        # Create positions that will result in large grid above 100MB threshold
-        # Grid: ~1500x1500 bins = 2.25M bins ≈ 241MB (> 100MB default threshold)
-        # This matches test_large_environment_warning but emphasizes completion
-        positions = np.random.uniform(0, 1500, (1000, 2))
-
-        # This should warn but NOT raise an error - grid creation proceeds
-        with pytest.warns(ResourceWarning, match="Creating large grid"):
-            env = Environment.from_samples(
-                positions, bin_size=1.0, infer_active_bins=False
-            )
-
-        # Verify environment was created successfully despite warning
-        assert env.n_bins > 0
-        assert env._is_fitted
