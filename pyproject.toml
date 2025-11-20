@@ -292,5 +292,6 @@ dev = [
     "hypothesis>=6.92.0",
     "pytest-benchmark>=5.2.3",
     "pytest-cov>=7.0.0",
+    "pytest-mpl>=0.18.0",
     "pytest-xdist>=3.8.0",
 ]

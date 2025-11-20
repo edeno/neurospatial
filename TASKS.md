@@ -338,17 +338,17 @@
 - [x] Test mixed overlay types in single animation
 - [x] Run tests with `uv run pytest tests/animation/test_animation_with_overlays.py -v`
 
-### 6.2 Visual Regression Tests (pytest-mpl)
+### 6.2 Visual Regression Tests (pytest-mpl) ✅
 
-- [ ] Create `tests/animation/test_overlay_visual_regression.py`
-- [ ] Generate golden image: position with trail
-- [ ] Generate golden image: bodypart with skeleton
-- [ ] Generate golden image: head direction arrows
-- [ ] Generate golden image: regions with alpha
-- [ ] Generate golden image: mixed overlays
-- [ ] Configure pytest-mpl in `tests/conftest.py`
-- [ ] Run with `uv run pytest tests/animation/test_overlay_visual_regression.py --mpl-generate-path=baseline`
-- [ ] Verify visual consistency on subsequent runs
+- [x] Create `tests/animation/test_overlay_visual_regression.py`
+- [x] Generate golden image: position with trail
+- [x] Generate golden image: bodypart with skeleton
+- [x] Generate golden image: head direction arrows
+- [x] Generate golden image: regions with alpha
+- [x] Generate golden image: mixed overlays
+- [x] Configure pytest-mpl (installed pytest-mpl==0.18.0)
+- [x] Run with `uv run pytest tests/animation/test_overlay_visual_regression.py --mpl-generate-path=baseline`
+- [x] Verify visual consistency on subsequent runs
 
 ### 6.3 Backend Capability Matrix Tests
 

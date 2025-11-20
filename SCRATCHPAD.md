@@ -278,9 +278,8 @@ git commit -m "feat(animation): add overlay dataclasses"
 
 **Next steps:**
 
-- **MILESTONE 3 COMPLETE ✅** (All sub-milestones 3.1-3.6 finished)
-- Proceed to Milestone 4: Video Backend (Full Overlays)
-- Video backend will be next major feature implementation
+- **MILESTONE 6.2 COMPLETE ✅** - Visual Regression Tests
+- Continue with Milestone 6.3: Backend Capability Matrix Tests
 
 **Status:** ✅ **MILESTONE 4.1 COMPLETE** - Video Backend Overlay Rendering
 
@@ -589,7 +588,67 @@ HOW: Choose one of these solutions:
 - tests/animation/test_animation_with_overlays.py (922 lines, 22 tests)
 - TASKS.md (marked Milestone 6.1 complete)
 
+**Status:** ✅ **MILESTONE 6.2 COMPLETE** - Visual Regression Tests (pytest-mpl)
+
+**Completed:**
+1. ✅ Installed pytest-mpl==0.18.0 as dev dependency
+2. ✅ Created comprehensive test file with 7 visual regression tests (test_overlay_visual_regression.py)
+3. ✅ Implemented helper function: render_field_with_overlays() - comprehensive matplotlib rendering
+4. ✅ Created fixtures: env_2d, simple_field_2d
+5. ✅ Verified tests fail (RED phase) - no baseline images
+6. ✅ Generated 7 baseline images successfully:
+   - position_overlay_with_trail.png (27KB)
+   - position_overlay_no_trail.png (27KB)
+   - bodypart_overlay_with_skeleton.png (28KB)
+   - head_direction_overlay_angle.png (26KB)
+   - head_direction_overlay_vector.png (27KB)
+   - regions_with_alpha.png (28KB)
+   - mixed_overlays_all_types.png (31KB)
+7. ✅ Verified tests pass (GREEN phase) - 7/7 tests passing
+8. ✅ Fixed mypy errors:
+   - Added Figure import from matplotlib.figure
+   - Added assert for dimension_ranges type narrowing
+   - Fixed region.data type handling with tuple() and type: ignore
+9. ✅ All 7 tests passing, ruff clean, mypy clean
+10. ✅ Applied code-reviewer agent - APPROVED (production-ready)
+11. ✅ Updated TASKS.md checkboxes (Milestone 6.2 complete)
+
+**Code Review Highlights:**
+- **Rating:** APPROVE (production-ready)
+- **Strengths:**
+  - Comprehensive test coverage (all overlay types + combinations)
+  - Excellent documentation (NumPy docstrings, module docstring)
+  - Proper pytest-mpl integration
+  - Clean fixture and helper design
+  - Type-safe (mypy clean)
+  - Follows scientific Python best practices
+- **Suggested Enhancements (non-blocking):**
+  - Add edge case tests (empty trails, single-point trails, overlapping overlays)
+  - Extract magic numbers to named constants
+  - Document tolerance value choice
+  - Add type annotations to fixtures
+
+**Design Highlights:**
+- Single reusable helper function: render_field_with_overlays()
+- Simplified matplotlib rendering (mimics video backend approach)
+- Tests all overlay types individually and in combination
+- Baseline images stored in tests/animation/baseline/
+- Tolerance set to 5 (accounts for platform rendering variations)
+
+**Test Coverage:**
+1. Position overlay with trail (5 frames)
+2. Position overlay without trail (single point)
+3. Bodypart overlay with skeleton (3 parts, 2 edges)
+4. Head direction overlay (angle format - radians)
+5. Head direction overlay (vector format - unit vectors)
+6. Regions with alpha transparency (point + polygon)
+7. Mixed overlays (all types combined)
+
+**Files Created:**
+- tests/animation/test_overlay_visual_regression.py (556 lines, 7 tests)
+- tests/animation/baseline/*.png (7 baseline images, ~195KB total)
+
 **Next Steps:**
 
-- Commit Milestone 6.1 completion with conventional commit message
-- Continue with Milestone 6.2: Visual Regression Tests (pytest-mpl)
+- Commit Milestone 6.2 completion with conventional commit message
+- Continue with Milestone 6.3: Backend Capability Matrix Tests
