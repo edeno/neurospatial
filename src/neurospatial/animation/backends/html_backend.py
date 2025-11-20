@@ -203,9 +203,9 @@ def render_html(
     if save_path is None:
         save_path = "animation.html"
 
-    # Write to file
+    # Write to file with UTF-8 encoding (for Unicode button symbols on Windows)
     output_path = Path(save_path)
-    output_path.write_text(html)
+    output_path.write_text(html, encoding="utf-8")
 
     file_size_mb = output_path.stat().st_size / 1e6
     print(f"✓ HTML saved to {output_path} ({file_size_mb:.1f} MB)")
