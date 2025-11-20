@@ -10,7 +10,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import (
+    Environment,
+    PositionOverlay,
+)
 
 
 class TestSubsampleFrames:
@@ -479,3 +482,258 @@ class TestAnimateFieldsIntegration:
             assert call_kwargs["fps"] == 60
             assert call_kwargs["cmap"] == "hot"
             assert call_kwargs["dpi"] == 200
+
+
+class TestDispatcherOverlayIntegration:
+    """Test dispatcher integration with overlay system (Milestone 2.2)."""
+
+    def test_dispatcher_accepts_overlay_parameters(self):
+        """Test that dispatcher accepts new overlay parameters."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Create test overlay
+        overlay_pos = np.random.randn(10, 2) * 50
+        position_overlay = PositionOverlay(data=overlay_pos, color="red", size=5.0)
+
+        # Create frame times
+        frame_times = np.linspace(0, 10, 10)
+
+        # Mock HTML backend
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Should accept all new parameters without error
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=[position_overlay],
+                frame_times=frame_times,
+                show_regions=True,
+                region_alpha=0.5,
+            )
+
+            mock.assert_called_once()
+
+    def test_dispatcher_converts_overlays_when_provided(self):
+        """Test that dispatcher calls conversion funnel when overlays provided."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Create test overlays
+        overlay_pos = np.random.randn(10, 2) * 50
+        position_overlay = PositionOverlay(data=overlay_pos)
+
+        # Mock conversion funnel and backend
+        with (
+            patch(
+                "neurospatial.animation.overlays._convert_overlays_to_data"
+            ) as mock_convert,
+            patch(
+                "neurospatial.animation.backends.html_backend.render_html"
+            ) as mock_backend,
+        ):
+            mock_backend.return_value = Path("test.html")
+            from neurospatial.animation.overlays import OverlayData
+
+            mock_convert.return_value = OverlayData()  # Empty overlay data
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=[position_overlay],
+            )
+
+            # Check conversion was called
+            mock_convert.assert_called_once()
+            call_kwargs = mock_convert.call_args.kwargs
+            assert call_kwargs["overlays"] == [position_overlay]
+
+    def test_dispatcher_skips_conversion_when_no_overlays(self):
+        """Test that dispatcher skips conversion when overlays is None."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Mock conversion funnel and backend
+        with (
+            patch(
+                "neurospatial.animation.overlays._convert_overlays_to_data"
+            ) as mock_convert,
+            patch(
+                "neurospatial.animation.backends.html_backend.render_html"
+            ) as mock_backend,
+        ):
+            mock_backend.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=None,
+            )
+
+            # Check conversion was NOT called
+            mock_convert.assert_not_called()
+
+    def test_dispatcher_passes_overlay_data_to_backend(self):
+        """Test that dispatcher passes OverlayData to backend."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Create test overlay
+        overlay_pos = np.random.randn(10, 2) * 50
+        position_overlay = PositionOverlay(data=overlay_pos)
+
+        # Mock conversion and backend
+        with (
+            patch(
+                "neurospatial.animation.overlays._convert_overlays_to_data"
+            ) as mock_convert,
+            patch(
+                "neurospatial.animation.backends.html_backend.render_html"
+            ) as mock_backend,
+        ):
+            from neurospatial.animation.overlays import OverlayData
+
+            mock_overlay_data = OverlayData()
+            mock_convert.return_value = mock_overlay_data
+            mock_backend.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=[position_overlay],
+            )
+
+            # Check backend received overlay_data
+            call_kwargs = mock_backend.call_args[1]
+            assert "overlay_data" in call_kwargs
+            assert call_kwargs["overlay_data"] is mock_overlay_data
+
+    def test_dispatcher_builds_frame_times_from_fps_when_not_provided(self):
+        """Test that dispatcher synthesizes frame_times from fps when not provided."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Create overlay with times (requires frame_times alignment)
+        overlay_times = np.linspace(0, 10, 10)
+        overlay_pos = np.random.randn(10, 2) * 50
+        position_overlay = PositionOverlay(data=overlay_pos, times=overlay_times)
+
+        # Mock conversion and backend
+        with (
+            patch(
+                "neurospatial.animation.overlays._convert_overlays_to_data"
+            ) as mock_convert,
+            patch(
+                "neurospatial.animation.backends.html_backend.render_html"
+            ) as mock_backend,
+        ):
+            from neurospatial.animation.overlays import OverlayData
+
+            mock_convert.return_value = OverlayData()
+            mock_backend.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=[position_overlay],
+                fps=30,  # No frame_times provided, should be synthesized
+            )
+
+            # Check conversion was called with synthesized frame_times
+            call_kwargs = mock_convert.call_args.kwargs
+            frame_times_arg = call_kwargs["frame_times"]
+            assert frame_times_arg is not None
+            assert len(frame_times_arg) == 10  # n_frames
+
+    def test_dispatcher_uses_provided_frame_times(self):
+        """Test that dispatcher uses explicitly provided frame_times."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Create overlay and explicit frame times
+        overlay_pos = np.random.randn(10, 2) * 50
+        position_overlay = PositionOverlay(data=overlay_pos)
+        frame_times = np.linspace(0, 5, 10)  # Custom times
+
+        # Mock conversion and backend
+        with (
+            patch(
+                "neurospatial.animation.overlays._convert_overlays_to_data"
+            ) as mock_convert,
+            patch(
+                "neurospatial.animation.backends.html_backend.render_html"
+            ) as mock_backend,
+        ):
+            from neurospatial.animation.overlays import OverlayData
+
+            mock_convert.return_value = OverlayData()
+            mock_backend.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                overlays=[position_overlay],
+                frame_times=frame_times,
+            )
+
+            # Check conversion received the exact frame_times we provided
+            call_kwargs = mock_convert.call_args.kwargs
+            frame_times_arg = call_kwargs["frame_times"]
+            np.testing.assert_array_equal(frame_times_arg, frame_times)
+
+    def test_dispatcher_passes_show_regions_to_backend(self):
+        """Test that dispatcher passes show_regions parameter to backend."""
+        from neurospatial.animation.core import animate_fields
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        # Mock backend
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                show_regions=["region1", "region2"],
+                region_alpha=0.4,
+            )
+
+            # Check backend received parameters
+            call_kwargs = mock.call_args[1]
+            assert call_kwargs["show_regions"] == ["region1", "region2"]
+            assert call_kwargs["region_alpha"] == 0.4

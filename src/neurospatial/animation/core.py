@@ -15,6 +15,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial.animation.overlays import (
+        BodypartOverlay,
+        HeadDirectionOverlay,
+        PositionOverlay,
+    )
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
@@ -59,6 +64,11 @@ def animate_fields(
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
+    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+    | None = None,
+    frame_times: NDArray[np.float64] | None = None,
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
     **kwargs: Any,
 ) -> Any:
     """Main animation dispatcher.
@@ -76,6 +86,24 @@ def animate_fields(
         Animation backend to use
     save_path : str, optional
         Output path for video/HTML backends
+    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay], optional
+        Dynamic overlays to render on top of spatial fields. Supports position
+        trajectories, multi-animal pose tracking, and head direction visualization.
+        Multiple overlays can be provided for multi-animal tracking.
+        Default is None (no overlays).
+    frame_times : NDArray[np.float64], optional
+        Explicit timestamps for each frame, shape (n_frames,). If provided, overlays
+        with times will be aligned via interpolation. If None, frames assumed evenly
+        spaced at fps rate. Must be monotonically increasing if provided.
+        Default is None.
+    show_regions : bool or list[str], default=False
+        Whether to render region overlays. If True, all regions defined in env.regions
+        are rendered. If list of strings, only those region names are rendered.
+        Regions rendered as semi-transparent polygons. Default is False.
+    region_alpha : float, default=0.3
+        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque. Only used when show_regions
+        is True or a list. Default is 0.3.
     **kwargs : dict
         Additional backend-specific parameters
 
@@ -107,6 +135,10 @@ def animate_fields(
     -----
     For parallel video rendering, ensure environment is pickle-able by calling
     env.clear_cache() before animating.
+
+    Backend signature mismatches with EnvironmentProtocol are intentional during
+    phased implementation. Overlay parameters will be added to backend signatures
+    in Milestones 3-5.
     """
     # Normalize fields to list of arrays
     if isinstance(fields, np.ndarray):
@@ -142,6 +174,27 @@ def animate_fields(
     # Compute n_frames (for multi-field, use length of first sequence)
     n_frames = len(fields[0]) if is_multi_field else len(fields)
 
+    # Build or verify frame_times for overlay alignment
+    if overlays is not None or frame_times is not None:
+        from neurospatial.animation.overlays import _build_frame_times
+
+        # Get fps from kwargs (default 30)
+        fps = kwargs.get("fps", 30)
+        frame_times = _build_frame_times(
+            n_frames=n_frames, fps=fps, frame_times=frame_times
+        )
+
+    # Convert overlays to internal OverlayData if provided
+    overlay_data = None
+    if overlays is not None:
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        # frame_times is guaranteed to be set by _build_frame_times above
+        assert frame_times is not None, "frame_times should be built before conversion"
+        overlay_data = _convert_overlays_to_data(
+            overlays=overlays, frame_times=frame_times, n_frames=n_frames, env=env
+        )
+
     # Auto-select backend
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
@@ -150,7 +203,14 @@ def animate_fields(
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        return render_napari(env, fields, **kwargs)  # type: ignore[arg-type]
+        return render_napari(
+            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            fields,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+            **kwargs,
+        )
 
     elif backend == "video":
         from neurospatial.animation.backends.video_backend import render_video
@@ -165,19 +225,42 @@ def animate_fields(
         if n_workers and n_workers > 1:
             _validate_env_pickleable(env)
 
-        return render_video(env, fields, save_path, **kwargs)  # type: ignore[arg-type]
+        return render_video(
+            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            fields,
+            save_path,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+            **kwargs,
+        )
 
     elif backend == "html":
         from neurospatial.animation.backends.html_backend import render_html
 
         if save_path is None:
             save_path = "animation.html"
-        return render_html(env, fields, save_path, **kwargs)  # type: ignore[arg-type]
+        return render_html(
+            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            fields,
+            save_path,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+            **kwargs,
+        )
 
     elif backend == "widget":
         from neurospatial.animation.backends.widget_backend import render_widget
 
-        return render_widget(env, fields, **kwargs)  # type: ignore[arg-type]
+        return render_widget(
+            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            fields,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+            **kwargs,
+        )
 
     else:
         raise ValueError(f"Unknown backend: {backend}")

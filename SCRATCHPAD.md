@@ -1,14 +1,14 @@
 # Animation Overlays v0.4.0 - Development Scratchpad
 
 **Started:** 2025-11-20
-**Current Milestone:** Milestone 2 - Protocol Update (2.1 COMPLETE ✅)
-**Status:** Ready for Milestone 2.2: Core Dispatcher Updates
+**Current Milestone:** Milestone 2 COMPLETE ✅ (Protocol & Core Dispatcher)
+**Status:** Ready for Milestone 3: Napari Backend Updates
 
 ---
 
 ## Current Task
 
-**Task:** Update core dispatcher in `src/neurospatial/animation/core.py`
+**Task:** Update Napari backend for overlay rendering (`src/neurospatial/animation/backends/napari_backend.py`)
 
 **Approach:**
 - Following TDD: Write tests first, then implementation
@@ -81,9 +81,25 @@
    - Mypy and ruff pass
    - All 73 overlay tests still pass
 
+12. ✅ Updated Core Dispatcher (Milestone 2.2 & 2.3 COMPLETE)
+   - Updated `src/neurospatial/animation/core.py` dispatcher signature
+   - Added overlay type imports with TYPE_CHECKING guard
+   - Implemented frame_times building/verification using _build_frame_times()
+   - Added conversion funnel call when overlays provided
+   - Updated all 4 backend routing calls (napari, video, html, widget) to pass:
+     - overlay_data parameter
+     - show_regions parameter
+     - region_alpha parameter
+   - Added comprehensive dispatcher docstring with NumPy format
+   - Added 7 new integration tests in TestDispatcherOverlayIntegration class
+   - All 35 tests passing (28 existing + 7 new)
+   - Mypy and ruff pass
+   - Code review rating: APPROVE (no critical issues, minor docstring update addressed)
+   - Test summary: 35 passed in test_core.py
+
 **Next Steps:**
-- Commit Milestone 2.1 completion with conventional commit message
-- Continue with Milestone 2.2: Core Dispatcher Updates
+- Commit Milestone 2.2 completion with conventional commit message
+- Continue with Milestone 3: Napari Backend Updates
 
 ---
 

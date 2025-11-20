@@ -128,21 +128,27 @@
 
 ### 2.2 Core Dispatcher Updates
 
-- [ ] Update `src/neurospatial/animation/core.py` dispatcher
-- [ ] Compute `n_frames` from `fields` shape
-- [ ] Build/verify `frame_times` using `_build_frame_times()`
-- [ ] Call `overlay_data = _convert_overlays_to_data(...)` if overlays provided
-- [ ] Pass `overlay_data` to selected backend
-- [ ] Update all backend routing calls to accept `overlay_data` parameter
+- [x] Update `src/neurospatial/animation/core.py` dispatcher
+- [x] Compute `n_frames` from `fields` shape
+- [x] Build/verify `frame_times` using `_build_frame_times()`
+- [x] Call `overlay_data = _convert_overlays_to_data(...)` if overlays provided
+- [x] Pass `overlay_data` to selected backend
+- [x] Update all backend routing calls to accept `overlay_data` parameter
+- [x] Updated dispatcher docstring with NumPy format for new parameters
+- [x] Ensured mypy and ruff pass
+- [x] Code review completed (APPROVE rating)
 
 ### 2.3 Integration Tests (Core)
 
-- [ ] Create `tests/animation/test_core_dispatcher.py`
-- [ ] Test dispatcher with no overlays (backward compatibility)
-- [ ] Test dispatcher with `frame_times` provided
-- [ ] Test dispatcher with synthesized `frame_times` from fps
-- [ ] Test `overlay_data` correctly passed to backend mock
-- [ ] Run tests with `uv run pytest tests/animation/test_core_dispatcher.py -v`
+- [x] Added `TestDispatcherOverlayIntegration` class to `tests/animation/test_core.py`
+- [x] Test dispatcher accepts overlay parameters (backward compatibility)
+- [x] Test dispatcher with no overlays (skips conversion)
+- [x] Test dispatcher with `frame_times` provided (uses explicit times)
+- [x] Test dispatcher with synthesized `frame_times` from fps
+- [x] Test `overlay_data` correctly passed to backend mock
+- [x] Test conversion funnel called when overlays provided
+- [x] Test show_regions and region_alpha passed to backend
+- [x] Run tests with `uv run pytest tests/animation/test_core.py -v` (35/35 passing)
 
 ---
 
