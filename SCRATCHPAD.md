@@ -2093,3 +2093,88 @@ Larger samples validate the implementation and reveal **significantly better par
 - ✅ Parallel scaling validated for real-world workloads
 - ✅ All targets exceeded by large margins
 - ✅ Updated TASKS.md with improved results
+
+---
+
+### Session 24 - M8 Memory Profiling + Systematic Debugging (2025-11-19)
+
+**Task:** Profile memory usage and systematically debug any issues
+
+**Implementation:**
+Created [tests/animation/test_memory_profiling.py](tests/animation/test_memory_profiling.py) with 4 comprehensive tests (407 lines):
+
+**Memory Profiling Results:**
+
+1. **Napari Lazy Loading (10K frames):**
+   - Baseline: 311.0 MB
+   - After memmap creation: +36.4 MB (virtual memory allocation)
+   - After renderer creation: +0.0 MB ✓
+   - After 10 frame access: +0.3 MB ✓
+   - **Conclusion:** Lazy loading works perfectly (0.3MB vs 36.4MB if eager)
+
+2. **Parallel Rendering Cleanup (50 frames, 4 workers):**
+   - Baseline: 311.6 MB
+   - After rendering: +2.7 MB ✓
+   - **Conclusion:** Excellent memory cleanup
+   - Note: 1 background process detected (pytest/Qt, not a leak)
+
+3. **Large Memmap Dataset (100K frames):**
+   - Memmap creation: +0.0 MB (lazy) ✓
+   - 100 frame access: +0.0 MB (lazy) ✓
+   - Subsample operation: +279.1 MB ⚠️
+   - **Finding:** Subsample shows high overhead (investigation required)
+
+4. **Memory Requirements Documentation:**
+   - Small (100 frames): 0.7 MB
+   - Medium (1K frames): 7.3 MB
+   - Large (100K memmap): 364 MB disk, ~20 MB RAM
+   - Napari cache: 28.6 MB (1000 frames)
+   - Parallel (4 workers): ~400 MB
+   - Recommendations documented for each backend
+
+**Systematic Debugging Investigation (subsample_frames):**
+
+Following systematic-debugging skill:
+
+**Phase 1: Root Cause Investigation**
+- Reproduced: `test_memmap_large_dataset_memory` shows 279MB overhead
+- Read implementation: Line 372 in `core.py`: `fields[indices]`
+- Traced data flow:
+  1. `_subsample_indices` creates non-uniform indices: [0, 8, 17, 25, 33, ...]
+  2. Gaps vary (8, 9, 8, 8...) due to rounding for accurate frame timing
+  3. `subsample_frames` uses fancy indexing: `fields[indices_array]`
+  4. **NumPy fancy indexing on memmap → MUST COPY (non-contiguous elements)**
+
+**Phase 2: Pattern Analysis**
+- Compared alternatives:
+  - Basic indexing `fields[::step]`: Creates view (no copy) but requires uniform step
+  - Fancy indexing `fields[indices]`: Copies data but allows non-uniform sampling
+- **Trade-off identified:** Accurate frame timing vs memory efficiency
+- For 250 Hz → 30 fps over 1 hour: frame drift would accumulate with uniform sampling
+
+**Phase 3: Conclusion**
+- **This is EXPECTED BEHAVIOR, not a bug**
+- NumPy fancy indexing must copy non-contiguous elements (documented behavior)
+- Acceptable for video export (one-time operation)
+- Large datasets: Use Napari directly with memmap (no subsample needed)
+- Already documented in memory profiling tests
+
+**Phase 4: No Fix Needed**
+- Behavior is correct and intentional
+- Trade-off favors accuracy over memory
+- Users have alternative workflow (Napari + memmap)
+- Documentation updated in TASKS.md
+
+**Status:**
+- ✅ All 4 memory profiling tests passing
+- ✅ Systematic debugging complete
+- ✅ Root cause identified and documented
+- ✅ No code changes needed (expected behavior)
+- ✅ Updated TASKS.md with investigation findings
+
+**Commits:**
+- `c5bb173` - test(animation): add memory profiling tests
+- `dd2e611` - docs(animation): document subsample memory behavior investigation
+
+**Next Task:**
+Error Message Review (M8 Testing and Polish)
