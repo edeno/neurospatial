@@ -31,10 +31,12 @@ def check_ffmpeg_available() -> bool:
 
     Examples
     --------
-    >>> if check_ffmpeg_available():
-    ...     print("ffmpeg is installed")
-    ... else:
-    ...     print("Please install ffmpeg")
+    .. code-block:: python
+
+        if check_ffmpeg_available():
+            print("ffmpeg is installed")
+        else:
+            print("Please install ffmpeg")
     """
     try:
         subprocess.run(
@@ -111,18 +113,21 @@ def render_video(
 
     Examples
     --------
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]
-    >>> # Dry run to estimate time/size
-    >>> render_video(
-    ...     env, fields, "output.mp4", dry_run=True, n_workers=4
-    ... )  # doctest: +SKIP
-    >>> # Actual rendering
-    >>> path = render_video(
-    ...     env, fields, "output.mp4", fps=10, n_workers=4
-    ... )  # doctest: +SKIP
-    >>> print(f"Video saved to {path}")  # doctest: +SKIP
+    .. code-block:: python
+
+        import numpy as np
+        from neurospatial import Environment
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(20)]
+
+        # Dry run to estimate time/size
+        render_video(env, fields, "output.mp4", dry_run=True, n_workers=4)
+
+        # Actual rendering
+        path = render_video(env, fields, "output.mp4", fps=10, n_workers=4)
+        print(f"Video saved to {path}")
 
     Notes
     -----

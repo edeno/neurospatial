@@ -68,16 +68,22 @@ def parallel_render_frames(
 
     Examples
     --------
-    >>> import tempfile
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(10)]
-    >>> with tempfile.TemporaryDirectory() as tmpdir:
-    ...     pattern = parallel_render_frames(
-    ...         env, fields, tmpdir, "viridis", 0.0, 1.0, None, 100, 2
-    ...     )
-    ...     print("frame_" in pattern and ".png" in pattern)  # doctest: +SKIP
-    True
+    .. code-block:: python
+
+        import tempfile
+        import numpy as np
+        from neurospatial import Environment
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pattern = parallel_render_frames(
+                env, fields, tmpdir, "viridis", 0.0, 1.0, None, 100, 2
+            )
+            print("frame_" in pattern and ".png" in pattern)
+            # True
     """
     import pickle
 
@@ -165,26 +171,34 @@ def _render_worker_frames(task: dict) -> None:
 
     Examples
     --------
-    >>> import tempfile
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(3)]
-    >>> with tempfile.TemporaryDirectory() as tmpdir:
-    ...     task = {
-    ...         "env": env,
-    ...         "fields": fields,
-    ...         "start_frame_idx": 0,
-    ...         "output_dir": tmpdir,
-    ...         "cmap": "viridis",
-    ...         "vmin": 0.0,
-    ...         "vmax": 1.0,
-    ...         "frame_labels": None,
-    ...         "dpi": 50,
-    ...     }
-    ...     _render_worker_frames(task)
-    ...     png_files = list(Path(tmpdir).glob("frame_*.png"))
-    ...     len(png_files)  # doctest: +SKIP
-    3
+    .. code-block:: python
+
+        import tempfile
+        from pathlib import Path
+        import numpy as np
+        from neurospatial import Environment
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            task = {
+                "env": env,
+                "fields": fields,
+                "start_frame_idx": 0,
+                "output_dir": tmpdir,
+                "cmap": "viridis",
+                "vmin": 0.0,
+                "vmax": 1.0,
+                "frame_labels": None,
+                "dpi": 50,
+                "n_total_frames": 3,
+            }
+            _render_worker_frames(task)
+            png_files = list(Path(tmpdir).glob("frame_*.png"))
+            len(png_files)
+            # 3
     """
     env = task["env"]
     fields = task["fields"]

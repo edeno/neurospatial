@@ -78,13 +78,16 @@ def render_html(
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]
-    >>> path = env.animate_fields(fields, backend="html", save_path="output.html")
-    >>> print(f"HTML player saved to {path}")
+    .. code-block:: python
+
+        import numpy as np
+        from neurospatial import Environment
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(20)]
+        path = env.animate_fields(fields, backend="html", save_path="output.html")
+        print(f"HTML player saved to {path}")
 
     Notes
     -----

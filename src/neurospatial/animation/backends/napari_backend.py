@@ -295,34 +295,36 @@ def render_napari(
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.animation.backends.napari_backend import render_napari
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>>
-    >>> # Single-field animation
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(100)]
-    >>>
-    >>> # Launch viewer
-    >>> viewer = render_napari(env, fields, fps=30, cmap="viridis")
-    >>> # napari.run()  # Uncomment to block until window closed
-    >>>
-    >>> # Multi-field animation (e.g., comparing 3 neurons)
-    >>> seq1 = [np.random.rand(env.n_bins) for _ in range(50)]
-    >>> seq2 = [np.random.rand(env.n_bins) for _ in range(50)]
-    >>> seq3 = [np.random.rand(env.n_bins) for _ in range(50)]
-    >>>
-    >>> # View side-by-side with custom names
-    >>> viewer = render_napari(
-    ...     env,
-    ...     fields=[seq1, seq2, seq3],
-    ...     layout="horizontal",
-    ...     layer_names=["Neuron A", "Neuron B", "Neuron C"],
-    ...     fps=10,
-    ... )
+    .. code-block:: python
+
+        import numpy as np
+        from neurospatial import Environment
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        # Create environment
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Single-field animation
+        fields = [np.random.rand(env.n_bins) for _ in range(100)]
+
+        # Launch viewer
+        viewer = render_napari(env, fields, fps=30, cmap="viridis")
+        # napari.run()  # Uncomment to block until window closed
+
+        # Multi-field animation (e.g., comparing 3 neurons)
+        seq1 = [np.random.rand(env.n_bins) for _ in range(50)]
+        seq2 = [np.random.rand(env.n_bins) for _ in range(50)]
+        seq3 = [np.random.rand(env.n_bins) for _ in range(50)]
+
+        # View side-by-side with custom names
+        viewer = render_napari(
+            env,
+            fields=[seq1, seq2, seq3],
+            layout="horizontal",
+            layer_names=["Neuron A", "Neuron B", "Neuron C"],
+            fps=10,
+        )
 
     Notes
     -----
@@ -809,12 +811,14 @@ class LazyFieldRenderer:
 
     Examples
     --------
-    >>> renderer = LazyFieldRenderer(env, fields, cmap_lookup, 0.0, 1.0)
-    >>> len(renderer)  # Number of frames
-    100
-    >>> frame = renderer[0]  # Render frame 0 (cached)
-    >>> frame = renderer[0]  # Retrieved from cache (instant)
-    >>> frame = renderer[-1]  # Negative indexing supported
+    .. code-block:: python
+
+        renderer = LazyFieldRenderer(env, fields, cmap_lookup, 0.0, 1.0)
+        len(renderer)  # Number of frames
+        # 100
+        frame = renderer[0]  # Render frame 0 (cached)
+        frame = renderer[0]  # Retrieved from cache (instant)
+        frame = renderer[-1]  # Negative indexing supported
     """
 
     def __init__(
@@ -1008,14 +1012,16 @@ class ChunkedLazyFieldRenderer:
 
     Examples
     --------
-    >>> renderer = ChunkedLazyFieldRenderer(
-    ...     env, fields, cmap_lookup, 0.0, 1.0, chunk_size=100, max_chunks=50
-    ... )
-    >>> len(renderer)  # Number of frames
-    100000
-    >>> frame = renderer[0]  # Loads chunk 0 (frames 0-99)
-    >>> frame = renderer[50]  # Retrieved from chunk 0 cache (instant)
-    >>> frame = renderer[100]  # Loads chunk 1 (frames 100-199)
+    .. code-block:: python
+
+        renderer = ChunkedLazyFieldRenderer(
+            env, fields, cmap_lookup, 0.0, 1.0, chunk_size=100, max_chunks=50
+        )
+        len(renderer)  # Number of frames
+        # 100000
+        frame = renderer[0]  # Loads chunk 0 (frames 0-99)
+        frame = renderer[50]  # Retrieved from chunk 0 cache (instant)
+        frame = renderer[100]  # Loads chunk 1 (frames 100-199)
     """
 
     def __init__(
