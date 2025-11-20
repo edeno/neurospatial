@@ -17,6 +17,9 @@ Place-field analysis → an object with field, fields (list of bin-index arrays)
     - should be able to display head direction
     - should be able to display multiple body parts (e.g., nose, tail base)
     - multiple synced environments
+    - Multi-Animal Support
+    - Mark specific events (rewards, errors, choice points) on timeline.
+    - Extend to 3D environments with 3D position tracking.
 - [ ] Head direction
   - [ ] Implement head direction cell analysis, including circular occupancy, tuning curves, and metrics like mean vector length and preferred direction.
   - [ ] Add utilities for circular statistics (e.g., Rayleigh test) to assess significance of head direction tuning.
