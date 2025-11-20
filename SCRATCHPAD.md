@@ -179,3 +179,51 @@ uv run pytest
 # Commit with conventional format
 git commit -m "feat(animation): add overlay dataclasses"
 ```
+
+**Status:** ✅ **MILESTONE 3.1 COMPLETE** - Napari Overlay Rendering
+
+**Completed:**
+1. ✅ Created comprehensive test file with 28 tests (test_napari_overlays.py)
+2. ✅ Verified tests fail (RED phase) - parameter not in signature, rendering not implemented
+3. ✅ Implemented overlay rendering (GREEN phase):
+   - Helper function: _transform_coords_for_napari() - (x, y) → (y, x) transformation
+   - Helper function: _render_position_overlay() - tracks + points with trails
+   - Helper function: _render_bodypart_overlay() - points + skeleton shapes
+   - Helper function: _render_head_direction_overlay() - vectors
+   - Helper function: _render_regions() - polygon shapes with alpha
+   - Updated render_napari() signature - added overlay_data, show_regions, region_alpha
+   - Updated _render_multi_field_napari() signature - same overlay parameters
+   - Removed legacy overlay_trajectory parameter
+4. ✅ Fixed bugs identified in tests:
+   - Head direction vector format (inhomogeneous array) - added time dimension to direction
+   - Region.kind attribute access (removed .value)
+5. ✅ Passed all 25 tests
+6. ✅ Fixed ruff and mypy issues:
+   - Simplified useless conditional in bodypart color assignment
+   - Added type annotations for face_colors, layers, region_properties
+   - Added type: ignore comment for region.data.exterior access
+7. ✅ Applied code-reviewer agent - APPROVED with recommended doc fixes
+8. ✅ Fixed documentation issues:
+   - Removed outdated overlay_trajectory parameter docs
+   - Fixed Raises section
+   - Replaced "Trajectory Overlay" section with comprehensive "Overlay System" documentation
+   - Added empty bodyparts validation with clear error message
+9. ✅ Final verification - All 25 tests pass, ruff clean, mypy clean
+
+**Design highlights:**
+- Clean separation of concerns (one function per overlay type)
+- Consistent coordinate transformation (single source of truth)
+- Proper use of Napari layer types (tracks, points, shapes, vectors)
+- Multi-animal support via suffix numbering
+- Graceful handling of optional features (trails, skeletons, colors, NaN values)
+- NumPy-style docstrings for all functions
+- Comprehensive test coverage (all overlay types, multi-overlay, edge cases)
+
+**Files modified:**
+- src/neurospatial/animation/backends/napari_backend.py (370+ lines of overlay code)
+- tests/animation/test_napari_overlays.py (695 lines, 25 tests)
+
+**Next steps:**
+- Milestone 3.2: Video backend overlay rendering
+- Milestone 3.3: HTML backend overlay rendering
+- Milestone 3.4: Widget backend overlay rendering

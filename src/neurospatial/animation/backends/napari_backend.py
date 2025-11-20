@@ -23,6 +23,386 @@ except ImportError:
     NAPARI_AVAILABLE = False
 
 
+# =============================================================================
+# Overlay Rendering Helper Functions
+# =============================================================================
+
+
+def _transform_coords_for_napari(coords: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Transform coordinates from (x, y) to (y, x) for Napari axis convention.
+
+    Napari uses (y, x) axis order for 2D data, opposite of the standard (x, y).
+
+    Parameters
+    ----------
+    coords : ndarray
+        Coordinates with shape (..., n_dims) where last dimension is spatial.
+        For 2D data, expects (..., 2) with (x, y) ordering.
+
+    Returns
+    -------
+    transformed : ndarray
+        Coordinates with swapped axes. For 2D: (x, y) → (y, x).
+        Higher dimensions returned unchanged.
+    """
+    if coords.shape[-1] == 2:
+        # Swap x and y for 2D
+        return coords[..., ::-1]  # Reverse last dimension
+    # For other dimensions, return unchanged
+    return coords
+
+
+def _render_position_overlay(
+    viewer: Any, position_data: Any, name_suffix: str = ""
+) -> list:
+    """Render a single position overlay with optional trail.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance
+    position_data : PositionData
+        Position overlay data aligned to frames
+    name_suffix : str
+        Suffix for layer names (e.g., for multi-animal)
+
+    Returns
+    -------
+    layers : list
+        List of created layer objects for later updates
+    """
+    layers = []
+    n_frames = len(position_data.data)
+
+    # Transform coordinates to napari (y, x) convention
+    transformed_data = _transform_coords_for_napari(position_data.data)
+
+    # Add tracks layer for trail if trail_length specified
+    if position_data.trail_length is not None:
+        # Create track data: (track_id, time, y, x)
+        track_data = np.column_stack(
+            [
+                np.zeros(n_frames),  # Single track
+                np.arange(n_frames),  # Time
+                transformed_data[:, 0],  # Y
+                transformed_data[:, 1],  # X
+            ]
+        )
+
+        layer = viewer.add_tracks(
+            track_data,
+            name=f"Position Trail{name_suffix}",
+            tail_length=position_data.trail_length,
+            color=position_data.color,
+        )
+        layers.append(layer)
+
+    # Add points layer for current position marker
+    # Create points with time dimension: (time, y, x)
+    points_data = np.column_stack(
+        [
+            np.arange(n_frames),  # Time
+            transformed_data[:, 0],  # Y
+            transformed_data[:, 1],  # X
+        ]
+    )
+
+    layer = viewer.add_points(
+        points_data,
+        name=f"Position{name_suffix}",
+        size=position_data.size,
+        face_color=position_data.color,
+        edge_color="white",
+        edge_width=0.5,
+    )
+    layers.append(layer)
+
+    return layers
+
+
+def _render_bodypart_overlay(
+    viewer: Any, bodypart_data: Any, name_suffix: str = ""
+) -> list:
+    """Render a single bodypart overlay with skeleton.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance
+    bodypart_data : BodypartData
+        Bodypart overlay data aligned to frames
+    name_suffix : str
+        Suffix for layer names
+
+    Returns
+    -------
+    layers : list
+        List of created layer objects for later updates
+    """
+    layers = []
+
+    # Validate non-empty bodyparts dictionary
+    if not bodypart_data.bodyparts:
+        raise ValueError(
+            "BodypartData must contain at least one bodypart. "
+            "Received empty bodyparts dictionary."
+        )
+
+    n_frames = len(next(iter(bodypart_data.bodyparts.values())))
+
+    # Render bodypart points
+    # Combine all bodyparts into single points layer with properties for coloring
+    all_points = []
+    all_features = []
+
+    for part_name, coords in bodypart_data.bodyparts.items():
+        # Transform coordinates
+        transformed = _transform_coords_for_napari(coords)
+
+        # Add time dimension: (time, y, x)
+        points_with_time = np.column_stack(
+            [
+                np.arange(n_frames),
+                transformed[:, 0],  # Y
+                transformed[:, 1],  # X
+            ]
+        )
+        all_points.append(points_with_time)
+
+        # Track which bodypart each point belongs to
+        all_features.extend([part_name] * n_frames)
+
+    # Stack all points
+    points_array = np.vstack(all_points)
+
+    # Determine face colors
+    face_colors: list[str] | str
+    if bodypart_data.colors is not None:
+        # Map bodypart names to colors
+        face_colors = [bodypart_data.colors.get(name, "white") for name in all_features]
+    else:
+        face_colors = "white"
+
+    layer = viewer.add_points(
+        points_array,
+        name=f"Bodyparts{name_suffix}",
+        size=5.0,
+        face_color=face_colors,
+        edge_color="black",
+        edge_width=0.5,
+        features={"bodypart": all_features},
+    )
+    layers.append(layer)
+
+    # Render skeleton if provided
+    if bodypart_data.skeleton is not None:
+        # Create line shapes for skeleton edges
+        # For each frame, create lines connecting skeleton pairs
+        skeleton_lines = []
+
+        for frame_idx in range(n_frames):
+            frame_lines = []
+            for start_part, end_part in bodypart_data.skeleton:
+                if (
+                    start_part in bodypart_data.bodyparts
+                    and end_part in bodypart_data.bodyparts
+                ):
+                    start_coords = bodypart_data.bodyparts[start_part][frame_idx]
+                    end_coords = bodypart_data.bodyparts[end_part][frame_idx]
+
+                    # Skip if either endpoint is NaN
+                    if np.any(np.isnan(start_coords)) or np.any(np.isnan(end_coords)):
+                        continue
+
+                    # Transform to napari coords
+                    start_napari = _transform_coords_for_napari(
+                        start_coords.reshape(1, -1)
+                    )[0]
+                    end_napari = _transform_coords_for_napari(
+                        end_coords.reshape(1, -1)
+                    )[0]
+
+                    # Line in napari format: [[time, y1, x1], [time, y2, x2]]
+                    line = np.array(
+                        [
+                            [frame_idx, start_napari[0], start_napari[1]],
+                            [frame_idx, end_napari[0], end_napari[1]],
+                        ]
+                    )
+                    frame_lines.append(line)
+
+            if frame_lines:
+                skeleton_lines.extend(frame_lines)
+
+        if skeleton_lines:
+            layer = viewer.add_shapes(
+                skeleton_lines,
+                name=f"Skeleton{name_suffix}",
+                shape_type="line",
+                edge_color=bodypart_data.skeleton_color,
+                edge_width=bodypart_data.skeleton_width,
+            )
+            layers.append(layer)
+
+    return layers
+
+
+def _render_head_direction_overlay(
+    viewer: Any, head_dir_data: Any, env: Environment, name_suffix: str = ""
+) -> list:
+    """Render a single head direction overlay as vectors.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance
+    head_dir_data : HeadDirectionData
+        Head direction data aligned to frames
+    env : Environment
+        Environment for positioning vectors
+    name_suffix : str
+        Suffix for layer names
+
+    Returns
+    -------
+    layers : list
+        List of created layer objects for later updates
+    """
+    layers = []
+    n_frames = len(head_dir_data.data)
+
+    # Determine if data is angles or vectors
+    is_angles = head_dir_data.data.ndim == 1
+
+    # Get centroid of environment for vector origin
+    centroid = np.mean(env.bin_centers, axis=0)
+    centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1))[0]
+
+    # Convert to vectors for napari
+    vectors_data = []
+
+    for frame_idx in range(n_frames):
+        if is_angles:
+            # Convert angle to unit vector, then scale by length
+            angle = head_dir_data.data[frame_idx]
+            direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
+        else:
+            # Already a vector, just scale to desired length
+            direction = head_dir_data.data[frame_idx]
+            # Normalize and scale
+            norm = np.linalg.norm(direction)
+            if norm > 0:
+                direction = direction / norm * head_dir_data.length
+
+        # Transform direction to napari coords
+        direction_napari = _transform_coords_for_napari(direction.reshape(1, -1))[0]
+
+        # Napari vector format: [[time, y, x], [dt, dy, dx]]
+        # Direction also needs time component (0 for spatial direction only)
+        vector = np.array(
+            [
+                [frame_idx, centroid_napari[0], centroid_napari[1]],  # Origin (t, y, x)
+                [0, direction_napari[0], direction_napari[1]],  # Direction (0, dy, dx)
+            ]
+        )
+        vectors_data.append(vector)
+
+    # Stack vectors and add layer
+    vectors_array = np.array(vectors_data)
+
+    layer = viewer.add_vectors(
+        vectors_array,
+        name=f"Head Direction{name_suffix}",
+        edge_color=head_dir_data.color,
+        edge_width=3.0,
+        length=1.0,  # Vectors already scaled by length
+    )
+    layers.append(layer)
+
+    return layers
+
+
+def _render_regions(
+    viewer: Any, env: Environment, show_regions: bool | list[str], region_alpha: float
+) -> list:
+    """Render environment regions as shapes.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance
+    env : Environment
+        Environment with regions
+    show_regions : bool or list of str
+        If True, show all regions. If list, show only specified regions.
+    region_alpha : float
+        Alpha transparency for regions (0-1)
+
+    Returns
+    -------
+    layers : list
+        List of created layer objects
+    """
+    layers: list[Any] = []
+
+    if not show_regions or len(env.regions) == 0:
+        return layers
+
+    # Determine which regions to show
+    if isinstance(show_regions, bool):
+        region_names = list(env.regions.keys())
+    else:
+        region_names = show_regions
+
+    # Collect region shapes
+    region_shapes: list[NDArray[np.float64]] = []
+    region_properties: dict[str, list[str]] = {"name": []}
+
+    for region_name in region_names:
+        if region_name not in env.regions:
+            continue
+
+        region = env.regions[region_name]
+
+        # Convert region to napari shape
+        if region.kind == "point":
+            # Point regions: render as small circle
+            coords = _transform_coords_for_napari(region.data.reshape(1, -1))[0]
+            # Create circle polygon (approximate with octagon)
+            radius = 2.0  # Small visual marker
+            angles = np.linspace(0, 2 * np.pi, 9)
+            circle = np.column_stack(
+                [
+                    coords[0] + radius * np.cos(angles),
+                    coords[1] + radius * np.sin(angles),
+                ]
+            )
+            region_shapes.append(circle)
+            region_properties["name"].append(region_name)
+        elif region.kind == "polygon":
+            # Polygon regions: use directly
+            # Extract coordinates from Shapely polygon
+            # Note: region.data is a Shapely Polygon here
+            coords = np.array(region.data.exterior.coords)  # type: ignore[union-attr]
+            coords_napari = _transform_coords_for_napari(coords)
+            region_shapes.append(coords_napari)
+            region_properties["name"].append(region_name)
+
+    if region_shapes:
+        layer = viewer.add_shapes(
+            region_shapes,
+            name="Regions",
+            shape_type="polygon",
+            edge_color="white",
+            face_color="white",
+            opacity=region_alpha,
+            properties=region_properties,
+        )
+        layers.append(layer)
+
+    return layers
+
+
 def _is_multi_field_input(fields: list) -> bool:
     """Check if fields is multi-field input (list of sequences).
 
@@ -223,13 +603,15 @@ def render_napari(
     vmin: float | None = None,
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
-    overlay_trajectory: NDArray[np.float64] | None = None,
     title: str = "Spatial Field Animation",
     cache_size: int = 1000,
     chunk_size: int = 10,
     max_chunks: int = 100,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
+    overlay_data: Any | None = None,  # OverlayData - use Any to avoid circular import
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> Any:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -258,10 +640,6 @@ def render_napari(
         Frame labels (e.g., ["Trial 1", "Trial 2", ...])
         Displayed in the enhanced playback control widget alongside
         the frame counter (requires magicgui, included with napari[all])
-    overlay_trajectory : ndarray, optional
-        Positions to overlay as trajectory (shape: n_timepoints, n_dims)
-        - 2D trajectories: rendered as tracks
-        - Higher dimensions: rendered as points
     title : str, default="Spatial Field Animation"
         Viewer window title
     cache_size : int, default=1000
@@ -288,6 +666,17 @@ def render_napari(
         Multi-field mode only: Custom names for each layer. Must match the
         number of field sequences. If None, uses "Field 1", "Field 2", etc.
         Single-field mode: ignored
+    overlay_data : OverlayData, optional
+        Overlay data containing position, bodypart, head direction, and region
+        overlays to render on top of fields. Created by the conversion pipeline
+        (see neurospatial.animation.overlays). If None, no overlays are rendered.
+        Default is None.
+    show_regions : bool or list of str, default=False
+        If True, show all environment regions. If list, show only specified
+        regions by name. Regions are rendered as semi-transparent polygon shapes.
+    region_alpha : float, default=0.3
+        Alpha transparency for region overlays (0.0 = fully transparent,
+        1.0 = fully opaque). Only applies when show_regions is True or non-empty.
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -302,8 +691,6 @@ def render_napari(
     ------
     ImportError
         If napari is not installed
-    ValueError
-        If overlay_trajectory has invalid shape (must be 2D)
 
     Examples
     --------
@@ -393,10 +780,22 @@ def render_napari(
     - GPU acceleration for rendering
     - Suitable for hour-long sessions (900K frames at 250 Hz)
 
-    **Trajectory Overlay:**
+    **Overlay System:**
 
-    2D trajectories are rendered as tracks with temporal dimension.
-    Higher-dimensional trajectories fall back to point cloud rendering.
+    The overlay system supports multiple overlay types that can be combined:
+
+    - **Position overlays**: Trajectory tracking with optional trails
+      (tracks + points layers)
+    - **Bodypart overlays**: Multi-keypoint pose tracking with skeleton
+      visualization (points + shapes layers)
+    - **Head direction overlays**: Directional heading as vectors (vectors layer)
+    - **Region overlays**: Environment regions of interest (shapes layer
+      with transparency)
+
+    Multiple overlays of the same type can be rendered simultaneously
+    (e.g., multi-animal tracking). Overlays are automatically aligned to
+    animation frame times during the conversion pipeline. All overlays use
+    Napari's native layer types for GPU-accelerated rendering.
 
     **Multi-Field Viewer Mode:**
 
@@ -444,13 +843,15 @@ def render_napari(
             vmin=vmin,
             vmax=vmax,
             frame_labels=frame_labels,
-            overlay_trajectory=overlay_trajectory,
             title=title,
             cache_size=cache_size,
             chunk_size=chunk_size,
             max_chunks=max_chunks,
             layout=layout,
             layer_names=layer_names,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
         )
 
     # Single-field viewer (original behavior)
@@ -525,30 +926,28 @@ def render_napari(
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
-    # Add trajectory overlay if provided
-    if overlay_trajectory is not None:
-        if overlay_trajectory.ndim != 2:
-            raise ValueError(
-                f"overlay_trajectory must be 2D (n_timepoints, n_dims), "
-                f"got shape {overlay_trajectory.shape}"
+    # Render overlay data if provided
+    if overlay_data is not None:
+        # Render position overlays (tracks + points)
+        for idx, pos_data in enumerate(overlay_data.positions):
+            suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
+            _render_position_overlay(viewer, pos_data, name_suffix=suffix)
+
+        # Render bodypart overlays (points + skeleton)
+        for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
+            suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
+            _render_bodypart_overlay(viewer, bodypart_data, name_suffix=suffix)
+
+        # Render head direction overlays (vectors)
+        for idx, head_dir_data in enumerate(overlay_data.head_directions):
+            suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
+            _render_head_direction_overlay(
+                viewer, head_dir_data, env, name_suffix=suffix
             )
 
-        # For 2D trajectories, add as tracks
-        if overlay_trajectory.shape[1] == 2:
-            # Create track data: (track_id, time, y, x)
-            n_points = len(overlay_trajectory)
-            track_data = np.column_stack(
-                [
-                    np.zeros(n_points),  # Single track
-                    np.arange(n_points),  # Time
-                    overlay_trajectory[:, 1],  # Y
-                    overlay_trajectory[:, 0],  # X
-                ]
-            )
-            viewer.add_tracks(track_data, name="Trajectory")
-        else:
-            # Higher dimensional - just plot as points
-            viewer.add_points(overlay_trajectory, name="Trajectory", size=2)
+    # Render regions if requested
+    if show_regions:
+        _render_regions(viewer, env, show_regions, region_alpha)
 
     return viewer
 
@@ -562,13 +961,15 @@ def _render_multi_field_napari(
     vmin: float | None = None,
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
-    overlay_trajectory: NDArray[np.float64] | None = None,
     title: str = "Multi-Field Animation",
     cache_size: int = 1000,
     chunk_size: int = 10,
     max_chunks: int = 100,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
+    overlay_data: Any | None = None,  # OverlayData
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
 ) -> Any:
     """Render multiple field sequences in a single napari viewer.
 
@@ -592,8 +993,6 @@ def _render_multi_field_napari(
         for consistent comparison.
     frame_labels : list of str, optional
         Frame labels (e.g., ["Trial 1", "Trial 2", ...])
-    overlay_trajectory : ndarray, optional
-        Positions to overlay as trajectory
     title : str, default="Multi-Field Animation"
         Viewer window title
     cache_size : int, default=1000
@@ -711,27 +1110,28 @@ def _render_multi_field_napari(
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
-    # Add trajectory overlay if provided
-    if overlay_trajectory is not None:
-        if overlay_trajectory.ndim != 2:
-            raise ValueError(
-                f"overlay_trajectory must be 2D (n_timepoints, n_dims), "
-                f"got shape {overlay_trajectory.shape}"
+    # Render overlay data if provided
+    if overlay_data is not None:
+        # Render position overlays (tracks + points)
+        for idx, pos_data in enumerate(overlay_data.positions):
+            suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
+            _render_position_overlay(viewer, pos_data, name_suffix=suffix)
+
+        # Render bodypart overlays (points + skeleton)
+        for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
+            suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
+            _render_bodypart_overlay(viewer, bodypart_data, name_suffix=suffix)
+
+        # Render head direction overlays (vectors)
+        for idx, head_dir_data in enumerate(overlay_data.head_directions):
+            suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
+            _render_head_direction_overlay(
+                viewer, head_dir_data, env, name_suffix=suffix
             )
 
-        if overlay_trajectory.shape[1] == 2:
-            n_points = len(overlay_trajectory)
-            track_data = np.column_stack(
-                [
-                    np.zeros(n_points),
-                    np.arange(n_points),
-                    overlay_trajectory[:, 1],
-                    overlay_trajectory[:, 0],
-                ]
-            )
-            viewer.add_tracks(track_data, name="Trajectory")
-        else:
-            viewer.add_points(overlay_trajectory, name="Trajectory", size=2)
+    # Render regions if requested
+    if show_regions:
+        _render_regions(viewer, env, show_regions, region_alpha)
 
     return viewer
 
