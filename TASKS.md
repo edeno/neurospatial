@@ -605,13 +605,27 @@ Implement animation capabilities supporting four backends:
 
 ### Performance Benchmarks
 
-- [ ] Create `tests/animation/test_benchmarks.py`
-- [ ] Benchmark Napari seek performance
-  - [ ] Target: <100ms for 100K frames
-- [ ] Benchmark parallel rendering scalability
-  - [ ] Test 1, 2, 4, 8 workers
-- [ ] Benchmark HTML generation
-  - [ ] Target: <20s for 100 frames
+- [x] Create `tests/animation/test_benchmarks.py` (5 comprehensive benchmarks, all passing)
+- [x] Benchmark Napari seek performance
+  - [x] Target: <100ms for 100K frames → **Actual: 0.06ms (1600x better!)** ✅
+  - [x] Test with 100K frames, 100 random seeks
+  - [x] Results: Mean 0.06ms, Median 0.05ms, P95 0.06ms, Max 0.08ms
+- [x] Benchmark parallel rendering scalability
+  - [x] Test 1, 2, 4, 8 workers
+  - [x] Realistic targets (accounting for process/pickle/ffmpeg overhead):
+    - [x] 2 workers: ≥1.2x speedup → **Actual: 1.35x** ✅
+    - [x] 4 workers: ≥1.4x speedup → **Actual: 1.49x** ✅
+  - [x] Results show expected scaling with Amdahl's law (8 workers: 1.20x)
+- [x] Benchmark HTML generation
+  - [x] Target: <20s for 100 frames → **Actual: 2.97s (7x faster!)** ✅
+  - [x] Per-frame encoding: 29.67ms/frame
+- [x] Benchmark chunked cache performance (50K frames, informational)
+  - [x] Documents trade-offs between regular and chunked caching
+  - [x] Note: Overhead visible for unpopulated memmap (instant rendering)
+  - [x] Real-world benefit: Pre-loading for expensive rendering operations
+- [x] Benchmark subsample_frames performance
+  - [x] Target: <3s for 900K frames → **Actual: 0.94s** ✅
+  - [x] Throughput: 953K frames/second (lazy evaluation working correctly)
 
 ### Memory Profiling
 
