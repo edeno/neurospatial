@@ -2282,3 +2282,51 @@ Ready for **Milestone 9: Final Review and Release Prep**:
 - [ ] Run full test suite
 - [ ] Review documentation
 - [ ] Create final commit
+
+---
+
+## Session 25b (2025-11-19): Docstring Review (Partial)
+
+**Goal**: Review all animation docstrings for NumPy format compliance
+
+### Progress
+
+**Fixed** ([core.py](src/neurospatial/animation/core.py:99-110), [widget_backend.py](src/neurospatial/animation/backends/widget_backend.py:73-90)):
+- ✅ Added `# doctest: +SKIP` markers to examples with undefined variables
+- ✅ Converted complex setup examples to `.. code-block:: python` format
+- ✅ All core.py and widget_backend.py doctests now pass/skip correctly
+
+**Approach**:
+- Simple, runnable examples: Keep as `>>>` format with proper setup
+- Complex illustrative examples: Convert to `.. code-block:: python` (non-executable)
+- Avoid `# doctest: +SKIP` on comment lines (causes errors)
+
+### Remaining Work
+
+**Need similar fixes** in:
+- [ ] napari_backend.py (LazyFieldRenderer, ChunkedLazyFieldRenderer, render_napari)
+- [ ] video_backend.py (render_video, check_ffmpeg_available)
+- [ ] html_backend.py (render_html)
+- [ ] _parallel.py (parallel_render_frames, _render_worker_frames)
+
+**Pattern to apply**:
+```python
+# Convert from >>> format to code-block:
+Examples
+--------
+.. code-block:: python
+
+    import numpy as np
+    from neurospatial import Environment
+
+    # Example usage
+    positions = np.random.randn(100, 2) * 50
+    env = Environment.from_samples(positions, bin_size=10.0)
+```
+
+### Commit
+
+**docs(animation): fix docstring examples to follow NumPy format** (ee81505)
+- Partial completion of docstring review task
+- Fixed core.py and widget_backend.py
+- Remaining backends documented for follow-up
