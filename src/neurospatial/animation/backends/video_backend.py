@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -67,6 +67,9 @@ def render_video(
     n_workers: int | None = None,
     dry_run: bool = False,
     title: str = "Spatial Field Animation",
+    overlay_data: Any | None = None,
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
     **kwargs,
 ) -> Path | None:
     """Export animation as video using parallel frame rendering.
@@ -118,6 +121,16 @@ def render_video(
         Returns None after printing estimate.
     title : str
         Animation title (unused in video, for compatibility)
+    overlay_data : OverlayData | None, optional
+        Overlay data to render on top of fields. Contains positions,
+        bodyparts, and head direction data aligned to frames.
+        Default is None (no overlays).
+    show_regions : bool | list[str], default=False
+        If True, render all regions from environment. If list of strings,
+        render only specified regions. Default is False (no regions).
+    region_alpha : float, default=0.3
+        Alpha transparency for region overlays (0-1). Only used if
+        show_regions is True or a list. Default is 0.3.
     **kwargs : dict
         Additional parameters (accepted for compatibility)
 
@@ -267,6 +280,9 @@ def render_video(
             frame_labels=frame_labels,
             dpi=dpi,
             n_workers=n_workers,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
         )
 
         # Encode video with ffmpeg

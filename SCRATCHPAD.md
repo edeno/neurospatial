@@ -262,3 +262,57 @@ git commit -m "feat(animation): add overlay dataclasses"
 - **MILESTONE 3 COMPLETE ✅** (All sub-milestones 3.1-3.6 finished)
 - Proceed to Milestone 4: Video Backend (Full Overlays)
 - Video backend will be next major feature implementation
+
+**Status:** ✅ **MILESTONE 4.1 COMPLETE** - Video Backend Overlay Rendering
+
+**Completed:**
+1. ✅ Created comprehensive test file with 17 tests (test_video_overlays.py)
+2. ✅ Verified tests fail (RED phase) - overlay_data parameter not in signature
+3. ✅ Implemented video backend overlay rendering (GREEN phase):
+   - Helper function: _render_position_overlay_matplotlib() - trails with decaying alpha + markers
+   - Helper function: _render_bodypart_overlay_matplotlib() - LineCollection-based skeletons
+   - Helper function: _render_head_direction_overlay_matplotlib() - quiver for vectorized arrows
+   - Helper function: _render_regions_matplotlib() - PathPatch for polygon boundaries
+   - Helper function: _render_all_overlays() - orchestration of all overlay types
+   - Updated render_video() signature - added overlay_data, show_regions, region_alpha
+   - Updated parallel_render_frames() to pass overlay parameters to workers
+   - Updated _render_worker_frames() to call overlay rendering before frame save
+4. ✅ Fixed test issues:
+   - Mock path corrections (parallel_render_frames from _parallel module)
+   - Changed to n_workers=1 for pickle-safe testing
+   - Fixed mock function signatures to match parallel_render_frames
+   - Added proper subprocess.run mock return values
+5. ✅ Passed all 17 tests (100% pass rate)
+6. ✅ Fixed ruff and mypy issues:
+   - Added Any import to video_backend.py
+   - Reordered None check in _render_all_overlays()
+   - Removed unused type ignore comment
+7. ✅ Code review improvements based on reviewer feedback:
+   - Optimized trail rendering using LineCollection instead of loop
+   - Added zorder layering documentation to module docstring
+   - Updated docstring to reflect LineCollection usage
+   - All 17 tests still pass, ruff clean, mypy clean
+8. ✅ Final verification - All tests pass, ruff clean, mypy clean
+
+**Design highlights:**
+- Efficient matplotlib primitives (LineCollection for skeletons, not loops)
+- Decaying alpha for trail visualization (smooth appearance)
+- Vectorized rendering with quiver for head direction arrows
+- Pickle-safe implementation for parallel frame rendering
+- Graceful NaN handling in all overlay types
+- Backward compatibility with None overlay_data
+- NumPy-style docstrings for all functions
+
+**Technical decisions:**
+- Used matplotlib.collections.LineCollection for efficient skeleton rendering
+- Implemented per-segment alpha decay for position trails
+- Used ax.quiver() for vectorized arrow rendering
+- Used matplotlib.patches.PathPatch for region polygons
+- Ensured all overlay helpers are pure functions (no state)
+- Workers extract overlay parameters from task dict for parallel safety
+
+**Files modified:**
+- src/neurospatial/animation/backends/video_backend.py (added overlay_data, show_regions, region_alpha params)
+- src/neurospatial/animation/_parallel.py (280+ lines of overlay rendering helpers)
+- tests/animation/test_video_overlays.py (704 lines, 17 tests)
+- TASKS.md (marked Milestone 4.1 checkboxes complete)

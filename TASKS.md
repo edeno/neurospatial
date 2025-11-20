@@ -219,24 +219,24 @@
 
 ## Milestone 4: Video Backend (Full Overlays) (Weeks 5-6)
 
-### 4.1 Video Overlay Rendering (Matplotlib)
+### 4.1 Video Overlay Rendering (Matplotlib) ✅
 
-- [ ] Update `src/neurospatial/animation/backends/video_backend.py`
-- [ ] Accept `overlay_data: OverlayData | None` parameter in render function
-- [ ] Implement position overlay rendering
-  - [ ] Render trails as polylines with decaying alpha
-  - [ ] Use ring buffer by `trail_length` for efficiency
-  - [ ] Render current position marker with specified color/size
-- [ ] Implement bodypart overlay rendering
-  - [ ] Render skeleton via `LineCollection` (single call per frame)
-  - [ ] Render bodypart points with per-part colors
-  - [ ] Avoid per-edge loops (use vectorized approach)
-- [ ] Implement head direction overlay rendering
-  - [ ] Render arrows using vectorized matplotlib approach
-  - [ ] Apply color and length from `HeadDirectionData`
-- [ ] Implement region overlay rendering
-  - [ ] Use `PathPatch` for region polygons
-  - [ ] Apply alpha transparency and filtering
+- [x] Update `src/neurospatial/animation/backends/video_backend.py`
+- [x] Accept `overlay_data: OverlayData | None` parameter in render function
+- [x] Implement position overlay rendering
+  - [x] Render trails as polylines with decaying alpha
+  - [x] Use ring buffer by `trail_length` for efficiency
+  - [x] Render current position marker with specified color/size
+- [x] Implement bodypart overlay rendering
+  - [x] Render skeleton via `LineCollection` (single call per frame)
+  - [x] Render bodypart points with per-part colors
+  - [x] Avoid per-edge loops (use vectorized approach)
+- [x] Implement head direction overlay rendering
+  - [x] Render arrows using vectorized matplotlib approach
+  - [x] Apply color and length from `HeadDirectionData`
+- [x] Implement region overlay rendering
+  - [x] Use `PathPatch` for region polygons
+  - [x] Apply alpha transparency and filtering
 
 ### 4.2 Video Parallel Safety
 
