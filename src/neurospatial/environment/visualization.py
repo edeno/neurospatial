@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import matplotlib
 import matplotlib.axes
@@ -32,6 +32,13 @@ from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
+
+if TYPE_CHECKING:
+    from neurospatial.animation.overlays import (
+        BodypartOverlay,
+        HeadDirectionOverlay,
+        PositionOverlay,
+    )
 
 
 class EnvironmentVisualization:
@@ -471,6 +478,11 @@ class EnvironmentVisualization:
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
+        overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+        | None = None,
+        frame_times: NDArray[np.float64] | None = None,
+        show_regions: bool | list[str] = False,
+        region_alpha: float = 0.3,
         **kwargs: Any,
     ) -> Any:
         """Animate spatial fields over time with multiple backend options.
@@ -546,6 +558,24 @@ class EnvironmentVisualization:
             Whether to include colorbar in rendered frames (not yet implemented)
         colorbar_label : str, default=""
             Label for colorbar axis (not yet implemented)
+        overlays : list of overlay objects, optional
+            List of overlay objects to render on top of the spatial field animation.
+            Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay.
+            Multiple overlays of the same type can be provided for multi-animal tracking.
+            See neurospatial.animation.overlays for details. Default: None (no overlays).
+        frame_times : NDArray[np.float64], shape (n_frames,), optional
+            Explicit timestamps for each frame in seconds. If provided, overlays with
+            timestamps will be aligned via interpolation. If None, frames are assumed
+            to be evenly spaced at the specified fps. Default: None.
+        show_regions : bool or list of str, default=False
+            Whether to render region overlays. If True, all regions defined in
+            env.regions are rendered. If a list of region names, only those regions
+            are rendered. Regions are rendered as semi-transparent polygons.
+            Default: False (no region overlays).
+        region_alpha : float, default=0.3
+            Alpha transparency for region overlays. Range: [0.0, 1.0] where
+            0.0 is fully transparent and 1.0 is fully opaque. Only used when
+            show_regions is True or a list. Default: 0.3.
         **kwargs : dict
             Backend-specific parameters. Common backend-specific options:
 
@@ -706,6 +736,10 @@ class EnvironmentVisualization:
             contrast_limits=contrast_limits,
             show_colorbar=show_colorbar,
             colorbar_label=colorbar_label,
+            overlays=overlays,
+            frame_times=frame_times,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
             **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
         )
 

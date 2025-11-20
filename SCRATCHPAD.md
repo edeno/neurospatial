@@ -1,14 +1,14 @@
 # Animation Overlays v0.4.0 - Development Scratchpad
 
 **Started:** 2025-11-20
-**Current Milestone:** Milestone 1 COMPLETE ✅
-**Status:** Ready for Milestone 2: Protocol Update & Core Dispatcher
+**Current Milestone:** Milestone 2 - Protocol Update (2.1 COMPLETE ✅)
+**Status:** Ready for Milestone 2.2: Core Dispatcher Updates
 
 ---
 
 ## Current Task
 
-**Task:** Create `src/neurospatial/animation/overlays.py` module with public API dataclasses
+**Task:** Update core dispatcher in `src/neurospatial/animation/core.py`
 
 **Approach:**
 - Following TDD: Write tests first, then implementation
@@ -71,9 +71,19 @@
    - Test summary: 73 passed, 1 warning (expected temporal overlap warning)
 10. ✅ Updated TASKS.md checkboxes (Milestone 1 complete - 11% overall progress)
 
+11. ✅ Updated EnvironmentProtocol and implementation (Milestone 2.1)
+   - Added `overlays` parameter to `animate_fields()` signature
+   - Added `frame_times`, `show_regions`, and `region_alpha` parameters
+   - Updated `src/neurospatial/environment/_protocols.py` protocol
+   - Updated `src/neurospatial/environment/visualization.py` implementation
+   - Added comprehensive NumPy docstrings for all new parameters
+   - Imports overlay types with TYPE_CHECKING guard
+   - Mypy and ruff pass
+   - All 73 overlay tests still pass
+
 **Next Steps:**
-- Commit Milestone 1 completion with conventional commit message
-- Continue with Milestone 2: Protocol Update & Core Dispatcher
+- Commit Milestone 2.1 completion with conventional commit message
+- Continue with Milestone 2.2: Core Dispatcher Updates
 
 ---
 

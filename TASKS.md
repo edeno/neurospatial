@@ -118,13 +118,13 @@
 
 ### 2.1 Environment Protocol Update
 
-- [ ] Update `EnvironmentProtocol` in `src/neurospatial/environment/_protocols.py`
-  - [ ] Add `overlays` parameter to `animate_fields()` signature
-  - [ ] Add `frame_times: NDArray[np.float64] | None` parameter
-  - [ ] Add `show_regions: bool | list[str] = False` parameter
-  - [ ] Add `region_alpha: float = 0.3` parameter
-  - [ ] Ensure type annotations satisfy mypy
-- [ ] Update docstring with NumPy format for new parameters
+- [x] Update `EnvironmentProtocol` in `src/neurospatial/environment/_protocols.py`
+  - [x] Add `overlays` parameter to `animate_fields()` signature
+  - [x] Add `frame_times: NDArray[np.float64] | None` parameter
+  - [x] Add `show_regions: bool | list[str] = False` parameter
+  - [x] Add `region_alpha: float = 0.3` parameter
+  - [x] Ensure type annotations satisfy mypy
+- [x] Update docstring with NumPy format for new parameters
 
 ### 2.2 Core Dispatcher Updates
 
