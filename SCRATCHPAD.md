@@ -181,9 +181,46 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
 - Video/widget use custom `_timing` module (simpler, environment-variable controlled)
 - Both approaches have minimal overhead when disabled
 
-## Next Task: Phase 0.2 - Create Benchmark Datasets
+## Completed: Phase 0.2 - Create Benchmark Datasets
 
-- Create `benchmarks/` directory
-- Small benchmark: 100 frames, 40x40 grid
-- Medium benchmark: 5k frames, typical spatial grid
-- Large benchmark: 100k frames with skeleton + head direction overlays
+### What Was Done
+
+1. **Created `benchmark_datasets/` package** (named to avoid conflict with `tests/benchmarks`):
+   - `benchmark_datasets/__init__.py` - Package exports
+   - `benchmark_datasets/datasets.py` - Dataset generators
+
+2. **Implemented BenchmarkConfig dataclass** with pre-defined configs:
+   - `SMALL_CONFIG`: 100 frames, 40x40 grid, position overlay only
+   - `MEDIUM_CONFIG`: 5k frames, 100x100 grid, all overlays
+   - `LARGE_CONFIG`: 100k frames, 100x100 grid, all overlays (7 bodyparts)
+
+3. **Generator functions**:
+   - `create_benchmark_env(config, seed)` - Creates Environment
+   - `create_benchmark_fields(env, config, seed, memmap_path)` - Creates drifting Gaussian blobs
+   - `create_benchmark_overlays(env, config, seed)` - Creates position, bodypart, head direction
+
+4. **Tests**: 22 tests in `tests/animation/test_benchmark_datasets.py`
+   - Config value validation
+   - Shape/type/reproducibility tests
+   - Edge cases (head-direction-only, no overlays)
+
+### Implementation Notes
+
+- Uses `np.random.default_rng(seed)` for reproducibility
+- Supports memory-mapped arrays for large datasets
+- Smooth trajectory generation with boundary reflection
+- Head direction angles wrapped to [-pi, pi]
+
+### Key Files
+
+- `benchmark_datasets/__init__.py` - Package init
+- `benchmark_datasets/datasets.py` - All generators
+- `tests/animation/test_benchmark_datasets.py` - 22 tests
+
+## Next Task: Phase 0.3 - Record Baseline Metrics
+
+- Napari: initialization time, random seek time
+- Widget: initialization time, scrubbing responsiveness
+- Video: time per frame, total export time
+- Peak memory usage for each benchmark
+- Document results in `benchmarks/BASELINE.md`

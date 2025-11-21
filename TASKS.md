@@ -17,11 +17,11 @@
 
 ### 0.2 Create Benchmark Datasets
 
-- [ ] Create `benchmarks/` directory
-- [ ] Small benchmark: 100 frames, 40x40 grid
-- [ ] Medium benchmark: 5k frames, typical spatial grid
-- [ ] Large benchmark: 100k frames with skeleton + head direction overlays
-- [ ] Save reproducible scripts/notebooks
+- [x] Create `benchmark_datasets/` directory (named to avoid conflict with tests/benchmarks)
+- [x] Small benchmark: 100 frames, 40x40 grid (SMALL_CONFIG)
+- [x] Medium benchmark: 5k frames, typical spatial grid (MEDIUM_CONFIG)
+- [x] Large benchmark: 100k frames with skeleton + head direction overlays (LARGE_CONFIG)
+- [x] Save reproducible scripts/notebooks (benchmark_datasets/datasets.py)
 
 ### 0.3 Record Baseline Metrics
 
@@ -241,7 +241,7 @@
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| Phase 0: Profiling | Not started | |
+| Phase 0: Profiling | In Progress | 0.1 timing done, 0.2 datasets done, 0.3 baseline pending |
 | Phase 1: Infrastructure | Not started | |
 | Phase 2: Napari | Not started | HIGH IMPACT: skeleton vectorization |
 | Phase 3: Overlays | Not started | |
