@@ -122,6 +122,25 @@ if bodypart_data.skeleton is not None:
 - These will be removed in Milestone 4 (Cleanup and Removal of Old Code Path)
 - The napari Vectors layer handles time slicing natively via dims
 
-## Next Task: Milestone 2.2 - Align with existing bodypart Points layer
+## Completed: Milestone 4 - Cleanup and Removal of Old Code Path
 
-Verify that Points layer creation remains unchanged and coordinate transforms are not duplicated.
+### Changes Made
+
+1. **Deleted dead code**:
+   - Removed `_create_skeleton_frame_data` function (~60 lines)
+   - Removed `_setup_skeleton_update_callback` function (~95 lines)
+   - Removed unused `weakref` import (auto-fixed by ruff)
+
+2. **Updated docstrings**:
+   - Removed "See Also" reference to deprecated `_create_skeleton_frame_data` in `_build_skeleton_vectors`
+
+### Notes
+
+- Tests in Milestone 2 already updated to expect vectors instead of shapes for skeleton
+- All 462 animation tests pass
+- Mypy passes with no issues
+
+## Next Task: Milestone 5 - Testing & Validation
+
+- Smoke-test vector skeleton visualization manually
+- Performance benchmarks for large datasets

@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
-import weakref
 from collections import OrderedDict
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
@@ -336,68 +335,6 @@ def _transform_coords_for_napari(
     return coords
 
 
-def _create_skeleton_frame_data(
-    bodypart_data: BodypartData,
-    env_or_scale: Environment | _EnvScale | None,
-    frame_idx: int,
-) -> list[NDArray[np.float64]]:
-    """Compute skeleton lines for a single frame.
-
-    This is a helper function for lazy skeleton rendering that computes
-    skeleton line data on-demand rather than pre-computing all frames.
-
-    Parameters
-    ----------
-    bodypart_data : BodypartData
-        Bodypart overlay data containing skeleton definition and bodypart coords
-    env_or_scale : Environment or _EnvScale or None
-        Environment instance or pre-computed scale for coordinate transformation.
-        Using pre-computed _EnvScale avoids repeated property lookups per frame.
-    frame_idx : int
-        Frame index to compute skeleton for
-
-    Returns
-    -------
-    lines : list of ndarray
-        List of line arrays for this frame. Each line is shape (2, 2) with
-        format [[y1, x1], [y2, x2]] in napari coordinates.
-        Returns empty list if skeleton is None or all edges have NaN endpoints.
-    """
-    if bodypart_data.skeleton is None:
-        return []
-
-    frame_lines = []
-    for start_part, end_part in bodypart_data.skeleton:
-        if (
-            start_part not in bodypart_data.bodyparts
-            or end_part not in bodypart_data.bodyparts
-        ):
-            continue
-
-        start_coords = bodypart_data.bodyparts[start_part][frame_idx]
-        end_coords = bodypart_data.bodyparts[end_part][frame_idx]
-
-        # Skip if either endpoint is NaN
-        if np.any(np.isnan(start_coords)) or np.any(np.isnan(end_coords)):
-            continue
-
-        # Transform to napari coords with Y-axis inversion
-        start_napari = _transform_coords_for_napari(
-            start_coords.reshape(1, -1), env_or_scale
-        )[0]
-        end_napari = _transform_coords_for_napari(
-            end_coords.reshape(1, -1), env_or_scale
-        )[0]
-
-        # Line in napari format: [[y1, x1], [y2, x2]] (no time dimension for shapes.data)
-        line = np.array(
-            [[start_napari[0], start_napari[1]], [end_napari[0], end_napari[1]]]
-        )
-        frame_lines.append(line)
-
-    return frame_lines
-
-
 def _build_skeleton_vectors(
     bodypart_data: BodypartData,
     env: Environment,
@@ -442,7 +379,6 @@ def _build_skeleton_vectors(
 
     See Also
     --------
-    _create_skeleton_frame_data : Legacy per-frame computation (to be deprecated)
     _render_bodypart_overlay : Uses this function for skeleton rendering
 
     Examples
@@ -526,102 +462,6 @@ def _build_skeleton_vectors(
 
     features: dict[str, NDArray[np.object_]] = {"edge_name": edge_names}
     return vectors, features
-
-
-def _setup_skeleton_update_callback(
-    viewer: Any,
-    skeleton_layer: Any,
-    bodypart_data: BodypartData,
-    env: Environment,
-) -> None:
-    """Setup callback to update skeleton layer on frame change.
-
-    This connects to napari's dims.events.current_step to lazily update
-    the skeleton shapes when the user navigates to a new frame, avoiding
-    the need to pre-compute all skeleton lines for all frames.
-
-    Uses weakref to automatically disconnect when the viewer or layer is
-    garbage collected, preventing memory leaks when viewers are closed.
-
-    Parameters
-    ----------
-    viewer : napari.Viewer
-        Napari viewer instance
-    skeleton_layer : napari.layers.Shapes
-        The skeleton shapes layer to update
-    bodypart_data : BodypartData
-        Bodypart overlay data containing skeleton definition
-    env : Environment
-        Environment instance for coordinate transformation
-
-    Notes
-    -----
-    The callback stores the last updated frame to avoid redundant updates
-    when the frame hasn't changed (e.g., from other dims events).
-
-    The weakref pattern ensures the callback is automatically cleaned up
-    when the viewer or layer is closed/deleted, preventing dangling callbacks.
-    """
-    # Track last frame to avoid redundant updates
-    callback_state = {"last_frame": -1, "connection": None}
-
-    # Pre-compute scale factors to avoid repeated property lookups per frame
-    env_scale = _EnvScale.from_env(env)
-
-    # Use weakrefs to detect when viewer/layer is garbage collected
-    viewer_ref = weakref.ref(viewer)
-    layer_ref = weakref.ref(skeleton_layer)
-
-    def update_skeleton_on_frame_change(event=None):
-        """Update skeleton shapes when frame changes (with auto-disconnect)."""
-        with perf_timer("skeleton_callback_total"):
-            # Check if viewer/layer still exists
-            v = viewer_ref()
-            layer = layer_ref()
-
-            if v is None or layer is None:
-                # Viewer or layer was garbage collected - disconnect callback
-                try:
-                    if callback_state["connection"] is not None:
-                        callback_state["connection"].disconnect()
-                except (RuntimeError, AttributeError, ReferenceError):
-                    pass  # Connection already disconnected or cleaned up
-                return
-
-            try:
-                # Get current frame from first dimension (time)
-                current_frame = v.dims.current_step[0] if v.dims.ndim > 0 else 0
-
-                # Skip if frame hasn't changed
-                if current_frame == callback_state["last_frame"]:
-                    add_instant_event("skeleton_skip_unchanged")
-                    return
-
-                callback_state["last_frame"] = current_frame
-
-                # Compute skeleton for this frame (using pre-computed scale)
-                with perf_timer("skeleton_compute"):
-                    new_skeleton_data = _create_skeleton_frame_data(
-                        bodypart_data,
-                        env_scale if env_scale is not None else env,
-                        current_frame,
-                    )
-
-                # Update layer data
-                # Note: setting data to empty list is valid for shapes layer
-                # This is potentially blocking as napari re-renders the layer
-                with perf_timer("skeleton_layer_data_set"):
-                    layer.data = new_skeleton_data
-                    add_instant_event("skeleton_updated")
-
-            except (RuntimeError, AttributeError):
-                # Expected when viewer is closing - layer may be garbage collected
-                pass
-
-    # Connect callback and store connection for potential disconnect
-    callback_state["connection"] = viewer.dims.events.current_step.connect(
-        update_skeleton_on_frame_change
-    )
 
 
 def _render_position_overlay(

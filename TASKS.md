@@ -73,20 +73,20 @@
 
 ### **4.1 Remove dead code**
 
-* [ ] Delete `_create_skeleton_frame_data`
-* [ ] Delete `_setup_skeleton_update_callback`
-* [ ] Remove any debug/perf events tied to skeleton callback
+* [x] Delete `_create_skeleton_frame_data`
+* [x] Delete `_setup_skeleton_update_callback`
+* [x] Remove any debug/perf events tied to skeleton callback
 
 ### **4.2 Update docstrings & comments**
 
-* [ ] Update backend docs: skeleton → vectors, no per-frame rebuild
-* [ ] Update overlay system docs to reflect new generation path
-* [ ] Rewrite napari backend notes to comply with CLAUDE.md formatting
+* [x] Update backend docs: skeleton → vectors, no per-frame rebuild
+* [x] Update overlay system docs to reflect new generation path
+* [x] Rewrite napari backend notes to comply with CLAUDE.md formatting
 
 ### **4.3 Remove Shapes skeleton references**
 
-* [ ] Update tests referring to Shapes-based skeleton overlays
-* [ ] Update developer guide and CLAUDE.md if needed
+* [x] Update tests referring to Shapes-based skeleton overlays
+* [x] Update developer guide and CLAUDE.md if needed
 
 ---
 
