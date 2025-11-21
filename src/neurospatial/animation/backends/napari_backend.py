@@ -824,22 +824,10 @@ def _add_speed_control_widget(
 
             playback_state["last_frame"] = current_frame
 
-            # Sync button state with napari's playback (fixes button sync issue)
-            # Detect if playback is active by checking if dims is playing
-            try:
-                # Use viewer.dims.playing (napari >= 0.5.0)
-                # Fallback to qt_viewer.dims.is_playing for older versions
-                if hasattr(viewer.dims, "playing"):
-                    is_playing = viewer.dims.playing
-                else:
-                    # Deprecated in napari 0.5.0, removed in 0.6.0
-                    is_playing = viewer.window.qt_viewer.dims.is_playing
-                if is_playing != playback_state["is_playing"]:
-                    playback_state["is_playing"] = is_playing
-                    playback_widget.play.text = "⏸ Pause" if is_playing else "▶ Play"
-            except (AttributeError, RuntimeError):
-                # If unable to detect playback state, don't update button
-                pass
+            # Note: We track our own playback state via playback_state["is_playing"]
+            # instead of syncing with napari's internal state. This avoids using
+            # the deprecated qt_viewer API. The button state is updated when the
+            # user clicks our play/pause button (see play_callback below).
 
             # Get total frames from dims range
             total_frames = (
