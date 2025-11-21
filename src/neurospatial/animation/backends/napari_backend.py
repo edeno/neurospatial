@@ -356,14 +356,18 @@ def _render_position_overlay(
         )
         colormaps_dict = {"color": custom_colormap}
 
+        # Note: We set color_by AFTER layer creation to avoid napari warning.
+        # During __init__, napari's data setter resets features to {} before our
+        # features are applied. If color_by is passed at init time, the check runs
+        # against empty features and warns. Setting color_by after creation avoids this.
         layer = viewer.add_tracks(
             track_data,
             name=f"Position Trail{name_suffix}",
             tail_length=position_data.trail_length,
             features=features,
             colormaps_dict=colormaps_dict,
-            color_by="color",
         )
+        layer.color_by = "color"  # Set after features are applied
         layers.append(layer)
 
     # Add points layer for current position marker
