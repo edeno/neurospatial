@@ -396,13 +396,13 @@
 
 ### 7.4 CLAUDE.md Updates
 
-- [ ] Add overlay examples to "Most Common Patterns" section
-- [ ] Document `frame_times` parameter usage
-- [ ] Document `show_regions` parameter
-- [ ] Add multi-animal pattern
-- [ ] Update "Key Implementation Notes" with overlay architecture
-- [ ] Add overlay troubleshooting to "Common Gotchas"
-- [ ] Update "Troubleshooting" section with validation errors
+- [x] Add overlay examples to "Most Common Patterns" section
+- [x] Document `frame_times` parameter usage
+- [x] Document `show_regions` parameter
+- [x] Add multi-animal pattern
+- [x] Update "Key Implementation Notes" with overlay architecture
+- [x] Add overlay troubleshooting to "Common Gotchas"
+- [x] Update "Troubleshooting" section with validation errors
 
 ### 7.5 CHANGELOG Update
 

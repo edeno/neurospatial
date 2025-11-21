@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-19 (v0.3.0 - Animation feature)
+**Last Updated**: 2025-11-20 (v0.4.0 - Animation overlays feature)
 
 ## Table of Contents
 
@@ -129,6 +129,66 @@ subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
 # IMPORTANT: Clear caches before parallel rendering (pickle-ability requirement)
 env.clear_cache()  # Makes environment pickle-able for multiprocessing
 env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
+
+# Animation overlays (v0.4.0+)
+from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
+
+# Position overlay with trail
+position_overlay = PositionOverlay(
+    data=trajectory,  # Shape: (n_frames, n_dims)
+    color="red",
+    size=12.0,
+    trail_length=10  # Show last 10 frames as decaying trail
+)
+env.animate_fields(fields, overlays=[position_overlay], backend="napari")
+
+# Pose tracking with skeleton
+bodypart_overlay = BodypartOverlay(
+    data={"nose": nose_traj, "body": body_traj, "tail": tail_traj},
+    skeleton=[("tail", "body"), ("body", "nose")],
+    colors={"nose": "yellow", "body": "red", "tail": "blue"},
+    skeleton_color="white",
+    skeleton_width=2.0
+)
+env.animate_fields(fields, overlays=[bodypart_overlay], backend="napari")
+
+# Head direction arrows
+head_direction_overlay = HeadDirectionOverlay(
+    data=head_angles,  # Shape: (n_frames,) radians OR (n_frames, n_dims) unit vectors
+    color="yellow",
+    length=15.0  # Arrow length in environment units
+)
+env.animate_fields(fields, overlays=[head_direction_overlay], backend="napari")
+
+# Multi-animal tracking (multiple overlays)
+animal1 = PositionOverlay(data=traj1, color="red", trail_length=10)
+animal2 = PositionOverlay(data=traj2, color="blue", trail_length=10)
+env.animate_fields(fields, overlays=[animal1, animal2], backend="napari")
+
+# Mixed-rate temporal alignment (120 Hz position → 10 Hz fields)
+overlay = PositionOverlay(
+    data=trajectory_120hz,
+    times=timestamps_120hz,  # Overlay timestamps
+    color="red",
+    trail_length=15
+)
+env.animate_fields(
+    fields_10hz,
+    overlays=[overlay],
+    frame_times=timestamps_10hz,  # Field timestamps - automatic interpolation
+    backend="napari"
+)
+
+# Show regions with overlays
+env.animate_fields(
+    fields,
+    overlays=[position_overlay],
+    show_regions=True,  # Show all regions, or ["region1", "region2"] for specific
+    region_alpha=0.3,   # 30% transparent
+    backend="napari"
+)
+
+# Backend capabilities: Napari/Video/Widget support all overlays; HTML supports position+regions only
 ```
 
 **Type Checking Support (v0.2.1+)**:
@@ -600,6 +660,34 @@ Development dependencies:
 - `ruff` - Fast Python linter and formatter
 - `ipython` - Enhanced interactive Python shell
 
+### Animation Overlay Architecture (v0.4.0+)
+
+The overlay system provides three public dataclasses for visualizing animal behavior alongside spatial fields:
+
+**Public API** (`src/neurospatial/animation/overlays.py`):
+- `PositionOverlay` - Trajectory tracking with decaying trails
+- `BodypartOverlay` - Pose tracking with skeleton rendering (dict of bodypart trajectories)
+- `HeadDirectionOverlay` - Orientation arrows (angles or unit vectors)
+
+**Conversion funnel**:
+1. User creates overlay dataclasses with behavioral data
+2. `_convert_overlays_to_data()` validates and aligns overlays to field frames
+3. Temporal interpolation handles mixed sampling rates (e.g., 120 Hz → 10 Hz)
+4. Outputs pickle-safe `OverlayData` for backend rendering
+
+**Backend support**:
+- Napari: Full support (all overlay types + regions)
+- Video: Full support (all overlay types + regions)
+- HTML: Partial support (position + regions only; warns for bodypart/head direction)
+- Widget: Full support (reuses video backend renderer)
+
+**Key patterns**:
+- Overlays accept optional `times` parameter for temporal alignment
+- `frame_times` parameter on `animate_fields()` enables mixed-rate synchronization
+- Multi-animal: Pass multiple overlay instances in a list
+- Regions: Use `show_regions=True` or `show_regions=["region1", "region2"]`
+- Parallel rendering: Call `env.clear_cache()` before `n_workers > 1`
+
 ## Testing Structure
 
 Tests mirror source structure:
@@ -921,6 +1009,75 @@ env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float(
 ```
 
 **Tip**: Warning messages include estimated memory and suggestions for reducing usage.
+
+### 11. Overlay temporal alignment (v0.4.0+)
+
+**Problem**: Overlays and fields at different sampling rates need explicit timestamps.
+
+❌ Wrong (no timestamps for mixed-rate data):
+
+```python
+# Position tracked at 120 Hz, fields at 10 Hz - without timestamps
+position_overlay = PositionOverlay(data=trajectory_120hz)  # No times!
+env.animate_fields(fields_10hz, overlays=[position_overlay])  # Mismatch!
+```
+
+✅ Right (provide timestamps for alignment):
+
+```python
+# Position tracked at 120 Hz, fields at 10 Hz - with timestamps
+position_overlay = PositionOverlay(
+    data=trajectory_120hz,
+    times=timestamps_120hz  # Overlay timestamps
+)
+env.animate_fields(
+    fields_10hz,
+    overlays=[position_overlay],
+    frame_times=timestamps_10hz  # Field timestamps - auto interpolation
+)
+```
+
+**Tip**: Linear interpolation automatically aligns overlay to field frames.
+
+### 12. HTML backend overlay limitations (v0.4.0+)
+
+**Problem**: HTML backend only supports position and region overlays.
+
+⚠️ Will warn (HTML doesn't support bodypart/head direction):
+
+```python
+env.animate_fields(
+    fields,
+    overlays=[bodypart_overlay, head_direction_overlay],  # Not supported in HTML!
+    backend="html"
+)
+# UserWarning: HTML backend does not support bodypart overlays. Use video or napari backend.
+```
+
+✅ Right (use supported overlays or different backend):
+
+```python
+# Option 1: Use only position + regions with HTML
+env.animate_fields(
+    fields,
+    overlays=[position_overlay],
+    show_regions=True,
+    backend="html"
+)
+
+# Option 2: Use video/napari for full overlay support
+env.animate_fields(
+    fields,
+    overlays=[bodypart_overlay, head_direction_overlay],
+    backend="napari"  # or "video" or "widget"
+)
+```
+
+**Backend capability matrix**:
+- Napari: All overlays ✓
+- Video: All overlays ✓
+- Widget: All overlays ✓
+- HTML: Position + regions only ⚠️
 
 ## Troubleshooting
 

@@ -47,6 +47,12 @@ The overlay system enables rich behavioral visualizations by combining spatial f
 - Backend flexibility: Full support in Napari/Video/Widget, partial in HTML
 - Scientifically correct: NaN extrapolation, validation, actionable errors
 
+**Related resources:**
+
+- [Example Notebook](../examples/17_animation_with_overlays.ipynb) - Hands-on tutorial with 7 comprehensive examples
+- [CLAUDE.md Quick Reference](../CLAUDE.md#quick-reference) - Common patterns for AI coding assistant
+- [Field Animation Guide](16_field_animation.ipynb) - Core animation features without overlays
+
 ## Overlay Types
 
 ### Position Overlay
@@ -294,19 +300,22 @@ Not all backends support all overlay types.
 **HTML backend limitations:**
 
 - Supports **positions** and **regions** only
-- Emits warnings for bodypart/head direction overlays
-- Suggestion: Use video backend for full features
+- **Bodypart and head direction overlays are silently ignored**
+- Emits warnings for unsupported overlays before rendering
+- Animation proceeds with only supported overlays rendered
+- Suggestion: Use video or napari backend for full overlay features
 
 ```python
 # HTML backend warns for unsupported overlays
 env.animate_fields(
     fields,
-    overlays=[bodypart_overlay],  # Warning emitted
+    overlays=[bodypart_overlay, position_overlay],  # Mixed overlays
     backend="html"
 )
 # UserWarning: HTML backend supports positions and regions only.
 #              Bodypart and head direction overlays will not be rendered.
 #              Consider using 'video' or 'napari' backend for full overlay support.
+# → Animation proceeds with only position_overlay rendered
 ```
 
 ## Complete Example
@@ -844,23 +853,25 @@ def animate_fields(
 - [Neuroscience Metrics](user-guide/neuroscience-metrics.md) - Computing place fields
 - [API Reference](api/animation.md) - Complete API documentation
 
-## Migration from Legacy overlay_trajectory
+## Migration from v0.3.x
 
-If you're using the legacy `overlay_trajectory` parameter (deprecated in v0.4.0):
+**Note**: v0.3.x had limited trajectory overlay support. v0.4.0 introduces a completely new overlay system with three overlay types.
 
-**Old (v0.3.x):**
+**Old approach (v0.3.x - if you used custom trajectory rendering):**
 ```python
+# v0.3.x: Limited trajectory support (backend-specific)
 env.animate_fields(
     fields,
-    overlay_trajectory=trajectory,  # Deprecated
     backend="napari"
+    # No standard overlay API
 )
 ```
 
-**New (v0.4.0+):**
+**New approach (v0.4.0+):**
 ```python
-from neurospatial.animation import PositionOverlay
+from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
 
+# Position overlay with trail
 overlay = PositionOverlay(
     data=trajectory,
     color="red",
@@ -870,16 +881,19 @@ overlay = PositionOverlay(
 
 env.animate_fields(
     fields,
-    overlays=[overlay],  # NEW: list of overlays
+    overlays=[overlay],  # NEW: standardized overlay API
     backend="napari"
 )
 ```
 
-**Benefits of new API:**
+**What's new in v0.4.0:**
 
-- Multi-animal support (multiple overlays)
-- Pose tracking (bodyparts + skeleton)
-- Head direction visualization
-- Temporal alignment with interpolation
+- **Standardized overlay API** across all backends
+- **Three overlay types**: Position, Bodypart, HeadDirection
+- **Multi-animal support** (multiple overlays)
+- **Pose tracking** (bodyparts + skeleton)
+- **Head direction visualization** (orientation arrows)
+- **Temporal alignment** with automatic interpolation
+- **Regions overlay** with transparency control
 - Backend-specific capabilities
 - Comprehensive validation and error messages

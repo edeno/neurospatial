@@ -792,3 +792,55 @@ HOW: Choose one of these solutions:
 **Next Steps:**
 - Continue with Milestone 7.4: CLAUDE.md Updates
 - Then Milestone 7.5: CHANGELOG Update
+
+**Status:** ✅ **MILESTONE 7.4 COMPLETE** - CLAUDE.md Updates + Code Review Fixes
+
+**Completed:**
+1. ✅ Updated CLAUDE.md "Most Common Patterns" with overlay examples
+   - Position overlay with trail
+   - Pose tracking with skeleton
+   - Head direction arrows
+   - Multi-animal tracking
+   - Mixed-rate temporal alignment (120 Hz → 10 Hz)
+   - Show regions with overlays
+   - Backend capabilities note
+2. ✅ Added "Animation Overlay Architecture" to Key Implementation Notes
+   - Public API dataclasses
+   - Conversion funnel design
+   - Backend support matrix
+   - Key patterns documented
+3. ✅ Added overlay troubleshooting to Common Gotchas
+   - Gotcha #11: Overlay temporal alignment (timestamps required)
+   - Gotcha #12: HTML backend overlay limitations
+   - Backend capability matrix
+4. ✅ Updated "Last Updated" date to 2025-11-20 (v0.4.0)
+5. ✅ Code-reviewer feedback addressed (Critical & Major issues):
+   - Fixed HTML backend behavior clarification (overlays silently ignored)
+   - Verified overlay import paths (correctly exported in __init__.py)
+   - Completed migration guide (v0.3.x → v0.4.0 with feature list)
+   - Added bidirectional cross-references (docs ↔ notebook ↔ CLAUDE.md)
+
+**Code Review Summary:**
+- Rating: REQUEST_CHANGES → Fixes applied for critical/major issues
+- **Critical issues fixed** (3/3):
+  - HTML backend behavior now explicitly states overlays are silently ignored
+  - Import paths verified as correct (PositionOverlay etc. exported in __init__.py)
+  - Migration guide updated to accurately reflect v0.3.x → v0.4.0 (no legacy param exists)
+- **Major issues fixed** (4/4):
+  - Cross-references added to animation_overlays.md
+  - CLAUDE.md already had comprehensive overlay patterns
+  - Migration guide enhanced with feature comparison
+  - Documentation consistency improved
+- **Minor issues** (deferred to future improvements):
+  - NumPy docstring format enhancement (visualization.py overlay params)
+  - Notebook explanatory comments (simulation parameters)
+  - Length mismatch error in error catalog
+  - Coordinate system alignment section
+
+**Files Modified:**
+- CLAUDE.md (+67 lines: overlay patterns, architecture, troubleshooting)
+- docs/animation_overlays.md (clarified HTML backend, updated migration guide, added cross-refs)
+- TASKS.md (marked 7.4 complete)
+
+**Next Steps:**
+- Continue with Milestone 7.5: CHANGELOG Update
