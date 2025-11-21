@@ -71,6 +71,57 @@ def _build_skeleton_vectors(
 - Missing bodypart handling
 - Large dataset performance (10k, 100k frames)
 
-## Next Task: Milestone 2 - Replace Shapes Skeleton With Vectors Layer
+## Completed: Milestone 2.1 - Update `_render_bodypart_overlay` to Use Vectors
 
-The next task is to update `_render_bodypart_overlay` to use the new vectors layer.
+### Changes Made
+
+1. **Updated `_render_bodypart_overlay`** (lines 819-837 in napari_backend.py):
+   - Removed: `_create_skeleton_frame_data()` call for frame 0
+   - Removed: `viewer.add_shapes()` for skeleton
+   - Removed: `_setup_skeleton_update_callback()` registration
+   - Added: `_build_skeleton_vectors()` call to precompute all vectors
+   - Added: `viewer.add_vectors()` with features for skeleton
+
+2. **Updated tests** (test_napari_overlays.py):
+   - `test_bodypart_overlay_creates_layers` - expects `add_vectors` instead of `add_shapes`
+   - `test_bodypart_overlay_skeleton_as_precomputed_vectors` - new test for vectors shape
+   - `test_bodypart_overlay_skeleton_color_and_width` - checks vectors kwargs
+   - `test_bodypart_overlay_without_skeleton` - checks `add_vectors.call_count == 0`
+   - `test_mixed_overlay_types` - expects `add_vectors.call_count >= 2`
+   - `test_bodypart_skeleton_all_nan_no_vectors_layer` - new edge case test
+
+### Key Implementation Details
+
+```python
+# In _render_bodypart_overlay (lines 819-837)
+if bodypart_data.skeleton is not None:
+    # Precompute all skeleton vectors at initialization
+    vectors_data, vector_features = _build_skeleton_vectors(bodypart_data, env)
+
+    # Only add layer if there are valid skeleton segments
+    if vectors_data.size > 0:
+        skeleton_layer = viewer.add_vectors(
+            vectors_data,
+            name=f"Skeleton{name_suffix}",
+            edge_color=bodypart_data.skeleton_color,
+            edge_width=bodypart_data.skeleton_width,
+            features=vector_features,
+        )
+        layers.append(skeleton_layer)
+```
+
+### Test Results
+
+- All 44 napari overlay tests pass
+- All 15 skeleton vectors tests pass
+- Code quality: ruff and mypy pass
+
+### Notes
+
+- The old functions `_create_skeleton_frame_data` and `_setup_skeleton_update_callback` still exist but are no longer called by `_render_bodypart_overlay`
+- These will be removed in Milestone 4 (Cleanup and Removal of Old Code Path)
+- The napari Vectors layer handles time slicing natively via dims
+
+## Next Task: Milestone 2.2 - Align with existing bodypart Points layer
+
+Verify that Points layer creation remains unchanged and coordinate transforms are not duplicated.

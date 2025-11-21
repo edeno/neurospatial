@@ -172,9 +172,9 @@ class TestNapariBackendIntegration:
         # Verify viewer created
         assert result is mock_viewer
 
-        # Verify bodypart layers added (points for keypoints, shapes for skeleton)
+        # Verify bodypart layers added (points for keypoints, vectors for skeleton)
         assert mock_viewer.add_points.called
-        assert mock_viewer.add_shapes.called
+        assert mock_viewer.add_vectors.called  # Skeleton uses precomputed vectors
 
     @patch("neurospatial.animation.backends.napari_backend.napari")
     def test_napari_with_head_direction_overlay(
@@ -243,8 +243,8 @@ class TestNapariBackendIntegration:
 
         # Verify all layer types added
         assert mock_viewer.add_points.called  # For position and bodyparts
-        assert mock_viewer.add_shapes.called  # For skeleton
-        assert mock_viewer.add_vectors.called  # For head direction
+        # Skeleton uses precomputed vectors layer (not shapes) + head direction
+        assert mock_viewer.add_vectors.call_count >= 2  # Skeleton + head direction
 
     @patch("neurospatial.animation.backends.napari_backend.napari")
     def test_napari_with_regions(self, mock_napari, env_with_regions, spatial_fields):
@@ -828,7 +828,7 @@ class TestMixedOverlayTypes:
 
         # Verify both overlay types rendered
         assert mock_viewer.add_points.called
-        assert mock_viewer.add_shapes.called  # For skeleton
+        assert mock_viewer.add_vectors.called  # Skeleton uses precomputed vectors
 
     @patch("neurospatial.animation.backends.napari_backend.napari")
     def test_all_three_overlay_types_together(
@@ -868,8 +868,8 @@ class TestMixedOverlayTypes:
 
         # Verify all three overlay types rendered
         assert mock_viewer.add_points.called  # Position and bodyparts
-        assert mock_viewer.add_shapes.called  # Skeleton
-        assert mock_viewer.add_vectors.called  # Head direction
+        # Skeleton + head direction both use vectors layer
+        assert mock_viewer.add_vectors.call_count >= 2  # Skeleton + head direction
 
     @patch("neurospatial.animation._parallel.parallel_render_frames")
     @patch("neurospatial.animation.backends.video_backend.subprocess.run")

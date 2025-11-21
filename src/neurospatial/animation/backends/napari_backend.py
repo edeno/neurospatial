@@ -816,25 +816,24 @@ def _render_bodypart_overlay(
     )
     layers.append(layer)
 
-    # Render skeleton if provided (lazy frame-change pattern for memory efficiency)
-    # Instead of pre-building O(n_frames x n_edges) shapes upfront, we create
-    # the layer with frame 0 data and use a callback to update on frame change.
+    # Render skeleton if provided using precomputed vectors layer
+    # This eliminates per-frame callback overhead (5.38ms per frame) that was
+    # blocking the Qt event loop during playback. The vectors layer handles
+    # time slicing natively via napari's built-in dims.
     if bodypart_data.skeleton is not None:
-        # Get initial skeleton data for frame 0
-        initial_skeleton = _create_skeleton_frame_data(bodypart_data, env, frame_idx=0)
+        # Precompute all skeleton vectors at initialization (not per-frame)
+        vectors_data, vector_features = _build_skeleton_vectors(bodypart_data, env)
 
-        # Create shapes layer (even if empty for frame 0, callback will populate)
-        skeleton_layer = viewer.add_shapes(
-            initial_skeleton if initial_skeleton else [],
-            name=f"Skeleton{name_suffix}",
-            shape_type="line",
-            edge_color=bodypart_data.skeleton_color,
-            edge_width=bodypart_data.skeleton_width,
-        )
-        layers.append(skeleton_layer)
-
-        # Setup callback to update skeleton on frame change
-        _setup_skeleton_update_callback(viewer, skeleton_layer, bodypart_data, env)
+        # Only add layer if there are valid skeleton segments
+        if vectors_data.size > 0:
+            skeleton_layer = viewer.add_vectors(
+                vectors_data,
+                name=f"Skeleton{name_suffix}",
+                edge_color=bodypart_data.skeleton_color,
+                edge_width=bodypart_data.skeleton_width,
+                features=vector_features,
+            )
+            layers.append(skeleton_layer)
 
     return layers
 

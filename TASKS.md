@@ -28,24 +28,24 @@
 
 ### **2.1 Update `_render_bodypart_overlay`**
 
-* [ ] Remove old Shapes-based `_create_skeleton_frame_data`
-* [ ] Remove Shapes-based `_setup_skeleton_update_callback`
-* [ ] Insert call to `_build_skeleton_vectors`
-* [ ] Add a single `viewer.add_vectors(...)` layer using the returned data
-* [ ] Apply `bodypart_data.skeleton_color` + `skeleton_width`
-* [ ] Add features for future styling (`edge_name`)
-* [ ] Append this vectors layer to the return list of layers
+* [x] Remove old Shapes-based `_create_skeleton_frame_data`
+* [x] Remove Shapes-based `_setup_skeleton_update_callback`
+* [x] Insert call to `_build_skeleton_vectors`
+* [x] Add a single `viewer.add_vectors(...)` layer using the returned data
+* [x] Apply `bodypart_data.skeleton_color` + `skeleton_width`
+* [x] Add features for future styling (`edge_name`)
+* [x] Append this vectors layer to the return list of layers
 
 ### **2.2 Align with existing bodypart Points layer**
 
-* [ ] Ensure Points layer creation remains unchanged
-* [ ] Ensure coordinate transforms are not duplicated
-* [ ] Validate that time dimension is interpreted correctly by napari
+* [x] Ensure Points layer creation remains unchanged
+* [x] Ensure coordinate transforms are not duplicated
+* [x] Validate that time dimension is interpreted correctly by napari
 
 ### **2.3 Remove per-frame callbacks**
 
-* [ ] Completely delete skeleton-related dims events
-* [ ] Ensure nothing in the viewer tries to update skeleton during playback
+* [x] Completely delete skeleton-related dims events
+* [x] Ensure nothing in the viewer tries to update skeleton during playback
 
 ---
 

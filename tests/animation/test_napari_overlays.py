@@ -252,7 +252,7 @@ def test_position_overlay_without_trail(mock_viewer_class, simple_env, simple_fi
 def test_bodypart_overlay_creates_layers(
     mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
 ):
-    """Test bodypart overlay creates points and shapes layers."""
+    """Test bodypart overlay creates points and vectors layers."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData
 
@@ -268,15 +268,19 @@ def test_bodypart_overlay_creates_layers(
     # Should create points layer(s) for bodyparts
     assert mock_viewer.add_points.called
 
-    # Should create shapes layer for skeleton
-    assert mock_viewer.add_shapes.called
+    # Should create vectors layer for skeleton (precomputed, not per-frame shapes)
+    assert mock_viewer.add_vectors.called
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_skeleton_as_lines(
+def test_bodypart_overlay_skeleton_as_precomputed_vectors(
     mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
 ):
-    """Test bodypart skeleton rendered as line shapes."""
+    """Test bodypart skeleton rendered as precomputed vectors layer.
+
+    The skeleton is now rendered using napari's Vectors layer with precomputed
+    data for all frames, eliminating per-frame callback overhead.
+    """
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData
 
@@ -289,10 +293,17 @@ def test_bodypart_overlay_skeleton_as_lines(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Check shapes layer has shape_type="line"
-    shapes_kwargs = mock_viewer.add_shapes.call_args[1]
-    assert "shape_type" in shapes_kwargs
-    assert shapes_kwargs["shape_type"] == "line"
+    # Check vectors layer created for skeleton
+    assert mock_viewer.add_vectors.called
+
+    # Verify vectors data shape: (n_segments, 2, 3) for [[t, y0, x0], [t, y1, x1]]
+    vectors_call = mock_viewer.add_vectors.call_args
+    vectors_data = vectors_call[0][0]
+
+    # Should have 3D data: (n_segments, 2 points per segment, 3 coords per point)
+    assert vectors_data.ndim == 3
+    assert vectors_data.shape[1] == 2  # Start and end points
+    assert vectors_data.shape[2] == 3  # (time, row, col)
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -365,7 +376,7 @@ def test_bodypart_overlay_per_part_colors(
 def test_bodypart_overlay_skeleton_color_and_width(
     mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
 ):
-    """Test bodypart skeleton applies color and width properties."""
+    """Test bodypart skeleton applies color and width properties to vectors layer."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData
 
@@ -378,17 +389,17 @@ def test_bodypart_overlay_skeleton_color_and_width(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Check shapes layer has edge_color and edge_width
-    shapes_kwargs = mock_viewer.add_shapes.call_args[1]
-    assert "edge_color" in shapes_kwargs or "edge_colours" in shapes_kwargs
-    assert "edge_width" in shapes_kwargs
+    # Check vectors layer has edge_color and edge_width
+    vectors_kwargs = mock_viewer.add_vectors.call_args[1]
+    assert "edge_color" in vectors_kwargs or "edge_colour" in vectors_kwargs
+    assert "edge_width" in vectors_kwargs
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
 def test_bodypart_overlay_without_skeleton(
     mock_viewer_class, simple_env, simple_fields
 ):
-    """Test bodypart overlay without skeleton (points only, no shapes)."""
+    """Test bodypart overlay without skeleton (points only, no vectors for skeleton)."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import BodypartData, OverlayData
 
@@ -412,8 +423,45 @@ def test_bodypart_overlay_without_skeleton(
     # Should create points layer
     assert mock_viewer.add_points.called
 
-    # Should NOT create shapes layer (no skeleton)
-    assert not mock_viewer.add_shapes.called
+    # Should NOT create vectors layer for skeleton (no skeleton defined)
+    # Note: head direction overlays use vectors, so we check call count = 0
+    # when only bodypart overlay without skeleton is present
+    assert mock_viewer.add_vectors.call_count == 0
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_bodypart_skeleton_all_nan_no_vectors_layer(
+    mock_viewer_class, simple_env, simple_fields
+):
+    """Test skeleton layer NOT created when all bodypart coords are NaN."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import BodypartData, OverlayData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Bodypart data with ALL NaN coordinates
+    bodypart_data = BodypartData(
+        bodyparts={
+            "head": np.full((10, 2), np.nan),
+            "body": np.full((10, 2), np.nan),
+        },
+        skeleton=[("head", "body")],
+        colors={"head": "red", "body": "green"},
+        skeleton_color="white",
+        skeleton_width=2.0,
+    )
+    overlay_data = OverlayData(bodypart_sets=[bodypart_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Points layer still created (even if NaN)
+    assert mock_viewer.add_points.called
+
+    # NO vectors layer should be created (all segments filtered due to NaN)
+    assert mock_viewer.add_vectors.call_count == 0
 
 
 # =============================================================================
@@ -652,11 +700,9 @@ def test_mixed_overlay_types(
     # Should create points layers (position marker + bodyparts)
     assert mock_viewer.add_points.call_count >= 2
 
-    # Should create shapes layer (bodypart skeleton)
-    assert mock_viewer.add_shapes.called
-
-    # Should create vectors layer (head direction)
-    assert mock_viewer.add_vectors.called
+    # Should create vectors layers (bodypart skeleton + head direction)
+    # Skeleton is now rendered as precomputed vectors (not shapes)
+    assert mock_viewer.add_vectors.call_count >= 2
 
 
 # =============================================================================
