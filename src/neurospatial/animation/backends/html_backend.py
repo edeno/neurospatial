@@ -308,6 +308,18 @@ def render_html(
 
     n_frames = len(fields)
 
+    # Validate frame_labels length if provided
+    if frame_labels is not None and len(frame_labels) != n_frames:
+        raise ValueError(
+            f"frame_labels length ({len(frame_labels)}) does not match "
+            f"number of frames ({n_frames}).\n\n"
+            f"WHAT: Mismatch between frame_labels and fields arrays.\n\n"
+            f"WHY: Each frame needs exactly one label for the HTML player slider.\n\n"
+            f"HOW: Ensure frame_labels has {n_frames} elements:\n"
+            f"  frame_labels = [f'Frame {{i+1}}' for i in range({n_frames})]\n"
+            f"  # Or provide None to use default labels"
+        )
+
     # Validate overlay capabilities and emit warnings for unsupported types
     if overlay_data is not None:
         has_unsupported = (
@@ -762,33 +774,41 @@ def _generate_html_player(
         function renderOverlays(frameIdx) {{
             if (!overlayData) return;
 
-            // Match canvas size to image (only resize when dimensions change)
+            // Match canvas size to image with HiDPI support (devicePixelRatio)
             const imgEl = document.getElementById('frame');
             const imgWidth = imgEl.naturalWidth || imgEl.width;
             const imgHeight = imgEl.naturalHeight || imgEl.height;
-            if (canvas.width !== imgWidth || canvas.height !== imgHeight) {{
-                canvas.width = imgWidth;
-                canvas.height = imgHeight;
+            const dpr = window.devicePixelRatio || 1;
+
+            // Scale canvas by devicePixelRatio for sharp rendering on HiDPI displays
+            const targetWidth = imgWidth * dpr;
+            const targetHeight = imgHeight * dpr;
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {{
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+                canvas.style.width = imgWidth + 'px';
+                canvas.style.height = imgHeight + 'px';
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             }}
             // Clear canvas (separate from resize)
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, imgWidth, imgHeight);
 
             // Get dimension ranges for coordinate scaling
             const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
             const xRange = dimRanges[0];
             const yRange = dimRanges[1];
 
-            // Scaling functions: data coords -> canvas pixels
+            // Scaling functions: data coords -> canvas pixels (CSS pixels, not device pixels)
             function scaleX(x) {{
                 const extent = xRange[1] - xRange[0];
-                if (extent === 0) return canvas.width / 2;  // Center point for zero extent
-                return ((x - xRange[0]) / extent) * canvas.width;
+                if (extent === 0) return imgWidth / 2;  // Center point for zero extent
+                return ((x - xRange[0]) / extent) * imgWidth;
             }}
             function scaleY(y) {{
                 // Flip y-axis (image has y=0 at top)
                 const extent = yRange[1] - yRange[0];
-                if (extent === 0) return canvas.height / 2;  // Center point for zero extent
-                return ((yRange[1] - y) / extent) * canvas.height;
+                if (extent === 0) return imgHeight / 2;  // Center point for zero extent
+                return ((yRange[1] - y) / extent) * imgHeight;
             }}
 
             // Render positions
@@ -1244,33 +1264,41 @@ def _generate_non_embedded_html_player(
         function renderOverlays(frameIdx) {{
             if (!overlayData) return;
 
-            // Match canvas size to image (only resize when dimensions change)
+            // Match canvas size to image with HiDPI support (devicePixelRatio)
             const imgEl = document.getElementById('frame');
             const imgWidth = imgEl.naturalWidth || imgEl.width;
             const imgHeight = imgEl.naturalHeight || imgEl.height;
-            if (canvas.width !== imgWidth || canvas.height !== imgHeight) {{
-                canvas.width = imgWidth;
-                canvas.height = imgHeight;
+            const dpr = window.devicePixelRatio || 1;
+
+            // Scale canvas by devicePixelRatio for sharp rendering on HiDPI displays
+            const targetWidth = imgWidth * dpr;
+            const targetHeight = imgHeight * dpr;
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {{
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+                canvas.style.width = imgWidth + 'px';
+                canvas.style.height = imgHeight + 'px';
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             }}
             // Clear canvas (separate from resize)
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, imgWidth, imgHeight);
 
             // Get dimension ranges for coordinate scaling
             const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
             const xRange = dimRanges[0];
             const yRange = dimRanges[1];
 
-            // Scaling functions: data coords -> canvas pixels
+            // Scaling functions: data coords -> canvas pixels (CSS pixels, not device pixels)
             function scaleX(x) {{
                 const extent = xRange[1] - xRange[0];
-                if (extent === 0) return canvas.width / 2;  // Center point for zero extent
-                return ((x - xRange[0]) / extent) * canvas.width;
+                if (extent === 0) return imgWidth / 2;  // Center point for zero extent
+                return ((x - xRange[0]) / extent) * imgWidth;
             }}
             function scaleY(y) {{
                 // Flip y-axis (image has y=0 at top)
                 const extent = yRange[1] - yRange[0];
-                if (extent === 0) return canvas.height / 2;  // Center point for zero extent
-                return ((yRange[1] - y) / extent) * canvas.height;
+                if (extent === 0) return imgHeight / 2;  // Center point for zero extent
+                return ((yRange[1] - y) / extent) * imgHeight;
             }}
 
             // Render positions

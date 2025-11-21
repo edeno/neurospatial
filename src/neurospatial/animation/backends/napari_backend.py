@@ -48,6 +48,10 @@ POINT_BORDER_WIDTH: float = 0.5
 BODYPART_POINT_SIZE: float = 5.0
 """Default size for bodypart point markers."""
 
+# Module-level flag for once-per-session fallback warning
+_NAPARI_TRANSFORM_FALLBACK_WARNED: bool = False
+"""Flag to ensure napari transform fallback warning is shown only once per session."""
+
 HEAD_DIRECTION_EDGE_WIDTH: float = 3.0
 """Edge width for head direction vector arrows."""
 
@@ -208,7 +212,21 @@ def _transform_direction_for_napari(
             scale = _make_env_scale(env_or_scale)
 
         if scale is None:
-            # Fallback: just swap axes and invert Y
+            # Fallback: just swap axes and invert Y (may cause alignment issues)
+            global _NAPARI_TRANSFORM_FALLBACK_WARNED
+            if not _NAPARI_TRANSFORM_FALLBACK_WARNED:
+                warnings.warn(
+                    "Napari coordinate transform falling back to simple axis swap.\n"
+                    "This may cause misalignment between overlays and the field image.\n\n"
+                    "CAUSE: Environment lacks dimension_ranges or layout.grid_shape.\n\n"
+                    "FIX: Ensure your environment has proper dimension ranges:\n"
+                    "  - Use Environment.from_samples() which computes ranges automatically\n"
+                    "  - Or set env.dimension_ranges manually\n"
+                    "  - For custom layouts, ensure layout.grid_shape is defined",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                _NAPARI_TRANSFORM_FALLBACK_WARNED = True
             result = np.empty_like(direction)
             result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
             result[..., 1] = dx
@@ -267,7 +285,21 @@ def _transform_coords_for_napari(
             scale = _make_env_scale(env_or_scale)
 
         if scale is None:
-            # Fallback: just swap x and y
+            # Fallback: just swap x and y (may cause alignment issues)
+            global _NAPARI_TRANSFORM_FALLBACK_WARNED
+            if not _NAPARI_TRANSFORM_FALLBACK_WARNED:
+                warnings.warn(
+                    "Napari coordinate transform falling back to simple axis swap.\n"
+                    "This may cause misalignment between overlays and the field image.\n\n"
+                    "CAUSE: Environment lacks dimension_ranges or layout.grid_shape.\n\n"
+                    "FIX: Ensure your environment has proper dimension ranges:\n"
+                    "  - Use Environment.from_samples() which computes ranges automatically\n"
+                    "  - Or set env.dimension_ranges manually\n"
+                    "  - For custom layouts, ensure layout.grid_shape is defined",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                _NAPARI_TRANSFORM_FALLBACK_WARNED = True
             return coords[..., ::-1]
 
         x_coords = coords[..., 0]

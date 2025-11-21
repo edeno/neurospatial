@@ -19,16 +19,18 @@ Overlay Rendering Layer Order (zorder):
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 # Module-level imports for hot path performance (avoid per-frame import overhead)
-from matplotlib.collections import LineCollection
+from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.colors import to_rgba
 from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path as MplPath
+from matplotlib.quiver import Quiver
 from numpy.typing import NDArray
 from tqdm import tqdm
 
@@ -341,6 +343,505 @@ def _clear_overlay_artists(ax: Any) -> None:
         # quiver creates FancyArrow or FancyArrowPatch objects
         if hasattr(artist, "arrow_patch") or type(artist).__name__ == "FancyArrow":
             artist.remove()
+
+
+# =============================================================================
+# Overlay Artist Manager (persistent artist reuse)
+# =============================================================================
+
+
+@dataclass
+class OverlayArtistManager:
+    """Manages persistent matplotlib artists for efficient overlay rendering.
+
+    Instead of creating and destroying artists each frame, this manager keeps
+    persistent references and updates their data. This provides significant
+    performance gains for animations with overlays.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to render overlays on.
+    env : Environment
+        Environment for spatial context (bin_centers for head direction anchor).
+    overlay_data : OverlayData
+        Overlay data containing positions, bodyparts, head directions.
+    show_regions : bool or list of str
+        Region display configuration.
+    region_alpha : float
+        Alpha transparency for regions.
+
+    Attributes
+    ----------
+    _position_trails : list[LineCollection]
+        Trail line collections for each position overlay.
+    _position_markers : list[PathCollection]
+        Scatter point collections for position markers.
+    _bodypart_points : list[PathCollection]
+        Scatter collections for bodypart keypoints.
+    _bodypart_skeletons : list[LineCollection]
+        Line collections for bodypart skeletons.
+    _head_direction_quivers : list[Quiver | None]
+        Quiver artists for head direction arrows.
+    _region_patches : list
+        Patches for region rendering (only created once, not updated).
+
+    Notes
+    -----
+    Artist update methods used:
+
+    - LineCollection: `set_segments()`, `set_colors()`
+    - PathCollection: `set_offsets()`, `set_facecolors()`
+    - Quiver: Recreated each frame (matplotlib limitation - position updates
+      require full recreation)
+
+    The manager is designed to be created once per worker/figure and updated
+    each frame via `update_frame()`.
+    """
+
+    ax: Any
+    env: Any
+    overlay_data: Any
+    show_regions: bool | list[str]
+    region_alpha: float
+
+    # Persistent artist references (initialized on first frame)
+    _position_trails: list[LineCollection | None] = field(default_factory=list)
+    _position_markers: list[PathCollection] = field(default_factory=list)
+    _bodypart_points: list[PathCollection] = field(default_factory=list)
+    _bodypart_skeletons: list[LineCollection | None] = field(default_factory=list)
+    _head_direction_quivers: list[Quiver | None] = field(default_factory=list)
+    _region_patches: list[Any] = field(default_factory=list)
+    _initialized: bool = False
+
+    def initialize(self, frame_idx: int = 0) -> None:
+        """Initialize all overlay artists for the first frame.
+
+        Creates persistent artists that will be reused for subsequent frames.
+        Must be called before `update_frame()`.
+
+        Parameters
+        ----------
+        frame_idx : int, default=0
+            Initial frame index for overlay data.
+        """
+        if self._initialized:
+            return
+
+        # Render regions (static, only created once)
+        self._initialize_regions()
+
+        if self.overlay_data is None:
+            self._initialized = True
+            return
+
+        # Initialize position overlays
+        for pos_data in self.overlay_data.positions:
+            self._initialize_position_overlay(pos_data, frame_idx)
+
+        # Initialize bodypart overlays
+        for bodypart_data in self.overlay_data.bodypart_sets:
+            self._initialize_bodypart_overlay(bodypart_data, frame_idx)
+
+        # Initialize head direction overlays
+        paired_position = (
+            self.overlay_data.positions[0]
+            if len(self.overlay_data.positions) == 1
+            else None
+        )
+        for head_dir_data in self.overlay_data.head_directions:
+            self._initialize_head_direction_overlay(
+                head_dir_data, frame_idx, paired_position
+            )
+
+        self._initialized = True
+
+    def _initialize_regions(self) -> None:
+        """Create region patches (static, not updated per frame)."""
+        if not self.show_regions or len(self.env.regions) == 0:
+            return
+
+        region_names: list[str]
+        if isinstance(self.show_regions, bool):
+            region_names = list(self.env.regions.keys())
+        else:
+            region_names = self.show_regions
+
+        for region_name in region_names:
+            if region_name not in self.env.regions:
+                continue
+
+            region = self.env.regions[region_name]
+
+            if region.kind == "point":
+                coords = region.data
+                circle = Circle(
+                    coords,
+                    radius=5.0,
+                    facecolor="white",
+                    edgecolor="white",
+                    alpha=self.region_alpha,
+                    zorder=99,
+                )
+                self.ax.add_patch(circle)
+                self._region_patches.append(circle)
+            elif region.kind == "polygon":
+                exterior_coords = np.array(region.data.exterior.coords)
+                path = MplPath(exterior_coords)
+                patch = PathPatch(
+                    path,
+                    facecolor="white",
+                    edgecolor="white",
+                    alpha=self.region_alpha,
+                    zorder=99,
+                )
+                self.ax.add_patch(patch)
+                self._region_patches.append(patch)
+
+    def _initialize_position_overlay(self, pos_data: Any, frame_idx: int) -> None:
+        """Initialize position overlay artists."""
+        current_pos = pos_data.data[frame_idx]
+
+        # Create trail LineCollection (empty initially, will be populated)
+        trail_lc: LineCollection | None = None
+        if pos_data.trail_length is not None and pos_data.trail_length > 0:
+            # Create empty LineCollection that will be updated
+            trail_lc = LineCollection([], linewidths=1.5, zorder=100)
+            self.ax.add_collection(trail_lc)
+            self._position_trails.append(trail_lc)
+        else:
+            self._position_trails.append(None)
+
+        # Create position marker scatter
+        if not np.any(np.isnan(current_pos)):
+            marker = self.ax.scatter(
+                [current_pos[0]],
+                [current_pos[1]],
+                c=[pos_data.color],
+                s=[pos_data.size**2],
+                zorder=101,
+                edgecolors="white",
+                linewidths=0.5,
+            )
+        else:
+            # Create with dummy data (will be updated)
+            marker = self.ax.scatter(
+                [0],
+                [0],
+                c=[pos_data.color],
+                s=[pos_data.size**2],
+                zorder=101,
+                edgecolors="white",
+                linewidths=0.5,
+            )
+            marker.set_visible(False)
+        self._position_markers.append(marker)
+
+        # Update trail for initial frame
+        self._update_position_trail(len(self._position_trails) - 1, pos_data, frame_idx)
+
+    def _initialize_bodypart_overlay(self, bodypart_data: Any, frame_idx: int) -> None:
+        """Initialize bodypart overlay artists."""
+        # Collect all bodypart positions for this frame
+        all_offsets = []
+        all_colors = []
+
+        for part_name, positions in bodypart_data.bodyparts.items():
+            pos = positions[frame_idx]
+            if not np.any(np.isnan(pos)):
+                all_offsets.append(pos)
+                if bodypart_data.colors and part_name in bodypart_data.colors:
+                    all_colors.append(bodypart_data.colors[part_name])
+                else:
+                    all_colors.append("cyan")
+
+        # Create scatter for all bodyparts
+        if all_offsets:
+            offsets_array = np.array(all_offsets)
+            points = self.ax.scatter(
+                offsets_array[:, 0],
+                offsets_array[:, 1],
+                c=all_colors,
+                s=25,
+                zorder=102,
+                edgecolors="white",
+                linewidths=0.5,
+            )
+        else:
+            # Create with dummy data
+            points = self.ax.scatter(
+                [0],
+                [0],
+                c=["cyan"],
+                s=25,
+                zorder=102,
+                edgecolors="white",
+                linewidths=0.5,
+            )
+            points.set_visible(False)
+        self._bodypart_points.append(points)
+
+        # Create skeleton LineCollection
+        skeleton_lc: LineCollection | None = None
+        if bodypart_data.skeleton:
+            skeleton_lc = LineCollection(
+                [],
+                colors=bodypart_data.skeleton_color,
+                linewidths=bodypart_data.skeleton_width,
+                zorder=101,
+            )
+            self.ax.add_collection(skeleton_lc)
+            self._update_bodypart_skeleton(
+                len(self._bodypart_skeletons), bodypart_data, frame_idx
+            )
+        self._bodypart_skeletons.append(skeleton_lc)
+
+    def _initialize_head_direction_overlay(
+        self, head_dir_data: Any, frame_idx: int, position_data: Any | None
+    ) -> None:
+        """Initialize head direction overlay artist."""
+        # Head direction requires quiver which is complex to update
+        # We'll store a reference and recreate as needed
+        quiver = self._create_head_direction_quiver(
+            head_dir_data, frame_idx, position_data
+        )
+        self._head_direction_quivers.append(quiver)
+
+    def _create_head_direction_quiver(
+        self, head_dir_data: Any, frame_idx: int, position_data: Any | None
+    ) -> Quiver | None:
+        """Create quiver artist for head direction."""
+        is_angles = head_dir_data.data.ndim == 1
+
+        # Determine arrow origin
+        if position_data is not None:
+            origin = position_data.data[frame_idx]
+            if np.any(np.isnan(origin)):
+                origin = np.mean(self.env.bin_centers, axis=0)
+        else:
+            origin = np.mean(self.env.bin_centers, axis=0)
+
+        # Compute direction vector
+        if is_angles:
+            angle = head_dir_data.data[frame_idx]
+            if np.isnan(angle):
+                return None
+            direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
+        else:
+            direction = head_dir_data.data[frame_idx]
+            if np.any(np.isnan(direction)):
+                return None
+            norm = np.linalg.norm(direction)
+            if norm > 0:
+                direction = direction / norm * head_dir_data.length
+
+        quiver: Quiver = self.ax.quiver(
+            origin[0],
+            origin[1],
+            direction[0],
+            direction[1],
+            color=head_dir_data.color,
+            scale=1,
+            scale_units="xy",
+            angles="xy",
+            width=0.006,
+            headwidth=4,
+            headlength=5,
+            zorder=103,
+        )
+        return quiver
+
+    def update_frame(self, frame_idx: int) -> None:
+        """Update all overlay artists for a new frame.
+
+        Parameters
+        ----------
+        frame_idx : int
+            Frame index for overlay data.
+        """
+        if not self._initialized:
+            self.initialize(frame_idx)
+            return
+
+        if self.overlay_data is None:
+            return
+
+        # Update position overlays
+        for i, pos_data in enumerate(self.overlay_data.positions):
+            self._update_position_marker(i, pos_data, frame_idx)
+            self._update_position_trail(i, pos_data, frame_idx)
+
+        # Update bodypart overlays
+        for i, bodypart_data in enumerate(self.overlay_data.bodypart_sets):
+            self._update_bodypart_points(i, bodypart_data, frame_idx)
+            if bodypart_data.skeleton and self._bodypart_skeletons[i] is not None:
+                self._update_bodypart_skeleton(i, bodypart_data, frame_idx)
+
+        # Update head direction overlays (recreate quiver - matplotlib limitation)
+        paired_position = (
+            self.overlay_data.positions[0]
+            if len(self.overlay_data.positions) == 1
+            else None
+        )
+        for i, head_dir_data in enumerate(self.overlay_data.head_directions):
+            self._update_head_direction(i, head_dir_data, frame_idx, paired_position)
+
+    def _update_position_marker(self, idx: int, pos_data: Any, frame_idx: int) -> None:
+        """Update position marker scatter point."""
+        marker = self._position_markers[idx]
+        current_pos = pos_data.data[frame_idx]
+
+        if np.any(np.isnan(current_pos)):
+            marker.set_visible(False)
+        else:
+            marker.set_visible(True)
+            marker.set_offsets([current_pos])
+
+    def _update_position_trail(self, idx: int, pos_data: Any, frame_idx: int) -> None:
+        """Update position trail line collection."""
+        trail_lc = self._position_trails[idx]
+        if trail_lc is None or pos_data.trail_length is None:
+            return
+
+        trail_start = max(0, frame_idx - pos_data.trail_length + 1)
+        trail_positions = pos_data.data[trail_start : frame_idx + 1]
+
+        # Filter out NaN positions
+        valid_mask = ~np.any(np.isnan(trail_positions), axis=1)
+        trail_positions = trail_positions[valid_mask]
+
+        if len(trail_positions) > 1:
+            # Create line segments
+            segments = [
+                trail_positions[i : i + 2] for i in range(len(trail_positions) - 1)
+            ]
+            # Compute per-segment alpha
+            alphas = [
+                (i + 1) / len(trail_positions) * 0.7 for i in range(len(segments))
+            ]
+            base_rgba = to_rgba(pos_data.color)
+            colors = [(*base_rgba[:3], alpha) for alpha in alphas]
+
+            trail_lc.set_segments(segments)
+            trail_lc.set_colors(colors)
+            trail_lc.set_visible(True)
+        else:
+            trail_lc.set_segments([])
+            trail_lc.set_visible(False)
+
+    def _update_bodypart_points(
+        self, idx: int, bodypart_data: Any, frame_idx: int
+    ) -> None:
+        """Update bodypart scatter points."""
+        points = self._bodypart_points[idx]
+
+        all_offsets = []
+        all_colors = []
+
+        for part_name, positions in bodypart_data.bodyparts.items():
+            pos = positions[frame_idx]
+            if not np.any(np.isnan(pos)):
+                all_offsets.append(pos)
+                if bodypart_data.colors and part_name in bodypart_data.colors:
+                    all_colors.append(bodypart_data.colors[part_name])
+                else:
+                    all_colors.append("cyan")
+
+        if all_offsets:
+            offsets_array = np.array(all_offsets)
+            points.set_offsets(offsets_array)
+            points.set_facecolor(all_colors)
+            points.set_visible(True)
+        else:
+            points.set_visible(False)
+
+    def _update_bodypart_skeleton(
+        self, idx: int, bodypart_data: Any, frame_idx: int
+    ) -> None:
+        """Update bodypart skeleton line collection."""
+        skeleton_lc = self._bodypart_skeletons[idx]
+        if skeleton_lc is None:
+            return
+
+        skeleton_segments = []
+        for start_part, end_part in bodypart_data.skeleton:
+            if (
+                start_part in bodypart_data.bodyparts
+                and end_part in bodypart_data.bodyparts
+            ):
+                start_pos = bodypart_data.bodyparts[start_part][frame_idx]
+                end_pos = bodypart_data.bodyparts[end_part][frame_idx]
+
+                if np.any(np.isnan(start_pos)) or np.any(np.isnan(end_pos)):
+                    continue
+
+                skeleton_segments.append([start_pos, end_pos])
+
+        if skeleton_segments:
+            skeleton_lc.set_segments(skeleton_segments)
+            skeleton_lc.set_visible(True)
+        else:
+            skeleton_lc.set_segments([])
+            skeleton_lc.set_visible(False)
+
+    def _update_head_direction(
+        self,
+        idx: int,
+        head_dir_data: Any,
+        frame_idx: int,
+        position_data: Any | None,
+    ) -> None:
+        """Update head direction quiver (recreated each frame)."""
+        # Remove old quiver if it exists
+        old_quiver = self._head_direction_quivers[idx]
+        if old_quiver is not None:
+            old_quiver.remove()
+
+        # Create new quiver for this frame
+        new_quiver = self._create_head_direction_quiver(
+            head_dir_data, frame_idx, position_data
+        )
+        self._head_direction_quivers[idx] = new_quiver
+
+    def clear(self) -> None:
+        """Remove all overlay artists from axes.
+
+        Call this when disposing of the manager or resetting the figure.
+        """
+        # Remove trail collections
+        for trail_lc in self._position_trails:
+            if trail_lc is not None:
+                trail_lc.remove()
+        self._position_trails.clear()
+
+        # Remove position markers
+        for marker in self._position_markers:
+            marker.remove()
+        self._position_markers.clear()
+
+        # Remove bodypart points
+        for points in self._bodypart_points:
+            points.remove()
+        self._bodypart_points.clear()
+
+        # Remove bodypart skeletons
+        for skeleton_lc in self._bodypart_skeletons:
+            if skeleton_lc is not None:
+                skeleton_lc.remove()
+        self._bodypart_skeletons.clear()
+
+        # Remove head direction quivers
+        for quiver in self._head_direction_quivers:
+            if quiver is not None:
+                quiver.remove()
+        self._head_direction_quivers.clear()
+
+        # Remove region patches
+        for patch in self._region_patches:
+            patch.remove()
+        self._region_patches.clear()
+
+        self._initialized = False
 
 
 def _render_all_overlays(
@@ -711,13 +1212,26 @@ def _render_worker_frames(task: dict) -> None:
     if frame_labels and frame_labels[0]:
         ax.set_title(frame_labels[0], fontsize=14)
 
-    # Render overlays for frame 0
-    _render_all_overlays(ax, env, 0, overlay_data, show_regions, region_alpha)
-
     # Try to identify the primary image artist to update
     # This assumes env.plot_field uses imshow/Images; otherwise we fall back
     primary_im: AxesImage | None = ax.images[0] if ax.images else None
     reuse_artists = bool(reuse_flag and primary_im is not None)
+
+    # Create overlay artist manager for efficient artist reuse
+    # (only when we have overlays and are using artist reuse path)
+    overlay_manager: OverlayArtistManager | None = None
+    if reuse_artists and (overlay_data is not None or show_regions):
+        overlay_manager = OverlayArtistManager(
+            ax=ax,
+            env=env,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+        )
+        overlay_manager.initialize(frame_idx=0)
+    else:
+        # Render overlays for frame 0 using legacy path
+        _render_all_overlays(ax, env, 0, overlay_data, show_regions, region_alpha)
 
     # Freeze autoscale to avoid changing extents while updating data
     if reuse_artists:
@@ -750,13 +1264,15 @@ def _render_worker_frames(task: dict) -> None:
                 if frame_labels and frame_labels[local_idx]:
                     ax.set_title(frame_labels[local_idx], fontsize=14)
 
-                # Clear overlay artists from previous frame (keep primary image)
-                _clear_overlay_artists(ax)
-
-                # Render overlays for this frame
-                _render_all_overlays(
-                    ax, env, local_idx, overlay_data, show_regions, region_alpha
-                )
+                # Update overlay artists efficiently (no clear/recreate)
+                if overlay_manager is not None:
+                    overlay_manager.update_frame(local_idx)
+                else:
+                    # Fallback: clear and re-render (no overlays case)
+                    _clear_overlay_artists(ax)
+                    _render_all_overlays(
+                        ax, env, local_idx, overlay_data, show_regions, region_alpha
+                    )
 
                 # No need to clear or re-layout. Draw and save.
                 frame_number = start_idx + local_idx

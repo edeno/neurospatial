@@ -145,9 +145,9 @@ def render_field_to_png_bytes_with_overlays(
             ax, env, frame_idx, overlay_data, show_regions, region_alpha
         )
 
-    # Save to PNG bytes
+    # Save to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.1)
+    fig.savefig(buf, format="png")
     plt.close(fig)  # Close figure to free memory
     buf.seek(0)
     png_bytes = buf.read()
@@ -207,7 +207,7 @@ class PersistentFigureRenderer:
     - Layout/tight_layout calculations
 
     Instead, only the image data is updated via ``set_data()``, and overlays
-    are cleared/re-rendered each frame.
+    use persistent artists via OverlayArtistManager for efficient updates.
 
     **Memory:**
 
@@ -274,6 +274,7 @@ class PersistentFigureRenderer:
         self._ax.set_axis_off()
         self._image: AxesImage | None = None  # Will hold AxesImage after first render
         self._is_first_render = True
+        self._overlay_manager: Any = None  # Initialized on first render with overlays
 
     def render(
         self,
@@ -304,14 +305,7 @@ class PersistentFigureRenderer:
         bytes
             PNG image data
         """
-        from neurospatial.animation._parallel import (
-            _clear_overlay_artists,
-            _render_all_overlays,
-        )
-
-        # Clear previous overlays (but keep image)
-        if not self._is_first_render:
-            _clear_overlay_artists(self._ax)
+        from neurospatial.animation._parallel import OverlayArtistManager
 
         if self._is_first_render:
             # First render: create image using environment's plot method
@@ -326,6 +320,18 @@ class PersistentFigureRenderer:
             # Store reference to the primary image artist for future updates
             if self._ax.images:
                 self._image = self._ax.images[0]
+
+            # Initialize overlay manager if we have overlays
+            if overlay_data is not None or show_regions:
+                self._overlay_manager = OverlayArtistManager(
+                    ax=self._ax,
+                    env=self._env,
+                    overlay_data=overlay_data,
+                    show_regions=show_regions,
+                    region_alpha=region_alpha,
+                )
+                self._overlay_manager.initialize(frame_idx=frame_idx)
+
             self._is_first_render = False
         else:
             # Subsequent renders: update image data using set_data
@@ -348,6 +354,16 @@ class PersistentFigureRenderer:
                     )
                     if self._ax.images:
                         self._image = self._ax.images[0]
+                    # Reset overlay manager for re-initialized axes
+                    if overlay_data is not None or show_regions:
+                        self._overlay_manager = OverlayArtistManager(
+                            ax=self._ax,
+                            env=self._env,
+                            overlay_data=overlay_data,
+                            show_regions=show_regions,
+                            region_alpha=region_alpha,
+                        )
+                        self._overlay_manager.initialize(frame_idx=frame_idx)
             else:
                 # No image artist found, re-render completely
                 self._ax.clear()
@@ -362,21 +378,24 @@ class PersistentFigureRenderer:
                 )
                 if self._ax.images:
                     self._image = self._ax.images[0]
+                # Reset overlay manager for re-initialized axes
+                if overlay_data is not None or show_regions:
+                    self._overlay_manager = OverlayArtistManager(
+                        ax=self._ax,
+                        env=self._env,
+                        overlay_data=overlay_data,
+                        show_regions=show_regions,
+                        region_alpha=region_alpha,
+                    )
+                    self._overlay_manager.initialize(frame_idx=frame_idx)
 
-        # Render overlays
-        if overlay_data is not None or show_regions:
-            _render_all_overlays(
-                self._ax,
-                self._env,
-                frame_idx,
-                overlay_data,
-                show_regions,
-                region_alpha,
-            )
+            # Update overlays using manager
+            if self._overlay_manager is not None:
+                self._overlay_manager.update_frame(frame_idx)
 
-        # Capture to PNG bytes
+        # Capture to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
         buf = io.BytesIO()
-        self._fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.1)
+        self._fig.savefig(buf, format="png")
         buf.seek(0)
         return buf.read()
 
