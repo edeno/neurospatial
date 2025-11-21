@@ -11,12 +11,12 @@ from pathlib import Path
 
 import numpy as np
 
-# Add project root to path for benchmark imports
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# Add scripts directory to path for benchmark imports
+SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-# Import benchmark utilities (use package-level imports)
+# Import benchmark utilities from scripts/benchmark_datasets
 from benchmark_datasets import (  # noqa: E402
     LARGE_CONFIG,
     MEDIUM_CONFIG,
