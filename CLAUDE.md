@@ -654,6 +654,63 @@ uv run ruff check . && uv run ruff format .
 uv run ruff check src/neurospatial/environment.py
 ```
 
+### Napari Performance Monitoring
+
+Use napari's built-in performance monitoring (perfmon) to profile animation backends:
+
+```bash
+# Enable perfmon with environment variable
+NAPARI_PERFMON=1 uv run python your_script.py
+
+# Or output trace to file for detailed analysis
+NAPARI_PERFMON=/tmp/perfmon.json uv run python your_script.py
+```
+
+**Viewing Trace Data:**
+- Chrome: Open `chrome://tracing` and drag-drop the JSON file
+- Speedscope: Upload to https://www.speedscope.app/ for flame graphs
+
+**Programmatic Timing (in code):**
+
+```python
+from napari.utils.perf import perf_timer, add_instant_event
+
+# Time a code block
+with perf_timer("my_operation"):
+    expensive_function()
+
+# Mark specific moments in traces
+add_instant_event("checkpoint_reached")
+```
+
+**Configuration File (optional):**
+
+Create a JSON config file for fine-grained control:
+
+```json
+{
+    "trace_qt_events": true,
+    "trace_file_on_start": "/tmp/latest.json",
+    "trace_callables": ["animation"],
+    "callable_lists": {
+        "animation": [
+            "neurospatial.animation.napari_backend._build_skeleton_vectors",
+            "neurospatial.animation.napari_backend._render_bodypart_overlay"
+        ]
+    }
+}
+```
+
+Then run with: `NAPARI_PERFMON=/path/to/config.json uv run python script.py`
+
+**Key hotspots to profile in this codebase:**
+- `_build_skeleton_vectors` - skeleton overlay construction
+- `_render_bodypart_overlay` - bodypart rendering per frame
+- `_render_head_direction_overlay` - head direction arrows
+- Layer update callbacks during playback
+
+See: https://napari.org/stable/howtos/perfmon.html
+
 ## Key Implementation Notes
 
 ### Creating New Layout Engines
