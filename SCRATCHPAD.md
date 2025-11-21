@@ -140,7 +140,50 @@ if bodypart_data.skeleton is not None:
 - All 462 animation tests pass
 - Mypy passes with no issues
 
-## Next Task: Milestone 5 - Testing & Validation
+## Completed: Phase 0.1 - Add Timing Instrumentation
 
-- Smoke-test vector skeleton visualization manually
-- Performance benchmarks for large datasets
+### What Was Done
+
+1. **Napari backend timing** (via perfmon_config.json):
+   - Added `_build_skeleton_vectors` to callable tracing
+   - Added `_render_bodypart_overlay` to callable tracing
+   - Added `_render_head_direction_overlay` to callable tracing
+   - Added `_render_position_overlay` to callable tracing
+   - Use: `NAPARI_PERFMON=scripts/perfmon_config.json uv run python script.py`
+
+2. **Created `_timing.py` module** for video/widget backends:
+   - `timing(name)` context manager for timing code blocks
+   - `timed(func)` decorator for timing function calls
+   - Enabled via `NEUROSPATIAL_TIMING=1` environment variable
+   - No-op with minimal overhead when disabled
+
+3. **Added timing to video backend**:
+   - Wrapped `render_field_to_rgb` in `rendering.py`
+
+4. **Added timing to widget backend**:
+   - Wrapped `render_field_to_png_bytes_with_overlays`
+   - Wrapped `PersistentFigureRenderer.render_savefig` (PNG save path)
+
+### How to Use
+
+```bash
+# Napari backend profiling (full tracing)
+NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/test_napari_perfmon.py
+
+# Video/Widget backend timing
+NEUROSPATIAL_TIMING=1 uv run python your_script.py
+# Output: [TIMING] render_field_to_rgb: 123.45 ms
+```
+
+### Notes
+
+- Napari uses its own perfmon infrastructure (callable tracing via JSON config)
+- Video/widget use custom `_timing` module (simpler, environment-variable controlled)
+- Both approaches have minimal overhead when disabled
+
+## Next Task: Phase 0.2 - Create Benchmark Datasets
+
+- Create `benchmarks/` directory
+- Small benchmark: 100 frames, 40x40 grid
+- Medium benchmark: 5k frames, typical spatial grid
+- Large benchmark: 100k frames with skeleton + head direction overlays

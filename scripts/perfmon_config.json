@@ -1,0 +1,23 @@
+{
+    "trace_qt_events": true,
+    "trace_file_on_start": "/tmp/napari_neurospatial_trace.json",
+    "trace_callables": ["neurospatial_animation"],
+    "callable_lists": {
+        "neurospatial_animation": [
+            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer.__getitem__",
+            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer._get_frame",
+            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer._getitem_locked",
+            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer.__getitem__",
+            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._get_frame",
+            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._render_chunk",
+            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._get_chunk",
+            "neurospatial.animation.rendering.field_to_rgb_for_napari",
+            "neurospatial.animation.backends.napari_backend.update_skeleton_on_frame_change",
+            "neurospatial.animation.backends.napari_backend.update_frame_info",
+            "neurospatial.animation.backends.napari_backend._build_skeleton_vectors",
+            "neurospatial.animation.backends.napari_backend._render_bodypart_overlay",
+            "neurospatial.animation.backends.napari_backend._render_head_direction_overlay",
+            "neurospatial.animation.backends.napari_backend._render_position_overlay"
+        ]
+    }
+}

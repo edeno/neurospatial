@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._timing import timing
+
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
@@ -108,51 +110,52 @@ def render_field_to_png_bytes_with_overlays(
         len(png_bytes) > 0
         True
     """
-    # Set Agg backend BEFORE any pyplot imports
-    try:
-        import matplotlib
+    with timing("render_field_to_png_bytes_with_overlays"):
+        # Set Agg backend BEFORE any pyplot imports
+        try:
+            import matplotlib
 
-        if matplotlib.get_backend().lower() not in (
-            "agg",
-            "module://matplotlib_inline.backend_inline",
-        ):
-            matplotlib.use("Agg", force=True)
-    except Exception:
-        pass
+            if matplotlib.get_backend().lower() not in (
+                "agg",
+                "module://matplotlib_inline.backend_inline",
+            ):
+                matplotlib.use("Agg", force=True)
+        except Exception:
+            pass
 
-    import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt
 
-    # Import overlay rendering function from video backend
-    from neurospatial.animation._parallel import _render_all_overlays
+        # Import overlay rendering function from video backend
+        from neurospatial.animation._parallel import _render_all_overlays
 
-    # Create figure and axes
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-    ax.set_axis_off()
+        # Create figure and axes
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+        ax.set_axis_off()
 
-    # Render field using environment's plot method
-    env.plot_field(
-        field,
-        ax=ax,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        colorbar=False,
-    )
-
-    # Render overlays if provided
-    if overlay_data is not None:
-        _render_all_overlays(
-            ax, env, frame_idx, overlay_data, show_regions, region_alpha
+        # Render field using environment's plot method
+        env.plot_field(
+            field,
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            colorbar=False,
         )
 
-    # Save to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png")
-    plt.close(fig)  # Close figure to free memory
-    buf.seek(0)
-    png_bytes = buf.read()
+        # Render overlays if provided
+        if overlay_data is not None:
+            _render_all_overlays(
+                ax, env, frame_idx, overlay_data, show_regions, region_alpha
+            )
 
-    return png_bytes
+        # Save to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png")
+        plt.close(fig)  # Close figure to free memory
+        buf.seek(0)
+        png_bytes = buf.read()
+
+        return png_bytes
 
 
 class PersistentFigureRenderer:
@@ -394,10 +397,11 @@ class PersistentFigureRenderer:
                 self._overlay_manager.update_frame(frame_idx)
 
         # Capture to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
-        buf = io.BytesIO()
-        self._fig.savefig(buf, format="png")
-        buf.seek(0)
-        return buf.read()
+        with timing("PersistentFigureRenderer.render_savefig"):
+            buf = io.BytesIO()
+            self._fig.savefig(buf, format="png")
+            buf.seek(0)
+            return buf.read()
 
     def _field_to_image_data(
         self, field: NDArray[np.float64]

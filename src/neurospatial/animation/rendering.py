@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._timing import timing
+
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
@@ -135,31 +137,32 @@ def render_field_to_rgb(
     >>> rgb.shape  # doctest: +SKIP
     (height, width, 3)
     """
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+    with timing("render_field_to_rgb"):
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
 
-    # Use environment's plot_field for layout-aware rendering
-    env.plot_field(
-        field,
-        ax=ax,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        colorbar=False,  # Skip colorbar for animation frames
-    )
+        # Use environment's plot_field for layout-aware rendering
+        env.plot_field(
+            field,
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            colorbar=False,  # Skip colorbar for animation frames
+        )
 
-    # Convert figure to RGB array
-    fig.canvas.draw()
+        # Convert figure to RGB array
+        fig.canvas.draw()
 
-    # Get RGBA buffer - handles retina/HiDPI displays automatically
-    # Note: buffer_rgba() is available in FigureCanvas implementations
-    rgba_buffer = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+        # Get RGBA buffer - handles retina/HiDPI displays automatically
+        # Note: buffer_rgba() is available in FigureCanvas implementations
+        rgba_buffer = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
 
-    # Buffer is already shaped correctly as (height, width, 4)
-    # Convert RGBA to RGB by dropping alpha channel
-    rgb: NDArray[np.uint8] = rgba_buffer[:, :, :3].copy()
+        # Buffer is already shaped correctly as (height, width, 4)
+        # Convert RGBA to RGB by dropping alpha channel
+        rgb: NDArray[np.uint8] = rgba_buffer[:, :, :3].copy()
 
-    plt.close(fig)
-    return rgb
+        plt.close(fig)
+        return rgb
 
 
 def render_field_to_image_bytes(
