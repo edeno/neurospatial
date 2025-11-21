@@ -282,7 +282,7 @@ def render_html(
     - Play/pause buttons
     - Frame scrubbing slider
     - Speed control (0.25x to 4x)
-    - Keyboard shortcuts (space = play/pause, arrows = step)
+    - Keyboard shortcuts (space = play/pause, arrows = step, Home/End = first/last, ,/. = step)
     - Frame counter and labels
 
     For large datasets, consider:
@@ -735,7 +735,9 @@ def _generate_html_player(
         // State
         let currentFrame = 0;
         let playing = false;
-        let interval = null;
+        let animationId = null;
+        let lastTime = 0;
+        let accumulator = 0;
         let speedMultiplier = 1.0;
 
         // Elements
@@ -755,13 +757,16 @@ def _generate_html_player(
         function renderOverlays(frameIdx) {{
             if (!overlayData) return;
 
-            // Clear canvas
+            // Match canvas size to image (only resize when dimensions change)
+            const imgEl = document.getElementById('frame');
+            const imgWidth = imgEl.naturalWidth || imgEl.width;
+            const imgHeight = imgEl.naturalHeight || imgEl.height;
+            if (canvas.width !== imgWidth || canvas.height !== imgHeight) {{
+                canvas.width = imgWidth;
+                canvas.height = imgHeight;
+            }}
+            // Clear canvas (separate from resize)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Match canvas size to image
-            const img = document.getElementById('frame');
-            canvas.width = img.naturalWidth || img.width;
-            canvas.height = img.naturalHeight || img.height;
 
             // Get dimension ranges for coordinate scaling
             const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
@@ -787,31 +792,26 @@ def _generate_html_player(
                     const positions = posOverlay.data;
                     const trailLength = posOverlay.trail_length || 0;
 
-                    // Draw trail
+                    // Draw trail - stroke each segment separately for proper alpha fade
                     if (trailLength > 0) {{
-                        ctx.strokeStyle = posOverlay.color;
                         ctx.lineWidth = 2;
-                        ctx.beginPath();
-
                         const startIdx = Math.max(0, frameIdx - trailLength);
-                        for (let i = startIdx; i <= frameIdx; i++) {{
+
+                        for (let i = startIdx + 1; i <= frameIdx; i++) {{
+                            const prevPos = positions[i - 1];
                             const pos = positions[i];
-                            const x = scaleX(pos[0]);
-                            const y = scaleY(pos[1]);
 
-                            if (i === startIdx) {{
-                                ctx.moveTo(x, y);
-                            }} else {{
-                                ctx.lineTo(x, y);
-                            }}
+                            // Calculate alpha for this segment (older = more faded)
+                            const age = frameIdx - i;
+                            const alpha = 0.3 + 0.7 * (1 - age / trailLength);
 
-                            // Decaying alpha for trail (newer = more opaque, older = faded)
-                            const ageInFrames = frameIdx - i;
-                            const alpha = 1.0 - (ageInFrames / trailLength);
-                            ctx.globalAlpha = alpha * 0.7 + 0.3;  // Range: 0.3 (oldest) to 1.0 (current)
+                            ctx.globalAlpha = alpha;
+                            ctx.strokeStyle = posOverlay.color;
+                            ctx.beginPath();
+                            ctx.moveTo(scaleX(prevPos[0]), scaleY(prevPos[1]));
+                            ctx.lineTo(scaleX(pos[0]), scaleY(pos[1]));
+                            ctx.stroke();
                         }}
-
-                        ctx.stroke();
                         ctx.globalAlpha = 1.0;
                     }}
 
@@ -889,24 +889,42 @@ def _generate_html_player(
             pauseBtn.disabled = !playing;
         }}
 
+        // Animation loop using requestAnimationFrame
+        function animate(timestamp) {{
+            if (!playing) return;
+
+            const delta = timestamp - lastTime;
+            lastTime = timestamp;
+            accumulator += delta;
+
+            const frameDelay = (1000 / baseFPS) / speedMultiplier;
+
+            while (accumulator >= frameDelay) {{
+                currentFrame = (currentFrame + 1) % frames.length;
+                updateFrame(currentFrame);
+                accumulator -= frameDelay;
+            }}
+
+            animationId = requestAnimationFrame(animate);
+        }}
+
         function play() {{
             if (playing) return;
             playing = true;
             updateControls();
-
-            const frameDelay = (1000 / baseFPS) / speedMultiplier;
-
-            interval = setInterval(() => {{
-                currentFrame = (currentFrame + 1) % frames.length;
-                updateFrame(currentFrame);
-            }}, frameDelay);
+            lastTime = performance.now();
+            accumulator = 0;
+            animationId = requestAnimationFrame(animate);
         }}
 
         function pause() {{
             if (!playing) return;
             playing = false;
             updateControls();
-            clearInterval(interval);
+            if (animationId) {{
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }}
         }}
 
         function stepForward() {{
@@ -932,10 +950,7 @@ def _generate_html_player(
 
         speedSelect.onchange = (e) => {{
             speedMultiplier = parseFloat(e.target.value);
-            if (playing) {{
-                pause();
-                play();  // Restart with new speed
-            }}
+            // No need to restart - accumulator handles speed changes gracefully
         }};
 
         // Keyboard shortcuts
@@ -947,6 +962,20 @@ def _generate_html_player(
                 e.preventDefault();
                 stepBackward();
             }} else if (e.key === 'ArrowRight') {{
+                e.preventDefault();
+                stepForward();
+            }} else if (e.key === 'Home') {{
+                e.preventDefault();
+                pause();
+                updateFrame(0);
+            }} else if (e.key === 'End') {{
+                e.preventDefault();
+                pause();
+                updateFrame(frames.length - 1);
+            }} else if (e.key === ',') {{
+                e.preventDefault();
+                stepBackward();
+            }} else if (e.key === '.') {{
                 e.preventDefault();
                 stepForward();
             }}
@@ -1178,7 +1207,6 @@ def _generate_non_embedded_html_player(
         const baseFPS = {fps};
         const framesDir = "{frames_dir_name}";
         const overlayData = {overlay_json_str};
-        const frames = null;  // For compatibility with renderOverlays
 
         // Zero-pad frame numbers (5 digits)
         function zpad(i, digits=5) {{ return (""+i).padStart(digits,"0"); }}
@@ -1189,7 +1217,9 @@ def _generate_non_embedded_html_player(
         // State
         let currentFrame = 0;
         let playing = false;
-        let interval = null;
+        let animationId = null;
+        let lastTime = 0;
+        let accumulator = 0;
         let speedMultiplier = 1.0;
 
         // Elements
@@ -1209,13 +1239,16 @@ def _generate_non_embedded_html_player(
         function renderOverlays(frameIdx) {{
             if (!overlayData) return;
 
-            // Clear canvas
+            // Match canvas size to image (only resize when dimensions change)
+            const imgEl = document.getElementById('frame');
+            const imgWidth = imgEl.naturalWidth || imgEl.width;
+            const imgHeight = imgEl.naturalHeight || imgEl.height;
+            if (canvas.width !== imgWidth || canvas.height !== imgHeight) {{
+                canvas.width = imgWidth;
+                canvas.height = imgHeight;
+            }}
+            // Clear canvas (separate from resize)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Match canvas size to image
-            const img = document.getElementById('frame');
-            canvas.width = img.naturalWidth || img.width;
-            canvas.height = img.naturalHeight || img.height;
 
             // Get dimension ranges for coordinate scaling
             const dimRanges = overlayData.dimension_ranges || [[0, 1], [0, 1]];
@@ -1241,31 +1274,26 @@ def _generate_non_embedded_html_player(
                     const positions = posOverlay.data;
                     const trailLength = posOverlay.trail_length || 0;
 
-                    // Draw trail
+                    // Draw trail - stroke each segment separately for proper alpha fade
                     if (trailLength > 0) {{
-                        ctx.strokeStyle = posOverlay.color;
                         ctx.lineWidth = 2;
-                        ctx.beginPath();
-
                         const startIdx = Math.max(0, frameIdx - trailLength);
-                        for (let i = startIdx; i <= frameIdx; i++) {{
+
+                        for (let i = startIdx + 1; i <= frameIdx; i++) {{
+                            const prevPos = positions[i - 1];
                             const pos = positions[i];
-                            const x = scaleX(pos[0]);
-                            const y = scaleY(pos[1]);
 
-                            if (i === startIdx) {{
-                                ctx.moveTo(x, y);
-                            }} else {{
-                                ctx.lineTo(x, y);
-                            }}
+                            // Calculate alpha for this segment (older = more faded)
+                            const age = frameIdx - i;
+                            const alpha = 0.3 + 0.7 * (1 - age / trailLength);
 
-                            // Decaying alpha for trail (newer = more opaque, older = faded)
-                            const ageInFrames = frameIdx - i;
-                            const alpha = 1.0 - (ageInFrames / trailLength);
-                            ctx.globalAlpha = alpha * 0.7 + 0.3;  // Range: 0.3 (oldest) to 1.0 (current)
+                            ctx.globalAlpha = alpha;
+                            ctx.strokeStyle = posOverlay.color;
+                            ctx.beginPath();
+                            ctx.moveTo(scaleX(prevPos[0]), scaleY(prevPos[1]));
+                            ctx.lineTo(scaleX(pos[0]), scaleY(pos[1]));
+                            ctx.stroke();
                         }}
-
-                        ctx.stroke();
                         ctx.globalAlpha = 1.0;
                     }}
 
@@ -1329,6 +1357,9 @@ def _generate_non_embedded_html_player(
             img.onload = () => renderOverlays(idx);
             img.src = frameSrc[idx];
 
+            // Prefetch neighboring frames for smoother scrubbing
+            prefetchFrames(idx);
+
             // Update UI
             slider.value = idx;
             labelSpan.textContent = labels[idx];
@@ -1340,24 +1371,42 @@ def _generate_non_embedded_html_player(
             pauseBtn.disabled = !playing;
         }}
 
+        // Animation loop using requestAnimationFrame
+        function animate(timestamp) {{
+            if (!playing) return;
+
+            const delta = timestamp - lastTime;
+            lastTime = timestamp;
+            accumulator += delta;
+
+            const frameDelay = (1000 / baseFPS) / speedMultiplier;
+
+            while (accumulator >= frameDelay) {{
+                currentFrame = (currentFrame + 1) % N;
+                updateFrame(currentFrame);
+                accumulator -= frameDelay;
+            }}
+
+            animationId = requestAnimationFrame(animate);
+        }}
+
         function play() {{
             if (playing) return;
             playing = true;
             updateControls();
-
-            const frameDelay = (1000 / baseFPS) / speedMultiplier;
-
-            interval = setInterval(() => {{
-                currentFrame = (currentFrame + 1) % N;
-                updateFrame(currentFrame);
-            }}, frameDelay);
+            lastTime = performance.now();
+            accumulator = 0;
+            animationId = requestAnimationFrame(animate);
         }}
 
         function pause() {{
             if (!playing) return;
             playing = false;
             updateControls();
-            clearInterval(interval);
+            if (animationId) {{
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }}
         }}
 
         function stepForward() {{
@@ -1383,10 +1432,7 @@ def _generate_non_embedded_html_player(
 
         speedSelect.onchange = (e) => {{
             speedMultiplier = parseFloat(e.target.value);
-            if (playing) {{
-                pause();
-                play();  // Restart with new speed
-            }}
+            // No need to restart - accumulator handles speed changes gracefully
         }};
 
         // Keyboard shortcuts
@@ -1400,8 +1446,46 @@ def _generate_non_embedded_html_player(
             }} else if (e.key === 'ArrowRight') {{
                 e.preventDefault();
                 stepForward();
+            }} else if (e.key === 'Home') {{
+                e.preventDefault();
+                pause();
+                updateFrame(0);
+            }} else if (e.key === 'End') {{
+                e.preventDefault();
+                pause();
+                updateFrame(N - 1);
+            }} else if (e.key === ',') {{
+                e.preventDefault();
+                stepBackward();
+            }} else if (e.key === '.') {{
+                e.preventDefault();
+                stepForward();
             }}
         }};
+
+        // Prefetch window for non-embedded mode
+        const prefetchSize = 5;  // Preload +/-5 frames
+        const imageCache = new Map();
+
+        function prefetchFrames(centerIdx) {{
+            for (let offset = -prefetchSize; offset <= prefetchSize; offset++) {{
+                const idx = centerIdx + offset;
+                if (idx >= 0 && idx < N && !imageCache.has(idx)) {{
+                    const img = new Image();
+                    img.src = frameSrc[idx];
+                    imageCache.set(idx, img);
+                }}
+            }}
+            // Limit cache size
+            if (imageCache.size > prefetchSize * 4) {{
+                // Remove entries far from current frame
+                for (const [key] of imageCache) {{
+                    if (Math.abs(key - centerIdx) > prefetchSize * 2) {{
+                        imageCache.delete(key);
+                    }}
+                }}
+            }}
+        }}
 
         // Start
         init();

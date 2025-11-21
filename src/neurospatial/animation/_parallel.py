@@ -23,6 +23,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+# Module-level imports for hot path performance (avoid per-frame import overhead)
+from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgba
+from matplotlib.patches import Circle, PathPatch
+from matplotlib.path import Path as MplPath
 from numpy.typing import NDArray
 from tqdm import tqdm
 
@@ -66,9 +72,6 @@ def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) 
 
         if len(trail_positions) > 1:
             # Create line segments with decaying alpha using LineCollection
-            from matplotlib.collections import LineCollection
-            from matplotlib.colors import to_rgba
-
             segments = [
                 trail_positions[i : i + 2] for i in range(len(trail_positions) - 1)
             ]
@@ -113,8 +116,6 @@ def _render_bodypart_overlay_matplotlib(
     -----
     Uses LineCollection for efficient skeleton rendering (single call per frame).
     """
-    from matplotlib.collections import LineCollection
-
     # Render bodypart points
     for part_name, positions in bodypart_data.bodyparts.items():
         pos = positions[frame_idx]
@@ -169,7 +170,11 @@ def _render_bodypart_overlay_matplotlib(
 
 
 def _render_head_direction_overlay_matplotlib(
-    ax: Any, head_dir_data: Any, frame_idx: int, env: Any
+    ax: Any,
+    head_dir_data: Any,
+    frame_idx: int,
+    env: Any,
+    position_data: Any | None = None,
 ) -> None:
     """Render head direction overlay as arrow on matplotlib axes.
 
@@ -183,23 +188,44 @@ def _render_head_direction_overlay_matplotlib(
         Current frame index
     env : Environment
         Environment for positioning arrow
+    position_data : PositionData | None, optional
+        If provided, arrows are anchored at the position coordinates for each frame.
+        If None, arrows are anchored at the environment centroid (fixed reference).
+        Default is None.
 
     Notes
     -----
     Renders direction as an arrow using matplotlib quiver.
+
+    When `position_data` is provided, arrows follow the animal's position and
+    visualize heading direction at that location. This is the recommended mode
+    for tracking moving animals.
     """
     # Determine if data is angles or vectors
     is_angles = head_dir_data.data.ndim == 1
 
-    # Get centroid of environment for arrow origin
-    centroid = np.mean(env.bin_centers, axis=0)
+    # Determine arrow origin: prefer position data if available
+    if position_data is not None:
+        origin = position_data.data[frame_idx]
+        # Skip if position is NaN (use centroid fallback)
+        if np.any(np.isnan(origin)):
+            origin = np.mean(env.bin_centers, axis=0)
+    else:
+        # Fallback: use centroid of environment
+        origin = np.mean(env.bin_centers, axis=0)
 
     # Compute direction vector
     if is_angles:
         angle = head_dir_data.data[frame_idx]
+        # Skip rendering if angle is NaN
+        if np.isnan(angle):
+            return
         direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
     else:
         direction = head_dir_data.data[frame_idx]
+        # Skip if direction is NaN
+        if np.any(np.isnan(direction)):
+            return
         # Normalize and scale
         norm = np.linalg.norm(direction)
         if norm > 0:
@@ -207,8 +233,8 @@ def _render_head_direction_overlay_matplotlib(
 
     # Render arrow using quiver
     ax.quiver(
-        centroid[0],
-        centroid[1],
+        origin[0],
+        origin[1],
         direction[0],
         direction[1],
         color=head_dir_data.color,
@@ -242,9 +268,6 @@ def _render_regions_matplotlib(
     -----
     Uses PathPatch for polygon regions and circles for point regions.
     """
-    from matplotlib.patches import Circle, PathPatch
-    from matplotlib.path import Path as MplPath
-
     if not show_regions or len(env.regions) == 0:
         return
 
@@ -376,8 +399,15 @@ def _render_all_overlays(
         _render_bodypart_overlay_matplotlib(ax, bodypart_data, frame_idx)
 
     # Render head direction overlays
+    # Auto-pair with position overlay when there's exactly one position
+    # (consistent with napari backend behavior)
+    paired_position = (
+        overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
+    )
     for head_dir_data in overlay_data.head_directions:
-        _render_head_direction_overlay_matplotlib(ax, head_dir_data, frame_idx, env)
+        _render_head_direction_overlay_matplotlib(
+            ax, head_dir_data, frame_idx, env, position_data=paired_position
+        )
 
 
 def parallel_render_frames(

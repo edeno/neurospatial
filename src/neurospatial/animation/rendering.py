@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import warnings
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
@@ -27,9 +28,10 @@ def compute_global_colormap_range(
     vmin: float | None = None,
     vmax: float | None = None,
 ) -> tuple[float, float]:
-    """Compute consistent color scale across all fields.
+    """Compute NaN-robust color scale across all fields.
 
-    Single-pass computation for efficiency.
+    Single-pass computation for efficiency. Ignores NaN and infinite values
+    when computing the range.
 
     Parameters
     ----------
@@ -41,7 +43,8 @@ def compute_global_colormap_range(
     Returns
     -------
     vmin, vmax : tuple of float
-        (vmin, vmax) - Minimum and maximum values for color scale
+        (vmin, vmax) - Minimum and maximum values for color scale.
+        Returns (0.0, 1.0) if all values are NaN/inf or fields is empty.
 
     Examples
     --------
@@ -51,22 +54,33 @@ def compute_global_colormap_range(
     >>> vmin, vmax
     (0.0, 5.0)
     """
-    # Single-pass min/max computation
+    # Single-pass min/max computation with NaN-robustness
     if vmin is None or vmax is None:
         all_min = float("inf")
         all_max = float("-inf")
 
-        for field in fields:
-            all_min = min(all_min, field.min())
-            all_max = max(all_max, field.max())
+        # Suppress RuntimeWarning from nanmin/nanmax on all-NaN arrays
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "All-NaN slice encountered")
+            for field in fields:
+                field_min = float(np.nanmin(field))
+                field_max = float(np.nanmax(field))
+                if np.isfinite(field_min):
+                    all_min = min(all_min, field_min)
+                if np.isfinite(field_max):
+                    all_max = max(all_max, field_max)
 
         vmin = vmin if vmin is not None else all_min
         vmax = vmax if vmax is not None else all_max
 
-    # Avoid degenerate case
-    if vmin == vmax:
-        vmin -= 0.5
-        vmax += 0.5
+    # Handle degenerate cases
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
+        # All NaN/inf or single value: use safe default
+        if vmin == vmax and np.isfinite(vmin):
+            vmin -= 0.5
+            vmax += 0.5
+        else:
+            vmin, vmax = 0.0, 1.0
 
     return float(vmin), float(vmax)
 
@@ -376,8 +390,14 @@ def field_to_rgb_for_napari(
     # Lookup RGB values
     rgb = cmap_lookup[indices]
 
-    # For grid layouts, reshape to 2D image
-    if hasattr(env.layout, "grid_shape") and env.layout.grid_shape is not None:
+    # For 2D grid layouts, reshape to 2D image
+    # Must have grid_shape with exactly 2 dimensions (some layouts like triangular mesh
+    # have 1D grid_shape which cannot be displayed as a 2D image grid)
+    if (
+        hasattr(env.layout, "grid_shape")
+        and env.layout.grid_shape is not None
+        and len(env.layout.grid_shape) == 2
+    ):
         # Determine which bins are active
         if hasattr(env.layout, "active_mask") and env.layout.active_mask is not None:
             # Create full grid RGB

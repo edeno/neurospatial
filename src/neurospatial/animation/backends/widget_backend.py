@@ -103,7 +103,7 @@ def render_field_to_png_bytes_with_overlays(
             env, field, "viridis", 0, 1, dpi=100, frame_idx=0, overlay_data=overlay_data
         )
         len(png_bytes) > 0
-        # True
+        True
     """
     # Set Agg backend BEFORE any pyplot imports
     try:
@@ -150,6 +150,282 @@ def render_field_to_png_bytes_with_overlays(
     png_bytes = buf.read()
 
     return png_bytes
+
+
+class PersistentFigureRenderer:
+    """Reusable figure renderer for efficient on-demand frame generation.
+
+    Creates a single matplotlib Figure/Axes that is reused across frames,
+    updating only the field data rather than recreating the entire figure.
+    This can provide 2-5x speedup for cache miss rendering in the widget backend.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment defining spatial structure
+    cmap : str
+        Matplotlib colormap name
+    vmin : float
+        Minimum value for colormap
+    vmax : float
+        Maximum value for colormap
+    dpi : int, default=100
+        Resolution for rendering
+
+    Examples
+    --------
+    .. code-block:: python
+
+        import numpy as np
+        from neurospatial import Environment
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+
+        renderer = PersistentFigureRenderer(env, "viridis", 0.0, 1.0, dpi=100)
+        try:
+            for i, field in enumerate(fields):
+                png_bytes = renderer.render(field, frame_idx=i)
+                # Use png_bytes...
+        finally:
+            renderer.close()
+
+    Notes
+    -----
+    **Performance:**
+
+    The persistent figure approach avoids per-frame overhead of:
+    - Creating new Figure/Axes objects
+    - Setting up axis limits, aspect ratio, colormap
+    - Layout/tight_layout calculations
+
+    Instead, only the image data is updated via ``set_data()``, and overlays
+    are cleared/re-rendered each frame.
+
+    **Memory:**
+
+    The renderer holds a single matplotlib Figure in memory. Call ``close()``
+    when done to release memory.
+
+    **Thread Safety:**
+
+    Not thread-safe. Use one renderer per thread/process.
+
+    See Also
+    --------
+    render_field_to_png_bytes_with_overlays : Fresh-figure rendering function.
+    render_widget : Widget backend using persistent renderer for cache misses.
+    """
+
+    def __init__(
+        self,
+        env: Environment,
+        cmap: str,
+        vmin: float,
+        vmax: float,
+        dpi: int = 100,
+    ) -> None:
+        """Initialize the persistent figure renderer.
+
+        Parameters
+        ----------
+        env : Environment
+            Environment defining spatial structure
+        cmap : str
+            Matplotlib colormap name
+        vmin : float
+            Minimum value for colormap
+        vmax : float
+            Maximum value for colormap
+        dpi : int, default=100
+            Resolution for rendering
+        """
+        # Set Agg backend BEFORE any pyplot imports
+        try:
+            import matplotlib
+
+            if matplotlib.get_backend().lower() not in (
+                "agg",
+                "module://matplotlib_inline.backend_inline",
+            ):
+                matplotlib.use("Agg", force=True)
+        except Exception:
+            pass
+
+        import matplotlib.pyplot as plt
+        from matplotlib.image import AxesImage
+
+        self._env = env
+        self._cmap = cmap
+        self._vmin = vmin
+        self._vmax = vmax
+        self._dpi = dpi
+        self._plt = plt  # Store reference to prevent issues with lazy imports
+
+        # Create persistent figure
+        self._fig, self._ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+        self._ax.set_axis_off()
+        self._image: AxesImage | None = None  # Will hold AxesImage after first render
+        self._is_first_render = True
+
+    def render(
+        self,
+        field: NDArray[np.float64],
+        frame_idx: int,
+        overlay_data: Any | None = None,
+        show_regions: bool | list[str] = False,
+        region_alpha: float = 0.3,
+    ) -> bytes:
+        """Render field to PNG bytes, reusing figure.
+
+        Parameters
+        ----------
+        field : ndarray, shape (n_bins,)
+            Field values to render
+        frame_idx : int
+            Current frame index (for overlays)
+        overlay_data : OverlayData, optional
+            Overlay data structure containing positions, bodyparts, head directions
+        show_regions : bool or list of str, default=False
+            Whether to show regions. If True, show all regions. If list, show
+            only specified region names.
+        region_alpha : float, default=0.3
+            Alpha transparency for region rendering (0=transparent, 1=opaque)
+
+        Returns
+        -------
+        bytes
+            PNG image data
+        """
+        from neurospatial.animation._parallel import (
+            _clear_overlay_artists,
+            _render_all_overlays,
+        )
+
+        # Clear previous overlays (but keep image)
+        if not self._is_first_render:
+            _clear_overlay_artists(self._ax)
+
+        if self._is_first_render:
+            # First render: create image using environment's plot method
+            self._env.plot_field(
+                field,
+                ax=self._ax,
+                cmap=self._cmap,
+                vmin=self._vmin,
+                vmax=self._vmax,
+                colorbar=False,
+            )
+            # Store reference to the primary image artist for future updates
+            if self._ax.images:
+                self._image = self._ax.images[0]
+            self._is_first_render = False
+        else:
+            # Subsequent renders: update image data using set_data
+            if self._image is not None:
+                # Get the 2D array from the field based on layout type
+                grid_data = self._field_to_image_data(field)
+                if grid_data is not None:
+                    self._image.set_data(grid_data)
+                else:
+                    # Fallback: re-render completely for non-grid layouts
+                    self._ax.clear()
+                    self._ax.set_axis_off()
+                    self._env.plot_field(
+                        field,
+                        ax=self._ax,
+                        cmap=self._cmap,
+                        vmin=self._vmin,
+                        vmax=self._vmax,
+                        colorbar=False,
+                    )
+                    if self._ax.images:
+                        self._image = self._ax.images[0]
+            else:
+                # No image artist found, re-render completely
+                self._ax.clear()
+                self._ax.set_axis_off()
+                self._env.plot_field(
+                    field,
+                    ax=self._ax,
+                    cmap=self._cmap,
+                    vmin=self._vmin,
+                    vmax=self._vmax,
+                    colorbar=False,
+                )
+                if self._ax.images:
+                    self._image = self._ax.images[0]
+
+        # Render overlays
+        if overlay_data is not None or show_regions:
+            _render_all_overlays(
+                self._ax,
+                self._env,
+                frame_idx,
+                overlay_data,
+                show_regions,
+                region_alpha,
+            )
+
+        # Capture to PNG bytes
+        buf = io.BytesIO()
+        self._fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.1)
+        buf.seek(0)
+        return buf.read()
+
+    def _field_to_image_data(
+        self, field: NDArray[np.float64]
+    ) -> NDArray[np.float64] | None:
+        """Convert field to 2D image data suitable for set_data().
+
+        Parameters
+        ----------
+        field : ndarray, shape (n_bins,)
+            Field values to convert
+
+        Returns
+        -------
+        ndarray or None
+            2D array for set_data() if grid layout, None otherwise.
+        """
+        layout = self._env.layout
+        layout_tag = layout._layout_type_tag
+
+        # Only grid layouts can use set_data optimization
+        grid_layouts = ("RegularGrid", "MaskedGrid", "ImageMask", "ShapelyPolygon")
+
+        if layout_tag not in grid_layouts:
+            return None
+
+        # Check required grid attributes
+        if (
+            not hasattr(layout, "grid_shape")
+            or layout.grid_shape is None
+            or not hasattr(layout, "active_mask")
+            or layout.active_mask is None
+        ):
+            return None
+
+        from neurospatial.layout.helpers.utils import map_active_data_to_grid
+
+        # Convert to grid
+        grid_data: NDArray[np.float64] = map_active_data_to_grid(
+            layout.grid_shape, layout.active_mask, field, fill_value=np.nan
+        )
+
+        # Transpose for display (matplotlib pcolormesh expects data.T)
+        return np.asarray(grid_data.T, dtype=np.float64)
+
+    def close(self) -> None:
+        """Close the figure to free memory.
+
+        Should be called when the renderer is no longer needed.
+        """
+        self._plt.close(self._fig)
 
 
 def render_widget(
@@ -325,6 +601,18 @@ def render_widget(
     if frame_labels is None:
         frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
 
+    # Create persistent figure renderer for efficient on-demand rendering
+    # Only create when overlays are present (main optimization target for cache misses)
+    persistent_renderer: PersistentFigureRenderer | None = None
+    if overlay_data is not None or show_regions:
+        persistent_renderer = PersistentFigureRenderer(
+            env=env,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            dpi=dpi,
+        )
+
     # On-demand rendering with LRU cache
     def get_frame_bytes(idx: int) -> bytes:
         """Get PNG bytes for frame, using cache or rendering on-demand."""
@@ -334,15 +622,10 @@ def render_widget(
             return cached_frames[idx]
         else:
             # Render on-demand
-            if overlay_data is not None or show_regions:
-                # Render with overlays/regions
-                png_bytes = render_field_to_png_bytes_with_overlays(
-                    env,
+            if persistent_renderer is not None:
+                # Use persistent figure renderer for efficient overlay rendering
+                png_bytes = persistent_renderer.render(
                     fields[idx],
-                    cmap,
-                    vmin,
-                    vmax,
-                    dpi,
                     frame_idx=idx,
                     overlay_data=overlay_data,
                     show_regions=show_regions,

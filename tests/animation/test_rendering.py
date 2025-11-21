@@ -188,3 +188,119 @@ def test_render_field_to_image_bytes_jpeg_format():
     assert len(png_bytes) > 0
     # PNG signature check
     assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+class TestComputeGlobalColormapRangeNaN:
+    """Test NaN-robustness of compute_global_colormap_range."""
+
+    def test_arrays_with_nan_values_return_correct_range(self):
+        """Test arrays with NaN values return correct range (ignoring NaNs)."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # Fields with NaN values mixed in
+        fields = [
+            np.array([np.nan, 1.0, 2.0]),
+            np.array([3.0, np.nan, 5.0]),
+            np.array([0.0, 2.0, np.nan]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should ignore NaN and compute range from valid values [0.0, 5.0]
+        assert vmin == 0.0
+        assert vmax == 5.0
+
+    def test_arrays_with_all_nan_return_safe_defaults(self):
+        """Test arrays with all NaN values return safe defaults (0.0, 1.0)."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # All-NaN fields
+        fields = [
+            np.array([np.nan, np.nan, np.nan]),
+            np.array([np.nan, np.nan]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should return safe default range
+        assert vmin == 0.0
+        assert vmax == 1.0
+
+    def test_arrays_with_inf_values_handled_correctly(self):
+        """Test arrays with non-finite values (inf) are handled correctly."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # Fields with inf values
+        fields = [
+            np.array([np.inf, 1.0, 2.0]),
+            np.array([3.0, -np.inf, 5.0]),
+            np.array([0.0, 2.0, np.inf]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should ignore inf and compute range from finite values [0.0, 5.0]
+        assert vmin == 0.0
+        assert vmax == 5.0
+
+    def test_arrays_with_all_inf_return_safe_defaults(self):
+        """Test arrays with all inf values return safe defaults (0.0, 1.0)."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # All-inf fields
+        fields = [
+            np.array([np.inf, np.inf, -np.inf]),
+            np.array([np.inf, -np.inf]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should return safe default range
+        assert vmin == 0.0
+        assert vmax == 1.0
+
+    def test_mixed_nan_and_inf_values(self):
+        """Test arrays with mixed NaN and inf values."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # Mixed NaN, inf, and valid values
+        fields = [
+            np.array([np.nan, np.inf, 2.0]),
+            np.array([3.0, -np.inf, np.nan]),
+            np.array([1.0, np.nan, np.inf]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should ignore NaN and inf, compute range from [1.0, 3.0]
+        assert vmin == 1.0
+        assert vmax == 3.0
+
+    def test_single_finite_value_with_nan(self):
+        """Test array with single finite value among NaNs."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # Single valid value among NaN/inf
+        fields = [
+            np.array([np.nan, 5.0, np.nan]),
+            np.array([np.nan, np.nan, np.inf]),
+        ]
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Single value: should expand range around it
+        assert vmin == 4.5
+        assert vmax == 5.5
+
+    def test_empty_fields_list(self):
+        """Test empty fields list returns safe defaults."""
+        from neurospatial.animation.rendering import compute_global_colormap_range
+
+        # Empty fields list
+        fields: list[np.ndarray] = []
+
+        vmin, vmax = compute_global_colormap_range(fields)
+
+        # Should return safe default range
+        assert vmin == 0.0
+        assert vmax == 1.0

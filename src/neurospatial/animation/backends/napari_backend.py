@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import weakref
 from collections import OrderedDict
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
@@ -209,6 +210,9 @@ def _setup_skeleton_update_callback(
     the skeleton shapes when the user navigates to a new frame, avoiding
     the need to pre-compute all skeleton lines for all frames.
 
+    Uses weakref to automatically disconnect when the viewer or layer is
+    garbage collected, preventing memory leaks when viewers are closed.
+
     Parameters
     ----------
     viewer : napari.Viewer
@@ -224,15 +228,35 @@ def _setup_skeleton_update_callback(
     -----
     The callback stores the last updated frame to avoid redundant updates
     when the frame hasn't changed (e.g., from other dims events).
+
+    The weakref pattern ensures the callback is automatically cleaned up
+    when the viewer or layer is closed/deleted, preventing dangling callbacks.
     """
     # Track last frame to avoid redundant updates
-    callback_state = {"last_frame": -1}
+    callback_state = {"last_frame": -1, "connection": None}
+
+    # Use weakrefs to detect when viewer/layer is garbage collected
+    viewer_ref = weakref.ref(viewer)
+    layer_ref = weakref.ref(skeleton_layer)
 
     def update_skeleton_on_frame_change(event=None):
-        """Update skeleton shapes when frame changes."""
+        """Update skeleton shapes when frame changes (with auto-disconnect)."""
+        # Check if viewer/layer still exists
+        v = viewer_ref()
+        layer = layer_ref()
+
+        if v is None or layer is None:
+            # Viewer or layer was garbage collected - disconnect callback
+            try:
+                if callback_state["connection"] is not None:
+                    callback_state["connection"].disconnect()
+            except (RuntimeError, AttributeError, ReferenceError):
+                pass  # Connection already disconnected or cleaned up
+            return
+
         try:
             # Get current frame from first dimension (time)
-            current_frame = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
+            current_frame = v.dims.current_step[0] if v.dims.ndim > 0 else 0
 
             # Skip if frame hasn't changed
             if current_frame == callback_state["last_frame"]:
@@ -247,14 +271,16 @@ def _setup_skeleton_update_callback(
 
             # Update layer data
             # Note: setting data to empty list is valid for shapes layer
-            skeleton_layer.data = new_skeleton_data
+            layer.data = new_skeleton_data
 
         except (RuntimeError, AttributeError):
             # Expected when viewer is closing - layer may be garbage collected
             pass
 
-    # Connect callback to dims frame change event
-    viewer.dims.events.current_step.connect(update_skeleton_on_frame_change)
+    # Connect callback and store connection for potential disconnect
+    callback_state["connection"] = viewer.dims.events.current_step.connect(
+        update_skeleton_on_frame_change
+    )
 
 
 def _render_position_overlay(
@@ -356,8 +382,8 @@ def _render_position_overlay(
         name=f"Position{name_suffix}",
         size=position_data.size,
         face_color=position_data.color,
-        edge_color="white",
-        edge_width=0.5,
+        border_color="white",
+        border_width=0.5,
     )
     layers.append(layer)
 
@@ -434,8 +460,8 @@ def _render_bodypart_overlay(
         name=f"Bodyparts{name_suffix}",
         size=5.0,
         face_color=face_colors,
-        edge_color="black",
-        edge_width=0.5,
+        border_color="black",
+        border_width=0.5,
         features={"bodypart": all_features},
     )
     layers.append(layer)
@@ -801,12 +827,17 @@ def _add_speed_control_widget(
             # Sync button state with napari's playback (fixes button sync issue)
             # Detect if playback is active by checking if dims is playing
             try:
-                # Check napari's internal playing state via dims
-                is_playing = viewer.window.qt_viewer.dims.is_playing
+                # Use viewer.dims.playing (napari >= 0.5.0)
+                # Fallback to qt_viewer.dims.is_playing for older versions
+                if hasattr(viewer.dims, "playing"):
+                    is_playing = viewer.dims.playing
+                else:
+                    # Deprecated in napari 0.5.0, removed in 0.6.0
+                    is_playing = viewer.window.qt_viewer.dims.is_playing
                 if is_playing != playback_state["is_playing"]:
                     playback_state["is_playing"] = is_playing
                     playback_widget.play.text = "⏸ Pause" if is_playing else "▶ Play"
-            except Exception:
+            except (AttributeError, RuntimeError):
                 # If unable to detect playback state, don't update button
                 pass
 

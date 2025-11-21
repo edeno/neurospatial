@@ -24,6 +24,10 @@ if TYPE_CHECKING:
 def check_ffmpeg_available() -> bool:
     """Check if ffmpeg is installed and accessible.
 
+    Uses shutil.which() for fast path detection before falling back to
+    subprocess invocation. This avoids subprocess overhead when ffmpeg
+    is not on PATH.
+
     Returns
     -------
     available : bool
@@ -38,6 +42,11 @@ def check_ffmpeg_available() -> bool:
         else:
             print("Please install ffmpeg")
     """
+    # Fast path: check if ffmpeg is on PATH
+    if shutil.which("ffmpeg") is None:
+        return False
+
+    # Verify it actually runs (handles edge cases like broken symlinks)
     try:
         subprocess.run(
             ["ffmpeg", "-version"],
@@ -45,7 +54,7 @@ def check_ffmpeg_available() -> bool:
             check=True,
         )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         return False
 
 
@@ -351,7 +360,22 @@ def render_video(
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg encoding failed:\n{result.stderr}")
+            # Build command string for error message (filter None for safety)
+            cmd_str = " ".join(str(c) for c in cmd if c is not None)
+            # Provide actionable error message with full context
+            raise RuntimeError(
+                f"ffmpeg encoding failed (exit code {result.returncode}).\n"
+                f"\n"
+                f"Command:\n  {cmd_str}\n"
+                f"\n"
+                f"Error output:\n{result.stderr}\n"
+                f"\n"
+                f"Common fixes:\n"
+                f"  - Ensure ffmpeg supports codec '{ffmpeg_codec}' (try: ffmpeg -encoders | grep {ffmpeg_codec})\n"
+                f"  - Check output path is writable: {output_path}\n"
+                f"  - For hardware acceleration, try codec='h264_videotoolbox' (macOS) "
+                f"or 'h264_nvenc' (NVIDIA)"
+            )
 
         print(f"✓ Video saved to {output_path}")
         return output_path

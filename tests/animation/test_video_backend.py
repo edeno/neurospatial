@@ -29,8 +29,15 @@ class TestFfmpegAvailability:
             check_ffmpeg_available,
         )
 
-        # Mock successful ffmpeg call
-        with patch("subprocess.run") as mock_run:
+        # Mock shutil.which to return a path (fast path passes)
+        # Mock successful ffmpeg call (verification passes)
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.shutil.which",
+                return_value="/usr/bin/ffmpeg",
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_run.return_value = Mock(returncode=0)
             assert check_ffmpeg_available() is True
             mock_run.assert_called_once()
@@ -39,14 +46,38 @@ class TestFfmpegAvailability:
             assert "ffmpeg" in args
             assert "-version" in args
 
-    def test_check_ffmpeg_available_false_not_found(self):
-        """Test ffmpeg check when command not found."""
+    def test_check_ffmpeg_available_false_not_on_path(self):
+        """Test ffmpeg check when ffmpeg is not on PATH (fast path)."""
         from neurospatial.animation.backends.video_backend import (
             check_ffmpeg_available,
         )
 
-        # Mock FileNotFoundError
-        with patch("subprocess.run", side_effect=FileNotFoundError):
+        # Mock shutil.which returning None (ffmpeg not on PATH)
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.shutil.which",
+                return_value=None,
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            assert check_ffmpeg_available() is False
+            # subprocess.run should not be called (fast path)
+            mock_run.assert_not_called()
+
+    def test_check_ffmpeg_available_false_not_found(self):
+        """Test ffmpeg check when subprocess raises FileNotFoundError."""
+        from neurospatial.animation.backends.video_backend import (
+            check_ffmpeg_available,
+        )
+
+        # Mock shutil.which returns path but subprocess fails
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.shutil.which",
+                return_value="/usr/bin/ffmpeg",
+            ),
+            patch("subprocess.run", side_effect=FileNotFoundError),
+        ):
             assert check_ffmpeg_available() is False
 
     def test_check_ffmpeg_available_false_error(self):
@@ -55,9 +86,16 @@ class TestFfmpegAvailability:
             check_ffmpeg_available,
         )
 
-        # Mock error return code
-        with patch(
-            "subprocess.run", side_effect=subprocess.CalledProcessError(1, "ffmpeg")
+        # Mock shutil.which returns path but subprocess fails
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.shutil.which",
+                return_value="/usr/bin/ffmpeg",
+            ),
+            patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, "ffmpeg"),
+            ),
         ):
             assert check_ffmpeg_available() is False
 

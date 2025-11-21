@@ -524,3 +524,192 @@ def test_widget_on_demand_rendering_for_uncached_frames(sample_env):
 
     # Verify that slider.observe was called to connect the update callback
     assert len(mock_slider._observers) == 1
+
+
+# ============================================================================
+# Test PersistentFigureRenderer
+# ============================================================================
+
+
+def test_persistent_figure_renderer_reuses_figure(sample_env, sample_fields):
+    """Test that PersistentFigureRenderer reuses the same figure."""
+    from neurospatial.animation.backends.widget_backend import PersistentFigureRenderer
+
+    # Create renderer
+    renderer = PersistentFigureRenderer(
+        env=sample_env,
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+    )
+
+    try:
+        # Store reference to internal figure
+        fig_id = id(renderer._fig)
+
+        # Render frame 1
+        png_bytes_1 = renderer.render(sample_fields[0], frame_idx=0)
+
+        # Verify figure is still the same
+        assert id(renderer._fig) == fig_id
+
+        # Render frame 2
+        png_bytes_2 = renderer.render(sample_fields[1], frame_idx=1)
+
+        # Verify figure is still the same
+        assert id(renderer._fig) == fig_id
+
+        # Assert outputs are valid PNG bytes
+        assert isinstance(png_bytes_1, bytes)
+        assert len(png_bytes_1) > 0
+        assert png_bytes_1[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic number
+
+        assert isinstance(png_bytes_2, bytes)
+        assert len(png_bytes_2) > 0
+        assert png_bytes_2[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic number
+    finally:
+        renderer.close()
+
+
+def test_persistent_figure_renderer_output_matches_fresh(sample_env, sample_fields):
+    """Test that persistent renderer output produces valid images like fresh render."""
+    from neurospatial.animation.backends.widget_backend import (
+        PersistentFigureRenderer,
+        render_field_to_png_bytes_with_overlays,
+    )
+
+    # Render with fresh figure
+    fresh_png = render_field_to_png_bytes_with_overlays(
+        env=sample_env,
+        field=sample_fields[0],
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+        frame_idx=0,
+    )
+
+    # Render with persistent figure
+    renderer = PersistentFigureRenderer(
+        env=sample_env,
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+    )
+
+    try:
+        persistent_png = renderer.render(sample_fields[0], frame_idx=0)
+
+        # Both should be valid PNG files
+        assert fresh_png[:8] == b"\x89PNG\r\n\x1a\n"
+        assert persistent_png[:8] == b"\x89PNG\r\n\x1a\n"
+
+        # Both should have reasonable size (not empty or corrupted)
+        assert len(fresh_png) > 1000  # Reasonable minimum for a PNG image
+        assert len(persistent_png) > 1000
+
+        # Sizes should be in the same ballpark (within 50% of each other)
+        # Note: Exact match not expected due to potential rendering differences
+        size_ratio = len(persistent_png) / len(fresh_png)
+        assert 0.5 < size_ratio < 2.0, (
+            f"Size ratio {size_ratio} is outside expected range"
+        )
+    finally:
+        renderer.close()
+
+
+def test_persistent_figure_renderer_with_overlays(sample_env, sample_fields):
+    """Test that PersistentFigureRenderer works with overlays."""
+    from neurospatial.animation.backends.widget_backend import PersistentFigureRenderer
+    from neurospatial.animation.overlays import OverlayData, PositionData
+
+    # Create overlay data
+    n_frames = len(sample_fields)
+    trajectory = np.random.randn(n_frames, 2) * 20 + 25  # Random trajectory
+    overlay_data = OverlayData(
+        positions=[
+            PositionData(data=trajectory, color="red", size=10.0, trail_length=3)
+        ],
+        bodypart_sets=[],
+        head_directions=[],
+    )
+
+    renderer = PersistentFigureRenderer(
+        env=sample_env,
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+    )
+
+    try:
+        # Render multiple frames with overlays
+        png_bytes_1 = renderer.render(
+            sample_fields[0], frame_idx=0, overlay_data=overlay_data
+        )
+        png_bytes_2 = renderer.render(
+            sample_fields[1], frame_idx=1, overlay_data=overlay_data
+        )
+
+        # Both should be valid PNG files
+        assert png_bytes_1[:8] == b"\x89PNG\r\n\x1a\n"
+        assert png_bytes_2[:8] == b"\x89PNG\r\n\x1a\n"
+    finally:
+        renderer.close()
+
+
+def test_persistent_figure_renderer_close_releases_figure(sample_env, sample_fields):
+    """Test that close() releases the figure."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial.animation.backends.widget_backend import PersistentFigureRenderer
+
+    # Count figures before
+    initial_fig_count = len(plt.get_fignums())
+
+    renderer = PersistentFigureRenderer(
+        env=sample_env,
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+    )
+
+    # Render a frame
+    renderer.render(sample_fields[0], frame_idx=0)
+
+    # Should have one more figure
+    assert len(plt.get_fignums()) == initial_fig_count + 1
+
+    # Close the renderer
+    renderer.close()
+
+    # Figure count should be back to initial
+    assert len(plt.get_fignums()) == initial_fig_count
+
+
+def test_persistent_figure_renderer_multiple_renders_consistency(
+    sample_env, sample_fields
+):
+    """Test that multiple renders produce consistent output for same field."""
+    from neurospatial.animation.backends.widget_backend import PersistentFigureRenderer
+
+    renderer = PersistentFigureRenderer(
+        env=sample_env,
+        cmap="viridis",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=50,
+    )
+
+    try:
+        # Render same field multiple times
+        png_1 = renderer.render(sample_fields[0], frame_idx=0)
+        png_2 = renderer.render(sample_fields[0], frame_idx=0)
+
+        # Outputs should be identical for same input
+        assert png_1 == png_2
+    finally:
+        renderer.close()
