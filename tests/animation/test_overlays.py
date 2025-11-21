@@ -86,7 +86,7 @@ class TestBodypartOverlay:
         assert overlay.skeleton is None
         assert overlay.colors is None
         assert overlay.skeleton_color == "white"
-        assert overlay.skeleton_width == 2.0
+        assert overlay.skeleton_width == 0.5
 
     def test_with_skeleton(self):
         """Test BodypartOverlay with skeleton connections."""
@@ -147,7 +147,7 @@ class TestHeadDirectionOverlay:
         assert_array_equal(overlay.data, data)
         assert overlay.times is None
         assert overlay.color == "yellow"
-        assert overlay.length == 20.0
+        assert overlay.length == 0.25
 
     def test_with_unit_vectors(self):
         """Test HeadDirectionOverlay with unit vector data."""
@@ -200,7 +200,7 @@ class TestOverlayDataclassDefaults:
         overlay = BodypartOverlay(data=data)
 
         assert overlay.skeleton_color == "white"
-        assert overlay.skeleton_width == 2.0
+        assert overlay.skeleton_width == 0.5
 
     def test_head_direction_overlay_defaults(self):
         """Test HeadDirectionOverlay default values."""
@@ -208,7 +208,7 @@ class TestOverlayDataclassDefaults:
         overlay = HeadDirectionOverlay(data=data)
 
         assert overlay.color == "yellow"
-        assert overlay.length == 20.0
+        assert overlay.length == 0.25
 
 
 class TestMultiAnimalSupport:

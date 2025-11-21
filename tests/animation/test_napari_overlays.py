@@ -94,7 +94,7 @@ def head_direction_overlay_data():
 
     # 10 frames, angles in radians
     data = np.linspace(0, np.pi, 10)  # Rotate from 0 to 180 degrees
-    return HeadDirectionData(data=data, color="yellow", length=2.0)
+    return HeadDirectionData(data=data, color="yellow", length=2.0, width=1.0)
 
 
 @pytest.fixture

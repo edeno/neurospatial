@@ -152,7 +152,7 @@ class BodypartOverlay:
     skeleton_color : str, optional
         Color for skeleton lines (matplotlib color string). Default is "white".
     skeleton_width : float, optional
-        Width of skeleton lines in points. Default is 2.0.
+        Width of skeleton lines in points. Default is 0.5.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.
@@ -232,7 +232,7 @@ class BodypartOverlay:
     skeleton: list[tuple[str, str]] | None = None
     colors: dict[str, str] | None = None
     skeleton_color: str = "white"
-    skeleton_width: float = 2.0
+    skeleton_width: float = 0.5
     interp: Literal["linear", "nearest"] = "linear"
 
 
@@ -262,7 +262,9 @@ class HeadDirectionOverlay:
     color : str, optional
         Color for arrows (matplotlib color string). Default is "yellow".
     length : float, optional
-        Arrow length in environment coordinate units. Default is 20.0.
+        Arrow length in environment coordinate units. Default is 0.25.
+    width : float, optional
+        Arrow line width in pixels. Default is 1.0.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.
@@ -278,6 +280,8 @@ class HeadDirectionOverlay:
         Arrow color.
     length : float
         Arrow length in environment units.
+    width : float
+        Arrow line width in pixels.
     interp : {"linear", "nearest"}
         Interpolation method.
 
@@ -333,7 +337,8 @@ class HeadDirectionOverlay:
     data: NDArray[np.float64]
     times: NDArray[np.float64] | None = None
     color: str = "yellow"
-    length: float = 20.0
+    length: float = 0.25
+    width: float = 1.0
     interp: Literal["linear", "nearest"] = "linear"
 
 
@@ -447,6 +452,8 @@ class HeadDirectionData:
         Arrow color (matplotlib color string).
     length : float
         Arrow length in environment coordinate units.
+    width : float
+        Arrow line width in pixels.
 
     Attributes
     ----------
@@ -456,6 +463,8 @@ class HeadDirectionData:
         Arrow color.
     length : float
         Arrow length in environment units.
+    width : float
+        Arrow line width in pixels.
 
     See Also
     --------
@@ -465,6 +474,7 @@ class HeadDirectionData:
     data: NDArray[np.float64]
     color: str
     length: float
+    width: float = 1.0
 
 
 @dataclass
@@ -1490,6 +1500,7 @@ def _convert_overlays_to_data(
                 data=aligned_data,
                 color=overlay.color,
                 length=overlay.length,
+                width=overlay.width,
             )
             head_direction_data_list.append(head_direction_data)
 

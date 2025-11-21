@@ -65,8 +65,6 @@ BODYPART_POINT_SIZE: float = 5.0
 _NAPARI_TRANSFORM_FALLBACK_WARNED: bool = False
 """Flag to ensure napari transform fallback warning is shown only once per session."""
 
-HEAD_DIRECTION_EDGE_WIDTH: float = 3.0
-"""Edge width for head direction vector arrows."""
 
 SKELETON_DEFAULT_WIDTH: float = 2.0
 """Default edge width for skeleton lines."""
@@ -793,7 +791,7 @@ def _render_head_direction_overlay(
         vectors_array,
         name=f"Head Direction{name_suffix}",
         edge_color=head_dir_data.color,
-        edge_width=HEAD_DIRECTION_EDGE_WIDTH,
+        edge_width=head_dir_data.width,
         length=1.0,  # Vectors already scaled by length
     )
     layers.append(layer)
