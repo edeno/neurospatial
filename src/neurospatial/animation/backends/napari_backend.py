@@ -334,23 +334,22 @@ def _render_position_overlay(
         #
         # Unlike add_points (which accepts face_color directly), the Tracks layer
         # has NO direct `color` parameter. Per napari docs and source code, track
-        # coloring is exclusively property-based:
-        #   - color_by: selects which property determines vertex colors
-        #   - colormap/colormaps_dict: maps property values to colors
+        # coloring is exclusively feature-based:
+        #   - color_by: selects which feature column determines vertex colors
+        #   - colormap/colormaps_dict: maps feature values to colors
         #
         # To achieve uniform coloring, we:
-        # 1. Create a constant property ("color" = all zeros) for each track point
+        # 1. Create a constant feature ("color" = all zeros) for each track point
         # 2. Create a Colormap mapping any value to our desired color
         #    (Colormap requires 2+ control points, so we use identical colors)
-        # 3. Set color_by="color" to apply this property-to-colormap mapping
+        # 3. Set color_by="color" to apply this feature-to-colormap mapping
         #
-        # This approach is stable across napari 0.4.x and 0.5.x and handles any
-        # matplotlib color string via the Colormap's internal color conversion.
+        # Note: napari 0.5+ uses `features` parameter (not `properties`).
         #
         # See: https://napari.org/stable/api/napari.layers.Tracks.html
         from napari.utils.colormaps import Colormap
 
-        properties = {"color": np.zeros(n_frames)}
+        features = {"color": np.zeros(n_frames)}
         custom_colormap = Colormap(
             colors=[position_data.color, position_data.color],
             name=f"trail_color{name_suffix}",
@@ -361,7 +360,7 @@ def _render_position_overlay(
             track_data,
             name=f"Position Trail{name_suffix}",
             tail_length=position_data.trail_length,
-            properties=properties,
+            features=features,
             colormaps_dict=colormaps_dict,
             color_by="color",
         )
