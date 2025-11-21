@@ -35,6 +35,7 @@ from neurospatial import (
     HeadDirectionOverlay,
     PositionOverlay,
 )
+from neurospatial.animation.skeleton import Skeleton
 from neurospatial.regions import Regions
 
 # Use non-interactive backend for testing
@@ -257,15 +258,16 @@ def render_field_with_overlays(
 
         # Render skeleton if provided
         if bodypart_overlay.skeleton:
-            for part_a, part_b in bodypart_overlay.skeleton:
+            skeleton = bodypart_overlay.skeleton
+            for part_a, part_b in skeleton.edges:
                 if part_a in bodypart_overlay.data and part_b in bodypart_overlay.data:
                     pos_a = bodypart_overlay.data[part_a][0]
                     pos_b = bodypart_overlay.data[part_b][0]
                     ax.plot(
                         [pos_a[0], pos_b[0]],
                         [pos_a[1], pos_b[1]],
-                        color=bodypart_overlay.skeleton_color,
-                        linewidth=bodypart_overlay.skeleton_width,
+                        color=skeleton.edge_color,
+                        linewidth=skeleton.edge_width,
                         zorder=3,
                     )
 
@@ -373,10 +375,13 @@ def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d):
         "right_ear": np.array([[55, 65], [57, 67]]),
     }
 
-    skeleton = [
-        ("nose", "left_ear"),
-        ("nose", "right_ear"),
-    ]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "left_ear", "right_ear"),
+        edges=(("nose", "left_ear"), ("nose", "right_ear")),
+        edge_color="white",
+        edge_width=2.0,
+    )
 
     colors = {
         "nose": "red",
@@ -388,8 +393,6 @@ def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d):
         data=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
     fig = render_field_with_overlays(
@@ -503,13 +506,17 @@ def test_mixed_overlays_all_types(env_2d, simple_field_2d):
         "head": np.array([[60, 60]]),
         "tail": np.array([[55, 55]]),
     }
-    skeleton = [("head", "tail")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("head", "tail"),
+        edges=(("head", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     bodypart_overlay = BodypartOverlay(
         data=bodyparts,
         skeleton=skeleton,
         colors={"head": "cyan", "tail": "magenta"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
     # Head direction overlay

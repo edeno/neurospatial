@@ -23,6 +23,7 @@ from neurospatial import (
     HeadDirectionOverlay,
     PositionOverlay,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 # =============================================================================
 # Fixtures for Integration Tests
@@ -73,7 +74,13 @@ def bodypart_overlay_data():
         "body": np.random.uniform(0, 100, (20, 2)),
         "tail": np.random.uniform(0, 100, (20, 2)),
     }
-    skeleton = [("nose", "head"), ("head", "body"), ("body", "tail")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "head", "body", "tail"),
+        edges=(("nose", "head"), ("head", "body"), ("body", "tail")),
+        edge_color="white",
+        edge_width=2.0,
+    )
     times = np.linspace(0, 2.0, 20)
 
     return BodypartOverlay(
@@ -81,8 +88,6 @@ def bodypart_overlay_data():
         times=times,
         skeleton=skeleton,
         colors={"nose": "yellow", "head": "orange", "body": "red", "tail": "blue"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 
@@ -661,14 +666,22 @@ class TestMultiAnimalScenarios:
             BodypartOverlay(
                 data=bodyparts_animal1,
                 times=np.linspace(0, 2.0, 20),
-                skeleton=[("nose", "tail")],
-                skeleton_color="red",
+                skeleton=Skeleton(
+                    name="animal1",
+                    nodes=("nose", "tail"),
+                    edges=(("nose", "tail"),),
+                    edge_color="red",
+                ),
             ),
             BodypartOverlay(
                 data=bodyparts_animal2,
                 times=np.linspace(0, 2.0, 20),
-                skeleton=[("nose", "tail")],
-                skeleton_color="blue",
+                skeleton=Skeleton(
+                    name="animal2",
+                    nodes=("nose", "tail"),
+                    edges=(("nose", "tail"),),
+                    edge_color="blue",
+                ),
             ),
         ]
 

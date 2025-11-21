@@ -31,6 +31,7 @@ from neurospatial.animation.overlays import (
     OverlayData,
     PositionData,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 # Backend import attempts
 try:
@@ -98,15 +99,19 @@ def bodypart_overlay_data() -> OverlayData:
         "ear_left": np.random.uniform(2, 8, (n_frames, 2)),
         "ear_right": np.random.uniform(2, 8, (n_frames, 2)),
     }
-    skeleton = [("nose", "ear_left"), ("nose", "ear_right")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "ear_left", "ear_right"),
+        edges=(("nose", "ear_left"), ("nose", "ear_right")),
+        edge_color="white",
+        edge_width=2.0,
+    )
     return OverlayData(
         bodypart_sets=[
             BodypartData(
                 bodyparts=bodyparts,
                 skeleton=skeleton,
                 colors={"nose": "red", "ear_left": "blue", "ear_right": "green"},
-                skeleton_color="white",
-                skeleton_width=2.0,
             )
         ]
     )

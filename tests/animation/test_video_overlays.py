@@ -26,6 +26,7 @@ from neurospatial.animation.overlays import (
     OverlayData,
     PositionData,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 # =============================================================================
 # Helpers
@@ -75,15 +76,19 @@ def bodypart_overlay_data() -> OverlayData:
         "nose": np.random.rand(n_frames, 2) * 50 + 25,
         "tail": np.random.rand(n_frames, 2) * 50 + 25,
     }
-    skeleton = [("nose", "tail")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     colors = {"nose": "blue", "tail": "green"}
 
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
     return OverlayData(bodypart_sets=[bodypart_data])
 
@@ -111,12 +116,17 @@ def multi_overlay_data() -> OverlayData:
         "nose": np.random.rand(n_frames, 2) * 50 + 25,
         "tail": np.random.rand(n_frames, 2) * 50 + 25,
     }
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
-        skeleton=[("nose", "tail")],
+        skeleton=skeleton,
         colors=None,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
     # Head direction overlay
@@ -307,18 +317,18 @@ def test_bodypart_overlay_renders_skeleton_with_linecollection(
         "left_ear": np.random.rand(n_frames, 2) * 50 + 25,
         "right_ear": np.random.rand(n_frames, 2) * 50 + 25,
     }
-    skeleton = [
-        ("nose", "tail"),
-        ("nose", "left_ear"),
-        ("nose", "right_ear"),
-    ]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail", "left_ear", "right_ear"),
+        edges=(("nose", "tail"), ("nose", "left_ear"), ("nose", "right_ear")),
+        edge_color="white",
+        edge_width=3.0,
+    )
 
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors={"nose": "red", "tail": "blue"},
-        skeleton_color="white",
-        skeleton_width=3.0,
     )
     overlay_data = OverlayData(bodypart_sets=[bodypart_data])
 
@@ -367,14 +377,18 @@ def test_bodypart_overlay_handles_nan_values(simple_env: Environment):
             [[15.0, 25.0], [35.0, 45.0], [np.nan, np.nan], [55.0, 65.0], [75.0, 85.0]]
         ),
     }
-    skeleton = [("nose", "tail")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
 
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=None,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
     # Should not raise when creating OverlayData

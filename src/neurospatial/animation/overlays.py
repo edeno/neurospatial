@@ -14,10 +14,13 @@ The module contains:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from neurospatial.animation.skeleton import Skeleton
 
 # =============================================================================
 # Public API: User-facing overlay dataclasses
@@ -142,17 +145,15 @@ class BodypartOverlay:
         Timestamps for each sample, in seconds. If None, samples are assumed
         uniformly spaced at the animation fps rate. Must be monotonically
         increasing. Default is None.
-    skeleton : list[tuple[str, str]] | None, optional
-        List of body part name pairs defining skeleton edges. Each tuple
-        specifies (start_part, end_part). Part names must exist in `data`.
-        If None, no skeleton is rendered. Default is None.
+    skeleton : Skeleton | None, optional
+        Skeleton object defining node names and edge connections. If provided,
+        edges are rendered as lines connecting keypoints. The skeleton's
+        node_colors, edge_color, and edge_width can override the overlay's
+        colors settings. If None, no skeleton is rendered. Default is None.
     colors : dict[str, str] | None, optional
         Dictionary mapping body part names to colors (matplotlib color strings).
-        If None, all parts use default colors. Default is None.
-    skeleton_color : str, optional
-        Color for skeleton lines (matplotlib color string). Default is "white".
-    skeleton_width : float, optional
-        Width of skeleton lines in points. Default is 0.5.
+        If None and skeleton has node_colors, uses skeleton's colors.
+        Otherwise all parts use default colors. Default is None.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.
@@ -164,14 +165,10 @@ class BodypartOverlay:
         Body part positions.
     times : NDArray[np.float64] | None
         Optional timestamps.
-    skeleton : list[tuple[str, str]] | None
-        Skeleton edge definitions.
+    skeleton : Skeleton | None
+        Skeleton definition with nodes and edges.
     colors : dict[str, str] | None
-        Per-part colors.
-    skeleton_color : str
-        Skeleton line color.
-    skeleton_width : float
-        Skeleton line width.
+        Per-part colors (overrides skeleton.node_colors if provided).
     interp : {"linear", "nearest"}
         Interpolation method.
 
@@ -179,16 +176,24 @@ class BodypartOverlay:
     --------
     PositionOverlay : Single trajectory tracking
     HeadDirectionOverlay : Directional heading visualization
+    Skeleton : Anatomical structure definition
 
     Notes
     -----
     Skeleton validation occurs during conversion to internal representation:
 
-    - All skeleton part names must exist in `data`
+    - All skeleton edge endpoints must exist in `data`
     - Invalid names trigger errors with suggestions
     - Missing data (NaN) breaks skeleton rendering at that frame
 
     For multi-animal pose tracking, create multiple BodypartOverlay instances.
+
+    Color resolution order:
+    1. overlay.colors (if provided)
+    2. skeleton.node_colors (if skeleton provided and has colors)
+    3. Default colors
+
+    Edge styling comes from skeleton.edge_color and skeleton.edge_width.
 
     Examples
     --------
@@ -205,34 +210,37 @@ class BodypartOverlay:
     >>> overlay.skeleton is None
     True
 
-    Pose with skeleton connections:
+    Pose with skeleton object:
 
+    >>> from neurospatial.animation.skeleton import Skeleton
     >>> data = {
     ...     "head": np.array([[0.0, 1.0]]),
     ...     "body": np.array([[1.0, 2.0]]),
     ...     "tail": np.array([[2.0, 3.0]]),
     ... }
-    >>> skeleton = [("head", "body"), ("body", "tail")]
+    >>> skeleton = Skeleton(
+    ...     name="simple",
+    ...     nodes=("head", "body", "tail"),
+    ...     edges=(("head", "body"), ("body", "tail")),
+    ...     edge_color="white",
+    ...     edge_width=2.0,
+    ... )
     >>> overlay = BodypartOverlay(data=data, skeleton=skeleton)
-    >>> len(overlay.skeleton)
+    >>> overlay.skeleton.n_edges
     2
 
     Custom colors per body part:
 
     >>> colors = {"head": "red", "body": "blue", "tail": "green"}
-    >>> overlay = BodypartOverlay(
-    ...     data=data, skeleton=skeleton, colors=colors, skeleton_color="white"
-    ... )
+    >>> overlay = BodypartOverlay(data=data, skeleton=skeleton, colors=colors)
     >>> overlay.colors["head"]
     'red'
     """
 
     data: dict[str, NDArray[np.float64]]
     times: NDArray[np.float64] | None = None
-    skeleton: list[tuple[str, str]] | None = None
+    skeleton: Skeleton | None = None
     colors: dict[str, str] | None = None
-    skeleton_color: str = "white"
-    skeleton_width: float = 0.5
     interp: Literal["linear", "nearest"] = "linear"
 
 
@@ -401,38 +409,30 @@ class BodypartData:
     bodyparts : dict of str to ndarray of shape (n_frames, n_dims), dtype float64
         Body part positions aligned to animation frames. NaN values indicate
         frames where the body part is unavailable.
-    skeleton : list of tuple of (str, str) or None
-        Skeleton edge definitions as (start_part, end_part) pairs.
+    skeleton : Skeleton | None
+        Skeleton object with edge definitions, colors, and styling.
     colors : dict of str to str or None
-        Per-part colors as matplotlib color strings.
-    skeleton_color : str
-        Skeleton line color (matplotlib color string).
-    skeleton_width : float
-        Skeleton line width in points.
+        Per-part colors as matplotlib color strings. Takes precedence over
+        skeleton.node_colors if both are provided.
 
     Attributes
     ----------
     bodyparts : dict[str, NDArray[np.float64]]
         Body part positions aligned to frames.
-    skeleton : list[tuple[str, str]] | None
-        Skeleton edge definitions.
+    skeleton : Skeleton | None
+        Skeleton definition with nodes, edges, and styling.
     colors : dict[str, str] | None
         Per-part colors.
-    skeleton_color : str
-        Skeleton line color.
-    skeleton_width : float
-        Skeleton line width.
 
     See Also
     --------
     BodypartOverlay : User-facing overlay configuration
+    Skeleton : Anatomical structure definition
     """
 
     bodyparts: dict[str, NDArray[np.float64]]
-    skeleton: list[tuple[str, str]] | None
+    skeleton: Skeleton | None
     colors: dict[str, str] | None
-    skeleton_color: str
-    skeleton_width: float
 
 
 @dataclass
@@ -846,7 +846,7 @@ def _validate_bounds(
 
 
 def _validate_skeleton_consistency(
-    skeleton: list[tuple[str, str]] | None,
+    skeleton: Skeleton | None,
     bodypart_names: list[str],
     *,
     name: str,
@@ -855,12 +855,12 @@ def _validate_skeleton_consistency(
 
     Parameters
     ----------
-    skeleton : list[tuple[str, str]] | None
-        List of (part1, part2) connections. Can be None or empty.
+    skeleton : Skeleton | None
+        Skeleton object with edges. Can be None.
     bodypart_names : list[str]
         Available bodypart names in the overlay data.
     name : str
-        Name of the skeleton for error messages.
+        Name of the overlay for error messages.
 
     Raises
     ------
@@ -868,16 +868,16 @@ def _validate_skeleton_consistency(
         If skeleton references missing bodypart names, with suggestions for
         nearest matches and actionable WHAT/WHY/HOW guidance.
     """
-    if skeleton is None or len(skeleton) == 0:
+    if skeleton is None or len(skeleton.edges) == 0:
         return  # Nothing to validate
 
-    # Collect all referenced parts
+    # Collect all referenced parts from skeleton edges
     referenced_parts = set()
-    for part1, part2 in skeleton:
+    for part1, part2 in skeleton.edges:
         referenced_parts.add(part1)
         referenced_parts.add(part2)
 
-    # Find missing parts
+    # Find missing parts (in skeleton but not in data)
     available_parts = set(bodypart_names)
     missing_parts = referenced_parts - available_parts
 
@@ -898,16 +898,20 @@ def _validate_skeleton_consistency(
         )
 
         raise ValueError(
-            f"WHAT: Skeleton for '{name}' references missing bodypart(s): "
-            f"{sorted(missing_parts)}\n"
-            f"  Available bodyparts: {sorted(bodypart_names)}\n\n"
+            f"WHAT: Skeleton '{skeleton.name}' for '{name}' references missing "
+            f"bodypart(s): {sorted(missing_parts)}\n"
+            f"  Available bodyparts in data: {sorted(bodypart_names)}\n"
+            f"  Skeleton nodes: {sorted(skeleton.nodes)}\n\n"
             f"WHY: Cannot draw skeleton edges without both endpoints defined in the "
             f"bodypart data.\n\n"
             f"HOW: Fix the bodypart names in your skeleton or data:\n"
             f"{suggestion_str}\n"
-            f"  # Or update skeleton to only use available parts:\n"
-            f"  skeleton = [(p1, p2) for p1, p2 in skeleton "
-            f"if p1 in bodypart_names and p2 in bodypart_names]"
+            f"  # Option 1: Add missing bodyparts to data dict\n"
+            f"  # Option 2: Create skeleton with only available bodyparts:\n"
+            f"  skeleton = Skeleton.from_edge_list(\n"
+            f"      [(p1, p2) for p1, p2 in skeleton.edges\n"
+            f"       if p1 in data and p2 in data]\n"
+            f"  )"
         )
 
 
@@ -1456,8 +1460,6 @@ def _convert_overlays_to_data(
                 bodyparts=aligned_bodyparts,
                 skeleton=overlay.skeleton,
                 colors=overlay.colors,
-                skeleton_color=overlay.skeleton_color,
-                skeleton_width=overlay.skeleton_width,
             )
             bodypart_data_list.append(bodypart_data)
 

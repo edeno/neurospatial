@@ -24,6 +24,7 @@ from neurospatial.animation.overlays import (
     _validate_skeleton_consistency,
     _validate_temporal_alignment,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 
 class TestPositionOverlay:
@@ -85,21 +86,24 @@ class TestBodypartOverlay:
         assert overlay.times is None
         assert overlay.skeleton is None
         assert overlay.colors is None
-        assert overlay.skeleton_color == "white"
-        assert overlay.skeleton_width == 0.5
 
     def test_with_skeleton(self):
-        """Test BodypartOverlay with skeleton connections."""
+        """Test BodypartOverlay with Skeleton object."""
         data = {
             "head": np.array([[0.0, 1.0], [2.0, 3.0]]),
             "body": np.array([[1.0, 2.0], [3.0, 4.0]]),
             "tail": np.array([[2.0, 3.0], [4.0, 5.0]]),
         }
-        skeleton = [("head", "body"), ("body", "tail")]
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),
+        )
         overlay = BodypartOverlay(data=data, skeleton=skeleton)
 
-        assert overlay.skeleton == skeleton
-        assert len(overlay.skeleton) == 2
+        assert overlay.skeleton is skeleton
+        assert len(overlay.skeleton.edges) == 2
+        assert overlay.skeleton.name == "test"
 
     def test_with_custom_colors(self):
         """Test BodypartOverlay with per-part colors."""
@@ -115,14 +119,19 @@ class TestBodypartOverlay:
         assert overlay.colors["body"] == "blue"
 
     def test_custom_skeleton_styling(self):
-        """Test BodypartOverlay with custom skeleton appearance."""
-        data = {"head": np.array([[0.0, 1.0]])}
-        overlay = BodypartOverlay(
-            data=data, skeleton_color="yellow", skeleton_width=3.0
+        """Test BodypartOverlay with custom skeleton appearance via Skeleton."""
+        data = {"head": np.array([[0.0, 1.0]]), "body": np.array([[1.0, 2.0]])}
+        skeleton = Skeleton(
+            name="styled",
+            nodes=("head", "body"),
+            edges=(("head", "body"),),
+            edge_color="yellow",
+            edge_width=3.0,
         )
+        overlay = BodypartOverlay(data=data, skeleton=skeleton)
 
-        assert overlay.skeleton_color == "yellow"
-        assert overlay.skeleton_width == 3.0
+        assert overlay.skeleton.edge_color == "yellow"
+        assert overlay.skeleton.edge_width == 3.0
 
     def test_with_times(self):
         """Test BodypartOverlay with timestamps."""
@@ -199,8 +208,8 @@ class TestOverlayDataclassDefaults:
         data = {"head": np.array([[0.0, 1.0]])}
         overlay = BodypartOverlay(data=data)
 
-        assert overlay.skeleton_color == "white"
-        assert overlay.skeleton_width == 0.5
+        assert overlay.skeleton is None
+        assert overlay.colors is None
 
     def test_head_direction_overlay_defaults(self):
         """Test HeadDirectionOverlay default values."""
@@ -592,15 +601,23 @@ class TestValidateSkeletonConsistency:
 
     def test_valid_skeleton(self):
         """Test that skeleton with all valid part names passes."""
-        skeleton = [("head", "body"), ("body", "tail")]
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),
+        )
         bodypart_names = ["head", "body", "tail"]
         # Should not raise
         _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
 
     def test_skeleton_with_missing_parts(self):
         """Test that skeleton referencing missing parts raises ValueError."""
-        skeleton = [("head", "body"), ("body", "tail")]
-        bodypart_names = ["head", "body"]  # Missing 'tail'
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),
+        )
+        bodypart_names = ["head", "body"]  # Missing 'tail' in data
 
         with pytest.raises(ValueError) as exc_info:
             _validate_skeleton_consistency(
@@ -618,7 +635,11 @@ class TestValidateSkeletonConsistency:
 
     def test_skeleton_with_suggestions(self):
         """Test that error includes nearest match suggestions."""
-        skeleton = [("head", "body"), ("body", "tale")]  # Typo: 'tale' vs 'tail'
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tale"),  # Typo: 'tale' vs 'tail'
+            edges=(("head", "body"), ("body", "tale")),
+        )
         bodypart_names = ["head", "body", "tail"]
 
         with pytest.raises(ValueError) as exc_info:
@@ -632,7 +653,11 @@ class TestValidateSkeletonConsistency:
 
     def test_empty_skeleton(self):
         """Test that empty skeleton passes validation."""
-        skeleton = []
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(),  # No edges
+        )
         bodypart_names = ["head", "body", "tail"]
         _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
 
@@ -815,7 +840,11 @@ class TestConvertOverlaysToData:
             "body": np.array([[15.0, 25.0], [35.0, 45.0]]),
         }
         times = np.array([0.0, 1.0])
-        skeleton = [("head", "body")]
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body"),
+            edges=(("head", "body"),),
+        )
         colors = {"head": "red", "body": "blue"}
         overlay = BodypartOverlay(
             data=data, times=times, skeleton=skeleton, colors=colors
@@ -843,7 +872,7 @@ class TestConvertOverlaysToData:
         assert "body" in bodypart_data.bodyparts
         assert bodypart_data.bodyparts["head"].shape == (2, 2)
         assert bodypart_data.bodyparts["body"].shape == (2, 2)
-        assert bodypart_data.skeleton == skeleton
+        assert bodypart_data.skeleton is skeleton
         assert bodypart_data.colors == colors
 
     def test_convert_bodypart_overlay_with_interpolation(self, mock_env):
@@ -1070,7 +1099,11 @@ class TestConvertOverlaysToData:
 
         # Create bodypart with skeleton referencing missing part
         data = {"head": np.array([[10.0, 20.0]])}
-        skeleton = [("head", "tail")]  # 'tail' doesn't exist!
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "tail"),
+            edges=(("head", "tail"),),
+        )  # 'tail' doesn't exist in data!
         times = np.array([0.0])
         overlay = BodypartOverlay(data=data, skeleton=skeleton, times=times)
 

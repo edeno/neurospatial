@@ -389,7 +389,8 @@ def _build_skeleton_vectors(
     >>> viewer.add_vectors(vectors, features=features, ...)
     """
     # Early exit if no skeleton defined
-    if bodypart_data.skeleton is None or len(bodypart_data.skeleton) == 0:
+    skeleton = bodypart_data.skeleton
+    if skeleton is None or len(skeleton.edges) == 0:
         empty_vectors = np.empty((0, 2, 3), dtype=dtype)
         empty_features: dict[str, NDArray[np.object_]] = {
             "edge_name": np.empty(0, dtype=object)
@@ -404,7 +405,7 @@ def _build_skeleton_vectors(
         return empty_vectors, empty_features
 
     n_frames = len(next(iter(bodyparts.values())))
-    skeleton_edges = bodypart_data.skeleton
+    skeleton_edges = skeleton.edges
 
     # Pre-compute scale factors for coordinate transformation
     env_scale = _EnvScale.from_env(env)
@@ -669,11 +670,13 @@ def _render_bodypart_overlay(
 
         # Only add layer if there are valid skeleton segments
         if vectors_data.size > 0:
+            # Get styling from Skeleton object
+            skeleton = bodypart_data.skeleton
             skeleton_layer = viewer.add_vectors(
                 vectors_data,
                 name=f"Skeleton{name_suffix}",
-                edge_color=bodypart_data.skeleton_color,
-                edge_width=bodypart_data.skeleton_width,
+                edge_color=skeleton.edge_color,
+                edge_width=skeleton.edge_width,
                 vector_style="line",  # Hide arrow heads for skeleton lines
                 features=vector_features,
             )

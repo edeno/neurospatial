@@ -15,6 +15,7 @@ from neurospatial.animation.overlays import (
     OverlayData,
     PositionData,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 
 @pytest.fixture
@@ -49,14 +50,19 @@ def bodypart_overlay_data():
     n_frames = 10
     nose = np.random.rand(n_frames, 2) * 10
     tail = np.random.rand(n_frames, 2) * 10
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     return OverlayData(
         bodypart_sets=[
             BodypartData(
                 bodyparts={"nose": nose, "tail": tail},
-                skeleton=[("nose", "tail")],
+                skeleton=skeleton,
                 colors={"nose": "red", "tail": "blue"},
-                skeleton_color="white",
-                skeleton_width=2.0,
             )
         ]
     )
@@ -81,6 +87,13 @@ def all_overlays_data():
     tail = np.random.rand(n_frames, 2) * 10
     angles = np.random.rand(n_frames) * 2 * np.pi
 
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     return OverlayData(
         positions=[
             PositionData(data=positions, color="red", size=10.0, trail_length=3)
@@ -88,10 +101,8 @@ def all_overlays_data():
         bodypart_sets=[
             BodypartData(
                 bodyparts={"nose": nose, "tail": tail},
-                skeleton=[("nose", "tail")],
+                skeleton=skeleton,
                 colors={"nose": "red", "tail": "blue"},
-                skeleton_color="white",
-                skeleton_width=2.0,
             )
         ],
         head_directions=[HeadDirectionData(data=angles, color="yellow", length=5.0)],

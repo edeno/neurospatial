@@ -14,8 +14,24 @@ Public API
 ----------
 subsample_frames : function
     Subsample frames to target frame rate for large-scale sessions
+Skeleton : class
+    Immutable skeleton definition for pose tracking
+MOUSE_SKELETON, RAT_SKELETON, SIMPLE_SKELETON : Skeleton
+    Common skeleton presets
 """
 
 from neurospatial.animation.core import subsample_frames
+from neurospatial.animation.skeleton import (
+    MOUSE_SKELETON,
+    RAT_SKELETON,
+    SIMPLE_SKELETON,
+    Skeleton,
+)
 
-__all__: list[str] = ["subsample_frames"]
+__all__: list[str] = [
+    "MOUSE_SKELETON",
+    "RAT_SKELETON",
+    "SIMPLE_SKELETON",
+    "Skeleton",
+    "subsample_frames",
+]

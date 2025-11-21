@@ -144,10 +144,11 @@ def _render_bodypart_overlay_matplotlib(
         )
 
     # Render skeleton using LineCollection
-    if bodypart_data.skeleton:
+    skeleton = bodypart_data.skeleton
+    if skeleton is not None and len(skeleton.edges) > 0:
         skeleton_segments = []
 
-        for start_part, end_part in bodypart_data.skeleton:
+        for start_part, end_part in skeleton.edges:
             if (
                 start_part in bodypart_data.bodyparts
                 and end_part in bodypart_data.bodyparts
@@ -164,8 +165,8 @@ def _render_bodypart_overlay_matplotlib(
         if skeleton_segments:
             lc = LineCollection(
                 skeleton_segments,
-                colors=bodypart_data.skeleton_color,
-                linewidths=bodypart_data.skeleton_width,
+                colors=skeleton.edge_color,
+                linewidths=skeleton.edge_width,
                 zorder=101,
             )
             ax.add_collection(lc)
@@ -583,11 +584,12 @@ class OverlayArtistManager:
 
         # Create skeleton LineCollection
         skeleton_lc: LineCollection | None = None
-        if bodypart_data.skeleton:
+        skeleton = bodypart_data.skeleton
+        if skeleton is not None and len(skeleton.edges) > 0:
             skeleton_lc = LineCollection(
                 [],
-                colors=bodypart_data.skeleton_color,
-                linewidths=bodypart_data.skeleton_width,
+                colors=skeleton.edge_color,
+                linewidths=skeleton.edge_width,
                 zorder=101,
             )
             self.ax.add_collection(skeleton_lc)
@@ -674,7 +676,12 @@ class OverlayArtistManager:
         # Update bodypart overlays
         for i, bodypart_data in enumerate(self.overlay_data.bodypart_sets):
             self._update_bodypart_points(i, bodypart_data, frame_idx)
-            if bodypart_data.skeleton and self._bodypart_skeletons[i] is not None:
+            skeleton = bodypart_data.skeleton
+            if (
+                skeleton is not None
+                and len(skeleton.edges) > 0
+                and self._bodypart_skeletons[i] is not None
+            ):
                 self._update_bodypart_skeleton(i, bodypart_data, frame_idx)
 
         # Update head direction overlays (recreate quiver - matplotlib limitation)
@@ -763,8 +770,12 @@ class OverlayArtistManager:
         if skeleton_lc is None:
             return
 
+        skeleton = bodypart_data.skeleton
+        if skeleton is None:
+            return
+
         skeleton_segments = []
-        for start_part, end_part in bodypart_data.skeleton:
+        for start_part, end_part in skeleton.edges:
             if (
                 start_part in bodypart_data.bodyparts
                 and end_part in bodypart_data.bodyparts

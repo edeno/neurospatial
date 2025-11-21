@@ -20,6 +20,7 @@ from neurospatial.animation.overlays import (
     OverlayData,
     PositionData,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 
 @pytest.fixture
@@ -51,14 +52,19 @@ def bodypart_overlay_data():
         "nose": np.array([[1.0, 2.0], [3.0, 4.0]]),
         "tail": np.array([[2.0, 3.0], [4.0, 5.0]]),
     }
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     return OverlayData(
         bodypart_sets=[
             BodypartData(
                 bodyparts=bodyparts,
-                skeleton=[("nose", "tail")],
+                skeleton=skeleton,
                 colors=None,
-                skeleton_color="white",
-                skeleton_width=2.0,
             )
         ]
     )
@@ -405,8 +411,6 @@ class TestUnsupportedOverlayWarnings:
                     bodyparts=bodyparts,
                     skeleton=None,
                     colors=None,
-                    skeleton_color="white",
-                    skeleton_width=2.0,
                 )
             ],
         )

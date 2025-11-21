@@ -12,6 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from neurospatial.animation.skeleton import Skeleton
+
 # Skip all tests if napari not available
 pytest.importorskip("napari")
 
@@ -46,13 +48,17 @@ def bodypart_data_with_skeleton():
         "body": np.array([[4.0 + i, 5.0] for i in range(n_frames)]),
         "tail": np.array([[3.0 + i, 3.0] for i in range(n_frames)]),
     }
-    skeleton = [("head", "body"), ("body", "tail")]
+    skeleton = Skeleton(
+        name="test",
+        nodes=("head", "body", "tail"),
+        edges=(("head", "body"), ("body", "tail")),
+        edge_color="white",
+        edge_width=2.0,
+    )
     return BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors={"head": "red", "body": "green", "tail": "blue"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 
@@ -69,26 +75,30 @@ def bodypart_data_no_skeleton():
         bodyparts=bodyparts,
         skeleton=None,  # No skeleton
         colors={"head": "red"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 
 @pytest.fixture
 def bodypart_data_empty_skeleton():
-    """Create BodypartData with empty skeleton list."""
+    """Create BodypartData with empty skeleton (no edges)."""
     from neurospatial.animation.overlays import BodypartData
 
     n_frames = 5
     bodyparts = {
         "head": np.array([[5.0 + i, 7.0] for i in range(n_frames)]),
     }
+    # Skeleton with no edges (just a single node)
+    skeleton = Skeleton(
+        name="test",
+        nodes=("head",),
+        edges=(),  # Empty edges tuple
+        edge_color="white",
+        edge_width=2.0,
+    )
     return BodypartData(
         bodyparts=bodyparts,
-        skeleton=[],  # Empty skeleton list
+        skeleton=skeleton,  # Skeleton with no edges
         colors={"head": "red"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 
@@ -342,12 +352,17 @@ class TestBuildSkeletonVectorsNaNHandling:
             "head": head_coords,
             "body": np.array([[4.0 + i, 5.0] for i in range(n_frames)]),
         }
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body"),
+            edges=(("head", "body"),),
+            edge_color="white",
+            edge_width=2.0,
+        )
         bodypart_data = BodypartData(
             bodyparts=bodyparts,
-            skeleton=[("head", "body")],
+            skeleton=skeleton,
             colors=None,
-            skeleton_color="white",
-            skeleton_width=2.0,
         )
 
         vectors, _features = _build_skeleton_vectors(bodypart_data, simple_env)
@@ -379,14 +394,19 @@ class TestBuildSkeletonVectorsMissingBodyparts:
         bodyparts = {
             "head": np.array([[5.0 + i, 7.0] for i in range(n_frames)]),
             "body": np.array([[4.0 + i, 5.0] for i in range(n_frames)]),
-            # "tail" is missing
+            # "tail" is missing from bodyparts dict (but defined in skeleton)
         }
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),  # tail edge exists
+            edge_color="white",
+            edge_width=2.0,
+        )
         bodypart_data = BodypartData(
             bodyparts=bodyparts,
-            skeleton=[("head", "body"), ("body", "tail")],  # tail is missing
+            skeleton=skeleton,  # tail is in skeleton but missing from bodyparts
             colors=None,
-            skeleton_color="white",
-            skeleton_width=2.0,
         )
 
         vectors, features = _build_skeleton_vectors(bodypart_data, simple_env)
@@ -420,12 +440,17 @@ class TestBuildSkeletonVectorsLargeDataset:
             "body": np.random.rand(n_frames, 2) * 10 + 3,
             "tail": np.random.rand(n_frames, 2) * 10 + 1,
         }
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),
+            edge_color="white",
+            edge_width=2.0,
+        )
         bodypart_data = BodypartData(
             bodyparts=bodyparts,
-            skeleton=[("head", "body"), ("body", "tail")],
+            skeleton=skeleton,
             colors=None,
-            skeleton_color="white",
-            skeleton_width=2.0,
         )
 
         vectors, _features = _build_skeleton_vectors(bodypart_data, simple_env)
@@ -448,14 +473,19 @@ class TestBuildSkeletonVectorsLargeDataset:
 
         bodypart_names = [f"part_{i}" for i in range(n_bodyparts)]
         bodyparts = {name: np.random.rand(n_frames, 2) * 20 for name in bodypart_names}
-        skeleton = [(bodypart_names[i], bodypart_names[i + 1]) for i in range(n_edges)]
+        edges = [(bodypart_names[i], bodypart_names[i + 1]) for i in range(n_edges)]
+        skeleton = Skeleton(
+            name="test",
+            nodes=tuple(bodypart_names),
+            edges=tuple(edges),
+            edge_color="white",
+            edge_width=2.0,
+        )
 
         bodypart_data = BodypartData(
             bodyparts=bodyparts,
             skeleton=skeleton,
             colors=None,
-            skeleton_color="white",
-            skeleton_width=2.0,
         )
 
         vectors, _features = _build_skeleton_vectors(bodypart_data, simple_env)

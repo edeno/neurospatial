@@ -56,6 +56,7 @@ def realistic_pose_overlay_data():
     Simulates multi-keypoint tracking (10 bodyparts, 100 frames).
     """
     from neurospatial.animation.overlays import BodypartData
+    from neurospatial.animation.skeleton import Skeleton
 
     n_frames = 100
     np.random.seed(42)
@@ -86,19 +87,25 @@ def realistic_pose_overlay_data():
         bodyparts[name] = np.column_stack([center_x + offset_x, center_y + offset_y])
 
     # Create realistic skeleton
-    skeleton = [
-        ("nose", "neck"),
-        ("left_ear", "neck"),
-        ("right_ear", "neck"),
-        ("neck", "left_shoulder"),
-        ("neck", "right_shoulder"),
-        ("left_shoulder", "spine"),
-        ("right_shoulder", "spine"),
-        ("spine", "left_hip"),
-        ("spine", "right_hip"),
-        ("left_hip", "tail_base"),
-        ("right_hip", "tail_base"),
-    ]
+    skeleton = Skeleton(
+        name="test",
+        nodes=tuple(bodypart_names),
+        edges=(
+            ("nose", "neck"),
+            ("left_ear", "neck"),
+            ("right_ear", "neck"),
+            ("neck", "left_shoulder"),
+            ("neck", "right_shoulder"),
+            ("left_shoulder", "spine"),
+            ("right_shoulder", "spine"),
+            ("spine", "left_hip"),
+            ("spine", "right_hip"),
+            ("left_hip", "tail_base"),
+            ("right_hip", "tail_base"),
+        ),
+        edge_color="white",
+        edge_width=2.0,
+    )
 
     colors = {name: f"C{i}" for i, name in enumerate(bodypart_names)}
 
@@ -106,8 +113,6 @@ def realistic_pose_overlay_data():
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 

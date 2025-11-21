@@ -19,6 +19,8 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from neurospatial.animation.skeleton import Skeleton
+
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
@@ -76,14 +78,18 @@ def bodypart_overlay_data():
         "body": np.array([[4.0 + i, 5.0] for i in range(10)]),
         "tail": np.array([[3.0 + i, 5.0] for i in range(10)]),
     }
-    skeleton = [("head", "body"), ("body", "tail")]
+    skeleton = Skeleton(
+        name="test_skeleton",
+        nodes=("head", "body", "tail"),
+        edges=(("head", "body"), ("body", "tail")),
+        edge_color="white",
+        edge_width=2.0,
+    )
     colors = {"head": "red", "body": "green", "tail": "blue"}
     return BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
 
@@ -413,8 +419,6 @@ def test_bodypart_overlay_without_skeleton(
         bodyparts={"head": np.array([[5.0 + i, 5.0] for i in range(10)])},
         skeleton=None,  # No skeleton
         colors={"head": "red"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
     overlay_data = OverlayData(bodypart_sets=[bodypart_data])
 
@@ -443,15 +447,20 @@ def test_bodypart_skeleton_all_nan_no_vectors_layer(
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
     # Bodypart data with ALL NaN coordinates
+    skeleton = Skeleton(
+        name="test_skeleton",
+        nodes=("head", "body"),
+        edges=(("head", "body"),),
+        edge_color="white",
+        edge_width=2.0,
+    )
     bodypart_data = BodypartData(
         bodyparts={
             "head": np.full((10, 2), np.nan),
             "body": np.full((10, 2), np.nan),
         },
-        skeleton=[("head", "body")],
+        skeleton=skeleton,
         colors={"head": "red", "body": "green"},
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
     overlay_data = OverlayData(bodypart_sets=[bodypart_data])
 

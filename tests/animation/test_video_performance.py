@@ -30,6 +30,7 @@ from neurospatial.animation.overlays import (
     OverlayData,
     PositionData,
 )
+from neurospatial.animation.skeleton import Skeleton
 
 # =============================================================================
 # Fixtures
@@ -75,15 +76,21 @@ def perf_bodypart_overlay() -> OverlayData:
     bodyparts = {
         f"part{i}": np.random.rand(n_frames, 2) * 100 + 50 for i in range(n_bodyparts)
     }
-    skeleton = [(f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1)]
+    nodes = tuple(f"part{i}" for i in range(n_bodyparts))
+    edges = tuple((f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1))
+    skeleton = Skeleton(
+        name="test",
+        nodes=nodes,
+        edges=edges,
+        edge_color="white",
+        edge_width=2.0,
+    )
     colors = {f"part{i}": f"C{i}" for i in range(n_bodyparts)}
 
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
     return OverlayData(bodypart_sets=[bodypart_data])
 
@@ -102,14 +109,20 @@ def perf_all_overlays() -> OverlayData:
     bodyparts = {
         f"part{i}": np.random.rand(n_frames, 2) * 100 + 50 for i in range(n_bodyparts)
     }
-    skeleton = [(f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1)]
+    nodes = tuple(f"part{i}" for i in range(n_bodyparts))
+    edges = tuple((f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1))
+    skeleton = Skeleton(
+        name="test",
+        nodes=nodes,
+        edges=edges,
+        edge_color="white",
+        edge_width=2.0,
+    )
     colors = {f"part{i}": f"C{i}" for i in range(n_bodyparts)}
     bodypart_data = BodypartData(
         bodyparts=bodyparts,
         skeleton=skeleton,
         colors=colors,
-        skeleton_color="white",
-        skeleton_width=2.0,
     )
 
     # Head direction
