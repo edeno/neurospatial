@@ -389,10 +389,12 @@ def field_to_rgb_for_napari(
             full_rgb_flat = full_rgb.reshape(-1, 3)
             full_rgb_flat[active_indices] = rgb
 
-            return full_rgb
+            # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention
+            return np.transpose(full_rgb, (1, 0, 2))
         else:
             # Regular grid without masking
-            return rgb.reshape((*env.layout.grid_shape, 3))
+            # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention
+            return np.transpose(rgb.reshape((*env.layout.grid_shape, 3)), (1, 0, 2))
 
     # Non-grid layout: return flat RGB for point cloud rendering
     return rgb
