@@ -165,15 +165,16 @@ class TestBuildSkeletonVectorsTimeStamps:
             bodypart_data_with_skeleton, simple_env
         )
 
-        # Extract all time values (first element of each point)
-        times_start = vectors[:, 0, 0]  # Time of start points
-        times_end = vectors[:, 1, 0]  # Time of end points
+        # Extract time values from position row (first row)
+        # Format is [position, direction] where position = [t, y, x]
+        times_position = vectors[:, 0, 0]  # Time of position points
 
-        # Start and end points should have same time
-        np.testing.assert_array_equal(times_start, times_end)
+        # Direction row (second row) should have dt=0 (same time as position)
+        dt_direction = vectors[:, 1, 0]  # Delta-time of direction vectors
+        np.testing.assert_array_equal(dt_direction, np.zeros(len(dt_direction)))
 
         # Should contain frame indices 0-4 for 5 frames
-        unique_times = np.unique(times_start)
+        unique_times = np.unique(times_position)
         expected_times = np.arange(5)
         np.testing.assert_array_equal(unique_times, expected_times)
 

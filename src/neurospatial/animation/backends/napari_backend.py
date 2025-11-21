@@ -362,8 +362,12 @@ def _build_skeleton_vectors(
     -------
     vectors : ndarray, shape (n_segments, 2, 3)
         Pre-computed skeleton vectors for all frames. Each segment has format:
-        [[t, y0, x0], [t, y1, x1]] where t is frame index, (y, x) are napari
-        pixel coordinates. n_segments = n_frames * n_valid_edges.
+        [[t, y0, x0], [0, dy, dx]] where:
+        - t is frame index
+        - (y0, x0) is the start position in napari pixel coordinates
+        - (dy, dx) is the direction/displacement vector to the end point
+        - n_segments = n_frames * n_valid_edges
+        This format follows napari's Vectors layer convention of [position, direction].
     features : dict[str, ndarray]
         Feature arrays parallel to vectors:
         - "edge_name": str array with format "start-end" for each segment
@@ -453,10 +457,11 @@ def _build_skeleton_vectors(
         vectors[seg_idx, 0, 1] = start_pt[0]  # row (y in napari)
         vectors[seg_idx, 0, 2] = start_pt[1]  # col (x in napari)
 
-        # End point: [t, y, x]
-        vectors[seg_idx, 1, 0] = frame_idx
-        vectors[seg_idx, 1, 1] = end_pt[0]  # row (y in napari)
-        vectors[seg_idx, 1, 2] = end_pt[1]  # col (x in napari)
+        # Direction vector: [dt, dy, dx] - displacement from start to end
+        # napari Vectors layer expects [position, direction], not [start, end]
+        vectors[seg_idx, 1, 0] = 0  # dt = 0 (same time)
+        vectors[seg_idx, 1, 1] = end_pt[0] - start_pt[0]  # dy
+        vectors[seg_idx, 1, 2] = end_pt[1] - start_pt[1]  # dx
 
         edge_names[seg_idx] = edge_name
 
