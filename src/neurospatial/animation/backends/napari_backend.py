@@ -31,12 +31,15 @@ except ImportError:
 def _transform_coords_for_napari(
     coords: NDArray[np.float64], env: Any | None = None
 ) -> NDArray[np.float64]:
-    """Transform coordinates from (x, y) to napari (y, x) with Y-axis inversion.
+    """Transform coordinates from environment (x, y) to napari pixel (row, col).
 
-    Napari uses (y, x) axis order and image coordinates (Y increases downward).
-    Environment uses Cartesian coordinates (Y increases upward). This function:
-    1. Swaps (x, y) → (y, x)
-    2. Inverts Y axis to match napari's top-down convention
+    Napari displays images with row 0 at top. After flipping the RGB image vertically,
+    row 0 contains data from max Y. This function maps environment coordinates to
+    pixel/row indices that match the flipped image.
+
+    Transformation:
+    1. Map X to column index: col = (x - x_min) / (x_max - x_min) * (n_x - 1)
+    2. Map Y to flipped row index: row = (n_y - 1) * (y_max - y) / (y_max - y_min)
 
     Parameters
     ----------
@@ -44,25 +47,40 @@ def _transform_coords_for_napari(
         Coordinates with shape (..., n_dims) where last dimension is spatial.
         For 2D data, expects (..., 2) with (x, y) ordering in environment space.
     env : Environment, optional
-        Environment instance for getting Y-axis range. If None, no Y inversion.
+        Environment instance for coordinate transformation. Required for 2D coords.
 
     Returns
     -------
     transformed : ndarray
-        Coordinates in napari space. For 2D: (x, y) → (y_inverted, x).
-        Higher dimensions returned with x-y swap only.
+        Coordinates in napari pixel space. For 2D: (x, y) → (row, col).
+        Higher dimensions returned unchanged.
     """
     if coords.shape[-1] == 2:
-        # Swap x and y for 2D
-        swapped = coords[..., ::-1]  # (x, y) → (y, x)
+        if env is None or not hasattr(env, "dimension_ranges"):
+            # Fallback: just swap x and y
+            return coords[..., ::-1]
 
-        # Invert Y axis if environment provided
-        if env is not None and hasattr(env, "dimension_ranges"):
-            y_min, y_max = env.dimension_ranges[1]  # Y is dimension 1
-            # Invert: y_napari = y_max - y_env + y_min
-            swapped[..., 0] = y_max + y_min - swapped[..., 0]
+        # Get environment bounds and grid size
+        x_min, x_max = env.dimension_ranges[0]
+        y_min, y_max = env.dimension_ranges[1]
+        n_x, n_y = env.layout.grid_shape
 
-        return swapped
+        x_coords = coords[..., 0]
+        y_coords = coords[..., 1]
+
+        # Map to pixel indices
+        # X → column (no flip)
+        col = (x_coords - x_min) / (x_max - x_min) * (n_x - 1)
+
+        # Y → row (with flip: high Y → low row)
+        row = (n_y - 1) * (y_max - y_coords) / (y_max - y_min)
+
+        # Return in napari (row, col) order
+        result = np.empty_like(coords)
+        result[..., 0] = row
+        result[..., 1] = col
+        return result
+
     # For other dimensions, return unchanged
     return coords
 
