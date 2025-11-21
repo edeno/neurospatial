@@ -676,6 +676,7 @@ def _render_bodypart_overlay(
                 name=f"Skeleton{name_suffix}",
                 edge_color=bodypart_data.skeleton_color,
                 edge_width=bodypart_data.skeleton_width,
+                vector_style="line",  # Hide arrow heads for skeleton lines
                 features=vector_features,
             )
             layers.append(skeleton_layer)
