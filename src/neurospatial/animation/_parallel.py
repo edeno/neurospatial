@@ -430,31 +430,35 @@ def parallel_render_frames(
     Parameters
     ----------
     env : Environment
-        Must be pickle-able (will be serialized to workers)
-    fields : list of arrays
-        All fields to render
+        Environment defining spatial structure. Must be pickle-able
+        (will be serialized to workers). Call env.clear_cache() first.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        All fields to render. Each array contains field values for one frame.
     output_dir : str
-        Directory to save frame PNGs
+        Directory to save frame PNGs.
     cmap : str
-        Colormap name
-    vmin, vmax : float
-        Color scale limits
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     frame_labels : list of str or None
-        Frame labels for each frame
+        Frame labels for each frame.
     dpi : int
-        Resolution
+        Resolution for rendering in dots per inch.
     n_workers : int
-        Number of parallel workers
+        Number of parallel workers.
     reuse_artists : bool, default=True
         If True, reuse the same AxesImage artist across frames (fast path).
         Updates image data only, avoiding layout/allocation overhead.
         If False, clear and redraw each frame (original behavior).
-    overlay_data : OverlayData | None, optional
+    overlay_data : OverlayData or None, optional
         Overlay data to render on top of fields. Default is None.
-    show_regions : bool | list[str], default=False
+    show_regions : bool or list of str, default=False
         If True, render all regions. If list, render specified regions only.
     region_alpha : float, default=0.3
-        Alpha transparency for region overlays (0-1).
+        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque.
 
     Returns
     -------

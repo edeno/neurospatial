@@ -35,15 +35,21 @@ def compute_global_colormap_range(
 
     Parameters
     ----------
-    fields : list of arrays
-        All fields to animate
-    vmin, vmax : float, optional
-        Manual limits (if provided, skip computation)
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        All fields to animate. Each array contains field values for one frame.
+    vmin : float, optional
+        Manual minimum limit. If provided, skips computation for minimum.
+        Useful for consistent colormaps across multiple animations.
+    vmax : float, optional
+        Manual maximum limit. If provided, skips computation for maximum.
+        Useful for consistent colormaps across multiple animations.
 
     Returns
     -------
-    vmin, vmax : tuple of float
-        (vmin, vmax) - Minimum and maximum values for color scale.
+    vmin : float
+        Minimum value for color scale.
+    vmax : float
+        Maximum value for color scale.
         Returns (0.0, 1.0) if all values are NaN/inf or fields is empty.
 
     Examples
@@ -101,20 +107,22 @@ def render_field_to_rgb(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    field : ndarray
-        Field values (shape: n_bins)
+        Environment defining spatial structure.
+    field : ndarray of shape (n_bins,), dtype float64
+        Field values to render. Length must match env.n_bins.
     cmap : str
-        Colormap name
-    vmin, vmax : float
-        Color scale limits
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     dpi : int, default=100
-        Resolution
+        Figure resolution in dots per inch.
 
     Returns
     -------
-    rgb : ndarray, shape (height, width, 3)
-        RGB image, uint8
+    rgb : ndarray of shape (height, width, 3), dtype uint8
+        RGB image array with values in range [0, 255].
 
     Examples
     --------
@@ -168,22 +176,24 @@ def render_field_to_image_bytes(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    field : ndarray
-        Field values
+        Environment defining spatial structure.
+    field : ndarray of shape (n_bins,), dtype float64
+        Field values to render. Length must match env.n_bins.
     cmap : str
-        Colormap name
-    vmin, vmax : float
-        Color scale limits
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     dpi : int, default=100
-        Resolution
+        Figure resolution in dots per inch.
     image_format : {"png", "jpeg"}, default="png"
         Image format. PNG is lossless, JPEG is smaller but lossy.
 
     Returns
     -------
     image_bytes : bytes
-        PNG or JPEG image data
+        Encoded image data (PNG or JPEG format).
 
     Raises
     ------
@@ -289,20 +299,22 @@ def render_field_to_png_bytes(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    field : ndarray
-        Field values
+        Environment defining spatial structure.
+    field : ndarray of shape (n_bins,), dtype float64
+        Field values to render. Length must match env.n_bins.
     cmap : str
-        Colormap name
-    vmin, vmax : float
-        Color scale limits
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     dpi : int, default=100
-        Resolution
+        Figure resolution in dots per inch.
 
     Returns
     -------
     png_bytes : bytes
-        PNG image data
+        PNG-encoded image data.
 
     Notes
     -----
@@ -340,18 +352,22 @@ def field_to_rgb_for_napari(
     Parameters
     ----------
     env : Environment
-        Environment (for grid shape if available)
-    field : ndarray
-        Field values
-    cmap_lookup : ndarray, shape (256, 3)
-        Pre-computed colormap RGB values
-    vmin, vmax : float
-        Color scale limits
+        Environment defining spatial structure (for grid shape if available).
+    field : ndarray of shape (n_bins,), dtype float64
+        Field values to render. Length must match env.n_bins.
+    cmap_lookup : ndarray of shape (256, 3), dtype uint8
+        Pre-computed colormap RGB lookup table with values in range [0, 255].
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
 
     Returns
     -------
-    rgb : ndarray, shape (height, width, 3) or (n_bins, 3)
-        RGB image for napari
+    rgb : ndarray of shape (height, width, 3) or (n_bins, 3), dtype uint8
+        RGB image for napari. For 2D grid layouts, returns (height, width, 3)
+        in napari coordinate convention (y, x). For non-grid layouts, returns
+        (n_bins, 3) for point cloud rendering.
 
     Raises
     ------

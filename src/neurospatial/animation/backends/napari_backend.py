@@ -1077,18 +1077,23 @@ def render_napari(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays or list of lists
-        Single-field mode: List of 1D arrays, each with shape (n_bins,)
-        Multi-field mode: List of field sequences, where each sequence
-        is a list of 1D arrays. Automatically detected based on input structure.
-        All sequences must have the same length (same number of frames).
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,) or list of list of ndarray of shape (n_bins,)
+        Field data to animate, dtype float64. Two modes:
+        - Single-field mode: List of arrays, each with shape (n_bins,)
+        - Multi-field mode: List of field sequences, where each sequence
+          is a list of 1D arrays. Automatically detected based on input structure.
+          All sequences must have the same length (same number of frames).
     fps : int, default=30
-        Frames per second for playback (Napari slider speed)
+        Frames per second for playback (Napari slider speed).
     cmap : str, default="viridis"
-        Matplotlib colormap name
-    vmin, vmax : float, optional
-        Color scale limits. If None, computed from all fields.
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float, optional
+        Minimum value for color scale normalization. If None, computed from
+        all fields using NaN-robust min.
+    vmax : float, optional
+        Maximum value for color scale normalization. If None, computed from
+        all fields using NaN-robust max.
     frame_labels : list of str, optional
         Frame labels (e.g., ["Trial 1", "Trial 2", ...])
         Displayed in the enhanced playback control widget alongside
@@ -1129,8 +1134,9 @@ def render_napari(
         If True, show all environment regions. If list, show only specified
         regions by name. Regions are rendered as semi-transparent polygon shapes.
     region_alpha : float, default=0.3
-        Alpha transparency for region overlays (0.0 = fully transparent,
-        1.0 = fully opaque). Only applies when show_regions is True or non-empty.
+        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque. Only applies when show_regions
+        is True or a non-empty list.
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -1707,15 +1713,17 @@ class LazyFieldRenderer:
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays
-        All fields to animate
-    cmap_lookup : ndarray, shape (256, 3)
-        Pre-computed colormap RGB lookup table
-    vmin, vmax : float
-        Color scale limits
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        All fields to animate. Each array contains field values for one frame.
+    cmap_lookup : ndarray of shape (256, 3), dtype uint8
+        Pre-computed colormap RGB lookup table with values in range [0, 255].
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     cache_size : int, default=DEFAULT_CACHE_SIZE
-        Maximum number of frames to cache
+        Maximum number of frames to cache.
 
     Attributes
     ----------
@@ -1920,17 +1928,19 @@ class ChunkedLazyFieldRenderer:
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays
-        All fields to animate
-    cmap_lookup : ndarray, shape (256, 3)
-        Pre-computed colormap RGB lookup table
-    vmin, vmax : float
-        Color scale limits
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        All fields to animate. Each array contains field values for one frame.
+    cmap_lookup : ndarray of shape (256, 3), dtype uint8
+        Pre-computed colormap RGB lookup table with values in range [0, 255].
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     chunk_size : int, default=DEFAULT_CHUNK_SIZE
-        Number of frames per chunk
+        Number of frames per chunk.
     max_chunks : int, default=DEFAULT_MAX_CHUNKS
-        Maximum number of chunks to cache (LRU eviction)
+        Maximum number of chunks to cache (LRU eviction).
 
     Attributes
     ----------

@@ -43,29 +43,32 @@ def render_field_to_png_bytes_with_overlays(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    field : ndarray
-        Field values to render
+        Environment defining spatial structure.
+    field : ndarray of shape (n_bins,), dtype float64
+        Field values to render. Length must match env.n_bins.
     cmap : str
-        Matplotlib colormap name
-    vmin, vmax : float
-        Color scale limits
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
     dpi : int
-        Resolution for rendering
+        Resolution for rendering in dots per inch.
     frame_idx : int
-        Current frame index (for extracting overlay data at this time point)
-    overlay_data : OverlayData, optional
-        Overlay data structure containing positions, bodyparts, head directions
+        Current frame index (for extracting overlay data at this time point).
+    overlay_data : OverlayData or None, optional
+        Overlay data structure containing positions, bodyparts, head directions.
     show_regions : bool or list of str, default=False
         Whether to show regions. If True, show all regions. If list, show
         only specified region names.
     region_alpha : float, default=0.3
-        Alpha transparency for region rendering (0=transparent, 1=opaque)
+        Alpha transparency for region rendering, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque.
 
     Returns
     -------
     png_bytes : bytes
-        PNG image data ready for display in widget
+        PNG-encoded image data ready for display in widget.
 
     Notes
     -----
@@ -162,15 +165,15 @@ class PersistentFigureRenderer:
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
+        Environment defining spatial structure.
     cmap : str
-        Matplotlib colormap name
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
     vmin : float
-        Minimum value for colormap
+        Minimum value for color scale normalization.
     vmax : float
-        Maximum value for colormap
+        Maximum value for color scale normalization.
     dpi : int, default=100
-        Resolution for rendering
+        Resolution for rendering in dots per inch.
 
     Examples
     --------
@@ -454,20 +457,25 @@ def render_widget(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays
-        List of field arrays to animate, each with shape (n_bins,)
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        List of field arrays to animate. Each array contains field values
+        for one frame.
     fps : int, default=30
-        Frames per second for playback
+        Frames per second for playback.
     cmap : str, default="viridis"
-        Matplotlib colormap name
-    vmin, vmax : float, optional
-        Color scale limits. If None, computed from all fields.
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float, optional
+        Minimum value for color scale normalization. If None, computed from
+        all fields using NaN-robust min.
+    vmax : float, optional
+        Maximum value for color scale normalization. If None, computed from
+        all fields using NaN-robust max.
     frame_labels : list of str, optional
         Frame labels (e.g., ["Trial 1", "Trial 2", ...]). If None,
         generates default labels "Frame 1", "Frame 2", etc.
     dpi : int, default=100
-        Resolution for frame rendering
+        Resolution for frame rendering in dots per inch.
     initial_cache_size : int, optional
         Number of frames to pre-render during initialization. If None,
         defaults to min(len(fields), 500). Increase for faster initial
@@ -475,7 +483,7 @@ def render_widget(
     cache_limit : int, default=1000
         Maximum number of frames to keep in LRU cache. Increase for
         larger datasets if memory allows (~30-100 MB per 1000 frames).
-    overlay_data : OverlayData, optional
+    overlay_data : OverlayData or None, optional
         Overlay data structure containing positions, bodyparts, and head
         directions to render on top of spatial fields. If None, no overlays
         are rendered. Use the conversion funnel in `core.py` to create this
@@ -485,10 +493,11 @@ def render_widget(
         regions defined in the environment. If a list of strings, shows only
         regions with matching names. If False, no regions are displayed.
     region_alpha : float, default=0.3
-        Alpha transparency for region rendering (0=transparent, 1=opaque).
-        Only used when show_regions is True or a list of region names.
+        Alpha transparency for region rendering, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque. Only used when show_regions
+        is True or a list of region names.
     **kwargs : dict
-        Additional parameters (accepted for backend compatibility, ignored)
+        Additional parameters (accepted for backend compatibility, ignored).
 
     Returns
     -------

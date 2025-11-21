@@ -207,51 +207,56 @@ def render_html(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays
-        Fields to animate
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        Fields to animate. Each array contains field values for one frame.
     save_path : str or None
-        Output path. If None, defaults to 'animation.html'
+        Output path. If None, defaults to 'animation.html'.
     fps : int, default=30
-        Frames per second for playback
+        Frames per second for playback.
     cmap : str, default="viridis"
-        Matplotlib colormap name
-    vmin, vmax : float, optional
-        Color scale limits. If None, computed from all fields.
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float, optional
+        Minimum value for color scale normalization. If None, computed from
+        all fields using NaN-robust min.
+    vmax : float, optional
+        Maximum value for color scale normalization. If None, computed from
+        all fields using NaN-robust max.
     frame_labels : list of str, optional
-        Frame labels for each frame
+        Frame labels for each frame.
     dpi : int, default=100
-        Resolution for rendering
-    image_format : str, default="png"
-        Image format (png or jpeg). PNG is lossless, JPEG is smaller.
+        Resolution for rendering in dots per inch.
+    image_format : {"png", "jpeg"}, default="png"
+        Image format. PNG is lossless, JPEG is smaller but lossy.
     max_html_frames : int, default=500
         Maximum number of frames allowed. Prevents creating huge HTML files
         that crash browsers.
     title : str, default="Spatial Field Animation"
-        Animation title
+        Animation title displayed in browser.
     embed : bool, default=True
         If True, embed frames as base64 data URLs (self-contained HTML).
         If False, write frames to disk and reference via relative paths
         (smaller HTML, suitable for 500+ frames).
-    frames_dir : str | Path | None, optional
+    frames_dir : str or Path or None, optional
         Directory to write frames when embed=False. Defaults to a sibling
         directory based on save_path name (e.g., "animation_frames/").
-    n_workers : int | None, optional
+    n_workers : int or None, optional
         Number of parallel workers for frame rendering (embed=False only).
         Defaults to CPU count / 2.
-    overlay_data : OverlayData | None, optional
+    overlay_data : OverlayData or None, optional
         Overlay data for rendering positions and regions. HTML backend supports:
         - Position overlays (with trails)
         - Region overlays
         Bodypart and head direction overlays are not supported and will emit warnings.
         Default is None.
-    show_regions : bool | list[str], default=False
+    show_regions : bool or list of str, default=False
         Whether to show environment regions. If True, show all regions.
         If list, show only regions with names in the list.
     region_alpha : float, default=0.3
-        Transparency for region overlays (0.0 = transparent, 1.0 = opaque).
+        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque.
     **kwargs
-        Other parameters (accepted gracefully for compatibility)
+        Other parameters (accepted gracefully for compatibility).
 
     Returns
     -------

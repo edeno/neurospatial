@@ -34,13 +34,13 @@ class PositionOverlay:
 
     Parameters
     ----------
-    data : NDArray[np.float64]
-        Position coordinates with shape (n_samples, n_dims). Each row is a
-        position at a time point. Dimensionality must match the environment.
-    times : NDArray[np.float64] | None, optional
-        Timestamps for each position sample with shape (n_samples,). If None,
-        samples are assumed uniformly spaced. Must be monotonically increasing.
-        Default is None.
+    data : ndarray of shape (n_samples, n_dims), dtype float64
+        Position coordinates in environment space. Each row is a position at
+        a time point. Dimensionality must match the environment (env.n_dims).
+    times : ndarray of shape (n_samples,), dtype float64, optional
+        Timestamps for each position sample, in seconds. If None, samples are
+        assumed uniformly spaced at the animation fps rate. Must be
+        monotonically increasing. Default is None.
     color : str, optional
         Color for the position marker and trail (matplotlib color string).
         Default is "red".
@@ -133,14 +133,15 @@ class BodypartOverlay:
 
     Parameters
     ----------
-    data : dict[str, NDArray[np.float64]]
+    data : dict of str to ndarray of shape (n_samples, n_dims), dtype float64
         Dictionary mapping body part names to position arrays. Each array has
-        shape (n_samples, n_dims). All body parts must have the same number of
-        samples and dimensionality matching the environment.
-    times : NDArray[np.float64] | None, optional
-        Timestamps for each sample with shape (n_samples,). If None, samples
-        are assumed uniformly spaced. Must be monotonically increasing.
-        Default is None.
+        shape (n_samples, n_dims), dtype float64. All body parts must have the
+        same number of samples and dimensionality matching the environment
+        (env.n_dims).
+    times : ndarray of shape (n_samples,), dtype float64, optional
+        Timestamps for each sample, in seconds. If None, samples are assumed
+        uniformly spaced at the animation fps rate. Must be monotonically
+        increasing. Default is None.
     skeleton : list[tuple[str, str]] | None, optional
         List of body part name pairs defining skeleton edges. Each tuple
         specifies (start_part, end_part). Part names must exist in `data`.
@@ -245,19 +246,19 @@ class HeadDirectionOverlay:
 
     Parameters
     ----------
-    data : NDArray[np.float64]
+    data : ndarray of shape (n_samples,) or (n_samples, n_dims), dtype float64
         Heading data in one of two formats:
 
-        - Angles: shape (n_samples,) in radians, where 0 is right (east),
-          π/2 is up (north), etc. (standard mathematical convention)
-        - Unit vectors: shape (n_samples, n_dims) with direction vectors
-          in environment coordinates
-
-        Dimensionality must match the environment when using vectors.
-    times : NDArray[np.float64] | None, optional
-        Timestamps for each sample with shape (n_samples,). If None, samples
-        are assumed uniformly spaced. Must be monotonically increasing.
-        Default is None.
+        - Angles: shape (n_samples,), dtype float64, in radians where 0 is
+          right (east), π/2 is up (north), etc. (standard mathematical
+          convention)
+        - Unit vectors: shape (n_samples, n_dims), dtype float64, with
+          direction vectors in environment coordinates. Dimensionality must
+          match the environment (env.n_dims).
+    times : ndarray of shape (n_samples,), dtype float64, optional
+        Timestamps for each sample, in seconds. If None, samples are assumed
+        uniformly spaced at the animation fps rate. Must be monotonically
+        increasing. Default is None.
     color : str, optional
         Color for arrows (matplotlib color string). Default is "yellow".
     length : float, optional
@@ -350,14 +351,16 @@ class PositionData:
 
     Parameters
     ----------
-    data : NDArray[np.float64]
-        Position coordinates aligned to animation frames, shape (n_frames, n_dims).
+    data : ndarray of shape (n_frames, n_dims), dtype float64
+        Position coordinates aligned to animation frames. NaN values indicate
+        frames where position is unavailable (extrapolation outside overlay
+        time range).
     color : str
-        Marker and trail color.
+        Marker and trail color (matplotlib color string).
     size : float
-        Marker size.
-    trail_length : int | None
-        Trail length in frames.
+        Marker size in points.
+    trail_length : int or None
+        Trail length in frames, or None for no trail.
 
     Attributes
     ----------
@@ -390,16 +393,17 @@ class BodypartData:
 
     Parameters
     ----------
-    bodyparts : dict[str, NDArray[np.float64]]
-        Body part positions aligned to frames, each shape (n_frames, n_dims).
-    skeleton : list[tuple[str, str]] | None
-        Skeleton edge definitions.
-    colors : dict[str, str] | None
-        Per-part colors.
+    bodyparts : dict of str to ndarray of shape (n_frames, n_dims), dtype float64
+        Body part positions aligned to animation frames. NaN values indicate
+        frames where the body part is unavailable.
+    skeleton : list of tuple of (str, str) or None
+        Skeleton edge definitions as (start_part, end_part) pairs.
+    colors : dict of str to str or None
+        Per-part colors as matplotlib color strings.
     skeleton_color : str
-        Skeleton line color.
+        Skeleton line color (matplotlib color string).
     skeleton_width : float
-        Skeleton line width.
+        Skeleton line width in points.
 
     Attributes
     ----------
@@ -435,12 +439,14 @@ class HeadDirectionData:
 
     Parameters
     ----------
-    data : NDArray[np.float64]
-        Heading data aligned to frames, shape (n_frames,) or (n_frames, n_dims).
+    data : ndarray of shape (n_frames,) or (n_frames, n_dims), dtype float64
+        Heading data aligned to animation frames. Shape (n_frames,) for angles
+        in radians, or (n_frames, n_dims) for unit vectors. NaN values indicate
+        frames where heading is unavailable.
     color : str
-        Arrow color.
+        Arrow color (matplotlib color string).
     length : float
-        Arrow length in environment units.
+        Arrow length in environment coordinate units.
 
     Attributes
     ----------

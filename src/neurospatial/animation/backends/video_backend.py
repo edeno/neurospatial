@@ -86,25 +86,29 @@ def render_video(
     Parameters
     ----------
     env : Environment
-        Environment defining spatial structure
-    fields : list of arrays
-        Fields to animate
+        Environment defining spatial structure.
+    fields : list of ndarray of shape (n_bins,), dtype float64
+        Fields to animate. Each array contains field values for one frame.
     save_path : str
-        Output path for video file
+        Output path for video file (e.g., "output.mp4").
     fps : int, default=30
-        Frames per second for playback
+        Frames per second for playback.
     cmap : str, default="viridis"
-        Matplotlib colormap name
-    vmin, vmax : float, optional
-        Color scale limits. If None, computed from all fields.
+        Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
+    vmin : float, optional
+        Minimum value for color scale normalization. If None, computed from
+        all fields using NaN-robust min.
+    vmax : float, optional
+        Maximum value for color scale normalization. If None, computed from
+        all fields using NaN-robust max.
     frame_labels : list of str, optional
-        Frame labels (e.g., ["Trial 1", "Trial 2", ...])
+        Frame labels (e.g., ["Trial 1", "Trial 2", ...]).
     dpi : int, default=100
-        Resolution for rendering
+        Resolution for rendering in dots per inch.
     codec : str, default="h264"
-        Video codec (h264, h265, vp9, mpeg4)
+        Video codec (h264, h265, vp9, mpeg4).
     crf : int, default=18
-        Constant Rate Factor for quality control (0-51).
+        Constant Rate Factor for quality control, range [0, 51].
         Lower values = higher quality and larger files.
         - 0: Lossless (very large files)
         - 18: "Visually lossless" - recommended default
@@ -119,29 +123,30 @@ def render_video(
         - ultrafast: Fastest encoding, largest file
         - medium: Balanced speed/compression (default)
         - veryslow: Best compression, slowest encoding
-    bitrate : int | None, optional
+    bitrate : int or None, optional
         Video bitrate in kbps. If specified, overrides CRF-based
         encoding and uses constant bitrate instead.
-        Default: None (uses CRF mode for better quality/size ratio)
+        Default: None (uses CRF mode for better quality/size ratio).
     n_workers : int, optional
-        Parallel workers for rendering (default: CPU count / 2)
+        Parallel workers for rendering (default: CPU count / 2).
     dry_run : bool, default=False
         If True, estimate time and file size without rendering.
         Returns None after printing estimate.
     title : str
-        Animation title (unused in video, for compatibility)
-    overlay_data : OverlayData | None, optional
+        Animation title (unused in video, for compatibility).
+    overlay_data : OverlayData or None, optional
         Overlay data to render on top of fields. Contains positions,
         bodyparts, and head direction data aligned to frames.
         Default is None (no overlays).
-    show_regions : bool | list[str], default=False
+    show_regions : bool or list of str, default=False
         If True, render all regions from environment. If list of strings,
         render only specified regions. Default is False (no regions).
     region_alpha : float, default=0.3
-        Alpha transparency for region overlays (0-1). Only used if
-        show_regions is True or a list. Default is 0.3.
+        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
+        fully transparent and 1.0 is fully opaque. Only used if show_regions
+        is True or a non-empty list. Default is 0.3.
     **kwargs : dict
-        Additional parameters (accepted for compatibility)
+        Additional parameters (accepted for compatibility).
 
     Returns
     -------

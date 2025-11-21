@@ -56,8 +56,8 @@ class EnvironmentFields:
         Parameters
         ----------
         bandwidth : float
-            Smoothing bandwidth in physical units (σ in the Gaussian kernel).
-            Controls the scale of diffusion.
+            Smoothing bandwidth in physical units (σ in the Gaussian kernel),
+            must be > 0. Controls the scale of diffusion.
         mode : {'transition', 'density'}, default='density'
             Normalization mode:
 

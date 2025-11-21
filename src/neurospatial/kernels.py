@@ -40,11 +40,11 @@ def compute_diffusion_kernels(
     graph : nx.Graph
         Nodes = bins.  Each edge must have a "distance" attribute (Euclidean length).
     bandwidth_sigma : float
-        The Gaussian-bandwidth (σ).  We exponentiate with t = σ^2 / 2.
-    bin_sizes : Optional[NDArray], shape (n_bins,)
+        The Gaussian-bandwidth (σ), must be > 0.  We exponentiate with t = σ^2 / 2.
+    bin_sizes : ndarray of shape (n_bins,), dtype float64, optional
         If provided, bin_sizes[i] is the physical "area/volume" of node i.
         If not provided, we treat all bins as unit-mass.
-    mode : "transition" or "density"
+    mode : {"transition", "density"}, default="transition"
         - "transition":  Return a purely discrete transition-matrix P so that ∑_i P[i,j] = 1.
                          (You do *not* need `bin_sizes` in this mode; if you pass it,
                          it will only be used in the exponent step to form L_vol = M^{-1} L,
@@ -55,10 +55,11 @@ def compute_diffusion_kernels(
 
     Returns
     -------
-    kernel : np.ndarray, shape (n_bins, n_bins)
-        If mode="transition":   each column j sums to 1 (∑_i K[i,j] = 1).
-        If mode="density":      each column j integrates to 1 over area
-                                 (∑_i K[i,j] * bin_sizes[i] = 1).
+    kernel : ndarray of shape (n_bins, n_bins), dtype float64
+        Diffusion kernel matrix. Column normalization depends on mode:
+        - mode="transition": each column j sums to 1 (∑_i K[i,j] = 1)
+        - mode="density": each column j integrates to 1 over area
+                         (∑_i K[i,j] * bin_sizes[i] = 1)
 
     Notes
     -----

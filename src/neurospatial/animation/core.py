@@ -78,25 +78,27 @@ def animate_fields(
     Parameters
     ----------
     env : Environment
-        Fitted environment defining spatial structure
-    fields : sequence of arrays or ndarray
-        Fields to animate. If ndarray, first dimension is time.
-        Each field shape must match env.n_bins.
+        Fitted environment defining spatial structure.
+    fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
+        Fields to animate, dtype float64. If ndarray, first dimension is time.
+        If list of arrays, each array represents one frame.
+        Values typically represent probabilities, firing rates, or other spatial
+        quantities. Each field length must match env.n_bins.
     backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
-        Animation backend to use
+        Animation backend to use.
     save_path : str, optional
-        Output path for video/HTML backends
-    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay], optional
+        Output path for video/HTML backends.
+    overlays : list of PositionOverlay, BodypartOverlay, or HeadDirectionOverlay, optional
         Dynamic overlays to render on top of spatial fields. Supports position
         trajectories, multi-animal pose tracking, and head direction visualization.
         Multiple overlays can be provided for multi-animal tracking.
         Default is None (no overlays).
-    frame_times : NDArray[np.float64], optional
-        Explicit timestamps for each frame, shape (n_frames,). If provided, overlays
-        with times will be aligned via interpolation. If None, frames assumed evenly
-        spaced at fps rate. Must be monotonically increasing if provided.
-        Default is None.
-    show_regions : bool or list[str], default=False
+    frame_times : ndarray of shape (n_frames,), optional
+        Explicit timestamps for each frame, dtype float64, in seconds.
+        If provided, overlays with times will be aligned via linear
+        interpolation. If None, frames assumed evenly spaced at fps rate.
+        Must be monotonically increasing if provided. Default is None.
+    show_regions : bool or list of str, default=False
         Whether to render region overlays. If True, all regions defined in env.regions
         are rendered. If list of strings, only those region names are rendered.
         Regions rendered as semi-transparent polygons. Default is False.
@@ -105,7 +107,7 @@ def animate_fields(
         fully transparent and 1.0 is fully opaque. Only used when show_regions
         is True or a list. Default is 0.3.
     **kwargs : dict
-        Additional backend-specific parameters
+        Additional backend-specific parameters.
 
     Returns
     -------
@@ -419,17 +421,20 @@ def subsample_frames(
 
     Parameters
     ----------
-    fields : array or list
-        Full field data, shape (n_frames, n_bins) or list of arrays
+    fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
+        Full field data, dtype float64. If ndarray, first dimension is time.
+        If list, each element is a single frame's field values.
     target_fps : int
-        Desired output frame rate (e.g., 30 for video)
+        Desired output frame rate (e.g., 30 for video). Must be positive and
+        less than or equal to source_fps.
     source_fps : int
-        Original sampling rate (e.g., 250 Hz for neural recording)
+        Original sampling rate (e.g., 250 Hz for neural recording). Must be positive.
 
     Returns
     -------
-    subsampled : array or list
-        Subsampled fields at target_fps, same type as input
+    subsampled : ndarray of shape (n_subsampled, n_bins) or list of ndarray of shape (n_bins,)
+        Subsampled fields at target_fps, same type and dtype as input.
+        n_subsampled is approximately n_frames * target_fps / source_fps.
 
     Raises
     ------
