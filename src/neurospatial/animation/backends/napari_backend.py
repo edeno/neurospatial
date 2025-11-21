@@ -89,11 +89,24 @@ def _render_position_overlay(
             ]
         )
 
+        # Napari tracks use properties + colormaps_dict for custom colors
+        from napari.utils.colormaps import Colormap
+
+        properties = {"color": np.zeros(n_frames)}  # Constant property for single color
+        # Create napari colormap with single color (need two points for interpolation)
+        custom_colormap = Colormap(
+            colors=[position_data.color, position_data.color],
+            name=f"trail_color{name_suffix}",
+        )
+        colormaps_dict = {"color": custom_colormap}
+
         layer = viewer.add_tracks(
             track_data,
             name=f"Position Trail{name_suffix}",
             tail_length=position_data.trail_length,
-            color=position_data.color,
+            properties=properties,
+            colormaps_dict=colormaps_dict,
+            color_by="color",
         )
         layers.append(layer)
 
