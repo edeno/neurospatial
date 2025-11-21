@@ -28,6 +28,62 @@ except ImportError:
 # =============================================================================
 
 
+def _transform_direction_for_napari(
+    direction: NDArray[np.float64], env: Any | None = None
+) -> NDArray[np.float64]:
+    """Transform direction vectors from environment (dx, dy) to napari (dr, dc).
+
+    Unlike positions, direction vectors are displacements and should NOT be
+    translated. They need only axis swapping, Y-axis inversion, and scaling.
+
+    Parameters
+    ----------
+    direction : ndarray
+        Direction vectors with shape (..., n_dims) where last dimension is spatial.
+        For 2D data, expects (..., 2) with (dx, dy) ordering in environment space.
+    env : Environment, optional
+        Environment instance for scaling. If None, only swaps axes and inverts Y.
+
+    Returns
+    -------
+    transformed : ndarray
+        Direction vectors in napari space. For 2D: (dx, dy) → (dr, dc).
+    """
+    if direction.shape[-1] == 2:
+        dx = direction[..., 0]
+        dy = direction[..., 1]
+
+        if (
+            env is None
+            or not hasattr(env, "dimension_ranges")
+            or not hasattr(env.layout, "grid_shape")
+        ):
+            # Fallback: just swap axes and invert Y
+            result = np.empty_like(direction)
+            result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
+            result[..., 1] = dx
+            return result
+
+        # Get environment bounds and grid size for scaling
+        x_min, x_max = env.dimension_ranges[0]
+        y_min, y_max = env.dimension_ranges[1]
+        n_x, n_y = env.layout.grid_shape
+
+        # Scale direction vectors (no translation!)
+        # X → column (scale only)
+        dc = dx * (n_x - 1) / (x_max - x_min) if (x_max - x_min) > 0 else dx
+        # Y → row (scale and invert: positive dy → negative dr)
+        dr = -dy * (n_y - 1) / (y_max - y_min) if (y_max - y_min) > 0 else -dy
+
+        result = np.empty_like(direction)
+        result[..., 0] = dr
+        result[..., 1] = dc
+        return result
+
+    # For other dimensions, return unchanged
+    return direction
+
+
 def _transform_coords_for_napari(
     coords: NDArray[np.float64], env: Any | None = None
 ) -> NDArray[np.float64]:
@@ -298,7 +354,11 @@ def _render_bodypart_overlay(
 
 
 def _render_head_direction_overlay(
-    viewer: Any, head_dir_data: Any, env: Environment, name_suffix: str = ""
+    viewer: Any,
+    head_dir_data: Any,
+    env: Environment,
+    name_suffix: str = "",
+    position_data: Any | None = None,
 ) -> list:
     """Render a single head direction overlay as vectors.
 
@@ -312,11 +372,25 @@ def _render_head_direction_overlay(
         Environment for positioning vectors
     name_suffix : str
         Suffix for layer names
+    position_data : PositionData | None, optional
+        If provided, arrows are anchored at the position coordinates for each frame.
+        If None, arrows are anchored at the environment centroid (fixed reference).
+        Default is None.
 
     Returns
     -------
     layers : list
         List of created layer objects for later updates
+
+    Notes
+    -----
+    When `position_data` is provided, arrows follow the animal's position and
+    visualize heading direction at that location. This is the recommended mode
+    for tracking moving animals.
+
+    When `position_data` is None, arrows are anchored at a fixed centroid
+    (mean of all bin centers), useful for stationary reference frames or when
+    position tracking is not available.
     """
     layers = []
     n_frames = len(head_dir_data.data)
@@ -324,36 +398,58 @@ def _render_head_direction_overlay(
     # Determine if data is angles or vectors
     is_angles = head_dir_data.data.ndim == 1
 
-    # Get centroid of environment for vector origin
-    centroid = np.mean(env.bin_centers, axis=0)
-    centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1), env)[0]
+    # Determine arrow origins for each frame
+    if position_data is not None:
+        # Use position coordinates as arrow origins (moving with animal)
+        origins = position_data.data  # Shape: (n_frames, n_dims)
+        origins_napari = _transform_coords_for_napari(origins, env)
+    else:
+        # Use fixed centroid as arrow origin (stationary reference)
+        centroid = np.mean(env.bin_centers, axis=0)
+        centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1), env)[0]
+        # Broadcast to all frames
+        origins_napari = np.tile(centroid_napari, (n_frames, 1))
 
     # Convert to vectors for napari
     vectors_data = []
 
     for frame_idx in range(n_frames):
+        # Get origin for this frame
+        origin_napari = origins_napari[frame_idx]
+
+        # Skip if origin is NaN (missing position data)
+        if np.any(np.isnan(origin_napari)):
+            continue
+
         if is_angles:
             # Convert angle to unit vector, then scale by length
             angle = head_dir_data.data[frame_idx]
+            if np.isnan(angle):
+                continue
             direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
         else:
             # Already a vector, just scale to desired length
             direction = head_dir_data.data[frame_idx]
+            # Skip if direction is NaN
+            if np.any(np.isnan(direction)):
+                continue
             # Normalize and scale
             norm = np.linalg.norm(direction)
             if norm > 0:
                 direction = direction / norm * head_dir_data.length
 
-        # Transform direction to napari coords with Y-axis inversion
-        direction_napari = _transform_coords_for_napari(direction.reshape(1, -1), env)[
-            0
-        ]
+        # Transform direction to napari coords with proper scaling and Y-axis inversion
+        # Use _transform_direction_for_napari (NOT _transform_coords_for_napari)
+        # because direction vectors are displacements, not positions
+        direction_napari = _transform_direction_for_napari(
+            direction.reshape(1, -1), env
+        )[0]
 
         # Napari vector format: [[time, y, x], [dt, dy, dx]]
         # Direction also needs time component (0 for spatial direction only)
         vector = np.array(
             [
-                [frame_idx, centroid_napari[0], centroid_napari[1]],  # Origin (t, y, x)
+                [frame_idx, origin_napari[0], origin_napari[1]],  # Origin (t, y, x)
                 [0, direction_napari[0], direction_napari[1]],  # Direction (0, dy, dx)
             ]
         )
@@ -991,10 +1087,18 @@ def render_napari(
             _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
 
         # Render head direction overlays (vectors)
+        # Auto-pair with position overlay when there's exactly one position
+        paired_position = (
+            overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
+        )
         for idx, head_dir_data in enumerate(overlay_data.head_directions):
             suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
             _render_head_direction_overlay(
-                viewer, head_dir_data, env, name_suffix=suffix
+                viewer,
+                head_dir_data,
+                env,
+                name_suffix=suffix,
+                position_data=paired_position,
             )
 
     # Render regions if requested
@@ -1175,10 +1279,18 @@ def _render_multi_field_napari(
             _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
 
         # Render head direction overlays (vectors)
+        # Auto-pair with position overlay when there's exactly one position
+        paired_position = (
+            overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
+        )
         for idx, head_dir_data in enumerate(overlay_data.head_directions):
             suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
             _render_head_direction_overlay(
-                viewer, head_dir_data, env, name_suffix=suffix
+                viewer,
+                head_dir_data,
+                env,
+                name_suffix=suffix,
+                position_data=paired_position,
             )
 
     # Render regions if requested

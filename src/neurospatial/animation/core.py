@@ -195,6 +195,14 @@ def animate_fields(
             overlays=overlays, frame_times=frame_times, n_frames=n_frames, env=env
         )
 
+        # Validate pickle-ability for parallel rendering (applies to video backend)
+        # Check n_workers from kwargs to determine if parallel rendering will be used
+        n_workers = kwargs.get("n_workers")
+        if n_workers and n_workers > 1:
+            from neurospatial.animation.overlays import _validate_pickle_ability
+
+            _validate_pickle_ability(overlay_data, n_workers=n_workers)
+
     # Auto-select backend
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)

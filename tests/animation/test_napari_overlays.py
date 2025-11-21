@@ -154,8 +154,16 @@ def test_position_overlay_creates_layers(
 def test_position_overlay_coordinate_transform(
     mock_viewer_class, simple_env, simple_fields, position_overlay_data
 ):
-    """Test position overlay applies (x, y) → (y, x) coordinate transformation."""
-    from neurospatial.animation.backends.napari_backend import render_napari
+    """Test position overlay applies (x, y) → (row, col) coordinate transformation.
+
+    The transformation maps environment coordinates to napari pixel indices:
+    - X maps to column (scaled to grid width)
+    - Y maps to row (scaled and inverted - high Y → low row)
+    """
+    from neurospatial.animation.backends.napari_backend import (
+        _transform_coords_for_napari,
+        render_napari,
+    )
     from neurospatial.animation.overlays import OverlayData
 
     mock_viewer = MagicMock()
@@ -165,19 +173,19 @@ def test_position_overlay_coordinate_transform(
 
     overlay_data = OverlayData(positions=[position_overlay_data])
 
-    # Original coordinates (x, y)
-    original_x = position_overlay_data.data[0, 0]
-    original_y = position_overlay_data.data[0, 1]
+    # Get expected transformed coordinates using the actual transform function
+    original_coords = position_overlay_data.data[0:1]  # First point as (1, 2)
+    expected_transformed = _transform_coords_for_napari(original_coords, simple_env)
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Get tracks data (should be transformed to y, x)
+    # Get tracks data (should be transformed to row, col)
     track_data = mock_viewer.add_tracks.call_args[0][0]
 
-    # Track data format: (track_id, time, y, x)
-    # First point should have y in position 2, x in position 3
-    assert np.isclose(track_data[0, 2], original_y)  # Y coordinate
-    assert np.isclose(track_data[0, 3], original_x)  # X coordinate
+    # Track data format: (track_id, time, row, col)
+    # First point should have row in position 2, col in position 3
+    assert np.isclose(track_data[0, 2], expected_transformed[0, 0])  # Row coordinate
+    assert np.isclose(track_data[0, 3], expected_transformed[0, 1])  # Col coordinate
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -291,8 +299,16 @@ def test_bodypart_overlay_skeleton_as_lines(
 def test_bodypart_overlay_coordinate_transform(
     mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
 ):
-    """Test bodypart overlay applies (x, y) → (y, x) transformation."""
-    from neurospatial.animation.backends.napari_backend import render_napari
+    """Test bodypart overlay applies (x, y) → (row, col) transformation.
+
+    The transformation maps environment coordinates to napari pixel indices:
+    - X maps to column (scaled to grid width)
+    - Y maps to row (scaled and inverted - high Y → low row)
+    """
+    from neurospatial.animation.backends.napari_backend import (
+        _transform_coords_for_napari,
+        render_napari,
+    )
     from neurospatial.animation.overlays import OverlayData
 
     mock_viewer = MagicMock()
@@ -302,19 +318,19 @@ def test_bodypart_overlay_coordinate_transform(
 
     overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
 
-    # Original coordinates for "head" bodypart
-    original_x = bodypart_overlay_data.bodyparts["head"][0, 0]
-    original_y = bodypart_overlay_data.bodyparts["head"][0, 1]
+    # Get expected transformed coordinates for "head" bodypart
+    original_coords = bodypart_overlay_data.bodyparts["head"][0:1]  # First point
+    expected_transformed = _transform_coords_for_napari(original_coords, simple_env)
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Get points data (should be transformed to y, x)
+    # Get points data (should be transformed to row, col)
     points_data = mock_viewer.add_points.call_args[0][0]
 
-    # Points format: (time, y, x) for 2D + time
-    # First point should have y, x swapped
-    assert np.isclose(points_data[0, 1], original_y)  # Y coordinate
-    assert np.isclose(points_data[0, 2], original_x)  # X coordinate
+    # Points format: (time, row, col) for 2D + time
+    # First point should have row, col from transformation
+    assert np.isclose(points_data[0, 1], expected_transformed[0, 0])  # Row coordinate
+    assert np.isclose(points_data[0, 2], expected_transformed[0, 1])  # Col coordinate
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -805,3 +821,150 @@ def test_render_napari_signature_includes_overlay_params():
     assert sig.parameters["show_regions"].default is False
     assert sig.parameters["region_alpha"].default == 0.3
     assert sig.parameters["overlay_data"].default is None
+
+
+# =============================================================================
+# Head Direction + Position Pairing Tests
+# =============================================================================
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_head_direction_paired_with_single_position(
+    mock_viewer_class, simple_env, simple_fields
+):
+    """Test head direction arrows are anchored at position when exactly one position overlay exists."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import (
+        HeadDirectionData,
+        OverlayData,
+        PositionData,
+    )
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Create position data with known trajectory
+    n_frames = 10
+    positions = np.array([[5.0 + i, 5.0 + i * 0.5] for i in range(n_frames)])
+    pos_data = PositionData(
+        data=positions,
+        color="red",
+        size=10.0,
+        trail_length=5,
+    )
+
+    # Create head direction data (angles)
+    angles = np.linspace(0, np.pi, n_frames)
+    head_dir_data = HeadDirectionData(
+        data=angles,
+        color="yellow",
+        length=5.0,
+    )
+
+    overlay_data = OverlayData(positions=[pos_data], head_directions=[head_dir_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Should create vectors layer
+    assert mock_viewer.add_vectors.called
+
+    # Get vectors data
+    vectors_data = mock_viewer.add_vectors.call_args[0][0]
+
+    # Vectors should have origins that follow the position trajectory
+    # Format: [[time, y, x], [dt, dy, dx]]
+    assert vectors_data.shape[0] == n_frames  # One vector per frame
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_head_direction_not_paired_with_multiple_positions(
+    mock_viewer_class, simple_env, simple_fields
+):
+    """Test head direction uses centroid when multiple position overlays exist."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import (
+        HeadDirectionData,
+        OverlayData,
+        PositionData,
+    )
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    n_frames = 10
+
+    # Create TWO position overlays (multi-animal scenario)
+    pos1 = PositionData(
+        data=np.array([[5.0 + i, 5.0] for i in range(n_frames)]),
+        color="red",
+        size=10.0,
+        trail_length=5,
+    )
+    pos2 = PositionData(
+        data=np.array([[15.0 - i, 15.0] for i in range(n_frames)]),
+        color="blue",
+        size=8.0,
+        trail_length=3,
+    )
+
+    # Create head direction data
+    angles = np.linspace(0, np.pi, n_frames)
+    head_dir_data = HeadDirectionData(
+        data=angles,
+        color="yellow",
+        length=5.0,
+    )
+
+    overlay_data = OverlayData(positions=[pos1, pos2], head_directions=[head_dir_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Should still create vectors layer (uses centroid as origin)
+    assert mock_viewer.add_vectors.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_head_direction_without_position_uses_centroid(
+    mock_viewer_class, simple_env, simple_fields
+):
+    """Test head direction uses environment centroid when no position overlay exists."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import HeadDirectionData, OverlayData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    n_frames = 10
+
+    # Create head direction data WITHOUT any position overlay
+    angles = np.linspace(0, np.pi, n_frames)
+    head_dir_data = HeadDirectionData(
+        data=angles,
+        color="yellow",
+        length=5.0,
+    )
+
+    overlay_data = OverlayData(head_directions=[head_dir_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Should create vectors layer (uses centroid as origin)
+    assert mock_viewer.add_vectors.called
+
+    # Vectors should all originate from the same centroid position
+    vectors_data = mock_viewer.add_vectors.call_args[0][0]
+
+    # All vectors should have the same origin (y, x) in positions 1 and 2
+    # (position 0 is time, which varies)
+    origins_y = vectors_data[:, 0, 1]  # All y origins
+    origins_x = vectors_data[:, 0, 2]  # All x origins
+
+    # All origins should be identical (centroid is fixed)
+    assert np.allclose(origins_y, origins_y[0])
+    assert np.allclose(origins_x, origins_x[0])
