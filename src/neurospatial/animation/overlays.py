@@ -14,7 +14,7 @@ The module contains:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -49,6 +49,10 @@ class PositionOverlay:
     trail_length : int | None, optional
         Number of recent frames to show as a trail. If None, no trail is rendered.
         Trail opacity decays over the length. Default is None.
+    interp : {"linear", "nearest"}, optional
+        Interpolation method for aligning overlay to animation frames.
+        "linear" (default) for smooth trajectories.
+        "nearest" for discrete/categorical data or to preserve exact samples.
 
     Attributes
     ----------
@@ -62,6 +66,8 @@ class PositionOverlay:
         Marker size.
     trail_length : int | None
         Trail length in frames.
+    interp : {"linear", "nearest"}
+        Interpolation method.
 
     See Also
     --------
@@ -114,6 +120,7 @@ class PositionOverlay:
     color: str = "red"
     size: float = 10.0
     trail_length: int | None = None
+    interp: Literal["linear", "nearest"] = "linear"
 
 
 @dataclass
@@ -145,6 +152,10 @@ class BodypartOverlay:
         Color for skeleton lines (matplotlib color string). Default is "white".
     skeleton_width : float, optional
         Width of skeleton lines in points. Default is 2.0.
+    interp : {"linear", "nearest"}, optional
+        Interpolation method for aligning overlay to animation frames.
+        "linear" (default) for smooth trajectories.
+        "nearest" for discrete/categorical data or to preserve exact samples.
 
     Attributes
     ----------
@@ -160,6 +171,8 @@ class BodypartOverlay:
         Skeleton line color.
     skeleton_width : float
         Skeleton line width.
+    interp : {"linear", "nearest"}
+        Interpolation method.
 
     See Also
     --------
@@ -219,6 +232,7 @@ class BodypartOverlay:
     colors: dict[str, str] | None = None
     skeleton_color: str = "white"
     skeleton_width: float = 2.0
+    interp: Literal["linear", "nearest"] = "linear"
 
 
 @dataclass
@@ -248,6 +262,10 @@ class HeadDirectionOverlay:
         Color for arrows (matplotlib color string). Default is "yellow".
     length : float, optional
         Arrow length in environment coordinate units. Default is 20.0.
+    interp : {"linear", "nearest"}, optional
+        Interpolation method for aligning overlay to animation frames.
+        "linear" (default) for smooth trajectories.
+        "nearest" for discrete/categorical data or to preserve exact samples.
 
     Attributes
     ----------
@@ -259,6 +277,8 @@ class HeadDirectionOverlay:
         Arrow color.
     length : float
         Arrow length in environment units.
+    interp : {"linear", "nearest"}
+        Interpolation method.
 
     See Also
     --------
@@ -313,6 +333,7 @@ class HeadDirectionOverlay:
     times: NDArray[np.float64] | None = None
     color: str = "yellow"
     length: float = 20.0
+    interp: Literal["linear", "nearest"] = "linear"
 
 
 # =============================================================================
@@ -1263,9 +1284,16 @@ def _convert_overlays_to_data(
 
     - If overlay.times is None, assumes overlay data is already aligned to
       frame_times (same length and uniform spacing)
-    - If overlay.times is provided, uses linear interpolation to align
+    - If overlay.times is provided, uses interpolation to align (controlled by
+      overlay.interp parameter)
     - Extrapolation outside overlay time range produces NaN values
     - Warns if temporal overlap is less than 50%
+
+    Interpolation modes:
+
+    - "linear": Smooth interpolation for continuous trajectories (default)
+    - "nearest": Nearest-neighbor for discrete/categorical data or to preserve
+      exact samples
 
     For BodypartOverlay, each keypoint is interpolated separately, preserving
     independent temporal dynamics of body parts.
@@ -1323,8 +1351,11 @@ def _convert_overlays_to_data(
                     overlay.times, frame_times, name="PositionOverlay"
                 )
 
-                # Interpolate to frame times
-                aligned_data = _interp_linear(overlay.times, overlay.data, frame_times)
+                # Interpolate to frame times using overlay's interp setting
+                interp_fn = (
+                    _interp_linear if overlay.interp == "linear" else _interp_nearest
+                )
+                aligned_data = interp_fn(overlay.times, overlay.data, frame_times)
             else:
                 # No times provided - assume data matches frame times
                 if len(overlay.data) != n_frames:
@@ -1375,9 +1406,14 @@ def _convert_overlays_to_data(
                     part_data, env_n_dims, name=f"BodypartOverlay.data['{part_name}']"
                 )
 
-                # Align to frame times
+                # Align to frame times using overlay's interp setting
                 if overlay.times is not None:
-                    aligned_part = _interp_linear(overlay.times, part_data, frame_times)
+                    interp_fn = (
+                        _interp_linear
+                        if overlay.interp == "linear"
+                        else _interp_nearest
+                    )
+                    aligned_part = interp_fn(overlay.times, part_data, frame_times)
                 else:
                     # No times provided - assume data matches frame times
                     if len(part_data) != n_frames:
@@ -1428,8 +1464,11 @@ def _convert_overlays_to_data(
                     overlay.times, frame_times, name="HeadDirectionOverlay"
                 )
 
-                # Interpolate to frame times
-                aligned_data = _interp_linear(overlay.times, overlay.data, frame_times)
+                # Interpolate to frame times using overlay's interp setting
+                interp_fn = (
+                    _interp_linear if overlay.interp == "linear" else _interp_nearest
+                )
+                aligned_data = interp_fn(overlay.times, overlay.data, frame_times)
             else:
                 # No times provided - assume data matches frame times
                 if len(overlay.data) != n_frames:

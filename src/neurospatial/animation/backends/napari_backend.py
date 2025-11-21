@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial.animation.overlays import BodypartData
     from neurospatial.environment.core import Environment
 
 # Check napari availability
@@ -141,6 +142,121 @@ def _transform_coords_for_napari(
     return coords
 
 
+def _create_skeleton_frame_data(
+    bodypart_data: BodypartData, env: Environment, frame_idx: int
+) -> list[NDArray[np.float64]]:
+    """Compute skeleton lines for a single frame.
+
+    This is a helper function for lazy skeleton rendering that computes
+    skeleton line data on-demand rather than pre-computing all frames.
+
+    Parameters
+    ----------
+    bodypart_data : BodypartData
+        Bodypart overlay data containing skeleton definition and bodypart coords
+    env : Environment
+        Environment instance for coordinate transformation
+    frame_idx : int
+        Frame index to compute skeleton for
+
+    Returns
+    -------
+    lines : list of ndarray
+        List of line arrays for this frame. Each line is shape (2, 2) with
+        format [[y1, x1], [y2, x2]] in napari coordinates.
+        Returns empty list if skeleton is None or all edges have NaN endpoints.
+    """
+    if bodypart_data.skeleton is None:
+        return []
+
+    frame_lines = []
+    for start_part, end_part in bodypart_data.skeleton:
+        if (
+            start_part not in bodypart_data.bodyparts
+            or end_part not in bodypart_data.bodyparts
+        ):
+            continue
+
+        start_coords = bodypart_data.bodyparts[start_part][frame_idx]
+        end_coords = bodypart_data.bodyparts[end_part][frame_idx]
+
+        # Skip if either endpoint is NaN
+        if np.any(np.isnan(start_coords)) or np.any(np.isnan(end_coords)):
+            continue
+
+        # Transform to napari coords with Y-axis inversion
+        start_napari = _transform_coords_for_napari(start_coords.reshape(1, -1), env)[0]
+        end_napari = _transform_coords_for_napari(end_coords.reshape(1, -1), env)[0]
+
+        # Line in napari format: [[y1, x1], [y2, x2]] (no time dimension for shapes.data)
+        line = np.array(
+            [[start_napari[0], start_napari[1]], [end_napari[0], end_napari[1]]]
+        )
+        frame_lines.append(line)
+
+    return frame_lines
+
+
+def _setup_skeleton_update_callback(
+    viewer: Any,
+    skeleton_layer: Any,
+    bodypart_data: BodypartData,
+    env: Environment,
+) -> None:
+    """Setup callback to update skeleton layer on frame change.
+
+    This connects to napari's dims.events.current_step to lazily update
+    the skeleton shapes when the user navigates to a new frame, avoiding
+    the need to pre-compute all skeleton lines for all frames.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance
+    skeleton_layer : napari.layers.Shapes
+        The skeleton shapes layer to update
+    bodypart_data : BodypartData
+        Bodypart overlay data containing skeleton definition
+    env : Environment
+        Environment instance for coordinate transformation
+
+    Notes
+    -----
+    The callback stores the last updated frame to avoid redundant updates
+    when the frame hasn't changed (e.g., from other dims events).
+    """
+    # Track last frame to avoid redundant updates
+    callback_state = {"last_frame": -1}
+
+    def update_skeleton_on_frame_change(event=None):
+        """Update skeleton shapes when frame changes."""
+        try:
+            # Get current frame from first dimension (time)
+            current_frame = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
+
+            # Skip if frame hasn't changed
+            if current_frame == callback_state["last_frame"]:
+                return
+
+            callback_state["last_frame"] = current_frame
+
+            # Compute skeleton for this frame
+            new_skeleton_data = _create_skeleton_frame_data(
+                bodypart_data, env, current_frame
+            )
+
+            # Update layer data
+            # Note: setting data to empty list is valid for shapes layer
+            skeleton_layer.data = new_skeleton_data
+
+        except (RuntimeError, AttributeError):
+            # Expected when viewer is closing - layer may be garbage collected
+            pass
+
+    # Connect callback to dims frame change event
+    viewer.dims.events.current_step.connect(update_skeleton_on_frame_change)
+
+
 def _render_position_overlay(
     viewer: Any, position_data: Any, env: Any, name_suffix: str = ""
 ) -> list:
@@ -161,6 +277,14 @@ def _render_position_overlay(
     -------
     layers : list
         List of created layer objects for later updates
+
+    Notes
+    -----
+    Trail coloring requires a property-based colormap approach because napari's
+    Tracks layer does not support a direct `color` parameter (unlike add_points
+    which accepts face_color). The Tracks layer exclusively uses property-based
+    coloring via `color_by` + `colormaps_dict`. See inline comments and
+    https://napari.org/stable/api/napari.layers.Tracks.html for details.
     """
     layers = []
     n_frames = len(position_data.data)
@@ -180,11 +304,27 @@ def _render_position_overlay(
             ]
         )
 
-        # Napari tracks use properties + colormaps_dict for custom colors
+        # Napari tracks layer uniform color workaround (REQUIRED - no simpler alternative):
+        #
+        # Unlike add_points (which accepts face_color directly), the Tracks layer
+        # has NO direct `color` parameter. Per napari docs and source code, track
+        # coloring is exclusively property-based:
+        #   - color_by: selects which property determines vertex colors
+        #   - colormap/colormaps_dict: maps property values to colors
+        #
+        # To achieve uniform coloring, we:
+        # 1. Create a constant property ("color" = all zeros) for each track point
+        # 2. Create a Colormap mapping any value to our desired color
+        #    (Colormap requires 2+ control points, so we use identical colors)
+        # 3. Set color_by="color" to apply this property-to-colormap mapping
+        #
+        # This approach is stable across napari 0.4.x and 0.5.x and handles any
+        # matplotlib color string via the Colormap's internal color conversion.
+        #
+        # See: https://napari.org/stable/api/napari.layers.Tracks.html
         from napari.utils.colormaps import Colormap
 
-        properties = {"color": np.zeros(n_frames)}  # Constant property for single color
-        # Create napari colormap with single color (need two points for interpolation)
+        properties = {"color": np.zeros(n_frames)}
         custom_colormap = Colormap(
             colors=[position_data.color, position_data.color],
             name=f"trail_color{name_suffix}",
@@ -300,55 +440,25 @@ def _render_bodypart_overlay(
     )
     layers.append(layer)
 
-    # Render skeleton if provided
+    # Render skeleton if provided (lazy frame-change pattern for memory efficiency)
+    # Instead of pre-building O(n_frames x n_edges) shapes upfront, we create
+    # the layer with frame 0 data and use a callback to update on frame change.
     if bodypart_data.skeleton is not None:
-        # Create line shapes for skeleton edges
-        # For each frame, create lines connecting skeleton pairs
-        skeleton_lines = []
+        # Get initial skeleton data for frame 0
+        initial_skeleton = _create_skeleton_frame_data(bodypart_data, env, frame_idx=0)
 
-        for frame_idx in range(n_frames):
-            frame_lines = []
-            for start_part, end_part in bodypart_data.skeleton:
-                if (
-                    start_part in bodypart_data.bodyparts
-                    and end_part in bodypart_data.bodyparts
-                ):
-                    start_coords = bodypart_data.bodyparts[start_part][frame_idx]
-                    end_coords = bodypart_data.bodyparts[end_part][frame_idx]
+        # Create shapes layer (even if empty for frame 0, callback will populate)
+        skeleton_layer = viewer.add_shapes(
+            initial_skeleton if initial_skeleton else [],
+            name=f"Skeleton{name_suffix}",
+            shape_type="line",
+            edge_color=bodypart_data.skeleton_color,
+            edge_width=bodypart_data.skeleton_width,
+        )
+        layers.append(skeleton_layer)
 
-                    # Skip if either endpoint is NaN
-                    if np.any(np.isnan(start_coords)) or np.any(np.isnan(end_coords)):
-                        continue
-
-                    # Transform to napari coords with Y-axis inversion
-                    start_napari = _transform_coords_for_napari(
-                        start_coords.reshape(1, -1), env
-                    )[0]
-                    end_napari = _transform_coords_for_napari(
-                        end_coords.reshape(1, -1), env
-                    )[0]
-
-                    # Line in napari format: [[time, y1, x1], [time, y2, x2]]
-                    line = np.array(
-                        [
-                            [frame_idx, start_napari[0], start_napari[1]],
-                            [frame_idx, end_napari[0], end_napari[1]],
-                        ]
-                    )
-                    frame_lines.append(line)
-
-            if frame_lines:
-                skeleton_lines.extend(frame_lines)
-
-        if skeleton_lines:
-            layer = viewer.add_shapes(
-                skeleton_lines,
-                name=f"Skeleton{name_suffix}",
-                shape_type="line",
-                edge_color=bodypart_data.skeleton_color,
-                edge_width=bodypart_data.skeleton_width,
-            )
-            layers.append(layer)
+        # Setup callback to update skeleton on frame change
+        _setup_skeleton_update_callback(viewer, skeleton_layer, bodypart_data, env)
 
     return layers
 
@@ -804,11 +914,12 @@ def render_napari(
         Controls total cache memory (cache_memory = chunk_size * max_chunks
         * frame_size). Adjust based on available RAM.
     layout : {"horizontal", "vertical", "grid"}, optional
-        Multi-field mode only: Layout arrangement for multiple field sequences.
-        Required when providing multiple field sequences. Options:
-        - "horizontal": side-by-side arrangement
-        - "vertical": stacked top-to-bottom
-        - "grid": automatic NxM grid layout
+        Multi-field mode only: Layout arrangement for multiple field sequences
+        using napari's built-in grid mode. Required when providing multiple
+        field sequences. Options:
+        - "horizontal": side-by-side in a single row (grid.shape = (1, n))
+        - "vertical": stacked top-to-bottom in a single column (grid.shape = (n, 1))
+        - "grid": automatic NxM grid layout (grid.shape = (-1, -1))
         Single-field mode: ignored
     layer_names : list of str, optional
         Multi-field mode only: Custom names for each layer. Must match the
@@ -1158,10 +1269,11 @@ def _render_multi_field_napari(
     max_chunks : int, default=100
         Maximum number of chunks to cache for chunked caching strategy
     layout : {"horizontal", "vertical", "grid"}, required
-        Layout arrangement for multiple fields:
-        - "horizontal": side-by-side
-        - "vertical": stacked top-to-bottom
-        - "grid": automatic NxM grid
+        Layout arrangement for multiple fields using napari's grid mode:
+        - "horizontal": side-by-side in a single row (grid.shape = (1, n))
+        - "vertical": stacked top-to-bottom in a single column (grid.shape = (n, 1))
+        - "grid": automatic NxM grid arrangement (grid.shape = (-1, -1))
+        Grid mode is automatically enabled when multiple sequences are provided.
     layer_names : list of str, optional
         Custom names for each layer. Must match number of sequences.
         If None, uses "Field 1", "Field 2", etc.
@@ -1233,16 +1345,31 @@ def _render_multi_field_napari(
     viewer = napari.Viewer(title=title)
 
     # Add image layers
-    # Note: Napari handles multi-layer arrangement automatically. The layout
-    # parameter is accepted for API compatibility and future customization,
-    # but currently all layouts add layers in the same way (napari manages
-    # visual positioning). Users can manually arrange layers in the napari GUI.
     for renderer, name in zip(lazy_renderers, layer_names, strict=True):
         viewer.add_image(
             renderer,
             name=name,
             rgb=True,
         )
+
+    # Configure grid mode based on layout parameter
+    # Napari's grid mode arranges layers in a 2D grid for side-by-side viewing
+    if n_sequences > 1:
+        viewer.grid.enabled = True
+        if layout == "horizontal":
+            # Side-by-side: single row with n_sequences columns
+            viewer.grid.shape = (1, n_sequences)
+            viewer.grid.stride = 1
+        elif layout == "vertical":
+            # Stacked: n_sequences rows with single column
+            viewer.grid.shape = (n_sequences, 1)
+            # stride=-1 reverses layer order so first layer appears at top
+            viewer.grid.stride = -1
+        elif layout == "grid":
+            # Auto-grid: napari determines optimal arrangement
+            # Use -1 for automatic sizing based on number of layers
+            viewer.grid.shape = (-1, -1)
+            viewer.grid.stride = 1
 
     # Configure playback controls
     viewer.dims.current_step = (0, *viewer.dims.current_step[1:])

@@ -134,8 +134,9 @@ env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
 from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
 
 # Position overlay with trail
+# NOTE: All overlay coordinates use environment space (x, y) - automatic napari conversion
 position_overlay = PositionOverlay(
-    data=trajectory,  # Shape: (n_frames, n_dims)
+    data=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
     color="red",
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
@@ -189,6 +190,30 @@ env.animate_fields(
 )
 
 # Backend capabilities: Napari/Video/Widget support all overlays; HTML supports position+regions only
+```
+
+**Coordinate Conventions for Overlays:**
+
+Environment and napari use different coordinate systems:
+
+| System | X-axis | Y-axis | Origin |
+|--------|--------|--------|--------|
+| Environment | Horizontal (columns) | Vertical (rows), up is positive | Bottom-left |
+| Napari | Column index | Row index, down is positive | Top-left |
+
+When providing overlay data (PositionOverlay, BodypartOverlay, HeadDirectionOverlay):
+- Use **environment coordinates** (same as your position data)
+- The animation system automatically transforms to napari pixel space
+- Transformations include: (x,y) to (row,col) swap and Y-axis inversion
+
+```python
+# Your data is in environment coordinates (x, y)
+positions = np.array([[10.0, 20.0], [15.0, 25.0]])  # (x, y) format
+
+# Pass directly - transformation happens internally
+overlay = PositionOverlay(data=positions)
+env.animate_fields(fields, overlays=[overlay])
+# Napari displays correctly with Y-axis increasing upward
 ```
 
 **Type Checking Support (v0.2.1+)**:
@@ -1078,6 +1103,28 @@ env.animate_fields(
 - Video: All overlays ✓
 - Widget: All overlays ✓
 - HTML: Position + regions only ⚠️
+
+### 13. Overlay coordinates use environment space
+
+**Problem**: Manually converting coordinates for napari causes inverted display.
+
+❌ Wrong:
+
+```python
+# Don't manually swap x,y or invert before passing to overlay
+positions_wrong = np.column_stack([y_coords, x_coords])  # Manual swap
+overlay = PositionOverlay(data=positions_wrong)  # Display will be wrong!
+```
+
+✅ Right:
+
+```python
+# Pass coordinates in environment (x, y) format - system handles conversion
+positions = np.column_stack([x_coords, y_coords])  # (x, y) format
+overlay = PositionOverlay(data=positions)  # System transforms internally
+```
+
+**Why**: The animation system automatically transforms environment coordinates to napari pixel space, including axis swap and Y-inversion. Manual pre-transformation causes double-conversion.
 
 ## Troubleshooting
 
