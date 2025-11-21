@@ -28,32 +28,47 @@ except ImportError:
 # =============================================================================
 
 
-def _transform_coords_for_napari(coords: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Transform coordinates from (x, y) to (y, x) for Napari axis convention.
+def _transform_coords_for_napari(
+    coords: NDArray[np.float64], env: Any | None = None
+) -> NDArray[np.float64]:
+    """Transform coordinates from (x, y) to napari (y, x) with Y-axis inversion.
 
-    Napari uses (y, x) axis order for 2D data, opposite of the standard (x, y).
+    Napari uses (y, x) axis order and image coordinates (Y increases downward).
+    Environment uses Cartesian coordinates (Y increases upward). This function:
+    1. Swaps (x, y) → (y, x)
+    2. Inverts Y axis to match napari's top-down convention
 
     Parameters
     ----------
     coords : ndarray
         Coordinates with shape (..., n_dims) where last dimension is spatial.
-        For 2D data, expects (..., 2) with (x, y) ordering.
+        For 2D data, expects (..., 2) with (x, y) ordering in environment space.
+    env : Environment, optional
+        Environment instance for getting Y-axis range. If None, no Y inversion.
 
     Returns
     -------
     transformed : ndarray
-        Coordinates with swapped axes. For 2D: (x, y) → (y, x).
-        Higher dimensions returned unchanged.
+        Coordinates in napari space. For 2D: (x, y) → (y_inverted, x).
+        Higher dimensions returned with x-y swap only.
     """
     if coords.shape[-1] == 2:
         # Swap x and y for 2D
-        return coords[..., ::-1]  # Reverse last dimension
+        swapped = coords[..., ::-1]  # (x, y) → (y, x)
+
+        # Invert Y axis if environment provided
+        if env is not None and hasattr(env, "dimension_ranges"):
+            y_min, y_max = env.dimension_ranges[1]  # Y is dimension 1
+            # Invert: y_napari = y_max - y_env + y_min
+            swapped[..., 0] = y_max + y_min - swapped[..., 0]
+
+        return swapped
     # For other dimensions, return unchanged
     return coords
 
 
 def _render_position_overlay(
-    viewer: Any, position_data: Any, name_suffix: str = ""
+    viewer: Any, position_data: Any, env: Any, name_suffix: str = ""
 ) -> list:
     """Render a single position overlay with optional trail.
 
@@ -63,6 +78,8 @@ def _render_position_overlay(
         Napari viewer instance
     position_data : PositionData
         Position overlay data aligned to frames
+    env : Environment
+        Environment instance for coordinate transformation
     name_suffix : str
         Suffix for layer names (e.g., for multi-animal)
 
@@ -74,8 +91,8 @@ def _render_position_overlay(
     layers = []
     n_frames = len(position_data.data)
 
-    # Transform coordinates to napari (y, x) convention
-    transformed_data = _transform_coords_for_napari(position_data.data)
+    # Transform coordinates to napari (y, x) convention with Y-axis inversion
+    transformed_data = _transform_coords_for_napari(position_data.data, env)
 
     # Add tracks layer for trail if trail_length specified
     if position_data.trail_length is not None:
@@ -134,7 +151,7 @@ def _render_position_overlay(
 
 
 def _render_bodypart_overlay(
-    viewer: Any, bodypart_data: Any, name_suffix: str = ""
+    viewer: Any, bodypart_data: Any, env: Any, name_suffix: str = ""
 ) -> list:
     """Render a single bodypart overlay with skeleton.
 
@@ -144,6 +161,8 @@ def _render_bodypart_overlay(
         Napari viewer instance
     bodypart_data : BodypartData
         Bodypart overlay data aligned to frames
+    env : Environment
+        Environment instance for coordinate transformation
     name_suffix : str
         Suffix for layer names
 
@@ -169,8 +188,8 @@ def _render_bodypart_overlay(
     all_features = []
 
     for part_name, coords in bodypart_data.bodyparts.items():
-        # Transform coordinates
-        transformed = _transform_coords_for_napari(coords)
+        # Transform coordinates with Y-axis inversion
+        transformed = _transform_coords_for_napari(coords, env)
 
         # Add time dimension: (time, y, x)
         points_with_time = np.column_stack(
@@ -227,12 +246,12 @@ def _render_bodypart_overlay(
                     if np.any(np.isnan(start_coords)) or np.any(np.isnan(end_coords)):
                         continue
 
-                    # Transform to napari coords
+                    # Transform to napari coords with Y-axis inversion
                     start_napari = _transform_coords_for_napari(
-                        start_coords.reshape(1, -1)
+                        start_coords.reshape(1, -1), env
                     )[0]
                     end_napari = _transform_coords_for_napari(
-                        end_coords.reshape(1, -1)
+                        end_coords.reshape(1, -1), env
                     )[0]
 
                     # Line in napari format: [[time, y1, x1], [time, y2, x2]]
@@ -289,7 +308,7 @@ def _render_head_direction_overlay(
 
     # Get centroid of environment for vector origin
     centroid = np.mean(env.bin_centers, axis=0)
-    centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1))[0]
+    centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1), env)[0]
 
     # Convert to vectors for napari
     vectors_data = []
@@ -307,8 +326,10 @@ def _render_head_direction_overlay(
             if norm > 0:
                 direction = direction / norm * head_dir_data.length
 
-        # Transform direction to napari coords
-        direction_napari = _transform_coords_for_napari(direction.reshape(1, -1))[0]
+        # Transform direction to napari coords with Y-axis inversion
+        direction_napari = _transform_coords_for_napari(direction.reshape(1, -1), env)[
+            0
+        ]
 
         # Napari vector format: [[time, y, x], [dt, dy, dx]]
         # Direction also needs time component (0 for spatial direction only)
@@ -380,7 +401,7 @@ def _render_regions(
         # Convert region to napari shape
         if region.kind == "point":
             # Point regions: render as small circle
-            coords = _transform_coords_for_napari(region.data.reshape(1, -1))[0]
+            coords = _transform_coords_for_napari(region.data.reshape(1, -1), env)[0]
             # Create circle polygon (approximate with octagon)
             radius = 2.0  # Small visual marker
             angles = np.linspace(0, 2 * np.pi, 9)
@@ -397,7 +418,7 @@ def _render_regions(
             # Extract coordinates from Shapely polygon
             # Note: region.data is a Shapely Polygon here
             coords = np.array(region.data.exterior.coords)  # type: ignore[union-attr]
-            coords_napari = _transform_coords_for_napari(coords)
+            coords_napari = _transform_coords_for_napari(coords, env)
             region_shapes.append(coords_napari)
             region_properties["name"].append(region_name)
 
@@ -944,12 +965,12 @@ def render_napari(
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(viewer, pos_data, name_suffix=suffix)
+            _render_position_overlay(viewer, pos_data, env, name_suffix=suffix)
 
         # Render bodypart overlays (points + skeleton)
         for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
             suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(viewer, bodypart_data, name_suffix=suffix)
+            _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
 
         # Render head direction overlays (vectors)
         for idx, head_dir_data in enumerate(overlay_data.head_directions):
@@ -1128,12 +1149,12 @@ def _render_multi_field_napari(
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(viewer, pos_data, name_suffix=suffix)
+            _render_position_overlay(viewer, pos_data, env, name_suffix=suffix)
 
         # Render bodypart overlays (points + skeleton)
         for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
             suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(viewer, bodypart_data, name_suffix=suffix)
+            _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
 
         # Render head direction overlays (vectors)
         for idx, head_dir_data in enumerate(overlay_data.head_directions):

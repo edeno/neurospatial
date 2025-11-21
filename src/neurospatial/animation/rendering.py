@@ -390,11 +390,18 @@ def field_to_rgb_for_napari(
             full_rgb_flat[active_indices] = rgb
 
             # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention
-            return np.transpose(full_rgb, (1, 0, 2))
+            transposed = np.transpose(full_rgb, (1, 0, 2))
+            # Flip vertically: napari displays row 0 at top, but row 0 = min Y (bottom)
+            # Environment coordinates have Y increasing upward, napari has Y increasing downward
+            return np.flip(transposed, axis=0)
         else:
             # Regular grid without masking
             # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention
-            return np.transpose(rgb.reshape((*env.layout.grid_shape, 3)), (1, 0, 2))
+            transposed = np.transpose(
+                rgb.reshape((*env.layout.grid_shape, 3)), (1, 0, 2)
+            )
+            # Flip vertically for napari coordinate system
+            return np.flip(transposed, axis=0)
 
     # Non-grid layout: return flat RGB for point cloud rendering
     return rgb
