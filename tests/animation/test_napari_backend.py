@@ -634,3 +634,241 @@ def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
         call_args = mock_viewer.bind_key.call_args
         # Check that "Space" was passed as the key
         assert call_args[0][0] == "Space"
+
+
+# ============================================================================
+# Unknown kwargs warning test
+# ============================================================================
+
+
+@pytest.mark.napari
+def test_render_napari_warns_on_unknown_kwargs(simple_env, simple_fields):
+    """Test that render_napari emits warning for unknown kwargs."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with patch(
+        "neurospatial.animation.backends.napari_backend.napari.Viewer"
+    ) as mock_viewer_class:
+        mock_viewer = _create_mock_viewer()
+        mock_viewer_class.return_value = mock_viewer
+
+        # Should emit UserWarning about unknown kwargs
+        with pytest.warns(UserWarning, match="unknown keyword arguments"):
+            render_napari(
+                simple_env,
+                simple_fields,
+                unknown_param=42,
+                another_unknown="test",
+            )
+
+
+@pytest.mark.napari
+def test_render_napari_warning_lists_unknown_keys(simple_env, simple_fields):
+    """Test that unknown kwargs warning includes the key names."""
+    pytest.importorskip("napari")
+
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    with patch(
+        "neurospatial.animation.backends.napari_backend.napari.Viewer"
+    ) as mock_viewer_class:
+        mock_viewer = _create_mock_viewer()
+        mock_viewer_class.return_value = mock_viewer
+
+        # Check that specific key names appear in warning (alphabetically sorted)
+        with pytest.warns(UserWarning, match="bar_param.*foo_param"):
+            render_napari(
+                simple_env,
+                simple_fields,
+                foo_param=1,
+                bar_param=2,
+            )
+
+
+# ============================================================================
+# _EnvScale class tests
+# ============================================================================
+
+
+def test_env_scale_caches_correct_values(simple_env):
+    """Test _EnvScale caches correct values from environment."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    scale = _EnvScale(simple_env)
+
+    # Check bounds match environment
+    (x_min, x_max), (y_min, y_max) = simple_env.dimension_ranges
+    assert scale.x_min == x_min
+    assert scale.x_max == x_max
+    assert scale.y_min == y_min
+    assert scale.y_max == y_max
+
+    # Check grid shape matches
+    n_x, n_y = simple_env.layout.grid_shape
+    assert scale.n_x == n_x
+    assert scale.n_y == n_y
+
+    # Check scale factors are computed correctly
+    expected_x_scale = (n_x - 1) / (x_max - x_min) if (x_max - x_min) > 0 else 1.0
+    expected_y_scale = (n_y - 1) / (y_max - y_min) if (y_max - y_min) > 0 else 1.0
+    assert scale.x_scale == pytest.approx(expected_x_scale)
+    assert scale.y_scale == pytest.approx(expected_y_scale)
+
+
+def test_env_scale_from_env_returns_none_for_none():
+    """Test from_env returns None when env is None."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    assert _EnvScale.from_env(None) is None
+
+
+def test_env_scale_from_env_returns_none_for_missing_attrs():
+    """Test from_env returns None when env lacks required attributes."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    # Object without dimension_ranges
+    class FakeEnvNoDimensions:
+        pass
+
+    assert _EnvScale.from_env(FakeEnvNoDimensions()) is None
+
+    # Object with dimension_ranges but no layout.grid_shape
+    class FakeEnvNoGridShape:
+        def __init__(self):
+            self.dimension_ranges = [(0, 10), (0, 10)]
+            self.layout = object()  # No grid_shape attribute
+
+    assert _EnvScale.from_env(FakeEnvNoGridShape()) is None
+
+
+def test_env_scale_from_env_returns_scale_for_valid_env(simple_env):
+    """Test from_env returns _EnvScale for valid environment."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    scale = _EnvScale.from_env(simple_env)
+    assert scale is not None
+    assert isinstance(scale, _EnvScale)
+
+
+def test_make_env_scale_wrapper(simple_env):
+    """Test _make_env_scale convenience function."""
+    from neurospatial.animation.backends.napari_backend import (
+        _EnvScale,
+        _make_env_scale,
+    )
+
+    # Returns None for None
+    assert _make_env_scale(None) is None
+
+    # Returns _EnvScale for valid env
+    scale = _make_env_scale(simple_env)
+    assert isinstance(scale, _EnvScale)
+
+
+def test_env_scale_uses_slots():
+    """Test _EnvScale uses __slots__ for memory efficiency."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    assert hasattr(_EnvScale, "__slots__")
+    assert "x_min" in _EnvScale.__slots__
+    assert "x_scale" in _EnvScale.__slots__
+
+
+def test_env_scale_repr(simple_env):
+    """Test _EnvScale __repr__ provides useful debug info."""
+    from neurospatial.animation.backends.napari_backend import _EnvScale
+
+    scale = _EnvScale(simple_env)
+    repr_str = repr(scale)
+
+    # Should contain class name and key values
+    assert "_EnvScale" in repr_str
+    assert "x=" in repr_str
+    assert "y=" in repr_str
+    assert "grid=" in repr_str
+
+
+# ============================================================================
+# __array_priority__ tests
+# ============================================================================
+
+
+def test_lazy_field_renderer_has_array_priority(simple_env, simple_fields):
+    """Test LazyFieldRenderer has __array_priority__ attribute."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial.animation.backends.napari_backend import LazyFieldRenderer
+
+    # Create colormap lookup
+    cmap_obj = plt.get_cmap("viridis")
+    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    renderer = LazyFieldRenderer(
+        simple_env, simple_fields, cmap_lookup, vmin=0.0, vmax=1.0
+    )
+
+    assert hasattr(renderer, "__array_priority__")
+    assert renderer.__array_priority__ == 1000
+
+
+def test_chunked_lazy_field_renderer_has_array_priority(simple_env, simple_fields):
+    """Test ChunkedLazyFieldRenderer has __array_priority__ attribute."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial.animation.backends.napari_backend import ChunkedLazyFieldRenderer
+
+    # Create colormap lookup
+    cmap_obj = plt.get_cmap("viridis")
+    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    renderer = ChunkedLazyFieldRenderer(
+        simple_env, simple_fields, cmap_lookup, vmin=0.0, vmax=1.0
+    )
+
+    assert hasattr(renderer, "__array_priority__")
+    assert renderer.__array_priority__ == 1000
+
+
+# ============================================================================
+# dtype property tests
+# ============================================================================
+
+
+def test_lazy_field_renderer_dtype_returns_np_dtype(simple_env, simple_fields):
+    """Test LazyFieldRenderer.dtype returns np.dtype not type."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial.animation.backends.napari_backend import LazyFieldRenderer
+
+    # Create colormap lookup
+    cmap_obj = plt.get_cmap("viridis")
+    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    renderer = LazyFieldRenderer(
+        simple_env, simple_fields, cmap_lookup, vmin=0.0, vmax=1.0
+    )
+
+    # Should be np.dtype, not type
+    assert isinstance(renderer.dtype, np.dtype)
+    assert renderer.dtype == np.dtype(np.uint8)
+
+
+def test_chunked_lazy_field_renderer_dtype_returns_np_dtype(simple_env, simple_fields):
+    """Test ChunkedLazyFieldRenderer.dtype returns np.dtype not type."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial.animation.backends.napari_backend import ChunkedLazyFieldRenderer
+
+    # Create colormap lookup
+    cmap_obj = plt.get_cmap("viridis")
+    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    renderer = ChunkedLazyFieldRenderer(
+        simple_env, simple_fields, cmap_lookup, vmin=0.0, vmax=1.0
+    )
+
+    # Should be np.dtype, not type
+    assert isinstance(renderer.dtype, np.dtype)
+    assert renderer.dtype == np.dtype(np.uint8)

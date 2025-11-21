@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 import weakref
 from collections import OrderedDict
 from threading import Lock
@@ -13,7 +14,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.animation.overlays import BodypartData
+    import napari
+    from napari.layers import Layer
+
+    from neurospatial.animation.overlays import (
+        BodypartData,
+        HeadDirectionData,
+        OverlayData,
+        PositionData,
+    )
     from neurospatial.environment.core import Environment
 
 # Check napari availability
@@ -22,7 +31,141 @@ try:
 
     NAPARI_AVAILABLE = True
 except ImportError:
+    napari = None
     NAPARI_AVAILABLE = False
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Overlay rendering constants
+POINT_MARKER_RADIUS: float = 2.0
+"""Radius for point region markers in napari pixel units."""
+
+POINT_BORDER_WIDTH: float = 0.5
+"""Border width for position and bodypart point markers."""
+
+BODYPART_POINT_SIZE: float = 5.0
+"""Default size for bodypart point markers."""
+
+HEAD_DIRECTION_EDGE_WIDTH: float = 3.0
+"""Edge width for head direction vector arrows."""
+
+SKELETON_DEFAULT_WIDTH: float = 2.0
+"""Default edge width for skeleton lines."""
+
+# Region rendering constants
+REGION_CIRCLE_SEGMENTS: int = 9
+"""Number of line segments to approximate circles for point regions (octagon + close)."""
+
+# Cache constants
+DEFAULT_CACHE_SIZE: int = 1000
+"""Default maximum number of frames to cache for per-frame caching."""
+
+DEFAULT_CHUNK_SIZE: int = 10
+"""Default number of frames per chunk for chunked caching."""
+
+DEFAULT_MAX_CHUNKS: int = 100
+"""Default maximum number of chunks to cache."""
+
+CHUNKED_CACHE_THRESHOLD: int = 10_000
+"""Frame count threshold above which chunked caching is used instead of per-frame."""
+
+# Playback constants
+DEFAULT_FPS: int = 30
+"""Default frames per second for playback."""
+
+FPS_SLIDER_MIN: int = 1
+"""Minimum FPS value for playback slider."""
+
+FPS_SLIDER_DEFAULT_MAX: int = 120
+"""Default maximum FPS value for playback slider."""
+
+WIDGET_UPDATE_TARGET_HZ: int = 30
+"""Target update rate for playback widget to avoid Qt overhead at high FPS."""
+
+
+# =============================================================================
+# Coordinate Transform Cache
+# =============================================================================
+
+
+class _EnvScale:
+    """Cached environment scale factors for coordinate transforms.
+
+    Pre-computes and caches coordinate transformation constants from an
+    Environment to avoid repeated property lookups during per-frame rendering.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment instance to extract scale factors from.
+
+    Attributes
+    ----------
+    x_min, x_max : float
+        X-axis bounds in environment coordinates.
+    y_min, y_max : float
+        Y-axis bounds in environment coordinates.
+    n_x, n_y : int
+        Grid dimensions (columns, rows).
+    x_scale, y_scale : float
+        Pre-computed scale factors for coordinate conversion.
+    """
+
+    __slots__ = ("n_x", "n_y", "x_max", "x_min", "x_scale", "y_max", "y_min", "y_scale")
+
+    def __init__(self, env: Any) -> None:
+        """Initialize scale factors from environment."""
+        (self.x_min, self.x_max), (self.y_min, self.y_max) = env.dimension_ranges
+        self.n_x, self.n_y = env.layout.grid_shape
+
+        # Pre-compute scale factors (avoid division by zero)
+        x_range = self.x_max - self.x_min
+        y_range = self.y_max - self.y_min
+        self.x_scale = (self.n_x - 1) / x_range if x_range > 0 else 1.0
+        self.y_scale = (self.n_y - 1) / y_range if y_range > 0 else 1.0
+
+    @classmethod
+    def from_env(cls, env: Any) -> _EnvScale | None:
+        """Create _EnvScale from environment, or None if not applicable.
+
+        Returns None if environment lacks required attributes (dimension_ranges,
+        layout.grid_shape), allowing fallback to simple axis swap.
+        """
+        if (
+            env is None
+            or not hasattr(env, "dimension_ranges")
+            or not hasattr(env.layout, "grid_shape")
+        ):
+            return None
+        return cls(env)
+
+    def __repr__(self) -> str:
+        """Return string representation for debugging."""
+        return (
+            f"_EnvScale(x=[{self.x_min:.2f}, {self.x_max:.2f}], "
+            f"y=[{self.y_min:.2f}, {self.y_max:.2f}], "
+            f"grid=({self.n_x}, {self.n_y}))"
+        )
+
+
+def _make_env_scale(env: Any) -> _EnvScale | None:
+    """Create cached scale factors from environment.
+
+    Convenience function wrapping _EnvScale.from_env().
+
+    Parameters
+    ----------
+    env : Environment
+        Environment instance.
+
+    Returns
+    -------
+    scale : _EnvScale or None
+        Cached scale factors, or None if env lacks required attributes.
+    """
+    return _EnvScale.from_env(env)
 
 
 # =============================================================================
@@ -31,7 +174,8 @@ except ImportError:
 
 
 def _transform_direction_for_napari(
-    direction: NDArray[np.float64], env: Any | None = None
+    direction: NDArray[np.float64],
+    env_or_scale: Any | _EnvScale | None = None,
 ) -> NDArray[np.float64]:
     """Transform direction vectors from environment (dx, dy) to napari (dr, dc).
 
@@ -43,8 +187,9 @@ def _transform_direction_for_napari(
     direction : ndarray
         Direction vectors with shape (..., n_dims) where last dimension is spatial.
         For 2D data, expects (..., 2) with (dx, dy) ordering in environment space.
-    env : Environment, optional
-        Environment instance for scaling. If None, only swaps axes and inverts Y.
+    env_or_scale : Environment or _EnvScale, optional
+        Environment instance or pre-computed _EnvScale for scaling.
+        If None, only swaps axes and inverts Y.
 
     Returns
     -------
@@ -55,27 +200,25 @@ def _transform_direction_for_napari(
         dx = direction[..., 0]
         dy = direction[..., 1]
 
-        if (
-            env is None
-            or not hasattr(env, "dimension_ranges")
-            or not hasattr(env.layout, "grid_shape")
-        ):
+        # Get or create scale factors
+        scale: _EnvScale | None
+        if isinstance(env_or_scale, _EnvScale):
+            scale = env_or_scale
+        else:
+            scale = _make_env_scale(env_or_scale)
+
+        if scale is None:
             # Fallback: just swap axes and invert Y
             result = np.empty_like(direction)
             result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
             result[..., 1] = dx
             return result
 
-        # Get environment bounds and grid size for scaling
-        x_min, x_max = env.dimension_ranges[0]
-        y_min, y_max = env.dimension_ranges[1]
-        n_x, n_y = env.layout.grid_shape
-
-        # Scale direction vectors (no translation!)
+        # Scale direction vectors using cached scale factors (no translation!)
         # X → column (scale only)
-        dc = dx * (n_x - 1) / (x_max - x_min) if (x_max - x_min) > 0 else dx
+        dc = dx * scale.x_scale
         # Y → row (scale and invert: positive dy → negative dr)
-        dr = -dy * (n_y - 1) / (y_max - y_min) if (y_max - y_min) > 0 else -dy
+        dr = -dy * scale.y_scale
 
         result = np.empty_like(direction)
         result[..., 0] = dr
@@ -87,7 +230,8 @@ def _transform_direction_for_napari(
 
 
 def _transform_coords_for_napari(
-    coords: NDArray[np.float64], env: Any | None = None
+    coords: NDArray[np.float64],
+    env_or_scale: Any | _EnvScale | None = None,
 ) -> NDArray[np.float64]:
     """Transform coordinates from environment (x, y) to napari pixel (row, col).
 
@@ -104,8 +248,9 @@ def _transform_coords_for_napari(
     coords : ndarray
         Coordinates with shape (..., n_dims) where last dimension is spatial.
         For 2D data, expects (..., 2) with (x, y) ordering in environment space.
-    env : Environment, optional
-        Environment instance for coordinate transformation. Required for 2D coords.
+    env_or_scale : Environment or _EnvScale, optional
+        Environment instance or pre-computed _EnvScale for coordinate transformation.
+        Required for 2D coords.
 
     Returns
     -------
@@ -114,24 +259,26 @@ def _transform_coords_for_napari(
         Higher dimensions returned unchanged.
     """
     if coords.shape[-1] == 2:
-        if env is None or not hasattr(env, "dimension_ranges"):
+        # Get or create scale factors
+        scale: _EnvScale | None
+        if isinstance(env_or_scale, _EnvScale):
+            scale = env_or_scale
+        else:
+            scale = _make_env_scale(env_or_scale)
+
+        if scale is None:
             # Fallback: just swap x and y
             return coords[..., ::-1]
-
-        # Get environment bounds and grid size
-        x_min, x_max = env.dimension_ranges[0]
-        y_min, y_max = env.dimension_ranges[1]
-        n_x, n_y = env.layout.grid_shape
 
         x_coords = coords[..., 0]
         y_coords = coords[..., 1]
 
-        # Map to pixel indices
+        # Map to pixel indices using cached scale factors
         # X → column (no flip)
-        col = (x_coords - x_min) / (x_max - x_min) * (n_x - 1)
+        col = (x_coords - scale.x_min) * scale.x_scale
 
         # Y → row (with flip: high Y → low row)
-        row = (n_y - 1) * (y_max - y_coords) / (y_max - y_min)
+        row = (scale.n_y - 1) - (y_coords - scale.y_min) * scale.y_scale
 
         # Return in napari (row, col) order
         result = np.empty_like(coords)
@@ -144,7 +291,9 @@ def _transform_coords_for_napari(
 
 
 def _create_skeleton_frame_data(
-    bodypart_data: BodypartData, env: Environment, frame_idx: int
+    bodypart_data: BodypartData,
+    env_or_scale: Environment | _EnvScale | None,
+    frame_idx: int,
 ) -> list[NDArray[np.float64]]:
     """Compute skeleton lines for a single frame.
 
@@ -155,8 +304,9 @@ def _create_skeleton_frame_data(
     ----------
     bodypart_data : BodypartData
         Bodypart overlay data containing skeleton definition and bodypart coords
-    env : Environment
-        Environment instance for coordinate transformation
+    env_or_scale : Environment or _EnvScale or None
+        Environment instance or pre-computed scale for coordinate transformation.
+        Using pre-computed _EnvScale avoids repeated property lookups per frame.
     frame_idx : int
         Frame index to compute skeleton for
 
@@ -186,8 +336,12 @@ def _create_skeleton_frame_data(
             continue
 
         # Transform to napari coords with Y-axis inversion
-        start_napari = _transform_coords_for_napari(start_coords.reshape(1, -1), env)[0]
-        end_napari = _transform_coords_for_napari(end_coords.reshape(1, -1), env)[0]
+        start_napari = _transform_coords_for_napari(
+            start_coords.reshape(1, -1), env_or_scale
+        )[0]
+        end_napari = _transform_coords_for_napari(
+            end_coords.reshape(1, -1), env_or_scale
+        )[0]
 
         # Line in napari format: [[y1, x1], [y2, x2]] (no time dimension for shapes.data)
         line = np.array(
@@ -235,6 +389,9 @@ def _setup_skeleton_update_callback(
     # Track last frame to avoid redundant updates
     callback_state = {"last_frame": -1, "connection": None}
 
+    # Pre-compute scale factors to avoid repeated property lookups per frame
+    env_scale = _EnvScale.from_env(env)
+
     # Use weakrefs to detect when viewer/layer is garbage collected
     viewer_ref = weakref.ref(viewer)
     layer_ref = weakref.ref(skeleton_layer)
@@ -264,9 +421,11 @@ def _setup_skeleton_update_callback(
 
             callback_state["last_frame"] = current_frame
 
-            # Compute skeleton for this frame
+            # Compute skeleton for this frame (using pre-computed scale)
             new_skeleton_data = _create_skeleton_frame_data(
-                bodypart_data, env, current_frame
+                bodypart_data,
+                env_scale if env_scale is not None else env,
+                current_frame,
             )
 
             # Update layer data
@@ -284,8 +443,11 @@ def _setup_skeleton_update_callback(
 
 
 def _render_position_overlay(
-    viewer: Any, position_data: Any, env: Any, name_suffix: str = ""
-) -> list:
+    viewer: napari.Viewer,
+    position_data: PositionData,
+    env: Environment,
+    name_suffix: str = "",
+) -> list[Layer]:
     """Render a single position overlay with optional trail.
 
     Parameters
@@ -301,8 +463,8 @@ def _render_position_overlay(
 
     Returns
     -------
-    layers : list
-        List of created layer objects for later updates
+    layers : list of Layer
+        List of created napari layer objects for later updates
 
     Notes
     -----
@@ -312,7 +474,7 @@ def _render_position_overlay(
     coloring via `color_by` + `colormaps_dict`. See inline comments and
     https://napari.org/stable/api/napari.layers.Tracks.html for details.
     """
-    layers = []
+    layers: list[Layer] = []
     n_frames = len(position_data.data)
 
     # Transform coordinates to napari (y, x) convention with Y-axis inversion
@@ -386,7 +548,7 @@ def _render_position_overlay(
         size=position_data.size,
         face_color=position_data.color,
         border_color="white",
-        border_width=0.5,
+        border_width=POINT_BORDER_WIDTH,
     )
     layers.append(layer)
 
@@ -394,8 +556,11 @@ def _render_position_overlay(
 
 
 def _render_bodypart_overlay(
-    viewer: Any, bodypart_data: Any, env: Any, name_suffix: str = ""
-) -> list:
+    viewer: napari.Viewer,
+    bodypart_data: BodypartData,
+    env: Environment,
+    name_suffix: str = "",
+) -> list[Layer]:
     """Render a single bodypart overlay with skeleton.
 
     Parameters
@@ -411,10 +576,10 @@ def _render_bodypart_overlay(
 
     Returns
     -------
-    layers : list
-        List of created layer objects for later updates
+    layers : list of Layer
+        List of created napari layer objects for later updates
     """
-    layers = []
+    layers: list[Layer] = []
 
     # Validate non-empty bodyparts dictionary
     if not bodypart_data.bodyparts:
@@ -461,10 +626,10 @@ def _render_bodypart_overlay(
     layer = viewer.add_points(
         points_array,
         name=f"Bodyparts{name_suffix}",
-        size=5.0,
+        size=BODYPART_POINT_SIZE,
         face_color=face_colors,
         border_color="black",
-        border_width=0.5,
+        border_width=POINT_BORDER_WIDTH,
         features={"bodypart": all_features},
     )
     layers.append(layer)
@@ -493,12 +658,12 @@ def _render_bodypart_overlay(
 
 
 def _render_head_direction_overlay(
-    viewer: Any,
-    head_dir_data: Any,
+    viewer: napari.Viewer,
+    head_dir_data: HeadDirectionData,
     env: Environment,
     name_suffix: str = "",
-    position_data: Any | None = None,
-) -> list:
+    position_data: PositionData | None = None,
+) -> list[Layer]:
     """Render a single head direction overlay as vectors.
 
     Parameters
@@ -518,8 +683,8 @@ def _render_head_direction_overlay(
 
     Returns
     -------
-    layers : list
-        List of created layer objects for later updates
+    layers : list of Layer
+        List of created napari layer objects for later updates
 
     Notes
     -----
@@ -531,7 +696,7 @@ def _render_head_direction_overlay(
     (mean of all bin centers), useful for stationary reference frames or when
     position tracking is not available.
     """
-    layers = []
+    layers: list[Layer] = []
     n_frames = len(head_dir_data.data)
 
     # Determine if data is angles or vectors
@@ -601,7 +766,7 @@ def _render_head_direction_overlay(
         vectors_array,
         name=f"Head Direction{name_suffix}",
         edge_color=head_dir_data.color,
-        edge_width=3.0,
+        edge_width=HEAD_DIRECTION_EDGE_WIDTH,
         length=1.0,  # Vectors already scaled by length
     )
     layers.append(layer)
@@ -610,8 +775,11 @@ def _render_head_direction_overlay(
 
 
 def _render_regions(
-    viewer: Any, env: Environment, show_regions: bool | list[str], region_alpha: float
-) -> list:
+    viewer: napari.Viewer,
+    env: Environment,
+    show_regions: bool | list[str],
+    region_alpha: float,
+) -> list[Layer]:
     """Render environment regions as shapes.
 
     Parameters
@@ -627,10 +795,10 @@ def _render_regions(
 
     Returns
     -------
-    layers : list
-        List of created layer objects
+    layers : list of Layer
+        List of created napari layer objects
     """
-    layers: list[Any] = []
+    layers: list[Layer] = []
 
     if not show_regions or len(env.regions) == 0:
         return layers
@@ -656,12 +824,11 @@ def _render_regions(
             # Point regions: render as small circle
             coords = _transform_coords_for_napari(region.data.reshape(1, -1), env)[0]
             # Create circle polygon (approximate with octagon)
-            radius = 2.0  # Small visual marker
-            angles = np.linspace(0, 2 * np.pi, 9)
+            angles = np.linspace(0, 2 * np.pi, REGION_CIRCLE_SEGMENTS)
             circle = np.column_stack(
                 [
-                    coords[0] + radius * np.cos(angles),
-                    coords[1] + radius * np.sin(angles),
+                    coords[0] + POINT_MARKER_RADIUS * np.cos(angles),
+                    coords[1] + POINT_MARKER_RADIUS * np.sin(angles),
                 ]
             )
             region_shapes.append(circle)
@@ -719,7 +886,9 @@ def _is_multi_field_input(fields: list) -> bool:
 
 
 def _add_speed_control_widget(
-    viewer: Any, initial_fps: int = 30, frame_labels: list[str] | None = None
+    viewer: napari.Viewer,
+    initial_fps: int = DEFAULT_FPS,
+    frame_labels: list[str] | None = None,
 ) -> None:
     """Add enhanced playback control widget to napari viewer.
 
@@ -761,19 +930,23 @@ def _add_speed_control_widget(
     playback_state = {"is_playing": False, "last_frame": -1}
 
     # Create enhanced playback widget using magicgui
-    # Set slider max to at least initial_fps (but minimum 120)
-    slider_max = max(120, initial_fps)
+    # Set slider max to at least initial_fps (but minimum FPS_SLIDER_DEFAULT_MAX)
+    slider_max = max(FPS_SLIDER_DEFAULT_MAX, initial_fps)
 
-    # Throttle widget updates for high FPS (30 Hz max to avoid Qt overhead)
-    # At 250 FPS, updating 250x/sec causes stalling; throttle to 30 Hz
-    update_interval = max(1, initial_fps // 30) if initial_fps >= 30 else 1
+    # Throttle widget updates for high FPS (WIDGET_UPDATE_TARGET_HZ max to avoid Qt overhead)
+    # At 250 FPS, updating 250x/sec causes stalling; throttle to target Hz
+    update_interval = (
+        max(1, initial_fps // WIDGET_UPDATE_TARGET_HZ)
+        if initial_fps >= WIDGET_UPDATE_TARGET_HZ
+        else 1
+    )
 
     @magicgui(
         auto_call=True,
         play={"widget_type": "PushButton", "text": "▶ Play"},
         fps={
             "widget_type": "Slider",
-            "min": 1,
+            "min": FPS_SLIDER_MIN,
             "max": slider_max,
             "value": initial_fps,
             "label": "Speed (FPS)",
@@ -878,22 +1051,22 @@ def render_napari(
     env: Environment,
     fields: list[NDArray[np.float64]] | list[list[NDArray[np.float64]]],
     *,
-    fps: int = 30,
+    fps: int = DEFAULT_FPS,
     cmap: str = "viridis",
     vmin: float | None = None,
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
     title: str = "Spatial Field Animation",
-    cache_size: int = 1000,
-    chunk_size: int = 10,
-    max_chunks: int = 100,
+    cache_size: int = DEFAULT_CACHE_SIZE,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    max_chunks: int = DEFAULT_MAX_CHUNKS,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
-    overlay_data: Any | None = None,  # OverlayData - use Any to avoid circular import
+    overlay_data: OverlayData | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    **kwargs: Any,  # Accept other parameters gracefully
-) -> Any:
+    **kwargs: Any,
+) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
 
     Napari provides GPU-accelerated rendering with on-demand frame loading,
@@ -1105,6 +1278,16 @@ def render_napari(
     --------
     neurospatial.animation.core.animate_fields : Main animation interface
     """
+    # Warn about unknown kwargs for easier debugging
+    if kwargs:
+        unknown_keys = ", ".join(sorted(kwargs.keys()))
+        warnings.warn(
+            f"render_napari received unknown keyword arguments that will be ignored: "
+            f"{unknown_keys}. These may be parameters intended for other backends.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     if not NAPARI_AVAILABLE:
         raise ImportError(
             "Napari backend requires napari. Install with:\n"
@@ -1245,21 +1428,21 @@ def _render_multi_field_napari(
     env: Environment,
     field_sequences: list[list[NDArray[np.float64]]],
     *,
-    fps: int = 30,
+    fps: int = DEFAULT_FPS,
     cmap: str = "viridis",
     vmin: float | None = None,
     vmax: float | None = None,
     frame_labels: list[str] | None = None,
     title: str = "Multi-Field Animation",
-    cache_size: int = 1000,
-    chunk_size: int = 10,
-    max_chunks: int = 100,
+    cache_size: int = DEFAULT_CACHE_SIZE,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    max_chunks: int = DEFAULT_MAX_CHUNKS,
     layout: Literal["horizontal", "vertical", "grid"] | None = None,
     layer_names: list[str] | None = None,
-    overlay_data: Any | None = None,  # OverlayData
+    overlay_data: OverlayData | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-) -> Any:
+) -> napari.Viewer:
     """Render multiple field sequences in a single napari viewer.
 
     Creates separate image layers for each field sequence, arranged according
@@ -1455,15 +1638,15 @@ def _create_lazy_field_renderer(
     cmap_lookup: NDArray[np.uint8],
     vmin: float,
     vmax: float,
-    cache_size: int = 1000,
-    chunk_size: int = 10,
-    max_chunks: int = 100,
+    cache_size: int = DEFAULT_CACHE_SIZE,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    max_chunks: int = DEFAULT_MAX_CHUNKS,
 ) -> LazyFieldRenderer | ChunkedLazyFieldRenderer:
     """Create lazy field renderer for Napari.
 
     Automatically selects between per-frame and chunked caching based on
-    dataset size. Uses per-frame caching for datasets ≤10K frames and
-    chunked caching for larger datasets.
+    dataset size. Uses per-frame caching for datasets ≤CHUNKED_CACHE_THRESHOLD
+    frames and chunked caching for larger datasets.
 
     Parameters
     ----------
@@ -1475,11 +1658,11 @@ def _create_lazy_field_renderer(
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
         Color scale limits
-    cache_size : int, default=1000
+    cache_size : int, default=DEFAULT_CACHE_SIZE
         Maximum number of frames to cache for per-frame caching strategy
-    chunk_size : int, default=10
+    chunk_size : int, default=DEFAULT_CHUNK_SIZE
         Number of frames per chunk for chunked caching strategy
-    max_chunks : int, default=100
+    max_chunks : int, default=DEFAULT_MAX_CHUNKS
         Maximum number of chunks to cache for chunked caching strategy
 
     Returns
@@ -1491,7 +1674,7 @@ def _create_lazy_field_renderer(
     n_frames = len(fields)
 
     # Auto-select caching strategy based on dataset size
-    if n_frames <= 10_000:
+    if n_frames <= CHUNKED_CACHE_THRESHOLD:
         # Use per-frame caching for small/medium datasets
         return LazyFieldRenderer(
             env, fields, cmap_lookup, vmin, vmax, cache_size=cache_size
@@ -1531,7 +1714,7 @@ class LazyFieldRenderer:
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
         Color scale limits
-    cache_size : int, default=1000
+    cache_size : int, default=DEFAULT_CACHE_SIZE
         Maximum number of frames to cache
 
     Attributes
@@ -1545,13 +1728,13 @@ class LazyFieldRenderer:
 
     Notes
     -----
-    The cache size of 1000 frames is chosen to balance memory usage
-    and performance. For typical 100x100 grids with RGB data:
+    The default cache size (DEFAULT_CACHE_SIZE) is chosen to balance memory
+    usage and performance. For typical 100x100 grids with RGB data:
     - Memory per frame: ~30KB
     - Cache memory: ~30MB
     - Sufficient for responsive scrubbing
 
-    For larger grids or tighter memory constraints, reduce _cache_size.
+    For larger grids or tighter memory constraints, reduce cache_size.
 
     Examples
     --------
@@ -1565,6 +1748,9 @@ class LazyFieldRenderer:
         frame = renderer[-1]  # Negative indexing supported
     """
 
+    # Prevent numpy from coercing this array-like into ndarray eagerly
+    __array_priority__ = 1000
+
     def __init__(
         self,
         env: Environment,
@@ -1572,7 +1758,7 @@ class LazyFieldRenderer:
         cmap_lookup: NDArray[np.uint8],
         vmin: float,
         vmax: float,
-        cache_size: int = 1000,
+        cache_size: int = DEFAULT_CACHE_SIZE,
     ):
         """Initialize lazy field renderer."""
         self.env = env
@@ -1710,9 +1896,9 @@ class LazyFieldRenderer:
         return (len(self.fields), *sample.shape)
 
     @property
-    def dtype(self) -> type:
+    def dtype(self) -> np.dtype[np.uint8]:
         """Return dtype (always uint8 for RGB)."""
-        return np.uint8
+        return np.dtype(np.uint8)
 
     @property
     def ndim(self) -> int:
@@ -1741,9 +1927,9 @@ class ChunkedLazyFieldRenderer:
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
         Color scale limits
-    chunk_size : int, default=100
+    chunk_size : int, default=DEFAULT_CHUNK_SIZE
         Number of frames per chunk
-    max_chunks : int, default=50
+    max_chunks : int, default=DEFAULT_MAX_CHUNKS
         Maximum number of chunks to cache (LRU eviction)
 
     Attributes
@@ -1763,8 +1949,8 @@ class ChunkedLazyFieldRenderer:
 
     For typical 100x100 grids with RGB data:
     - Memory per frame: ~30KB
-    - Memory per chunk (100 frames): ~3MB
-    - Cache memory (50 chunks): ~150MB
+    - Memory per chunk (DEFAULT_CHUNK_SIZE frames): ~300KB
+    - Cache memory (DEFAULT_MAX_CHUNKS chunks): ~30MB
 
     Chunked caching is more efficient than individual frame caching for:
     - Sequential playback (pre-loads neighboring frames)
@@ -1782,14 +1968,17 @@ class ChunkedLazyFieldRenderer:
     .. code-block:: python
 
         renderer = ChunkedLazyFieldRenderer(
-            env, fields, cmap_lookup, 0.0, 1.0, chunk_size=100, max_chunks=50
+            env, fields, cmap_lookup, 0.0, 1.0, chunk_size=10, max_chunks=100
         )
         len(renderer)  # Number of frames
         # 100000
-        frame = renderer[0]  # Loads chunk 0 (frames 0-99)
-        frame = renderer[50]  # Retrieved from chunk 0 cache (instant)
-        frame = renderer[100]  # Loads chunk 1 (frames 100-199)
+        frame = renderer[0]  # Loads chunk 0 (frames 0-9)
+        frame = renderer[5]  # Retrieved from chunk 0 cache (instant)
+        frame = renderer[10]  # Loads chunk 1 (frames 10-19)
     """
+
+    # Prevent numpy from coercing this array-like into ndarray eagerly
+    __array_priority__ = 1000
 
     def __init__(
         self,
@@ -1798,8 +1987,8 @@ class ChunkedLazyFieldRenderer:
         cmap_lookup: NDArray[np.uint8],
         vmin: float,
         vmax: float,
-        chunk_size: int = 100,
-        max_chunks: int = 50,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        max_chunks: int = DEFAULT_MAX_CHUNKS,
     ):
         """Initialize chunked lazy field renderer."""
         self.env = env
@@ -1989,9 +2178,9 @@ class ChunkedLazyFieldRenderer:
         return (len(self.fields), *sample.shape)
 
     @property
-    def dtype(self) -> type:
+    def dtype(self) -> np.dtype[np.uint8]:
         """Return dtype (always uint8 for RGB)."""
-        return np.uint8
+        return np.dtype(np.uint8)
 
     @property
     def ndim(self) -> int:
