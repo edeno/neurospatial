@@ -549,6 +549,41 @@ Added `test_playback_widget_scrubbing_updates_immediately`:
 - All 32 napari backend tests pass (1 skipped)
 - ruff and mypy pass
 
-## Next Task: Phase 2.5 - Re-profile Napari
+## Completed: Phase 2.5 - Re-profile Napari
 
-Measure skeleton overlay initialization time and playback smoothness.
+### Benchmark Results
+
+**Skeleton Vector Generation** (via `bench_skeleton_vectors.py`):
+
+| Config | Baseline (ms) | Current (ms) | Speedup |
+|--------|---------------|--------------|---------|
+| Medium (5k frames) | 98.75 | 1.99 | **49.6x** |
+| Large (100k frames) | 2628.52 | 61.82 | **42.5x** |
+
+**Napari Viewer** (via `bench_napari.py`):
+
+| Config | Init (baseline) | Init (current) | Seek (baseline) | Seek (current) |
+|--------|-----------------|----------------|-----------------|----------------|
+| Small | 2,585 ms | 2,607 ms | 4.38 ms | 4.38 ms |
+| Medium | 2,974 ms | 2,978 ms | 15.80 ms | 15.81 ms |
+
+### Analysis
+
+1. **Skeleton vectors 42-50x faster**: The vectorized implementation delivers massive speedup
+2. **Viewer init unchanged**: Skeleton generation is small part of total init time
+3. **Random seek unchanged**: Expected - seek performance wasn't the optimization target
+4. **Main benefit**: Eliminated per-frame Shapes layer callback (5.38ms/frame → 0ms via native Vectors layer)
+
+### Phase 2 Summary
+
+All Phase 2 tasks complete:
+
+- 2.1: Vectorized `_build_skeleton_vectors` (42-50x speedup)
+- 2.2: Per-viewer transform fallback warning tracking
+- 2.3: Verified tracks `color_by` workaround is correct
+- 2.4: Fixed playback widget throttling (scrubbing now immediate)
+- 2.5: Re-profiled and documented improvements
+
+## Next Task: Phase 3 - Overlay Conversion & Core Orchestration
+
+See TASKS.md for Phase 3 details.
