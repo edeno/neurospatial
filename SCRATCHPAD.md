@@ -842,6 +842,59 @@ Tested with 385 bins environment and position overlay (trail_length=5):
 - All 615 animation tests pass
 - ruff and mypy pass
 
-## Next Task: Phase 4.4 - Re-profile Widget
+## Completed: Phase 4.4 - Re-profile Widget (2025-11-22)
+
+### Performance Improvements (Post Phase 4.1-4.3)
+
+The `QuadMesh.set_array()` optimization from Phase 4.1 delivers significant speedups:
+
+**Comparison vs Baseline:**
+
+| Config | Metric | Baseline | Current | Speedup |
+|--------|--------|----------|---------|---------|
+| small | Avg render | 8.93 ms | 4.20 ms | **2.1x** |
+| small | Avg scrub | 8.92 ms | 4.12 ms | **2.2x** |
+| medium | Avg render | 10.00 ms | 5.53 ms | **1.8x** |
+| medium | Avg scrub | 9.81 ms | 5.49 ms | **1.8x** |
+| large | Avg render | 9.95 ms | 5.67 ms | **1.8x** |
+| large | Avg scrub | 10.02 ms | 5.71 ms | **1.8x** |
+
+### PNG vs JPEG Comparison
+
+| Format | Avg Time | Size | Conclusion |
+|--------|----------|------|------------|
+| PNG | 6.79 ms | 7.8 KB | **1.5x faster, 4.1x smaller** |
+| JPEG | 10.48 ms | 32.2 KB | Larger files, slower for sci viz |
+
+**Recommendation**: Use PNG (default) for scientific visualization.
+
+### Scrubbing Responsiveness for Large Frame Counts
+
+| Frame Count | Avg Scrub | P50 | P95 | P99 |
+|-------------|-----------|-----|-----|-----|
+| 10,000 | 5.71 ms | 5.68 ms | 5.93 ms | 6.07 ms |
+| 50,000 | 5.71 ms | 5.69 ms | 5.97 ms | 6.06 ms |
+
+**Key Finding**: Scrubbing performance is **O(1)** - constant regardless of frame count!
+This confirms the `set_array()` optimization is working correctly.
+
+### Summary
+
+Phase 4 widget improvements deliver:
+
+1. **1.8-2.2x faster rendering** via `QuadMesh.set_array()` optimization
+2. **Fixed skeleton initialization bug** (IndexError in `_initialize_bodypart_overlay`)
+3. **Optional JPEG support** (PNG recommended for scientific viz)
+4. **Constant-time scrubbing** regardless of frame count
+
+## Phase 4 Complete!
+
+All Phase 4 (Widget Backend Performance) tasks are now complete:
+- 4.1 Fixed `set_array` optimization ✅
+- 4.2 Fixed overlay artist lifecycle bug ✅
+- 4.3 Optional JPEG support ✅
+- 4.4 Re-profiled widget backend ✅
+
+## Next Task: Phase 5.1 - Sanitize Frame Naming Pattern
 
 See TASKS.md for details.

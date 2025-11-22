@@ -316,11 +316,38 @@ size AND speed. This is because scientific plots have uniform color regions and 
 **Recommendation**: Use default PNG for widget backend. JPEG option remains available for
 users who need it (e.g., for photographic overlays or specific compatibility requirements).
 
-### 4.4 Re-profile Widget
+### 4.4 Re-profile Widget - COMPLETE
 
-- [ ] First render time
-- [ ] Cache miss render time (PNG/JPEG comparison)
-- [ ] Scrubbing responsiveness for 10k and 50k frames
+**Completed 2025-11-22**: Measured widget performance after Phase 4.1-4.3 improvements.
+
+- [x] First render time
+- [x] Cache miss render time (PNG/JPEG comparison)
+- [x] Scrubbing responsiveness for 10k and 50k frames
+
+**Results vs Baseline:**
+
+| Config | Metric | Baseline | Current | Speedup |
+|--------|--------|----------|---------|---------|
+| small | Avg render | 8.93 ms | 4.20 ms | **2.1x** |
+| small | Avg scrub | 8.92 ms | 4.12 ms | **2.2x** |
+| medium | Avg render | 10.00 ms | 5.53 ms | **1.8x** |
+| large | Avg scrub | 10.02 ms | 5.71 ms | **1.8x** |
+
+**PNG vs JPEG** (40x40 grid, dpi=72):
+
+| Format | Time | Size |
+|--------|------|------|
+| PNG | 6.79 ms | 7.8 KB |
+| JPEG | 10.48 ms | 32.2 KB |
+
+PNG is 1.5x faster and 4.1x smaller for scientific visualization.
+
+**Large Frame Count Scrubbing** (constant-time O(1)):
+
+| Frame Count | Avg Scrub | P95 |
+|-------------|-----------|-----|
+| 10,000 | 5.71 ms | 5.93 ms |
+| 50,000 | 5.71 ms | 5.97 ms |
 
 ---
 
@@ -403,7 +430,7 @@ users who need it (e.g., for photographic overlays or specific compatibility req
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
 | Phase 2: Napari | Complete | 2.1-2.5 COMPLETE (42-50x skeleton speedup!) |
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
-| Phase 4: Widget | In Progress | 4.1-4.3 COMPLETE (bug fix + 44 tests), 4.4 pending |
+| Phase 4: Widget | **Complete** | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
 | Phase 5: Video | Not started | |
 | Phase 6: Skeleton | Not started | |
 | Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |
