@@ -476,6 +476,205 @@ def flip_y(frame_height_px: float) -> Affine2D:
     )
 
 
+# --- Video Calibration Helpers ---------------------------------------
+def calibrate_from_scale_bar(
+    p1_px: tuple[float, float],
+    p2_px: tuple[float, float],
+    known_length_cm: float,
+    frame_size_px: tuple[int, int],
+) -> Affine2D:
+    """Build pixel→cm transform from a scale bar of known length.
+
+    Creates an affine transformation that converts video pixel coordinates
+    to environment centimeter coordinates. The transform includes Y-axis flip
+    to convert from video origin (top-left) to environment origin (bottom-left).
+
+    Parameters
+    ----------
+    p1_px : tuple[float, float]
+        First endpoint of scale bar in pixel coordinates (x, y).
+    p2_px : tuple[float, float]
+        Second endpoint of scale bar in pixel coordinates (x, y).
+    known_length_cm : float
+        Real-world length of the scale bar in centimeters. Must be positive.
+    frame_size_px : tuple[int, int]
+        Video frame size as (width, height) in pixels.
+
+    Returns
+    -------
+    Affine2D
+        Transform that converts pixel coords to cm coords with Y-flip.
+
+    Raises
+    ------
+    ValueError
+        If known_length_cm is not positive, or scale bar has zero length.
+
+    Notes
+    -----
+    Pixel coordinates use (x_px, y_px) = (column, row) ordering.
+    The transform assumes uniform scaling (same cm_per_px for x and y).
+
+    The returned transform composes:
+    1. Y-flip via ``flip_y(frame_height)`` - converts top-left to bottom-left origin
+    2. Uniform scaling via ``scale_2d(cm_per_px)`` - converts pixels to centimeters
+
+    Examples
+    --------
+    >>> from neurospatial.transforms import calibrate_from_scale_bar
+    >>> # Scale bar from (100, 200) to (300, 200) represents 50 cm
+    >>> transform = calibrate_from_scale_bar(
+    ...     p1_px=(100.0, 200.0),
+    ...     p2_px=(300.0, 200.0),
+    ...     known_length_cm=50.0,
+    ...     frame_size_px=(640, 480),
+    ... )
+    >>> import numpy as np
+    >>> point_px = np.array([[200.0, 240.0]])
+    >>> point_cm = transform(point_px)
+    """
+    # Validate inputs
+    if known_length_cm <= 0:
+        raise ValueError(
+            f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
+            f"WHY: A scale bar must have positive real-world length.\n"
+            f"HOW: Provide a positive value for known_length_cm."
+        )
+
+    # Compute pixel distance between endpoints
+    dx = p2_px[0] - p1_px[0]
+    dy = p2_px[1] - p1_px[1]
+    px_distance = np.sqrt(dx * dx + dy * dy)
+
+    if px_distance == 0:
+        raise ValueError(
+            f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
+            f"WHY: Cannot compute scale from coincident endpoints.\n"
+            f"HOW: Provide two distinct points for the scale bar."
+        )
+
+    # Compute cm per pixel (uniform scaling assumed)
+    cm_per_px = known_length_cm / px_distance
+
+    # Compose: Y-flip then scale
+    # Order: scale_2d @ flip_y means "apply flip_y first, then scale_2d"
+    # flip_y converts y_px to (frame_height - y_px)
+    # scale_2d converts pixels to cm
+    _, frame_height = frame_size_px
+    return scale_2d(cm_per_px, cm_per_px) @ flip_y(frame_height)
+
+
+def calibrate_from_landmarks(
+    landmarks_px: NDArray[np.float64],
+    landmarks_cm: NDArray[np.float64],
+    frame_size_px: tuple[int, int],
+    kind: str = "similarity",
+) -> Affine2D:
+    """Build pixel→cm transform from corresponding landmark pairs.
+
+    Creates an affine transformation from at least 3 corresponding point pairs
+    using the specified transform type (rigid, similarity, or affine).
+
+    Parameters
+    ----------
+    landmarks_px : ndarray of shape (n_points, 2)
+        Landmark coordinates in video pixels as (x_px, y_px) = (column, row).
+        Must have at least 3 points.
+    landmarks_cm : ndarray of shape (n_points, 2)
+        Corresponding coordinates in environment space as (x_cm, y_cm).
+        Must have the same number of points as landmarks_px.
+    frame_size_px : tuple[int, int]
+        Video frame size as (width, height) in pixels.
+    kind : {"rigid", "similarity", "affine"}, default="similarity"
+        Type of transform to estimate:
+        - "rigid": rotation + translation (4 DOF)
+        - "similarity": uniform scale + rotation + translation (5 DOF)
+        - "affine": full affine (6 DOF)
+
+    Returns
+    -------
+    Affine2D
+        Transform that converts pixel coords to cm coords.
+
+    Raises
+    ------
+    ValueError
+        If fewer than 3 landmarks provided, or landmark arrays have different
+        lengths, or transform estimation fails.
+
+    Notes
+    -----
+    Pixel coordinates use (x_px, y_px) = (column, row) ordering in image space.
+    The frame_size_px is used to apply Y-flip before transform estimation,
+    converting from video coordinates (origin top-left) to standard Cartesian
+    coordinates (origin bottom-left).
+
+    For best results, use landmarks that:
+    - Span the full video frame
+    - Are well-distributed (not collinear)
+    - Have accurate pixel and world coordinates
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.transforms import calibrate_from_landmarks
+    >>> # Arena corners in video pixels and environment cm
+    >>> corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]], dtype=float)
+    >>> corners_cm = np.array([[0, 80], [100, 80], [100, 0], [0, 0]], dtype=float)
+    >>> transform = calibrate_from_landmarks(
+    ...     landmarks_px=corners_px,
+    ...     landmarks_cm=corners_cm,
+    ...     frame_size_px=(640, 480),
+    ...     kind="similarity",
+    ... )
+    """
+    # Validate landmark arrays
+    landmarks_px = np.asarray(landmarks_px, dtype=np.float64)
+    landmarks_cm = np.asarray(landmarks_cm, dtype=np.float64)
+
+    if landmarks_px.ndim != 2 or landmarks_px.shape[1] != 2:
+        raise ValueError(
+            f"WHAT: landmarks_px must have shape (n_points, 2), got {landmarks_px.shape}.\n"
+            f"WHY: Each landmark needs (x, y) coordinates.\n"
+            f"HOW: Provide landmarks as shape (n_points, 2) array."
+        )
+
+    if landmarks_cm.ndim != 2 or landmarks_cm.shape[1] != 2:
+        raise ValueError(
+            f"WHAT: landmarks_cm must have shape (n_points, 2), got {landmarks_cm.shape}.\n"
+            f"WHY: Each landmark needs (x, y) coordinates.\n"
+            f"HOW: Provide landmarks as shape (n_points, 2) array."
+        )
+
+    n_px = len(landmarks_px)
+    n_cm = len(landmarks_cm)
+
+    if n_px != n_cm:
+        raise ValueError(
+            f"WHAT: landmarks_px ({n_px} points) and landmarks_cm ({n_cm} points) "
+            f"must have the same number of points.\n"
+            f"WHY: Each pixel landmark must have a corresponding cm landmark.\n"
+            f"HOW: Ensure both arrays have the same length."
+        )
+
+    if n_px < 3:
+        raise ValueError(
+            f"WHAT: Need at least 3 landmarks for transform estimation (got {n_px}).\n"
+            f"WHY: Affine transforms have at least 4 degrees of freedom.\n"
+            f"HOW: Provide at least 3 non-collinear landmark pairs."
+        )
+
+    # Apply Y-flip to pixel coordinates before estimation
+    # This converts from video coords (origin top-left) to standard coords
+    _, frame_height = frame_size_px
+    landmarks_px_flipped = landmarks_px.copy()
+    landmarks_px_flipped[:, 1] = frame_height - landmarks_px[:, 1]
+
+    # Use estimate_transform from this module (returns AffineND, wrap in Affine2D)
+    result = estimate_transform(landmarks_px_flipped, landmarks_cm, kind=kind)
+    return Affine2D(result.A)
+
+
 # --- 3D Transform Factories ------------------------------------------
 def translate_3d(tx: float = 0.0, ty: float = 0.0, tz: float = 0.0) -> AffineND:
     """Create 3D translation transformation.

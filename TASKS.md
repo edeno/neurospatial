@@ -107,20 +107,20 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 1.1: Add Calibration Helpers
 
-- [ ] Implement `calibrate_from_scale_bar()` in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
-  - [ ] Compute scale from pixel distance between endpoints
-  - [ ] Compose with `flip_y()` for Y-axis correction
-  - [ ] Return `Affine2D` with working inverse
-- [ ] Implement `calibrate_from_landmarks()` in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
-  - [ ] Use existing `estimate_transform()` internally
-  - [ ] Compose with `flip_y()` for Y-axis correction
-  - [ ] Support `kind` parameter: "rigid", "similarity", "affine"
-- [ ] Write unit tests in [tests/test_transforms.py](tests/test_transforms.py):
-  - [ ] `test_scale_bar_calibration`
-  - [ ] `test_landmark_calibration_rigid`
-  - [ ] `test_landmark_calibration_similarity`
-  - [ ] `test_roundtrip_px_cm_px` with tolerance `max(1e-4, 1e-6 * extent)`
-- [ ] Verify: `uv run pytest tests/test_transforms.py -v -k calibrat`
+- [x] Implement `calibrate_from_scale_bar()` in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
+  - [x] Compute scale from pixel distance between endpoints
+  - [x] Compose with `flip_y()` for Y-axis correction
+  - [x] Return `Affine2D` with working inverse
+- [x] Implement `calibrate_from_landmarks()` in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
+  - [x] Use existing `estimate_transform()` internally
+  - [x] Compose with `flip_y()` for Y-axis correction
+  - [x] Support `kind` parameter: "rigid", "similarity", "affine"
+- [x] Write unit tests in [tests/test_transforms.py](tests/test_transforms.py):
+  - [x] `test_scale_bar_calibration`
+  - [x] `test_landmark_calibration_rigid`
+  - [x] `test_landmark_calibration_similarity`
+  - [x] `test_roundtrip_px_cm_px` with tolerance `max(1e-4, 1e-6 * extent)`
+- [x] Verify: `uv run pytest tests/test_transforms.py -v -k calibrat`
 
 ### Task 1.2: Add VideoCalibration Dataclass
 
