@@ -135,12 +135,41 @@ def animate_fields(
 
     Notes
     -----
-    For parallel video rendering, ensure environment is pickle-able by calling
-    env.clear_cache() before animating.
+    **Backend Selection Guide:**
 
-    Backend signature mismatches with EnvironmentProtocol are intentional during
-    phased implementation. Overlay parameters will be added to backend signatures
-    in Milestones 3-5.
+    +---------+------------+------------------+----------------------------------+
+    | Backend | Best For   | Frame Count      | Features                         |
+    +=========+============+==================+==================================+
+    | napari  | Exploration| 100K+            | Interactive, O(1) seek, zoom     |
+    +---------+------------+------------------+----------------------------------+
+    | video   | Export     | Any (parallel)   | MP4 for publications, n_workers  |
+    +---------+------------+------------------+----------------------------------+
+    | widget  | Notebooks  | <5K              | Inline display, simple scrubbing |
+    +---------+------------+------------------+----------------------------------+
+    | html    | Sharing    | <500             | Standalone file, no dependencies |
+    +---------+------------+------------------+----------------------------------+
+
+    **Auto-selection criteria** (``backend="auto"``):
+
+    - If ``save_path`` ends with ``.mp4``: video
+    - If ``save_path`` ends with ``.html``: html
+    - If in Jupyter notebook: widget
+    - Otherwise: napari
+
+    **Large-dataset recommendations:**
+
+    - **100K+ frames**: Use ``backend="napari"`` for interactive exploration.
+      Napari has O(1) frame seek time regardless of dataset size.
+    - **Export to video**: Use ``backend="video"`` with ``n_workers=4`` for
+      parallel rendering. Call ``env.clear_cache()`` first.
+    - **Subsampling**: For high-frequency data (e.g., 250 Hz), subsample to
+      30-60 fps with ``subsample_frames(fields, source_fps=250, target_fps=30)``
+      from ``neurospatial.animation``.
+
+    **Parallel video rendering:**
+
+    Ensure environment is pickle-able by calling ``env.clear_cache()`` before
+    animating with ``n_workers > 1``.
     """
     # Normalize fields to list of arrays
     if isinstance(fields, np.ndarray):

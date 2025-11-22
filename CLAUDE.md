@@ -770,6 +770,34 @@ The overlay system provides three public dataclasses for visualizing animal beha
 - Regions: Use `show_regions=True` or `show_regions=["region1", "region2"]`
 - Parallel rendering: Call `env.clear_cache()` before `n_workers > 1`
 
+### Skeleton Class (v0.4.0+)
+
+The `Skeleton` class defines anatomical structure for pose tracking:
+
+```python
+from neurospatial.animation.skeleton import Skeleton, SIMPLE_SKELETON
+
+# Create a skeleton
+skeleton = Skeleton(
+    name="mouse",
+    nodes=("nose", "body", "tail"),
+    edges=(("nose", "body"), ("body", "tail")),  # Edges normalized automatically
+)
+
+# Edge canonicalization: ("body", "nose") becomes ("body", "nose") since "body" < "nose"
+# Duplicates removed: ("a", "b") and ("b", "a") become single ("a", "b")
+
+# Graph traversal via adjacency property
+skeleton.adjacency["body"]  # Returns ['nose', 'tail'] - neighbors sorted
+```
+
+**Key features**:
+- **Edge canonicalization**: Edges stored in lexicographic order `(min, max)`
+- **Deduplication**: Reversed duplicates automatically removed
+- **Adjacency property**: Precomputed O(1) access for graph traversal
+- **Immutable**: Frozen dataclass with slots for performance
+- **Factory methods**: `from_edge_list()`, `from_ndx_pose()`, `from_movement()`
+
 ## Testing Structure
 
 Tests mirror source structure:

@@ -9,6 +9,20 @@ The module contains:
 - Internal data containers: PositionData, BodypartData, HeadDirectionData
 - Conversion pipeline: Aligns overlay data to animation frame times
 - Validation functions: WHAT/WHY/HOW error messages for common issues
+
+Performance Considerations
+--------------------------
+- **NaN handling**: NaN values in overlay data are propagated through interpolation.
+  Frames where any coordinate is NaN will not render that overlay element. This is
+  useful for handling missing tracking data (e.g., occluded bodyparts).
+- **Expected shapes**: Position data should be shape (n_samples, n_dims). For 2D
+  environments, n_dims=2. All bodyparts in BodypartOverlay must have the same
+  n_samples.
+- **Temporal alignment**: When overlays have higher sampling rates than field frames
+  (e.g., 120 Hz tracking vs 10 Hz fields), provide ``times`` to the overlay and
+  ``frame_times`` to animate_fields. Linear interpolation aligns automatically.
+- **Multi-animal**: Multiple overlays can be passed as a list. Each is rendered
+  independently.
 """
 
 from __future__ import annotations

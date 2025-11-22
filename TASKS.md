@@ -534,12 +534,14 @@ skeleton.adjacency["body"]  # Returns ['head', 'tail'] for chain skeleton
 - [x] `benchmarks/bench_widget.py` - CLI tool with timing table
 - [x] Each prints compact before/after comparison
 
-### 7.3 Documentation Updates
+### 7.3 Documentation Updates - COMPLETE
 
-- [ ] `animate_fields` docstring: overlays, backends, large-dataset recommendations
-- [ ] Overlay dataclasses: performance considerations (NaN cleaning, expected shapes)
-- [ ] Backend descriptions: auto-selection criteria, strengths per use case
-- [ ] Update CLAUDE.md with any new patterns
+**Completed 2025-11-22**: Updated docstrings and CLAUDE.md.
+
+- [x] `animate_fields` docstring: Added backend selection guide, auto-selection criteria, large-dataset recommendations
+- [x] Overlay dataclasses: Added performance considerations to module docstring (NaN handling, expected shapes, temporal alignment)
+- [x] Backend descriptions: Added table comparing backends by use case, frame count, features
+- [x] Updated CLAUDE.md: Added Skeleton class section with edge canonicalization and adjacency docs
 
 ---
 
@@ -554,7 +556,7 @@ skeleton.adjacency["body"]  # Returns ['head', 'tail'] for chain skeleton
 | Phase 4: Widget | Complete | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
 | Phase 5: Video | Complete | 5.1-5.4 done (robustness improvements, no regression) |
 | Phase 6: Skeleton | Complete | 6.1-6.2 done (edge normalization + adjacency property) |
-| Phase 7: Tests/Docs | **In Progress** | 7.1-7.2 done, 7.3 pending |
+| Phase 7: Tests/Docs | **Complete** | 7.1-7.3 all done |
 
 ---
 
