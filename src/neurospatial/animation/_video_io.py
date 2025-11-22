@@ -9,12 +9,70 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple, Protocol, runtime_checkable
 
 import numpy as np
+from numpy.typing import NDArray
 
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
+
+@runtime_checkable
+class VideoReaderProtocol(Protocol):
+    """Protocol defining the interface for video frame readers.
+
+    This protocol enables type-safe handling of both VideoReader instances
+    and pre-loaded numpy arrays in VideoData. Classes implementing this
+    protocol must provide frame count, frame dimensions, and indexed access.
+
+    Attributes
+    ----------
+    n_frames : int
+        Total number of frames in the video.
+    frame_size_px : tuple[int, int]
+        Frame dimensions as (width, height) in pixels.
+
+    Methods
+    -------
+    __getitem__(idx: int) -> NDArray[np.uint8]
+        Get a frame by index, returning RGB uint8 array of shape (H, W, 3).
+
+    Examples
+    --------
+    >>> def render_video(reader: VideoReaderProtocol) -> None:
+    ...     for i in range(reader.n_frames):
+    ...         frame = reader[i]
+    ...         # Process frame...
+
+    Notes
+    -----
+    The protocol is runtime-checkable, allowing isinstance() checks:
+
+    >>> isinstance(my_reader, VideoReaderProtocol)  # True if implements protocol
+    """
+
+    @property
+    def n_frames(self) -> int:
+        """Total number of frames in the video."""
+        ...
+
+    @property
+    def frame_size_px(self) -> tuple[int, int]:
+        """Frame dimensions as (width, height) in pixels."""
+        ...
+
+    def __getitem__(self, idx: int) -> NDArray[np.uint8]:
+        """Get frame by index.
+
+        Parameters
+        ----------
+        idx : int
+            Frame index (0-based).
+
+        Returns
+        -------
+        NDArray[np.uint8]
+            RGB frame array of shape (height, width, 3).
+        """
+        ...
 
 
 class CacheInfo(NamedTuple):

@@ -469,7 +469,7 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Low - Improves IDE support and reduces `Any`
 
-- [ ] Create `VideoReaderProtocol` in [src/neurospatial/animation/_video_io.py](src/neurospatial/animation/_video_io.py):
+- [x] Create `VideoReaderProtocol` in [src/neurospatial/animation/_video_io.py](src/neurospatial/animation/_video_io.py):
 
   ```python
   class VideoReaderProtocol(Protocol):
@@ -478,8 +478,8 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
       def __getitem__(self, idx: int) -> NDArray[np.uint8]: ...
   ```
 
-- [ ] Update `VideoData.reader` type: `NDArray[np.uint8] | VideoReaderProtocol`
-- [ ] Remove `Any` type annotations where VideoReader is used
+- [x] Update `VideoData.reader` type: `NDArray[np.uint8] | VideoReaderProtocol`
+- [x] Remove `Any` type annotations where VideoReader is used
 
 ### Task 8.6: Document Overlay JSON Schema for HTML
 

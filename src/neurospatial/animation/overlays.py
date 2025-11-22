@@ -35,8 +35,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial.animation._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
-    from neurospatial.transforms import VideoCalibration
+    from neurospatial.transforms import Affine2D, VideoCalibration
 
 # =============================================================================
 # Public API: User-facing overlay dataclasses
@@ -736,9 +737,9 @@ class VideoData:
     frame_indices : ndarray of shape (n_animation_frames,), dtype int
         Mapping from animation frame indices to video frame indices.
         Value of -1 indicates no video frame available (out of range).
-    reader : NDArray[np.uint8] or VideoReader
+    reader : NDArray[np.uint8] or VideoReaderProtocol
         Video source. Either a pre-loaded array of shape (n_video_frames, height,
-        width, 3) with dtype uint8, or a VideoReader instance for streaming.
+        width, 3) with dtype uint8, or a VideoReaderProtocol-compliant reader.
     transform_to_env : Affine2D or None
         Transform from video pixel coordinates to environment coordinates.
         If None, video is displayed in pixel coordinates.
@@ -754,8 +755,9 @@ class VideoData:
     ----------
     frame_indices : NDArray[np.int_]
         Animation-to-video frame mapping.
-    reader : NDArray[np.uint8] | Any
-        Video source (array or VideoReader).
+    reader : NDArray[np.uint8] | VideoReaderProtocol
+        Video source. Either a pre-loaded array of shape (n_video_frames, height,
+        width, 3) with dtype uint8, or a VideoReaderProtocol-compliant reader.
     transform_to_env : Affine2D | None
         Coordinate transform.
     env_bounds : tuple[float, float, float, float]
@@ -768,18 +770,19 @@ class VideoData:
     See Also
     --------
     VideoOverlay : User-facing overlay configuration
+    VideoReaderProtocol : Interface for video readers
 
     Notes
     -----
     For pickle-safety with parallel rendering:
 
     - Pre-loaded arrays (NDArray[np.uint8]) are pickle-safe
-    - VideoReader instances must implement pickle protocol (Task 3.1)
+    - VideoReader instances implement pickle protocol (drops cache on pickle)
     """
 
     frame_indices: NDArray[np.int_]
-    reader: NDArray[np.uint8] | Any  # NDArray or VideoReader (future)
-    transform_to_env: Any | None  # Affine2D | None
+    reader: NDArray[np.uint8] | VideoReaderProtocol
+    transform_to_env: Affine2D | None
     env_bounds: tuple[float, float, float, float]
     alpha: float
     z_order: Literal["below", "above"]

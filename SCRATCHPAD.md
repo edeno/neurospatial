@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.4 (Document Coordinate Conventions)
-**Next**: Milestone 8 - Task 8.5 (Add VideoReaderProtocol for Type Safety)
+**Completed**: Milestone 8 - Task 8.5 (Add VideoReaderProtocol for Type Safety)
+**Next**: Milestone 8 - Task 8.6 (Document Overlay JSON Schema for HTML)
 
 ---
 
@@ -344,4 +344,16 @@ None currently.
     - Coordinate flow diagram in docstring
     - Y-FLIP POLICY prominently documented
   - All 40 video overlay tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.5 - Add VideoReaderProtocol for Type Safety
+  - Created `VideoReaderProtocol` in `_video_io.py`:
+    - Runtime-checkable Protocol class
+    - Properties: `n_frames`, `frame_size_px`
+    - Method: `__getitem__(idx: int) -> NDArray[np.uint8]`
+  - Updated `VideoData.reader` type from `NDArray | Any` to `NDArray | VideoReaderProtocol`
+  - Updated `VideoData.transform_to_env` type from `Any | None` to `Affine2D | None`
+  - Added `VideoReaderProtocol` to animation module exports
+  - Updated docstrings to reference VideoReaderProtocol
+  - All 58 video tests passing
   - ruff and mypy pass
