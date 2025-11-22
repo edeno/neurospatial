@@ -543,7 +543,7 @@ def _build_video_napari_affine(
 
     if video_data.transform_to_env is not None:
         # Use provided transform
-        video_to_env = video_data.transform_to_env.matrix
+        video_to_env = video_data.transform_to_env.A  # 3x3 homogeneous matrix
     else:
         # Build scale+translate from video pixels to env bounds
         # Video pixel (0,0) is top-left, (video_w, video_h) is bottom-right

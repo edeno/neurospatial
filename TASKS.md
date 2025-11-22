@@ -391,16 +391,16 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 7.2: Create Example Notebook
 
-- [ ] Create [examples/18_video_overlay.ipynb](examples/18_video_overlay.ipynb)
-- [ ] Sections:
-  - [ ] Loading and inspecting video metadata
-  - [ ] Calibrating with scale bar method
-  - [ ] Calibrating with landmark correspondences
-  - [ ] Creating VideoOverlay with various options
-  - [ ] Animating fields with video background
-  - [ ] Exporting synchronized video
-  - [ ] Performance tips for large videos
-- [ ] Test notebook runs without errors
+- [x] Create [examples/18_video_overlay.ipynb](examples/18_video_overlay.ipynb)
+- [x] Sections:
+  - [x] Loading and inspecting video metadata
+  - [x] Calibrating with scale bar method
+  - [x] Calibrating with landmark correspondences
+  - [x] Creating VideoOverlay with various options
+  - [x] Animating fields with video background
+  - [x] Exporting synchronized video
+  - [x] Performance tips for large videos
+- [x] Test notebook runs without errors
 
 ### Task 7.3: Update Animation Guide
 

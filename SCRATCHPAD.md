@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 7 - Task 7.1 (Update CLAUDE.md)
-**Next**: Milestone 7 - Task 7.2 (Create Example Notebook)
+**Completed**: Milestone 7 - Task 7.2 (Create Example Notebook)
+**Next**: Milestone 7 - Task 7.3 (Update Animation Guide)
 
 ---
 
@@ -243,4 +243,20 @@ None currently.
   - Added common gotcha #14: VideoOverlay requires 2D environments
     - Includes support matrix (2D grid ✓, 2D polygon ⚠️, 1D ✗)
   - Verified all imports work via Python
+  - All 804 animation tests passing
+
+- **Completed M7 (partial)**: 7.2 - Create Example Notebook
+  - Created `examples/18_video_overlay.ipynb` with all required sections:
+    - Loading and inspecting video metadata (VideoReader)
+    - Calibrating with scale bar method (calibrate_from_scale_bar)
+    - Calibrating with landmark correspondences (calibrate_from_landmarks)
+    - Creating VideoOverlay with various options (alpha, z_order, crop, downsample)
+    - Animating fields with video background (Napari backend)
+    - Exporting synchronized video (video backend, widget backend)
+    - Performance tips for large videos (cache size, downsampling, subsampling)
+  - Fixed trajectory to stay within environment bounds (clipping)
+  - Fixed widget backend demo with proper temporal alignment (times parameter)
+  - **Bug fix**: Changed `video_data.transform_to_env.matrix` to `.A` in napari_backend.py
+    - `Affine2D` uses `.A` attribute, not `.matrix`
+  - Notebook executes without errors
   - All 804 animation tests passing
