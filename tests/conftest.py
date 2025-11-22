@@ -495,3 +495,94 @@ def sample_calibration():
         transform_px_to_cm=transform,
         frame_size_px=(16, 16),
     )
+
+
+# =============================================================================
+# Video Overlay Environment Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def linearized_env() -> Environment:
+    """1D linearized track environment for video overlay rejection tests.
+
+    This environment has n_dims=1 and should be rejected by VideoOverlay
+    validation since video frames are 2D images.
+
+    Returns
+    -------
+    Environment
+        1D track environment with 15 bins along a linear path.
+    """
+    import networkx as nx
+
+    # Create a simple linear 1D track
+    graph = nx.Graph()
+    # Add nodes with 1D positions (tuples of length 1)
+    graph.add_nodes_from(
+        [
+            (0, {"pos": (0.0,)}),
+            (1, {"pos": (10.0,)}),
+            (2, {"pos": (20.0,)}),
+            (3, {"pos": (30.0,)}),
+        ]
+    )
+    # Add edges with required distance attributes
+    graph.add_edge(0, 1, distance=10.0)
+    graph.add_edge(1, 2, distance=10.0)
+    graph.add_edge(2, 3, distance=10.0)
+
+    edge_order = [(0, 1), (1, 2), (2, 3)]
+    return Environment.from_graph(
+        graph, edge_order, edge_spacing=0.0, bin_size=2.0, name="LinearizedTrack"
+    )
+
+
+@pytest.fixture(scope="session")
+def polygon_env() -> Environment:
+    """Non-grid 2D polygon environment for video overlay fallback tests.
+
+    This environment uses from_polygon which creates a MaskedGridLayout.
+    It has dimension_ranges but may not have a perfect rectangular grid_shape
+    (bins are masked by polygon boundary).
+
+    Returns
+    -------
+    Environment
+        2D polygon environment covering 100x80 cm rectangle.
+    """
+    from shapely.geometry import box
+
+    polygon = box(0, 0, 100, 80)  # Rectangle 100x80 cm
+    return Environment.from_polygon(polygon, bin_size=5.0, name="PolygonEnv")
+
+
+@pytest.fixture(scope="session")
+def masked_env() -> Environment:
+    """Grid 2D environment with mask for full video overlay support tests.
+
+    This environment has complete grid metadata (grid_shape, dimension_ranges)
+    and represents the standard use case for video overlays.
+
+    Returns
+    -------
+    Environment
+        2D masked grid environment covering 100x80 cm rectangle.
+    """
+    # Create a boolean mask for a rectangular region
+    # mask shape is (dim0_bins, dim1_bins) matching grid_edges order
+    # grid_edges = (dim0_edges, dim1_edges)
+    # For a 100x80 cm region with bin_size=5:
+    # - dim0 (x): 20 bins -> 21 edges
+    # - dim1 (y): 16 bins -> 17 edges
+    x_edges = np.linspace(0, 100, 21)  # 20 bins
+    y_edges = np.linspace(0, 80, 17)  # 16 bins
+
+    # mask shape must match (len(x_edges)-1, len(y_edges)-1) = (20, 16)
+    mask = np.ones((20, 16), dtype=bool)
+
+    return Environment.from_mask(
+        mask,
+        grid_edges=(x_edges, y_edges),
+        name="MaskedGridEnv",
+    )

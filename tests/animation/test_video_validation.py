@@ -5,6 +5,11 @@ Tests validate:
 - Non-grid 2D environment support with dimension_ranges fallback
 - Video export and import work without napari installed
 
+Uses shared fixtures from conftest.py:
+- linearized_env: 1D track environment for rejection tests
+- polygon_env: non-grid 2D polygon environment for fallback tests
+- masked_env: grid 2D environment for full support tests
+
 Run with:
     uv run pytest tests/animation/test_video_validation.py -v
 """
@@ -16,61 +21,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.animation.overlays import VideoOverlay, _validate_video_env
 
 if TYPE_CHECKING:
     from neurospatial.transforms import VideoCalibration
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def env_1d() -> Environment:
-    """Create a 1D track environment using from_graph."""
-    # Create a simple linear 1D track
-    graph = nx.Graph()
-    # Add nodes with 1D positions (tuples of length 1)
-    graph.add_nodes_from(
-        [
-            (0, {"pos": (0.0,)}),
-            (1, {"pos": (10.0,)}),
-            (2, {"pos": (20.0,)}),
-            (3, {"pos": (30.0,)}),
-        ]
-    )
-    # Add edges with required distance attributes
-    graph.add_edge(0, 1, distance=10.0)
-    graph.add_edge(1, 2, distance=10.0)
-    graph.add_edge(2, 3, distance=10.0)
-
-    edge_order = [(0, 1), (1, 2), (2, 3)]
-    # edge_spacing=0.0 means use node positions directly
-    return Environment.from_graph(
-        graph, edge_order, edge_spacing=0.0, bin_size=2.0, name="Linear1D"
-    )
-
-
-@pytest.fixture
-def env_2d_polygon() -> Environment:
-    """Create a non-grid 2D environment using from_polygon."""
-    polygon = box(0, 0, 100, 80)  # Rectangle 100x80
-    return Environment.from_polygon(polygon, bin_size=5.0, name="Polygon2D")
-
-
-@pytest.fixture
-def env_2d_grid() -> Environment:
-    """Create a standard grid-based 2D environment."""
-    positions = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 80.0], [0.0, 80.0]])
-    return Environment.from_samples(positions, bin_size=5.0, name="Grid2D")
 
 
 # =============================================================================
@@ -81,7 +39,7 @@ def env_2d_grid() -> Environment:
 class TestEnvironmentValidation:
     """Test _validate_video_env rejects invalid environments."""
 
-    def test_rejects_1d_environment(self, env_1d: Environment):
+    def test_rejects_1d_environment(self, linearized_env: Environment):
         """Test that VideoOverlay rejects 1D environments.
 
         WHAT: 1D environments should raise ValueError.
@@ -89,17 +47,17 @@ class TestEnvironmentValidation:
         HOW: Use a 2D environment (from_samples, from_polygon, etc.).
         """
         with pytest.raises(ValueError, match=r"requires.*2D"):
-            _validate_video_env(env_1d)
+            _validate_video_env(linearized_env)
 
-    def test_accepts_2d_grid_environment(self, env_2d_grid: Environment):
+    def test_accepts_2d_grid_environment(self, masked_env: Environment):
         """Test that standard 2D grid environments are accepted."""
         # Should not raise
-        _validate_video_env(env_2d_grid)
+        _validate_video_env(masked_env)
 
-    def test_accepts_2d_polygon_environment(self, env_2d_polygon: Environment):
+    def test_accepts_2d_polygon_environment(self, polygon_env: Environment):
         """Test that non-grid 2D polygon environments are accepted."""
         # Should not raise - polygon envs have dimension_ranges
-        _validate_video_env(env_2d_polygon)
+        _validate_video_env(polygon_env)
 
 
 class TestNonGridEnvironmentSupport:
@@ -108,7 +66,7 @@ class TestNonGridEnvironmentSupport:
     def test_non_grid_2d_environment_works_with_warning(
         self,
         tmp_path: Path,
-        env_2d_polygon: Environment,
+        polygon_env: Environment,
         sample_video_array: np.ndarray,
         sample_calibration: VideoCalibration,
     ):
@@ -121,7 +79,7 @@ class TestNonGridEnvironmentSupport:
         # sample_video_array has 10 frames, so use 10 frames for fields
         n_frames = 10
         rng = np.random.default_rng(42)
-        fields = rng.random((n_frames, env_2d_polygon.n_bins))
+        fields = rng.random((n_frames, polygon_env.n_bins))
 
         # Create calibration for 100x80 env
         from neurospatial.transforms import (
@@ -147,10 +105,10 @@ class TestNonGridEnvironmentSupport:
         output_path = tmp_path / "polygon_with_video.mp4"
 
         # Clear cache for pickle safety
-        env_2d_polygon.clear_cache()
+        polygon_env.clear_cache()
 
         # This should work (may emit fallback warning for non-grid)
-        env_2d_polygon.animate_fields(
+        polygon_env.animate_fields(
             fields,
             overlays=[video_overlay],
             backend="video",
@@ -162,22 +120,22 @@ class TestNonGridEnvironmentSupport:
         # Verify output was created
         assert output_path.exists(), "Output should be created for polygon env"
 
-    def test_non_grid_extent_uses_dimension_ranges(self, env_2d_polygon: Environment):
+    def test_non_grid_extent_uses_dimension_ranges(self, polygon_env: Environment):
         """Test that dimension_ranges defines the extent for non-grid envs.
 
         Non-grid environments should use dimension_ranges for video alignment
         since they may not have a regular grid_shape.
         """
         # Verify the polygon environment has dimension_ranges
-        assert env_2d_polygon.dimension_ranges is not None
+        assert polygon_env.dimension_ranges is not None
 
         # Check the dimension ranges match our expected bounds (0-100, 0-80)
-        x_range, y_range = env_2d_polygon.dimension_ranges
+        x_range, y_range = polygon_env.dimension_ranges
         assert x_range[0] >= 0 and x_range[1] <= 100
         assert y_range[0] >= 0 and y_range[1] <= 80
 
         # Validation should pass
-        _validate_video_env(env_2d_polygon)
+        _validate_video_env(polygon_env)
 
 
 # =============================================================================
@@ -191,7 +149,7 @@ class TestNapariFreeOperation:
     def test_video_export_without_napari(
         self,
         tmp_path: Path,
-        env_2d_grid: Environment,
+        masked_env: Environment,
         sample_video_array: np.ndarray,
         sample_calibration: VideoCalibration,
     ):
@@ -203,7 +161,7 @@ class TestNapariFreeOperation:
         # Create test fields - must match sample_video_array frame count (10)
         n_frames = 10
         rng = np.random.default_rng(42)
-        fields = rng.random((n_frames, env_2d_grid.n_bins))
+        fields = rng.random((n_frames, masked_env.n_bins))
 
         video_overlay = VideoOverlay(
             source=sample_video_array,
@@ -217,10 +175,10 @@ class TestNapariFreeOperation:
         # Mock napari as not installed
         with patch.dict(sys.modules, {"napari": None}):
             # Clear cache for pickle safety
-            env_2d_grid.clear_cache()
+            masked_env.clear_cache()
 
             # Video export should work without napari
-            env_2d_grid.animate_fields(
+            masked_env.animate_fields(
                 fields,
                 overlays=[video_overlay],
                 backend="video",

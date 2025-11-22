@@ -366,18 +366,14 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 6.5: Add Test Fixtures
 
-- [ ] Add environment fixtures to [tests/conftest.py](tests/conftest.py):
-  - [ ] `linearized_env` (1D, for rejection tests)
-  - [ ] `polygon_env` (non-grid 2D, for fallback tests)
-  - [ ] `masked_env` (grid 2D, for full support tests)
-- [ ] Add pytest marker configuration to [pyproject.toml](pyproject.toml):
+- [x] Add environment fixtures to [tests/conftest.py](tests/conftest.py):
+  - [x] `linearized_env` (1D, for rejection tests)
+  - [x] `polygon_env` (non-grid 2D, for fallback tests)
+  - [x] `masked_env` (grid 2D, for full support tests)
+- [x] Add pytest marker configuration to [pyproject.toml](pyproject.toml):
+  - Already configured in pytest.ini: `slow`, `gui`, `napari` markers
 
-  ```toml
-  [tool.pytest.ini_options]
-  markers = ["slow: marks tests as slow"]
-  ```
-
-**M5 Checkpoint**: `uv run pytest` all tests pass
+**M6 Checkpoint**: `uv run pytest` all tests pass ✓
 
 ---
 

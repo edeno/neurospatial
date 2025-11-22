@@ -195,11 +195,21 @@
   - All 8 tests passing
   - Verified `_validate_video_env()` correctly rejects 1D envs and accepts 2D envs
 
+- **Completed M6**: 6.5 - Add Test Fixtures
+  - Added shared fixtures to `tests/conftest.py`:
+    - `linearized_env` - 1D track environment for rejection tests
+    - `polygon_env` - non-grid 2D polygon environment for fallback tests
+    - `masked_env` - grid 2D environment for full support tests
+  - Updated `test_video_validation.py` to use shared fixtures
+  - pytest markers already configured in pytest.ini (`slow`, `gui`, `napari`)
+  - All 801 animation tests passing
+
 ---
 
 ## Current Task
 
-**Next**: Milestone 6 - Task 6.5 (Add Test Fixtures)
+**Completed**: Milestone 6 (Testing)
+**Next**: Milestone 7 - Documentation (Task 7.1)
 
 ---
 
