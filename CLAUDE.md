@@ -198,10 +198,9 @@ from neurospatial.animation import VideoOverlay, calibrate_video
 from neurospatial.transforms import calibrate_from_landmarks, VideoCalibration
 
 # Create calibration from known landmarks (video pixels → environment cm)
-transform = calibrate_from_landmarks(
-    src_points=[(100, 200), (500, 200), (500, 400)],  # Video pixels
-    dst_points=[(0, 0), (100, 0), (100, 50)],          # Environment cm
-)
+landmarks_px = np.array([[100, 200], [500, 200], [500, 400]])  # Video pixels
+landmarks_cm = np.array([[0, 0], [100, 0], [100, 50]])          # Environment cm
+transform = calibrate_from_landmarks(landmarks_px, landmarks_cm, frame_size_px=(640, 480))
 calib = VideoCalibration(transform, frame_size_px=(640, 480))
 
 # Video overlay with calibration
