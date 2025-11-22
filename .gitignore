@@ -184,3 +184,4 @@ cython_debug/
 # Research/experimental code (not for distribution)
 examples/research/
 docs/research/
+data/
