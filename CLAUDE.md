@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-20 (v0.4.0 - Animation overlays feature)
+**Last Updated**: 2025-11-22 (v0.5.0 - Video overlay feature)
 
 ## Table of Contents
 
@@ -189,8 +189,71 @@ env.animate_fields(
     backend="napari"
 )
 
-# Backend capabilities: Napari/Video/Widget support all overlays; HTML supports position+regions only
+# Backend capabilities:
+# - Napari/Video/Widget: All overlays including VideoOverlay
+# - HTML: Position + regions only (VideoOverlay skipped with warning)
+
+# Video overlay - display recorded video behind/above spatial fields (v0.5.0+)
+from neurospatial.animation import VideoOverlay, calibrate_video
+from neurospatial.transforms import calibrate_from_landmarks, VideoCalibration
+
+# Create calibration from known landmarks (video pixels → environment cm)
+transform = calibrate_from_landmarks(
+    src_points=[(100, 200), (500, 200), (500, 400)],  # Video pixels
+    dst_points=[(0, 0), (100, 0), (100, 50)],          # Environment cm
+)
+calib = VideoCalibration(transform, frame_size_px=(640, 480))
+
+# Video overlay with calibration
+video_overlay = VideoOverlay(
+    source="experiment.mp4",     # Or pre-loaded array (n_frames, H, W, 3)
+    calibration=calib,           # Pixel → cm transform
+    alpha=0.5,                   # 50% blend (default) - equal video/field visibility
+    z_order="above",             # Render on top of field (default)
+)
+env.animate_fields(fields, overlays=[video_overlay], backend="napari")
+
+# Adjust alpha to control video/field balance:
+# - alpha=0.3: 30% video, 70% field (field dominant)
+# - alpha=0.5: 50% video, 50% field (balanced, default)
+# - alpha=0.7: 70% video, 30% field (video dominant)
+
+# Convenience function: calibrate_video() (recommended approach)
+from neurospatial.animation import calibrate_video
+
+# Method 1: Scale bar calibration
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    scale_bar=((100, 200), (300, 200), 50.0),  # Two points + known length in cm
+)
+
+# Method 2: Landmark correspondences (arena corners)
+corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]])  # Video pixels
+corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])       # Environment cm
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    landmarks_px=corners_px,
+    landmarks_env=corners_env,
+)
+
+# Method 3: Direct scale factor
+calibration = calibrate_video("session.mp4", env, cm_per_px=0.25)
+
+# Use calibration with VideoOverlay
+video = VideoOverlay(source="session.mp4", calibration=calibration)
+env.animate_fields(fields, overlays=[video], backend="napari")
 ```
+
+**Video Overlay Best Practices:**
+
+| Goal | Settings | Result |
+|------|----------|--------|
+| Balanced view | `alpha=0.5, z_order="above"` | Equal video/field visibility (default) |
+| Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
+| Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
+| Video as background | `z_order="below"` | Only works if field has transparent regions |
 
 **Coordinate Conventions for Overlays:**
 
@@ -1184,10 +1247,11 @@ env.animate_fields(
 ```
 
 **Backend capability matrix**:
-- Napari: All overlays ✓
-- Video: All overlays ✓
-- Widget: All overlays ✓
-- HTML: Position + regions only ⚠️
+
+- Napari: All overlays including VideoOverlay ✓
+- Video: All overlays including VideoOverlay ✓
+- Widget: All overlays including VideoOverlay ✓
+- HTML: Position + regions only (VideoOverlay skipped with warning) ⚠️
 
 ### 13. Overlay coordinates use environment space
 
@@ -1210,6 +1274,40 @@ overlay = PositionOverlay(data=positions)  # System transforms internally
 ```
 
 **Why**: The animation system automatically transforms environment coordinates to napari pixel space, including axis swap and Y-inversion. Manual pre-transformation causes double-conversion.
+
+### 14. VideoOverlay requires 2D environments (v0.5.0+)
+
+**Problem**: Using VideoOverlay with 1D linearized or 3D environments fails.
+
+❌ Wrong (1D environment):
+
+```python
+# 1D linearized track environments don't support video overlay
+env_1d = Environment.from_graph(track_graph, ...)  # Creates 1D environment
+video = VideoOverlay(source="session.mp4", calibration=calib)
+env_1d.animate_fields(fields, overlays=[video])  # ValueError!
+```
+
+✅ Right (2D environment):
+
+```python
+# VideoOverlay works with any 2D environment
+env_2d = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
+video = VideoOverlay(source="session.mp4", calibration=calib)
+env_2d.animate_fields(fields, overlays=[video], backend="napari")  # ✓ Works
+
+# Also works with polygon and masked environments
+env_polygon = Environment.from_polygon(arena_boundary, bin_size=2.0)
+env_polygon.animate_fields(fields, overlays=[video])  # ✓ Works with fallback warning
+```
+
+**Why**: Video frames are 2D images that map to 2D spatial coordinates. 1D linearized tracks have no meaningful 2D extent for video alignment.
+
+**VideoOverlay support matrix**:
+
+- 2D grid environments: Full support ✓
+- 2D polygon/masked environments: Works with fallback warning ⚠️
+- 1D linearized tracks: Not supported ✗
 
 ## Troubleshooting
 

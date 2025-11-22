@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 6 (Testing)
-**Next**: Milestone 7 - Documentation (Task 7.1)
+**Completed**: Milestone 7 - Task 7.1 (Update CLAUDE.md)
+**Next**: Milestone 7 - Task 7.2 (Create Example Notebook)
 
 ---
 
@@ -225,3 +225,22 @@ None currently.
 2. Ill-conditioned landmark detection uses SVD of centered points, not condition number of output transform
    - Output transform can have good condition even with collinear inputs
    - Singular value ratio of centered source points reliably detects collinearity
+
+---
+
+## Session Log (2025-11-22 continued)
+
+- **Completed M7 (partial)**: 7.1 - Update CLAUDE.md
+  - Updated version from v0.4.0 to v0.5.0
+  - Added `calibrate_video()` convenience function documentation with all 3 methods:
+    - Scale bar calibration
+    - Landmark correspondences
+    - Direct cm_per_px scale factor
+  - Updated import line to include `calibrate_video` from `neurospatial.animation`
+  - Added version annotation `(v0.5.0+)` to video overlay section
+  - Updated backend capabilities comment to explicitly mention VideoOverlay
+  - Updated backend capability matrix in gotcha #12 to include VideoOverlay
+  - Added common gotcha #14: VideoOverlay requires 2D environments
+    - Includes support matrix (2D grid ✓, 2D polygon ⚠️, 1D ✗)
+  - Verified all imports work via Python
+  - All 804 animation tests passing

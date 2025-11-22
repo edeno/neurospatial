@@ -399,14 +399,17 @@ class VideoOverlay:
         monotonically increasing. Default is None.
     alpha : float, optional
         Opacity of the video layer (0.0 = transparent, 1.0 = opaque).
-        Default is 0.7.
+        At alpha=0.5, video and field are equally visible (balanced blend).
+        Default is 0.5.
     z_order : {"below", "above"}, optional
         Rendering order relative to the spatial field layer.
 
-        - "below": Video appears behind the field (default)
-        - "above": Video appears in front of the field
+        - "above" (default): Video blends on top of the field. Use when
+          field is opaque (most common case).
+        - "below": Video appears behind the field. Only visible if field
+          has transparency (e.g., NaN masking, transparent colormap).
 
-        Default is "below".
+        Default is "above".
     crop : tuple[int, int, int, int] | None, optional
         Crop region as (x, y, width, height) in video pixel coordinates.
         If None, full frame is used. Default is None.
@@ -480,9 +483,9 @@ class VideoOverlay:
     >>> # Create video overlay
     >>> overlay = VideoOverlay(source="experiment.mp4", calibration=calib)
     >>> overlay.alpha
-    0.7
+    0.5
     >>> overlay.z_order
-    'below'
+    'above'
 
     Pre-loaded video array:
 
@@ -503,8 +506,8 @@ class VideoOverlay:
     source: str | Path | NDArray[np.uint8]
     calibration: VideoCalibration | None = None
     times: NDArray[np.float64] | None = None
-    alpha: float = 0.7
-    z_order: Literal["below", "above"] = "below"
+    alpha: float = 0.5
+    z_order: Literal["below", "above"] = "above"
     crop: tuple[int, int, int, int] | None = None
     downsample: int = 1
     interp: Literal["linear", "nearest"] = "nearest"
@@ -524,7 +527,7 @@ class VideoOverlay:
             raise ValueError(
                 f"WHAT: alpha must be between 0.0 and 1.0, got {self.alpha}.\n"
                 f"WHY: Alpha controls transparency (0=invisible, 1=opaque).\n"
-                f"HOW: Use alpha=0.7 (default) for semi-transparent overlay."
+                f"HOW: Use alpha=0.5 (default) for semi-transparent overlay."
             )
 
         # Validate downsample

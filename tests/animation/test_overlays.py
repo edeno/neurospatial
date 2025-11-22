@@ -220,8 +220,8 @@ class TestVideoOverlay:
         assert_array_equal(overlay.source, sample_video_array)
         assert overlay.calibration is None
         assert overlay.times is None
-        assert overlay.alpha == 0.7
-        assert overlay.z_order == "below"
+        assert overlay.alpha == 0.5
+        assert overlay.z_order == "above"
         assert overlay.crop is None
         assert overlay.downsample == 1
         assert overlay.interp == "nearest"
@@ -255,13 +255,13 @@ class TestVideoOverlay:
         assert overlay.alpha == 0.5
 
     def test_z_order_below(self, sample_video_array: np.ndarray):
-        """Test VideoOverlay with z_order='below' (default)."""
+        """Test VideoOverlay with z_order='below'."""
         overlay = VideoOverlay(source=sample_video_array, z_order="below")
 
         assert overlay.z_order == "below"
 
     def test_z_order_above(self, sample_video_array: np.ndarray):
-        """Test VideoOverlay with z_order='above'."""
+        """Test VideoOverlay with z_order='above' (default)."""
         overlay = VideoOverlay(source=sample_video_array, z_order="above")
 
         assert overlay.z_order == "above"
@@ -646,8 +646,8 @@ class TestOverlayDataclassDefaults:
 
         assert overlay.calibration is None
         assert overlay.times is None
-        assert overlay.alpha == 0.7
-        assert overlay.z_order == "below"
+        assert overlay.alpha == 0.5
+        assert overlay.z_order == "above"
         assert overlay.crop is None
         assert overlay.downsample == 1
         assert overlay.interp == "nearest"

@@ -383,11 +383,11 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 7.1: Update CLAUDE.md
 
-- [ ] Add VideoOverlay to Quick Reference section
-- [ ] Add code example with calibration
-- [ ] Add to "Animation overlays (v0.4.0+)" section
-- [ ] Update backend capabilities matrix
-- [ ] Add common gotcha for video coordinates
+- [x] Add VideoOverlay to Quick Reference section
+- [x] Add code example with calibration
+- [x] Add to "Animation overlays (v0.4.0+)" section
+- [x] Update backend capabilities matrix
+- [x] Add common gotcha for video coordinates
 
 ### Task 7.2: Create Example Notebook
 
