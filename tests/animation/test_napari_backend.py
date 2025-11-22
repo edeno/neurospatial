@@ -784,7 +784,8 @@ def test_env_scale_repr(simple_env):
     repr_str = repr(scale)
 
     # Should contain class name and key values
-    assert "_EnvScale" in repr_str
+    # Note: The public class is named EnvScale (re-exported as _EnvScale in napari_backend)
+    assert "EnvScale" in repr_str
     assert "x=" in repr_str
     assert "y=" in repr_str
     assert "grid=" in repr_str

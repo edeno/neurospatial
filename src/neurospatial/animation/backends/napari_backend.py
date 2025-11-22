@@ -13,6 +13,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
+# Import shared coordinate transforms
+from neurospatial.animation.transforms import EnvScale as _EnvScale
+from neurospatial.animation.transforms import make_env_scale as _make_env_scale
+from neurospatial.animation.transforms import (
+    transform_coords_for_napari as _transform_coords_for_napari,
+)
+from neurospatial.animation.transforms import (
+    transform_direction_for_napari as _transform_direction_for_napari,
+)
+
+# Re-export for backward compatibility (used by tests)
+__all__ = ["_EnvScale", "_make_env_scale"]
+
 # Performance monitoring support (enabled via NAPARI_PERFMON env var)
 _PERFMON_ENABLED = bool(os.environ.get("NAPARI_PERFMON"))
 if _PERFMON_ENABLED:
@@ -61,11 +74,6 @@ POINT_BORDER_WIDTH: float = 0.5
 BODYPART_POINT_SIZE: float = 5.0
 """Default size for bodypart point markers."""
 
-# Module-level flag for once-per-session fallback warning
-_NAPARI_TRANSFORM_FALLBACK_WARNED: bool = False
-"""Flag to ensure napari transform fallback warning is shown only once per session."""
-
-
 SKELETON_DEFAULT_WIDTH: float = 2.0
 """Default edge width for skeleton lines."""
 
@@ -101,236 +109,8 @@ WIDGET_UPDATE_TARGET_HZ: int = 30
 
 
 # =============================================================================
-# Coordinate Transform Cache
-# =============================================================================
-
-
-class _EnvScale:
-    """Cached environment scale factors for coordinate transforms.
-
-    Pre-computes and caches coordinate transformation constants from an
-    Environment to avoid repeated property lookups during per-frame rendering.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment instance to extract scale factors from.
-
-    Attributes
-    ----------
-    x_min, x_max : float
-        X-axis bounds in environment coordinates.
-    y_min, y_max : float
-        Y-axis bounds in environment coordinates.
-    n_x, n_y : int
-        Grid dimensions (columns, rows).
-    x_scale, y_scale : float
-        Pre-computed scale factors for coordinate conversion.
-    """
-
-    __slots__ = ("n_x", "n_y", "x_max", "x_min", "x_scale", "y_max", "y_min", "y_scale")
-
-    def __init__(self, env: Any) -> None:
-        """Initialize scale factors from environment."""
-        (self.x_min, self.x_max), (self.y_min, self.y_max) = env.dimension_ranges
-        self.n_x, self.n_y = env.layout.grid_shape
-
-        # Pre-compute scale factors (avoid division by zero)
-        x_range = self.x_max - self.x_min
-        y_range = self.y_max - self.y_min
-        self.x_scale = (self.n_x - 1) / x_range if x_range > 0 else 1.0
-        self.y_scale = (self.n_y - 1) / y_range if y_range > 0 else 1.0
-
-    @classmethod
-    def from_env(cls, env: Any) -> _EnvScale | None:
-        """Create _EnvScale from environment, or None if not applicable.
-
-        Returns None if environment lacks required attributes (dimension_ranges,
-        layout.grid_shape), allowing fallback to simple axis swap.
-        """
-        if (
-            env is None
-            or not hasattr(env, "dimension_ranges")
-            or not hasattr(env.layout, "grid_shape")
-        ):
-            return None
-        return cls(env)
-
-    def __repr__(self) -> str:
-        """Return string representation for debugging."""
-        return (
-            f"_EnvScale(x=[{self.x_min:.2f}, {self.x_max:.2f}], "
-            f"y=[{self.y_min:.2f}, {self.y_max:.2f}], "
-            f"grid=({self.n_x}, {self.n_y}))"
-        )
-
-
-def _make_env_scale(env: Any) -> _EnvScale | None:
-    """Create cached scale factors from environment.
-
-    Convenience function wrapping _EnvScale.from_env().
-
-    Parameters
-    ----------
-    env : Environment
-        Environment instance.
-
-    Returns
-    -------
-    scale : _EnvScale or None
-        Cached scale factors, or None if env lacks required attributes.
-    """
-    return _EnvScale.from_env(env)
-
-
-# =============================================================================
 # Overlay Rendering Helper Functions
 # =============================================================================
-
-
-def _transform_direction_for_napari(
-    direction: NDArray[np.float64],
-    env_or_scale: Any | _EnvScale | None = None,
-) -> NDArray[np.float64]:
-    """Transform direction vectors from environment (dx, dy) to napari (dr, dc).
-
-    Unlike positions, direction vectors are displacements and should NOT be
-    translated. They need only axis swapping, Y-axis inversion, and scaling.
-
-    Parameters
-    ----------
-    direction : ndarray
-        Direction vectors with shape (..., n_dims) where last dimension is spatial.
-        For 2D data, expects (..., 2) with (dx, dy) ordering in environment space.
-    env_or_scale : Environment or _EnvScale, optional
-        Environment instance or pre-computed _EnvScale for scaling.
-        If None, only swaps axes and inverts Y.
-
-    Returns
-    -------
-    transformed : ndarray
-        Direction vectors in napari space. For 2D: (dx, dy) → (dr, dc).
-    """
-    if direction.shape[-1] == 2:
-        dx = direction[..., 0]
-        dy = direction[..., 1]
-
-        # Get or create scale factors
-        scale: _EnvScale | None
-        if isinstance(env_or_scale, _EnvScale):
-            scale = env_or_scale
-        else:
-            scale = _make_env_scale(env_or_scale)
-
-        if scale is None:
-            # Fallback: just swap axes and invert Y (may cause alignment issues)
-            global _NAPARI_TRANSFORM_FALLBACK_WARNED
-            if not _NAPARI_TRANSFORM_FALLBACK_WARNED:
-                warnings.warn(
-                    "Napari coordinate transform falling back to simple axis swap.\n"
-                    "This may cause misalignment between overlays and the field image.\n\n"
-                    "CAUSE: Environment lacks dimension_ranges or layout.grid_shape.\n\n"
-                    "FIX: Ensure your environment has proper dimension ranges:\n"
-                    "  - Use Environment.from_samples() which computes ranges automatically\n"
-                    "  - Or set env.dimension_ranges manually\n"
-                    "  - For custom layouts, ensure layout.grid_shape is defined",
-                    UserWarning,
-                    stacklevel=3,
-                )
-                _NAPARI_TRANSFORM_FALLBACK_WARNED = True
-            result = np.empty_like(direction)
-            result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
-            result[..., 1] = dx
-            return result
-
-        # Scale direction vectors using cached scale factors (no translation!)
-        # X → column (scale only)
-        dc = dx * scale.x_scale
-        # Y → row (scale and invert: positive dy → negative dr)
-        dr = -dy * scale.y_scale
-
-        result = np.empty_like(direction)
-        result[..., 0] = dr
-        result[..., 1] = dc
-        return result
-
-    # For other dimensions, return unchanged
-    return direction
-
-
-def _transform_coords_for_napari(
-    coords: NDArray[np.float64],
-    env_or_scale: Any | _EnvScale | None = None,
-) -> NDArray[np.float64]:
-    """Transform coordinates from environment (x, y) to napari pixel (row, col).
-
-    Napari displays images with row 0 at top. After flipping the RGB image vertically,
-    row 0 contains data from max Y. This function maps environment coordinates to
-    pixel/row indices that match the flipped image.
-
-    Transformation:
-    1. Map X to column index: col = (x - x_min) / (x_max - x_min) * (n_x - 1)
-    2. Map Y to flipped row index: row = (n_y - 1) * (y_max - y) / (y_max - y_min)
-
-    Parameters
-    ----------
-    coords : ndarray
-        Coordinates with shape (..., n_dims) where last dimension is spatial.
-        For 2D data, expects (..., 2) with (x, y) ordering in environment space.
-    env_or_scale : Environment or _EnvScale, optional
-        Environment instance or pre-computed _EnvScale for coordinate transformation.
-        Required for 2D coords.
-
-    Returns
-    -------
-    transformed : ndarray
-        Coordinates in napari pixel space. For 2D: (x, y) → (row, col).
-        Higher dimensions returned unchanged.
-    """
-    if coords.shape[-1] == 2:
-        # Get or create scale factors
-        scale: _EnvScale | None
-        if isinstance(env_or_scale, _EnvScale):
-            scale = env_or_scale
-        else:
-            scale = _make_env_scale(env_or_scale)
-
-        if scale is None:
-            # Fallback: just swap x and y (may cause alignment issues)
-            global _NAPARI_TRANSFORM_FALLBACK_WARNED
-            if not _NAPARI_TRANSFORM_FALLBACK_WARNED:
-                warnings.warn(
-                    "Napari coordinate transform falling back to simple axis swap.\n"
-                    "This may cause misalignment between overlays and the field image.\n\n"
-                    "CAUSE: Environment lacks dimension_ranges or layout.grid_shape.\n\n"
-                    "FIX: Ensure your environment has proper dimension ranges:\n"
-                    "  - Use Environment.from_samples() which computes ranges automatically\n"
-                    "  - Or set env.dimension_ranges manually\n"
-                    "  - For custom layouts, ensure layout.grid_shape is defined",
-                    UserWarning,
-                    stacklevel=3,
-                )
-                _NAPARI_TRANSFORM_FALLBACK_WARNED = True
-            return coords[..., ::-1]
-
-        x_coords = coords[..., 0]
-        y_coords = coords[..., 1]
-
-        # Map to pixel indices using cached scale factors
-        # X → column (no flip)
-        col = (x_coords - scale.x_min) * scale.x_scale
-
-        # Y → row (with flip: high Y → low row)
-        row = (scale.n_y - 1) - (y_coords - scale.y_min) * scale.y_scale
-
-        # Return in napari (row, col) order
-        result = np.empty_like(coords)
-        result[..., 0] = row
-        result[..., 1] = col
-        return result
-
-    # For other dimensions, return unchanged
-    return coords
 
 
 def _build_skeleton_vectors(

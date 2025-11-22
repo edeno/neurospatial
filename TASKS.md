@@ -37,11 +37,11 @@
 
 ### 1.1 Centralize Coordinate Transforms
 
-- [ ] Create `neurospatial/animation/transforms.py` (or add to `rendering.py`)
-- [ ] Move `_transform_coords_for_napari` to shared module
-- [ ] Move `_transform_direction_for_napari` to shared module
-- [ ] Update napari backend to use shared functions
-- [ ] Add tests for coordinate transforms
+- [x] Create `neurospatial/animation/transforms.py` (or add to `rendering.py`)
+- [x] Move `_transform_coords_for_napari` to shared module
+- [x] Move `_transform_direction_for_napari` to shared module
+- [x] Update napari backend to use shared functions
+- [x] Add tests for coordinate transforms (19 tests)
 
 ### 1.2 Normalize Layout Metadata
 

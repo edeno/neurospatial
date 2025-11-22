@@ -255,11 +255,49 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
 - Widget PersistentFigureRenderer reuse is effective (~9-10ms/frame)
 - Parallel video rendering gives ~2x speedup for 500+ frames
 
-## Next Task: Phase 1.1 - Centralize Coordinate Transforms
+## Completed: Phase 1.1 - Centralize Coordinate Transforms
+
+### What Was Done
+
+1. **Created `neurospatial/animation/transforms.py`** with shared coordinate transforms:
+   - `EnvScale` class - cached scale factors for coordinate transformation
+   - `make_env_scale(env)` - convenience factory function
+   - `transform_coords_for_napari(coords, env_or_scale)` - transforms (x, y) → (row, col)
+   - `transform_direction_for_napari(direction, env_or_scale)` - transforms direction vectors
+   - `reset_transform_warning()` - resets fallback warning flag (for testing)
+
+2. **Added comprehensive tests** in `tests/animation/test_transforms.py`:
+   - 19 tests covering EnvScale, coordinate transforms, direction transforms
+   - Tests for consistency between env and pre-computed scale
+   - Tests for fallback behavior when env lacks required attributes
+
+3. **Updated napari backend** to use shared functions:
+   - Added imports: `EnvScale as _EnvScale`, `make_env_scale as _make_env_scale`,
+     `transform_coords_for_napari as _transform_coords_for_napari`,
+     `transform_direction_for_napari as _transform_direction_for_napari`
+   - Removed ~230 lines of duplicate code from napari_backend.py
+
+4. **Updated existing test**:
+   - Fixed `test_env_scale_repr` to expect "EnvScale" in repr (not "_EnvScale")
+
+### Key Design Decisions
+
+1. **Public API**: The transforms module is a public API (`EnvScale`, not `_EnvScale`)
+2. **Backward compatibility**: napari_backend re-exports with underscore prefix for internal use
+3. **Single warning flag**: Module-level flag `_TRANSFORM_FALLBACK_WARNED` for once-per-session warning
+4. **Memory efficient**: Uses `__slots__` for EnvScale to minimize memory overhead
+
+### Test Results
+
+- All 19 new transform tests pass
+- All 67 napari tests pass (1 skipped)
+- All 462 animation tests pass
+- Mypy passes with no issues
+
+## Next Task: Phase 1.2 - Normalize Layout Metadata
 
 From TASKS.md:
-- [ ] Create `neurospatial/animation/transforms.py` (or add to `rendering.py`)
-- [ ] Move `_transform_coords_for_napari` to shared module
-- [ ] Move `_transform_direction_for_napari` to shared module
-- [ ] Update napari backend to use shared functions
-- [ ] Add tests for coordinate transforms
+- [ ] Add `layout_type` property to layouts: `"grid" | "mask" | "polygon" | "other"`
+- [ ] Update widget `_field_to_image_data` to use `layout_type`
+- [ ] Update `field_to_rgb_for_napari` to use `layout_type`
+- [ ] Add explicit branching for non-grid layouts in rendering
