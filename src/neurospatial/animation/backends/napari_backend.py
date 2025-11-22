@@ -793,14 +793,82 @@ def _is_multi_field_input(fields: list) -> bool:
     Detection logic:
     - Empty list → single field (False)
     - List of arrays → single field (False)
-    - List of lists → multi-field (True)
+    - List of lists/tuples → multi-field (True)
+
+    This function only checks the first element for quick detection.
+    For robust validation that all elements are consistent, use
+    _validate_field_types_consistent() before calling this.
     """
     if len(fields) == 0:
         return False
 
-    # Check if first element is a list/sequence
+    # Check if first element is a list/sequence (not ndarray)
     first_elem = fields[0]
     return isinstance(first_elem, (list, tuple))
+
+
+def _validate_field_types_consistent(fields: list) -> None:
+    """Validate that all field elements have consistent types.
+
+    Parameters
+    ----------
+    fields : list
+        Input fields to validate
+
+    Raises
+    ------
+    ValueError
+        If fields contain mixed types (some arrays, some lists/tuples).
+        Provides a clear WHAT/WHY/HOW error message.
+
+    Notes
+    -----
+    This validation should be called before _is_multi_field_input() to ensure
+    the detection is reliable. The check ensures ALL elements are either:
+    - All numpy arrays (single-field mode)
+    - All lists/tuples (multi-field mode)
+
+    Mixed inputs like [list, array, list] will raise an error with guidance.
+    """
+    if len(fields) == 0:
+        return  # Empty is valid (single-field)
+
+    # Determine expected type from first element
+    first_elem = fields[0]
+    first_is_sequence = isinstance(first_elem, (list, tuple))
+
+    # Check all elements match the first element's type
+    mismatched_indices = []
+    for i, elem in enumerate(fields):
+        elem_is_sequence = isinstance(elem, (list, tuple))
+        if elem_is_sequence != first_is_sequence:
+            mismatched_indices.append(i)
+
+    if mismatched_indices:
+        # Build informative error message
+        expected_type = "list/tuple (multi-field)" if first_is_sequence else "array"
+        actual_types = []
+        for i in mismatched_indices[:3]:  # Show first 3 mismatches
+            elem = fields[i]
+            actual_type = (
+                "list/tuple" if isinstance(elem, (list, tuple)) else type(elem).__name__
+            )
+            actual_types.append(f"  fields[{i}]: {actual_type}")
+
+        raise ValueError(
+            f"WHAT: Inconsistent field types detected - mixed arrays and sequences.\n"
+            f"  fields[0] is: {expected_type}\n"
+            f"  Mismatched elements:\n" + "\n".join(actual_types) + "\n\n"
+            "WHY: Fields must be either:\n"
+            "  - Single-field mode: list of 1D arrays [arr1, arr2, ...]\n"
+            "  - Multi-field mode: list of sequences [[arr1, arr2], [arr3, arr4]]\n"
+            "  Mixed types cannot be processed correctly.\n\n"
+            "HOW: Ensure all elements are the same type:\n"
+            "  # Single-field: list of arrays\n"
+            "  fields = [field_frame0, field_frame1, ...]\n"
+            "  # Multi-field: list of lists/tuples\n"
+            "  fields = [[seq1_frame0, seq1_frame1], [seq2_frame0, seq2_frame1]]"
+        )
 
 
 def _add_speed_control_widget(
@@ -1224,6 +1292,9 @@ def render_napari(
             "or\n"
             "  uv add napari[all]"
         )
+
+    # Validate field types are consistent (all arrays or all lists)
+    _validate_field_types_consistent(fields)
 
     # Detect multi-field input and route appropriately
     if _is_multi_field_input(fields):

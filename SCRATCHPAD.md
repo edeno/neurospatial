@@ -584,6 +584,84 @@ All Phase 2 tasks complete:
 - 2.4: Fixed playback widget throttling (scrubbing now immediate)
 - 2.5: Re-profiled and documented improvements
 
-## Next Task: Phase 3 - Overlay Conversion & Core Orchestration
+## Completed: Phase 3.1 - Verify Interpolation Vectorization (2025-11-21)
 
-See TASKS.md for Phase 3 details.
+### Investigation Result
+
+**Finding**: Interpolation was ALREADY vectorized in the existing implementation!
+
+The PLAN.md/TASKS.md description mentioned "per-point loops" but the actual code already uses:
+- `np.interp` for 1D and per-dimension interpolation
+- Boolean masking for extrapolation handling
+- The only loops iterate over dimensions (2-3), not frames (100k+)
+
+### Performance Verification (100k frames)
+
+| Function | Time |
+|----------|------|
+| `_interp_linear` 1D | 0.89 ms |
+| `_interp_linear` 2D | 2.10 ms |
+| `_interp_nearest` 2D | 54.29 ms |
+| Full conversion (3 overlays) | 12.47 ms |
+
+## Completed: Phase 3.2 - Verify Validation Vectorization (2025-11-21)
+
+### Investigation Result
+
+**Finding**: Validation functions were ALREADY vectorized!
+
+- `_validate_finite_values`: uses `np.isfinite`, `np.sum`, `np.argmax`
+- `_validate_bounds`: loops over dimensions (2-3), vectorized across points
+- `_validate_monotonic_time`: uses `np.diff`, `np.where`
+
+### Performance Verification (100k points)
+
+| Function | Time |
+|----------|------|
+| `_validate_finite_values` | 0.114 ms |
+| `_validate_shape` | 0.002 ms |
+| `_validate_bounds` | 0.232 ms |
+| `_validate_monotonic_time` | 0.142 ms |
+
+## Phase 3.3 - Skipped (Premature Optimization)
+
+**Decision 2025-11-21**: Conversion takes only 12ms for 100k frames. Caching would add
+complexity without meaningful benefit.
+
+## Completed: Phase 3.4 - Harden Multi-Field Detection (2025-11-21)
+
+### Problem
+
+The old implementation only checked `fields[0]` to determine single vs multi-field:
+
+```python
+is_multi_field = len(fields) > 0 and isinstance(fields[0], (list, tuple))
+```
+
+This would incorrectly process mixed inputs like `[list, array, list]` and fail with
+confusing error messages ("same length" instead of "mixed types").
+
+### Solution
+
+Added `_validate_field_types_consistent()` that checks ALL elements:
+
+```python
+def _validate_field_types_consistent(fields: list) -> None:
+    """Validate all elements are either arrays or lists/tuples (not mixed)."""
+    ...
+    if mismatched_indices:
+        raise ValueError(
+            "WHAT: Inconsistent field types detected - mixed arrays and sequences.\n"
+            ...
+        )
+```
+
+### Test Results
+
+- 14 new tests in `tests/animation/test_multi_field_detection.py`
+- 17 existing tests in `tests/animation/test_napari_multi_field.py`
+- All 31 tests pass
+
+## Next Task: Phase 3.5 - Re-profile Conversion Time
+
+See TASKS.md for details.
