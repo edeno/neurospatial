@@ -22,8 +22,11 @@ VideoOverlay : class
     Video background overlay for displaying recorded footage
 VideoCalibration : class
     Coordinate transform from video pixels to environment cm
+calibrate_video : function
+    Convenience function to calibrate video to environment coordinates
 """
 
+from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.core import subsample_frames
 from neurospatial.animation.overlays import VideoOverlay
 from neurospatial.animation.skeleton import (
@@ -41,5 +44,6 @@ __all__: list[str] = [
     "Skeleton",
     "VideoCalibration",
     "VideoOverlay",
+    "calibrate_video",
     "subsample_frames",
 ]

@@ -309,17 +309,17 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 5.1: Create calibrate_video() Function
 
-- [ ] Create new file [src/neurospatial/animation/calibration.py](src/neurospatial/animation/calibration.py)
-- [ ] Implement `calibrate_video()`:
-  - [ ] Accept `video_path`, `env`, and calibration params
-  - [ ] Support scale_bar, landmarks_px/landmarks_env, cm_per_px methods
-  - [ ] Return `VideoCalibration` object
-  - [ ] Validate bounds coverage, warn if mismatch
-- [ ] Add to animation package exports
-- [ ] Write tests:
-  - [ ] `test_calibrate_video_scale_bar`
-  - [ ] `test_calibrate_video_landmarks`
-  - [ ] `test_calibrate_video_bounds_warning`
+- [x] Create new file [src/neurospatial/animation/calibration.py](src/neurospatial/animation/calibration.py)
+- [x] Implement `calibrate_video()`:
+  - [x] Accept `video_path`, `env`, and calibration params
+  - [x] Support scale_bar, landmarks_px/landmarks_env, cm_per_px methods
+  - [x] Return `VideoCalibration` object
+  - [x] Validate bounds coverage, warn if mismatch
+- [x] Add to animation package exports
+- [x] Write tests:
+  - [x] `test_calibrate_video_scale_bar`
+  - [x] `test_calibrate_video_landmarks`
+  - [x] `test_calibrate_video_bounds_warning`
 
 ---
 

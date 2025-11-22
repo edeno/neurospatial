@@ -137,7 +137,27 @@
 
 ## Current Task
 
-**Working on**: Milestone 5 - Environment Integration (Task 5.1 - calibrate_video function)
+**Completed**: Milestone 5 - Task 5.1 (calibrate_video function)
+
+---
+
+## Session Log (continued)
+
+### 2025-11-22 (continued)
+
+- **Completed M5**: 5.1 - calibrate_video() convenience function
+  - Created `src/neurospatial/animation/calibration.py` with `calibrate_video()` function
+  - Supports three calibration methods:
+    - `scale_bar`: Two pixel endpoints + known length in cm
+    - `landmarks_px/landmarks_env`: Corresponding point pairs
+    - `cm_per_px`: Direct scale factor
+  - Returns `VideoCalibration` object
+  - Validates bounds coverage with WHAT/WHY/HOW warning if env exceeds video
+  - Uses existing calibration functions from transforms.py (DRY)
+  - Added `cm_per_px > 0` validation (from code review)
+  - 17 unit tests passing
+  - Code review approved
+  - Exported from `neurospatial.animation` module
 
 ---
 
