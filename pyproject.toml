@@ -47,14 +47,21 @@ Issues = "https://github.com/edeno/neurospatial/issues"
 
 [project.optional-dependencies]
 dev = [
+    # Testing
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
-    "pytest-benchmark>=4.0.0",
+    "pytest-benchmark>=5.2.3",
+    "pytest-mpl>=0.18.0",
+    "pytest-xdist>=3.8.0",
+    "hypothesis>=6.92.0",
+    "coverage>=7.11.0",
+    # Code quality
     "ruff>=0.14.3",
     "pre-commit>=4.3.0",
-    "ipython>=8.0.0",
     "mypy>=1.18.2",
-    "hypothesis>=6.92.0",
+    # Development tools
+    "ipython>=8.0.0",
+    # Test fixtures
     "imageio>=2.35.0",  # For video test fixtures
     "pyarrow>=22.0.0",  # For parquet test fixtures
 ]
@@ -296,13 +303,3 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "docs.examples.*"
 ignore_errors = true
-
-[dependency-groups]
-dev = [
-    "coverage>=7.11.0",
-    "hypothesis>=6.92.0",
-    "pytest-benchmark>=5.2.3",
-    "pytest-cov>=7.0.0",
-    "pytest-mpl>=0.18.0",
-    "pytest-xdist>=3.8.0",
-]

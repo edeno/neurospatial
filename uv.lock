@@ -2633,6 +2633,7 @@ animation = [
     { name = "pillow" },
 ]
 dev = [
+    { name = "coverage" },
     { name = "hypothesis" },
     { name = "imageio" },
     { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2643,6 +2644,8 @@ dev = [
     { name = "pytest" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
+    { name = "pytest-mpl" },
+    { name = "pytest-xdist" },
     { name = "ruff" },
 ]
 docs = [
@@ -2670,18 +2673,9 @@ video = [
     { name = "opencv-python" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "coverage" },
-    { name = "hypothesis" },
-    { name = "pytest-benchmark" },
-    { name = "pytest-cov" },
-    { name = "pytest-mpl" },
-    { name = "pytest-xdist" },
-]
-
 [package.metadata]
 requires-dist = [
+    { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.11.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.92.0" },
     { name = "imageio", marker = "extra == 'dev'", specifier = ">=2.35.0" },
     { name = "imageio", marker = "extra == 'video'", specifier = ">=2.35.0" },
@@ -2712,8 +2706,10 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
     { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=22.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
-    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=5.2.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-mpl", marker = "extra == 'dev'", specifier = ">=0.18.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.3" },
     { name = "scikit-learn", specifier = ">=1.2.0" },
     { name = "scipy", specifier = ">=1.10.0" },
@@ -2722,16 +2718,6 @@ requires-dist = [
     { name = "track-linearization", specifier = ">=2.4.0" },
 ]
 provides-extras = ["dev", "docs", "notebooks", "opencv", "video", "animation"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "coverage", specifier = ">=7.11.0" },
-    { name = "hypothesis", specifier = ">=6.92.0" },
-    { name = "pytest-benchmark", specifier = ">=5.2.3" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-mpl", specifier = ">=0.18.0" },
-    { name = "pytest-xdist", specifier = ">=3.8.0" },
-]
 
 [[package]]
 name = "nodeenv"
