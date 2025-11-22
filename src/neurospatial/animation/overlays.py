@@ -28,6 +28,7 @@ Performance Considerations
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -35,6 +36,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.animation.skeleton import Skeleton
+    from neurospatial.transforms import VideoCalibration
 
 # =============================================================================
 # Public API: User-facing overlay dataclasses
@@ -367,6 +369,213 @@ class HeadDirectionOverlay:
     length: float = 0.25
     width: float = 1.0
     interp: Literal["linear", "nearest"] = "linear"
+
+
+@dataclass
+class VideoOverlay:
+    """Video background overlay for displaying recorded footage behind or above fields.
+
+    Renders video frames aligned to animation frame times, optionally transformed
+    from video pixel coordinates to environment coordinates using a calibration.
+    Useful for visualizing spatial fields overlaid on the original experimental video.
+
+    Parameters
+    ----------
+    source : str | Path | NDArray[np.uint8]
+        Video source. Can be:
+
+        - File path (str or Path): Path to video file (.mp4, .avi, etc.).
+          File existence is validated during playback, not at construction.
+        - Pre-loaded array: shape (n_frames, height, width, 3), dtype uint8.
+          RGB video frames pre-loaded into memory.
+    calibration : VideoCalibration | None, optional
+        Coordinate transform from video pixels to environment cm.
+        If None, video is displayed in pixel coordinates without transform.
+        Created using calibrate_from_scale_bar() or calibrate_from_landmarks().
+        Default is None.
+    times : ndarray of shape (n_frames,), dtype float64, optional
+        Timestamps for each video frame, in seconds. If None, video frames
+        are assumed uniformly spaced at the animation fps rate. Must be
+        monotonically increasing. Default is None.
+    alpha : float, optional
+        Opacity of the video layer (0.0 = transparent, 1.0 = opaque).
+        Default is 0.7.
+    z_order : {"below", "above"}, optional
+        Rendering order relative to the spatial field layer.
+
+        - "below": Video appears behind the field (default)
+        - "above": Video appears in front of the field
+
+        Default is "below".
+    crop : tuple[int, int, int, int] | None, optional
+        Crop region as (x, y, width, height) in video pixel coordinates.
+        If None, full frame is used. Default is None.
+    downsample : int, optional
+        Spatial downsampling factor. 1 = full resolution, 2 = half resolution, etc.
+        Reduces memory and rendering time for large videos. Default is 1.
+    interp : {"linear", "nearest"}, optional
+        Temporal interpolation method for aligning video to animation frames.
+
+        - "nearest" (default): Use nearest video frame (no interpolation)
+        - "linear": Blend between adjacent frames (smoother but slower)
+
+        Default is "nearest".
+
+    Attributes
+    ----------
+    source : str | Path | NDArray[np.uint8]
+        Video source (file path or array).
+    calibration : VideoCalibration | None
+        Pixel-to-cm coordinate transform.
+    times : NDArray[np.float64] | None
+        Video frame timestamps.
+    alpha : float
+        Video opacity.
+    z_order : {"below", "above"}
+        Rendering order.
+    crop : tuple[int, int, int, int] | None
+        Crop region in pixels.
+    downsample : int
+        Spatial downsampling factor.
+    interp : {"linear", "nearest"}
+        Temporal interpolation method.
+
+    See Also
+    --------
+    PositionOverlay : Trajectory visualization
+    neurospatial.transforms.calibrate_from_scale_bar : Create calibration from scale bar
+    neurospatial.transforms.calibrate_from_landmarks : Create calibration from landmarks
+    neurospatial.transforms.VideoCalibration : Calibration data container
+
+    Notes
+    -----
+    Video calibration workflow:
+
+    1. Identify landmarks in video pixels (corners, rulers, etc.)
+    2. Measure corresponding coordinates in environment cm
+    3. Create calibration using calibrate_from_scale_bar() or calibrate_from_landmarks()
+    4. Pass calibration to VideoOverlay
+
+    Memory considerations:
+
+    - File path source: Video is read frame-by-frame during playback (low memory)
+    - Pre-loaded array: Video is stored in memory (fast but memory-intensive)
+
+    For large videos, use downsample > 1 to reduce memory and improve performance.
+
+    Examples
+    --------
+    Video overlay with calibration:
+
+    >>> import numpy as np
+    >>> from neurospatial.transforms import calibrate_from_scale_bar, VideoCalibration
+    >>> # Create calibration from scale bar in video
+    >>> transform = calibrate_from_scale_bar(
+    ...     p1_px=(100.0, 200.0),
+    ...     p2_px=(300.0, 200.0),
+    ...     known_length_cm=50.0,
+    ...     frame_size_px=(640, 480),
+    ... )
+    >>> calib = VideoCalibration(transform, frame_size_px=(640, 480))
+    >>> # Create video overlay
+    >>> overlay = VideoOverlay(source="experiment.mp4", calibration=calib)
+    >>> overlay.alpha
+    0.7
+    >>> overlay.z_order
+    'below'
+
+    Pre-loaded video array:
+
+    >>> # 10 frames, 480x640 pixels, RGB
+    >>> frames = np.zeros((10, 480, 640, 3), dtype=np.uint8)
+    >>> overlay = VideoOverlay(source=frames, alpha=0.5, z_order="above")
+    >>> overlay.source.shape
+    (10, 480, 640, 3)
+
+    With temporal alignment:
+
+    >>> times = np.linspace(0.0, 10.0, 300)  # 30 Hz video over 10 seconds
+    >>> overlay = VideoOverlay(source="video.mp4", times=times)
+    >>> overlay.times.shape
+    (300,)
+    """
+
+    source: str | Path | NDArray[np.uint8]
+    calibration: VideoCalibration | None = None
+    times: NDArray[np.float64] | None = None
+    alpha: float = 0.7
+    z_order: Literal["below", "above"] = "below"
+    crop: tuple[int, int, int, int] | None = None
+    downsample: int = 1
+    interp: Literal["linear", "nearest"] = "nearest"
+
+    def __post_init__(self) -> None:
+        """Validate VideoOverlay parameters.
+
+        Raises
+        ------
+        ValueError
+            If alpha is not in [0.0, 1.0].
+            If source is an array with wrong shape, dtype, or channels.
+            If downsample is not a positive integer.
+        """
+        # Validate alpha bounds
+        if not 0.0 <= self.alpha <= 1.0:
+            raise ValueError(
+                f"WHAT: alpha must be between 0.0 and 1.0, got {self.alpha}.\n"
+                f"WHY: Alpha controls transparency (0=invisible, 1=opaque).\n"
+                f"HOW: Use alpha=0.7 (default) for semi-transparent overlay."
+            )
+
+        # Validate downsample
+        if not isinstance(self.downsample, int) or self.downsample < 1:
+            raise ValueError(
+                f"WHAT: downsample must be a positive integer >= 1, got {self.downsample}.\n"
+                f"WHY: Downsample factor controls spatial resolution reduction.\n"
+                f"HOW: Use downsample=1 (full resolution) or downsample=2 (half resolution)."
+            )
+
+        # Validate source array if it's a numpy array
+        if isinstance(self.source, np.ndarray):
+            self._validate_source_array(self.source)
+
+    def _validate_source_array(self, arr: NDArray[np.uint8]) -> None:
+        """Validate source array has correct shape and dtype.
+
+        Parameters
+        ----------
+        arr : ndarray
+            Array to validate.
+
+        Raises
+        ------
+        ValueError
+            If array has wrong shape, dtype, or number of channels.
+        """
+        # Check ndim (must be 4D: n_frames, height, width, channels)
+        if arr.ndim != 4:
+            raise ValueError(
+                f"WHAT: Video array must be 4D (n_frames, height, width, channels), "
+                f"got shape {arr.shape} ({arr.ndim}D).\n"
+                f"WHY: Video data requires frames, height, width, and color channels.\n"
+                f"HOW: Reshape array to (n_frames, height, width, 3) for RGB video."
+            )
+
+        # Check channels (must be 3 for RGB)
+        if arr.shape[3] != 3:
+            raise ValueError(
+                f"WHAT: Video array must have 3 RGB channels, got {arr.shape[3]} channels.\n"
+                f"WHY: VideoOverlay requires RGB format for rendering.\n"
+                f"HOW: Convert to RGB (drop alpha channel if RGBA, or convert grayscale)."
+            )
+
+        # Check dtype (must be uint8)
+        if arr.dtype != np.uint8:
+            raise ValueError(
+                f"WHAT: Video array must have dtype uint8, got {arr.dtype}.\n"
+                f"WHY: Video pixels are 0-255 values stored as unsigned 8-bit integers.\n"
+                f"HOW: Convert with arr.astype(np.uint8) if values are in 0-255 range."
+            )
 
 
 # =============================================================================
@@ -1280,7 +1489,9 @@ def _interp_nearest(
 
 
 def _convert_overlays_to_data(
-    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay],
+    overlays: list[
+        PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
+    ],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
@@ -1294,9 +1505,10 @@ def _convert_overlays_to_data(
 
     Parameters
     ----------
-    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay]
         List of overlay configurations to convert. Can be empty or contain
-        multiple instances of any overlay type.
+        multiple instances of any overlay type. VideoOverlay is currently
+        passed through without conversion (handled by backends).
     frame_times : NDArray[np.float64]
         Animation frame timestamps with shape (n_frames,). Used as interpolation
         targets for aligning overlay data.

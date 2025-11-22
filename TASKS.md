@@ -16,14 +16,14 @@
 
 ### I.1: Update Type Signatures
 
-- [ ] Update `overlays` parameter type in [src/neurospatial/animation/core.py:67-68](src/neurospatial/animation/core.py#L67-L68)
-- [ ] Update `overlays` parameter type in [src/neurospatial/environment/visualization.py](src/neurospatial/environment/visualization.py)
-- [ ] Add `VideoOverlay` to `__all__` in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
-- [ ] Add exports to [src/neurospatial/animation/\_\_init\_\_.py](src/neurospatial/animation/__init__.py):
-  - [ ] `from .overlays import VideoOverlay`
-  - [ ] `from ..transforms import VideoCalibration`
-  - [ ] Update `__all__` list
-- [ ] Run tests: `uv run pytest tests/animation/ -v`
+- [x] Update `overlays` parameter type in [src/neurospatial/animation/core.py:67-68](src/neurospatial/animation/core.py#L67-L68)
+- [x] Update `overlays` parameter type in [src/neurospatial/environment/visualization.py](src/neurospatial/environment/visualization.py)
+- [x] Add `VideoOverlay` to `__all__` in [src/neurospatial/__init__.py](src/neurospatial/__init__.py)
+- [x] Add exports to [src/neurospatial/animation/\_\_init\_\_.py](src/neurospatial/animation/__init__.py):
+  - [x] `from .overlays import VideoOverlay`
+  - [x] `from ..transforms import VideoCalibration`
+  - [x] Update `__all__` list
+- [x] Run tests: `uv run pytest tests/animation/ -v`
 
 ### I.2: Fix Artist Reuse Logic
 
@@ -147,21 +147,21 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 2.1: Create VideoOverlay Dataclass
 
-- [ ] Add `VideoOverlay` dataclass to [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
-  - [ ] `source: str | Path | NDArray[np.uint8]`
-  - [ ] `calibration: VideoCalibration | None`
-  - [ ] `times: NDArray[np.float64] | None`
-  - [ ] `alpha: float = 0.7`
-  - [ ] `z_order: Literal["below", "above"] = "below"`
-  - [ ] `crop: tuple[int, int, int, int] | None = None`
-  - [ ] `downsample: int = 1`
-  - [ ] `interp: Literal["linear", "nearest"] = "nearest"`
-- [ ] Implement `__post_init__` validation:
-  - [ ] File path existence check
-  - [ ] Array shape/dtype validation
-  - [ ] Alpha bounds check (0.0-1.0)
-- [ ] Add comprehensive docstring with examples
-- [ ] Add to `__all__`
+- [x] Add `VideoOverlay` dataclass to [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
+  - [x] `source: str | Path | NDArray[np.uint8]`
+  - [x] `calibration: VideoCalibration | None`
+  - [x] `times: NDArray[np.float64] | None`
+  - [x] `alpha: float = 0.7`
+  - [x] `z_order: Literal["below", "above"] = "below"`
+  - [x] `crop: tuple[int, int, int, int] | None = None`
+  - [x] `downsample: int = 1`
+  - [x] `interp: Literal["linear", "nearest"] = "nearest"`
+- [x] Implement `__post_init__` validation:
+  - [x] File path existence check (deferred to VideoReader for lazy loading)
+  - [x] Array shape/dtype validation
+  - [x] Alpha bounds check (0.0-1.0)
+- [x] Add comprehensive docstring with examples
+- [x] Add to `__all__` (in neurospatial/__init__.py)
 
 ### Task 2.2: Create VideoData Internal Container
 

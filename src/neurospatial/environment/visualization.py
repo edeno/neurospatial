@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         BodypartOverlay,
         HeadDirectionOverlay,
         PositionOverlay,
+        VideoOverlay,
     )
 
 
@@ -478,7 +479,9 @@ class EnvironmentVisualization:
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
-        overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+        overlays: list[
+            PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
+        ]
         | None = None,
         frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
@@ -560,7 +563,7 @@ class EnvironmentVisualization:
             Label for colorbar axis (not yet implemented)
         overlays : list of overlay objects, optional
             List of overlay objects to render on top of the spatial field animation.
-            Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay.
+            Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
             Multiple overlays of the same type can be provided for multi-animal tracking.
             See neurospatial.animation.overlays for details. Default: None (no overlays).
         frame_times : NDArray[np.float64], shape (n_frames,), optional

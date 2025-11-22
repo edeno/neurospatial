@@ -1,7 +1,7 @@
 # VideoOverlay Implementation Scratchpad
 
 **Started**: 2025-11-22
-**Current Phase**: Milestone 0 (Integration Pre-requisites)
+**Current Phase**: Milestone 2 (Data Model) - Task 2.2
 
 ---
 
@@ -25,18 +25,27 @@
 
 - Read PLAN.md and TASKS.md
 - Identified dependency issue: I.1 needs VideoOverlay but it's created in 2.1
-- Starting with I.5 (Add imageio Dependency) - concrete, independent task
-- Then I.3, I.4, I.6 (verification tasks)
-- Then I.2 (artist reuse fix)
-- Then 1.1-1.2 (calibration)
-- Then 2.1 (VideoOverlay)
-- Then I.1 (type signatures)
+- **Completed M0**: I.5, I.3, I.4, I.6, I.2 (integration pre-requisites)
+- **Completed M1**: 1.1, 1.2 (calibration infrastructure)
+  - `calibrate_from_scale_bar()` - scale bar calibration
+  - `calibrate_from_landmarks()` - landmark-based calibration
+  - `VideoCalibration` - dataclass with serialization
+  - 19 unit tests passing
+- **Completed M2 (partial)**: 2.1 - VideoOverlay dataclass
+  - All fields implemented: source, calibration, times, alpha, z_order, crop, downsample, interp
+  - `__post_init__` validation: alpha bounds, downsample, array shape/dtype/channels
+  - Comprehensive NumPy-style docstring with examples
+  - Added to `__all__` in main package and animation module
+  - 22 unit tests passing
+- **Completed I.1**: Update type signatures
+  - Updated overlays parameter types in core.py and visualization.py
+  - Added VideoOverlay and VideoCalibration exports to animation/__init__.py
 
 ---
 
 ## Current Task
 
-**Working on**: I.5 - Add imageio Dependency
+**Working on**: 2.2 - Create VideoData internal container
 
 ---
 

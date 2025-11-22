@@ -18,20 +18,28 @@ Skeleton : class
     Immutable skeleton definition for pose tracking
 MOUSE_SKELETON, RAT_SKELETON, SIMPLE_SKELETON : Skeleton
     Common skeleton presets
+VideoOverlay : class
+    Video background overlay for displaying recorded footage
+VideoCalibration : class
+    Coordinate transform from video pixels to environment cm
 """
 
 from neurospatial.animation.core import subsample_frames
+from neurospatial.animation.overlays import VideoOverlay
 from neurospatial.animation.skeleton import (
     MOUSE_SKELETON,
     RAT_SKELETON,
     SIMPLE_SKELETON,
     Skeleton,
 )
+from neurospatial.transforms import VideoCalibration
 
 __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
     "Skeleton",
+    "VideoCalibration",
+    "VideoOverlay",
     "subsample_frames",
 ]

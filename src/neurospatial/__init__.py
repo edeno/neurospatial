@@ -195,6 +195,7 @@ from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
     PositionOverlay,
+    VideoOverlay,
 )
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
@@ -259,6 +260,7 @@ __all__ = [
     "BodypartOverlay",
     "HeadDirectionOverlay",
     "PositionOverlay",
+    "VideoOverlay",
     # Enums and types
     "LayoutType",
     "TieBreakStrategy",

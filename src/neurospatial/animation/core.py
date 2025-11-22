@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         BodypartOverlay,
         HeadDirectionOverlay,
         PositionOverlay,
+        VideoOverlay,
     )
     from neurospatial.environment._protocols import EnvironmentProtocol
 
@@ -64,7 +65,9 @@ def animate_fields(
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
-    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
+    overlays: list[
+        PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
+    ]
     | None = None,
     frame_times: NDArray[np.float64] | None = None,
     show_regions: bool | list[str] = False,
@@ -88,11 +91,11 @@ def animate_fields(
         Animation backend to use.
     save_path : str, optional
         Output path for video/HTML backends.
-    overlays : list of PositionOverlay, BodypartOverlay, or HeadDirectionOverlay, optional
+    overlays : list of PositionOverlay, BodypartOverlay, HeadDirectionOverlay, or VideoOverlay, optional
         Dynamic overlays to render on top of spatial fields. Supports position
-        trajectories, multi-animal pose tracking, and head direction visualization.
-        Multiple overlays can be provided for multi-animal tracking.
-        Default is None (no overlays).
+        trajectories, multi-animal pose tracking, head direction visualization,
+        and video background/overlay. Multiple overlays can be provided for
+        multi-animal tracking. Default is None (no overlays).
     frame_times : ndarray of shape (n_frames,), optional
         Explicit timestamps for each frame, dtype float64, in seconds.
         If provided, overlays with times will be aligned via linear

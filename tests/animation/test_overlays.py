@@ -16,6 +16,7 @@ from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
     PositionOverlay,
+    VideoOverlay,
     _validate_bounds,
     _validate_finite_values,
     _validate_monotonic_time,
@@ -25,6 +26,7 @@ from neurospatial.animation.overlays import (
     _validate_temporal_alignment,
 )
 from neurospatial.animation.skeleton import Skeleton
+from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
 
 
 class TestPositionOverlay:
@@ -191,6 +193,243 @@ class TestHeadDirectionOverlay:
         assert_array_equal(overlay.data, data)
 
 
+class TestVideoOverlay:
+    """Test VideoOverlay dataclass."""
+
+    @pytest.fixture
+    def sample_video_array(self) -> np.ndarray:
+        """Create a sample video array (n_frames, height, width, 3)."""
+        # 10 frames, 16x16 pixels, RGB
+        return np.zeros((10, 16, 16, 3), dtype=np.uint8)
+
+    @pytest.fixture
+    def sample_calibration(self) -> VideoCalibration:
+        """Create a sample VideoCalibration for testing."""
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),
+            known_length_cm=50.0,
+            frame_size_px=(640, 480),
+        )
+        return VideoCalibration(transform, frame_size_px=(640, 480))
+
+    def test_basic_creation_with_array(self, sample_video_array: np.ndarray):
+        """Test creating VideoOverlay with pre-loaded array."""
+        overlay = VideoOverlay(source=sample_video_array)
+
+        assert_array_equal(overlay.source, sample_video_array)
+        assert overlay.calibration is None
+        assert overlay.times is None
+        assert overlay.alpha == 0.7
+        assert overlay.z_order == "below"
+        assert overlay.crop is None
+        assert overlay.downsample == 1
+        assert overlay.interp == "nearest"
+
+    def test_with_calibration(
+        self, sample_video_array: np.ndarray, sample_calibration: VideoCalibration
+    ):
+        """Test VideoOverlay with VideoCalibration."""
+        overlay = VideoOverlay(
+            source=sample_video_array,
+            calibration=sample_calibration,
+        )
+
+        assert overlay.calibration is sample_calibration
+        assert overlay.calibration.frame_size_px == (640, 480)
+
+    def test_with_timestamps(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with timestamps."""
+        times = np.linspace(0.0, 1.0, len(sample_video_array))
+        overlay = VideoOverlay(
+            source=sample_video_array,
+            times=times,
+        )
+
+        assert_array_equal(overlay.times, times)
+
+    def test_custom_alpha(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with custom alpha."""
+        overlay = VideoOverlay(source=sample_video_array, alpha=0.5)
+
+        assert overlay.alpha == 0.5
+
+    def test_z_order_below(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with z_order='below' (default)."""
+        overlay = VideoOverlay(source=sample_video_array, z_order="below")
+
+        assert overlay.z_order == "below"
+
+    def test_z_order_above(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with z_order='above'."""
+        overlay = VideoOverlay(source=sample_video_array, z_order="above")
+
+        assert overlay.z_order == "above"
+
+    def test_with_crop(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with crop region."""
+        crop = (10, 20, 100, 80)  # x, y, width, height
+        overlay = VideoOverlay(source=sample_video_array, crop=crop)
+
+        assert overlay.crop == crop
+
+    def test_with_downsample(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with downsampling factor."""
+        overlay = VideoOverlay(source=sample_video_array, downsample=2)
+
+        assert overlay.downsample == 2
+
+    def test_interp_nearest(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with nearest interpolation (default)."""
+        overlay = VideoOverlay(source=sample_video_array, interp="nearest")
+
+        assert overlay.interp == "nearest"
+
+    def test_interp_linear(self, sample_video_array: np.ndarray):
+        """Test VideoOverlay with linear interpolation."""
+        overlay = VideoOverlay(source=sample_video_array, interp="linear")
+
+        assert overlay.interp == "linear"
+
+    def test_all_parameters(
+        self, sample_video_array: np.ndarray, sample_calibration: VideoCalibration
+    ):
+        """Test VideoOverlay with all parameters specified."""
+        times = np.linspace(0.0, 1.0, len(sample_video_array))
+        crop = (0, 0, 8, 8)
+
+        overlay = VideoOverlay(
+            source=sample_video_array,
+            calibration=sample_calibration,
+            times=times,
+            alpha=0.3,
+            z_order="above",
+            crop=crop,
+            downsample=2,
+            interp="linear",
+        )
+
+        assert overlay.calibration is sample_calibration
+        assert_array_equal(overlay.times, times)
+        assert overlay.alpha == 0.3
+        assert overlay.z_order == "above"
+        assert overlay.crop == crop
+        assert overlay.downsample == 2
+        assert overlay.interp == "linear"
+
+
+class TestVideoOverlayValidation:
+    """Test VideoOverlay __post_init__ validation."""
+
+    def test_alpha_lower_bound(self):
+        """Test that alpha < 0.0 raises ValueError."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data, alpha=-0.1)
+
+        error_msg = str(exc_info.value)
+        assert "alpha" in error_msg.lower()
+        assert "0.0" in error_msg or "0" in error_msg
+
+    def test_alpha_upper_bound(self):
+        """Test that alpha > 1.0 raises ValueError."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data, alpha=1.5)
+
+        error_msg = str(exc_info.value)
+        assert "alpha" in error_msg.lower()
+        assert "1.0" in error_msg or "1" in error_msg
+
+    def test_alpha_at_boundaries(self):
+        """Test that alpha at boundaries (0.0 and 1.0) is valid."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+
+        overlay_min = VideoOverlay(source=data, alpha=0.0)
+        overlay_max = VideoOverlay(source=data, alpha=1.0)
+
+        assert overlay_min.alpha == 0.0
+        assert overlay_max.alpha == 1.0
+
+    def test_array_wrong_ndim(self):
+        """Test that 3D array (not 4D) raises ValueError."""
+        data = np.zeros((16, 16, 3), dtype=np.uint8)  # Missing frames dimension
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data)
+
+        error_msg = str(exc_info.value)
+        assert "shape" in error_msg.lower() or "dimension" in error_msg.lower()
+
+    def test_array_wrong_channels(self):
+        """Test that non-RGB array (not 3 channels) raises ValueError."""
+        data = np.zeros((10, 16, 16, 4), dtype=np.uint8)  # RGBA, not RGB
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data)
+
+        error_msg = str(exc_info.value)
+        assert "channel" in error_msg.lower() or "rgb" in error_msg.lower()
+
+    def test_array_wrong_dtype(self):
+        """Test that non-uint8 array raises ValueError."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.float32)  # float, not uint8
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data)
+
+        error_msg = str(exc_info.value)
+        assert "uint8" in error_msg.lower() or "dtype" in error_msg.lower()
+
+    def test_downsample_must_be_positive(self):
+        """Test that downsample <= 0 raises ValueError."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data, downsample=0)
+
+        error_msg = str(exc_info.value)
+        assert "downsample" in error_msg.lower()
+
+    def test_downsample_negative(self):
+        """Test that negative downsample raises ValueError."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data, downsample=-1)
+
+        error_msg = str(exc_info.value)
+        assert "downsample" in error_msg.lower()
+
+    def test_downsample_float_not_integer(self):
+        """Test that float downsample raises ValueError (must be integer)."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.raises(ValueError) as exc_info:
+            VideoOverlay(source=data, downsample=1.5)  # type: ignore[arg-type]
+
+        error_msg = str(exc_info.value)
+        assert "downsample" in error_msg.lower()
+
+
+class TestVideoOverlayWithFilePath:
+    """Test VideoOverlay with file path source."""
+
+    def test_with_string_path(self, tmp_path):
+        """Test VideoOverlay with string file path (deferred existence check)."""
+        # Note: For file paths, existence check happens during VideoReader creation,
+        # not during VideoOverlay construction (lazy loading)
+        video_path = str(tmp_path / "nonexistent.mp4")
+
+        # Construction should succeed (lazy loading)
+        overlay = VideoOverlay(source=video_path)
+
+        assert overlay.source == video_path
+
+    def test_with_path_object(self, tmp_path):
+        """Test VideoOverlay with Path object."""
+
+        video_path = tmp_path / "test.mp4"
+
+        overlay = VideoOverlay(source=video_path)
+
+        assert overlay.source == video_path
+
+
 class TestOverlayDataclassDefaults:
     """Test that overlay dataclasses have correct default values."""
 
@@ -218,6 +457,19 @@ class TestOverlayDataclassDefaults:
 
         assert overlay.color == "yellow"
         assert overlay.length == 0.25
+
+    def test_video_overlay_defaults(self):
+        """Test VideoOverlay default values."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        overlay = VideoOverlay(source=data)
+
+        assert overlay.calibration is None
+        assert overlay.times is None
+        assert overlay.alpha == 0.7
+        assert overlay.z_order == "below"
+        assert overlay.crop is None
+        assert overlay.downsample == 1
+        assert overlay.interp == "nearest"
 
 
 class TestMultiAnimalSupport:
