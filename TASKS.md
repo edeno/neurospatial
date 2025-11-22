@@ -264,23 +264,24 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 4.2: Video Export Backend
 
-- [ ] Implement `VideoFrameRenderer` class in [src/neurospatial/animation/backends/video_backend.py](src/neurospatial/animation/backends/video_backend.py):
-  - [ ] `__init__(ax, video_data, env)`
-  - [ ] `render(ax, frame_idx)` with artist reuse
-  - [ ] `_compute_extent()` from transform or env_bounds
-- [ ] Implement `_render_video_background()` for parallel rendering:
-  - [ ] Fresh artist per frame (parallel-safe)
-  - [ ] Handle -1 frame indices (skip rendering)
-  - [ ] Correct z-order via `zorder` parameter
-- [ ] Update render pipeline to call video rendering:
-  - [ ] Before field for `z_order="below"`
-  - [ ] After field for `z_order="above"`
-- [ ] Write integration tests in [tests/animation/test_video_overlay.py](tests/animation/test_video_overlay.py):
-  - [ ] `test_video_composited_in_output`
-  - [ ] `test_video_parallel_rendering`
-- [ ] Verify: `uv run pytest tests/animation/test_video_overlay.py -v`
+- [x] Implement `VideoFrameRenderer` class in [src/neurospatial/animation/_parallel.py](src/neurospatial/animation/_parallel.py):
+  - [x] `__init__(ax, video_data, env)`
+  - [x] `render(ax, frame_idx)` with artist reuse
+  - [x] `_compute_extent()` from transform or env_bounds
+- [x] Implement `_render_video_background()` for parallel rendering:
+  - [x] Fresh artist per frame (parallel-safe)
+  - [x] Handle -1 frame indices (skip rendering)
+  - [x] Correct z-order via `zorder` parameter
+- [x] Update render pipeline to call video rendering:
+  - [x] Before field for `z_order="below"`
+  - [x] After field for `z_order="above"`
+- [x] Write integration tests in [tests/animation/test_video_overlays.py](tests/animation/test_video_overlays.py):
+  - [x] TestVideoOverlayExportRendering (7 tests)
+  - [x] TestRenderAllOverlaysWithVideo (2 tests)
+  - [x] TestVideoFrameRenderer (5 tests)
+- [x] Verify: `uv run pytest tests/animation/test_video_overlays.py -v` (36 tests pass)
 
-**M3 Checkpoint**: Video export produces correct spatial composite
+**M3 Checkpoint**: Video export produces correct spatial composite ✓
 
 ### Task 4.3: Widget and HTML Backends
 

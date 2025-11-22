@@ -90,11 +90,31 @@
   - Manual test created: `test_video_alignment.py`
   - **Manual test PASSED**: video fills environment, corners aligned, scrubbing works, playback works
 
+- **Completed M4**: 4.2 - Video Export Backend
+  - Implemented `_render_video_background()` in _parallel.py
+    - Fresh imshow artist per frame (parallel-safe)
+    - Handles -1 frame indices (skip rendering)
+    - Correct z-order: -1 for "below", +1 for "above"
+  - Implemented `VideoFrameRenderer` class in _parallel.py
+    - Reuses imshow artist via set_data() for sequential rendering
+    - `_compute_extent()` from transform or env_bounds
+    - Hides artist for invalid frames (-1 indices)
+  - Updated `_render_all_overlays()` to handle video overlays
+    - Renders videos before regions for z_order="below"
+    - Renders videos after head direction for z_order="above"
+  - 14 new tests in test_video_overlays.py:
+    - TestVideoOverlayExportRendering (7 tests)
+    - TestRenderAllOverlaysWithVideo (2 tests)
+    - TestVideoFrameRenderer (5 tests)
+  - All 36 video overlay tests passing
+  - All 772 animation tests passing
+  - Code review approved
+
 ---
 
 ## Current Task
 
-**Working on**: Milestone 4 - Backend Rendering (Task 4.2 - Video Export Backend)
+**Working on**: Milestone 4 - Backend Rendering (Task 4.3 - Widget and HTML Backends)
 
 ---
 

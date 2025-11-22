@@ -653,6 +653,31 @@ class TestOverlayDataclassDefaults:
         assert overlay.interp == "nearest"
 
 
+class TestOverlayDataVideosAttribute:
+    """Test that OverlayData.videos attribute works correctly."""
+
+    def test_overlay_data_has_videos_attribute(self):
+        """Test that OverlayData has videos attribute without AttributeError."""
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData()
+
+        # Should not raise AttributeError
+        videos = overlay_data.videos
+
+        assert videos is not None
+        assert isinstance(videos, list)
+        assert len(videos) == 0
+
+    def test_overlay_data_videos_default_is_empty_list(self):
+        """Test that videos defaults to empty list."""
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData()
+
+        assert overlay_data.videos == []
+
+
 class TestMultiAnimalSupport:
     """Test that multiple overlays can be created for multi-animal scenarios."""
 
@@ -1697,6 +1722,33 @@ class TestFindNearestIndices:
         indices = _find_nearest_indices(t_src, t_query)
 
         assert len(indices) == 0
+
+    def test_single_source_point(self):
+        """Test edge case: single source timestamp returns index 0."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([5.0])  # Single point
+        t_query = np.array([4.9, 5.0, 5.1])
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        # Only in-range query should return 0 (the only valid index)
+        assert indices[0] == -1  # Before range (4.9 < 5.0)
+        assert indices[1] == 0  # Exact match
+        assert indices[2] == -1  # After range (5.1 > 5.0)
+
+    def test_empty_source_returns_all_minus_one(self):
+        """Test edge case: empty source returns all -1."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([])  # Empty source
+        t_query = np.array([1.0, 2.0, 3.0])
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        # All queries should return -1 (no valid source)
+        assert len(indices) == 3
+        assert all(idx == -1 for idx in indices)
 
 
 class TestValidateVideoEnv:

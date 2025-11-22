@@ -956,3 +956,466 @@ def test_none_overlay_data_is_always_pickle_safe(
     # Should succeed
     assert "frame_" in frame_pattern
     assert ".png" in frame_pattern
+
+
+# =============================================================================
+# Test: Video Overlay Rendering in Video Export Backend (Task 4.2)
+# =============================================================================
+
+
+@pytest.fixture
+def sample_video_array() -> NDArray[np.uint8]:
+    """Create a simple video array for testing (16x16, 10 frames)."""
+    n_frames, height, width = 10, 16, 16
+    frames = np.zeros((n_frames, height, width, 3), dtype=np.uint8)
+    # Create a gradient pattern that varies by frame
+    for i in range(n_frames):
+        frames[i, :, :, 0] = i * 25  # Red varies by frame
+        frames[i, :, :, 1] = 128  # Constant green
+        frames[i, :, :, 2] = 128  # Constant blue
+    return frames
+
+
+@pytest.fixture
+def video_overlay_data(sample_video_array: NDArray[np.uint8]) -> OverlayData:
+    """Create OverlayData with a VideoData for testing."""
+    from neurospatial.animation.overlays import VideoData
+
+    frame_indices = np.arange(10, dtype=np.int_)  # 1:1 mapping
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=sample_video_array,
+        transform_to_env=None,  # No calibration - stretch to fill
+        env_bounds=(0.0, 100.0, 0.0, 100.0),
+        alpha=0.7,
+        z_order="below",
+    )
+    return OverlayData(videos=[video_data])
+
+
+class TestVideoOverlayExportRendering:
+    """Test video overlay rendering in video export backend."""
+
+    def test_render_video_background_function_exists(self):
+        """Test that _render_video_background function exists in _parallel.py."""
+        from neurospatial.animation._parallel import _render_video_background
+
+        assert callable(_render_video_background)
+
+    def test_render_video_background_renders_frame(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background renders a video frame."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        # Create VideoData
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+
+        # Create figure
+        fig, ax = plt.subplots()
+        try:
+            # Render video background for frame 0
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            # Should have added an image to the axes
+            assert len(ax.images) >= 1
+        finally:
+            plt.close(fig)
+
+    def test_render_video_background_skips_invalid_frame(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background skips rendering for -1 frame index."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        # Create VideoData with -1 indicating no video for that frame
+        frame_indices = np.array([-1, 0, 1, 2, -1], dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            # Render for frame 0 which has -1 (no video)
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            # Should NOT have added an image (skipped)
+            assert len(ax.images) == 0
+        finally:
+            plt.close(fig)
+
+    def test_render_video_background_uses_env_bounds_extent(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background uses env_bounds for extent when no transform."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        env_bounds = (10.0, 90.0, 20.0, 80.0)  # xmin, xmax, ymin, ymax
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,  # No transform
+            env_bounds=env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            # Check extent matches env_bounds
+            im = ax.images[0]
+            extent = im.get_extent()
+            # extent is (left, right, bottom, top) = (xmin, xmax, ymin, ymax)
+            assert extent[0] == pytest.approx(env_bounds[0])  # xmin
+            assert extent[1] == pytest.approx(env_bounds[1])  # xmax
+            assert extent[2] == pytest.approx(env_bounds[2])  # ymin
+            assert extent[3] == pytest.approx(env_bounds[3])  # ymax
+        finally:
+            plt.close(fig)
+
+    def test_render_video_background_applies_alpha(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background applies alpha transparency."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.3,  # Specific alpha
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            im = ax.images[0]
+            assert im.get_alpha() == pytest.approx(0.3)
+        finally:
+            plt.close(fig)
+
+    def test_render_video_background_zorder_below(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background sets zorder < 0 for z_order='below'."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",  # Should be rendered below field
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            im = ax.images[0]
+            # z_order="below" should have negative zorder
+            assert im.get_zorder() < 0
+        finally:
+            plt.close(fig)
+
+    def test_render_video_background_zorder_above(
+        self, simple_env: Environment, sample_video_array: NDArray[np.uint8]
+    ):
+        """Test _render_video_background sets zorder > 0 for z_order='above'."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_video_background
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="above",  # Should be rendered above field
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            _render_video_background(ax, video_data, frame_idx=0)
+
+            im = ax.images[0]
+            # z_order="above" should have positive zorder
+            assert im.get_zorder() > 0
+        finally:
+            plt.close(fig)
+
+
+class TestRenderAllOverlaysWithVideo:
+    """Test that _render_all_overlays handles video overlays."""
+
+    def test_render_all_overlays_renders_videos_below(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test _render_all_overlays renders video with z_order='below'."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_all_overlays
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.7,
+            z_order="below",
+        )
+        overlay_data = OverlayData(videos=[video_data])
+
+        fig, ax = plt.subplots()
+        try:
+            _render_all_overlays(
+                ax=ax,
+                env=simple_env,
+                frame_idx=0,
+                overlay_data=overlay_data,
+                show_regions=False,
+                region_alpha=0.3,
+            )
+
+            # Should have rendered video (at least one image)
+            assert len(ax.images) >= 1
+        finally:
+            plt.close(fig)
+
+    def test_render_all_overlays_renders_multiple_videos(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test _render_all_overlays renders multiple video overlays."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_all_overlays
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video1 = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 50.0, 0.0, 50.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        video2 = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(50.0, 100.0, 50.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        overlay_data = OverlayData(videos=[video1, video2])
+
+        fig, ax = plt.subplots()
+        try:
+            _render_all_overlays(
+                ax=ax,
+                env=simple_env,
+                frame_idx=0,
+                overlay_data=overlay_data,
+                show_regions=False,
+                region_alpha=0.3,
+            )
+
+            # Should have rendered both videos
+            assert len(ax.images) >= 2
+        finally:
+            plt.close(fig)
+
+
+class TestVideoFrameRenderer:
+    """Test VideoFrameRenderer class for artist reuse."""
+
+    def test_video_frame_renderer_exists(self):
+        """Test that VideoFrameRenderer class exists."""
+        from neurospatial.animation._parallel import VideoFrameRenderer
+
+        assert VideoFrameRenderer is not None
+
+    def test_video_frame_renderer_initialization(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test VideoFrameRenderer initializes correctly."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import VideoFrameRenderer
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.7,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            renderer = VideoFrameRenderer(ax, video_data, simple_env)
+            assert renderer is not None
+            assert renderer.video_data is video_data
+        finally:
+            plt.close(fig)
+
+    def test_video_frame_renderer_creates_artist_on_first_render(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test VideoFrameRenderer creates artist on first render call."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import VideoFrameRenderer
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.7,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            renderer = VideoFrameRenderer(ax, video_data, simple_env)
+
+            # Before render, no artist
+            assert renderer._artist is None
+
+            # First render creates artist
+            renderer.render(ax, frame_idx=0)
+            assert renderer._artist is not None
+        finally:
+            plt.close(fig)
+
+    def test_video_frame_renderer_reuses_artist(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test VideoFrameRenderer reuses artist on subsequent renders."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import VideoFrameRenderer
+        from neurospatial.animation.overlays import VideoData
+
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.7,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            renderer = VideoFrameRenderer(ax, video_data, simple_env)
+
+            # First render
+            renderer.render(ax, frame_idx=0)
+            first_artist = renderer._artist
+
+            # Second render should reuse same artist
+            renderer.render(ax, frame_idx=1)
+            assert renderer._artist is first_artist
+        finally:
+            plt.close(fig)
+
+    def test_video_frame_renderer_hides_artist_for_invalid_frame(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test VideoFrameRenderer hides artist when frame index is -1."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import VideoFrameRenderer
+        from neurospatial.animation.overlays import VideoData
+
+        # Frame indices with -1 at position 2
+        frame_indices = np.array([0, 1, -1, 3, 4], dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.7,
+            z_order="below",
+        )
+
+        fig, ax = plt.subplots()
+        try:
+            renderer = VideoFrameRenderer(ax, video_data, simple_env)
+
+            # Render valid frame first
+            renderer.render(ax, frame_idx=0)
+            assert renderer._artist.get_visible()
+
+            # Render frame with -1 index
+            renderer.render(ax, frame_idx=2)
+            assert not renderer._artist.get_visible()
+
+            # Render valid frame again - should show artist
+            renderer.render(ax, frame_idx=3)
+            assert renderer._artist.get_visible()
+        finally:
+            plt.close(fig)

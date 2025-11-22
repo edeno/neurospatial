@@ -251,6 +251,195 @@ def _render_head_direction_overlay_matplotlib(
     )
 
 
+def _render_video_background(
+    ax: Any,
+    video_data: Any,
+    frame_idx: int,
+    _env: Any = None,
+) -> None:
+    """Render video overlay frame as background image on matplotlib axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes to render on.
+    video_data : VideoData
+        Video overlay data containing frame indices and reader.
+    frame_idx : int
+        Current animation frame index.
+    _env : Environment, optional
+        Reserved for future use (e.g., spatial validation). Default is None.
+
+    Notes
+    -----
+    This function creates a new imshow artist each call (suitable for parallel
+    rendering). For sequential rendering with artist reuse, use VideoFrameRenderer.
+
+    Renders video beneath or above the field based on z_order:
+    - "below": zorder=-1 (rendered beneath field, default zorder=0)
+    - "above": zorder=1 (rendered above field)
+    """
+    # Get video frame index for this animation frame
+    if frame_idx < 0 or frame_idx >= len(video_data.frame_indices):
+        return  # Out of bounds
+
+    video_frame_idx = video_data.frame_indices[frame_idx]
+
+    if video_frame_idx < 0:
+        return  # -1 indicates no video for this frame
+
+    # Get video frame from reader
+    frame_rgb = video_data.get_frame(frame_idx)
+    if frame_rgb is None:
+        return
+
+    # Calculate extent in environment coordinates
+    if video_data.transform_to_env is not None:
+        # Use transform to compute extent from video corners
+        h, w = frame_rgb.shape[:2]
+        corners_px = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float64)
+        corners_cm = video_data.transform_to_env(corners_px)
+        extent = [
+            corners_cm[:, 0].min(),
+            corners_cm[:, 0].max(),
+            corners_cm[:, 1].min(),
+            corners_cm[:, 1].max(),
+        ]
+    else:
+        # No transform - use env_bounds directly
+        xmin, xmax, ymin, ymax = video_data.env_bounds
+        extent = [xmin, xmax, ymin, ymax]
+
+    # Determine zorder based on z_order setting
+    zorder = -1 if video_data.z_order == "below" else 1
+
+    # Render video frame
+    ax.imshow(
+        frame_rgb,
+        extent=extent,
+        aspect="auto",
+        origin="lower",  # Use lower origin (Y-flip is in calibration transform)
+        alpha=video_data.alpha,
+        zorder=zorder,
+    )
+
+
+class VideoFrameRenderer:
+    """Manages video artist for efficient sequential frame updates.
+
+    For sequential rendering (e.g., widget backend), this class reuses a single
+    matplotlib imshow artist across frames, updating only the data via set_data().
+    This is faster than creating new artists each frame.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to render on.
+    video_data : VideoData
+        Video overlay data.
+    env : Environment
+        Environment for spatial context.
+
+    Attributes
+    ----------
+    video_data : VideoData
+        Video overlay data.
+    _artist : AxesImage | None
+        The matplotlib imshow artist, created on first render.
+    _extent : list[float]
+        Pre-computed extent for the video.
+
+    Notes
+    -----
+    For parallel rendering (n_workers > 1), use _render_video_background()
+    instead as each worker needs fresh artists.
+    """
+
+    def __init__(self, ax: Any, video_data: Any, env: Any) -> None:
+        """Initialize the renderer.
+
+        Note: ax is received but not stored because render() receives ax as
+        a parameter (same as other overlay renderers in OverlayArtistManager).
+        This keeps the API consistent with how matplotlib artists are managed.
+        """
+        self.video_data = video_data
+        self._artist: Any | None = None
+        self._extent = self._compute_extent(video_data)
+
+    def _compute_extent(self, video_data: Any) -> list[float]:
+        """Compute extent once (assumes constant frame size)."""
+        if video_data.transform_to_env is not None:
+            # Need a sample frame to get dimensions
+            # Try to get first valid frame
+            for i, idx in enumerate(video_data.frame_indices):
+                if idx >= 0:
+                    frame = video_data.get_frame(i)
+                    if frame is not None:
+                        h, w = frame.shape[:2]
+                        corners_px = np.array(
+                            [[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float64
+                        )
+                        corners_cm = video_data.transform_to_env(corners_px)
+                        return [
+                            corners_cm[:, 0].min(),
+                            corners_cm[:, 0].max(),
+                            corners_cm[:, 1].min(),
+                            corners_cm[:, 1].max(),
+                        ]
+            # Fallback to env_bounds if no valid frames
+            return list(video_data.env_bounds)
+        else:
+            return list(video_data.env_bounds)
+
+    def render(self, ax: Any, frame_idx: int) -> None:
+        """Render video frame, reusing artist if possible.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axes to render on.
+        frame_idx : int
+            Animation frame index.
+        """
+        # Get video frame index
+        if frame_idx < 0 or frame_idx >= len(self.video_data.frame_indices):
+            if self._artist is not None:
+                self._artist.set_visible(False)
+            return
+
+        video_frame_idx = self.video_data.frame_indices[frame_idx]
+
+        if video_frame_idx < 0:
+            # No video for this frame
+            if self._artist is not None:
+                self._artist.set_visible(False)
+            return
+
+        frame_rgb = self.video_data.get_frame(frame_idx)
+        if frame_rgb is None:
+            if self._artist is not None:
+                self._artist.set_visible(False)
+            return
+
+        # Determine zorder based on z_order setting
+        zorder = -1 if self.video_data.z_order == "below" else 1
+
+        if self._artist is None:
+            # First frame: create artist
+            self._artist = ax.imshow(
+                frame_rgb,
+                extent=self._extent,
+                aspect="auto",
+                origin="lower",
+                alpha=self.video_data.alpha,
+                zorder=zorder,
+            )
+        else:
+            # Subsequent frames: reuse artist with set_data
+            self._artist.set_data(frame_rgb)
+            self._artist.set_visible(True)
+
+
 def _render_regions_matplotlib(
     ax: Any, env: Any, show_regions: bool | list[str], region_alpha: float
 ) -> None:
@@ -877,7 +1066,7 @@ def _render_all_overlays(
     frame_idx : int
         Current frame index
     overlay_data : OverlayData | None
-        Overlay data containing positions, bodyparts, head directions
+        Overlay data containing positions, bodyparts, head directions, videos
     show_regions : bool | list[str]
         Region display configuration
     region_alpha : float
@@ -887,42 +1076,59 @@ def _render_all_overlays(
     -----
     This function orchestrates rendering of all overlay types for a frame.
     Called before saving each frame in the worker process.
+
+    Rendering order (controlled by zorder):
+    1. Video backgrounds (z_order="below", zorder=-1)
+    2. Regions (zorder=99)
+    3. Position/bodypart overlays (zorder=100-102)
+    4. Head direction overlays (zorder=103)
+    5. Video foregrounds (z_order="above", zorder=1)
     """
+    # Early return if no overlay data
+    if overlay_data is None:
+        # Still render regions even without overlay data
+        _render_regions_matplotlib(ax, env, show_regions, region_alpha)
+        return
+
+    # Render video backgrounds first (z_order="below")
+    for video_data in overlay_data.videos:
+        if video_data.z_order == "below":
+            _render_video_background(ax, video_data, frame_idx)
+
     # Render regions
     _render_regions_matplotlib(ax, env, show_regions, region_alpha)
 
-    # Early return if no overlay data
-    if overlay_data is None:
-        return
-
-    # Check if overlay_data has any actual overlays
+    # Check if overlay_data has any actual overlays (excluding videos)
     overlay_data_present = (
         len(overlay_data.positions) > 0
         or len(overlay_data.bodypart_sets) > 0
         or len(overlay_data.head_directions) > 0
     )
 
-    if not overlay_data_present:
-        return
+    if overlay_data_present:
+        # Render position overlays
+        for pos_data in overlay_data.positions:
+            _render_position_overlay_matplotlib(ax, pos_data, frame_idx)
 
-    # Render position overlays
-    for pos_data in overlay_data.positions:
-        _render_position_overlay_matplotlib(ax, pos_data, frame_idx)
+        # Render bodypart overlays
+        for bodypart_data in overlay_data.bodypart_sets:
+            _render_bodypart_overlay_matplotlib(ax, bodypart_data, frame_idx)
 
-    # Render bodypart overlays
-    for bodypart_data in overlay_data.bodypart_sets:
-        _render_bodypart_overlay_matplotlib(ax, bodypart_data, frame_idx)
-
-    # Render head direction overlays
-    # Auto-pair with position overlay when there's exactly one position
-    # (consistent with napari backend behavior)
-    paired_position = (
-        overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
-    )
-    for head_dir_data in overlay_data.head_directions:
-        _render_head_direction_overlay_matplotlib(
-            ax, head_dir_data, frame_idx, env, position_data=paired_position
+        # Render head direction overlays
+        # Auto-pair with position overlay when there's exactly one position
+        # (consistent with napari backend behavior)
+        paired_position = (
+            overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
         )
+        for head_dir_data in overlay_data.head_directions:
+            _render_head_direction_overlay_matplotlib(
+                ax, head_dir_data, frame_idx, env, position_data=paired_position
+            )
+
+    # Render video foregrounds last (z_order="above")
+    for video_data in overlay_data.videos:
+        if video_data.z_order == "above":
+            _render_video_background(ax, video_data, frame_idx)
 
 
 def parallel_render_frames(
