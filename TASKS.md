@@ -517,13 +517,15 @@ skeleton.adjacency["body"]  # Returns ['head', 'tail'] for chain skeleton
 
 ## Phase 7: Tests, Docs, and Examples
 
-### 7.1 Unit Tests
+### 7.1 Unit Tests - COMPLETE
 
-- [ ] Napari: `_build_skeleton_vectors` shape/content for synthetic skeleton
-- [ ] Overlays: temporal alignment correctness (known angle trajectory)
-- [ ] Widget: `_field_to_image_data` returns arrays of expected shape
-- [ ] Video: `compute_global_colormap_range` degeneracy tests
-- [ ] Video: ffmpeg call constructed with expected arguments
+**Verified 2025-11-22**: All unit tests already exist and pass (58 tests).
+
+- [x] Napari: `_build_skeleton_vectors` - 15+ tests in `test_skeleton_vectors.py`
+- [x] Overlays: temporal alignment - 12+ tests in `test_timeline_helpers.py`
+- [x] Widget: `_field_to_image_data` - 5+ tests in `test_rendering.py`
+- [x] Video: `compute_global_colormap_range` degeneracy - 7+ tests in `test_rendering.py`
+- [x] Video: ffmpeg call arguments - 6+ tests in `test_ffmpeg_io.py`
 
 ### 7.2 Benchmark Scripts
 
@@ -551,8 +553,8 @@ skeleton.adjacency["body"]  # Returns ['head', 'tail'] for chain skeleton
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
 | Phase 4: Widget | Complete | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
 | Phase 5: Video | Complete | 5.1-5.4 done (robustness improvements, no regression) |
-| Phase 6: Skeleton | **Complete** | 6.1-6.2 done (edge normalization + adjacency property) |
-| Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |
+| Phase 6: Skeleton | Complete | 6.1-6.2 done (edge normalization + adjacency property) |
+| Phase 7: Tests/Docs | **In Progress** | 7.1-7.2 done, 7.3 pending |
 
 ---
 
