@@ -213,24 +213,24 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 3.2: Pipeline Integration
 
-- [ ] Create `_find_nearest_indices()` helper in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
-  - [ ] Factor out index-finding from `_interp_nearest()`
-  - [ ] Return -1 for out-of-range queries
-- [ ] Refactor `_interp_nearest()` to use `_find_nearest_indices()`
-- [ ] Add `_validate_video_env()` function:
-  - [ ] Check `env.n_dims == 2`
-  - [ ] Check `dimension_ranges` exists and is finite
-  - [ ] WHAT/WHY/HOW error messages
-- [ ] Update `_convert_overlays_to_data()` to handle `VideoOverlay`:
-  - [ ] Create VideoReader or wrap array
-  - [ ] Compute frame index mapping
-  - [ ] Compose crop offset into transform
-  - [ ] Warn if no calibration provided
-- [ ] Write tests for temporal alignment edge cases
+- [x] Create `_find_nearest_indices()` helper in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
+  - [x] Factor out index-finding from `_interp_nearest()`
+  - [x] Return -1 for out-of-range queries
+- [x] Refactor `_interp_nearest()` to use `_find_nearest_indices()`
+- [x] Add `_validate_video_env()` function:
+  - [x] Check `env.n_dims == 2`
+  - [x] Check `dimension_ranges` exists and is finite
+  - [x] WHAT/WHY/HOW error messages
+- [x] Update `_convert_overlays_to_data()` to handle `VideoOverlay`:
+  - [x] Create VideoReader or wrap array
+  - [x] Compute frame index mapping
+  - [x] Compose crop offset into transform
+  - [x] Warn if no calibration provided
+- [x] Write tests for temporal alignment edge cases
 
 ### Task 3.3: Update OverlayData
 
-- [ ] Add `videos: list[VideoData] = field(default_factory=list)` to `OverlayData`
+- [x] Add `videos: list[VideoData] = field(default_factory=list)` to `OverlayData`
 - [ ] Update all backend imports/type hints
 - [ ] Verify no `AttributeError` when accessing `overlay_data.videos`
 - [ ] Run full test suite: `uv run pytest tests/animation/ -v`

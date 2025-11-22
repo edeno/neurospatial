@@ -51,12 +51,18 @@
   - Crop and downsample support
   - Pickle-safe (cache dropped on serialization)
   - 18 unit tests passing
+- **Completed M3 (partial)**: 3.2 - Pipeline integration
+  - `_find_nearest_indices()` helper for index mapping
+  - `_validate_video_env()` with WHAT/WHY/HOW error messages
+  - VideoOverlay handling in `_convert_overlays_to_data()`
+  - Added `videos` field to OverlayData
+  - 11 additional tests passing
 
 ---
 
 ## Current Task
 
-**Working on**: Milestone 3 - Video I/O (Task 3.2)
+**Working on**: Milestone 3 - Video I/O (Task 3.3)
 
 ---
 

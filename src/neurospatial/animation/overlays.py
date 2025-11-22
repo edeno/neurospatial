@@ -821,6 +821,8 @@ class OverlayData:
         List of bodypart overlays. Default is empty list.
     head_directions : list[HeadDirectionData], optional
         List of head direction overlays. Default is empty list.
+    videos : list[VideoData], optional
+        List of video overlays. Default is empty list.
     regions : list[str] | dict[int, list[str]] | None, optional
         Region names or per-frame region lists. When dict, keys are frame
         indices (0-based). Default is None.
@@ -833,6 +835,8 @@ class OverlayData:
         List of bodypart overlays.
     head_directions : list[HeadDirectionData]
         List of head direction overlays.
+    videos : list[VideoData]
+        List of video overlays.
     regions : list[str] | dict[int, list[str]] | None
         Region names or per-frame region lists.
 
@@ -858,6 +862,7 @@ class OverlayData:
     positions: list[PositionData] = field(default_factory=list)
     bodypart_sets: list[BodypartData] = field(default_factory=list)
     head_directions: list[HeadDirectionData] = field(default_factory=list)
+    videos: list[VideoData] = field(default_factory=list)
     regions: list[str] | dict[int, list[str]] | None = None
 
     def __post_init__(self) -> None:
@@ -1286,6 +1291,63 @@ def _validate_pickle_ability(
         ) from e
 
 
+def _validate_video_env(env: Any) -> None:
+    """Validate that environment supports video overlay rendering.
+
+    Video overlays require a 2D environment with finite dimension ranges
+    to compute proper coordinate transforms.
+
+    Parameters
+    ----------
+    env : Any
+        Environment object with n_dims and dimension_ranges attributes.
+
+    Raises
+    ------
+    ValueError
+        If environment is not 2D or has non-finite dimension ranges.
+
+    Notes
+    -----
+    WHAT: Video overlays require 2D environments with finite bounds.
+
+    WHY: Video frames are 2D images that need to be transformed into
+    environment coordinates. Non-finite bounds make it impossible to
+    compute a valid affine transform from pixel space to environment space.
+
+    HOW: Ensure your environment is 2D (e.g., from_samples with 2D positions)
+    and has finite dimension_ranges (no infinite extents).
+
+    Examples
+    --------
+    >>> env = Environment.from_samples(np.random.rand(100, 2) * 100, bin_size=5)
+    >>> _validate_video_env(env)  # Should not raise
+    """
+    # Check 2D requirement
+    if env.n_dims != 2:
+        raise ValueError(
+            f"VideoOverlay requires a 2D environment.\n\n"
+            f"WHAT: Environment has n_dims={env.n_dims}, expected n_dims=2.\n\n"
+            f"WHY: Video frames are 2D images that must be transformed into "
+            f"environment coordinates. This requires a 2D coordinate system.\n\n"
+            f"HOW: Create a 2D environment:\n"
+            f"  env = Environment.from_samples(positions_2d, bin_size=5.0)"
+        )
+
+    # Check finite dimension ranges
+    dim_ranges = env.dimension_ranges
+    if not np.all(np.isfinite(dim_ranges)):
+        raise ValueError(
+            f"VideoOverlay requires finite dimension ranges.\n\n"
+            f"WHAT: Environment dimension_ranges contains non-finite values: "
+            f"{dim_ranges}.\n\n"
+            f"WHY: Computing the video-to-environment transform requires "
+            f"finite bounds to establish the coordinate mapping.\n\n"
+            f"HOW: Ensure your environment data has finite coordinates. "
+            f"Check for infinite or NaN values in your position data."
+        )
+
+
 # =============================================================================
 # Timeline and interpolation helpers (private)
 # =============================================================================
@@ -1472,6 +1534,76 @@ def _interp_linear(
     return result
 
 
+def _find_nearest_indices(
+    t_src: NDArray[np.float64],
+    t_query: NDArray[np.float64],
+) -> NDArray[np.int_]:
+    """Find nearest source indices for query times.
+
+    For each query time, finds the index of the nearest source time.
+    Returns -1 for query times outside the source time range.
+
+    Parameters
+    ----------
+    t_src : NDArray[np.float64]
+        Source timestamps with shape (n_samples,). Must be monotonically increasing.
+    t_query : NDArray[np.float64]
+        Query timestamps with shape (n_queries,).
+
+    Returns
+    -------
+    NDArray[np.int_]
+        Array of indices into t_src for each query time. Shape (n_queries,).
+        Values are -1 for query times outside [t_src.min(), t_src.max()].
+
+    Notes
+    -----
+    For query times exactly at the midpoint between two source times, the
+    earlier (left) neighbor is chosen.
+
+    Uses searchsorted for O(n_query log n_source) complexity.
+
+    Examples
+    --------
+    >>> t_src = np.array([0.0, 1.0, 2.0])
+    >>> t_query = np.array([0.4, 1.4, 3.0])
+    >>> _find_nearest_indices(t_src, t_query)
+    array([ 0,  1, -1])
+    """
+    # Handle empty query
+    if len(t_query) == 0:
+        return np.array([], dtype=np.int_)
+
+    # Initialize result with -1 (out-of-range marker)
+    result = np.full(len(t_query), -1, dtype=np.int_)
+
+    # Restrict to query times within source range
+    t_min = float(t_src.min())
+    t_max = float(t_src.max())
+    valid_mask = (t_query >= t_min) & (t_query <= t_max)
+
+    if not np.any(valid_mask):
+        return result
+
+    t_valid = t_query[valid_mask]
+
+    # Use searchsorted to find nearest indices
+    idx_right = np.searchsorted(t_src, t_valid, side="left")
+    idx_right = np.clip(idx_right, 1, len(t_src) - 1)
+    idx_left = idx_right - 1
+
+    t_left = t_src[idx_left]
+    t_right = t_src[idx_right]
+
+    # Choose neighbor with smaller absolute time difference
+    # For ties (exactly at midpoint), choose left (earlier) neighbor
+    choose_right = (t_valid - t_left) > (t_right - t_valid)
+    nearest_indices = np.where(choose_right, idx_right, idx_left)
+
+    result[valid_mask] = nearest_indices
+    return result
+
+
 def _interp_nearest(
     t_src: NDArray[np.float64],
     x_src: NDArray[np.float64],
@@ -1547,37 +1679,18 @@ def _interp_nearest(
 
     result = np.full(output_shape, np.nan, dtype=np.float64)
 
-    # Restrict to frame times within source range
-    t_min = float(t_src.min())
-    t_max = float(t_src.max())
-    valid_mask = (t_frame >= t_min) & (t_frame <= t_max)
+    # Find nearest indices using helper function
+    nearest_indices = _find_nearest_indices(t_src, t_frame)
+    valid_mask = nearest_indices >= 0
 
     if not np.any(valid_mask):
-        # No valid interpolation points
         return result
-
-    t_valid = t_frame[valid_mask]
-
-    # Use searchsorted to find nearest indices without building a distance matrix
-    # idx_right is the insertion index such that t_src[idx_right - 1] <= t <= t_src[idx_right]
-    idx_right = np.searchsorted(t_src, t_valid, side="left")
-    # Clip to interior so we always have a left/right neighbor
-    idx_right = np.clip(idx_right, 1, len(t_src) - 1)
-    idx_left = idx_right - 1
-
-    t_left = t_src[idx_left]
-    t_right = t_src[idx_right]
-
-    # Choose neighbor with smaller absolute time difference
-    # For ties (exactly at midpoint), choose left (earlier) neighbor
-    choose_right = (t_valid - t_left) > (t_right - t_valid)
-    nearest_indices = np.where(choose_right, idx_right, idx_left)
 
     # Index into source data
     if x_src.ndim == 1:
-        result[valid_mask] = x_src[nearest_indices]
+        result[valid_mask] = x_src[nearest_indices[valid_mask]]
     else:
-        result[valid_mask, :] = x_src[nearest_indices, :]
+        result[valid_mask, :] = x_src[nearest_indices[valid_mask], :]
 
     return result
 
@@ -1688,6 +1801,7 @@ def _convert_overlays_to_data(
     position_data_list: list[PositionData] = []
     bodypart_data_list: list[BodypartData] = []
     head_direction_data_list: list[HeadDirectionData] = []
+    video_data_list: list[VideoData] = []
 
     # Get environment dimensions
     env_n_dims = env.n_dims
@@ -1842,11 +1956,95 @@ def _convert_overlays_to_data(
             )
             head_direction_data_list.append(head_direction_data)
 
+        elif isinstance(overlay, VideoOverlay):
+            # Validate environment supports video overlays
+            _validate_video_env(env)
+
+            # Warn if no calibration provided
+            if overlay.calibration is None:
+                import warnings
+
+                warnings.warn(
+                    "VideoOverlay has no calibration. Video will be scaled to fit "
+                    "environment bounds but may not align accurately with spatial data. "
+                    "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
+                    "or calibrate_from_landmarks().",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            # Determine video source: array or file path
+            if isinstance(overlay.source, np.ndarray):
+                # Array source - use directly as reader
+                reader: NDArray[np.uint8] | Any = overlay.source
+                n_video_frames = overlay.source.shape[0]
+            else:
+                # File path - create VideoReader (to be implemented in 3.1)
+                from neurospatial.animation._video_io import VideoReader
+
+                reader = VideoReader(
+                    overlay.source,
+                    cache_size=100,
+                    downsample=overlay.downsample,
+                    crop=overlay.crop,
+                )
+                n_video_frames = reader.n_frames
+
+            # Compute frame index mapping
+            if overlay.times is not None:
+                # Video has explicit times - map animation frames to video frames
+                _validate_monotonic_time(overlay.times, name="VideoOverlay.times")
+
+                if len(overlay.times) != n_video_frames:
+                    raise ValueError(
+                        f"VideoOverlay.times length ({len(overlay.times)}) does not "
+                        f"match number of video frames ({n_video_frames})."
+                    )
+
+                # Find nearest video frame for each animation frame
+                frame_indices = _find_nearest_indices(overlay.times, frame_times)
+            else:
+                # No times provided - assume 1:1 mapping
+                if n_video_frames != n_frames:
+                    raise ValueError(
+                        f"VideoOverlay source has {n_video_frames} frames but "
+                        f"animation has {n_frames} frames. When times=None, "
+                        f"video frames must match animation frames."
+                    )
+                frame_indices = np.arange(n_frames, dtype=np.int_)
+
+            # Compute environment bounds for transform
+            x_range = env_dim_ranges[0]
+            y_range = env_dim_ranges[1]
+            env_bounds = (
+                float(x_range[0]),
+                float(x_range[1]),
+                float(y_range[0]),
+                float(y_range[1]),
+            )
+
+            # Transform from calibration (to be used by backends)
+            transform_to_env = (
+                overlay.calibration.transform_px_to_cm if overlay.calibration else None
+            )
+
+            # Create VideoData
+            video_data = VideoData(
+                frame_indices=frame_indices,
+                reader=reader,
+                transform_to_env=transform_to_env,
+                env_bounds=env_bounds,
+                alpha=overlay.alpha,
+                z_order=overlay.z_order,
+            )
+            video_data_list.append(video_data)
+
     # Aggregate all overlay data
     overlay_data = OverlayData(
         positions=position_data_list,
         bodypart_sets=bodypart_data_list,
         head_directions=head_direction_data_list,
+        videos=video_data_list,
         regions=None,  # Regions will be handled separately in v0.4.0
     )
 

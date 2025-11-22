@@ -1633,5 +1633,205 @@ class TestConvertOverlaysToData:
         assert np.isnan(pos_data.data[3]).all()  # t=3.0 > 2.0
 
 
+# =============================================================================
+# Task 3.2: Pipeline Integration Tests
+# =============================================================================
+
+
+class TestFindNearestIndices:
+    """Tests for _find_nearest_indices helper function."""
+
+    def test_basic_nearest_indices(self):
+        """Test basic nearest-neighbor index finding."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([0.0, 1.0, 2.0, 3.0])
+        t_query = np.array([0.1, 0.9, 1.6, 2.9])
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        assert_array_equal(indices, [0, 1, 2, 3])
+
+    def test_out_of_range_returns_minus_one(self):
+        """Test that out-of-range queries return -1."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([1.0, 2.0, 3.0])
+        t_query = np.array([0.0, 2.0, 4.0])  # 0.0 and 4.0 are out of range
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        assert indices[0] == -1  # Before range
+        assert indices[1] == 1  # In range
+        assert indices[2] == -1  # After range
+
+    def test_exact_matches(self):
+        """Test that exact matches return correct indices."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([0.0, 1.0, 2.0])
+        t_query = np.array([0.0, 1.0, 2.0])
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        assert_array_equal(indices, [0, 1, 2])
+
+    def test_midpoint_chooses_left(self):
+        """Test that midpoint between samples chooses left (earlier) neighbor."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([0.0, 2.0])
+        t_query = np.array([1.0])  # Exactly at midpoint
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        assert indices[0] == 0  # Should choose left (earlier)
+
+    def test_empty_query_returns_empty(self):
+        """Test that empty query returns empty array."""
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        t_src = np.array([0.0, 1.0, 2.0])
+        t_query = np.array([])
+
+        indices = _find_nearest_indices(t_src, t_query)
+
+        assert len(indices) == 0
+
+
+class TestValidateVideoEnv:
+    """Tests for _validate_video_env function."""
+
+    def test_valid_2d_environment_passes(self):
+        """Test that 2D environment with finite ranges passes validation."""
+        from unittest.mock import MagicMock
+
+        from neurospatial.animation.overlays import _validate_video_env
+
+        mock_env = MagicMock()
+        mock_env.n_dims = 2
+        mock_env.dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
+
+        # Should not raise
+        _validate_video_env(mock_env)
+
+    def test_1d_environment_raises(self):
+        """Test that 1D environment raises ValueError."""
+        from unittest.mock import MagicMock
+
+        from neurospatial.animation.overlays import _validate_video_env
+
+        env_1d = MagicMock()
+        env_1d.n_dims = 1
+        env_1d.dimension_ranges = np.array([[0.0, 100.0]])
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_video_env(env_1d)
+
+        assert "2D" in str(exc_info.value) or "n_dims" in str(exc_info.value)
+
+    def test_infinite_ranges_raises(self):
+        """Test that infinite dimension ranges raise ValueError."""
+        from unittest.mock import MagicMock
+
+        from neurospatial.animation.overlays import _validate_video_env
+
+        env_inf = MagicMock()
+        env_inf.n_dims = 2
+        env_inf.dimension_ranges = np.array([[0.0, np.inf], [0.0, 100.0]])
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_video_env(env_inf)
+
+        assert (
+            "finite" in str(exc_info.value).lower()
+            or "inf" in str(exc_info.value).lower()
+        )
+
+
+class TestConvertVideoOverlay:
+    """Tests for VideoOverlay conversion in _convert_overlays_to_data."""
+
+    @pytest.fixture
+    def mock_env_2d(self):
+        """Create a mock 2D environment for testing."""
+        from unittest.mock import MagicMock
+
+        env = MagicMock()
+        env.n_dims = 2
+        env.dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
+        return env
+
+    @pytest.fixture
+    def sample_video_array(self) -> np.ndarray:
+        """Create sample video array (5 frames, 32x32, RGB)."""
+        return np.random.randint(0, 255, (5, 32, 32, 3), dtype=np.uint8)
+
+    def test_video_overlay_converts_to_video_data(
+        self, mock_env_2d, sample_video_array
+    ):
+        """Test that VideoOverlay converts to VideoData in OverlayData."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        overlay = VideoOverlay(source=sample_video_array)
+        frame_times = np.linspace(0.0, 1.0, 5)
+        n_frames = 5
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_2d,
+        )
+
+        # Should have video data in the result
+        assert hasattr(overlay_data, "videos")
+        assert len(overlay_data.videos) == 1
+
+    def test_video_overlay_with_times_computes_frame_indices(
+        self, mock_env_2d, sample_video_array
+    ):
+        """Test that video overlay with times computes frame index mapping."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        # Video has 5 frames at 0.0, 0.25, 0.5, 0.75, 1.0
+        video_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        overlay = VideoOverlay(source=sample_video_array, times=video_times)
+
+        # Animation has 10 frames at 0.0, 0.1, 0.2, ..., 0.9
+        frame_times = np.linspace(0.0, 0.9, 10)
+        n_frames = 10
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_2d,
+        )
+
+        # Check that frame_indices were computed
+        video_data = overlay_data.videos[0]
+        assert video_data.frame_indices is not None
+        assert len(video_data.frame_indices) == n_frames
+
+    def test_video_overlay_warns_without_calibration(
+        self, mock_env_2d, sample_video_array
+    ):
+        """Test that VideoOverlay without calibration emits warning."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        overlay = VideoOverlay(source=sample_video_array, calibration=None)
+        frame_times = np.linspace(0.0, 1.0, 5)
+        n_frames = 5
+
+        with pytest.warns(UserWarning, match="calibration"):
+            _convert_overlays_to_data(
+                overlays=[overlay],
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=mock_env_2d,
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
