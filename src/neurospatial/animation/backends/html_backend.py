@@ -308,6 +308,7 @@ def render_html(
     render_napari : Interactive GPU viewer
     """
     from neurospatial.animation.rendering import (
+        _validate_frame_labels,
         compute_global_colormap_range,
         render_field_to_image_bytes,
     )
@@ -315,16 +316,11 @@ def render_html(
     n_frames = len(fields)
 
     # Validate frame_labels length if provided
-    if frame_labels is not None and len(frame_labels) != n_frames:
-        raise ValueError(
-            f"frame_labels length ({len(frame_labels)}) does not match "
-            f"number of frames ({n_frames}).\n\n"
-            f"WHAT: Mismatch between frame_labels and fields arrays.\n\n"
-            f"WHY: Each frame needs exactly one label for the HTML player slider.\n\n"
-            f"HOW: Ensure frame_labels has {n_frames} elements:\n"
-            f"  frame_labels = [f'Frame {{i+1}}' for i in range({n_frames})]\n"
-            f"  # Or provide None to use default labels"
-        )
+    frame_labels = _validate_frame_labels(
+        frame_labels=frame_labels,
+        n_frames=n_frames,
+        backend_name="html",
+    )
 
     # Validate overlay capabilities and emit warnings for unsupported types
     if overlay_data is not None:

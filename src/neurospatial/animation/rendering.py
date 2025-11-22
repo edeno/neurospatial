@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "_validate_frame_labels",
     "compute_global_colormap_range",
     "field_to_rgb_for_napari",
     "render_field_to_image_bytes",
@@ -399,9 +400,14 @@ def field_to_rgb_for_napari(
             f"Expected shape: ({env.n_bins},)"
         )
 
-    # Normalize to [0, 1]
-    normalized = (field - vmin) / (vmax - vmin)
-    normalized = np.clip(normalized, 0, 1)
+    # Normalize to [0, 1], guarding against zero-range (constant field or vmin == vmax)
+    value_range = vmax - vmin
+    if value_range <= 0 or not np.isfinite(value_range):
+        # Zero or invalid range: map all values to middle of colormap (index 127)
+        normalized = np.full_like(field, 0.5)
+    else:
+        normalized = (field - vmin) / value_range
+        normalized = np.clip(normalized, 0, 1)
 
     # Map to colormap indices [0, 255]
     indices = (normalized * 255).astype(np.uint8)
@@ -445,3 +451,55 @@ def field_to_rgb_for_napari(
 
     # Non-grid layout: return flat RGB for point cloud rendering
     return rgb
+
+
+def _validate_frame_labels(
+    frame_labels: list[str] | None,
+    n_frames: int,
+    backend_name: str,
+) -> list[str] | None:
+    """Validate that frame_labels length matches number of frames.
+
+    Parameters
+    ----------
+    frame_labels : list of str or None
+        Optional labels, one per frame. If None, no labels are enforced here.
+    n_frames : int
+        Number of frames for the backend.
+    backend_name : str
+        Name of the backend for error-message context (e.g., "html", "video").
+
+    Returns
+    -------
+    list of str or None
+        The original labels if valid, or None.
+
+    Raises
+    ------
+    ValueError
+        If frame_labels is not None and its length does not match n_frames.
+
+    Examples
+    --------
+    >>> _validate_frame_labels(["Frame 1", "Frame 2"], 2, "html")
+    ['Frame 1', 'Frame 2']
+
+    >>> _validate_frame_labels(None, 10, "video") is None
+    True
+    """
+    if frame_labels is None:
+        return None
+
+    if len(frame_labels) != n_frames:
+        raise ValueError(
+            f"frame_labels length ({len(frame_labels)}) does not match "
+            f"number of frames ({n_frames}) for backend '{backend_name}'.\n\n"
+            f"WHAT: Mismatch between frame_labels and fields arrays.\n\n"
+            f"WHY: Each frame needs exactly one label for the {backend_name} "
+            f"backend's controls.\n\n"
+            f"HOW: Ensure frame_labels has {n_frames} elements, for example:\n"
+            f"  frame_labels = [f'Frame {{i + 1}}' for i in range({n_frames})]\n"
+            f"  # Or pass frame_labels=None to use backend defaults (when supported)"
+        )
+
+    return frame_labels

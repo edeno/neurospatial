@@ -781,12 +781,21 @@ def render_widget(
     from collections import OrderedDict
 
     from neurospatial.animation.rendering import (
+        _validate_frame_labels,
         compute_global_colormap_range,
         render_field_to_png_bytes,
     )
 
     # Compute global color scale
     vmin, vmax = compute_global_colormap_range(fields, vmin, vmax)
+
+    # Validate frame_labels length if provided
+    n_frames = len(fields)
+    frame_labels = _validate_frame_labels(
+        frame_labels=frame_labels,
+        n_frames=n_frames,
+        backend_name="widget",
+    )
 
     # LRU cache storing raw PNG bytes (not base64 strings)
     cached_frames: OrderedDict[int, bytes] = OrderedDict()
@@ -799,10 +808,12 @@ def render_widget(
             cached_frames.popitem(last=False)  # Remove oldest
 
     # Pre-render subset of frames for responsive scrubbing
+    # Clamp initial_cache_size to cache_limit to avoid pre-rendering frames
+    # that will be immediately evicted
     if initial_cache_size is None:
-        initial_cache_size = min(len(fields), 500)
+        initial_cache_size = min(len(fields), 500, cache_limit)
     else:
-        initial_cache_size = min(initial_cache_size, len(fields))
+        initial_cache_size = min(initial_cache_size, len(fields), cache_limit)
     print(f"Pre-rendering {initial_cache_size} frames for widget...")
 
     for i in range(initial_cache_size):
@@ -826,9 +837,9 @@ def render_widget(
             png_bytes = render_field_to_png_bytes(env, fields[i], cmap, vmin, vmax, dpi)
         cache_put(i, png_bytes)
 
-    # Generate frame labels
+    # Generate default frame labels if none provided
     if frame_labels is None:
-        frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
+        frame_labels = [f"Frame {i + 1}" for i in range(n_frames)]
 
     # Create persistent figure renderer for efficient on-demand rendering
     # Only create when overlays are present (main optimization target for cache misses)

@@ -500,8 +500,10 @@ class HeadDirectionData:
 class OverlayData:
     """Container for all overlay data passed to animation backends.
 
-    Aggregates all overlay types into a single pickle-safe container. Backends
-    receive this object and render the appropriate overlay types.
+    Aggregates all overlay types into a single container. Backends receive this
+    object and render the appropriate overlay types. Pickle-ability is validated
+    separately in the animation pipeline when needed (e.g., for parallel video
+    rendering with n_workers > 1).
 
     Parameters
     ----------
@@ -534,19 +536,15 @@ class OverlayData:
 
     All data is aligned to animation frame times and validated for:
 
-    - Pickle-ability (required for parallel video rendering)
     - Shape consistency with environment dimensions
     - Finite values (no NaN/Inf)
 
+    Pickle-ability is validated via ``_validate_pickle_ability()`` during the
+    animation pipeline when ``n_workers > 1`` is specified for parallel video
+    rendering. Serial rendering (``n_workers=1``) does not require pickling.
+
     Backends access this object to render overlays without needing to handle
     temporal alignment or validation.
-
-    Raises
-    ------
-    ValueError
-        If the OverlayData instance is not pickle-able (required for parallel
-        video rendering). This will be validated during conversion pipeline
-        implementation.
     """
 
     positions: list[PositionData] = field(default_factory=list)
@@ -555,20 +553,17 @@ class OverlayData:
     regions: list[str] | dict[int, list[str]] | None = None
 
     def __post_init__(self) -> None:
-        """Placeholder for future pickle-ability validation.
+        """Post-initialization hook.
 
         Notes
         -----
-        Pickle-ability validation will be implemented in the validation module
-        during conversion pipeline implementation (Milestone 1.4). This method is
-        reserved for future validation logic to ensure parallel rendering
-        compatibility.
-
-        Once implemented, this will raise ValueError if any attribute contains
-        unpickleable objects (lambdas, closures, etc.).
+        Currently, overlay pickle-ability is validated in the conversion
+        pipeline via ``_validate_pickle_ability`` rather than here. This keeps
+        construction of ``OverlayData`` lightweight while still providing
+        user-friendly errors when parallel backends are used (n_workers > 1).
         """
-        # Validation deferred to conversion pipeline implementation
-        pass
+        # Intentionally no-op; validation lives in conversion pipeline.
+        return None
 
 
 # =============================================================================
@@ -1200,8 +1195,11 @@ def _interp_nearest(
     For each frame time, finds the closest source time and returns that value.
     Extrapolation beyond source time range returns NaN to indicate missing data.
 
+    Uses searchsorted for O(n_target log n_source) complexity, avoiding the
+    O(n_target * n_source) memory cost of a full distance matrix.
+
     For frame times exactly at the midpoint between two source times, the
-    behavior depends on numpy.searchsorted (typically picks the right neighbor).
+    earlier (left) neighbor is chosen.
 
     NaN values in source data will be returned when the nearest source point is NaN.
 
@@ -1241,23 +1239,31 @@ def _interp_nearest(
 
     result = np.full(output_shape, np.nan, dtype=np.float64)
 
-    # Find frame times within source range
-    t_min, t_max = t_src.min(), t_src.max()
+    # Restrict to frame times within source range
+    t_min = float(t_src.min())
+    t_max = float(t_src.max())
     valid_mask = (t_frame >= t_min) & (t_frame <= t_max)
 
     if not np.any(valid_mask):
         # No valid interpolation points
         return result
 
-    # For each valid frame time, find nearest source index
     t_valid = t_frame[valid_mask]
 
-    # Compute distances to all source times
-    # Shape: (n_valid_frames, n_src_samples)
-    distances = np.abs(t_valid[:, np.newaxis] - t_src[np.newaxis, :])
+    # Use searchsorted to find nearest indices without building a distance matrix
+    # idx_right is the insertion index such that t_src[idx_right - 1] <= t <= t_src[idx_right]
+    idx_right = np.searchsorted(t_src, t_valid, side="left")
+    # Clip to interior so we always have a left/right neighbor
+    idx_right = np.clip(idx_right, 1, len(t_src) - 1)
+    idx_left = idx_right - 1
 
-    # Find index of minimum distance for each frame
-    nearest_indices = np.argmin(distances, axis=1)
+    t_left = t_src[idx_left]
+    t_right = t_src[idx_right]
+
+    # Choose neighbor with smaller absolute time difference
+    # For ties (exactly at midpoint), choose left (earlier) neighbor
+    choose_right = (t_valid - t_left) > (t_right - t_valid)
+    nearest_indices = np.where(choose_right, idx_right, idx_left)
 
     # Index into source data
     if x_src.ndim == 1:

@@ -222,6 +222,7 @@ def render_video(
     """
     from neurospatial.animation._parallel import parallel_render_frames
     from neurospatial.animation.rendering import (
+        _validate_frame_labels,
         compute_global_colormap_range,
         render_field_to_rgb,
     )
@@ -237,6 +238,14 @@ def render_video(
 
     # Compute global color scale
     vmin, vmax = compute_global_colormap_range(fields, vmin, vmax)
+
+    # Validate frame_labels length if provided
+    n_frames = len(fields)
+    frame_labels = _validate_frame_labels(
+        frame_labels=frame_labels,
+        n_frames=n_frames,
+        backend_name="video",
+    )
 
     # Determine number of workers
     if n_workers is None:

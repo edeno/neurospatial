@@ -257,6 +257,23 @@ def animate_fields(
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
 
+    # Multi-field inputs are only supported by the napari backend
+    if is_multi_field and backend != "napari":
+        raise ValueError(
+            "Multi-field input (list of sequences) is only supported by the "
+            "'napari' backend.\n\n"
+            "WHAT: Detected list-of-sequences input for 'fields', which encodes "
+            "multiple spatial fields per frame (multi-field mode).\n\n"
+            "WHY: Video, HTML, and widget backends currently expect a single "
+            "field array per frame and cannot render multi-field layouts.\n\n"
+            "HOW: Either:\n"
+            "  - Use backend='napari' (or backend='auto' without save_path) "
+            "to explore multi-field data interactively, or\n"
+            "  - Convert your multi-field input into a single field per frame "
+            "(e.g., by stacking or selecting one field) before calling "
+            "animate_fields()."
+        )
+
     # Route to backend with early validation
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
