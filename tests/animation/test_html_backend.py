@@ -499,3 +499,207 @@ def test_html_export_non_embedded_negative_workers(tmp_path):
             embed=False,
             n_workers=-1,
         )
+
+
+# =============================================================================
+# TypedDict JSON Schema Tests
+# =============================================================================
+
+
+class TestOverlayJSONSchema:
+    """Tests for TypedDict JSON schema conformance.
+
+    These tests verify that _serialize_overlay_data() returns structures
+    that conform to the TypedDict definitions in html_backend.py.
+    """
+
+    @pytest.fixture
+    def env_with_regions(self):
+        """Create environment with regions for testing."""
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Add point and polygon regions
+        env.regions.add("goal", point=(10.0, 10.0))
+        env.regions.add("start", point=(0.0, 0.0))
+
+        return env
+
+    @pytest.fixture
+    def overlay_data_with_positions(self, env_with_regions):
+        """Create OverlayData with position overlays."""
+        from neurospatial.animation.overlays import (
+            PositionOverlay,
+            _convert_overlays_to_data,
+        )
+
+        trajectory = np.random.randn(10, 2) * 20
+        overlay = PositionOverlay(
+            data=trajectory, color="red", size=10.0, trail_length=5
+        )
+
+        frame_times = np.linspace(0, 1, 10)
+        return _convert_overlays_to_data(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=10,
+            env=env_with_regions,
+            show_regions=["goal", "start"],
+        )
+
+    def test_serialize_returns_dict(
+        self, env_with_regions, overlay_data_with_positions
+    ):
+        """Test that _serialize_overlay_data returns a dictionary."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        assert isinstance(result, dict)
+
+    def test_serialize_has_required_keys(
+        self, env_with_regions, overlay_data_with_positions
+    ):
+        """Test that serialized data has all required keys from OverlayDataJSON."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        # Required keys from OverlayDataJSON
+        assert "positions" in result
+        assert "regions" in result
+        assert "dimension_ranges" in result
+        assert "region_alpha" in result
+
+    def test_position_overlay_conforms_to_schema(
+        self, env_with_regions, overlay_data_with_positions
+    ):
+        """Test that position overlays conform to PositionOverlayJSON schema."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        assert isinstance(result["positions"], list)
+        assert len(result["positions"]) > 0
+
+        for pos in result["positions"]:
+            # Check PositionOverlayJSON fields
+            assert "data" in pos
+            assert "color" in pos
+            assert "size" in pos
+            assert "trail_length" in pos
+
+            # Type checks
+            assert isinstance(pos["data"], list)
+            assert isinstance(pos["color"], str)
+            assert isinstance(pos["size"], (int, float))
+            assert isinstance(pos["trail_length"], int)
+
+            # Data should be list of [x, y] coordinates
+            assert all(len(coord) == 2 for coord in pos["data"])
+
+    def test_point_region_conforms_to_schema(
+        self, env_with_regions, overlay_data_with_positions
+    ):
+        """Test that point regions conform to PointRegionJSON schema."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        assert isinstance(result["regions"], list)
+        assert len(result["regions"]) > 0
+
+        # Find point regions
+        point_regions = [r for r in result["regions"] if r["kind"] == "point"]
+        assert len(point_regions) > 0
+
+        for region in point_regions:
+            # Check PointRegionJSON fields
+            assert "name" in region
+            assert "kind" in region
+            assert "coordinates" in region
+
+            # Type checks
+            assert isinstance(region["name"], str)
+            assert region["kind"] == "point"
+            assert isinstance(region["coordinates"], list)
+            assert len(region["coordinates"]) == 2  # [x, y]
+
+    def test_dimension_ranges_format(
+        self, env_with_regions, overlay_data_with_positions
+    ):
+        """Test that dimension_ranges is in correct format."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        dim_ranges = result["dimension_ranges"]
+
+        # Should be list of [min, max] pairs
+        assert isinstance(dim_ranges, list)
+        assert len(dim_ranges) == 2  # 2D environment
+        for axis_range in dim_ranges:
+            assert isinstance(axis_range, list)
+            assert len(axis_range) == 2
+            assert axis_range[0] <= axis_range[1]  # min <= max
+
+    def test_region_alpha_is_float(self, env_with_regions, overlay_data_with_positions):
+        """Test that region_alpha is a float value."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            overlay_data_with_positions,
+            env_with_regions,
+            show_regions=["goal", "start"],
+            region_alpha=0.3,
+        )
+
+        assert isinstance(result["region_alpha"], float)
+        assert 0.0 <= result["region_alpha"] <= 1.0
+
+    def test_empty_overlays_returns_valid_schema(self, env_with_regions):
+        """Test that empty overlays still return valid schema structure."""
+        from neurospatial.animation.backends.html_backend import _serialize_overlay_data
+
+        result = _serialize_overlay_data(
+            None,  # No overlay data
+            env_with_regions,
+            show_regions=False,
+            region_alpha=0.3,
+        )
+
+        # Should still have all required keys
+        assert "positions" in result
+        assert "regions" in result
+        assert "dimension_ranges" in result
+        assert "region_alpha" in result
+
+        # Empty lists for positions and regions
+        assert result["positions"] == []
+        assert result["regions"] == []
