@@ -1292,6 +1292,8 @@ def _validate_pickle_ability(
         # Attempt to pickle the overlay data
         pickle.dumps(overlay_data)
     except (pickle.PicklingError, TypeError, AttributeError) as e:
+        from neurospatial.animation._utils import _pickling_guidance
+
         raise ValueError(
             f"WHAT: OverlayData is not pickle-able, preventing parallel video "
             f"rendering.\n"
@@ -1299,14 +1301,7 @@ def _validate_pickle_ability(
             f"WHY: Parallel video rendering (n_workers > 1) requires pickling "
             f"OverlayData to pass it to worker processes. Unpickleable objects "
             f"include lambdas, closures, local functions, and certain class instances.\n\n"
-            f"HOW: Fix the issue using one of these approaches:\n"
-            f"  # Option 1: Call env.clear_cache() before rendering\n"
-            f"  env.clear_cache()  # Remove cached unpickleable objects\n"
-            f"  env.animate_fields(..., n_workers={n_workers})\n\n"
-            f"  # Option 2: Use single-threaded rendering\n"
-            f"  env.animate_fields(..., n_workers=1)\n\n"
-            f"  # Option 3: Remove unpickleable attributes from OverlayData\n"
-            f"  # (check for lambdas, local functions, or cached methods)"
+            f"{_pickling_guidance(n_workers=n_workers)}"
         ) from e
 
 

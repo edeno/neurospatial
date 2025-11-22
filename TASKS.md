@@ -449,10 +449,10 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Low - Improves consistency
 
-- [ ] Create `_pickling_guidance()` helper in [src/neurospatial/animation/_utils.py](src/neurospatial/animation/_utils.py) (NEW file)
-- [ ] Refactor `_validate_pickle_ability()` in overlays.py to use helper
-- [ ] Refactor `_validate_env_pickleable()` in core.py to use helper
-- [ ] Ensure both error messages have identical "HOW" guidance
+- [x] Create `_pickling_guidance()` helper in [src/neurospatial/animation/_utils.py](src/neurospatial/animation/_utils.py) (NEW file)
+- [x] Refactor `_validate_pickle_ability()` in overlays.py to use helper
+- [x] Refactor `_validate_env_pickleable()` in core.py to use helper
+- [x] Ensure both error messages have identical "HOW" guidance
 
 ### Task 8.4: Document Coordinate Conventions
 

@@ -365,7 +365,7 @@ class TestAnimateFieldsBackendRouting:
                 return_value=True,
             ),
             patch("pickle.dumps", side_effect=Exception("Cannot pickle")),
-            pytest.raises(ValueError, match="requires environment to be pickle-able"),
+            pytest.raises(ValueError, match="Environment is not pickle-able"),
         ):
             animate_fields(
                 env,

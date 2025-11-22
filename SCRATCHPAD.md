@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.2 (Normalize Regions Representation)
-**Next**: Milestone 8 - Task 8.3 (Centralize Pickle Validation Messages)
+**Completed**: Milestone 8 - Task 8.3 (Centralize Pickle Validation Messages)
+**Next**: Milestone 8 - Task 8.4 (Document Coordinate Conventions)
 
 ---
 
@@ -309,4 +309,22 @@ None currently.
     - `test_regions_normalization_bool_false_to_none`
     - `test_regions_default_to_none`
   - All 810 animation tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.3 - Centralize Pickle Validation Messages
+  - Created `src/neurospatial/animation/_utils.py` with `_pickling_guidance()` helper
+    - Takes optional `n_workers` parameter for customized examples
+    - Returns consistent HOW guidance with 3 numbered options:
+      1. Clear caches before rendering (`env.clear_cache()`)
+      2. Use serial rendering (`n_workers=1`)
+      3. Use non-pickling backend (`backend='html'`)
+  - Refactored `_validate_pickle_ability()` in overlays.py:
+    - Now uses `_pickling_guidance(n_workers=n_workers)` for HOW section
+    - Maintains WHAT/WHY/HOW format
+  - Refactored `_validate_env_pickleable()` in core.py:
+    - Updated to WHAT/WHY/HOW format (previously different format)
+    - Now uses `_pickling_guidance()` for consistent HOW section
+  - Updated test regex in `test_route_to_video_backend_pickle_validation`
+  - 8 new tests in `tests/animation/test_utils.py`
+  - All 818 animation tests passing
   - ruff and mypy pass

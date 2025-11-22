@@ -47,15 +47,16 @@ def _validate_env_pickleable(env: EnvironmentProtocol) -> None:
     try:
         pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
     except Exception as e:
+        from neurospatial.animation._utils import _pickling_guidance
+
         raise ValueError(
-            f"Video backend with parallel rendering requires environment to be pickle-able.\n"
-            f"\n"
-            f"Error: {e}\n"
-            f"\n"
-            f"Solutions:\n"
-            f"  1. Clear caches: env.clear_cache() before animating\n"
-            f"  2. Use n_workers=1 for serial rendering (slower)\n"
-            f"  3. Use backend='html' instead (no pickling required)\n"
+            f"WHAT: Environment is not pickle-able, preventing parallel video "
+            f"rendering.\n"
+            f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
+            f"WHY: Video backend with parallel rendering (n_workers > 1) requires "
+            f"pickling the Environment to pass it to worker processes. Unpickleable "
+            f"objects include KDTree caches, lambdas, and certain class instances.\n\n"
+            f"{_pickling_guidance()}"
         ) from e
 
 
