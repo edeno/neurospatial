@@ -900,19 +900,24 @@ def _add_speed_control_widget(
 
     # Update frame counter when dims change
     def update_frame_info(event=None):
-        """Update frame counter and label display (throttled for high FPS)."""
+        """Update frame counter and label display (throttled for high FPS during playback).
+
+        Throttling only applies during playback to prevent Qt overhead at high FPS.
+        When scrubbing (not playing), updates are immediate for responsive feedback.
+        """
         try:
             # Get current frame from first dimension (time)
             current_frame = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
 
-            # Throttle updates: only update every Nth frame to avoid Qt overhead
-            # For high FPS (e.g., 250 FPS), this prevents stalling
+            # Throttle updates ONLY during playback; always update when scrubbing
+            # This ensures responsive feedback during manual navigation
+            # For high FPS (e.g., 250 FPS), throttling prevents Qt stalling
             if (
-                current_frame % update_interval != 0
+                playback_state["is_playing"]
+                and current_frame % update_interval != 0
                 and current_frame != playback_state["last_frame"]
             ):
                 # Skip this update (not at interval boundary and frame changed)
-                # Exception: always update when paused (frame == last_frame)
                 playback_state["last_frame"] = current_frame
                 return
 

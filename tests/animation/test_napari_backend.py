@@ -873,3 +873,97 @@ def test_chunked_lazy_field_renderer_dtype_returns_np_dtype(simple_env, simple_f
     # Should be np.dtype, not type
     assert isinstance(renderer.dtype, np.dtype)
     assert renderer.dtype == np.dtype(np.uint8)
+
+
+# ============================================================================
+# Playback Widget Throttling Tests
+# ============================================================================
+
+
+@pytest.mark.napari
+def test_playback_widget_scrubbing_updates_immediately():
+    """Test frame info updates immediately when scrubbing (not playing).
+
+    When the user is manually scrubbing through frames (playback stopped),
+    the frame info should update on every frame change, not be throttled.
+    This ensures responsive feedback during manual navigation.
+    """
+    pytest.importorskip("napari")
+    pytest.importorskip("magicgui")
+
+    from unittest.mock import MagicMock, patch
+
+    from neurospatial.animation.backends.napari_backend import _add_speed_control_widget
+
+    # Create mock viewer
+    mock_viewer = MagicMock()
+    mock_viewer.dims.ndim = 3
+    mock_viewer.dims.range = [(0, 100, 100)]  # 100 frames
+
+    # Track frame info updates
+    frame_info_values = []
+
+    # We need to capture the update_frame_info callback registered with dims events
+    captured_callback = None
+
+    def capture_connect(callback):
+        nonlocal captured_callback
+        captured_callback = callback
+
+    mock_viewer.dims.events.current_step.connect = capture_connect
+
+    # Mock magicgui to capture the widget and its frame_info attribute
+    mock_widget = MagicMock()
+    mock_widget.frame_info = MagicMock()
+
+    # Track frame_info.value assignments
+    def track_value_assignment(value):
+        frame_info_values.append(value)
+
+    mock_widget.frame_info.value = property(
+        lambda self: "", lambda self, v: track_value_assignment(v)
+    )
+
+    # Use property setter simulation
+    mock_widget.frame_info = type(
+        "MockFrameInfo",
+        (),
+        {"value": property(lambda s: "", lambda s, v: frame_info_values.append(v))},
+    )()
+
+    with (
+        patch("magicgui.magicgui", return_value=lambda f: mock_widget),
+        patch("napari.settings.get_settings") as mock_settings,
+    ):
+        mock_settings.return_value.application.playback_fps = 30
+        _add_speed_control_widget(mock_viewer, initial_fps=60)
+
+    # Verify callback was captured
+    assert captured_callback is not None, "update_frame_info callback not captured"
+
+    # Clear initial frame info update
+    frame_info_values.clear()
+
+    # Simulate scrubbing: manually change frames (is_playing should be False by default)
+    # At high FPS (60), update_interval = 60 // 30 = 2, so without fix every other frame skips
+    mock_viewer.dims.current_step = (1, 0, 0)
+    captured_callback()
+
+    mock_viewer.dims.current_step = (2, 0, 0)
+    captured_callback()
+
+    mock_viewer.dims.current_step = (3, 0, 0)
+    captured_callback()
+
+    mock_viewer.dims.current_step = (4, 0, 0)
+    captured_callback()
+
+    mock_viewer.dims.current_step = (5, 0, 0)
+    captured_callback()
+
+    # When scrubbing (not playing), ALL frame changes should result in updates
+    # No throttling should occur
+    assert len(frame_info_values) == 5, (
+        f"Expected 5 updates when scrubbing, got {len(frame_info_values)}. "
+        "Scrubbing (not playing) should not be throttled."
+    )

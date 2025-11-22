@@ -503,6 +503,52 @@ Added `test_position_overlay_trail_color_by_workaround` to document and lock in 
 - All 30 napari overlay tests pass
 - ruff and mypy pass
 
-## Next Task: Phase 2.4 - Playback Widget Throttling Fix
+## Completed: Phase 2.4 - Playback Widget Throttling Fix
 
-Fix `_add_speed_control_widget` so `update_frame_info` always updates when not playing.
+### Problem
+
+The `update_frame_info` function in `_add_speed_control_widget` was throttling updates
+even when scrubbing (not playing). This caused unresponsive feedback when manually
+navigating through frames at high FPS settings.
+
+### Root Cause
+
+The throttling logic always applied:
+```python
+# Old code (always throttled)
+if (
+    current_frame % update_interval != 0
+    and current_frame != playback_state["last_frame"]
+):
+    return  # Skipped update
+```
+
+### Fix
+
+Added check for `is_playing` to only throttle during playback:
+```python
+# New code (only throttle during playback)
+if (
+    playback_state["is_playing"]
+    and current_frame % update_interval != 0
+    and current_frame != playback_state["last_frame"]
+):
+    return  # Only skip during playback
+```
+
+### Test Added
+
+Added `test_playback_widget_scrubbing_updates_immediately`:
+- Mocks viewer and magicgui to capture the update callback
+- Simulates frame changes when not playing (scrubbing)
+- Verifies ALL frame changes result in updates (no throttling)
+
+### Test Results
+
+- New test passes
+- All 32 napari backend tests pass (1 skipped)
+- ruff and mypy pass
+
+## Next Task: Phase 2.5 - Re-profile Napari
+
+Measure skeleton overlay initialization time and playback smoothness.

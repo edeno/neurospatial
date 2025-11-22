@@ -98,12 +98,13 @@ creation) is the correct approach.
 - [x] Added test `test_position_overlay_trail_color_by_workaround` to document/lock behavior
 - [N/A] Remove post-creation workaround - NOT POSSIBLE (napari bug still present)
 
-### 2.4 Playback Widget Throttling Fix
+### 2.4 Playback Widget Throttling Fix - COMPLETE
 
-- [ ] In `_add_speed_control_widget`, fix `update_frame_info`
-- [ ] Always update when `playback_state["is_playing"]` is `False`
-- [ ] Test smooth scrubbing at high FPS
-- [ ] Test no UI stalls on large datasets
+- [x] In `_add_speed_control_widget`, fix `update_frame_info`
+- [x] Always update when `playback_state["is_playing"]` is `False`
+- [x] Added test `test_playback_widget_scrubbing_updates_immediately`
+- [ ] Test smooth scrubbing at high FPS - requires interactive testing
+- [ ] Test no UI stalls on large datasets - requires interactive testing
 
 ### 2.5 Re-profile Napari
 
@@ -259,7 +260,7 @@ creation) is the correct approach.
 |-------|--------|-------|
 | Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
-| Phase 2: Napari | In Progress | 2.1-2.3 COMPLETE (42-47x speedup!), 2.4-2.5 pending |
+| Phase 2: Napari | In Progress | 2.1-2.4 COMPLETE (42-47x speedup!), 2.5 pending |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |
 | Phase 5: Video | Not started | |
