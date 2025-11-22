@@ -53,8 +53,8 @@
 
 ### 1.3 Verify No Regressions
 
-- [ ] Re-run benchmarks after changes
-- [ ] Visual verification of alignment (napari + widget)
+- [x] Re-run benchmarks after changes (no regressions detected)
+- [ ] Visual verification of alignment (napari + widget) - requires interactive testing
 
 ---
 
@@ -243,7 +243,7 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
-| Phase 1: Infrastructure | In Progress | 1.1 and 1.2 complete; 1.3 pending |
+| Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
 | Phase 2: Napari | Not started | HIGH IMPACT: skeleton vectorization |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |
