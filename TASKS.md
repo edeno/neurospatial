@@ -514,7 +514,7 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Low - Documentation improvement
 
-- [ ] Add explicit "multi-field mode" description to `fields` parameter in [core.py:85-86](src/neurospatial/animation/core.py#L85-L86):
+- [x] Add explicit "multi-field mode" description to `fields` parameter in [core.py:85-86](src/neurospatial/animation/core.py#L85-L86):
 
   ```text
   Multi-field mode: For napari backend only, fields can be a list of sequences

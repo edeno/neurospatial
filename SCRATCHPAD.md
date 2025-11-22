@@ -208,9 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.6 (Document Overlay JSON Schema for HTML)
-**Next**: Milestone 8 - Task 8.7 (Improve VideoReader Performance) - marked FUTURE, skip
-        Milestone 8 - Task 8.8 (Improve animate_fields Docstring)
+**Completed**: Milestone 8 - Task 8.8 (Improve animate_fields Docstring)
+**Next**: Final Verification
 
 ---
 
@@ -369,4 +368,10 @@ None currently.
   - Documented coordinate system (environment space, not pixels)
   - Documented limitations (position + regions only)
   - All 18 HTML backend tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.8 - Improve animate_fields Docstring
+  - Added "multi-field mode" documentation to `fields` parameter
+  - Explains napari-only feature for multiple fields per frame
+  - Includes code examples showing single vs multi-field mode
   - ruff and mypy pass

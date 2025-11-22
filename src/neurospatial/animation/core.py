@@ -88,6 +88,20 @@ def animate_fields(
         If list of arrays, each array represents one frame.
         Values typically represent probabilities, firing rates, or other spatial
         quantities. Each field length must match env.n_bins.
+
+        **Multi-field mode** (napari backend only): ``fields`` can also be a
+        list of sequences where each sequence contains multiple spatial fields
+        per frame. This enables side-by-side comparison of different analyses::
+
+            # Single field per frame (standard mode)
+            fields = [field_frame0, field_frame1, ...]
+
+            # Multiple fields per frame (napari only)
+            fields = [
+                [posterior_frame0, likelihood_frame0],  # Frame 0: 2 fields
+                [posterior_frame1, likelihood_frame1],  # Frame 1: 2 fields
+                ...
+            ]
     backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
         Animation backend to use.
     save_path : str, optional
