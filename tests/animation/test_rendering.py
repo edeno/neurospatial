@@ -304,3 +304,137 @@ class TestComputeGlobalColormapRangeNaN:
         # Should return safe default range
         assert vmin == 0.0
         assert vmax == 1.0
+
+
+class TestFieldToRgbForNapariZeroRange:
+    """Test zero-range guard in field_to_rgb_for_napari."""
+
+    def test_vmin_equals_vmax_returns_uniform_color(self):
+        """Test that vmin == vmax (constant field) produces uniform color."""
+        pytest.importorskip("matplotlib")
+
+        from neurospatial.animation.rendering import field_to_rgb_for_napari
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create colormap lookup
+        from matplotlib import pyplot as plt
+
+        cmap_obj = plt.get_cmap("viridis")
+        cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        # Constant field (all same values)
+        field = np.full(env.n_bins, 5.0)
+
+        # vmin == vmax: zero range
+        rgb = field_to_rgb_for_napari(env, field, cmap_lookup, vmin=5.0, vmax=5.0)
+
+        # Should not raise and should produce valid RGB
+        assert rgb.dtype == np.uint8
+        assert np.all((rgb >= 0) & (rgb <= 255))
+
+        # All active pixels should map to same color (middle of colormap)
+        # Since normalized = 0.5, index = 127
+        expected_color = cmap_lookup[127]
+
+        # For grid layouts, inactive bins are black [0,0,0]. Filter those out.
+        rgb_flat = rgb.reshape(-1, 3)
+        # Find non-black pixels (active bins)
+        non_black_mask = np.any(rgb_flat != 0, axis=1)
+
+        if np.any(non_black_mask):
+            # All active pixels should have the expected color
+            active_pixels = rgb_flat[non_black_mask]
+            assert np.all(active_pixels == expected_color), (
+                f"Expected all active pixels to be {expected_color}, "
+                f"but got unique values: {np.unique(active_pixels, axis=0)}"
+            )
+
+    def test_zero_range_no_divide_by_zero_warning(self):
+        """Test that zero range does not produce divide-by-zero warning."""
+        pytest.importorskip("matplotlib")
+        import warnings
+
+        from neurospatial.animation.rendering import field_to_rgb_for_napari
+
+        positions = np.random.randn(100, 2) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create colormap lookup
+        from matplotlib import pyplot as plt
+
+        cmap_obj = plt.get_cmap("viridis")
+        cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        field = np.random.rand(env.n_bins)
+
+        # Capture warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            rgb = field_to_rgb_for_napari(env, field, cmap_lookup, vmin=0.5, vmax=0.5)
+
+            # Should not have RuntimeWarning about divide by zero
+            divide_warnings = [
+                warning
+                for warning in w
+                if "divide" in str(warning.message).lower()
+                or "invalid" in str(warning.message).lower()
+            ]
+            assert len(divide_warnings) == 0
+
+        # Should still produce valid output
+        assert rgb.dtype == np.uint8
+
+
+class TestValidateFrameLabels:
+    """Test _validate_frame_labels helper function."""
+
+    def test_valid_labels_returned_unchanged(self):
+        """Test that valid frame_labels are returned unchanged."""
+        from neurospatial.animation.rendering import _validate_frame_labels
+
+        labels = ["Frame 1", "Frame 2", "Frame 3"]
+        result = _validate_frame_labels(labels, n_frames=3, backend_name="test")
+
+        assert result == labels
+        assert result is labels  # Same object reference
+
+    def test_none_returns_none(self):
+        """Test that None frame_labels returns None."""
+        from neurospatial.animation.rendering import _validate_frame_labels
+
+        result = _validate_frame_labels(None, n_frames=10, backend_name="test")
+
+        assert result is None
+
+    def test_mismatched_length_raises_value_error(self):
+        """Test that mismatched length raises ValueError with helpful message."""
+        from neurospatial.animation.rendering import _validate_frame_labels
+
+        labels = ["Frame 1", "Frame 2"]  # 2 labels
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_frame_labels(labels, n_frames=5, backend_name="html")
+
+        error_msg = str(exc_info.value)
+        # Check WHAT/WHY/HOW format
+        assert "WHAT:" in error_msg
+        assert "WHY:" in error_msg
+        assert "HOW:" in error_msg
+        # Check specific details
+        assert "2" in error_msg  # frame_labels length
+        assert "5" in error_msg  # n_frames
+        assert "html" in error_msg  # backend_name
+
+    def test_error_message_includes_backend_name(self):
+        """Test error message includes the backend name."""
+        from neurospatial.animation.rendering import _validate_frame_labels
+
+        labels = ["Label"]
+
+        for backend_name in ["html", "video", "widget"]:
+            with pytest.raises(ValueError) as exc_info:
+                _validate_frame_labels(labels, n_frames=10, backend_name=backend_name)
+
+            assert backend_name in str(exc_info.value)

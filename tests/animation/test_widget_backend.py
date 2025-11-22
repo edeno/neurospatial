@@ -713,3 +713,103 @@ def test_persistent_figure_renderer_multiple_renders_consistency(
         assert png_1 == png_2
     finally:
         renderer.close()
+
+
+# ============================================================================
+# Test cache_limit Clamping
+# ============================================================================
+
+
+def test_initial_cache_size_clamped_to_cache_limit(sample_env):
+    """Test that initial_cache_size is clamped to cache_limit.
+
+    When initial_cache_size > cache_limit, we should only pre-render
+    cache_limit frames to avoid pre-rendering frames that will be
+    immediately evicted from the LRU cache.
+    """
+    from neurospatial.animation.backends.widget_backend import render_widget
+
+    # Create more frames than both limits
+    fields = [np.random.rand(sample_env.n_bins) for _ in range(200)]
+
+    # Mock dependencies
+    mock_ipywidgets = MagicMock()
+    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_ipywidgets.Play = MockPlay
+    mock_ipywidgets.HBox = MockHBox
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.jslink = Mock()
+
+    mock_display = Mock()
+
+    # Track how many times render_field_to_png_bytes is called
+    render_calls = []
+
+    def mock_render(*args, **kwargs):
+        render_calls.append(args)
+        return b"fake_png_data"
+
+    with (
+        patch(
+            "neurospatial.animation.backends.widget_backend.IPYWIDGETS_AVAILABLE", True
+        ),
+        patch(
+            "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
+        ),
+        patch("neurospatial.animation.backends.widget_backend.display", mock_display),
+        patch("builtins.print"),
+        patch(
+            "neurospatial.animation.rendering.render_field_to_png_bytes",
+            side_effect=mock_render,
+        ),
+    ):
+        # Set cache_limit=50, which is less than default initial_cache_size of 500
+        # This should clamp pre-rendering to only 50 frames
+        render_widget(sample_env, fields, cache_limit=50)
+
+    # Should only pre-render up to cache_limit (50), not 200 or 500
+    assert len(render_calls) == 50
+
+
+def test_initial_cache_size_explicit_clamped_to_cache_limit(sample_env):
+    """Test explicit initial_cache_size is clamped to cache_limit."""
+    from neurospatial.animation.backends.widget_backend import render_widget
+
+    fields = [np.random.rand(sample_env.n_bins) for _ in range(200)]
+
+    # Mock dependencies
+    mock_ipywidgets = MagicMock()
+    mock_ipywidgets.IntSlider = MockIntSlider
+    mock_ipywidgets.Play = MockPlay
+    mock_ipywidgets.HBox = MockHBox
+    mock_ipywidgets.VBox = MockVBox
+    mock_ipywidgets.jslink = Mock()
+
+    mock_display = Mock()
+
+    render_calls = []
+
+    def mock_render(*args, **kwargs):
+        render_calls.append(args)
+        return b"fake_png_data"
+
+    with (
+        patch(
+            "neurospatial.animation.backends.widget_backend.IPYWIDGETS_AVAILABLE", True
+        ),
+        patch(
+            "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
+        ),
+        patch("neurospatial.animation.backends.widget_backend.display", mock_display),
+        patch("builtins.print"),
+        patch(
+            "neurospatial.animation.rendering.render_field_to_png_bytes",
+            side_effect=mock_render,
+        ),
+    ):
+        # Set initial_cache_size=100, cache_limit=30
+        # This should clamp pre-rendering to only 30 frames (the cache_limit)
+        render_widget(sample_env, fields, initial_cache_size=100, cache_limit=30)
+
+    # Should only pre-render up to cache_limit (30), not 100
+    assert len(render_calls) == 30
