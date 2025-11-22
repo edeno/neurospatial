@@ -445,6 +445,51 @@ def _add_video_layer(
     return layer
 
 
+def _make_video_frame_callback(
+    viewer: napari.Viewer,
+    video_layers: list[Layer],
+) -> None:
+    """Register callback to update video layers when animation frame changes.
+
+    Creates and connects a callback to viewer.dims.events.current_step that
+    updates each video layer's data based on the current animation frame.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    video_layers : list[Layer]
+        List of video layers to update. Each layer must have metadata keys
+        'video_data' and 'video_frame_indices'.
+    """
+    if not video_layers:
+        return
+
+    def update_video_frames(event=None):
+        """Update all video layers to show frame at current animation time."""
+        # Get current animation frame from first dimension (time)
+        if viewer.dims.ndim == 0:
+            return
+        current_frame = int(viewer.dims.current_step[0])
+
+        for layer in video_layers:
+            video_data = layer.metadata.get("video_data")
+            if video_data is None:
+                continue
+
+            # Get the video frame for this animation frame
+            frame = video_data.get_frame(current_frame)
+            if frame is not None:
+                # Update layer data in-place
+                layer.data = frame
+
+    # Connect callback to dims events
+    viewer.dims.events.current_step.connect(update_video_frames)
+
+    # Trigger initial update
+    update_video_frames()
+
+
 def _build_video_napari_affine(
     video_data: VideoData,
     env: Environment,
@@ -1577,6 +1622,7 @@ def render_napari(
     if overlay_data is not None:
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         n_frames = len(fields)
+        video_layers: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
             suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
             name = f"Video{suffix}"
@@ -1588,9 +1634,16 @@ def render_napari(
                 )
                 # Move video layer to bottom of stack (index 0)
                 viewer.layers.move(viewer.layers.index(video_layer), 0)
+                video_layers.append(video_layer)
             else:
                 # Add video layer above field (default position - on top)
-                _add_video_layer(viewer, video_data, env, n_frames, name=name)
+                video_layer = _add_video_layer(
+                    viewer, video_data, env, n_frames, name=name
+                )
+                video_layers.append(video_layer)
+
+        # Register callback to update video frames when animation frame changes
+        _make_video_frame_callback(viewer, video_layers)
 
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
@@ -1818,6 +1871,7 @@ def _render_multi_field_napari(
     if overlay_data is not None:
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         n_frames = len(field_sequences[0]) if field_sequences else 0
+        video_layers: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
             suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
             name = f"Video{suffix}"
@@ -1828,9 +1882,16 @@ def _render_multi_field_napari(
                 )
                 # Move video layer to bottom of stack (index 0)
                 viewer.layers.move(viewer.layers.index(video_layer), 0)
+                video_layers.append(video_layer)
             else:
                 # Add video layer above field (default position - on top)
-                _add_video_layer(viewer, video_data, env, n_frames, name=name)
+                video_layer = _add_video_layer(
+                    viewer, video_data, env, n_frames, name=name
+                )
+                video_layers.append(video_layer)
+
+        # Register callback to update video frames when animation frame changes
+        _make_video_frame_callback(viewer, video_layers)
 
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
