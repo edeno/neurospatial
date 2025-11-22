@@ -841,9 +841,10 @@ class OverlayData:
         List of head direction overlays. Default is empty list.
     videos : list[VideoData], optional
         List of video overlays. Default is empty list.
-    regions : list[str] | dict[int, list[str]] | None, optional
-        Region names or per-frame region lists. When dict, keys are frame
-        indices (0-based). Default is None.
+    regions : dict[int, list[str]] | None, optional
+        Region names in normalized format. Key is frame index (0 = all frames),
+        value is list of region names. Populated by _convert_overlays_to_data()
+        from show_regions parameter. Default is None.
 
     Attributes
     ----------
@@ -855,8 +856,8 @@ class OverlayData:
         List of head direction overlays.
     videos : list[VideoData]
         List of video overlays.
-    regions : list[str] | dict[int, list[str]] | None
-        Region names or per-frame region lists.
+    regions : dict[int, list[str]] | None
+        Region names in normalized format (key 0 = all frames).
 
     Notes
     -----
@@ -881,7 +882,7 @@ class OverlayData:
     bodypart_sets: list[BodypartData] = field(default_factory=list)
     head_directions: list[HeadDirectionData] = field(default_factory=list)
     videos: list[VideoData] = field(default_factory=list)
-    regions: list[str] | dict[int, list[str]] | None = None
+    regions: dict[int, list[str]] | None = None
 
     def __post_init__(self) -> None:
         """Post-initialization hook.
@@ -1734,6 +1735,7 @@ def _convert_overlays_to_data(
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
+    show_regions: bool | list[str] = False,
 ) -> OverlayData:
     """Convert overlay configurations to aligned internal data representation.
 
@@ -1756,6 +1758,11 @@ def _convert_overlays_to_data(
     env : Any
         Environment object with `n_dims` and `dimension_ranges` attributes.
         Used for validating overlay coordinate dimensions and bounds.
+    show_regions : bool or list of str, default=False
+        Region names to include in overlay data. If True, all region names
+        from env.regions are included. If a list, only those region names
+        are included. If False, no regions are included. Normalized to
+        dict[int, list[str]] format where key 0 means "all frames".
 
     Returns
     -------
@@ -2066,13 +2073,24 @@ def _convert_overlays_to_data(
             )
             video_data_list.append(video_data)
 
+    # Normalize regions to dict[int, list[str]] format
+    # Key 0 means "apply to all frames"
+    normalized_regions: dict[int, list[str]] | None = None
+    if show_regions:
+        if isinstance(show_regions, bool):
+            # True → all region names from env.regions
+            normalized_regions = {0: list(env.regions.keys())}
+        else:
+            # list[str] → wrap in dict
+            normalized_regions = {0: show_regions}
+
     # Aggregate all overlay data
     overlay_data = OverlayData(
         positions=position_data_list,
         bodypart_sets=bodypart_data_list,
         head_directions=head_direction_data_list,
         videos=video_data_list,
-        regions=None,  # Regions will be handled separately in v0.4.0
+        regions=normalized_regions,
     )
 
     return overlay_data

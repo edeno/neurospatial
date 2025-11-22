@@ -1909,5 +1909,111 @@ class TestConvertVideoOverlay:
             )
 
 
+class TestRegionsNormalization:
+    """Test regions normalization in _convert_overlays_to_data()."""
+
+    @pytest.fixture
+    def mock_env_with_regions(self):
+        """Create a mock environment with regions for testing."""
+
+        class MockRegion:
+            def __init__(self, name):
+                self.name = name
+                self.kind = "point"
+
+        class MockRegions(dict):
+            def keys(self):
+                return ["goal", "start", "reward"]
+
+        class MockEnv:
+            n_dims: ClassVar[int] = 2
+            dimension_ranges: ClassVar[list[tuple[float, float]]] = [
+                (0.0, 100.0),
+                (0.0, 100.0),
+            ]
+            regions = MockRegions()
+
+        return MockEnv()
+
+    def test_regions_normalization_list_to_dict(self, mock_env_with_regions):
+        """Test that list[str] is normalized to {0: list_of_regions}."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.array([0.0, 1.0, 2.0])
+        n_frames = 3
+
+        # Convert with show_regions as list
+        overlay_data = _convert_overlays_to_data(
+            overlays=[],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_with_regions,
+            show_regions=["goal", "start"],  # list format
+        )
+
+        # Should be normalized to dict format
+        assert overlay_data.regions is not None
+        assert isinstance(overlay_data.regions, dict)
+        assert 0 in overlay_data.regions
+        assert overlay_data.regions[0] == ["goal", "start"]
+
+    def test_regions_normalization_bool_true_to_dict(self, mock_env_with_regions):
+        """Test that show_regions=True is normalized to {0: all_region_names}."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.array([0.0, 1.0, 2.0])
+        n_frames = 3
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_with_regions,
+            show_regions=True,  # bool True
+        )
+
+        # Should be normalized to dict with all region names
+        assert overlay_data.regions is not None
+        assert isinstance(overlay_data.regions, dict)
+        assert 0 in overlay_data.regions
+        assert set(overlay_data.regions[0]) == {"goal", "start", "reward"}
+
+    def test_regions_normalization_bool_false_to_none(self, mock_env_with_regions):
+        """Test that show_regions=False results in None."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.array([0.0, 1.0, 2.0])
+        n_frames = 3
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_with_regions,
+            show_regions=False,  # bool False
+        )
+
+        # Should be None
+        assert overlay_data.regions is None
+
+    def test_regions_default_to_none(self, mock_env_with_regions):
+        """Test that regions defaults to None when show_regions not provided."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.array([0.0, 1.0, 2.0])
+        n_frames = 3
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[],
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=mock_env_with_regions,
+            # show_regions not provided
+        )
+
+        # Should be None by default
+        assert overlay_data.regions is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.1 (Fix VideoOverlay.interp Not Honored)
-**Next**: Milestone 8 - Task 8.2 (Normalize Regions Representation)
+**Completed**: Milestone 8 - Task 8.2 (Normalize Regions Representation)
+**Next**: Milestone 8 - Task 8.3 (Centralize Pickle Validation Messages)
 
 ---
 
@@ -291,4 +291,22 @@ None currently.
     - `test_interp_linear_emits_warning` - verifies warning contains "linear" and "nearest"
     - `test_interp_nearest_no_warning` - verifies no warning for default value
   - All 806 animation tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.2 - Normalize Regions Representation
+  - Changed `OverlayData.regions` type from `list[str] | dict[int, list[str]] | None`
+    to `dict[int, list[str]] | None` (simpler, consistent format)
+  - Added `show_regions` parameter to `_convert_overlays_to_data()`:
+    - `show_regions=["a", "b"]` → `{0: ["a", "b"]}` (key 0 = all frames)
+    - `show_regions=True` → `{0: list(env.regions.keys())}`
+    - `show_regions=False` → `None`
+  - Updated HTML backend to prefer `overlay_data.regions` if available:
+    - Both `_estimate_overlay_json_size()` and `_serialize_overlay_data()` updated
+    - Falls back to `show_regions` parameter for backwards compatibility
+  - Added `TestRegionsNormalization` test class with 4 tests:
+    - `test_regions_normalization_list_to_dict`
+    - `test_regions_normalization_bool_true_to_dict`
+    - `test_regions_normalization_bool_false_to_none`
+    - `test_regions_default_to_none`
+  - All 810 animation tests passing
   - ruff and mypy pass

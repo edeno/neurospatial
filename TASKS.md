@@ -437,12 +437,13 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Medium - Simplifies backend code
 
-- [ ] Update `OverlayData.regions` to always be `dict[int, list[str]] | None`
-- [ ] Add normalization in `_convert_overlays_to_data()`:
-  - [ ] Convert `list[str]` → `{0: list_of_regions}` (apply to all frames)
-  - [ ] Pass through `dict[int, list[str]]` unchanged
-- [ ] Update HTML backend to expect normalized format (remove special-casing)
-- [ ] Write test: `test_regions_normalization_list_to_dict`
+- [x] Update `OverlayData.regions` to always be `dict[int, list[str]] | None`
+- [x] Add normalization in `_convert_overlays_to_data()`:
+  - [x] Convert `list[str]` → `{0: list_of_regions}` (apply to all frames)
+  - [x] Convert `bool True` → `{0: all_region_names}`
+  - [x] Convert `bool False` → `None`
+- [x] Update HTML backend to expect normalized format (prefer overlay_data.regions)
+- [x] Write tests: `TestRegionsNormalization` class with 4 tests
 
 ### Task 8.3: Centralize Pickle Validation Messages
 

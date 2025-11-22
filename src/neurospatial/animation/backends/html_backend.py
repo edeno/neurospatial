@@ -68,10 +68,16 @@ def _estimate_overlay_json_size(
             total_bytes += 100  # Metadata per overlay
 
     # Estimate region size
-    if show_regions:
+    # Prefer normalized format from overlay_data.regions if available
+    region_names: list[str] | None = None
+    if overlay_data is not None and overlay_data.regions is not None:
+        region_names = overlay_data.regions.get(0, [])
+    elif show_regions:
         region_names = (
             show_regions if isinstance(show_regions, list) else list(env.regions.keys())
         )
+
+    if region_names:
         for name in region_names:
             if name not in env.regions:
                 continue
@@ -145,10 +151,18 @@ def _serialize_overlay_data(
             )
 
     # Serialize regions
-    if show_regions:
+    # Prefer normalized format from overlay_data.regions if available
+    region_names: list[str] | None = None
+    if overlay_data is not None and overlay_data.regions is not None:
+        # Use normalized format (key 0 = all frames)
+        region_names = overlay_data.regions.get(0, [])
+    elif show_regions:
+        # Fall back to show_regions parameter
         region_names = (
             show_regions if isinstance(show_regions, list) else list(env.regions.keys())
         )
+
+    if region_names:
         for name in region_names:
             if name not in env.regions:
                 continue
