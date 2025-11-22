@@ -26,13 +26,13 @@ src/neurospatial/annotation/
 
 | Component | Location | Usage |
 |-----------|----------|-------|
-| `VideoCalibration` | `transforms.py:702-816` | Pixel↔cm transforms via `transform_px_to_cm` |
-| `Region`/`Regions` | `regions/core.py` | Annotation output data structures |
+| `VideoCalibration` | `transforms.py:721-835` | Pixel↔cm transforms via `transform_px_to_cm` |
+| `Region`/`Regions` | `regions/core.py:36,161` | Annotation output data structures |
 | `load_labelme_json` | `regions/io.py:83` | Already accepts `pixel_to_world: SpatialTransform` |
 | `load_cvat_xml` | `regions/io.py:785` | Already accepts `pixel_to_world: SpatialTransform` |
-| `VideoReader` | `animation/_video_io.py:41-309` | Load video frames |
+| `VideoReader` | `animation/_video_io.py:99-350` | Load video frames |
 | `Environment.from_polygon` | `environment/factories.py:399` | Create env from boundary |
-| `SpatialTransform` | `transforms.py:44-47` | Protocol for coordinate transforms |
+| `SpatialTransform` | `transforms.py:44` | Protocol for coordinate transforms |
 
 ### Coordinate Systems
 
@@ -43,6 +43,55 @@ src/neurospatial/annotation/
 Transform pipeline:
 ```
 napari (row, col) → video (x, y) pixels → calibration → world (x, y) cm
+```
+
+### Napari Annotation Best Practices
+
+Based on [napari annotation tutorials](https://napari.org/stable/tutorials/annotation/annotate_points.html) and [segmentation guide](https://napari.org/stable/tutorials/segmentation/annotate_segmentation.html):
+
+| Pattern | Description | Implementation |
+|---------|-------------|----------------|
+| **Features-based coloring** | Use `features` dict with `face_color='role'` for automatic color cycling | Shapes layer uses `face_color_cycle` to distinguish environment (cyan) vs region (yellow) |
+| **Text labels on shapes** | Display metadata directly on shapes via `text` parameter | Shape names shown with `text={'string': '{name}', ...}` |
+| **feature_defaults** | Auto-set metadata for newly-drawn shapes | New shapes automatically get role and auto-incremented name |
+| **Keyboard shortcuts** | Bind keys for common actions | `E` = environment mode, `R` = region mode |
+| **Layer data events** | Respond to data changes | `shapes.events.data.connect()` for reliable shape-added detection |
+| **magicgui widgets** | Prefer over raw Qt for napari integration | `ComboBox`, `LineEdit`, `PushButton` from magicgui |
+| **Categorical features** | Use `pd.Categorical` for color cycling | Enables proper color assignment per category |
+
+**Key code patterns:**
+
+```python
+# Initialize features with pandas DataFrame (enables color cycling)
+features = pd.DataFrame({
+    "role": pd.Categorical([], categories=["region", "environment"]),
+    "name": pd.Series([], dtype=str),
+})
+
+# Add shapes layer with features-based coloring and text labels
+shapes = viewer.add_shapes(
+    features=features,
+    face_color="role",                    # Color by role feature
+    face_color_cycle=["yellow", "cyan"],  # region=yellow, environment=cyan
+    text={"string": "{name}", "size": 10, "color": "white"},
+)
+
+# Set defaults for new shapes
+shapes.feature_defaults["role"] = "region"
+shapes.feature_defaults["name"] = "region_0"
+
+# Keyboard shortcut
+@viewer.bind_key("e")
+def set_environment_mode(viewer):
+    shapes.feature_defaults["role"] = "environment"
+
+# Layer data event for auto-increment (more reliable than mouse callbacks)
+_prev_count = [0]
+def on_data_changed(event):
+    if len(shapes.data) > _prev_count[0]:
+        shapes.feature_defaults["name"] = f"region_{len(shapes.data)}"
+    _prev_count[0] = len(shapes.data)
+shapes.events.data.connect(on_data_changed)
 ```
 
 ---
@@ -126,6 +175,7 @@ def shapes_to_regions(
     names: list[str],
     roles: list[str],
     calibration: VideoCalibration | None = None,
+    simplify_tolerance: float | None = None,
 ) -> tuple[Regions, Region | None]:
     """
     Convert napari polygon shapes to Regions.
@@ -142,6 +192,10 @@ def shapes_to_regions(
     calibration : VideoCalibration, optional
         If provided, transforms pixel coordinates to world coordinates (cm)
         using ``calibration.transform_px_to_cm``.
+    simplify_tolerance : float, optional
+        If provided, simplifies polygons using Shapely's Douglas-Peucker
+        algorithm. Tolerance is in output coordinate units (cm if calibration
+        provided, else pixels). Recommended: 1.0 for cleaner boundaries.
 
     Returns
     -------
@@ -177,6 +231,10 @@ def shapes_to_regions(
             continue
 
         poly = shp.Polygon(pts_world)
+
+        # Optional simplification (Douglas-Peucker algorithm)
+        if simplify_tolerance is not None:
+            poly = shp.simplify(poly, tolerance=simplify_tolerance, preserve_topology=True)
 
         metadata = {
             "source": "napari_annotation",
@@ -365,41 +423,43 @@ uv run python -c "from neurospatial.annotation.io import regions_from_labelme, r
 
 ## Milestone 4: Napari Annotation Widget
 
+> **Note**: This module implements the patterns from [Napari Annotation Best Practices](#napari-annotation-best-practices) in the Architecture section above.
+
 ### Task 4.1: Create `_napari_widget.py`
 
 **File**: `src/neurospatial/annotation/_napari_widget.py`
 
 ```python
-"""Qt dock widget for napari annotation workflow."""
+"""Magicgui-based widget for napari annotation workflow."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import numpy as np
-from qtpy.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from magicgui.widgets import ComboBox, Container, Label, LineEdit, PushButton
 
 if TYPE_CHECKING:
     import napari
 
+# Role categories - order determines color cycle mapping
+ROLE_CATEGORIES = ["region", "environment"]
 
-class AnnotationWidget(QWidget):
+# Color scheme for role-based visualization
+# Order must match ROLE_CATEGORIES
+ROLE_COLORS = {
+    "region": "yellow",
+    "environment": "cyan",
+}
+ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]  # ["yellow", "cyan"]
+
+
+def create_annotation_widget(
+    viewer: napari.Viewer,
+    shapes_layer_name: str = "Annotations",
+) -> Container:
     """
-    Dock widget for managing annotation shapes.
-
-    Provides UI for:
-    - Viewing all drawn shapes in a table
-    - Editing shape names
-    - Assigning roles (environment vs region)
-    - Saving and closing the viewer
+    Create annotation control widget using magicgui.
 
     Parameters
     ----------
@@ -407,209 +467,241 @@ class AnnotationWidget(QWidget):
         The napari viewer instance.
     shapes_layer_name : str, default="Annotations"
         Name of the Shapes layer to manage.
+
+    Returns
+    -------
+    Container
+        Magicgui container widget with annotation controls.
     """
-
-    def __init__(
-        self,
-        viewer: napari.Viewer,
-        shapes_layer_name: str = "Annotations",
-    ) -> None:
-        super().__init__()
-        self._viewer = viewer
-        self._shapes_name = shapes_layer_name
-        self._setup_ui()
-        self._connect_signals()
-        self._refresh_table()
-
-    def _setup_ui(self) -> None:
-        """Build the widget UI."""
-        layout = QVBoxLayout()
-
-        # Instructions
-        instructions = QLabel(
-            "Draw polygons on the image.\n"
-            "Select rows and assign roles.\n"
-            "Double-click names to edit."
-        )
-        layout.addWidget(instructions)
-
-        # Shape table
-        self._table = QTableWidget(0, 2)
-        self._table.setHorizontalHeaderLabels(["Name", "Role"])
-        self._table.setColumnWidth(0, 150)
-        self._table.setColumnWidth(1, 100)
-        layout.addWidget(self._table)
-
-        # Role assignment buttons
-        btn_layout = QHBoxLayout()
-        self._env_btn = QPushButton("Set as Environment")
-        self._region_btn = QPushButton("Set as Region")
-        self._env_btn.setToolTip("Mark selected shape(s) as environment boundary")
-        self._region_btn.setToolTip("Mark selected shape(s) as named region")
-        btn_layout.addWidget(self._env_btn)
-        btn_layout.addWidget(self._region_btn)
-        layout.addLayout(btn_layout)
-
-        # Save button
-        self._save_btn = QPushButton("Save and Close")
-        self._save_btn.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self._save_btn)
-
-        self.setLayout(layout)
-
-    def _connect_signals(self) -> None:
-        """Connect Qt signals to handlers."""
-        self._env_btn.clicked.connect(lambda: self._set_selected_role("environment"))
-        self._region_btn.clicked.connect(lambda: self._set_selected_role("region"))
-        self._save_btn.clicked.connect(self._on_save)
-        self._table.cellChanged.connect(self._on_cell_changed)
-
-        # Listen for shape changes
-        shapes = self._get_shapes_layer()
-        if shapes is not None:
-            shapes.events.data.connect(self._refresh_table)
-
-    def _get_shapes_layer(self):
-        """Get the Shapes layer by name."""
+    # Get shapes layer
+    def get_shapes():
         try:
-            return self._viewer.layers[self._shapes_name]
+            return viewer.layers[shapes_layer_name]
         except KeyError:
             return None
 
-    def _refresh_table(self, event=None) -> None:
-        """Update table when shapes change."""
-        shapes = self._get_shapes_layer()
-        if shapes is None:
-            return
+    # --- Widget Components ---
+    instructions = Label(
+        value=(
+            "Draw polygons: E=environment, R=region\n"
+            "Edit: 3=move shape, 4=edit vertices, Delete=remove\n"
+            "Click shape to select, then Apply to change metadata"
+        )
+    )
 
-        # Block signals during update to avoid recursive calls
-        self._table.blockSignals(True)
+    role_selector = ComboBox(
+        choices=["region", "environment"],
+        value="region",
+        label="New shape role:",
+    )
 
-        n_shapes = len(shapes.data)
-        self._table.setRowCount(n_shapes)
+    name_input = LineEdit(value="region_0", label="New shape name:")
 
-        # Get or initialize properties
-        props = shapes.properties
-        names = props.get("name", np.array([], dtype=object))
-        roles = props.get("role", np.array([], dtype=object))
+    apply_btn = PushButton(text="Apply to Selected")
+    save_btn = PushButton(text="Save and Close")
 
-        # Extend arrays if needed (new shapes added)
-        if len(names) < n_shapes:
-            new_names = [f"region_{i}" for i in range(len(names), n_shapes)]
-            names = np.concatenate([names, np.array(new_names, dtype=object)])
-            shapes.properties["name"] = names
-
-        if len(roles) < n_shapes:
-            new_roles = ["region"] * (n_shapes - len(roles))
-            roles = np.concatenate([roles, np.array(new_roles, dtype=object)])
-            shapes.properties["role"] = roles
-
-        # Populate table
-        for i in range(n_shapes):
-            name = str(names[i]) if i < len(names) else f"region_{i}"
-            role = str(roles[i]) if i < len(roles) else "region"
-
-            name_item = QTableWidgetItem(name)
-            role_item = QTableWidgetItem(role)
-            role_item.setFlags(role_item.flags() & ~0x2)  # Not editable
-
-            self._table.setItem(i, 0, name_item)
-            self._table.setItem(i, 1, role_item)
-
-        self._table.blockSignals(False)
-
-    def _on_cell_changed(self, row: int, col: int) -> None:
-        """Handle cell edits (name changes)."""
-        if col != 0:  # Only name column is editable
-            return
-
-        shapes = self._get_shapes_layer()
-        if shapes is None:
-            return
-
-        item = self._table.item(row, 0)
-        if item is None:
-            return
-
-        new_name = item.text()
-        names = list(shapes.properties.get("name", []))
-        if row < len(names):
-            names[row] = new_name
-            shapes.properties["name"] = np.array(names, dtype=object)
-
-    def _set_selected_role(self, role: str) -> None:
-        """Set role for selected table rows."""
-        shapes = self._get_shapes_layer()
-        if shapes is None:
-            return
-
-        selected_rows = set(item.row() for item in self._table.selectedItems())
-        if not selected_rows:
-            return
-
-        # Update properties
-        roles = list(shapes.properties.get("role", ["region"] * len(shapes.data)))
-        for row in selected_rows:
-            if row < len(roles):
-                roles[row] = role
-                role_item = self._table.item(row, 1)
-                if role_item:
-                    role_item.setText(role)
-
-        shapes.properties["role"] = np.array(roles, dtype=object)
-
-    def _on_save(self) -> None:
-        """Finalize properties and close viewer."""
-        shapes = self._get_shapes_layer()
+    # --- Event Handlers ---
+    @role_selector.changed.connect
+    def on_role_changed(role: str):
+        """Update feature_defaults when role selector changes."""
+        shapes = get_shapes()
         if shapes is not None:
-            # Ensure all names are saved from table
-            names = []
-            roles = []
-            for i in range(self._table.rowCount()):
-                name_item = self._table.item(i, 0)
-                role_item = self._table.item(i, 1)
-                names.append(name_item.text() if name_item else f"region_{i}")
-                roles.append(role_item.text() if role_item else "region")
+            shapes.feature_defaults["role"] = role
+            # Update colors for visual feedback
+            shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
 
-            shapes.properties["name"] = np.array(names, dtype=object)
-            shapes.properties["role"] = np.array(roles, dtype=object)
+    @name_input.changed.connect
+    def on_name_changed(name: str):
+        """Update feature_defaults when name changes."""
+        shapes = get_shapes()
+        if shapes is not None:
+            shapes.feature_defaults["name"] = name
 
-        self._viewer.close()
+    @apply_btn.clicked.connect
+    def apply_to_selected():
+        """Apply current role/name to selected shapes."""
+        shapes = get_shapes()
+        if shapes is None or len(shapes.selected_data) == 0:
+            return
 
-    def get_annotation_data(self) -> tuple[list, list[str], list[str]]:
-        """
-        Get current annotation data from shapes layer.
+        # Use DataFrame operations for safer feature updates
+        features_df = shapes.features.copy()
+        for idx in shapes.selected_data:
+            if 0 <= idx < len(features_df):
+                features_df.loc[idx, "role"] = role_selector.value
+                features_df.loc[idx, "name"] = name_input.value
 
-        Returns
-        -------
-        shapes_data : list
-            List of polygon vertex arrays.
-        names : list of str
-            Name for each shape.
-        roles : list of str
-            Role for each shape.
-        """
-        shapes = self._get_shapes_layer()
-        if shapes is None or len(shapes.data) == 0:
-            return [], [], []
+        shapes.features = features_df
+        shapes.refresh()
 
-        data = list(shapes.data)
-        names = list(shapes.properties.get("name", []))
-        roles = list(shapes.properties.get("role", []))
+    @save_btn.clicked.connect
+    def save_and_close():
+        """Close viewer to return control to Python."""
+        viewer.close()
 
-        # Ensure lists match data length
-        while len(names) < len(data):
-            names.append(f"region_{len(names)}")
-        while len(roles) < len(data):
-            roles.append("region")
+    # --- Keyboard Shortcuts ---
+    @viewer.bind_key("e")
+    def set_environment_mode(viewer):
+        """Set mode to draw environment boundary."""
+        role_selector.value = "environment"
+        shapes = get_shapes()
+        if shapes:
+            shapes.feature_defaults["role"] = "environment"
+            shapes.current_face_color = ROLE_COLORS["environment"]
 
-        return data, names, roles
+    @viewer.bind_key("r")
+    def set_region_mode(viewer):
+        """Set mode to draw named region."""
+        role_selector.value = "region"
+        shapes = get_shapes()
+        if shapes:
+            shapes.feature_defaults["role"] = "region"
+            shapes.current_face_color = ROLE_COLORS["region"]
+
+    # --- Data Change Callback for Auto-increment ---
+    # Use events.data instead of mouse_drag_callbacks for reliable detection
+    # of when shapes are actually added (learned from napari-segment-anything)
+    _prev_shape_count = [0]  # Mutable container for closure
+
+    def on_data_changed(event):
+        """Auto-increment name when a new shape is added."""
+        shapes = get_shapes()
+        if shapes is None:
+            return
+
+        current_count = len(shapes.data)
+        if current_count > _prev_shape_count[0]:
+            # New shape was added - update name for next shape
+            new_name = f"region_{current_count}"
+            name_input.value = new_name
+            shapes.feature_defaults["name"] = new_name
+        _prev_shape_count[0] = current_count
+
+    shapes = get_shapes()
+    if shapes is not None:
+        shapes.events.data.connect(on_data_changed)
+        _prev_shape_count[0] = len(shapes.data)
+
+    # --- Build Container ---
+    widget = Container(
+        widgets=[
+            instructions,
+            role_selector,
+            name_input,
+            apply_btn,
+            save_btn,
+        ],
+        labels=False,
+    )
+
+    return widget
+
+
+def setup_shapes_layer_for_annotation(viewer: napari.Viewer) -> napari.layers.Shapes:
+    """
+    Create and configure a Shapes layer optimized for annotation.
+
+    Uses napari best practices:
+    - Features-based coloring for role distinction
+    - Text labels showing shape names
+    - Initialized feature_defaults for new shapes
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer instance.
+
+    Returns
+    -------
+    napari.layers.Shapes
+        Configured shapes layer ready for annotation.
+    """
+    import pandas as pd
+
+    # Initialize with empty features DataFrame (categorical for color cycling)
+    features = pd.DataFrame({
+        "role": pd.Categorical([], categories=ROLE_CATEGORIES),
+        "name": pd.Series([], dtype=str),
+    })
+
+    shapes = viewer.add_shapes(
+        name="Annotations",
+        shape_type="polygon",
+        # Features-based coloring
+        features=features,
+        face_color="role",
+        face_color_cycle=ROLE_COLOR_CYCLE,
+        edge_color="white",
+        edge_width=2,
+        # Text labels on shapes
+        text={
+            "string": "{name}",
+            "size": 10,
+            "color": "white",
+            "anchor": "upper_left",
+            "translation": [5, 5],
+        },
+    )
+
+    # Set defaults for new shapes
+    shapes.feature_defaults["role"] = "region"
+    shapes.feature_defaults["name"] = "region_0"
+    shapes.current_face_color = ROLE_COLORS["region"]
+
+    # Start in polygon drawing mode
+    shapes.mode = "add_polygon"
+
+    return shapes
+
+
+def get_annotation_data(
+    shapes_layer: napari.layers.Shapes,
+) -> tuple[list, list[str], list[str]]:
+    """
+    Extract annotation data from shapes layer.
+
+    Parameters
+    ----------
+    shapes_layer : napari.layers.Shapes
+        The shapes layer containing annotations.
+
+    Returns
+    -------
+    shapes_data : list of NDArray
+        List of polygon vertex arrays in napari (row, col) format.
+    names : list of str
+        Name for each shape.
+    roles : list of str
+        Role for each shape ("environment" or "region").
+    """
+    if shapes_layer is None or len(shapes_layer.data) == 0:
+        return [], [], []
+
+    data = list(shapes_layer.data)
+
+    # Get from features (preferred) or properties (fallback)
+    if hasattr(shapes_layer, "features") and len(shapes_layer.features) > 0:
+        features = shapes_layer.features
+        names = list(features.get("name", [f"region_{i}" for i in range(len(data))]))
+        roles = list(features.get("role", ["region"] * len(data)))
+    else:
+        props = shapes_layer.properties
+        names = list(props.get("name", [f"region_{i}" for i in range(len(data))]))
+        roles = list(props.get("role", ["region"] * len(data)))
+
+    # Ensure lists match data length
+    while len(names) < len(data):
+        names.append(f"region_{len(names)}")
+    while len(roles) < len(data):
+        roles.append("region")
+
+    return data, [str(n) for n in names], [str(r) for r in roles]
 ```
 
 ### Task 4.2: Verification
 
 ```bash
-uv run python -c "from neurospatial.annotation._napari_widget import AnnotationWidget; print('OK')"
+uv run python -c "from neurospatial.annotation._napari_widget import create_annotation_widget, setup_shapes_layer_for_annotation; print('OK')"
 ```
 
 ---
@@ -660,6 +752,7 @@ def annotate_video(
     calibration: VideoCalibration | None = None,
     mode: Literal["environment", "regions", "both"] = "both",
     bin_size: float | None = None,
+    simplify_tolerance: float | None = None,
 ) -> AnnotationResult:
     """
     Launch interactive napari annotation on a video frame.
@@ -688,6 +781,11 @@ def annotate_video(
     bin_size : float, optional
         Bin size for environment discretization. Required if mode is
         "environment" or "both".
+    simplify_tolerance : float, optional
+        If provided, simplifies hand-drawn polygons using Douglas-Peucker
+        algorithm. Removes jagged edges from freehand drawing. Tolerance
+        is in output units (cm if calibration provided, else pixels).
+        Recommended: 1.0-2.0 for typical use cases.
 
     Returns
     -------
@@ -736,7 +834,11 @@ def annotate_video(
     import napari
 
     from neurospatial.animation._video_io import VideoReader
-    from neurospatial.annotation._napari_widget import AnnotationWidget
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        get_annotation_data,
+        setup_shapes_layer_for_annotation,
+    )
     from neurospatial.annotation.converters import (
         env_from_boundary_region,
         shapes_to_regions,
@@ -759,28 +861,16 @@ def annotate_video(
     viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
     viewer.add_image(frame, name="video_frame", rgb=True)
 
-    # Add shapes layer for annotations
-    shapes = viewer.add_shapes(
-        name="Annotations",
-        shape_type="polygon",
-        edge_color="yellow",
-        face_color=[1, 1, 0, 0.2],
-        edge_width=2,
-    )
-    shapes.mode = "add_polygon"
-
-    # Initialize properties
-    shapes.properties = {
-        "name": np.array([], dtype=object),
-        "role": np.array([], dtype=object),
-    }
+    # Add shapes layer with annotation-optimized settings
+    # (features-based coloring, text labels, keyboard shortcuts)
+    shapes = setup_shapes_layer_for_annotation(viewer)
 
     # Add existing regions if provided
     if initial_regions is not None:
         _add_initial_regions(shapes, initial_regions, calibration)
 
-    # Add annotation widget
-    widget = AnnotationWidget(viewer, "Annotations")
+    # Add annotation control widget (magicgui-based)
+    widget = create_annotation_widget(viewer, "Annotations")
     viewer.window.add_dock_widget(
         widget,
         name="Annotation Controls",
@@ -790,8 +880,8 @@ def annotate_video(
     # Run napari (blocking until viewer closes)
     napari.run()
 
-    # Get annotation data from widget
-    shapes_data, names, roles = widget.get_annotation_data()
+    # Get annotation data from shapes layer
+    shapes_data, names, roles = get_annotation_data(shapes)
 
     # Handle empty annotations
     if not shapes_data:
@@ -799,7 +889,7 @@ def annotate_video(
 
     # Convert shapes to regions
     regions, env_boundary = shapes_to_regions(
-        shapes_data, names, roles, calibration
+        shapes_data, names, roles, calibration, simplify_tolerance
     )
 
     # Build environment if requested and boundary exists
@@ -834,6 +924,7 @@ def _add_initial_regions(
     calibration : VideoCalibration or None
         If provided, transforms cm coordinates back to pixels for display.
     """
+    import pandas as pd
     from shapely import get_coordinates
 
     data = []
@@ -858,9 +949,17 @@ def _add_initial_regions(
         roles.append(region.metadata.get("role", "region"))
 
     if data:
+        # Add shapes to layer
         shapes_layer.add(data, shape_type="polygon")
-        shapes_layer.properties["name"] = np.array(names, dtype=object)
-        shapes_layer.properties["role"] = np.array(roles, dtype=object)
+
+        # Update features DataFrame (consistent with setup_shapes_layer_for_annotation)
+        # Import ROLE_CATEGORIES from module level
+        from neurospatial.annotation._napari_widget import ROLE_CATEGORIES
+
+        shapes_layer.features = pd.DataFrame({
+            "role": pd.Categorical(roles, categories=ROLE_CATEGORIES),
+            "name": pd.Series(names, dtype=str),
+        })
 ```
 
 ### Task 5.2: Verification
@@ -878,6 +977,21 @@ uv run python -c "from neurospatial.annotation import annotate_video, Annotation
 ```bash
 mkdir -p tests/annotation
 touch tests/annotation/__init__.py
+```
+
+**Note:** Tests using napari viewers are marked with `@pytest.mark.gui`. To skip these in headless CI environments, run:
+
+```bash
+uv run pytest -m "not gui"
+```
+
+Register the marker in `pyproject.toml` to avoid warnings:
+
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "gui: tests requiring display/Qt backend (napari)",
+]
 ```
 
 ### Task 6.2: Create `test_converters.py`
@@ -991,6 +1105,36 @@ class TestShapesToRegions:
         assert metadata["source"] == "napari_annotation"
         assert metadata["coord_system"] == "pixels"
         assert metadata["role"] == "region"
+
+    def test_simplify_tolerance(self):
+        """Simplify polygon with tolerance parameter."""
+        # Create a polygon with many redundant vertices on a line
+        # Square with extra points along edges
+        vertices = np.array([
+            [0, 0], [0, 25], [0, 50], [0, 75], [0, 100],  # Left edge
+            [25, 100], [50, 100], [75, 100], [100, 100],  # Top edge
+            [100, 75], [100, 50], [100, 25], [100, 0],    # Right edge
+            [75, 0], [50, 0], [25, 0],                     # Bottom edge
+        ], dtype=float)
+        shapes_data = [vertices]
+        names = ["detailed"]
+        roles = ["region"]
+
+        # Without simplification
+        regions_full, _ = shapes_to_regions(shapes_data, names, roles)
+        poly_full = regions_full["detailed"].data
+        n_coords_full = len(poly_full.exterior.coords)
+
+        # With simplification (tolerance=5.0 should remove colinear points)
+        regions_simple, _ = shapes_to_regions(
+            shapes_data, names, roles, simplify_tolerance=5.0
+        )
+        poly_simple = regions_simple["detailed"].data
+        n_coords_simple = len(poly_simple.exterior.coords)
+
+        # Simplified should have fewer vertices (just 4 corners + closing point)
+        assert n_coords_simple < n_coords_full
+        assert n_coords_simple == 5  # 4 corners + closing point
 
 
 class TestEnvFromBoundaryRegion:
@@ -1210,6 +1354,7 @@ class TestAnnotationResult:
         assert regs is regions
 
 
+@pytest.mark.gui  # Skip in headless CI with: pytest -m "not gui"
 class TestAddInitialRegions:
     """Tests for _add_initial_regions helper."""
 
@@ -1228,15 +1373,16 @@ class TestAddInitialRegions:
         )
         regions = Regions([region])
 
-        # Create mock shapes layer
+        # Create shapes layer (no initial features needed - _add_initial_regions sets them)
         viewer = napari.Viewer(show=False)
         shapes = viewer.add_shapes(name="Test")
-        shapes.properties = {"name": np.array([], dtype=object), "role": np.array([], dtype=object)}
 
         _add_initial_regions(shapes, regions, calibration=None)
 
         assert len(shapes.data) == 1
-        assert shapes.properties["name"][0] == "test"
+        # Check features DataFrame (not properties)
+        assert shapes.features["name"].iloc[0] == "test"
+        assert shapes.features["role"].iloc[0] == "region"
         viewer.close()
 
     def test_skips_point_regions(self):
@@ -1253,7 +1399,6 @@ class TestAddInitialRegions:
 
         viewer = napari.Viewer(show=False)
         shapes = viewer.add_shapes(name="Test")
-        shapes.properties = {"name": np.array([], dtype=object), "role": np.array([], dtype=object)}
 
         _add_initial_regions(shapes, regions, calibration=None)
 
@@ -1281,7 +1426,6 @@ class TestAddInitialRegions:
 
         viewer = napari.Viewer(show=False)
         shapes = viewer.add_shapes(name="Test")
-        shapes.properties = {"name": np.array([], dtype=object), "role": np.array([], dtype=object)}
 
         _add_initial_regions(shapes, regions, calibration)
 
