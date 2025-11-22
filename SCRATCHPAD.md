@@ -706,6 +706,58 @@ for collection in self._ax.collections:
 - All 18 widget backend tests pass
 - All 540 animation tests pass
 
-## Next Task: Phase 4.2 - Stabilize Overlay Artist Lifecycle
+## Completed: Phase 4.2 - Stabilize Overlay Artist Lifecycle (2025-11-21)
+
+### Investigation Result
+
+**Finding**: The existing `OverlayArtistManager` implementation was mostly correct, but tests exposed a critical bug!
+
+### Bug Found and Fixed
+
+**Root cause**: In `_initialize_bodypart_overlay`, `_update_bodypart_skeleton` was called with an index BEFORE the skeleton was appended to the list, causing IndexError.
+
+**Before** (buggy):
+```python
+# Line 596-598: Call update with index == len() (doesn't exist yet!)
+self._update_bodypart_skeleton(len(self._bodypart_skeletons), bodypart_data, frame_idx)
+# Line 599: Append happens AFTER the call!
+self._bodypart_skeletons.append(skeleton_lc)
+```
+
+**After** (fixed):
+```python
+# Line 597: Append FIRST
+self._bodypart_skeletons.append(skeleton_lc)
+# Line 599-601: Now update with valid index (len() - 1)
+if skeleton_lc is not None:
+    self._update_bodypart_skeleton(len(self._bodypart_skeletons) - 1, bodypart_data, frame_idx)
+```
+
+### New Tests
+
+Created `tests/animation/test_overlay_artist_manager.py` with 30 tests:
+
+| Test Class | Count | Coverage |
+|------------|-------|----------|
+| TestOverlayArtistManagerInitialization | 9 | Initialization, idempotency, artist creation |
+| TestOverlayArtistManagerUpdate | 6 | set_offsets, set_segments, quiver recreation |
+| TestOverlayArtistManagerClear | 5 | Artist removal, flag reset, reinitialize |
+| TestOverlayArtistManagerEdgeCases | 7 | NaN data, empty lists, multi-animal, no skeleton |
+| TestOverlayArtistManagerIntegration | 3 | PersistentFigureRenderer integration |
+
+### Key Verified Behaviors
+
+1. **Manager created once per figure**: Verified with integration tests
+2. **Uses set_data/set_offsets**: All overlay types use efficient updates, not recreation
+3. **Fallback path correct**: New manager created after ax.clear() (necessary, as old artists are destroyed)
+4. **Clear method works**: Properly removes artists and resets `_initialized` flag
+
+### Test Results
+
+- All 30 new tests pass
+- All 600 animation tests pass
+- ruff and mypy pass
+
+## Next Task: Phase 4.3 - Optional JPEG Support
 
 See TASKS.md for details.

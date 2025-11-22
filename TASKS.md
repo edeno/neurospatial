@@ -256,12 +256,33 @@ a bottleneck in the future, caching can be added then.
 - Tests verify grid layouts use optimization (no fallback)
 - Tests verify hex layouts trigger fallback with informative log
 
-### 4.2 Stabilize Overlay Artist Lifecycle
+### 4.2 Stabilize Overlay Artist Lifecycle - COMPLETE
 
-- [ ] Ensure `OverlayArtistManager` created once per figure
-- [ ] Use `set_data`, `set_offsets` instead of recreate-on-each-frame
-- [ ] In fallback path: reinitialize overlay manager exactly once
-- [ ] Profile redraw overhead
+**Completed 2025-11-21**: Fixed critical bug and added comprehensive tests.
+
+- [x] Ensure `OverlayArtistManager` created once per figure (already correct, verified with tests)
+- [x] Use `set_data`, `set_offsets` instead of recreate-on-each-frame (already implemented, verified with tests)
+- [x] In fallback path: reinitialize overlay manager exactly once (already correct, verified with tests)
+- [x] Fixed IndexError bug: skeleton list was accessed before appending in `_initialize_bodypart_overlay`
+- [N/A] Profile redraw overhead - already profiled in Phase 0.3 baseline metrics
+
+**Bug Fixed** (in `_parallel.py:585-602`):
+
+```python
+# Before (buggy): Called update BEFORE appending to list
+self._update_bodypart_skeleton(len(self._bodypart_skeletons), ...)  # IndexError!
+self._bodypart_skeletons.append(skeleton_lc)
+
+# After (fixed): Append FIRST, then update
+self._bodypart_skeletons.append(skeleton_lc)
+self._update_bodypart_skeleton(len(self._bodypart_skeletons) - 1, ...)  # Correct index
+```
+
+**New Tests** (`tests/animation/test_overlay_artist_manager.py`):
+
+- 30 tests covering initialization, updates, clear, edge cases, and integration
+- Includes regression test for the IndexError bug
+- All 600 animation tests pass
 
 ### 4.3 Optional JPEG Support
 
@@ -357,7 +378,7 @@ a bottleneck in the future, caching can be added then.
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
 | Phase 2: Napari | Complete | 2.1-2.5 COMPLETE (42-50x skeleton speedup!) |
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
-| Phase 4: Widget | Not started | |
+| Phase 4: Widget | In Progress | 4.1-4.2 COMPLETE (bug fix + 30 tests), 4.3-4.4 pending |
 | Phase 5: Video | Not started | |
 | Phase 6: Skeleton | Not started | |
 | Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |

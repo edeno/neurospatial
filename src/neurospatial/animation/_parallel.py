@@ -593,10 +593,13 @@ class OverlayArtistManager:
                 zorder=101,
             )
             self.ax.add_collection(skeleton_lc)
-            self._update_bodypart_skeleton(
-                len(self._bodypart_skeletons), bodypart_data, frame_idx
-            )
+        # Append skeleton BEFORE calling update (update accesses by index)
         self._bodypart_skeletons.append(skeleton_lc)
+        # Now update skeleton with initial data
+        if skeleton_lc is not None:
+            self._update_bodypart_skeleton(
+                len(self._bodypart_skeletons) - 1, bodypart_data, frame_idx
+            )
 
     def _initialize_head_direction_overlay(
         self, head_dir_data: Any, frame_idx: int, position_data: Any | None
