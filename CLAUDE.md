@@ -295,6 +295,46 @@ env.animate_fields(fields, overlays=[overlay])
 # Napari displays correctly with Y-axis increasing upward
 ```
 
+**Video Annotation (v0.6.0+)**:
+
+```python
+# Annotate video frames interactively
+from neurospatial import annotate_video, regions_from_labelme, regions_from_cvat
+
+# Interactive napari annotation - draw environment boundary and regions
+result = annotate_video("experiment.mp4", bin_size=2.0)
+env = result.environment  # Environment from boundary polygon
+regions = result.regions   # Named regions
+
+# With calibration (pixel -> cm coordinates)
+from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+transform = calibrate_from_scale_bar((0, 0), (200, 0), 100.0, (640, 480))
+calib = VideoCalibration(transform, (640, 480))
+result = annotate_video("experiment.mp4", calibration=calib, bin_size=2.0)
+
+# Import from external annotation tools
+regions = regions_from_labelme("labelme_export.json", calibration=calib)
+regions = regions_from_cvat("cvat_export.xml", calibration=calib)
+
+# Annotation modes
+result = annotate_video("experiment.mp4", mode="both", bin_size=2.0)      # Default: boundary + regions
+result = annotate_video("experiment.mp4", mode="environment", bin_size=2.0)  # Only boundary
+result = annotate_video("experiment.mp4", mode="regions")                    # Only regions (no bin_size needed)
+
+# Simplify hand-drawn polygons (removes jagged edges)
+result = annotate_video("experiment.mp4", bin_size=2.0, simplify_tolerance=1.0)
+```
+
+**Annotation Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `E` | Set mode to draw environment boundary (cyan) |
+| `R` | Set mode to draw named region (yellow) |
+| `3` | Move shape mode |
+| `4` | Edit vertices mode |
+| `Delete` | Remove selected shape |
+
 **Type Checking Support (v0.2.1+)**:
 
 This package now includes a `py.typed` marker, enabling type checkers like mypy to use the library's type annotations:

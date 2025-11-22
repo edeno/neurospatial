@@ -13,8 +13,8 @@
 | M3: External Import | Complete | 2/2 |
 | M4: Napari Widget | Complete | 2/2 |
 | M5: Main Entry Point | Complete | 2/2 |
-| M6: Tests | In Progress | 4/5 |
-| M7: Documentation | Not Started | 0/1 |
+| M6: Tests | Complete | 5/5 |
+| M7: Documentation | Complete | 1/1 |
 
 ---
 
@@ -82,7 +82,7 @@
 - [x] **6.2** Create `tests/annotation/test_converters.py`
 - [x] **6.3** Create `tests/annotation/test_io.py`
 - [x] **6.4** Create `tests/annotation/test_core.py`
-- [ ] **6.5** Run test suite and verify passing
+- [x] **6.5** Run test suite and verify passing
 
 **Commands**:
 
@@ -96,7 +96,7 @@ uv run pytest                                # Full suite
 
 ## Milestone 7: Documentation
 
-- [ ] **7.1** Update CLAUDE.md Quick Reference with annotation examples
+- [x] **7.1** Update CLAUDE.md Quick Reference with annotation examples
 
 ---
 
