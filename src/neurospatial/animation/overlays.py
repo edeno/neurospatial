@@ -706,6 +706,105 @@ class HeadDirectionData:
 
 
 @dataclass
+class VideoData:
+    """Internal container for video overlay data aligned to animation frames.
+
+    This is used internally by backends and should not be instantiated by users.
+    Created by the conversion pipeline from VideoOverlay instances.
+
+    Parameters
+    ----------
+    frame_indices : ndarray of shape (n_animation_frames,), dtype int
+        Mapping from animation frame indices to video frame indices.
+        Value of -1 indicates no video frame available (out of range).
+    reader : NDArray[np.uint8] or VideoReader
+        Video source. Either a pre-loaded array of shape (n_video_frames, height,
+        width, 3) with dtype uint8, or a VideoReader instance for streaming.
+    transform_to_env : Affine2D or None
+        Transform from video pixel coordinates to environment coordinates.
+        If None, video is displayed in pixel coordinates.
+    env_bounds : tuple of float
+        Environment bounding box as (xmin, xmax, ymin, ymax) for positioning
+        the video in the visualization.
+    alpha : float
+        Opacity of the video layer (0.0-1.0).
+    z_order : {"below", "above"}
+        Rendering order relative to the spatial field layer.
+
+    Attributes
+    ----------
+    frame_indices : NDArray[np.int_]
+        Animation-to-video frame mapping.
+    reader : NDArray[np.uint8] | Any
+        Video source (array or VideoReader).
+    transform_to_env : Affine2D | None
+        Coordinate transform.
+    env_bounds : tuple[float, float, float, float]
+        Environment bounds (xmin, xmax, ymin, ymax).
+    alpha : float
+        Video opacity.
+    z_order : {"below", "above"}
+        Rendering order.
+
+    See Also
+    --------
+    VideoOverlay : User-facing overlay configuration
+
+    Notes
+    -----
+    For pickle-safety with parallel rendering:
+
+    - Pre-loaded arrays (NDArray[np.uint8]) are pickle-safe
+    - VideoReader instances must implement pickle protocol (Task 3.1)
+    """
+
+    frame_indices: NDArray[np.int_]
+    reader: NDArray[np.uint8] | Any  # NDArray or VideoReader (future)
+    transform_to_env: Any | None  # Affine2D | None
+    env_bounds: tuple[float, float, float, float]
+    alpha: float
+    z_order: Literal["below", "above"]
+
+    def get_frame(self, anim_frame_idx: int) -> NDArray[np.uint8] | None:
+        """Get the video frame for a given animation frame index.
+
+        Parameters
+        ----------
+        anim_frame_idx : int
+            Animation frame index (0-based).
+
+        Returns
+        -------
+        NDArray[np.uint8] | None
+            RGB video frame of shape (height, width, 3) with dtype uint8,
+            or None if no video frame is available for this animation frame.
+            Returns None for:
+            - Animation index out of bounds (>= len(frame_indices))
+            - Video frame index is -1 (out of range in frame_indices)
+        """
+        # Check if animation index is out of bounds
+        if anim_frame_idx < 0 or anim_frame_idx >= len(self.frame_indices):
+            return None
+
+        # Get the video frame index
+        video_frame_idx = self.frame_indices[anim_frame_idx]
+
+        # Check if video frame index is out of range (indicated by -1)
+        if video_frame_idx < 0:
+            return None
+
+        # Return the video frame from the reader
+        if isinstance(self.reader, np.ndarray):
+            frame: NDArray[np.uint8] = self.reader[video_frame_idx]
+            return frame
+        else:
+            # VideoReader case - to be implemented in Task 3.1
+            # For now, assume reader has a get_frame method
+            result: NDArray[np.uint8] | None = self.reader.get_frame(video_frame_idx)
+            return result
+
+
+@dataclass
 class OverlayData:
     """Container for all overlay data passed to animation backends.
 

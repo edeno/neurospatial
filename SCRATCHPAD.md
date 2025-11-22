@@ -1,7 +1,7 @@
 # VideoOverlay Implementation Scratchpad
 
 **Started**: 2025-11-22
-**Current Phase**: Milestone 2 (Data Model) - Task 2.2
+**Current Phase**: Milestone 3 (Video I/O) - Task 3.1
 
 ---
 
@@ -40,12 +40,17 @@
 - **Completed I.1**: Update type signatures
   - Updated overlays parameter types in core.py and visualization.py
   - Added VideoOverlay and VideoCalibration exports to animation/__init__.py
+- **Completed M2**: 2.2 - VideoData internal container
+  - All fields: frame_indices, reader, transform_to_env, env_bounds, alpha, z_order
+  - `get_frame()` method returns frame or None for out-of-range
+  - Pickle-safety verified for parallel rendering
+  - 6 unit tests passing
 
 ---
 
 ## Current Task
 
-**Working on**: 2.2 - Create VideoData internal container
+**Working on**: Milestone 3 - Video I/O (Task 3.1)
 
 ---
 

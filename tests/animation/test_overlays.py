@@ -430,6 +430,187 @@ class TestVideoOverlayWithFilePath:
         assert overlay.source == video_path
 
 
+class TestVideoData:
+    """Test VideoData internal container."""
+
+    @pytest.fixture
+    def sample_video_frames(self) -> np.ndarray:
+        """Create sample video frames (n_frames, height, width, 3)."""
+        # 5 video frames, 8x8 pixels, RGB
+        frames = np.zeros((5, 8, 8, 3), dtype=np.uint8)
+        # Add distinct patterns to each frame for testing
+        for i in range(5):
+            frames[i, :, :, :] = i * 50  # Different brightness per frame
+        return frames
+
+    @pytest.fixture
+    def sample_frame_indices(self) -> np.ndarray:
+        """Create sample frame indices mapping animation frames to video frames."""
+        # 10 animation frames mapping to 5 video frames
+        # -1 indicates out-of-range (no video frame available)
+        return np.array([0, 0, 1, 1, 2, 2, 3, 3, 4, -1], dtype=np.int_)
+
+    @pytest.fixture
+    def sample_env_bounds(self) -> tuple[float, float, float, float]:
+        """Sample environment bounds (xmin, xmax, ymin, ymax)."""
+        return (0.0, 100.0, 0.0, 80.0)
+
+    def test_basic_creation(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test creating VideoData with array source."""
+        from neurospatial.animation.overlays import VideoData
+
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=None,
+            env_bounds=sample_env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        assert_array_equal(video_data.frame_indices, sample_frame_indices)
+        assert video_data.transform_to_env is None
+        assert video_data.env_bounds == sample_env_bounds
+        assert video_data.alpha == 0.7
+        assert video_data.z_order == "below"
+
+    def test_with_transform(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test VideoData with Affine2D transform."""
+        from neurospatial.animation.overlays import VideoData
+        from neurospatial.transforms import identity
+
+        transform = identity()
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=transform,
+            env_bounds=sample_env_bounds,
+            alpha=0.5,
+            z_order="above",
+        )
+
+        assert video_data.transform_to_env is transform
+        assert video_data.z_order == "above"
+
+    def test_get_frame_valid_index(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test get_frame returns correct frame for valid animation index."""
+        from neurospatial.animation.overlays import VideoData
+
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=None,
+            env_bounds=sample_env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        # Animation frame 0 maps to video frame 0
+        frame = video_data.get_frame(0)
+        assert frame is not None
+        assert frame.shape == (8, 8, 3)
+        assert frame.dtype == np.uint8
+        # First frame has brightness 0
+        assert frame[0, 0, 0] == 0
+
+        # Animation frame 4 maps to video frame 2
+        frame = video_data.get_frame(4)
+        assert frame is not None
+        # Video frame 2 has brightness 100
+        assert frame[0, 0, 0] == 100
+
+    def test_get_frame_out_of_range_returns_none(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test get_frame returns None for index -1 (out of range)."""
+        from neurospatial.animation.overlays import VideoData
+
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=None,
+            env_bounds=sample_env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        # Animation frame 9 maps to -1 (out of range)
+        frame = video_data.get_frame(9)
+        assert frame is None
+
+    def test_get_frame_negative_index_returns_none(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test get_frame returns None for animation index out of bounds."""
+        from neurospatial.animation.overlays import VideoData
+
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=None,
+            env_bounds=sample_env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        # Animation index beyond frame_indices length
+        frame = video_data.get_frame(100)
+        assert frame is None
+
+    def test_pickle_safety(
+        self,
+        sample_video_frames: np.ndarray,
+        sample_frame_indices: np.ndarray,
+        sample_env_bounds: tuple[float, float, float, float],
+    ):
+        """Test VideoData can be pickled for parallel rendering."""
+        import pickle
+
+        from neurospatial.animation.overlays import VideoData
+
+        video_data = VideoData(
+            frame_indices=sample_frame_indices,
+            reader=sample_video_frames,
+            transform_to_env=None,
+            env_bounds=sample_env_bounds,
+            alpha=0.7,
+            z_order="below",
+        )
+
+        # Should be pickle-able
+        pickled = pickle.dumps(video_data)
+        restored = pickle.loads(pickled)
+
+        assert_array_equal(restored.frame_indices, video_data.frame_indices)
+        assert restored.alpha == video_data.alpha
+        assert restored.z_order == video_data.z_order
+
+        # Restored object should work
+        frame = restored.get_frame(0)
+        assert frame is not None
+
+
 class TestOverlayDataclassDefaults:
     """Test that overlay dataclasses have correct default values."""
 

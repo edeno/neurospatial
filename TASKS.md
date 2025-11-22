@@ -165,17 +165,17 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 2.2: Create VideoData Internal Container
 
-- [ ] Add `VideoData` dataclass to [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
-  - [ ] `frame_indices: NDArray[np.int_]`
-  - [ ] `reader: VideoReader | NDArray[np.uint8]`
-  - [ ] `transform_to_env: Affine2D | None`
-  - [ ] `env_bounds: tuple[float, float, float, float]`
-  - [ ] `alpha: float`
-  - [ ] `z_order: Literal["below", "above"]`
-- [ ] Implement `get_frame(anim_frame_idx)` method
-  - [ ] Return `None` for index -1 (out of range)
-  - [ ] Return RGB frame for valid indices
-- [ ] Verify pickle-safety for parallel rendering
+- [x] Add `VideoData` dataclass to [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
+  - [x] `frame_indices: NDArray[np.int_]`
+  - [x] `reader: VideoReader | NDArray[np.uint8]`
+  - [x] `transform_to_env: Affine2D | None`
+  - [x] `env_bounds: tuple[float, float, float, float]`
+  - [x] `alpha: float`
+  - [x] `z_order: Literal["below", "above"]`
+- [x] Implement `get_frame(anim_frame_idx)` method
+  - [x] Return `None` for index -1 (out of range)
+  - [x] Return RGB frame for valid indices
+- [x] Verify pickle-safety for parallel rendering
 
 ---
 
