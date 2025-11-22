@@ -11,9 +11,9 @@
 | M1: Module Structure | In Progress | 1/2 |
 | M2: Converters | Complete | 2/2 |
 | M3: External Import | Complete | 2/2 |
-| M4: Napari Widget | Not Started | 0/2 |
-| M5: Main Entry Point | Not Started | 0/2 |
-| M6: Tests | In Progress | 3/5 |
+| M4: Napari Widget | Complete | 2/2 |
+| M5: Main Entry Point | Complete | 2/2 |
+| M6: Tests | In Progress | 4/5 |
 | M7: Documentation | Not Started | 0/1 |
 
 ---
@@ -51,11 +51,11 @@
 
 ## Milestone 4: Napari Annotation Widget
 
-- [ ] **4.1** Create `src/neurospatial/annotation/_napari_widget.py`
+- [x] **4.1** Create `src/neurospatial/annotation/_napari_widget.py`
   - `create_annotation_widget()` - magicgui container
   - `setup_shapes_layer_for_annotation()` - features-based coloring
   - `get_annotation_data()` - extract shapes/names/roles
-- [ ] **4.2** Verify import works
+- [x] **4.2** Verify import works
 
 **Napari patterns** (per PLAN.md Architecture section):
 
@@ -68,11 +68,11 @@
 
 ## Milestone 5: Main Entry Point
 
-- [ ] **5.1** Create `src/neurospatial/annotation/core.py`
+- [x] **5.1** Create `src/neurospatial/annotation/core.py`
   - `AnnotationResult` named tuple
   - `annotate_video()` main function
   - `_add_initial_regions()` helper
-- [ ] **5.2** Verify end-to-end import works
+- [x] **5.2** Verify end-to-end import works
 
 ---
 
@@ -81,7 +81,7 @@
 - [x] **6.1** Create `tests/annotation/__init__.py`
 - [x] **6.2** Create `tests/annotation/test_converters.py`
 - [x] **6.3** Create `tests/annotation/test_io.py`
-- [ ] **6.4** Create `tests/annotation/test_core.py`
+- [x] **6.4** Create `tests/annotation/test_core.py`
 - [ ] **6.5** Run test suite and verify passing
 
 **Commands**:
