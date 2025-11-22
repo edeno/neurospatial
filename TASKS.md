@@ -45,10 +45,11 @@
 
 ### 1.2 Normalize Layout Metadata
 
-- [ ] Add `layout_type` property to layouts: `"grid" | "mask" | "polygon" | "other"`
-- [ ] Update widget `_field_to_image_data` to use `layout_type`
-- [ ] Update `field_to_rgb_for_napari` to use `layout_type`
-- [ ] Add explicit branching for non-grid layouts in rendering
+- [x] Add `layout_type` property to layouts: `"grid" | "mask" | "polygon" | "hexagonal" | "mesh" | "graph" | "other"`
+- [x] Add `is_grid_compatible` property to layouts (True for grid/mask/polygon, False for others)
+- [x] Update widget `_field_to_image_data` to use `is_grid_compatible`
+- [x] Update `field_to_rgb_for_napari` to use `is_grid_compatible`
+- [x] Add tests for layout_type and is_grid_compatible (32 tests in test_layout_type.py)
 
 ### 1.3 Verify No Regressions
 
@@ -242,7 +243,7 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
-| Phase 1: Infrastructure | Not started | |
+| Phase 1: Infrastructure | In Progress | 1.1 and 1.2 complete; 1.3 pending |
 | Phase 2: Napari | Not started | HIGH IMPACT: skeleton vectorization |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |

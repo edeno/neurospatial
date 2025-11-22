@@ -64,6 +64,16 @@ class TriangularMeshLayout:
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
 
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type."""
+        return "mesh"
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return False - triangular mesh layouts cannot be rendered as 2D images."""
+        return False
+
     def build(self, boundary_polygon: Polygon, point_spacing: float) -> None:
         """Build the triangular mesh layout.
 

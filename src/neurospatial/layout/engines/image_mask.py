@@ -44,6 +44,16 @@ class ImageMaskLayout(_GridMixin):
         self.grid_shape = None
         self.active_mask = None
 
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type."""
+        return "mask"
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return True - image mask layouts can be rendered as 2D images."""
+        return True
+
     @capture_build_params
     def build(
         self,

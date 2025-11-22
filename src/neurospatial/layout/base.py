@@ -119,6 +119,19 @@ class LayoutEngine(Protocol):
     _build_params_used : Dict[str, Any]
         A dictionary of the parameters used to construct this layout instance.
         Used for introspection and serialization.
+    layout_type : str
+        A standardized category for the layout type. Values:
+        - "grid": Regular rectangular grid (RegularGridLayout)
+        - "mask": Grid with active/inactive regions (MaskedGridLayout, ImageMaskLayout)
+        - "polygon": Polygon-bounded grid (ShapelyPolygonLayout)
+        - "hexagonal": Hexagonal tessellation
+        - "mesh": Point-based mesh (TriangularMeshLayout)
+        - "graph": 1D linearized path (GraphLayout)
+        - "other": Unknown or custom layouts
+    is_grid_compatible : bool
+        True if the layout can be rendered as a 2D image (has 2D grid_shape
+        and active_mask). Grid-compatible layouts include: grid, mask, polygon.
+        Non-grid layouts (hexagonal, mesh, graph) return False.
 
     """
 
@@ -135,6 +148,35 @@ class LayoutEngine(Protocol):
     # Internal Attributes for Introspection/Serialization
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
+
+    # --- Public Properties for Layout Classification ---
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type.
+
+        Returns
+        -------
+        str
+            One of: "grid", "mask", "polygon", "hexagonal", "mesh", "graph", "other"
+
+        """
+        ...
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return True if layout can be rendered as a 2D image.
+
+        Grid-compatible layouts have a 2D grid_shape and active_mask,
+        allowing field values to be reshaped into 2D images for efficient
+        rendering in napari and widget backends.
+
+        Returns
+        -------
+        bool
+            True for grid, mask, and polygon layouts; False otherwise.
+
+        """
+        ...
 
     # --- Required Methods ---
     def build(self, **kwargs) -> None:

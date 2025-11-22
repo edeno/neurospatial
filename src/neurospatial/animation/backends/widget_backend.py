@@ -419,12 +419,10 @@ class PersistentFigureRenderer:
             2D array for set_data() if grid layout, None otherwise.
         """
         layout = self._env.layout
-        layout_tag = layout._layout_type_tag
 
-        # Only grid layouts can use set_data optimization
-        grid_layouts = ("RegularGrid", "MaskedGrid", "ImageMask", "ShapelyPolygon")
-
-        if layout_tag not in grid_layouts:
+        # Only grid-compatible layouts can use set_data optimization
+        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        if not getattr(layout, "is_grid_compatible", False):
             return None
 
         # Check required grid attributes

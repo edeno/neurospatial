@@ -57,6 +57,16 @@ class GraphLayout(_KDTreeMixin):
         self.active_mask = None
         self.linear_bin_centers_ = None
 
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type."""
+        return "graph"
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return False - graph layouts cannot be rendered as 2D images."""
+        return False
+
     @capture_build_params
     def build(
         self,

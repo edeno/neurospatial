@@ -294,10 +294,53 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
 - All 462 animation tests pass
 - Mypy passes with no issues
 
-## Next Task: Phase 1.2 - Normalize Layout Metadata
+## Completed: Phase 1.2 - Normalize Layout Metadata
+
+### What Was Done
+
+1. **Added `layout_type` and `is_grid_compatible` properties to LayoutEngine protocol** (`src/neurospatial/layout/base.py`):
+   - `layout_type`: Returns categorical string identifying the layout type
+   - `is_grid_compatible`: Returns True if layout can be rendered as 2D image
+
+2. **Implemented properties in all 7 layout engines**:
+   | Layout | layout_type | is_grid_compatible |
+   |--------|-------------|-------------------|
+   | RegularGridLayout | "grid" | True |
+   | MaskedGridLayout | "mask" | True |
+   | ImageMaskLayout | "mask" | True |
+   | ShapelyPolygonLayout | "polygon" | True |
+   | HexagonalLayout | "hexagonal" | False |
+   | TriangularMeshLayout | "mesh" | False |
+   | GraphLayout | "graph" | False |
+
+3. **Updated widget backend** (`_field_to_image_data`):
+   - Replaced hardcoded `_layout_type_tag` check against list
+   - Now uses `is_grid_compatible` property
+
+4. **Updated napari rendering** (`field_to_rgb_for_napari`):
+   - Uses `is_grid_compatible` for grid detection
+   - Maintains explicit 2D grid_shape check for safety
+
+5. **Added comprehensive tests** (`tests/layout/test_layout_type.py`):
+   - 32 tests covering all layout engines
+   - Tests work both before and after `build()` is called
+   - Integration tests for widget and rendering backends
+
+### Key Design Decisions
+
+1. **Two separate properties**: `layout_type` for semantic categorization, `is_grid_compatible` for rendering decisions
+2. **Properties work before `build()`**: Static classification doesn't require layout to be built
+3. **Backwards compatible**: Uses `getattr(layout, "is_grid_compatible", False)` for graceful degradation
+
+### Test Results
+
+- 32 layout_type tests pass
+- 220 layout tests pass
+- All rendering and widget tests pass
+- Code review: APPROVED
+
+## Next Task: Phase 1.3 - Verify No Regressions
 
 From TASKS.md:
-- [ ] Add `layout_type` property to layouts: `"grid" | "mask" | "polygon" | "other"`
-- [ ] Update widget `_field_to_image_data` to use `layout_type`
-- [ ] Update `field_to_rgb_for_napari` to use `layout_type`
-- [ ] Add explicit branching for non-grid layouts in rendering
+- [ ] Re-run benchmarks after changes
+- [ ] Visual verification of alignment (napari + widget)

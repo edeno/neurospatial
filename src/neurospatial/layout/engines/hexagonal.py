@@ -64,6 +64,16 @@ class HexagonalLayout:
         self.grid_offset_y_ = None
         self._source_flat_to_active_id_map = None
 
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type."""
+        return "hexagonal"
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return False - hexagonal layouts cannot be rendered as 2D images."""
+        return False
+
     @capture_build_params
     def build(
         self,

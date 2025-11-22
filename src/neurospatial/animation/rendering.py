@@ -409,19 +409,22 @@ def field_to_rgb_for_napari(
     # Lookup RGB values
     rgb = cmap_lookup[indices]
 
-    # For 2D grid layouts, reshape to 2D image
-    # Must have grid_shape with exactly 2 dimensions (some layouts like triangular mesh
-    # have 1D grid_shape which cannot be displayed as a 2D image grid)
-    if (
+    # For grid-compatible 2D layouts, reshape to 2D image
+    # Use is_grid_compatible property for type checking, then verify 2D grid_shape
+    is_grid = getattr(env.layout, "is_grid_compatible", False)
+    has_2d_grid = (
         hasattr(env.layout, "grid_shape")
         and env.layout.grid_shape is not None
         and len(env.layout.grid_shape) == 2
-    ):
+    )
+    if is_grid and has_2d_grid:
         # Determine which bins are active
+        grid_shape = env.layout.grid_shape
+        assert grid_shape is not None  # for mypy
+        rgb_shape = (grid_shape[0], grid_shape[1], 3)
         if hasattr(env.layout, "active_mask") and env.layout.active_mask is not None:
             # Create full grid RGB
-            grid_shape = env.layout.grid_shape
-            full_rgb = np.zeros((*grid_shape, 3), dtype=np.uint8)
+            full_rgb = np.zeros(rgb_shape, dtype=np.uint8)
 
             # Fill active bins
             active_indices = env.layout.active_mask.flatten()
@@ -436,9 +439,7 @@ def field_to_rgb_for_napari(
         else:
             # Regular grid without masking
             # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention
-            transposed = np.transpose(
-                rgb.reshape((*env.layout.grid_shape, 3)), (1, 0, 2)
-            )
+            transposed = np.transpose(rgb.reshape(rgb_shape), (1, 0, 2))
             # Flip vertically for napari coordinate system
             return np.flip(transposed, axis=0)
 

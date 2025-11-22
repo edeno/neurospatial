@@ -54,6 +54,16 @@ class ShapelyPolygonLayout(_GridMixin):
         self.active_mask = None
         self.polygon_definition_ = None
 
+    @property
+    def layout_type(self) -> str:
+        """Return standardized category for this layout type."""
+        return "polygon"
+
+    @property
+    def is_grid_compatible(self) -> bool:
+        """Return True - polygon layouts can be rendered as 2D images."""
+        return True
+
     @capture_build_params
     def build(
         self,
