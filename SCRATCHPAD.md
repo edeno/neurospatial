@@ -935,6 +935,36 @@ Created `tests/animation/test_frame_naming.py` with 16 tests:
 - All 16 tests pass
 - ruff and mypy pass with no issues
 
-## Next Task: Phase 5.2 - Control ffmpeg I/O
+## Completed: Phase 5.2 - Control ffmpeg I/O (2025-11-22)
+
+### Problem
+
+The original `capture_output=True` routes both stdout and stderr to PIPE buffers. For long ffmpeg runs with verbose output, the stdout buffer can fill up, potentially causing deadlock.
+
+### Solution
+
+Changed from `capture_output=True` to explicit I/O routing:
+- `stdout=subprocess.DEVNULL` - discard ffmpeg progress output
+- `stderr=subprocess.PIPE` - capture errors for reporting
+
+### New Tests
+
+Created `tests/animation/test_ffmpeg_io.py` with 6 tests:
+
+| Test | Coverage |
+|------|----------|
+| `test_ffmpeg_stdout_is_devnull` | stdout routing |
+| `test_ffmpeg_stderr_is_captured` | stderr routing |
+| `test_ffmpeg_error_includes_stderr_message` | Error messages include stderr |
+| `test_ffmpeg_does_not_use_capture_output` | Explicit I/O not capture_output |
+| `test_ffmpeg_called_with_correct_arguments` | Basic ffmpeg args |
+| `test_ffmpeg_uses_text_mode` | text=True for string stderr |
+
+### Test Results
+
+- All 6 tests pass
+- ruff and mypy pass with no issues
+
+## Next Task: Phase 5.3 - DPI and Size Guard
 
 See TASKS.md for details.

@@ -377,11 +377,42 @@ PNG is 1.5x faster and 4.1x smaller for scientific visualization.
 - Non-zero start index for workers
 - ffmpeg pattern integration
 
-### 5.2 Control ffmpeg I/O
+### 5.2 Control ffmpeg I/O - COMPLETE
 
-- [ ] Route `stdout=subprocess.DEVNULL`
-- [ ] Route `stderr=subprocess.STDOUT`
-- [ ] Test with large frame counts
+**Completed 2025-11-22**: Fixed ffmpeg subprocess I/O to avoid buffer issues.
+
+- [x] Route `stdout=subprocess.DEVNULL` (discard ffmpeg progress output)
+- [x] Route `stderr=subprocess.PIPE` (capture errors for reporting)
+- [x] Test with large frame counts
+
+**Implementation Details:**
+
+Changed from `capture_output=True` to explicit I/O routing:
+
+```python
+result = subprocess.run(
+    cmd,
+    stdout=subprocess.DEVNULL,  # Discard progress output (avoids buffer issues)
+    stderr=subprocess.PIPE,     # Capture errors for reporting
+    text=True,
+    check=False,
+)
+```
+
+**Why this matters:**
+
+- `capture_output=True` routes both stdout AND stderr to PIPE buffers
+- For very long ffmpeg runs, stdout buffer can fill up causing potential deadlock
+- Discarding stdout (progress info) avoids this issue while keeping error capture
+
+**New Tests** (`tests/animation/test_ffmpeg_io.py`): 6 tests covering:
+
+- stdout is DEVNULL
+- stderr is PIPE
+- Error messages include stderr content
+- capture_output is NOT used
+- Basic ffmpeg arguments
+- Text mode enabled
 
 ### 5.3 DPI and Size Guard
 

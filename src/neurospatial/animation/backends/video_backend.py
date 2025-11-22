@@ -359,7 +359,8 @@ def render_video(
 
         result = subprocess.run(
             cmd,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,  # Discard ffmpeg progress output (avoids buffer issues)
+            stderr=subprocess.PIPE,  # Capture errors for reporting
             text=True,
             check=False,
         )
