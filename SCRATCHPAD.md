@@ -185,9 +185,10 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
 
 ### What Was Done
 
-1. **Created `benchmark_datasets/` package** (named to avoid conflict with `tests/benchmarks`):
-   - `benchmark_datasets/__init__.py` - Package exports
-   - `benchmark_datasets/datasets.py` - Dataset generators
+1. **Created `scripts/benchmark_datasets/` package**:
+   - `scripts/benchmark_datasets/__init__.py` - Package exports
+   - `scripts/benchmark_datasets/datasets.py` - Dataset generators
+   - Moved to scripts/ to avoid polluting pytest pythonpath config
 
 2. **Implemented BenchmarkConfig dataclass** with pre-defined configs:
    - `SMALL_CONFIG`: 100 frames, 40x40 grid, position overlay only
@@ -203,6 +204,7 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
    - Config value validation
    - Shape/type/reproducibility tests
    - Edge cases (head-direction-only, no overlays)
+   - Uses localized sys.path manipulation to import from scripts/
 
 ### Implementation Notes
 
@@ -213,14 +215,51 @@ NEUROSPATIAL_TIMING=1 uv run python your_script.py
 
 ### Key Files
 
-- `benchmark_datasets/__init__.py` - Package init
-- `benchmark_datasets/datasets.py` - All generators
+- `scripts/benchmark_datasets/__init__.py` - Package init
+- `scripts/benchmark_datasets/datasets.py` - All generators
 - `tests/animation/test_benchmark_datasets.py` - 22 tests
 
-## Next Task: Phase 0.3 - Record Baseline Metrics
+## Completed: Phase 0.3 - Record Baseline Metrics
 
-- Napari: initialization time, random seek time
-- Widget: initialization time, scrubbing responsiveness
-- Video: time per frame, total export time
-- Peak memory usage for each benchmark
-- Document results in `benchmarks/BASELINE.md`
+### What Was Done
+
+1. **Created benchmark scripts** in `benchmarks/` directory:
+   - `benchmarks/__init__.py` - Package docs
+   - `benchmarks/utils.py` - Shared timing/memory utilities
+   - `benchmarks/bench_napari.py` - Napari backend benchmark
+   - `benchmarks/bench_video.py` - Video backend benchmark
+   - `benchmarks/bench_widget.py` - Widget backend benchmark
+
+2. **Recorded baseline metrics** for all backends:
+   - Small config: 100 frames, 40x40 grid, position overlay
+   - Medium config: 5k frames (truncated to 500 for benchmarks)
+   - Large config: 100k frames (truncated to 500 for benchmarks)
+
+3. **Documented results** in `benchmarks/BASELINE.md`
+
+### Key Baseline Metrics
+
+| Backend | Init Time | Frame Time | Notes |
+|---------|-----------|------------|-------|
+| Napari (small) | 2,585 ms | 4.38 ms/seek | Position overlay |
+| Napari (medium) | 2,974 ms | 15.80 ms/seek | All overlays |
+| Video (small) | N/A | 29.95 ms/frame | Position overlay |
+| Video (500 frames) | N/A | 15.77 ms/frame | 1.99x parallel speedup |
+| Widget (small) | 15.39 ms | 8.93 ms/frame | Position overlay |
+| Widget (500 frames) | 7.44 ms | 10.00 ms/frame | No overlays |
+
+### Notes
+
+- Overlay truncation is complex due to skeleton relationships - benchmarks skip overlays when truncating
+- Napari viewer init is ~2.5-3s regardless of frame count
+- Widget PersistentFigureRenderer reuse is effective (~9-10ms/frame)
+- Parallel video rendering gives ~2x speedup for 500+ frames
+
+## Next Task: Phase 1.1 - Centralize Coordinate Transforms
+
+From TASKS.md:
+- [ ] Create `neurospatial/animation/transforms.py` (or add to `rendering.py`)
+- [ ] Move `_transform_coords_for_napari` to shared module
+- [ ] Move `_transform_direction_for_napari` to shared module
+- [ ] Update napari backend to use shared functions
+- [ ] Add tests for coordinate transforms

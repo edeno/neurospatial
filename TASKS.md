@@ -17,19 +17,19 @@
 
 ### 0.2 Create Benchmark Datasets
 
-- [x] Create `benchmark_datasets/` directory (named to avoid conflict with tests/benchmarks)
+- [x] Create `scripts/benchmark_datasets/` directory (moved from root to scripts/)
 - [x] Small benchmark: 100 frames, 40x40 grid (SMALL_CONFIG)
 - [x] Medium benchmark: 5k frames, typical spatial grid (MEDIUM_CONFIG)
 - [x] Large benchmark: 100k frames with skeleton + head direction overlays (LARGE_CONFIG)
-- [x] Save reproducible scripts/notebooks (benchmark_datasets/datasets.py)
+- [x] Save reproducible scripts/notebooks (scripts/benchmark_datasets/datasets.py)
 
 ### 0.3 Record Baseline Metrics
 
-- [ ] Napari: initialization time, random seek time
-- [ ] Widget: initialization time, scrubbing responsiveness
-- [ ] Video: time per frame, total export time
-- [ ] Peak memory usage for each benchmark
-- [ ] Document results in `benchmarks/BASELINE.md`
+- [x] Napari: initialization time, random seek time
+- [x] Widget: initialization time, scrubbing responsiveness
+- [x] Video: time per frame, total export time
+- [x] Peak memory usage for each benchmark
+- [x] Document results in `benchmarks/BASELINE.md`
 
 ---
 
@@ -223,10 +223,10 @@
 
 ### 7.2 Benchmark Scripts
 
-- [ ] `benchmarks/bench_napari.py` - CLI tool with timing table
-- [ ] `benchmarks/bench_video.py` - CLI tool with timing table
-- [ ] `benchmarks/bench_widget.py` - CLI tool with timing table
-- [ ] Each prints compact before/after comparison
+- [x] `benchmarks/bench_napari.py` - CLI tool with timing table
+- [x] `benchmarks/bench_video.py` - CLI tool with timing table
+- [x] `benchmarks/bench_widget.py` - CLI tool with timing table
+- [x] Each prints compact before/after comparison
 
 ### 7.3 Documentation Updates
 
@@ -241,14 +241,14 @@
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| Phase 0: Profiling | In Progress | 0.1 timing done, 0.2 datasets done, 0.3 baseline pending |
+| Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
 | Phase 1: Infrastructure | Not started | |
 | Phase 2: Napari | Not started | HIGH IMPACT: skeleton vectorization |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |
 | Phase 5: Video | Not started | |
 | Phase 6: Skeleton | Not started | |
-| Phase 7: Tests/Docs | Not started | |
+| Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |
 
 ---
 
