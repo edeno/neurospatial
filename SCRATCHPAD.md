@@ -45,12 +45,18 @@
   - `get_frame()` method returns frame or None for out-of-range
   - Pickle-safety verified for parallel rendering
   - 6 unit tests passing
+- **Completed M3 (partial)**: 3.1 - VideoReader class
+  - Lazy-loading video reader with LRU caching
+  - OpenCV backend for video reading
+  - Crop and downsample support
+  - Pickle-safe (cache dropped on serialization)
+  - 18 unit tests passing
 
 ---
 
 ## Current Task
 
-**Working on**: Milestone 3 - Video I/O (Task 3.1)
+**Working on**: Milestone 3 - Video I/O (Task 3.2)
 
 ---
 

@@ -187,27 +187,27 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 3.1: Create VideoReader Class
 
-- [ ] Create new file [src/neurospatial/animation/_video_io.py](src/neurospatial/animation/_video_io.py)
-- [ ] Implement `VideoReader` class:
-  - [ ] `__init__(path, cache_size=100, downsample=1, crop=None)`
-  - [ ] `__getitem__(frame_idx)` with LRU caching
-  - [ ] `get_timestamps()` method (ffprobe or fps fallback)
-  - [ ] `__reduce__()` for pickle support (drop cache, keep path)
-- [ ] Attributes:
-  - [ ] `n_frames: int`
-  - [ ] `fps: float`
-  - [ ] `frame_size_px: tuple[int, int]` (after crop/downsample)
-  - [ ] `original_size_px: tuple[int, int]` (before processing)
-  - [ ] `crop_offset_px: tuple[int, int]`
-  - [ ] `duration: float`
-- [ ] Backend selection: OpenCV (preferred) → imageio (fallback)
-- [ ] Write unit tests in [tests/animation/test_video_io.py](tests/animation/test_video_io.py) (NEW):
-  - [ ] `test_reader_loads_metadata`
-  - [ ] `test_reader_lazy_loading`
-  - [ ] `test_reader_lru_cache`
-  - [ ] `test_reader_pickle_roundtrip`
-  - [ ] `test_reader_timestamps`
-- [ ] Verify: `uv run pytest tests/animation/test_video_io.py -v`
+- [x] Create new file [src/neurospatial/animation/_video_io.py](src/neurospatial/animation/_video_io.py)
+- [x] Implement `VideoReader` class:
+  - [x] `__init__(path, cache_size=100, downsample=1, crop=None)`
+  - [x] `__getitem__(frame_idx)` with LRU caching
+  - [x] `get_timestamps()` method (ffprobe or fps fallback)
+  - [x] `__reduce__()` for pickle support (drop cache, keep path)
+- [x] Attributes:
+  - [x] `n_frames: int`
+  - [x] `fps: float`
+  - [x] `frame_size_px: tuple[int, int]` (after crop/downsample)
+  - [x] `original_size_px: tuple[int, int]` (before processing)
+  - [x] `crop_offset_px: tuple[int, int]`
+  - [x] `duration: float`
+- [x] Backend selection: OpenCV (preferred) → imageio (fallback)
+- [x] Write unit tests in [tests/animation/test_video_io.py](tests/animation/test_video_io.py) (NEW):
+  - [x] `test_reader_loads_metadata`
+  - [x] `test_reader_lazy_loading`
+  - [x] `test_reader_lru_cache`
+  - [x] `test_reader_pickle_roundtrip`
+  - [x] `test_reader_timestamps`
+- [x] Verify: `uv run pytest tests/animation/test_video_io.py -v`
 
 **M2 Checkpoint**: VideoReader tests pass
 
