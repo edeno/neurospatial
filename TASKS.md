@@ -344,14 +344,14 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 6.3: Backend Integration Tests
 
-- [ ] Create [tests/animation/test_video_overlay.py](tests/animation/test_video_overlay.py)
-- [ ] Napari tests (mark with `@pytest.mark.slow`):
-  - [ ] `test_video_layer_added`
-  - [ ] `test_video_spatial_alignment`
-  - [ ] `test_video_temporal_sync`
-- [ ] Export tests:
-  - [ ] `test_video_composited_in_output`
-  - [ ] `test_video_parallel_rendering`
+- [x] Create [tests/animation/test_video_overlay.py](tests/animation/test_video_overlay.py)
+- [x] Napari tests (mark with `@pytest.mark.slow`):
+  - [x] `test_video_layer_added`
+  - [x] `test_video_spatial_alignment`
+  - [x] `test_video_temporal_sync`
+- [x] Export tests:
+  - [x] `test_video_composited_in_output`
+  - [x] `test_video_parallel_rendering`
 
 ### Task 6.4: Validation Tests
 

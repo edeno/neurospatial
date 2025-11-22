@@ -180,11 +180,18 @@
   - All 18 video I/O tests passing
   - All 40 video overlay tests passing
 
+- **Completed M6 (partial)**: 6.3 - Backend Integration Tests
+  - Created `tests/animation/test_video_overlay.py` with 6 tests:
+    - Napari tests (slow): `test_video_layer_added`, `test_video_spatial_alignment`, `test_video_temporal_sync`
+    - Export tests: `test_video_composited_in_output`, `test_video_parallel_rendering`, `test_video_zorder_affects_compositing`
+  - All 3 export tests passing
+  - Napari tests properly marked with `@pytest.mark.slow` and `@pytest.mark.xdist_group`
+
 ---
 
 ## Current Task
 
-**Next**: Milestone 6 - Task 6.3 (Backend Integration Tests)
+**Next**: Milestone 6 - Task 6.4 (Validation Tests)
 
 ---
 
