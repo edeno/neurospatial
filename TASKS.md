@@ -423,15 +423,15 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: High - Documented behavior doesn't match implementation
 
-- [ ] Update `_convert_overlays_to_data()` in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
-  - [ ] For VideoOverlay with `interp="nearest"`: Use current `_find_nearest_indices()` (no change)
-  - [ ] For VideoOverlay with `interp="linear"`: Implement frame blending between adjacent video frames
+- [x] Update `_convert_overlays_to_data()` in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
+  - [x] For VideoOverlay with `interp="nearest"`: Use current `_find_nearest_indices()` (no change)
+  - [x] For VideoOverlay with `interp="linear"`: Implement frame blending between adjacent video frames
     - Option A: True linear blend (expensive: blend two RGB frames per animation frame)
-    - Option B: Restrict `interp` to `"nearest"` only and update docstring/validation
-  - [ ] Decision: Document trade-off and choose approach (prefer Option B for v0.5.0)
-- [ ] If Option B: Update `VideoOverlay.interp` docstring to clarify only "nearest" is currently supported
-- [ ] If Option B: Add validation in `__post_init__` to warn if "linear" is requested
-- [ ] Write test: `test_video_overlay_interp_warning`
+    - **Option B chosen**: Restrict `interp` to `"nearest"` only and update docstring/validation
+  - [x] Decision: Document trade-off and choose approach (prefer Option B for v0.5.0)
+- [x] If Option B: Update `VideoOverlay.interp` docstring to clarify only "nearest" is currently supported
+- [x] If Option B: Add validation in `__post_init__` to warn if "linear" is requested
+- [x] Write test: `test_video_overlay_interp_warning`
 
 ### Task 8.2: Normalize Regions Representation
 

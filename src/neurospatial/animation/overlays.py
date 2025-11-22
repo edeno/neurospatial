@@ -420,9 +420,11 @@ class VideoOverlay:
         Temporal interpolation method for aligning video to animation frames.
 
         - "nearest" (default): Use nearest video frame (no interpolation)
-        - "linear": Blend between adjacent frames (smoother but slower)
+        - "linear": **Not yet implemented** - emits warning and uses nearest
 
-        Default is "nearest".
+        Currently only "nearest" is supported. Linear interpolation for video
+        would require blending adjacent frames, which is expensive. A warning
+        is emitted if "linear" is requested. Default is "nearest".
 
     Attributes
     ----------
@@ -441,7 +443,7 @@ class VideoOverlay:
     downsample : int
         Spatial downsampling factor.
     interp : {"linear", "nearest"}
-        Temporal interpolation method.
+        Temporal interpolation method (currently only "nearest" is implemented).
 
     See Also
     --------
@@ -541,6 +543,20 @@ class VideoOverlay:
         # Validate source array if it's a numpy array
         if isinstance(self.source, np.ndarray):
             self._validate_source_array(self.source)
+
+        # Warn if linear interpolation is requested (not implemented for video)
+        if self.interp == "linear":
+            import warnings
+
+            warnings.warn(
+                "WHAT: VideoOverlay interp='linear' is not yet implemented.\n"
+                "WHY: Linear interpolation for video would require blending adjacent "
+                "frames, which is computationally expensive and rarely needed.\n"
+                "HOW: Using nearest-neighbor frame selection instead. Set interp='nearest' "
+                "explicitly to suppress this warning.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     def _validate_source_array(self, arr: NDArray[np.uint8]) -> None:
         """Validate source array has correct shape and dtype.

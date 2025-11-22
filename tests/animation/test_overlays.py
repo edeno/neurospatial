@@ -405,6 +405,30 @@ class TestVideoOverlayValidation:
         error_msg = str(exc_info.value)
         assert "downsample" in error_msg.lower()
 
+    def test_interp_linear_emits_warning(self):
+        """Test that interp='linear' emits UserWarning (not implemented for video)."""
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with pytest.warns(UserWarning) as record:
+            VideoOverlay(source=data, interp="linear")
+
+        # Verify warning message explains the limitation
+        assert len(record) >= 1
+        warning_msg = str(record[0].message)
+        assert "linear" in warning_msg.lower()
+        # Should suggest using nearest
+        assert "nearest" in warning_msg.lower()
+
+    def test_interp_nearest_no_warning(self):
+        """Test that interp='nearest' (default) does not emit warning."""
+        import warnings
+
+        data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            # Should not raise UserWarning
+            overlay = VideoOverlay(source=data, interp="nearest")
+            assert overlay.interp == "nearest"
+
 
 class TestVideoOverlayWithFilePath:
     """Test VideoOverlay with file path source."""

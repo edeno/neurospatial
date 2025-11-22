@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 7 - Task 7.3 (Update Animation Guide)
-**Next**: Milestone 8 - Post-Review Refinements
+**Completed**: Milestone 8 - Task 8.1 (Fix VideoOverlay.interp Not Honored)
+**Next**: Milestone 8 - Task 8.2 (Normalize Regions Representation)
 
 ---
 
@@ -276,4 +276,19 @@ None currently.
     - Added "Overlay Support by Backend" matrix with Video column
     - Added link to animation_overlays.md for VideoOverlay docs
   - All 804 animation tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.1 - Fix VideoOverlay.interp Not Honored
+  - **Decision**: Chose Option B - restrict to "nearest" only with warning
+    - Linear interpolation for video would require blending adjacent RGB frames
+    - Computationally expensive and rarely needed in practice
+  - Added `__post_init__` validation that emits UserWarning when `interp="linear"`
+    - WHAT/WHY/HOW format warning message
+  - Updated `VideoOverlay.interp` docstring to clarify only "nearest" is implemented
+    - Parameter docs clearly state "linear" is not yet implemented
+    - Attributes docs note current limitation
+  - Added tests:
+    - `test_interp_linear_emits_warning` - verifies warning contains "linear" and "nearest"
+    - `test_interp_nearest_no_warning` - verifies no warning for default value
+  - All 806 animation tests passing
   - ruff and mypy pass
