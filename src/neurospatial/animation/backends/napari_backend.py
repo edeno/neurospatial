@@ -404,9 +404,33 @@ def _add_video_layer(
     Z-ordering is controlled by the `z_order` attribute:
     - "below": Video layer is added before field layer (lower in stack)
     - "above": Video layer is added after field layer (higher in stack)
+
+    **Coordinate Transform Chain** (see animation/COORDINATES.md):
+
+    The affine parameter encodes the full transform: video_px → napari_px
+
+    .. code-block:: text
+
+        video_px ──► env_cm ──► napari_px
+                 │          │
+                 │          └── build_env_to_napari_matrix()
+                 │              (y-invert + axis swap + scale)
+                 │
+                 └── video_data.transform_to_env
+                     (y-flip + scale from calibration)
+
+    **Frame Index Mapping**:
+
+    ``video_data.frame_indices[anim_frame]`` maps animation frames to video frames:
+    - >= 0: Valid video frame index to display
+    - -1: No video frame available (animation time outside video range)
+
+    The callback ``_make_video_frame_callback()`` uses this mapping to update
+    ``layer.data`` when the animation frame changes.
     """
 
     # Build affine transform matrix
+    # Chains: video_px → env_cm → napari_px (see COORDINATES.md for details)
     affine = _build_video_napari_affine(video_data, env)
 
     # Get initial frame

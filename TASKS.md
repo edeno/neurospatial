@@ -458,12 +458,12 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Medium - Reduces debugging time for contributors
 
-- [ ] Create [src/neurospatial/animation/COORDINATES.md](src/neurospatial/animation/COORDINATES.md) (internal dev doc)
-  - [ ] Define three coordinate spaces: Video pixel, Environment cm, Napari world
-  - [ ] Document Y-flip policy: "flip happens ONCE in VideoCalibration"
-  - [ ] Include ASCII diagrams showing axis orientations
-- [ ] Add comments in `_add_video_layer()` explaining frame mapping contract
-- [ ] Add comments in `calibrate_from_scale_bar()` explaining coordinate flow
+- [x] Create [src/neurospatial/animation/COORDINATES.md](src/neurospatial/animation/COORDINATES.md) (internal dev doc)
+  - [x] Define three coordinate spaces: Video pixel, Environment cm, Napari world
+  - [x] Document Y-flip policy: "flip happens ONCE in VideoCalibration"
+  - [x] Include ASCII diagrams showing axis orientations
+- [x] Add comments in `_add_video_layer()` explaining frame mapping contract
+- [x] Add comments in `calibrate_from_scale_bar()` explaining coordinate flow
 
 ### Task 8.5: Add VideoReaderProtocol for Type Safety
 

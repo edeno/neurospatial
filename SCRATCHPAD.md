@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.3 (Centralize Pickle Validation Messages)
-**Next**: Milestone 8 - Task 8.4 (Document Coordinate Conventions)
+**Completed**: Milestone 8 - Task 8.4 (Document Coordinate Conventions)
+**Next**: Milestone 8 - Task 8.5 (Add VideoReaderProtocol for Type Safety)
 
 ---
 
@@ -327,4 +327,21 @@ None currently.
   - Updated test regex in `test_route_to_video_backend_pickle_validation`
   - 8 new tests in `tests/animation/test_utils.py`
   - All 818 animation tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.4 - Document Coordinate Conventions
+  - Created `src/neurospatial/animation/COORDINATES.md` (internal dev doc)
+    - Defines three coordinate spaces: Video pixel, Environment cm, Napari world
+    - Documents Y-flip policy: "flip happens ONCE in VideoCalibration"
+    - Includes ASCII diagrams showing axis orientations
+    - Documents transform chain: video_px → env_cm → napari_px
+    - Common bugs and how to avoid them
+    - Testing coordinate transforms
+  - Added comments in `_add_video_layer()` in napari_backend.py
+    - Coordinate transform chain diagram in docstring
+    - Frame index mapping documentation (-1 = no video for frame)
+  - Added comments in `calibrate_from_scale_bar()` in transforms.py
+    - Coordinate flow diagram in docstring
+    - Y-FLIP POLICY prominently documented
+  - All 40 video overlay tests passing
   - ruff and mypy pass

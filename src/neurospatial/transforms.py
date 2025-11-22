@@ -519,6 +519,24 @@ def calibrate_from_scale_bar(
     1. Y-flip via ``flip_y(frame_height)`` - converts top-left to bottom-left origin
     2. Uniform scaling via ``scale_2d(cm_per_px)`` - converts pixels to centimeters
 
+    **Coordinate Flow** (see ``animation/COORDINATES.md`` for details):
+
+    .. code-block:: text
+
+        video_px (y-down, origin top-left)
+            │
+            │  flip_y(frame_height)
+            ▼
+        flipped_px (y-up, origin bottom-left)
+            │
+            │  scale_2d(cm_per_px)
+            ▼
+        env_cm (y-up, in centimeters)
+
+    **Y-FLIP POLICY**: The Y-flip happens ONCE here in calibration.
+    All downstream code (matplotlib imshow, napari) should use ``origin="lower"``
+    or equivalent to preserve this orientation. Do NOT add another Y-flip elsewhere.
+
     Examples
     --------
     >>> from neurospatial.transforms import calibrate_from_scale_bar
