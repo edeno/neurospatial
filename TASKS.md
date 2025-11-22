@@ -497,11 +497,21 @@ improvements (frame naming, ffmpeg I/O, DPI warning), not optimizations.
 
 **Note**: Node names are expected to be strings (per type annotation). The comparison uses Python's string comparison, which is case-sensitive (uppercase < lowercase in ASCII).
 
-### 6.2 Precompute Adjacency
+### 6.2 Precompute Adjacency - COMPLETE
 
-- [ ] Add cached property: `adjacency: dict[str, list[str]]`
-- [ ] Useful for graph traversal and topology-based styling
-- [ ] Add tests for adjacency computation
+**Completed 2025-11-22**: Added `adjacency` property to Skeleton.
+
+- [x] Add `adjacency` property returning `dict[str, list[str]]`
+- [x] Precomputed in `__post_init__` for O(1) access
+- [x] Sorted neighbor lists for deterministic output
+- [x] 10 new tests in `TestSkeletonAdjacency`
+
+**Usage:**
+```python
+skeleton.adjacency["body"]  # Returns ['head', 'tail'] for chain skeleton
+```
+
+**Useful for:** Graph traversal, topology-based styling, finding connected components
 
 ---
 
@@ -540,8 +550,8 @@ improvements (frame naming, ffmpeg I/O, DPI warning), not optimizations.
 | Phase 2: Napari | Complete | 2.1-2.5 COMPLETE (42-50x skeleton speedup!) |
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
 | Phase 4: Widget | Complete | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
-| Phase 5: Video | **Complete** | 5.1-5.4 done (robustness improvements, no regression) |
-| Phase 6: Skeleton | Not started | |
+| Phase 5: Video | Complete | 5.1-5.4 done (robustness improvements, no regression) |
+| Phase 6: Skeleton | **Complete** | 6.1-6.2 done (edge normalization + adjacency property) |
 | Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |
 
 ---

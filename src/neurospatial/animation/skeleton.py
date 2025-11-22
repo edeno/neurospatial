@@ -72,6 +72,43 @@ def _normalize_edges(edges: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str
     return tuple(normalized)
 
 
+def _build_adjacency(
+    nodes: tuple[str, ...], edges: tuple[tuple[str, str], ...]
+) -> dict[str, list[str]]:
+    """Build adjacency list representation from nodes and edges.
+
+    Parameters
+    ----------
+    nodes : tuple[str, ...]
+        All node names in the skeleton.
+    edges : tuple[tuple[str, str], ...]
+        Edges as (node1, node2) pairs.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Mapping from each node to a sorted list of its neighbors.
+        All nodes are included, even isolated ones (empty lists).
+    """
+    # Initialize with all nodes (including isolated ones)
+    adjacency: dict[str, list[str]] = {node: [] for node in nodes}
+
+    # Add edges (undirected - add both directions)
+    for src, dst in edges:
+        if src == dst:
+            # Self-loop: add only once
+            adjacency[src].append(dst)
+        else:
+            adjacency[src].append(dst)
+            adjacency[dst].append(src)
+
+    # Sort neighbor lists for deterministic output
+    for node in adjacency:
+        adjacency[node].sort()
+
+    return adjacency
+
+
 # =============================================================================
 # Skeleton dataclass
 # =============================================================================
@@ -163,6 +200,9 @@ class Skeleton:
     edge_color: str = "white"
     edge_width: float = 1.0
     metadata: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    _adjacency: dict[str, list[str]] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         """Validate skeleton structure after initialization.
@@ -233,6 +273,10 @@ class Skeleton:
                     f"     Available nodes: {sorted(node_set)}"
                 )
 
+        # Precompute adjacency for graph traversal
+        adjacency = _build_adjacency(self.nodes, self.edges)
+        object.__setattr__(self, "_adjacency", adjacency)
+
     # -------------------------------------------------------------------------
     # Properties
     # -------------------------------------------------------------------------
@@ -246,6 +290,44 @@ class Skeleton:
     def n_edges(self) -> int:
         """Number of edges (connections) in the skeleton."""
         return len(self.edges)
+
+    @property
+    def adjacency(self) -> dict[str, list[str]]:
+        """Adjacency list representation of the skeleton graph.
+
+        Maps each node to a sorted list of its neighbors. Since skeleton
+        edges are undirected, if A-B is an edge, both A's list contains B
+        and B's list contains A.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping from each node name to a sorted list of neighbor names.
+            All nodes are included, even isolated ones (which have empty lists).
+
+        Examples
+        --------
+        >>> skeleton = Skeleton(
+        ...     name="chain",
+        ...     nodes=("head", "body", "tail"),
+        ...     edges=(("head", "body"), ("body", "tail")),
+        ... )
+        >>> skeleton.adjacency["head"]
+        ['body']
+        >>> sorted(skeleton.adjacency["body"])
+        ['head', 'tail']
+        >>> skeleton.adjacency["tail"]
+        ['body']
+
+        Notes
+        -----
+        Precomputed at initialization for O(1) access. Useful for:
+        - Graph traversal algorithms
+        - Topology-based styling
+        - Finding connected components
+        """
+        assert self._adjacency is not None  # Guaranteed by __post_init__
+        return self._adjacency
 
     # -------------------------------------------------------------------------
     # Factory methods for format conversion

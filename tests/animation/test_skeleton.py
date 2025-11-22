@@ -470,3 +470,117 @@ class TestSkeletonEdgeNormalization:
         assert ("neck", "nose") in skeleton.edges  # "neck" < "nose"
         assert ("body", "neck") in skeleton.edges  # "body" < "neck"
         assert ("body", "tail") in skeleton.edges  # "body" < "tail"
+
+
+class TestSkeletonAdjacency:
+    """Test Skeleton adjacency property for graph traversal."""
+
+    def test_adjacency_returns_dict(self):
+        """Test that adjacency property returns a dict."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"),),
+        )
+        assert isinstance(skeleton.adjacency, dict)
+
+    def test_adjacency_contains_all_nodes(self):
+        """Test that adjacency dict contains all nodes."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b", "c"),
+            edges=(("a", "b"),),
+        )
+        # All nodes should be in adjacency, even isolated ones
+        assert "a" in skeleton.adjacency
+        assert "b" in skeleton.adjacency
+        assert "c" in skeleton.adjacency
+
+    def test_adjacency_simple_edge(self):
+        """Test adjacency for a simple two-node skeleton."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"),),
+        )
+        # Both directions should be present (undirected)
+        assert "b" in skeleton.adjacency["a"]
+        assert "a" in skeleton.adjacency["b"]
+
+    def test_adjacency_chain(self):
+        """Test adjacency for a chain of nodes."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("head", "body", "tail"),
+            edges=(("head", "body"), ("body", "tail")),
+        )
+        # head connects to body only
+        assert skeleton.adjacency["head"] == ["body"]
+        # body connects to both head and tail
+        assert set(skeleton.adjacency["body"]) == {"head", "tail"}
+        # tail connects to body only
+        assert skeleton.adjacency["tail"] == ["body"]
+
+    def test_adjacency_isolated_node(self):
+        """Test that isolated nodes have empty adjacency list."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b", "isolated"),
+            edges=(("a", "b"),),
+        )
+        assert skeleton.adjacency["isolated"] == []
+
+    def test_adjacency_hub_node(self):
+        """Test adjacency for a node with multiple connections (hub)."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("hub", "a", "b", "c"),
+            edges=(("hub", "a"), ("hub", "b"), ("hub", "c")),
+        )
+        # Hub connects to a, b, c
+        assert set(skeleton.adjacency["hub"]) == {"a", "b", "c"}
+        # Each peripheral node connects only to hub
+        assert skeleton.adjacency["a"] == ["hub"]
+        assert skeleton.adjacency["b"] == ["hub"]
+        assert skeleton.adjacency["c"] == ["hub"]
+
+    def test_adjacency_self_loop(self):
+        """Test adjacency for self-loop edge."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a",),
+            edges=(("a", "a"),),
+        )
+        # Self-loop: node is adjacent to itself
+        assert skeleton.adjacency["a"] == ["a"]
+
+    def test_adjacency_is_cached(self):
+        """Test that adjacency is cached (same object returned)."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"),),
+        )
+        adj1 = skeleton.adjacency
+        adj2 = skeleton.adjacency
+        assert adj1 is adj2  # Same object (cached)
+
+    def test_adjacency_sorted_neighbors(self):
+        """Test that neighbor lists are sorted for deterministic output."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("center", "z", "a", "m"),
+            edges=(("center", "z"), ("center", "a"), ("center", "m")),
+        )
+        # Neighbors should be sorted alphabetically
+        assert skeleton.adjacency["center"] == ["a", "m", "z"]
+
+    def test_adjacency_complex_skeleton(self):
+        """Test adjacency on SIMPLE_SKELETON preset."""
+        from neurospatial.animation.skeleton import SIMPLE_SKELETON
+
+        adj = SIMPLE_SKELETON.adjacency
+        # nose-body-tail chain
+        assert adj["nose"] == ["body"]
+        assert set(adj["body"]) == {"nose", "tail"}
+        assert adj["tail"] == ["body"]

@@ -1113,6 +1113,51 @@ Updated 4 tests in `test_skeleton_vectors.py` to expect canonical edge names.
 - 30 napari overlay tests pass
 - ruff and mypy pass
 
-## Next Task: Phase 6.2 - Precompute Adjacency
+## Completed: Phase 6.2 - Precompute Adjacency (2025-11-22)
+
+### What Was Done
+
+Added `adjacency` property to Skeleton for graph traversal.
+
+### Implementation
+
+1. **Added `_adjacency` field**: Private field to store precomputed adjacency dict
+2. **Added `_build_adjacency()` helper function**: Builds adjacency list from nodes/edges
+3. **Added `adjacency` property**: Returns precomputed adjacency dict
+
+### Key Features
+
+- **Undirected edges**: Both `adj[a]` contains `b` and `adj[b]` contains `a`
+- **Sorted neighbors**: Deterministic output for consistent behavior
+- **All nodes included**: Even isolated nodes (empty neighbor lists)
+- **Self-loops supported**: Node appears in its own neighbor list once
+- **O(1) access**: Precomputed at initialization
+
+### Tests Added
+
+10 new tests in `TestSkeletonAdjacency`:
+- `test_adjacency_returns_dict`
+- `test_adjacency_contains_all_nodes`
+- `test_adjacency_simple_edge`
+- `test_adjacency_chain`
+- `test_adjacency_isolated_node`
+- `test_adjacency_hub_node`
+- `test_adjacency_self_loop`
+- `test_adjacency_is_cached`
+- `test_adjacency_sorted_neighbors`
+- `test_adjacency_complex_skeleton`
+
+### Test Results
+
+- 49 skeleton tests pass
+- ruff and mypy pass
+
+## Phase 6 Complete
+
+Both Phase 6 tasks are now complete:
+- 6.1: Edge canonicalization and deduplication
+- 6.2: Adjacency property
+
+## Next Task: Phase 7.1 - Unit Tests
 
 See TASKS.md for details.
