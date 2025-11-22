@@ -33,6 +33,24 @@
 5. Implement `core.py` (M5.1)
 6. Update main `__init__.py` (M1.2)
 
+### 2025-11-22 Session 2: Code & UX Review Fixes
+
+**Completed**:
+- Addressed critical issues from code-reviewer and ux-reviewer subagents
+- Added parameter validation tests for `annotate_video()`
+- Improved napari ImportError with installation guidance
+- Added FileNotFoundError for missing video files
+- Added warning when empty annotations returned
+- Added warning for multiple environment boundaries (uses last one)
+- Improved type annotations for `get_annotation_data()` and `_add_initial_regions()`
+- Complete NumPy-style docstring for `_add_initial_regions()`
+
+**Review Summary**:
+- Code reviewer identified 4 critical, 6 important, and 3 minor issues
+- UX reviewer identified 2 critical, 3 important, and 2 minor issues
+- All critical and important issues addressed
+- Final verification checklist passed
+
 ---
 
 ## Blockers

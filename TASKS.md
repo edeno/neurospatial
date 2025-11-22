@@ -104,11 +104,11 @@ uv run pytest                                # Full suite
 
 Before marking complete:
 
-- [ ] All annotation tests pass: `uv run pytest tests/annotation/ -v`
-- [ ] Full test suite passes: `uv run pytest`
-- [ ] Linting passes: `uv run ruff check . && uv run ruff format .`
-- [ ] Type checking passes: `uv run mypy src/neurospatial/annotation/`
-- [ ] Public API imports work:
+- [x] All annotation tests pass: `uv run pytest tests/annotation/ -v`
+- [x] Full test suite passes: `uv run pytest`
+- [x] Linting passes: `uv run ruff check . && uv run ruff format .`
+- [x] Type checking passes: `uv run mypy src/neurospatial/annotation/`
+- [x] Public API imports work:
 
   ```python
   from neurospatial import annotate_video, regions_from_labelme, regions_from_cvat
