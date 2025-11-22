@@ -227,7 +227,13 @@ def render_html(
     dpi : int, default=100
         Resolution for rendering in dots per inch.
     image_format : {"png", "jpeg"}, default="png"
-        Image format. PNG is lossless, JPEG is smaller but lossy.
+        Image format for frames. PNG is lossless with sharp edges (ideal for
+        scientific visualization). JPEG is lossy but typically 2-10x smaller
+        for high-DPI renders (dpi >= 100).
+
+        **Recommendation**: Use ``image_format='jpeg'`` when file size matters
+        and you're using high DPI. For low DPI (<100) or when preserving exact
+        values matters, use PNG (default).
     max_html_frames : int, default=500
         Maximum number of frames allowed. Prevents creating huge HTML files
         that crash browsers.

@@ -285,6 +285,11 @@ class HeadDirectionOverlay:
         Color for arrows (matplotlib color string). Default is "yellow".
     length : float, optional
         Arrow length in environment coordinate units. Default is 0.25.
+
+        **Important**: The default value (0.25) may be too small for many environments.
+        For environments measured in centimeters (e.g., bin_size=5.0), consider using
+        length=10.0 to 20.0 for visible arrows. A good rule of thumb is to use
+        approximately 2-4x your bin_size.
     width : float, optional
         Arrow line width in pixels. Default is 1.0.
     interp : {"linear", "nearest"}, optional

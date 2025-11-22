@@ -252,12 +252,15 @@ def render_video(
         width_px = int(default_figsize[0] * dpi)
         height_px = int(default_figsize[1] * dpi)
         warnings.warn(
-            f"High DPI detected: dpi={dpi} will produce {width_px}x{height_px} pixel frames.\n"
-            f"This may result in:\n"
+            f"RECOMMENDATION: Use dpi=100 (default) or dpi=150 for most use cases.\n\n"
+            f"WHAT: High DPI detected (dpi={dpi}) producing {width_px}x{height_px} frames.\n\n"
+            f"WHY: High-resolution frames cause:\n"
             f"  - Large video file sizes\n"
-            f"  - Slow rendering times\n"
-            f"  - High memory usage\n"
-            f"Consider using dpi=100 or dpi=150 for most use cases.",
+            f"  - Slow rendering (4x pixels at dpi=200 vs dpi=100)\n"
+            f"  - High memory usage during rendering\n\n"
+            f"HOW: Reduce DPI to speed up export:\n"
+            f"  env.animate_fields(fields, backend='video', dpi=100)  # 800x600\n"
+            f"  env.animate_fields(fields, backend='video', dpi=150)  # 1200x900",
             UserWarning,
             stacklevel=2,
         )

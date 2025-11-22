@@ -128,10 +128,29 @@ def animate_fields(
 
     Examples
     --------
+    Basic animation:
+
     >>> positions = np.random.randn(100, 2) * 50  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
     >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]  # doctest: +SKIP
     >>> env.animate_fields(fields, backend="napari")  # doctest: +SKIP
+
+    Mixed-rate temporal alignment (e.g., 120 Hz tracking → 10 Hz fields):
+
+    >>> # Position tracked at 120 Hz, fields computed at 10 Hz
+    >>> from neurospatial import PositionOverlay  # doctest: +SKIP
+    >>> position_overlay = PositionOverlay(
+    ...     data=trajectory_120hz,  # (n_samples_120hz, 2)
+    ...     times=timestamps_120hz,  # Overlay timestamps
+    ...     color="red",
+    ...     trail_length=15,
+    ... )  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields_10hz,
+    ...     overlays=[position_overlay],
+    ...     frame_times=timestamps_10hz,  # Field timestamps
+    ...     backend="napari",
+    ... )  # doctest: +SKIP
 
     Notes
     -----

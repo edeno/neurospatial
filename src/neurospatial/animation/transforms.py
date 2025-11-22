@@ -171,12 +171,14 @@ def _warn_fallback(suppress: bool = False) -> None:
         return
     if not _TRANSFORM_FALLBACK_WARNED:
         warnings.warn(
-            "Napari coordinate transform falling back to simple axis swap.\n"
-            "This may cause misalignment between overlays and the field image.\n\n"
-            "CAUSE: Environment lacks dimension_ranges or layout.grid_shape.\n\n"
-            "FIX: Ensure your environment has proper dimension ranges:\n"
+            "WHAT: Napari coordinate transform falling back to simple axis swap.\n"
+            "  This may cause misalignment between overlays and the field image.\n\n"
+            "WHY: Environment lacks required attributes for proper scaling:\n"
+            "  - dimension_ranges: needed to compute spatial bounds\n"
+            "  - layout.grid_shape: needed to compute pixel scaling\n\n"
+            "HOW: Ensure your environment has proper dimension ranges:\n"
             "  - Use Environment.from_samples() which computes ranges automatically\n"
-            "  - Or set env.dimension_ranges manually\n"
+            "  - Or set env.dimension_ranges manually after creation\n"
             "  - For custom layouts, ensure layout.grid_shape is defined",
             UserWarning,
             stacklevel=4,

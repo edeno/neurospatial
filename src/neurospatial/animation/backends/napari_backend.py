@@ -1498,8 +1498,14 @@ def _render_multi_field_napari(
     # Validation
     if layout is None:
         raise ValueError(
-            "Multi-field input requires 'layout' parameter. "
-            "Choose from: 'horizontal', 'vertical', 'grid'"
+            "WHAT: Multi-field input requires 'layout' parameter.\n"
+            "  Current: layout=None\n"
+            "  Available: 'horizontal', 'vertical', 'grid'\n\n"
+            "WHY: Multiple field sequences must be arranged spatially for comparison.\n\n"
+            "HOW: Specify layout when animating multiple fields:\n"
+            "  env.animate_fields(fields, layout='horizontal')  # Side-by-side\n"
+            "  env.animate_fields(fields, layout='vertical')    # Stacked\n"
+            "  env.animate_fields(fields, layout='grid')        # 2D grid"
         )
 
     n_sequences = len(field_sequences)
@@ -1508,8 +1514,18 @@ def _render_multi_field_napari(
     sequence_lengths = [len(seq) for seq in field_sequences]
     if len(set(sequence_lengths)) > 1:
         raise ValueError(
-            f"All field sequences must have the same length. "
-            f"Got lengths: {sequence_lengths}"
+            f"WHAT: All field sequences must have the same length.\n"
+            f"  Got lengths: {sequence_lengths}\n"
+            f"  Expected: {sequence_lengths[0]} frames (from first sequence)\n\n"
+            f"WHY: Animation requires synchronized frames across all fields.\n\n"
+            f"HOW: Ensure all field sequences have the same number of frames:\n"
+            f"  # Truncate to shortest sequence\n"
+            f"  min_len = min(len(seq) for seq in field_sequences)\n"
+            f"  fields = [[seq[:min_len] for seq in field_sequences]]\n\n"
+            f"  # Or pad shorter sequences\n"
+            f"  max_len = max(len(seq) for seq in field_sequences)\n"
+            f"  fields = [[list(seq) + [seq[-1]] * (max_len - len(seq)) "
+            f"for seq in field_sequences]]"
         )
 
     # Generate layer names if not provided
