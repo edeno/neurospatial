@@ -229,11 +229,32 @@ a bottleneck in the future, caching can be added then.
 
 ## Phase 4: Widget Backend Performance
 
-### 4.1 Clarify Fallback in `PersistentFigureRenderer`
+### 4.1 Clarify Fallback in `PersistentFigureRenderer` - COMPLETE
 
-- [ ] In `render()`: log when `_field_to_image_data` returns `None`
-- [ ] Consider debug flag to raise instead of silent fallback
-- [ ] Document performance implications
+**Completed 2025-11-21**: Fixed optimization and added fallback diagnostics.
+
+- [x] Fixed `set_array` optimization to work with `pcolormesh` (uses `QuadMesh.set_array()`)
+- [x] In `render()`: log at DEBUG level when fallback to full re-render is required
+- [x] Added `raise_on_fallback=True` debug flag to raise RuntimeError instead of silent fallback
+- [x] Added `_field_to_mesh_array()` method for QuadMesh-compatible data conversion
+- [x] Added `_do_full_rerender()` helper method for DRY fallback path
+- [x] Document performance implications in docstrings
+
+**Key Changes**:
+
+- **Fixed optimization**: Changed from looking for `AxesImage` in `ax.images` (for `imshow`)
+  to looking for `QuadMesh` in `ax.collections` (for `pcolormesh`). Grid layouts now use
+  efficient `set_array()` updates instead of full re-render.
+- **Fallback logging**: Non-grid layouts (hexagonal, graph, mesh) trigger DEBUG log message
+  explaining why fallback is required.
+- **Debug flag**: `PersistentFigureRenderer(..., raise_on_fallback=True)` raises RuntimeError
+  on fallback, useful for debugging performance issues.
+
+**New Tests** (`tests/animation/test_widget_fallback.py`):
+
+- 13 tests covering fallback logging, debug flag, valid output, and `_field_to_mesh_array`
+- Tests verify grid layouts use optimization (no fallback)
+- Tests verify hex layouts trigger fallback with informative log
 
 ### 4.2 Stabilize Overlay Artist Lifecycle
 
@@ -290,7 +311,7 @@ a bottleneck in the future, caching can be added then.
 
 ### 6.1 Normalize Edges in `Skeleton`
 
-- [ ] In `__post_init__` or factory: canonicalize edges to sorted `(min(node), max(node))`
+- [ ] In `__post_init__` or factory: canonicalize edges to sorted `(min(node), max(node))` (what if the edges are strings?)
 - [ ] Optionally deduplicate edges
 - [ ] Test: reversed duplicates handled gracefully
 

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import io
+import logging
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._timing import timing
+
+# Module-level logger for fallback diagnostics
+_logger = logging.getLogger("neurospatial.animation.backends.widget_backend")
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -234,6 +238,7 @@ class PersistentFigureRenderer:
         vmin: float,
         vmax: float,
         dpi: int = 100,
+        raise_on_fallback: bool = False,
     ) -> None:
         """Initialize the persistent figure renderer.
 
@@ -249,6 +254,11 @@ class PersistentFigureRenderer:
             Maximum value for colormap
         dpi : int, default=100
             Resolution for rendering
+        raise_on_fallback : bool, default=False
+            If True, raise RuntimeError when fallback to full re-render is required
+            (e.g., for non-grid layouts). Useful for debugging performance issues.
+            If False (default), fallback is logged at DEBUG level and rendering
+            continues.
         """
         # Set Agg backend BEFORE any pyplot imports
         try:
@@ -263,19 +273,21 @@ class PersistentFigureRenderer:
             pass
 
         import matplotlib.pyplot as plt
-        from matplotlib.image import AxesImage
+        from matplotlib.collections import QuadMesh
 
         self._env = env
         self._cmap = cmap
         self._vmin = vmin
         self._vmax = vmax
         self._dpi = dpi
+        self._raise_on_fallback = raise_on_fallback
         self._plt = plt  # Store reference to prevent issues with lazy imports
+        self._QuadMesh = QuadMesh  # Store class reference for isinstance checks
 
         # Create persistent figure
         self._fig, self._ax = plt.subplots(figsize=(8, 6), dpi=dpi)
         self._ax.set_axis_off()
-        self._image: AxesImage | None = None  # Will hold AxesImage after first render
+        self._mesh: QuadMesh | None = None  # Will hold QuadMesh after first render
         self._is_first_render = True
         self._overlay_manager: Any = None  # Initialized on first render with overlays
 
@@ -320,9 +332,12 @@ class PersistentFigureRenderer:
                 vmax=self._vmax,
                 colorbar=False,
             )
-            # Store reference to the primary image artist for future updates
-            if self._ax.images:
-                self._image = self._ax.images[0]
+            # Store reference to QuadMesh (from pcolormesh) for efficient updates
+            # plot_field uses pcolormesh which creates QuadMesh in ax.collections
+            for collection in self._ax.collections:
+                if isinstance(collection, self._QuadMesh):
+                    self._mesh = collection
+                    break
 
             # Initialize overlay manager if we have overlays
             if overlay_data is not None or show_regions:
@@ -337,60 +352,30 @@ class PersistentFigureRenderer:
 
             self._is_first_render = False
         else:
-            # Subsequent renders: update image data using set_data
-            if self._image is not None:
-                # Get the 2D array from the field based on layout type
-                grid_data = self._field_to_image_data(field)
-                if grid_data is not None:
-                    self._image.set_data(grid_data)
+            # Subsequent renders: update mesh data using set_array (efficient)
+            if self._mesh is not None:
+                # Check if layout supports efficient updates
+                mesh_data = self._field_to_mesh_array(field)
+                if mesh_data is not None:
+                    self._mesh.set_array(mesh_data)
                 else:
                     # Fallback: re-render completely for non-grid layouts
-                    self._ax.clear()
-                    self._ax.set_axis_off()
-                    self._env.plot_field(
-                        field,
-                        ax=self._ax,
-                        cmap=self._cmap,
-                        vmin=self._vmin,
-                        vmax=self._vmax,
-                        colorbar=False,
+                    layout_type = getattr(self._env.layout, "layout_type", "unknown")
+                    fallback_reason = (
+                        f"set_array optimization not supported for layout type "
+                        f"'{layout_type}' (is_grid_compatible=False)"
                     )
-                    if self._ax.images:
-                        self._image = self._ax.images[0]
-                    # Reset overlay manager for re-initialized axes
-                    if overlay_data is not None or show_regions:
-                        self._overlay_manager = OverlayArtistManager(
-                            ax=self._ax,
-                            env=self._env,
-                            overlay_data=overlay_data,
-                            show_regions=show_regions,
-                            region_alpha=region_alpha,
-                        )
-                        self._overlay_manager.initialize(frame_idx=frame_idx)
+                    self._handle_fallback(fallback_reason)
+                    self._do_full_rerender(
+                        field, overlay_data, show_regions, region_alpha, frame_idx
+                    )
             else:
-                # No image artist found, re-render completely
-                self._ax.clear()
-                self._ax.set_axis_off()
-                self._env.plot_field(
-                    field,
-                    ax=self._ax,
-                    cmap=self._cmap,
-                    vmin=self._vmin,
-                    vmax=self._vmax,
-                    colorbar=False,
+                # No mesh found, re-render completely
+                fallback_reason = "QuadMesh not found in axes, requiring full re-render"
+                self._handle_fallback(fallback_reason)
+                self._do_full_rerender(
+                    field, overlay_data, show_regions, region_alpha, frame_idx
                 )
-                if self._ax.images:
-                    self._image = self._ax.images[0]
-                # Reset overlay manager for re-initialized axes
-                if overlay_data is not None or show_regions:
-                    self._overlay_manager = OverlayArtistManager(
-                        ax=self._ax,
-                        env=self._env,
-                        overlay_data=overlay_data,
-                        show_regions=show_regions,
-                        region_alpha=region_alpha,
-                    )
-                    self._overlay_manager.initialize(frame_idx=frame_idx)
 
             # Update overlays using manager
             if self._overlay_manager is not None:
@@ -403,10 +388,142 @@ class PersistentFigureRenderer:
             buf.seek(0)
             return buf.read()
 
+    def _handle_fallback(self, reason: str) -> None:
+        """Handle fallback to full re-render.
+
+        Logs the fallback at DEBUG level, or raises RuntimeError if
+        raise_on_fallback is True.
+
+        Parameters
+        ----------
+        reason : str
+            Description of why fallback is needed.
+
+        Raises
+        ------
+        RuntimeError
+            If raise_on_fallback was set to True in the constructor.
+        """
+        message = f"PersistentFigureRenderer fallback to full re-render: {reason}"
+
+        if self._raise_on_fallback:
+            raise RuntimeError(message)
+
+        _logger.debug(message)
+
+    def _do_full_rerender(
+        self,
+        field: NDArray[np.float64],
+        overlay_data: Any | None,
+        show_regions: bool | list[str],
+        region_alpha: float,
+        frame_idx: int,
+    ) -> None:
+        """Perform full re-render (fallback path).
+
+        Clears axes and redraws everything from scratch. This is slower
+        than the optimized set_array path but works for all layout types.
+
+        Parameters
+        ----------
+        field : ndarray
+            Field values to render.
+        overlay_data : OverlayData or None
+            Overlay data structure.
+        show_regions : bool or list of str
+            Region display settings.
+        region_alpha : float
+            Region transparency.
+        frame_idx : int
+            Current frame index.
+        """
+        from neurospatial.animation._parallel import OverlayArtistManager
+
+        self._ax.clear()
+        self._ax.set_axis_off()
+        self._env.plot_field(
+            field,
+            ax=self._ax,
+            cmap=self._cmap,
+            vmin=self._vmin,
+            vmax=self._vmax,
+            colorbar=False,
+        )
+
+        # Find new QuadMesh after re-render
+        self._mesh = None
+        for collection in self._ax.collections:
+            if isinstance(collection, self._QuadMesh):
+                self._mesh = collection
+                break
+
+        # Reset overlay manager for re-initialized axes
+        if overlay_data is not None or show_regions:
+            self._overlay_manager = OverlayArtistManager(
+                ax=self._ax,
+                env=self._env,
+                overlay_data=overlay_data,
+                show_regions=show_regions,
+                region_alpha=region_alpha,
+            )
+            self._overlay_manager.initialize(frame_idx=frame_idx)
+
+    def _field_to_mesh_array(
+        self, field: NDArray[np.float64]
+    ) -> NDArray[np.float64] | None:
+        """Convert field to flat array suitable for QuadMesh.set_array().
+
+        Parameters
+        ----------
+        field : ndarray, shape (n_bins,)
+            Field values to convert
+
+        Returns
+        -------
+        ndarray or None
+            Flat array for set_array() if grid layout, None otherwise.
+
+        Notes
+        -----
+        For pcolormesh with shading='flat' (default), the array should have
+        shape (nrows * ncols,). The array is flattened in row-major order
+        from the transposed grid (grid_data.T.ravel()).
+        """
+        layout = self._env.layout
+
+        # Only grid-compatible layouts can use set_array optimization
+        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        if not getattr(layout, "is_grid_compatible", False):
+            return None
+
+        # Check required grid attributes
+        if (
+            not hasattr(layout, "grid_shape")
+            or layout.grid_shape is None
+            or not hasattr(layout, "active_mask")
+            or layout.active_mask is None
+        ):
+            return None
+
+        from neurospatial.layout.helpers.utils import map_active_data_to_grid
+
+        # Convert to grid
+        grid_data: NDArray[np.float64] = map_active_data_to_grid(
+            layout.grid_shape, layout.active_mask, field, fill_value=np.nan
+        )
+
+        # Transpose and flatten for pcolormesh set_array
+        # pcolormesh expects data in the same shape/order as when first created
+        return np.asarray(grid_data.T.ravel(), dtype=np.float64)
+
     def _field_to_image_data(
         self, field: NDArray[np.float64]
     ) -> NDArray[np.float64] | None:
         """Convert field to 2D image data suitable for set_data().
+
+        .. deprecated::
+            Use `_field_to_mesh_array` instead. This method is retained for
+            backwards compatibility with code that may use imshow.
 
         Parameters
         ----------

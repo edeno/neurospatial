@@ -662,6 +662,50 @@ def _validate_field_types_consistent(fields: list) -> None:
 - 17 existing tests in `tests/animation/test_napari_multi_field.py`
 - All 31 tests pass
 
-## Next Task: Phase 3.5 - Re-profile Conversion Time
+## Completed: Phase 4.1 - Clarify Fallback in PersistentFigureRenderer (2025-11-21)
+
+### Problem
+
+The `PersistentFigureRenderer` was designed to use `set_data()` optimization but it never worked:
+- `plot_field` uses `pcolormesh` which creates `QuadMesh` in `ax.collections`
+- The code was looking for `AxesImage` in `ax.images` (used by `imshow`)
+- Result: EVERY render was a full re-render, even for grid layouts
+
+### Solution
+
+1. **Fixed optimization to work with pcolormesh**:
+   - Now looks for `QuadMesh` in `ax.collections` instead of `AxesImage` in `ax.images`
+   - Uses `QuadMesh.set_array()` instead of `AxesImage.set_data()`
+   - Added `_field_to_mesh_array()` method for QuadMesh-compatible flat array
+
+2. **Added fallback logging**:
+   - Non-grid layouts trigger DEBUG log explaining why fallback is required
+   - Message includes layout type and reason
+
+3. **Added debug flag**:
+   - `raise_on_fallback=True` parameter raises RuntimeError instead of silent fallback
+   - Useful for debugging performance issues
+
+### Key Changes
+
+```python
+# Before: Looking for wrong type, never found anything
+if self._ax.images:
+    self._image = self._ax.images[0]  # Always empty for pcolormesh!
+
+# After: Find QuadMesh from pcolormesh
+for collection in self._ax.collections:
+    if isinstance(collection, self._QuadMesh):
+        self._mesh = collection
+        break
+```
+
+### Test Results
+
+- 13 new tests in `tests/animation/test_widget_fallback.py`
+- All 18 widget backend tests pass
+- All 540 animation tests pass
+
+## Next Task: Phase 4.2 - Stabilize Overlay Artist Lifecycle
 
 See TASKS.md for details.
