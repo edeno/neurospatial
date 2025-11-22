@@ -172,6 +172,62 @@ overlay = HeadDirectionOverlay(
 - `color`: Arrow color (default: `"yellow"`)
 - `length`: Arrow length in environment units (default: `20.0`)
 
+### Video Overlay (v0.5.0+)
+
+Display raw behavioral video frames as a background or foreground layer with spatial calibration.
+
+```python
+from neurospatial.animation import VideoOverlay, calibrate_video
+
+# Calibrate video to environment coordinates
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    landmarks_px=arena_corners_px,    # Video pixel coordinates
+    landmarks_env=arena_corners_env,  # Environment cm coordinates
+)
+
+# Create video overlay
+overlay = VideoOverlay(
+    source="session.mp4",       # Path or pre-loaded array
+    calibration=calibration,    # Pixel↔cm transform
+    alpha=0.5,                  # Blend opacity (0-1)
+    z_order="above",            # "above" or "below" field
+)
+
+# Animate with video background
+env.animate_fields(
+    fields,
+    overlays=[overlay],
+    backend="napari"  # or "video", "widget"
+)
+```
+
+**Parameters:**
+
+- `source`: Path to video file or pre-loaded array `(n_frames, height, width, 3)`
+- `calibration`: `VideoCalibration` object for spatial alignment (optional but recommended)
+- `times`: Video frame timestamps for temporal alignment (default: synthesized from fps)
+- `alpha`: Opacity of video layer, 0.0=transparent, 1.0=opaque (default: `0.5`)
+- `z_order`: Draw order relative to field - `"above"` (default) or `"below"`
+- `crop`: Crop region `(x, y, width, height)` in pixels (default: `None`)
+- `downsample`: Spatial downsampling factor, e.g., 2 = half resolution (default: `1`)
+
+**Best practices:**
+
+| Goal | Settings | Result |
+|------|----------|--------|
+| Balanced view | `alpha=0.5, z_order="above"` | Equal video/field visibility (default) |
+| Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
+| Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
+| Video as background | `z_order="below"` | Only works if field has transparent regions |
+
+**Requirements:**
+
+- 2D environments only (`env.n_dims == 2`)
+- Not supported for 1D linearized tracks or 3D environments
+- Non-grid 2D environments work with approximate alignment (warning emitted)
+
 ## Multi-Animal Support
 
 Track multiple animals by passing **multiple overlays of the same type**:
@@ -290,17 +346,17 @@ env.animate_fields(
 
 Not all backends support all overlay types.
 
-| Backend | Position | Bodypart | HeadDirection | Regions |
-|---------|----------|----------|---------------|---------|
-| **Napari** | ✓ | ✓ | ✓ | ✓ |
-| **Video** | ✓ | ✓ | ✓ | ✓ |
-| **HTML** | ✓ | ✗ | ✗ | ✓ |
-| **Widget** | ✓ | ✓ | ✓ | ✓ |
+| Backend | Position | Bodypart | HeadDirection | Video | Regions |
+|---------|----------|----------|---------------|-------|---------|
+| **Napari** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
+| **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **HTML backend limitations:**
 
 - Supports **positions** and **regions** only
-- **Bodypart and head direction overlays are silently ignored**
+- **Bodypart, head direction, and video overlays are skipped with warnings**
 - Emits warnings for unsupported overlays before rendering
 - Animation proceeds with only supported overlays rendered
 - Suggestion: Use video or napari backend for full overlay features
@@ -317,6 +373,137 @@ env.animate_fields(
 #              Consider using 'video' or 'napari' backend for full overlay support.
 # → Animation proceeds with only position_overlay rendered
 ```
+
+## Video Overlay Coordinate Systems (v0.5.0+)
+
+VideoOverlay requires calibration to align video pixels to environment coordinates.
+
+### Coordinate Spaces
+
+Three coordinate systems are involved:
+
+| Space | Origin | X-axis | Y-axis | Units |
+|-------|--------|--------|--------|-------|
+| **Video Pixel** | Top-left | Right (columns) | Down (rows) | Pixels |
+| **Environment** | Bottom-left | Right | Up | cm (or your units) |
+| **Napari Display** | Top-left | Right (columns) | Down (rows) | Pixels |
+
+The calibration transform handles the coordinate conversion, including:
+
+1. **Y-axis flip**: Video origin (top-left) → Environment origin (bottom-left)
+2. **Scale**: Pixels → centimeters
+3. **Rotation/Translation**: If camera and arena are not perfectly aligned
+
+### Calibration Methods
+
+Choose the method that matches your available reference data:
+
+#### Method 1: Scale Bar (Simplest)
+
+Use when you have two points of known distance in the video.
+
+```python
+from neurospatial.animation import calibrate_video
+
+# Two endpoints of a scale bar (e.g., ruler in video)
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    scale_bar=((100, 200), (300, 200), 50.0),  # px1, px2, length_cm
+)
+```
+
+**Limitations:** Assumes uniform scaling and standard camera orientation (no rotation).
+
+#### Method 2: Landmark Correspondences (Most Flexible)
+
+Use when you can identify the same points in both video and environment.
+
+```python
+import numpy as np
+from neurospatial.animation import calibrate_video
+
+# Arena corners in video pixels (x, y)
+corners_px = np.array([
+    [50, 50],    # Top-left in video
+    [590, 50],   # Top-right
+    [590, 430],  # Bottom-right
+    [50, 430],   # Bottom-left
+])
+
+# Same corners in environment coordinates (x_cm, y_cm)
+corners_env = np.array([
+    [0, 80],     # Environment top-left (high Y)
+    [100, 80],   # Environment top-right
+    [100, 0],    # Environment bottom-right (low Y)
+    [0, 0],      # Environment bottom-left
+])
+
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    landmarks_px=corners_px,
+    landmarks_env=corners_env,
+)
+```
+
+**Best for:** Cameras at angles, non-uniform scaling, or complex arena geometries.
+
+#### Method 3: Direct Scale Factor
+
+Use when you know the exact cm-per-pixel ratio.
+
+```python
+from neurospatial.animation import calibrate_video
+
+# 4 pixels = 1 cm
+calibration = calibrate_video(
+    "session.mp4",
+    env,
+    cm_per_px=0.25,
+)
+```
+
+**Limitations:** Assumes uniform scaling, no rotation, and video origin at environment origin.
+
+### Calibration Comparison
+
+| Method | Accuracy | Ease of Use | Best For |
+|--------|----------|-------------|----------|
+| **Scale bar** | Medium | Easiest | Quick setup, overhead cameras |
+| **Landmarks** | Highest | More work | Angled cameras, precise alignment |
+| **cm_per_px** | Low-Medium | Easy | Known camera setup |
+
+### Troubleshooting Spatial Misalignment
+
+#### Video and field don't align
+
+1. **Check coordinate order**: Video landmarks use `(x_px, y_px)` = `(column, row)`
+2. **Verify Y-axis direction**: Environment Y increases upward, video Y increases downward
+3. **Use more landmarks**: 4+ points give better transforms than 3
+
+#### Video appears rotated
+
+Use landmark calibration instead of scale bar—it can handle rotation.
+
+#### Warning about bounds mismatch
+
+```text
+UserWarning: Environment bounds extend beyond calibrated video coverage.
+```
+
+The environment is larger than what the video shows. Either:
+
+- Expand video frame to cover more area
+- Accept that regions outside video will show no video pixels
+
+#### 1D environment error
+
+```text
+ValueError: VideoOverlay requires 2D environment.
+```
+
+Video overlay only works with 2D environments. Linearized tracks (1D) have no meaningful 2D extent for video alignment.
 
 ## Complete Example
 
@@ -820,6 +1007,39 @@ class HeadDirectionOverlay:
     length: float = 20.0
 ```
 
+### VideoOverlay (v0.5.0+)
+
+```python
+@dataclass
+class VideoOverlay:
+    """Background video layer with spatial calibration."""
+    source: str | Path | NDArray[np.uint8]  # Path or (n_frames, H, W, 3)
+    calibration: VideoCalibration | None = None
+    times: NDArray[np.float64] | None = None
+    alpha: float = 0.5
+    z_order: Literal["below", "above"] = "above"
+    crop: tuple[int, int, int, int] | None = None  # (x, y, w, h)
+    downsample: int = 1
+```
+
+### VideoCalibration (v0.5.0+)
+
+```python
+@dataclass(frozen=True)
+class VideoCalibration:
+    """Video→environment coordinate calibration."""
+    transform_px_to_cm: Affine2D          # Pixel → cm transform
+    frame_size_px: tuple[int, int]        # (width, height) in pixels
+
+    @property
+    def transform_cm_to_px(self) -> Affine2D:
+        """Inverse transform (cm → pixel)."""
+
+    @property
+    def cm_per_px(self) -> float:
+        """Approximate scale factor."""
+```
+
 ### animate_fields() Signature
 
 ```python
@@ -830,7 +1050,7 @@ def animate_fields(
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
     fps: int = 30,
-    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay] | None = None,
+    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay] | None = None,
     frame_times: NDArray[np.float64] | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,

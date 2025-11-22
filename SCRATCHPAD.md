@@ -208,8 +208,8 @@
 
 ## Current Task
 
-**Completed**: Milestone 7 - Task 7.2 (Create Example Notebook)
-**Next**: Milestone 7 - Task 7.3 (Update Animation Guide)
+**Completed**: Milestone 7 - Task 7.3 (Update Animation Guide)
+**Next**: Milestone 8 - Post-Review Refinements
 
 ---
 
@@ -260,3 +260,20 @@ None currently.
     - `Affine2D` uses `.A` attribute, not `.matrix`
   - Notebook executes without errors
   - All 804 animation tests passing
+
+- **Completed M7**: 7.3 - Update Animation Guide
+  - Updated `docs/animation_overlays.md`:
+    - Added VideoOverlay section with full parameter documentation
+    - Added Backend Capabilities matrix with Video column
+    - Added "Video Overlay Coordinate Systems" section with:
+      - Coordinate spaces table (Video Pixel, Environment, Napari)
+      - Three calibration methods: scale bar, landmarks, cm_per_px
+      - Calibration comparison table
+      - Troubleshooting section for spatial misalignment
+    - Added VideoOverlay and VideoCalibration API references
+    - Updated animate_fields() signature to include VideoOverlay
+  - Updated `docs/user-guide/animation.md`:
+    - Added "Overlay Support by Backend" matrix with Video column
+    - Added link to animation_overlays.md for VideoOverlay docs
+  - All 804 animation tests passing
+  - ruff and mypy pass

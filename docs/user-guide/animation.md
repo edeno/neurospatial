@@ -50,6 +50,17 @@ Choose the right backend for your workflow:
 \* Limited only by disk space (lazy loading with LRU cache)
 \** Pre-renders first 500 frames, rest on-demand
 
+### Overlay Support by Backend (v0.5.0+)
+
+| Backend | Position | Bodypart | HeadDirection | Video | Regions |
+|---------|----------|----------|---------------|-------|---------|
+| **Napari** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
+| **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
+
 ### Backend Auto-Selection
 
 When `backend="auto"` (default), the system automatically selects based on context:

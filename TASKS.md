@@ -404,12 +404,124 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 7.3: Update Animation Guide
 
-- [ ] Update `docs/guides/animation.md` (or equivalent)
-- [ ] Add video integration section:
-  - [ ] Coordinate systems explanation
-  - [ ] Calibration methods comparison
-  - [ ] Backend capabilities (update matrix)
-  - [ ] Troubleshooting spatial misalignment
+- [x] Update `docs/guides/animation.md` (or equivalent)
+- [x] Add video integration section:
+  - [x] Coordinate systems explanation
+  - [x] Calibration methods comparison
+  - [x] Backend capabilities (update matrix)
+  - [x] Troubleshooting spatial misalignment
+
+---
+
+## Milestone 8: Post-Review Refinements
+
+> **Goal**: Address code review findings for code quality, maintainability, and correctness.
+>
+> **Reference**: External code review of VideoOverlay implementation (2025-11-22)
+
+### Task 8.1: Fix VideoOverlay.interp Not Honored (BUG)
+
+> **Priority**: High - Documented behavior doesn't match implementation
+
+- [ ] Update `_convert_overlays_to_data()` in [src/neurospatial/animation/overlays.py](src/neurospatial/animation/overlays.py)
+  - [ ] For VideoOverlay with `interp="nearest"`: Use current `_find_nearest_indices()` (no change)
+  - [ ] For VideoOverlay with `interp="linear"`: Implement frame blending between adjacent video frames
+    - Option A: True linear blend (expensive: blend two RGB frames per animation frame)
+    - Option B: Restrict `interp` to `"nearest"` only and update docstring/validation
+  - [ ] Decision: Document trade-off and choose approach (prefer Option B for v0.5.0)
+- [ ] If Option B: Update `VideoOverlay.interp` docstring to clarify only "nearest" is currently supported
+- [ ] If Option B: Add validation in `__post_init__` to warn if "linear" is requested
+- [ ] Write test: `test_video_overlay_interp_warning`
+
+### Task 8.2: Normalize Regions Representation
+
+> **Priority**: Medium - Simplifies backend code
+
+- [ ] Update `OverlayData.regions` to always be `dict[int, list[str]] | None`
+- [ ] Add normalization in `_convert_overlays_to_data()`:
+  - [ ] Convert `list[str]` → `{0: list_of_regions}` (apply to all frames)
+  - [ ] Pass through `dict[int, list[str]]` unchanged
+- [ ] Update HTML backend to expect normalized format (remove special-casing)
+- [ ] Write test: `test_regions_normalization_list_to_dict`
+
+### Task 8.3: Centralize Pickle Validation Messages
+
+> **Priority**: Low - Improves consistency
+
+- [ ] Create `_pickling_guidance()` helper in [src/neurospatial/animation/_utils.py](src/neurospatial/animation/_utils.py) (NEW file)
+- [ ] Refactor `_validate_pickle_ability()` in overlays.py to use helper
+- [ ] Refactor `_validate_env_pickleable()` in core.py to use helper
+- [ ] Ensure both error messages have identical "HOW" guidance
+
+### Task 8.4: Document Coordinate Conventions
+
+> **Priority**: Medium - Reduces debugging time for contributors
+
+- [ ] Create [src/neurospatial/animation/COORDINATES.md](src/neurospatial/animation/COORDINATES.md) (internal dev doc)
+  - [ ] Define three coordinate spaces: Video pixel, Environment cm, Napari world
+  - [ ] Document Y-flip policy: "flip happens ONCE in VideoCalibration"
+  - [ ] Include ASCII diagrams showing axis orientations
+- [ ] Add comments in `_add_video_layer()` explaining frame mapping contract
+- [ ] Add comments in `calibrate_from_scale_bar()` explaining coordinate flow
+
+### Task 8.5: Add VideoReaderProtocol for Type Safety
+
+> **Priority**: Low - Improves IDE support and reduces `Any`
+
+- [ ] Create `VideoReaderProtocol` in [src/neurospatial/animation/_video_io.py](src/neurospatial/animation/_video_io.py):
+
+  ```python
+  class VideoReaderProtocol(Protocol):
+      n_frames: int
+      frame_size_px: tuple[int, int]
+      def __getitem__(self, idx: int) -> NDArray[np.uint8]: ...
+  ```
+
+- [ ] Update `VideoData.reader` type: `NDArray[np.uint8] | VideoReaderProtocol`
+- [ ] Remove `Any` type annotations where VideoReader is used
+
+### Task 8.6: Document Overlay JSON Schema for HTML
+
+> **Priority**: Low - Improves maintainability
+
+- [ ] Add schema documentation to [src/neurospatial/animation/backends/html_backend.py](src/neurospatial/animation/backends/html_backend.py):
+
+  ```python
+  # Overlay JSON Schema:
+  # {
+  #   "positions": {"name": {"x": [...], "y": [...]}},
+  #   "regions": {"name": {"polygon": [[x, y], ...], "color": "..."}},
+  #   ...
+  # }
+  ```
+
+- [ ] Add type stub or TypedDict for overlay JSON structure
+
+### Task 8.7: Improve VideoReader Performance (FUTURE)
+
+> **Priority**: Low - Performance optimization for future release
+> **Note**: LRU cache already mitigates this for most use cases
+
+- [ ] Investigate persistent handle approach:
+  - [ ] Keep `cv2.VideoCapture` open per instance (not per-frame)
+  - [ ] Handle re-opening in `__setstate__` for pickle roundtrip
+- [ ] Benchmark sequential read performance with/without persistent handle
+- [ ] Decision: Only implement if benchmark shows >2x improvement
+- [ ] If implemented, add `prefer_persistent_handle: bool = True` parameter
+
+### Task 8.8: Improve animate_fields Docstring
+
+> **Priority**: Low - Documentation improvement
+
+- [ ] Add explicit "multi-field mode" description to `fields` parameter in [core.py:85-86](src/neurospatial/animation/core.py#L85-L86):
+
+  ```text
+  Multi-field mode: For napari backend only, fields can be a list of sequences
+  where each sequence contains multiple spatial fields per frame. Example:
+  [[field1_frame0, field2_frame0], [field1_frame1, field2_frame1], ...]
+  ```
+
+**M8 Checkpoint**: `uv run pytest` passes, improved code quality
 
 ---
 
