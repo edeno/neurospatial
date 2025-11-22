@@ -18,7 +18,7 @@
 
 - [x] Update `overlays` parameter type in [src/neurospatial/animation/core.py:67-68](src/neurospatial/animation/core.py#L67-L68)
 - [x] Update `overlays` parameter type in [src/neurospatial/environment/visualization.py](src/neurospatial/environment/visualization.py)
-- [x] Add `VideoOverlay` to `__all__` in [src/neurospatial/__init__.py](src/neurospatial/__init__.py)
+- [x] Add `VideoOverlay` to `__all__` in [src/neurospatial/**init**.py](src/neurospatial/__init__.py)
 - [x] Add exports to [src/neurospatial/animation/\_\_init\_\_.py](src/neurospatial/animation/__init__.py):
   - [x] `from .overlays import VideoOverlay`
   - [x] `from ..transforms import VideoCalibration`
@@ -161,7 +161,7 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
   - [x] Array shape/dtype validation
   - [x] Alpha bounds check (0.0-1.0)
 - [x] Add comprehensive docstring with examples
-- [x] Add to `__all__` (in neurospatial/__init__.py)
+- [x] Add to `__all__` (in neurospatial/**init**.py)
 
 ### Task 2.2: Create VideoData Internal Container
 
@@ -285,17 +285,21 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 4.3: Widget and HTML Backends
 
-- [ ] Update [src/neurospatial/animation/backends/widget_backend.py](src/neurospatial/animation/backends/widget_backend.py):
-  - [ ] Use `VideoFrameRenderer` for artist reuse
-  - [ ] Initialize renderers in `__init__`
-  - [ ] Call `renderer.render()` in frame loop
-- [ ] Update [src/neurospatial/animation/backends/html_backend.py](src/neurospatial/animation/backends/html_backend.py):
-  - [ ] Add video skip with WHAT/WHY/HOW warning
-  - [ ] Strip videos from overlay_data before rendering
-  - [ ] Continue rendering field + other overlays
-- [ ] Write tests:
-  - [ ] `test_widget_video_support`
-  - [ ] `test_html_skips_video_with_warning`
+- [x] Update [src/neurospatial/animation/backends/widget_backend.py](src/neurospatial/animation/backends/widget_backend.py):
+  - [x] Widget backend already supports video via `_render_all_overlays()` (Task 4.2)
+  - [x] Uses existing `render_field_to_png_bytes_with_overlays()` which handles video
+  - [x] No additional changes needed (artist reuse handled by existing code path)
+- [x] Update [src/neurospatial/animation/backends/html_backend.py](src/neurospatial/animation/backends/html_backend.py):
+  - [x] Add video skip with WHAT/WHY/HOW warning
+  - [x] Video stripped automatically (HTML serializer ignores video data)
+  - [x] Continue rendering field + other overlays (positions, regions)
+- [x] Write tests:
+  - [x] `test_widget_backend_renders_video_overlay`
+  - [x] `test_html_backend_warns_on_video_overlay`
+  - [x] `test_html_backend_still_renders_with_video_overlay_present`
+  - [x] `test_html_backend_renders_other_overlays_with_video_present`
+
+**M4 Checkpoint**: Widget and HTML backends handle video overlays correctly ✓
 
 ---
 

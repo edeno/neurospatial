@@ -324,10 +324,11 @@ def render_html(
 
     # Validate overlay capabilities and emit warnings for unsupported types
     if overlay_data is not None:
-        has_unsupported = (
+        # Check for unsupported bodypart/head direction overlays
+        has_unsupported_behavioral = (
             len(overlay_data.bodypart_sets) > 0 or len(overlay_data.head_directions) > 0
         )
-        if has_unsupported:
+        if has_unsupported_behavioral:
             warnings.warn(
                 "HTML backend supports positions and regions only.\n"
                 "Bodypart and head direction overlays are not supported in HTML mode.\n"
@@ -339,6 +340,29 @@ def render_html(
                 "For full overlay support, use video or napari backend:\n"
                 "  env.animate_fields(fields, backend='video', save_path='output.mp4', ...)\n"
                 "  env.animate_fields(fields, backend='napari', ...)",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        # Check for unsupported video overlays
+        has_video_overlays = len(overlay_data.videos) > 0
+        if has_video_overlays:
+            warnings.warn(
+                "HTML backend does not support video overlays.\n"
+                "\n"
+                "WHAT: Video overlays cannot be rendered in standalone HTML files.\n"
+                "WHY: HTML embeds frames as base64 images; video compositing requires\n"
+                "     frame-by-frame rendering which is only supported in video/napari.\n"
+                "\n"
+                "HOW to fix:\n"
+                "  1. Use video backend for full video overlay support:\n"
+                "     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+                "                        overlays=[video_overlay], ...)\n"
+                "\n"
+                "  2. Use napari backend for interactive viewing:\n"
+                "     env.animate_fields(fields, backend='napari', overlays=[video_overlay])\n"
+                "\n"
+                "Video overlays will be skipped. Other overlays (positions, regions) will render.",
                 UserWarning,
                 stacklevel=2,
             )

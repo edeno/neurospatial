@@ -1419,3 +1419,222 @@ class TestVideoFrameRenderer:
             assert renderer._artist.get_visible()
         finally:
             plt.close(fig)
+
+
+# =============================================================================
+# Test: Widget Backend Video Overlay Support (Task 4.3)
+# =============================================================================
+
+
+class TestWidgetBackendVideoOverlay:
+    """Test widget backend handles video overlays correctly."""
+
+    def test_widget_backend_renders_video_overlay(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+    ):
+        """Test widget backend renders video overlays via _render_all_overlays."""
+        from neurospatial.animation.backends.widget_backend import (
+            render_field_to_png_bytes_with_overlays,
+        )
+        from neurospatial.animation.overlays import VideoData
+
+        # Create VideoData
+        frame_indices = np.arange(10, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        overlay_data = OverlayData(videos=[video_data])
+
+        # Create a simple field
+        field = np.random.rand(simple_env.n_bins)
+
+        # Render frame with video overlay - should not raise
+        png_bytes = render_field_to_png_bytes_with_overlays(
+            env=simple_env,
+            field=field,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=50,
+            frame_idx=0,
+            overlay_data=overlay_data,
+            show_regions=False,
+            region_alpha=0.3,
+        )
+
+        # Should return valid PNG bytes
+        assert isinstance(png_bytes, bytes)
+        assert len(png_bytes) > 0
+        # PNG magic bytes
+        assert png_bytes[:4] == b"\x89PNG"
+
+
+# =============================================================================
+# Test: HTML Backend Video Overlay Warning (Task 4.3)
+# =============================================================================
+
+
+class TestHTMLBackendVideoOverlay:
+    """Test HTML backend skips video overlays with warning."""
+
+    def test_html_backend_warns_on_video_overlay(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+        tmp_path: Path,
+    ):
+        """Test HTML backend emits warning when video overlay is present."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import VideoData
+
+        # Create VideoData
+        frame_indices = np.arange(5, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        overlay_data = OverlayData(videos=[video_data])
+
+        # Create simple fields
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+
+        # Should emit warning about video overlay not being supported
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            render_html(
+                env=simple_env,
+                fields=fields,
+                save_path=str(tmp_path / "output.html"),
+                overlay_data=overlay_data,
+                max_html_frames=500,
+                dpi=50,
+            )
+
+            # Check that exactly one warning was emitted about video overlays
+            video_warnings = [
+                warning
+                for warning in w
+                if "video" in str(warning.message).lower()
+                and issubclass(warning.category, UserWarning)
+            ]
+            assert len(video_warnings) == 1, (
+                "Expected exactly one warning about video overlay"
+            )
+
+            # Check warning message contains WHAT/WHY/HOW structure
+            warning_msg = str(video_warnings[0].message)
+            # Verify WHAT/WHY/HOW format
+            assert "WHAT:" in warning_msg, "Warning should contain WHAT section"
+            assert "WHY:" in warning_msg, "Warning should contain WHY section"
+            assert "HOW" in warning_msg, "Warning should contain HOW section"
+            # Should explain what the problem is
+            assert "video" in warning_msg.lower()
+            # Should provide alternatives
+            assert (
+                "video backend" in warning_msg.lower()
+                or "napari" in warning_msg.lower()
+            )
+
+    def test_html_backend_still_renders_with_video_overlay_present(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+        tmp_path: Path,
+    ):
+        """Test HTML backend still renders successfully when video is skipped."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import VideoData
+
+        # Create VideoData
+        frame_indices = np.arange(5, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        overlay_data = OverlayData(videos=[video_data])
+
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        output_path = tmp_path / "output.html"
+
+        # Suppress warnings for this test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_path = render_html(
+                env=simple_env,
+                fields=fields,
+                save_path=str(output_path),
+                overlay_data=overlay_data,
+                max_html_frames=500,
+                dpi=50,
+            )
+
+        # Should still generate HTML file
+        assert result_path.exists()
+        assert result_path.stat().st_size > 0
+
+    def test_html_backend_renders_other_overlays_with_video_present(
+        self,
+        simple_env: Environment,
+        sample_video_array: NDArray[np.uint8],
+        tmp_path: Path,
+    ):
+        """Test HTML renders position overlays even when video is skipped."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import VideoData
+
+        # Create mixed overlay data (video + position)
+        frame_indices = np.arange(5, dtype=np.int_)
+        video_data = VideoData(
+            frame_indices=frame_indices,
+            reader=sample_video_array,
+            transform_to_env=None,
+            env_bounds=(0.0, 100.0, 0.0, 100.0),
+            alpha=0.5,
+            z_order="below",
+        )
+        positions = np.random.rand(5, 2) * 50 + 25
+        pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
+        overlay_data = OverlayData(videos=[video_data], positions=[pos_data])
+
+        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        output_path = tmp_path / "output.html"
+
+        # Suppress warnings for this test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_path = render_html(
+                env=simple_env,
+                fields=fields,
+                save_path=str(output_path),
+                overlay_data=overlay_data,
+                max_html_frames=500,
+                dpi=50,
+            )
+
+        # Read HTML and check for position overlay data
+        html_content = result_path.read_text()
+        # HTML should contain the serialized position overlay
+        assert "positions" in html_content
+        # Position data should be present
+        assert "color" in html_content or '"red"' in html_content

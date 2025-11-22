@@ -1,7 +1,7 @@
 # VideoOverlay Implementation Scratchpad
 
 **Started**: 2025-11-22
-**Current Phase**: Milestone 3 (Video I/O) - Task 3.1
+**Current Phase**: Milestone 5 (Environment Integration) - Task 5.1
 
 ---
 
@@ -110,11 +110,34 @@
   - All 772 animation tests passing
   - Code review approved
 
+- **Updated VideoOverlay defaults** (post-review fix):
+  - Changed default `z_order` from `"below"` to `"above"` (video on top of field)
+  - Changed default `alpha` from `0.7` to `0.5` (balanced 50/50 blend)
+  - Updated docstrings with usage guidance
+  - Added VideoOverlay best practices to CLAUDE.md
+  - Rationale: `z_order="below"` hides video behind opaque fields; `"above"` with alpha blending works universally
+
+- **Completed M4**: 4.3 - Widget and HTML Backends
+  - **Widget Backend**: Already supports video overlays via `_render_all_overlays()` from Task 4.2
+    - `render_field_to_png_bytes_with_overlays()` calls `_render_all_overlays()` which handles video
+    - No additional changes needed (artist reuse already handled)
+  - **HTML Backend**: Added video overlay skip warning with WHAT/WHY/HOW format
+    - Warns users that video overlays cannot render in standalone HTML
+    - Suggests video or napari backends as alternatives
+    - Other overlays (positions, regions) continue to render
+  - 4 new tests:
+    - `TestWidgetBackendVideoOverlay::test_widget_backend_renders_video_overlay`
+    - `TestHTMLBackendVideoOverlay::test_html_backend_warns_on_video_overlay`
+    - `TestHTMLBackendVideoOverlay::test_html_backend_still_renders_with_video_overlay_present`
+    - `TestHTMLBackendVideoOverlay::test_html_backend_renders_other_overlays_with_video_present`
+  - All 776 animation tests passing
+  - Code review approved
+
 ---
 
 ## Current Task
 
-**Working on**: Milestone 4 - Backend Rendering (Task 4.3 - Widget and HTML Backends)
+**Working on**: Milestone 5 - Environment Integration (Task 5.1 - calibrate_video function)
 
 ---
 
