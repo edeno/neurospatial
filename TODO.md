@@ -26,3 +26,11 @@ Place-field analysis → an object with field, fields (list of bin-index arrays)
 - [ ] Help users define environment boundaries and obstacle.
 - [ ] phase precession analysis
 - [ ] Distance of animal to goal over time
+
+viz
+
+- ability to annotate to get environment polygons or regions
+- ability to put video in background (need to handle different frame rates, handle transforms between video and environment coordinates)
+- scale bar option
+- colorbar option
+- 3D with napari
