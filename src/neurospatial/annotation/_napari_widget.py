@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 from magicgui.widgets import ComboBox, Container, Label, LineEdit, PushButton
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     import napari
@@ -225,8 +227,8 @@ def setup_shapes_layer_for_annotation(viewer: napari.Viewer) -> napari.layers.Sh
 
 
 def get_annotation_data(
-    shapes_layer: napari.layers.Shapes,
-) -> tuple[list, list[str], list[str]]:
+    shapes_layer: napari.layers.Shapes | None,
+) -> tuple[list[NDArray[np.float64]], list[str], list[str]]:
     """
     Extract annotation data from shapes layer.
 

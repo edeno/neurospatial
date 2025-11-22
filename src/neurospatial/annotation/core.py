@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 if TYPE_CHECKING:
+    import napari
+
     from neurospatial import Environment
     from neurospatial.regions import Regions
     from neurospatial.transforms import VideoCalibration
@@ -114,7 +116,13 @@ def annotate_video(
     regions_from_labelme : Import from LabelMe JSON
     regions_from_cvat : Import from CVAT XML
     """
-    import napari
+    try:
+        import napari
+    except ImportError as e:
+        raise ImportError(
+            "napari is required for interactive annotation. "
+            "Install with: pip install napari[all]"
+        ) from e
 
     from neurospatial.animation._video_io import VideoReader
     from neurospatial.annotation._napari_widget import (
@@ -135,8 +143,12 @@ def annotate_video(
             "Provide bin_size for environment discretization."
         )
 
-    # Load video frame
+    # Validate video path
     video_path = Path(video_path)
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    # Load video frame
     reader = VideoReader(str(video_path))
     frame = reader[frame_index]  # (H, W, 3) RGB uint8
 
@@ -168,6 +180,13 @@ def annotate_video(
 
     # Handle empty annotations
     if not shapes_data:
+        import warnings
+
+        warnings.warn(
+            "No annotations were drawn. Returning empty result.",
+            UserWarning,
+            stacklevel=2,
+        )
         return AnnotationResult(environment=None, regions=Regions([]))
 
     # Convert shapes to regions
@@ -193,21 +212,32 @@ def annotate_video(
 
 
 def _add_initial_regions(
-    shapes_layer,
+    shapes_layer: napari.layers.Shapes,
     regions: Regions,
     calibration: VideoCalibration | None,
 ) -> None:
     """
     Add existing regions to shapes layer for editing.
 
+    Transforms region polygon coordinates back to napari pixel space and adds
+    them to the shapes layer with appropriate features (name, role) for editing.
+
     Parameters
     ----------
     shapes_layer : napari.layers.Shapes
-        The shapes layer to add regions to.
+        The shapes layer to add regions to. Must be an initialized napari
+        Shapes layer.
     regions : Regions
-        Existing regions to display.
+        Existing regions to display. Only polygon regions are added; point
+        regions are skipped.
     calibration : VideoCalibration or None
         If provided, transforms cm coordinates back to pixels for display.
+        The inverse of the calibration transform is used.
+
+    Notes
+    -----
+    This function modifies the shapes_layer in place. Non-polygon regions
+    (points) are silently skipped as they cannot be represented as shapes.
     """
     import pandas as pd
     from shapely import get_coordinates

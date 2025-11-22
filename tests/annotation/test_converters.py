@@ -152,6 +152,22 @@ class TestShapesToRegions:
         assert n_coords_simple < n_coords_full
         assert n_coords_simple == 5  # 4 corners + closing point
 
+    def test_warns_multiple_environment_boundaries(self):
+        """Warn when multiple shapes have role='environment'."""
+        # Two shapes both marked as environment
+        poly1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        poly2 = np.array([[50, 50], [150, 50], [150, 150], [50, 150]], dtype=float)
+        shapes_data = [poly1, poly2]
+        names = ["boundary1", "boundary2"]
+        roles = ["environment", "environment"]
+
+        with pytest.warns(UserWarning, match="Multiple environment boundaries"):
+            _, env_boundary = shapes_to_regions(shapes_data, names, roles)
+
+        # Only the last one should be returned
+        assert env_boundary is not None
+        assert env_boundary.name == "boundary2"
+
 
 class TestEnvFromBoundaryRegion:
     """Tests for env_from_boundary_region function."""

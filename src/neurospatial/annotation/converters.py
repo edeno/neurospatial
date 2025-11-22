@@ -55,10 +55,13 @@ def shapes_to_regions(
     Napari shapes use (row, col) order. This function converts to (x, y)
     pixel coordinates before applying calibration.
     """
+    import warnings
+
     from neurospatial.regions import Region, Regions
 
     regions_list: list[Region] = []
     env_boundary: Region | None = None
+    env_boundary_count = 0
 
     for poly_rc, name, role in zip(shapes_data, names, roles, strict=True):
         # Convert napari (row, col) to video (x, y) pixels
@@ -96,9 +99,19 @@ def shapes_to_regions(
         )
 
         if role == "environment":
+            env_boundary_count += 1
             env_boundary = region
         else:
             regions_list.append(region)
+
+    # Warn if multiple environment boundaries were drawn (only last one used)
+    if env_boundary_count > 1:
+        warnings.warn(
+            f"Multiple environment boundaries ({env_boundary_count}) were drawn. "
+            f"Only the last one ('{env_boundary.name if env_boundary else 'unknown'}') will be used.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     return Regions(regions_list), env_boundary
 

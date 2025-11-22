@@ -4,9 +4,57 @@ import numpy as np
 import pytest
 import shapely.geometry as shp
 
-from neurospatial.annotation.core import AnnotationResult, _add_initial_regions
+from neurospatial.annotation.core import (
+    AnnotationResult,
+    _add_initial_regions,
+    annotate_video,
+)
 from neurospatial.regions import Region, Regions
 from neurospatial.transforms import Affine2D, VideoCalibration
+
+
+class TestAnnotateVideoValidation:
+    """Tests for annotate_video parameter validation (no GUI required)."""
+
+    def test_bin_size_required_for_environment_mode(self, tmp_path):
+        """bin_size is required when mode='environment'."""
+        # Create a dummy video file (won't actually be read due to early validation)
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with pytest.raises(
+            ValueError, match="bin_size is required when mode='environment'"
+        ):
+            annotate_video(str(video_file), mode="environment", bin_size=None)
+
+    def test_bin_size_required_for_both_mode(self, tmp_path):
+        """bin_size is required when mode='both'."""
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        with pytest.raises(ValueError, match="bin_size is required when mode='both'"):
+            annotate_video(str(video_file), mode="both", bin_size=None)
+
+    def test_bin_size_not_required_for_regions_mode(self, tmp_path):
+        """bin_size not required when mode='regions' (validation passes, video read fails)."""
+        pytest.importorskip("napari")  # Skip if napari not installed
+
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        # With mode='regions', no bin_size validation error
+        # But it will fail on video read (empty file) - ValueError from VideoReader
+        with pytest.raises(ValueError, match="Could not open video file"):
+            annotate_video(str(video_file), mode="regions", bin_size=None)
+
+    def test_video_file_not_found(self, tmp_path):
+        """Raise FileNotFoundError for missing video file."""
+        pytest.importorskip("napari")  # Skip if napari not installed
+
+        missing_file = tmp_path / "nonexistent.mp4"
+
+        with pytest.raises(FileNotFoundError, match="Video file not found"):
+            annotate_video(str(missing_file), bin_size=5.0)
 
 
 class TestAnnotationResult:
