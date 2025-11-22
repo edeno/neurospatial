@@ -184,7 +184,6 @@ def _build_skeleton_vectors(
         empty_features = {"edge_name": np.empty(0, dtype=object)}
         return empty_vectors, empty_features
 
-    n_frames = len(next(iter(bodyparts.values())))
     skeleton_edges = skeleton.edges
 
     # Pre-compute scale factors for coordinate transformation
@@ -197,11 +196,12 @@ def _build_skeleton_vectors(
             coords, env_scale if env_scale is not None else env
         )
 
-    # Build list of valid segments (handling NaN and missing bodyparts)
-    valid_segments: list[tuple[int, int, str, NDArray, NDArray]] = []
-    # Format: (frame_idx, edge_idx, edge_name, start_napari, end_napari)
+    # Build vectors for all edges using vectorized operations
+    # Collect per-edge results for concatenation
+    edge_vectors_list: list[NDArray[np.floating]] = []
+    edge_names_list: list[NDArray[np.object_]] = []
 
-    for edge_idx, (start_part, end_part) in enumerate(skeleton_edges):
+    for start_part, end_part in skeleton_edges:
         # Skip if either bodypart is missing
         if start_part not in napari_coords or end_part not in napari_coords:
             continue
@@ -210,39 +210,47 @@ def _build_skeleton_vectors(
         start_coords = napari_coords[start_part]  # (n_frames, 2)
         end_coords = napari_coords[end_part]  # (n_frames, 2)
 
-        for frame_idx in range(n_frames):
-            start_point = start_coords[frame_idx]
-            end_point = end_coords[frame_idx]
+        # Vectorized NaN check: find frames where both endpoints are valid
+        # ~np.isnan(...).any(axis=1) gives True for rows with all finite values
+        valid_mask = ~np.isnan(start_coords).any(axis=1) & ~np.isnan(end_coords).any(
+            axis=1
+        )
+        valid_frame_indices = np.where(valid_mask)[0]
 
-            # Skip if either endpoint has NaN
-            if np.any(np.isnan(start_point)) or np.any(np.isnan(end_point)):
-                continue
+        n_valid = len(valid_frame_indices)
+        if n_valid == 0:
+            continue
 
-            valid_segments.append(
-                (frame_idx, edge_idx, edge_name, start_point, end_point)
-            )
+        # Extract valid coordinates (n_valid, 2)
+        valid_start = start_coords[valid_frame_indices]
+        valid_end = end_coords[valid_frame_indices]
 
-    # Allocate output arrays
-    n_segments = len(valid_segments)
-    vectors = np.empty((n_segments, 2, 3), dtype=dtype)
-    edge_names = np.empty(n_segments, dtype=object)
+        # Build vectors array for this edge: (n_valid, 2, 3)
+        edge_vectors = np.empty((n_valid, 2, 3), dtype=dtype)
 
-    # Fill vectors array
-    for seg_idx, (frame_idx, _edge_idx, edge_name, start_pt, end_pt) in enumerate(
-        valid_segments
-    ):
-        # Start point: [t, y, x]
-        vectors[seg_idx, 0, 0] = frame_idx
-        vectors[seg_idx, 0, 1] = start_pt[0]  # row (y in napari)
-        vectors[seg_idx, 0, 2] = start_pt[1]  # col (x in napari)
+        # Position row: [t, y, x]
+        edge_vectors[:, 0, 0] = valid_frame_indices  # frame indices
+        edge_vectors[:, 0, 1] = valid_start[:, 0]  # row (y in napari)
+        edge_vectors[:, 0, 2] = valid_start[:, 1]  # col (x in napari)
 
-        # Direction vector: [dt, dy, dx] - displacement from start to end
-        # napari Vectors layer expects [position, direction], not [start, end]
-        vectors[seg_idx, 1, 0] = 0  # dt = 0 (same time)
-        vectors[seg_idx, 1, 1] = end_pt[0] - start_pt[0]  # dy
-        vectors[seg_idx, 1, 2] = end_pt[1] - start_pt[1]  # dx
+        # Direction row: [dt, dy, dx]
+        edge_vectors[:, 1, 0] = 0  # dt = 0 (same time)
+        edge_vectors[:, 1, 1] = valid_end[:, 0] - valid_start[:, 0]  # dy
+        edge_vectors[:, 1, 2] = valid_end[:, 1] - valid_start[:, 1]  # dx
 
-        edge_names[seg_idx] = edge_name
+        edge_vectors_list.append(edge_vectors)
+
+        # Edge names for this edge (all same name)
+        edge_names_arr = np.full(n_valid, edge_name, dtype=object)
+        edge_names_list.append(edge_names_arr)
+
+    # Concatenate all edges
+    if edge_vectors_list:
+        vectors = np.concatenate(edge_vectors_list, axis=0)
+        edge_names = np.concatenate(edge_names_list)
+    else:
+        vectors = np.empty((0, 2, 3), dtype=dtype)
+        edge_names = np.empty(0, dtype=object)
 
     features: dict[str, NDArray[np.object_]] = {"edge_name": edge_names}
     return vectors, features

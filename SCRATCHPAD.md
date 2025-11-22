@@ -372,6 +372,55 @@ All Phase 1 (Shared Infrastructure Cleanup) tasks are now complete:
 - 1.2 Normalize Layout Metadata ✅
 - 1.3 Verify No Regressions ✅
 
-## Next Task: Phase 2 - Napari Backend Performance
+## Completed: Phase 2.1 - Vectorize `_build_skeleton_vectors`
 
-The highest-impact task is **Phase 2.1: Vectorize `_build_skeleton_vectors`** which is expected to provide 5-20x faster loading.
+### What Was Done
+
+1. **Profiled baseline performance** on medium (5k frames) and large (100k frames) datasets
+2. **Replaced Python loops with vectorized NumPy operations**:
+   - Changed inner `for frame_idx in range(n_frames)` loop to vectorized boolean mask
+   - Used `np.where(valid_mask)` to get valid frame indices in one operation
+   - Used array slicing to extract valid coordinates all at once
+   - Built vectors array using array assignment instead of element-by-element
+   - Used `np.concatenate` to combine all edge results at the end
+3. **Removed unused `n_frames` variable** caught by ruff
+
+### Performance Results
+
+| Config | Before (ms) | After (ms) | Speedup |
+|--------|-------------|------------|---------|
+| Medium (5k frames, 4 edges) | 98.75 | 2.11 | **46.8x** |
+| Large (100k frames, 6 edges) | 2628.52 | 62.35 | **42.2x** |
+
+**Result**: Achieved 42-47x speedup, far exceeding the target of 5-20x!
+
+### Test Results
+
+- All 15 existing skeleton vectors tests pass
+- All 77 napari backend tests pass
+- ruff and mypy pass with no issues
+
+### Key Code Changes
+
+**Before** (slow nested loops):
+```python
+for frame_idx in range(n_frames):
+    start_point = start_coords[frame_idx]
+    end_point = end_coords[frame_idx]
+    if np.any(np.isnan(start_point)) or np.any(np.isnan(end_point)):
+        continue
+    valid_segments.append((frame_idx, ...))
+```
+
+**After** (vectorized):
+```python
+valid_mask = ~np.isnan(start_coords).any(axis=1) & ~np.isnan(end_coords).any(axis=1)
+valid_frame_indices = np.where(valid_mask)[0]
+valid_start = start_coords[valid_frame_indices]
+valid_end = end_coords[valid_frame_indices]
+# Build vectors using array operations
+```
+
+## Next Task: Phase 2.2 - Fix Transform Fallback Warning State
+
+Replace `_NAPARI_TRANSFORM_FALLBACK_WARNED` global with per-viewer state.
