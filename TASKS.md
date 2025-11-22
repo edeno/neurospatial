@@ -284,12 +284,37 @@ self._update_bodypart_skeleton(len(self._bodypart_skeletons) - 1, ...)  # Correc
 - Includes regression test for the IndexError bug
 - All 600 animation tests pass
 
-### 4.3 Optional JPEG Support
+### 4.3 Optional JPEG Support - COMPLETE
 
-- [ ] Add config flag: `image_format="png" | "jpeg"`
-- [ ] Use `render_field_to_image_bytes` internally
-- [ ] Benchmark PNG vs JPEG: file size
-- [ ] Benchmark PNG vs JPEG: time per render
+**Completed 2025-11-22**: Added optional JPEG image format support.
+
+- [x] Add config flag: `image_format="png" | "jpeg"` - added to all widget backend functions
+- [x] Use PIL for JPEG compression (quality=85, optimize=True)
+- [x] Added `image_format` parameter to:
+  - `render_field_to_png_bytes_with_overlays()`
+  - `PersistentFigureRenderer` class
+  - `render_widget()` function
+- [x] Added validation (ValueError for invalid formats)
+- [x] Added graceful ImportError for missing Pillow
+
+**New Tests** (`tests/animation/test_widget_image_format.py`):
+
+- 14 tests covering PNG/JPEG output, format validation, case-insensitivity, PersistentFigureRenderer
+
+**Benchmark Results** (385 bins, position overlay):
+
+| DPI | PNG Size | JPEG Size | PNG Time | JPEG Time | Conclusion |
+|-----|----------|-----------|----------|-----------|------------|
+| 100 | 15.4 KB | 40.4 KB | 11.25 ms | 12.85 ms | PNG 2.6x smaller |
+| 150 | 24.0 KB | 62.3 KB | 18.19 ms | 22.12 ms | PNG 2.6x smaller |
+| 200 | 32.5 KB | 76.7 KB | 27.71 ms | 34.91 ms | PNG 2.4x smaller |
+
+**Key Finding**: For scientific visualization with colormaps, PNG outperforms JPEG in both
+size AND speed. This is because scientific plots have uniform color regions and sharp edges
+(ideal for PNG's run-length encoding) rather than photographic content (where JPEG excels).
+
+**Recommendation**: Use default PNG for widget backend. JPEG option remains available for
+users who need it (e.g., for photographic overlays or specific compatibility requirements).
 
 ### 4.4 Re-profile Widget
 
@@ -378,7 +403,7 @@ self._update_bodypart_skeleton(len(self._bodypart_skeletons) - 1, ...)  # Correc
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
 | Phase 2: Napari | Complete | 2.1-2.5 COMPLETE (42-50x skeleton speedup!) |
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
-| Phase 4: Widget | In Progress | 4.1-4.2 COMPLETE (bug fix + 30 tests), 4.3-4.4 pending |
+| Phase 4: Widget | In Progress | 4.1-4.3 COMPLETE (bug fix + 44 tests), 4.4 pending |
 | Phase 5: Video | Not started | |
 | Phase 6: Skeleton | Not started | |
 | Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |

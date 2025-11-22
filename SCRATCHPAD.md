@@ -758,6 +758,90 @@ Created `tests/animation/test_overlay_artist_manager.py` with 30 tests:
 - All 600 animation tests pass
 - ruff and mypy pass
 
-## Next Task: Phase 4.3 - Optional JPEG Support
+## Completed: Phase 4.3 - Optional JPEG Support (2025-11-22)
+
+### What Was Done
+
+Added optional JPEG image format support to the widget backend, allowing users to choose between PNG (lossless, larger) and JPEG (lossy, smaller) for cached frames.
+
+### Implementation
+
+1. **Added `image_format` parameter to three functions/classes**:
+   - `render_field_to_png_bytes_with_overlays()` - main rendering function
+   - `PersistentFigureRenderer` - persistent renderer class
+   - `render_widget()` - main widget entry point
+
+2. **JPEG rendering implementation**:
+   - Uses PIL (Pillow) for JPEG compression
+   - Quality: 85 (good balance of quality and size)
+   - Optimize: True (smaller file size)
+   - Graceful ImportError with clear installation instructions
+
+3. **Validation**:
+   - Case-insensitive format comparison (accepts "JPEG", "jpeg", "PNG", "png")
+   - ValueError for invalid formats with clear error message
+
+### Key Code Changes
+
+```python
+# render_field_to_png_bytes_with_overlays (lines 127-200)
+image_format = image_format.lower()
+if image_format not in ("png", "jpeg"):
+    raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
+
+if image_format == "jpeg":
+    fig.canvas.draw()
+    rgba = np.asarray(fig.canvas.buffer_rgba())
+    rgb = rgba[:, :, :3]  # Drop alpha channel
+    from PIL import Image
+    img = Image.fromarray(rgb)
+    img.save(buf, format="JPEG", quality=85, optimize=True)
+else:
+    fig.savefig(buf, format="png")
+```
+
+### New Tests
+
+Created `tests/animation/test_widget_image_format.py` with 14 tests:
+
+| Test Class | Count | Coverage |
+|------------|-------|----------|
+| TestRenderFieldWithOverlaysImageFormat | 7 | PNG/JPEG output, validation, case-insensitivity |
+| TestPersistentFigureRendererImageFormat | 4 | PNG/JPEG in persistent renderer, invalid format |
+| TestRenderWidgetImageFormat | 2 | render_widget accepts and passes image_format |
+| TestJPEGRequirements | 1 | Pillow availability verification |
+
+### Code Review Fixes
+
+1. Fixed mypy `type: ignore` placement (single-line format)
+2. Simplified redundant format normalization in Image widget creation
+3. Added test for PersistentFigureRenderer invalid format validation
+
+### Benchmark Results
+
+Tested with 385 bins environment and position overlay (trail_length=5):
+
+| DPI | PNG Size | JPEG Size | PNG Time | JPEG Time |
+|-----|----------|-----------|----------|-----------|
+| 100 | 15.4 KB | 40.4 KB | 11.25 ms | 12.85 ms |
+| 150 | 24.0 KB | 62.3 KB | 18.19 ms | 22.12 ms |
+| 200 | 32.5 KB | 76.7 KB | 27.71 ms | 34.91 ms |
+
+**Key Finding**: PNG outperforms JPEG in both size AND speed for scientific visualization!
+
+**Why?**
+- Scientific plots have uniform color regions and sharp edges
+- PNG excels at run-length encoding for uniform regions
+- JPEG introduces block artifacts and doesn't compress well for this content type
+
+**Recommendation**: Keep PNG as default. JPEG option available for users who need it.
+
+### Test Results
+
+- All 14 new JPEG tests pass
+- All 615 animation tests pass
+- ruff and mypy pass
+
+## Next Task: Phase 4.4 - Re-profile Widget
 
 See TASKS.md for details.

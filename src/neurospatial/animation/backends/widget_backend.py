@@ -38,13 +38,14 @@ def render_field_to_png_bytes_with_overlays(
     overlay_data: Any | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    image_format: str = "png",
 ) -> bytes:
-    """Render field with overlays to PNG bytes.
+    """Render field with overlays to image bytes (PNG or JPEG).
 
     This function reuses the video backend's overlay rendering logic to
-    produce PNG frames with overlays for the widget backend. It creates
+    produce image frames with overlays for the widget backend. It creates
     a matplotlib figure, renders the field, adds overlays, and saves to
-    PNG bytes.
+    PNG or JPEG bytes.
 
     Parameters
     ----------
@@ -70,11 +71,20 @@ def render_field_to_png_bytes_with_overlays(
     region_alpha : float, default=0.3
         Alpha transparency for region rendering, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque.
+    image_format : {"png", "jpeg"}, default="png"
+        Image format. PNG is lossless, JPEG is smaller but lossy.
 
     Returns
     -------
-    png_bytes : bytes
-        PNG-encoded image data ready for display in widget.
+    image_bytes : bytes
+        Encoded image data (PNG or JPEG format) ready for display in widget.
+
+    Raises
+    ------
+    ValueError
+        If image_format is not "png" or "jpeg".
+    ImportError
+        If image_format="jpeg" but Pillow is not installed.
 
     Notes
     -----
@@ -114,6 +124,11 @@ def render_field_to_png_bytes_with_overlays(
         len(png_bytes) > 0
         True
     """
+    # Validate format early (defense in depth)
+    image_format = image_format.lower()
+    if image_format not in ("png", "jpeg"):
+        raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
+
     with timing("render_field_to_png_bytes_with_overlays"):
         # Set Agg backend BEFORE any pyplot imports
         try:
@@ -152,14 +167,40 @@ def render_field_to_png_bytes_with_overlays(
                 ax, env, frame_idx, overlay_data, show_regions, region_alpha
             )
 
-        # Save to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
+        # Save to image bytes (removed bbox_inches="tight" for consistent dimensions)
         buf = io.BytesIO()
-        fig.savefig(buf, format="png")
+
+        if image_format == "jpeg":
+            # For JPEG, render to RGB array then save with PIL
+            fig.canvas.draw()
+            rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+            rgb = rgba[:, :, :3]  # Drop alpha channel
+
+            # Use PIL for JPEG compression
+            try:
+                from PIL import Image
+
+                img = Image.fromarray(rgb)
+                img.save(buf, format="JPEG", quality=85, optimize=True)
+            except ImportError as e:
+                plt.close(fig)
+                raise ImportError(
+                    "JPEG support requires Pillow. Install with:\n"
+                    "  pip install pillow\n"
+                    "or\n"
+                    "  uv add pillow\n"
+                    "\n"
+                    "Alternatively, use image_format='png' (no dependencies)"
+                ) from e
+        else:
+            # PNG format (lossless)
+            fig.savefig(buf, format="png")
+
         plt.close(fig)  # Close figure to free memory
         buf.seek(0)
-        png_bytes = buf.read()
+        image_bytes = buf.read()
 
-        return png_bytes
+        return image_bytes
 
 
 class PersistentFigureRenderer:
@@ -239,6 +280,7 @@ class PersistentFigureRenderer:
         vmax: float,
         dpi: int = 100,
         raise_on_fallback: bool = False,
+        image_format: str = "png",
     ) -> None:
         """Initialize the persistent figure renderer.
 
@@ -259,7 +301,15 @@ class PersistentFigureRenderer:
             (e.g., for non-grid layouts). Useful for debugging performance issues.
             If False (default), fallback is logged at DEBUG level and rendering
             continues.
+        image_format : {"png", "jpeg"}, default="png"
+            Image format. PNG is lossless, JPEG is smaller but lossy.
         """
+        # Validate format early
+        image_format = image_format.lower()
+        if image_format not in ("png", "jpeg"):
+            raise ValueError(
+                f"image_format must be 'png' or 'jpeg', got '{image_format}'"
+            )
         # Set Agg backend BEFORE any pyplot imports
         try:
             import matplotlib
@@ -281,6 +331,7 @@ class PersistentFigureRenderer:
         self._vmax = vmax
         self._dpi = dpi
         self._raise_on_fallback = raise_on_fallback
+        self._image_format = image_format
         self._plt = plt  # Store reference to prevent issues with lazy imports
         self._QuadMesh = QuadMesh  # Store class reference for isinstance checks
 
@@ -299,7 +350,7 @@ class PersistentFigureRenderer:
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
     ) -> bytes:
-        """Render field to PNG bytes, reusing figure.
+        """Render field to image bytes (PNG or JPEG), reusing figure.
 
         Parameters
         ----------
@@ -318,7 +369,7 @@ class PersistentFigureRenderer:
         Returns
         -------
         bytes
-            PNG image data
+            Image data (PNG or JPEG based on image_format set in constructor)
         """
         from neurospatial.animation._parallel import OverlayArtistManager
 
@@ -381,10 +432,35 @@ class PersistentFigureRenderer:
             if self._overlay_manager is not None:
                 self._overlay_manager.update_frame(frame_idx)
 
-        # Capture to PNG bytes (removed bbox_inches="tight" for consistent dimensions)
+        # Capture to image bytes (removed bbox_inches="tight" for consistent dimensions)
         with timing("PersistentFigureRenderer.render_savefig"):
             buf = io.BytesIO()
-            self._fig.savefig(buf, format="png")
+
+            if self._image_format == "jpeg":
+                # For JPEG, render to RGB array then save with PIL
+                self._fig.canvas.draw()
+                rgba = np.asarray(self._fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+                rgb = rgba[:, :, :3]  # Drop alpha channel
+
+                # Use PIL for JPEG compression
+                try:
+                    from PIL import Image
+
+                    img = Image.fromarray(rgb)
+                    img.save(buf, format="JPEG", quality=85, optimize=True)
+                except ImportError as e:
+                    raise ImportError(
+                        "JPEG support requires Pillow. Install with:\n"
+                        "  pip install pillow\n"
+                        "or\n"
+                        "  uv add pillow\n"
+                        "\n"
+                        "Alternatively, use image_format='png' (no dependencies)"
+                    ) from e
+            else:
+                # PNG format (lossless)
+                self._fig.savefig(buf, format="png")
+
             buf.seek(0)
             return buf.read()
 
@@ -584,6 +660,7 @@ def render_widget(
     overlay_data: Any | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    image_format: str = "png",
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> None:
     """Create interactive Jupyter widget with slider control.
@@ -634,6 +711,10 @@ def render_widget(
         Alpha transparency for region rendering, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only used when show_regions
         is True or a list of region names.
+    image_format : {"png", "jpeg"}, default="png"
+        Image format. PNG is lossless, JPEG is smaller but lossy. JPEG can
+        reduce memory usage significantly for large animations at the cost
+        of some image quality.
     **kwargs : dict
         Additional parameters (accepted for backend compatibility, ignored).
 
@@ -738,6 +819,7 @@ def render_widget(
                 overlay_data=overlay_data,
                 show_regions=show_regions,
                 region_alpha=region_alpha,
+                image_format=image_format,
             )
         else:
             # Render without overlays (backward compatibility)
@@ -758,6 +840,7 @@ def render_widget(
             vmin=vmin,
             vmax=vmax,
             dpi=dpi,
+            image_format=image_format,
         )
 
     # On-demand rendering with LRU cache
@@ -787,7 +870,8 @@ def render_widget(
             return png_bytes
 
     # Create persistent Image widget (updated in-place, not re-displayed)
-    image_widget = ipywidgets.Image(format="png", width=800)
+    # Use image format (lowercase)
+    image_widget = ipywidgets.Image(format=image_format.lower(), width=800)
 
     # Create persistent HTML widget for frame label
     title_widget = ipywidgets.HTML()
