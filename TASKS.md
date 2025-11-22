@@ -336,11 +336,11 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 6.2: Video I/O Tests
 
-- [ ] Complete all tests from Task 3.1
-- [ ] Add fixtures to [tests/conftest.py](tests/conftest.py):
-  - [ ] `sample_video` (16x16, 10 frames)
-  - [ ] `sample_video_array`
-  - [ ] `sample_calibration`
+- [x] Complete all tests from Task 3.1
+- [x] Add fixtures to [tests/conftest.py](tests/conftest.py):
+  - [x] `sample_video` (16x16, 10 frames)
+  - [x] `sample_video_array`
+  - [x] `sample_calibration`
 
 ### Task 6.3: Backend Integration Tests
 

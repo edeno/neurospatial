@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -388,4 +390,108 @@ def medium_2d_env_with_diagonal() -> Environment:
         connect_diagonal_neighbors=True,
         infer_active_bins=True,
         bin_count_threshold=1,
+    )
+
+
+# =============================================================================
+# Video Overlay Fixtures (Milestone 6.2)
+# =============================================================================
+
+
+@pytest.fixture
+def sample_video(tmp_path: Path) -> Path:
+    """Create a sample test video (16x16 pixels, 10 frames, 10 fps).
+
+    Each frame has a distinct pattern for verification:
+    - Frame i has brightness level i * 25 (0, 25, 50, ..., 225)
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest's temporary directory fixture.
+
+    Returns
+    -------
+    Path
+        Path to the created video file.
+
+    Notes
+    -----
+    Uses OpenCV for video creation. The video is created fresh for each test
+    to ensure isolation. Use `sample_video_array` for tests that don't need
+    a file on disk.
+    """
+    import cv2
+
+    video_path = tmp_path / "sample_video.mp4"
+
+    # Create video writer
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = 10.0
+    frame_size = (16, 16)  # width, height
+    writer = cv2.VideoWriter(str(video_path), fourcc, fps, frame_size)
+
+    # Write 10 frames with different brightness levels
+    for i in range(10):
+        # Create frame with brightness = i * 25 (0, 25, 50, ..., 225)
+        frame = np.full((16, 16, 3), i * 25, dtype=np.uint8)
+        writer.write(frame)  # OpenCV uses BGR
+
+    writer.release()
+    return video_path
+
+
+@pytest.fixture
+def sample_video_array() -> np.ndarray:
+    """Create a sample video as a numpy array (16x16 pixels, 10 frames).
+
+    Returns
+    -------
+    np.ndarray
+        Video array with shape (10, 16, 16, 3) and dtype uint8.
+        Frame i has brightness level i * 25.
+
+    Notes
+    -----
+    This fixture is faster than `sample_video` since it doesn't create a file.
+    Use for tests that accept array input directly.
+    """
+    frames = []
+    for i in range(10):
+        frame = np.full((16, 16, 3), i * 25, dtype=np.uint8)
+        frames.append(frame)
+    return np.array(frames, dtype=np.uint8)
+
+
+@pytest.fixture
+def sample_calibration():
+    """Create a sample VideoCalibration for testing.
+
+    Returns a calibration that maps a 16x16 pixel video to a 16x16 cm
+    environment (1:1 cm per pixel with Y-flip).
+
+    Returns
+    -------
+    VideoCalibration
+        Calibration object with 1:1 pixel-to-cm mapping.
+
+    Notes
+    -----
+    The calibration includes Y-axis flip (video origin top-left to
+    environment origin bottom-left), which is standard for video overlays.
+    """
+    from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+
+    # Create 1:1 mapping (1 cm per pixel) with Y-flip
+    # 16 pixels = 16 cm
+    transform = calibrate_from_scale_bar(
+        p1_px=(0.0, 0.0),
+        p2_px=(16.0, 0.0),
+        known_length_cm=16.0,
+        frame_size_px=(16, 16),
+    )
+
+    return VideoCalibration(
+        transform_px_to_cm=transform,
+        frame_size_px=(16, 16),
     )

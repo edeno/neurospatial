@@ -171,11 +171,20 @@
   - All 23 transform tests passing
   - All 816 animation tests passing
 
+- **Completed M6 (partial)**: 6.2 - Video I/O Tests
+  - Task 3.1 tests already exist (18 tests for VideoReader)
+  - Added shared fixtures to `tests/conftest.py`:
+    - `sample_video` - 16x16 video file, 10 frames, 10 fps
+    - `sample_video_array` - numpy array (10, 16, 16, 3)
+    - `sample_calibration` - VideoCalibration with 1:1 px→cm mapping
+  - All 18 video I/O tests passing
+  - All 40 video overlay tests passing
+
 ---
 
 ## Current Task
 
-**Next**: Milestone 6 - Task 6.2 (Video I/O Tests)
+**Next**: Milestone 6 - Task 6.3 (Backend Integration Tests)
 
 ---
 
