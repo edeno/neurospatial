@@ -531,8 +531,8 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 - [x] Full test suite: `uv run pytest` (818 animation tests pass, ruff/mypy clean)
 - [x] Linting: `uv run ruff check . && uv run ruff format .`
 - [x] Type checking: `uv run mypy src/neurospatial/` (92 files, no issues)
-- [ ] Example notebook runs: `uv run jupyter nbconvert --execute examples/18_video_overlay.ipynb`
-- [ ] CLAUDE.md examples are copy-pasteable and work
+- [x] Example notebook runs: `uv run jupyter nbconvert --execute examples/18_video_overlay.ipynb`
+- [x] CLAUDE.md examples are copy-pasteable and work (fixed calibrate_from_landmarks params)
 
 ---
 

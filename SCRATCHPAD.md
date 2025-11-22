@@ -385,9 +385,24 @@ None currently.
   - COORDINATES.md documentation rated as "outstanding"
   - No critical issues
 
+- **Quality Issues Resolved**:
+  1. **Regions normalization tests**: Already exist in `tests/animation/test_overlays.py`
+     - `TestRegionsNormalization` class with 4 tests (added in Task 8.2)
+     - Tests cover: list→dict, bool True→dict, bool False→None, default→None
+  2. **TypedDict JSON schema tests**: Added to `tests/animation/test_html_backend.py`
+     - `TestOverlayJSONSchema` class with 7 tests:
+       - `test_serialize_returns_dict`
+       - `test_serialize_has_required_keys`
+       - `test_position_overlay_conforms_to_schema`
+       - `test_point_region_conforms_to_schema`
+       - `test_dimension_ranges_format`
+       - `test_region_alpha_is_float`
+       - `test_empty_overlays_returns_valid_schema`
+     - Tests verify serialized data conforms to TypedDict definitions
+
 - **Final Verification**:
-  - [x] Animation tests: 818 passed
+  - [x] Animation tests: 825 passed (added 7 TypedDict schema tests)
   - [x] Ruff check: All checks passed
   - [x] Mypy: Success, 92 files, no issues
-  - [ ] Example notebook execution: Pending
-  - [ ] CLAUDE.md examples: Pending
+  - [x] Example notebook execution: Success (`examples/18_video_overlay.ipynb`)
+  - [x] CLAUDE.md examples: Fixed and verified (calibrate_from_landmarks params)
