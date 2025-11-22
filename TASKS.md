@@ -10,10 +10,10 @@
 |-----------|--------|-------|
 | M1: Module Structure | In Progress | 1/2 |
 | M2: Converters | Complete | 2/2 |
-| M3: External Import | Not Started | 0/2 |
+| M3: External Import | Complete | 2/2 |
 | M4: Napari Widget | Not Started | 0/2 |
 | M5: Main Entry Point | Not Started | 0/2 |
-| M6: Tests | In Progress | 2/5 |
+| M6: Tests | In Progress | 3/5 |
 | M7: Documentation | Not Started | 0/1 |
 
 ---
@@ -40,10 +40,10 @@
 
 ## Milestone 3: External Tool Import Wrappers
 
-- [ ] **3.1** Create `src/neurospatial/annotation/io.py`
+- [x] **3.1** Create `src/neurospatial/annotation/io.py`
   - `regions_from_labelme()` - wrapper for `load_labelme_json`
   - `regions_from_cvat()` - wrapper for `load_cvat_xml`
-- [ ] **3.2** Verify imports work
+- [x] **3.2** Verify imports work
 
 **Dependencies**: Uses existing `regions/io.py` functions with `VideoCalibration.transform_px_to_cm`
 
@@ -80,7 +80,7 @@
 
 - [x] **6.1** Create `tests/annotation/__init__.py`
 - [x] **6.2** Create `tests/annotation/test_converters.py`
-- [ ] **6.3** Create `tests/annotation/test_io.py`
+- [x] **6.3** Create `tests/annotation/test_io.py`
 - [ ] **6.4** Create `tests/annotation/test_core.py`
 - [ ] **6.5** Run test suite and verify passing
 
