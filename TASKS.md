@@ -353,10 +353,29 @@ PNG is 1.5x faster and 4.1x smaller for scientific visualization.
 
 ## Phase 5: Video Backend Robustness
 
-### 5.1 Sanitize Frame Naming Pattern
+### 5.1 Sanitize Frame Naming Pattern - COMPLETE
 
-- [ ] Ensure `frame_pattern` uses zero-padded filenames: `frame_%06d.png`
-- [ ] Verify `parallel_render_frames` uses same pattern
+**Verified 2025-11-22**: The current implementation already uses zero-padded filenames correctly.
+
+- [x] Ensure `frame_pattern` uses zero-padded filenames: `frame_%05d.png` (min 5 digits, expands for >99,999 frames)
+- [x] Verify `parallel_render_frames` uses same pattern
+
+**Implementation Details:**
+
+- Digit calculation: `digits = max(5, len(str(max(0, n_frames - 1))))`
+- Pattern format: `frame_%0{digits}d.png`
+- Pattern passed to workers and used in ffmpeg command are consistent
+- Handles edge cases: single frame, >100k frames, multi-worker scenarios
+
+**New Tests** (`tests/animation/test_frame_naming.py`): 16 tests covering:
+
+- Zero-padding verification
+- Minimum 5 digits enforcement
+- Pattern-to-file consistency
+- Multi-worker sequential numbering
+- Digit calculation boundaries (5k, 100k, 1M frames)
+- Non-zero start index for workers
+- ffmpeg pattern integration
 
 ### 5.2 Control ffmpeg I/O
 

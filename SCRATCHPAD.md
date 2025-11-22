@@ -895,6 +895,46 @@ All Phase 4 (Widget Backend Performance) tasks are now complete:
 - 4.3 Optional JPEG support ✅
 - 4.4 Re-profiled widget backend ✅
 
-## Next Task: Phase 5.1 - Sanitize Frame Naming Pattern
+## Completed: Phase 5.1 - Sanitize Frame Naming Pattern (2025-11-22)
+
+### Investigation Result
+
+**Finding**: The current implementation already uses zero-padded filenames correctly!
+
+### Implementation Details
+
+1. **Digit calculation** (in `parallel_render_frames`):
+   ```python
+   digits = max(5, len(str(max(0, n_frames - 1))))
+   ```
+   - Minimum 5 digits (supports up to 99,999 frames)
+   - Dynamically expands for larger frame counts
+
+2. **Pattern format**: `frame_%0{digits}d.png`
+   - Example: `frame_%05d.png` for <100k frames
+   - Example: `frame_%06d.png` for ≥100k frames
+
+3. **Consistency verified**:
+   - Pattern passed to workers via `task["digits"]`
+   - Workers use same digit count when saving: `f"frame_{frame_number:0{digits}d}.png"`
+   - ffmpeg pattern matches saved files exactly
+
+### New Tests
+
+Created `tests/animation/test_frame_naming.py` with 16 tests:
+
+| Test Class | Count | Coverage |
+|------------|-------|----------|
+| TestFrameNamingPattern | 4 | Zero-padding, minimum digits, file matching, multi-worker |
+| TestFrameNamingDigitCalculation | 5 | Small/medium/large/very large/extreme frame counts |
+| TestFrameNamingIntegration | 3 | ffmpeg pattern, non-zero start, digits propagation |
+| TestFrameNamingEdgeCases | 4 | Single frame, boundary cases (99999, 100000, 100001) |
+
+### Test Results
+
+- All 16 tests pass
+- ruff and mypy pass with no issues
+
+## Next Task: Phase 5.2 - Control ffmpeg I/O
 
 See TASKS.md for details.
