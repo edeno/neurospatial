@@ -42,6 +42,7 @@ from numpy.typing import NDArray
 
 __all__ = [
     "EnvScale",
+    "build_env_to_napari_matrix",
     "make_env_scale",
     "transform_coords_for_napari",
     "transform_direction_for_napari",
@@ -154,6 +155,72 @@ def make_env_scale(env: Any) -> EnvScale | None:
         Cached scale factors, or None if env lacks required attributes.
     """
     return EnvScale.from_env(env)
+
+
+def build_env_to_napari_matrix(scale: EnvScale) -> NDArray[np.float64]:
+    """Build 3x3 homogeneous matrix for env_cm → napari_px transform.
+
+    This matrix encodes the same transformation as transform_coords_for_napari()
+    but in matrix form for use with napari's affine parameter.
+
+    The transformation maps environment coordinates (x, y) to napari pixel
+    coordinates (row, col):
+    - col = (x - x_min) * x_scale
+    - row = (n_y - 1) - (y - y_min) * y_scale
+
+    Parameters
+    ----------
+    scale : EnvScale
+        Pre-computed scale factors from environment.
+
+    Returns
+    -------
+    T : ndarray of shape (3, 3)
+        Homogeneous transformation matrix. Apply as:
+        ``napari_coords = (T @ [x, y, 1].T).T[:2]``
+
+    Notes
+    -----
+    The matrix form is:
+
+    .. code-block:: text
+
+        [row]   [0,       -y_scale, (n_y-1) + y_min*y_scale] [x]
+        [col] = [x_scale,  0,       -x_min*x_scale         ] [y]
+        [1  ]   [0,        0,        1                     ] [1]
+
+    This is derived from the transformation equations:
+    - row = (n_y - 1) - (y - y_min) * y_scale
+          = (n_y - 1) - y*y_scale + y_min*y_scale
+          = -y_scale * y + ((n_y - 1) + y_min*y_scale)
+    - col = (x - x_min) * x_scale
+          = x_scale * x - x_min*x_scale
+
+    Examples
+    --------
+    >>> from neurospatial.animation.transforms import (
+    ...     EnvScale,
+    ...     build_env_to_napari_matrix,
+    ... )
+    >>> scale = EnvScale.from_env(env)
+    >>> matrix = build_env_to_napari_matrix(scale)
+    >>> # Transform point (x=5.0, y=5.0)
+    >>> point = np.array([5.0, 5.0, 1.0])
+    >>> napari_coords = matrix @ point  # [row, col, 1]
+
+    See Also
+    --------
+    transform_coords_for_napari : Function-based coordinate transformation
+    EnvScale : Cached scale factors for transformation
+    """
+    return np.array(
+        [
+            [0.0, -scale.y_scale, (scale.n_y - 1) + scale.y_min * scale.y_scale],
+            [scale.x_scale, 0.0, -scale.x_min * scale.x_scale],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
 
 
 def _warn_fallback(suppress: bool = False) -> None:

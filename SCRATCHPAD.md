@@ -57,12 +57,36 @@
   - VideoOverlay handling in `_convert_overlays_to_data()`
   - Added `videos` field to OverlayData
   - 11 additional tests passing
+- **Completed M3**: 3.3 - Update OverlayData
+  - Backend imports updated (ruff cleaned unused VideoData imports - will be used in M4)
+  - Fixed `_find_nearest_indices()` edge case for single-point sources
+  - Added defensive check for empty source arrays
+  - 743 tests passing (741 animation + 2 new edge case tests)
+  - Code review approved
+
+- **Completed M4 (partial)**: 4.1 - Napari Backend
+  - Added `build_env_to_napari_matrix()` to transforms.py
+    - 3x3 homogeneous matrix encoding env→napari transform
+    - Matches `transform_coords_for_napari()` exactly (6 unit tests)
+  - Implemented `_add_video_layer()` in napari_backend.py
+    - Single-frame initialization with napari Image layer
+    - Affine transform for video positioning
+    - z_order handling via layer reordering
+    - Opacity/alpha support
+    - Frame metadata storage for callbacks
+  - Implemented `_build_video_napari_affine()`
+    - Chains video→env→napari transforms
+    - Falls back to identity for non-grid environments
+  - Integrated video layer rendering in render_napari() and _render_multi_field_napari()
+  - 9 new tests for video overlays, all passing
+  - 758 animation tests passing total
+  - Pending: manual test to verify spatial alignment
 
 ---
 
 ## Current Task
 
-**Working on**: Milestone 3 - Video I/O (Task 3.3)
+**Working on**: Milestone 4 - Backend Rendering (Task 4.2 - Video Export Backend)
 
 ---
 

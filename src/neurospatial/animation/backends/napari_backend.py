@@ -48,6 +48,7 @@ if TYPE_CHECKING:
         HeadDirectionData,
         OverlayData,
         PositionData,
+        VideoData,
     )
     from neurospatial.environment.core import Environment
 
@@ -356,6 +357,188 @@ def _build_skeleton_vectors(
 
     features: dict[str, NDArray[np.object_]] = {"edge_name": edge_names}
     return vectors, features
+
+
+# =============================================================================
+# Video Layer Rendering
+# =============================================================================
+
+
+def _add_video_layer(
+    viewer: napari.Viewer,
+    video_data: VideoData,
+    env: Environment,
+    n_frames: int,
+    name: str = "Video",
+) -> Layer:
+    """Add video overlay as a streaming Image layer.
+
+    Creates a napari Image layer that displays video frames synchronized with
+    the animation. Supports affine transforms to position the video in
+    environment coordinates.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    video_data : VideoData
+        Video overlay data containing frame indices, reader, transform, etc.
+    env : Environment
+        Environment instance for coordinate transforms.
+    n_frames : int
+        Total number of animation frames.
+    name : str, default="Video"
+        Name for the video layer.
+
+    Returns
+    -------
+    layer : Layer
+        The created napari Image layer.
+
+    Notes
+    -----
+    The video layer uses napari's affine parameter to position the video
+    in environment coordinates. Frame updates are handled by the callback
+    registered via viewer.dims.events.current_step.
+
+    Z-ordering is controlled by the `z_order` attribute:
+    - "below": Video layer is added before field layer (lower in stack)
+    - "above": Video layer is added after field layer (higher in stack)
+    """
+
+    # Build affine transform matrix
+    affine = _build_video_napari_affine(video_data, env)
+
+    # Get initial frame
+    initial_frame_idx = (
+        video_data.frame_indices[0] if len(video_data.frame_indices) > 0 else 0
+    )
+    if initial_frame_idx >= 0:
+        if isinstance(video_data.reader, np.ndarray):
+            initial_frame = video_data.reader[initial_frame_idx]
+        else:
+            # VideoReader interface
+            initial_frame = video_data.reader[initial_frame_idx]
+    else:
+        # No valid frame - create blank
+        if isinstance(video_data.reader, np.ndarray):
+            h, w = video_data.reader.shape[1:3]
+        else:
+            # Estimate from env_bounds
+            h, w = 64, 64  # fallback
+        initial_frame = np.zeros((h, w, 3), dtype=np.uint8)
+
+    # Add the image layer
+    layer = viewer.add_image(
+        initial_frame,
+        name=name,
+        rgb=True,
+        opacity=video_data.alpha,
+        affine=affine,
+        blending="translucent",
+    )
+
+    # Store video data for frame updates
+    layer.metadata["video_data"] = video_data
+    layer.metadata["video_frame_indices"] = video_data.frame_indices
+
+    return layer
+
+
+def _build_video_napari_affine(
+    video_data: VideoData,
+    env: Environment,
+) -> NDArray[np.float64]:
+    """Build affine transform matrix for video positioning in napari.
+
+    Combines the video-to-environment transform with the environment-to-napari
+    transform to position video frames correctly in the napari viewer.
+
+    Parameters
+    ----------
+    video_data : VideoData
+        Video overlay data containing transform_to_env and env_bounds.
+    env : Environment
+        Environment instance for coordinate transforms.
+
+    Returns
+    -------
+    affine : ndarray of shape (3, 3)
+        2D affine transform matrix for napari's Image layer.
+
+    Notes
+    -----
+    The full transform chain is:
+    video_px → (transform_to_env) → env_cm → (env_to_napari) → napari_px
+
+    If transform_to_env is None, uses env_bounds to position the video
+    by computing a simple scale+translate transform from video pixel
+    coordinates to environment bounds.
+    """
+    from neurospatial.animation.transforms import EnvScale, build_env_to_napari_matrix
+
+    # Get environment scale factors
+    scale = EnvScale.from_env(env)
+    if scale is None:
+        # Fallback: return identity (video displayed in pixel coords)
+        return np.eye(3, dtype=np.float64)
+
+    # Build env→napari matrix
+    env_to_napari = build_env_to_napari_matrix(scale)
+
+    # Get video dimensions
+    if isinstance(video_data.reader, np.ndarray):
+        video_h, video_w = video_data.reader.shape[1:3]
+    else:
+        # Estimate from bounds or use default
+        video_h, video_w = 64, 64
+
+    # Build video→env matrix based on env_bounds
+    xmin, xmax, ymin, ymax = video_data.env_bounds
+
+    if video_data.transform_to_env is not None:
+        # Use provided transform
+        video_to_env = video_data.transform_to_env.matrix
+    else:
+        # Build scale+translate from video pixels to env bounds
+        # Video pixel (0,0) is top-left, (video_w, video_h) is bottom-right
+        # But in env coords, we typically want y increasing upward
+
+        # Scale factors: map [0, video_w) → [xmin, xmax), [0, video_h) → [ymin, ymax)
+        sx = (xmax - xmin) / video_w if video_w > 0 else 1.0
+        sy = (ymax - ymin) / video_h if video_h > 0 else 1.0
+
+        # Video y=0 at top → env y=ymax, video y=video_h at bottom → env y=ymin
+        # So: env_y = ymax - (video_row / video_h) * (ymax - ymin)
+        #           = ymax - video_row * sy
+        #           = -sy * video_row + ymax
+
+        # Video x follows same direction as env x
+        # env_x = xmin + video_col * sx
+
+        # Matrix form (row, col) → (x, y):
+        # [x]   [0,  sx, xmin] [row]
+        # [y] = [-sy, 0, ymax] [col]
+        # [1]   [0,  0,   1 ] [1  ]
+        #
+        # But we need (row, col) input format for napari:
+        video_to_env = np.array(
+            [
+                [0.0, sx, xmin],  # x = sx * col + xmin
+                [-sy, 0.0, ymax],  # y = -sy * row + ymax
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+
+    # Combine: video_px → env_cm → napari_px
+    # Note: env_to_napari operates on (x, y), but napari expects (row, col)
+    # The video_to_env converts (row, col) to (x, y)
+    # The env_to_napari converts (x, y) to (row, col)
+    # Combined: (row_v, col_v) → (x, y) → (row_n, col_n)
+    affine: NDArray[np.float64] = env_to_napari @ video_to_env
+
+    return affine
 
 
 def _render_position_overlay(
@@ -1392,6 +1575,23 @@ def render_napari(
 
     # Render overlay data if provided
     if overlay_data is not None:
+        # Render video overlays (z_order="below" first, then field layer exists, then "above")
+        n_frames = len(fields)
+        for idx, video_data in enumerate(overlay_data.videos):
+            suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
+            name = f"Video{suffix}"
+            if video_data.z_order == "below":
+                # Add video layer below field - it will appear under the field
+                # We need to reorder layers after adding
+                video_layer = _add_video_layer(
+                    viewer, video_data, env, n_frames, name=name
+                )
+                # Move video layer to bottom of stack (index 0)
+                viewer.layers.move(viewer.layers.index(video_layer), 0)
+            else:
+                # Add video layer above field (default position - on top)
+                _add_video_layer(viewer, video_data, env, n_frames, name=name)
+
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
@@ -1616,6 +1816,22 @@ def _render_multi_field_napari(
 
     # Render overlay data if provided
     if overlay_data is not None:
+        # Render video overlays (z_order="below" first, then field layer exists, then "above")
+        n_frames = len(field_sequences[0]) if field_sequences else 0
+        for idx, video_data in enumerate(overlay_data.videos):
+            suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
+            name = f"Video{suffix}"
+            if video_data.z_order == "below":
+                # Add video layer below field - it will appear under the field
+                video_layer = _add_video_layer(
+                    viewer, video_data, env, n_frames, name=name
+                )
+                # Move video layer to bottom of stack (index 0)
+                viewer.layers.move(viewer.layers.index(video_layer), 0)
+            else:
+                # Add video layer above field (default position - on top)
+                _add_video_layer(viewer, video_data, env, n_frames, name=name)
+
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""

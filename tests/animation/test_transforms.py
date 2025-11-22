@@ -326,3 +326,147 @@ class TestFallbackBehavior:
 
         # Fallback swaps axes and inverts Y
         assert result.shape == direction.shape
+
+
+class TestBuildEnvToNapariMatrix:
+    """Tests for build_env_to_napari_matrix function."""
+
+    def test_matrix_shape(self, simple_env: Environment) -> None:
+        """Test that build_env_to_napari_matrix returns 3x3 matrix."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+        )
+
+        scale = EnvScale.from_env(simple_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        assert matrix.shape == (3, 3)
+        assert matrix.dtype == np.float64
+
+    def test_matrix_matches_transform_coords(self, simple_env: Environment) -> None:
+        """Test that matrix produces same results as transform_coords_for_napari."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+            transform_coords_for_napari,
+        )
+
+        scale = EnvScale.from_env(simple_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        # Test multiple points
+        test_points = np.array(
+            [
+                [0.0, 0.0],  # Origin
+                [5.0, 5.0],  # Center
+                [10.0, 10.0],  # Corner
+                [2.5, 7.5],  # Random
+            ]
+        )
+
+        # Transform using transform_coords_for_napari
+        expected = transform_coords_for_napari(test_points, scale)
+
+        # Transform using matrix (homogeneous coordinates)
+        homogeneous = np.column_stack([test_points, np.ones(len(test_points))])
+        matrix_result = (matrix @ homogeneous.T).T[:, :2]
+
+        assert_allclose(matrix_result, expected, rtol=1e-10)
+
+    def test_matrix_origin_transform(self, simple_env: Environment) -> None:
+        """Test that matrix correctly transforms origin (0,0) to bottom-left."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+        )
+
+        scale = EnvScale.from_env(simple_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        # Transform origin
+        origin_homogeneous = np.array([scale.x_min, scale.y_min, 1.0])
+        result = matrix @ origin_homogeneous
+
+        row, col = result[0], result[1]
+
+        # Bottom-left (min x, min y) should map to:
+        # - high row (near n_y - 1, which is bottom of napari image)
+        # - low col (near 0)
+        assert col == pytest.approx(0.0, abs=0.5)
+        assert row == pytest.approx(scale.n_y - 1, abs=0.5)
+
+    def test_matrix_top_right_transform(self, simple_env: Environment) -> None:
+        """Test that matrix correctly transforms top-right corner."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+        )
+
+        scale = EnvScale.from_env(simple_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        # Transform top-right
+        top_right_homogeneous = np.array([scale.x_max, scale.y_max, 1.0])
+        result = matrix @ top_right_homogeneous
+
+        row, col = result[0], result[1]
+
+        # Top-right (max x, max y) should map to:
+        # - low row (near 0, which is top of napari image)
+        # - high col (near n_x - 1)
+        assert row == pytest.approx(0.0, abs=0.5)
+        assert col == pytest.approx(scale.n_x - 1, abs=0.5)
+
+    def test_matrix_invertible(self, simple_env: Environment) -> None:
+        """Test that the matrix is invertible for round-trip transforms."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+        )
+
+        scale = EnvScale.from_env(simple_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        # Matrix should be invertible
+        det = np.linalg.det(matrix)
+        assert abs(det) > 1e-10, "Matrix should be invertible"
+
+    def test_matrix_rectangular_env(self, rectangular_env: Environment) -> None:
+        """Test matrix works correctly for non-square environments."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+            transform_coords_for_napari,
+        )
+
+        scale = EnvScale.from_env(rectangular_env)
+        assert scale is not None
+
+        matrix = build_env_to_napari_matrix(scale)
+
+        # Test points
+        test_points = np.array(
+            [
+                [0.0, 0.0],
+                [10.0, 5.0],
+                [20.0, 10.0],
+            ]
+        )
+
+        # Transform using both methods
+        expected = transform_coords_for_napari(test_points, scale)
+        homogeneous = np.column_stack([test_points, np.ones(len(test_points))])
+        matrix_result = (matrix @ homogeneous.T).T[:, :2]
+
+        assert_allclose(matrix_result, expected, rtol=1e-10)

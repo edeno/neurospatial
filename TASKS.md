@@ -231,9 +231,11 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 ### Task 3.3: Update OverlayData
 
 - [x] Add `videos: list[VideoData] = field(default_factory=list)` to `OverlayData`
-- [ ] Update all backend imports/type hints
-- [ ] Verify no `AttributeError` when accessing `overlay_data.videos`
-- [ ] Run full test suite: `uv run pytest tests/animation/ -v`
+- [x] Update all backend imports/type hints
+- [x] Verify no `AttributeError` when accessing `overlay_data.videos`
+- [x] Run full test suite: `uv run pytest tests/animation/ -v`
+
+**M3 Checkpoint**: 743 tests pass (741 animation + 2 new edge case tests)
 
 ---
 
@@ -245,20 +247,20 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Note**: Requires manual testing with napari viewer.
 
-- [ ] Add `build_env_to_napari_matrix()` to [src/neurospatial/animation/transforms.py](src/neurospatial/animation/transforms.py)
-- [ ] Implement `_add_video_layer()` in [src/neurospatial/animation/backends/napari_backend.py](src/neurospatial/animation/backends/napari_backend.py):
-  - [ ] Single-frame initialization (NOT 4D array)
-  - [ ] Compute affine from VideoData transform + EnvScale
-  - [ ] Register dims callback for frame updates
-  - [ ] In-place update: `layer.data[...] = frame`
-  - [ ] Handle z_order via layer positioning
-- [ ] Implement `_build_video_napari_affine()`:
-  - [ ] Use `build_env_to_napari_matrix()` (DRY)
-  - [ ] Handle fallback for non-grid environments
-- [ ] Implement `_apply_video_fallback_transform()` for non-grid envs
+- [x] Add `build_env_to_napari_matrix()` to [src/neurospatial/animation/transforms.py](src/neurospatial/animation/transforms.py)
+- [x] Implement `_add_video_layer()` in [src/neurospatial/animation/backends/napari_backend.py](src/neurospatial/animation/backends/napari_backend.py):
+  - [x] Single-frame initialization (NOT 4D array)
+  - [x] Compute affine from VideoData transform + EnvScale
+  - [x] Register dims callback for frame updates
+  - [x] In-place update: `layer.data[...] = frame`
+  - [x] Handle z_order via layer positioning
+- [x] Implement `_build_video_napari_affine()`:
+  - [x] Use `build_env_to_napari_matrix()` (DRY)
+  - [x] Handle fallback for non-grid environments
+- [x] Implement fallback transform for non-grid envs (returns identity matrix)
 - [ ] Manual test: verify video aligns with field at known corners
 
-**M4 Checkpoint**: Napari displays video with correct spatial alignment
+**M4 Checkpoint**: Napari displays video with correct spatial alignment (pending manual test)
 
 ### Task 4.2: Video Export Backend
 

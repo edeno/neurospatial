@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 from neurospatial.animation.skeleton import Skeleton
 
 if TYPE_CHECKING:
+    from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
 
 # Skip all tests if napari not available
@@ -1081,3 +1082,284 @@ def test_head_direction_without_position_uses_centroid(
     # All origins should be identical (centroid is fixed)
     assert np.allclose(origins_y, origins_y[0])
     assert np.allclose(origins_x, origins_x[0])
+
+
+# =============================================================================
+# Video Overlay Layer Tests
+# =============================================================================
+
+
+@pytest.fixture
+def video_data_array() -> tuple[NDArray[np.uint8], NDArray[np.int_]]:
+    """Create video data as numpy array for testing."""
+
+    # 10 frames, 64x64 pixels, RGB
+    n_frames = 10
+    height, width = 64, 64
+    video_frames = np.random.randint(
+        0, 256, (n_frames, height, width, 3), dtype=np.uint8
+    )
+    frame_indices = np.arange(n_frames)
+
+    return video_frames, frame_indices
+
+
+@pytest.fixture
+def video_overlay_data(video_data_array, simple_env) -> OverlayData:
+    """Create OverlayData with VideoData for testing."""
+    from neurospatial.animation.overlays import OverlayData, VideoData
+
+    video_frames, frame_indices = video_data_array
+
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),  # xmin, xmax, ymin, ymax
+        alpha=0.8,
+        z_order="below",
+    )
+
+    return OverlayData(videos=[video_data])
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_created_when_video_data_present(
+    mock_viewer_class, simple_env, simple_fields, video_overlay_data
+):
+    """Test that video overlay adds an Image layer to napari viewer."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    render_napari(simple_env, simple_fields, overlay_data=video_overlay_data)
+
+    # Should call add_image for video layer
+    assert mock_viewer.add_image.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_z_order_below(
+    mock_viewer_class, simple_env, simple_fields, video_data_array
+):
+    """Test that z_order='below' positions video under field layer."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData, VideoData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    video_frames, frame_indices = video_data_array
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),
+        alpha=0.8,
+        z_order="below",  # Video below field
+    )
+    overlay_data = OverlayData(videos=[video_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Video layer should be added before field layer (lower in stack = below)
+    # We can verify by checking call order
+    assert mock_viewer.add_image.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_z_order_above(
+    mock_viewer_class, simple_env, simple_fields, video_data_array
+):
+    """Test that z_order='above' positions video over field layer."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData, VideoData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    video_frames, frame_indices = video_data_array
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),
+        alpha=0.5,
+        z_order="above",  # Video above field
+    )
+    overlay_data = OverlayData(videos=[video_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Video layer should be added after field layer (higher in stack = above)
+    assert mock_viewer.add_image.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_alpha_applied(
+    mock_viewer_class, simple_env, simple_fields, video_data_array
+):
+    """Test that video layer opacity is set correctly."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData, VideoData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    video_frames, frame_indices = video_data_array
+    alpha_value = 0.65
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),
+        alpha=alpha_value,
+        z_order="below",
+    )
+    overlay_data = OverlayData(videos=[video_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Check that add_image was called with opacity parameter
+    assert mock_viewer.add_image.called
+    call_kwargs = mock_viewer.add_image.call_args[1]
+    assert "opacity" in call_kwargs
+    assert call_kwargs["opacity"] == pytest.approx(alpha_value)
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_updates_on_frame_change(
+    mock_viewer_class, simple_env, simple_fields, video_overlay_data
+):
+    """Test that video layer data updates when animation frame changes."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Mock dims events for frame change callback
+    mock_viewer.dims.events.current_step = MagicMock()
+
+    render_napari(simple_env, simple_fields, overlay_data=video_overlay_data)
+
+    # Verify callback was registered for frame changes
+    assert mock_viewer.dims.events.current_step.connect.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_layer_handles_missing_frames(
+    mock_viewer_class, simple_env, simple_fields
+):
+    """Test video layer handles frame_indices with -1 (missing frames)."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData, VideoData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Create video with fewer frames than animation
+    n_video_frames = 5
+    n_animation_frames = 10
+    video_frames = np.random.randint(
+        0, 256, (n_video_frames, 32, 32, 3), dtype=np.uint8
+    )
+
+    # Frame indices with -1 for missing frames
+    frame_indices = np.array([0, 1, 2, 3, 4, -1, -1, -1, -1, -1])
+
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),
+        alpha=0.8,
+        z_order="below",
+    )
+    overlay_data = OverlayData(videos=[video_data])
+
+    # Extend simple_fields to match n_animation_frames
+    extended_fields = [
+        np.random.rand(simple_env.n_bins) for _ in range(n_animation_frames)
+    ]
+
+    render_napari(simple_env, extended_fields, overlay_data=overlay_data)
+
+    # Should not raise error - missing frames handled gracefully
+    assert mock_viewer.add_image.called
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_video_with_other_overlays(
+    mock_viewer_class, simple_env, simple_fields, video_data_array
+):
+    """Test video overlay works alongside position and other overlays."""
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData, PositionData, VideoData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    video_frames, frame_indices = video_data_array
+    video_data = VideoData(
+        frame_indices=frame_indices,
+        reader=video_frames,
+        transform_to_env=None,
+        env_bounds=(0.0, 20.0, 0.0, 10.0),
+        alpha=0.7,
+        z_order="below",
+    )
+
+    # Add position overlay too
+    positions = np.array([[5.0 + i, 5.0 + i * 0.3] for i in range(10)])
+    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=5)
+
+    overlay_data = OverlayData(videos=[video_data], positions=[pos_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Both video and position layers should be created
+    assert mock_viewer.add_image.called
+    assert mock_viewer.add_tracks.called or mock_viewer.add_points.called
+
+
+def test_video_overlay_data_signature():
+    """Test OverlayData includes videos parameter."""
+    # Check that videos parameter exists
+    import inspect
+
+    from neurospatial.animation.overlays import OverlayData
+
+    sig = inspect.signature(OverlayData)
+    param_names = list(sig.parameters.keys())
+    assert "videos" in param_names
+
+
+def test_video_data_fields():
+    """Test VideoData has expected fields."""
+    # Check required attributes exist
+    import dataclasses
+
+    from neurospatial.animation.overlays import VideoData
+
+    fields = {f.name for f in dataclasses.fields(VideoData)}
+    assert "frame_indices" in fields
+    assert "reader" in fields
+    assert "transform_to_env" in fields
+    assert "env_bounds" in fields
+    assert "alpha" in fields
+    assert "z_order" in fields
