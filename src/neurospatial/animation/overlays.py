@@ -798,9 +798,8 @@ class VideoData:
             frame: NDArray[np.uint8] = self.reader[video_frame_idx]
             return frame
         else:
-            # VideoReader case - to be implemented in Task 3.1
-            # For now, assume reader has a get_frame method
-            result: NDArray[np.uint8] | None = self.reader.get_frame(video_frame_idx)
+            # VideoReader case - uses subscript access
+            result: NDArray[np.uint8] = self.reader[video_frame_idx]
             return result
 
 
@@ -1574,6 +1573,10 @@ def _find_nearest_indices(
     if len(t_query) == 0:
         return np.array([], dtype=np.int_)
 
+    # Handle empty source (no valid indices possible)
+    if len(t_src) == 0:
+        return np.full(len(t_query), -1, dtype=np.int_)
+
     # Initialize result with -1 (out-of-range marker)
     result = np.full(len(t_query), -1, dtype=np.int_)
 
@@ -1586,6 +1589,11 @@ def _find_nearest_indices(
         return result
 
     t_valid = t_query[valid_mask]
+
+    # Handle single-point source case
+    if len(t_src) == 1:
+        result[valid_mask] = 0  # Only one index possible
+        return result
 
     # Use searchsorted to find nearest indices
     idx_right = np.searchsorted(t_src, t_valid, side="left")
