@@ -159,6 +159,24 @@
   - Code review approved
   - Exported from `neurospatial.animation` module
 
+- **Completed M6 (partial)**: 6.1 - Calibration Edge Case Tests
+  - Added `test_rejects_ill_conditioned_landmarks` - tests collinear landmarks rejection
+  - Added `test_rejects_nearly_collinear_landmarks` - tests nearly collinear landmarks
+  - Added `test_warns_bounds_mismatch` - tests warning when env exceeds video
+  - Added `test_no_warning_when_video_covers_env` - tests no warning case
+  - Implemented ill-conditioned landmark check in `calibrate_from_landmarks()`
+    - Uses SVD to detect collinearity (singular value ratio check)
+    - Threshold: `s[1] < 1e-6 * s[0]` indicates collinear points
+    - Checks both pixel and environment landmarks
+  - All 23 transform tests passing
+  - All 816 animation tests passing
+
+---
+
+## Current Task
+
+**Next**: Milestone 6 - Task 6.2 (Video I/O Tests)
+
 ---
 
 ## Blockers
@@ -170,3 +188,6 @@ None currently.
 ## Decisions Made
 
 1. Reordering tasks to respect dependencies while following TDD
+2. Ill-conditioned landmark detection uses SVD of centered points, not condition number of output transform
+   - Output transform can have good condition even with collinear inputs
+   - Singular value ratio of centered source points reliably detects collinearity

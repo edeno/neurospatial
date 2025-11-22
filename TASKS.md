@@ -329,10 +329,10 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 6.1: Calibration Tests
 
-- [ ] Complete all tests from Task 1.1 and 1.2
-- [ ] Add edge case tests:
-  - [ ] `test_rejects_ill_conditioned_landmarks`
-  - [ ] `test_warns_bounds_mismatch`
+- [x] Complete all tests from Task 1.1 and 1.2
+- [x] Add edge case tests:
+  - [x] `test_rejects_ill_conditioned_landmarks`
+  - [x] `test_warns_bounds_mismatch`
 
 ### Task 6.2: Video I/O Tests
 

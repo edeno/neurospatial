@@ -670,8 +670,32 @@ def calibrate_from_landmarks(
     landmarks_px_flipped = landmarks_px.copy()
     landmarks_px_flipped[:, 1] = frame_height - landmarks_px[:, 1]
 
+    # Check for collinear/degenerate landmarks before estimation
+    # Use singular values of centered points to detect if they span 2D
+    # If the ratio S[0]/S[1] is huge, points are nearly collinear
+    centered_px = landmarks_px_flipped - landmarks_px_flipped.mean(axis=0)
+    centered_cm = landmarks_cm - landmarks_cm.mean(axis=0)
+
+    _, s_px, _ = np.linalg.svd(centered_px, full_matrices=False)
+    _, s_cm, _ = np.linalg.svd(centered_cm, full_matrices=False)
+
+    # Check both source and destination for collinearity
+    # Condition threshold: smallest singular value should be > 1e-6 * largest
+    for name, s in [("pixel", s_px), ("environment", s_cm)]:
+        if len(s) >= 2 and s[1] < 1e-6 * s[0]:
+            ratio = s[0] / (s[1] + 1e-15)
+            raise ValueError(
+                f"WHAT: Landmark calibration has ill-conditioned {name} points "
+                f"(spread ratio={ratio:.1e}).\n"
+                f"WHY: Landmarks are collinear or too close together. "
+                f"2D transforms require points that span both x and y directions.\n"
+                f"HOW: Use landmarks that span the full video frame with good spread. "
+                f"Ensure at least 3 non-collinear points."
+            )
+
     # Use estimate_transform from this module (returns AffineND, wrap in Affine2D)
     result = estimate_transform(landmarks_px_flipped, landmarks_cm, kind=kind)
+
     return Affine2D(result.A)
 
 

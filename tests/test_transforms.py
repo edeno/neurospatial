@@ -391,3 +391,164 @@ class TestVideoCalibration:
         assert "transform_px_to_cm" in d
         assert "frame_size_px" in d
         assert d["frame_size_px"] == [640, 480]
+
+
+class TestCalibrationEdgeCases:
+    """Edge case tests for calibration validation (Task 6.1)."""
+
+    def test_rejects_ill_conditioned_landmarks(self):
+        """Collinear landmarks raise ValueError due to ill-conditioned transform.
+
+        Landmarks that are collinear (all on a line) produce an ill-conditioned
+        transform that cannot reliably map points. This should be rejected with
+        a clear error message.
+        """
+        # All points on a horizontal line (y=200 constant)
+        collinear_px = np.array(
+            [
+                [100.0, 200.0],
+                [200.0, 200.0],
+                [300.0, 200.0],
+                [400.0, 200.0],
+            ]
+        )
+        # Corresponding environment points (also collinear)
+        collinear_cm = np.array(
+            [
+                [0.0, 50.0],
+                [25.0, 50.0],
+                [50.0, 50.0],
+                [75.0, 50.0],
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"[Ii]ll.?condition"):
+            calibrate_from_landmarks(
+                landmarks_px=collinear_px,
+                landmarks_cm=collinear_cm,
+                frame_size_px=(640, 480),
+                kind="similarity",
+            )
+
+    def test_rejects_nearly_collinear_landmarks(self):
+        """Nearly collinear landmarks also raise ValueError.
+
+        Points that are almost on a line (very small deviation) should also
+        be rejected as the resulting transform will be numerically unstable.
+        """
+        # Points almost on a horizontal line (tiny y variation)
+        nearly_collinear_px = np.array(
+            [
+                [100.0, 200.0],
+                [200.0, 200.0001],  # Tiny deviation
+                [300.0, 200.0],
+                [400.0, 200.0001],
+            ]
+        )
+        nearly_collinear_cm = np.array(
+            [
+                [0.0, 50.0],
+                [25.0, 50.0001],
+                [50.0, 50.0],
+                [75.0, 50.0001],
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"[Ii]ll.?condition"):
+            calibrate_from_landmarks(
+                landmarks_px=nearly_collinear_px,
+                landmarks_cm=nearly_collinear_cm,
+                frame_size_px=(640, 480),
+                kind="similarity",
+            )
+
+
+class TestBoundsMismatchWarning:
+    """Tests for bounds coverage validation (Task 6.1)."""
+
+    def test_warns_bounds_mismatch(self, tmp_path):
+        """Warns when environment bounds exceed calibrated video coverage.
+
+        When the environment extends beyond what the calibrated video covers,
+        a warning should be emitted to alert the user that some regions will
+        appear blank.
+        """
+        # Create a tiny test video file
+        import imageio
+
+        video_path = tmp_path / "test_video.mp4"
+        # 64x48 video (small for fast test)
+        frames = [np.zeros((48, 64, 3), dtype=np.uint8) for _ in range(5)]
+        imageio.mimwrite(str(video_path), frames, fps=10)
+
+        # Create environment with bounds LARGER than video will cover
+        # Video is 64x48 pixels with scale 1.0 cm/px = 64x48 cm coverage
+        # But environment is 100x100 cm
+        from neurospatial import Environment
+
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [0.0, 100.0],
+            ]
+        )
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Import calibrate_video
+        from neurospatial.animation.calibration import calibrate_video
+
+        # Calibration with scale 1.0 cm/px means video covers 64x48 cm
+        # Environment needs 100x100 cm - should warn
+        with pytest.warns(UserWarning, match="[Bb]ounds.*extend|exceed"):
+            calibrate_video(
+                video_path,
+                env,
+                cm_per_px=1.0,
+            )
+
+    def test_no_warning_when_video_covers_env(self):
+        """No warning when video coverage fully contains environment bounds.
+
+        Test the validation function directly with a calibration that clearly
+        covers the environment bounds.
+        """
+        import warnings
+
+        from neurospatial import Environment
+        from neurospatial.animation.calibration import _validate_calibration_coverage
+        from neurospatial.transforms import VideoCalibration
+
+        # Create a small environment
+        positions = np.array(
+            [
+                [10.0, 10.0],
+                [20.0, 10.0],
+                [20.0, 20.0],
+                [10.0, 20.0],
+            ]
+        )
+        # With bin_size=5.0, bounds will be ~[7.5, 22.5] x [7.5, 22.5]
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Create calibration that maps 640x480 video to 0-100 cm
+        # Using simple 1:1 pixel-to-cm with Y-flip: video covers 0-640 x 0-480 cm
+        # which is much larger than env bounds [7.5, 22.5]
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),  # 100 px = 100 cm -> 1 cm/px
+            known_length_cm=100.0,
+            frame_size_px=(640, 480),
+        )
+        calibration = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+        # Video covers x: 0 to 640 cm, y: 0 to 480 cm
+        # Env bounds: [7.5, 22.5] x [7.5, 22.5] - fully inside
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            # Should NOT raise any warnings
+            _validate_calibration_coverage(calibration, env)
