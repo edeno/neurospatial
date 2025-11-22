@@ -197,6 +197,12 @@ from neurospatial.animation.overlays import (
     PositionOverlay,
     VideoOverlay,
 )
+from neurospatial.annotation import (
+    AnnotationResult,
+    annotate_video,
+    regions_from_cvat,
+    regions_from_labelme,
+)
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
@@ -261,6 +267,11 @@ __all__ = [
     "HeadDirectionOverlay",
     "PositionOverlay",
     "VideoOverlay",
+    # Annotation tools
+    "AnnotationResult",
+    "annotate_video",
+    "regions_from_cvat",
+    "regions_from_labelme",
     # Enums and types
     "LayoutType",
     "TieBreakStrategy",

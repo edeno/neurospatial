@@ -8,7 +8,7 @@
 
 | Milestone | Status | Tasks |
 |-----------|--------|-------|
-| M1: Module Structure | In Progress | 1/2 |
+| M1: Module Structure | Complete | 2/2 |
 | M2: Converters | Complete | 2/2 |
 | M3: External Import | Complete | 2/2 |
 | M4: Napari Widget | Complete | 2/2 |
@@ -20,8 +20,8 @@
 
 ## Milestone 1: Module Structure and Public API
 
-- [x] **1.1** Create `src/neurospatial/annotation/__init__.py` with public exports (partial - converters only)
-- [ ] **1.2** Update `src/neurospatial/__init__.py` with annotation imports
+- [x] **1.1** Create `src/neurospatial/annotation/__init__.py` with public exports
+- [x] **1.2** Update `src/neurospatial/__init__.py` with annotation imports
 
 **Verification**: `uv run python -c "from neurospatial.annotation import annotate_video; print('OK')"`
 
