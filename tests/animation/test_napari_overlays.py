@@ -221,6 +221,64 @@ def test_position_overlay_applies_color_and_size(
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+def test_position_overlay_trail_color_by_workaround(
+    mock_viewer_class, simple_env, simple_fields, position_overlay_data
+):
+    """Test that trail color is set via post-creation assignment to avoid napari warning.
+
+    napari 0.5.x has a known issue where passing color_by at layer creation time
+    triggers a warning because napari's internal data setter resets features to {}
+    before our features are applied. The workaround is:
+    1. Pass features and colormaps_dict at creation time
+    2. Set color_by AFTER creation via attribute assignment
+
+    This test documents and locks in the workaround behavior.
+    """
+    from neurospatial.animation.backends.napari_backend import render_napari
+    from neurospatial.animation.overlays import OverlayData
+
+    mock_viewer = MagicMock()
+    mock_viewer_class.return_value = mock_viewer
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Create a mock layer to track attribute assignment
+    mock_tracks_layer = MagicMock()
+    mock_viewer.add_tracks.return_value = mock_tracks_layer
+
+    overlay_data = OverlayData(positions=[position_overlay_data])
+
+    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+    # Verify add_tracks was called
+    assert mock_viewer.add_tracks.called
+
+    # Verify color_by was NOT passed as a kwarg (to avoid napari warning)
+    tracks_kwargs = mock_viewer.add_tracks.call_args[1]
+    assert "color_by" not in tracks_kwargs, (
+        "color_by should NOT be passed at layer creation (causes napari warning)"
+    )
+
+    # Verify features and colormaps_dict ARE passed at creation
+    assert "features" in tracks_kwargs, "features should be passed at creation"
+    assert "colormaps_dict" in tracks_kwargs, (
+        "colormaps_dict should be passed at creation"
+    )
+    assert "color" in tracks_kwargs["features"], (
+        "features should include 'color' key for uniform coloring"
+    )
+    assert "color" in tracks_kwargs["colormaps_dict"], (
+        "colormaps_dict should include 'color' key"
+    )
+
+    # Verify color_by was set AFTER creation via attribute assignment
+    # The mock layer should have had its color_by attribute set
+    assert mock_tracks_layer.color_by == "color", (
+        "color_by should be set to 'color' via post-creation assignment"
+    )
+
+
+@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
 def test_position_overlay_without_trail(mock_viewer_class, simple_env, simple_fields):
     """Test position overlay without trail_length (points only, no tracks)."""
     from neurospatial.animation.backends.napari_backend import render_napari

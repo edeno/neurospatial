@@ -85,12 +85,18 @@
 - [x] Test: one warning per viewer/env combination (15 new tests)
 - [x] Test: multiple envs warn once each
 
-### 2.3 Tracks Color Handling Cleanup
+### 2.3 Tracks Color Handling Cleanup - VERIFIED CURRENT APPROACH CORRECT
 
-- [ ] Use `features` + `color_by="color"` at layer creation (verify it is a keyword argument)
-- [ ] Remove post-creation `layer.color_by = "color"` workaround
-- [ ] Verify no warnings on layer init
-- [ ] Verify trails still uniformly colored
+**Investigation Result**: napari 0.5.6 still exhibits the issue where passing `color_by` at
+layer creation time triggers a warning because napari's internal data setter resets features
+to `{}` before our features are applied. The current workaround (setting `color_by` AFTER
+creation) is the correct approach.
+
+- [x] Verified `color_by` is a keyword argument in napari 0.5.6 Tracks layer
+- [x] Tested: passing `color_by` at init triggers warning "color_by key 'color' not present in features"
+- [x] Verified: post-creation `layer.color_by = "color"` avoids warning
+- [x] Added test `test_position_overlay_trail_color_by_workaround` to document/lock behavior
+- [N/A] Remove post-creation workaround - NOT POSSIBLE (napari bug still present)
 
 ### 2.4 Playback Widget Throttling Fix
 
@@ -253,7 +259,7 @@
 |-------|--------|-------|
 | Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
-| Phase 2: Napari | In Progress | 2.1 COMPLETE (42-47x speedup!), 2.2 COMPLETE, 2.3-2.5 pending |
+| Phase 2: Napari | In Progress | 2.1-2.3 COMPLETE (42-47x speedup!), 2.4-2.5 pending |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |
 | Phase 5: Video | Not started | |

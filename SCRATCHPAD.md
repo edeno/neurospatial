@@ -464,6 +464,45 @@ valid_end = end_coords[valid_frame_indices]
 - All 63 related tests pass (transforms + napari overlays)
 - ruff and mypy pass
 
-## Next Task: Phase 2.3 - Tracks Color Handling Cleanup
+## Completed: Phase 2.3 - Tracks Color Handling Investigation
 
-Use `features` + `color_by="color"` at layer creation instead of post-creation workaround.
+### Investigation Summary
+
+**Goal**: Use `features` + `color_by="color"` at layer creation instead of post-creation workaround.
+
+**Finding**: The current workaround is CORRECT and still necessary in napari 0.5.6.
+
+### Technical Details
+
+1. **Verified napari 0.5.6 behavior**:
+   - `color_by` IS a constructor parameter for Tracks layer
+   - BUT passing it at init time triggers warning:
+     `UserWarning: Previous color_by key 'color' not present in features. Falling back to track_id`
+
+2. **Root cause** (documented in existing code comment):
+   - During `__init__`, napari's data setter resets features to `{}` before our features are applied
+   - If `color_by` is passed at init time, the check runs against empty features and warns
+
+3. **Current workaround is correct**:
+   ```python
+   # Create layer WITHOUT color_by
+   layer = viewer.add_tracks(track_data, features=features, colormaps_dict=colormaps_dict)
+   layer.color_by = "color"  # Set AFTER creation - no warning!
+   ```
+
+### Test Added
+
+Added `test_position_overlay_trail_color_by_workaround` to document and lock in this behavior:
+- Verifies `color_by` NOT passed as kwarg at creation
+- Verifies `features` and `colormaps_dict` ARE passed at creation
+- Verifies `layer.color_by` set to "color" via post-creation assignment
+
+### Test Results
+
+- New test passes
+- All 30 napari overlay tests pass
+- ruff and mypy pass
+
+## Next Task: Phase 2.4 - Playback Widget Throttling Fix
+
+Fix `_add_speed_control_widget` so `update_frame_info` always updates when not playing.
