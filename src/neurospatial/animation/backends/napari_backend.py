@@ -107,6 +107,108 @@ FPS_SLIDER_DEFAULT_MAX: int = 120
 WIDGET_UPDATE_TARGET_HZ: int = 30
 """Target update rate for playback widget to avoid Qt overhead at high FPS."""
 
+# Per-viewer warning state metadata key
+_TRANSFORM_WARNED_KEY: str = "_transform_fallback_warned"
+"""Metadata key for tracking transform fallback warning per viewer."""
+
+
+# =============================================================================
+# Per-Viewer Warning State Management
+# =============================================================================
+
+
+def _check_viewer_warned(viewer: napari.Viewer) -> bool:
+    """Check if viewer has already shown transform fallback warning.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+
+    Returns
+    -------
+    bool
+        True if viewer has already shown the warning, False otherwise.
+    """
+    return bool(viewer.metadata.get(_TRANSFORM_WARNED_KEY, False))
+
+
+def _mark_viewer_warned(viewer: napari.Viewer) -> None:
+    """Mark viewer as having shown transform fallback warning.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    """
+    viewer.metadata[_TRANSFORM_WARNED_KEY] = True
+
+
+def _transform_coords_with_viewer(
+    coords: NDArray[np.float64],
+    env: Environment,
+    viewer: napari.Viewer,
+) -> NDArray[np.float64]:
+    """Transform coordinates with per-viewer warning tracking.
+
+    This wrapper around _transform_coords_for_napari manages warning state
+    per-viewer, ensuring each viewer receives the fallback warning at most once.
+
+    Parameters
+    ----------
+    coords : ndarray
+        Coordinates in environment (x, y) space.
+    env : Environment
+        Environment instance for coordinate transformation.
+    viewer : napari.Viewer
+        Napari viewer instance for warning state tracking.
+
+    Returns
+    -------
+    ndarray
+        Coordinates in napari pixel (row, col) space.
+    """
+    already_warned = _check_viewer_warned(viewer)
+    result = _transform_coords_for_napari(coords, env, suppress_warning=already_warned)
+    # Mark as warned if we didn't suppress (warning may have been shown)
+    if not already_warned:
+        _mark_viewer_warned(viewer)
+    return result
+
+
+def _transform_direction_with_viewer(
+    direction: NDArray[np.float64],
+    env: Environment,
+    viewer: napari.Viewer,
+) -> NDArray[np.float64]:
+    """Transform direction vectors with per-viewer warning tracking.
+
+    This wrapper around _transform_direction_for_napari manages warning state
+    per-viewer, ensuring each viewer receives the fallback warning at most once.
+
+    Parameters
+    ----------
+    direction : ndarray
+        Direction vectors in environment (dx, dy) space.
+    env : Environment
+        Environment instance for coordinate transformation.
+    viewer : napari.Viewer
+        Napari viewer instance for warning state tracking.
+
+    Returns
+    -------
+    ndarray
+        Direction vectors in napari pixel (dr, dc) space.
+    """
+    already_warned = _check_viewer_warned(viewer)
+    result = _transform_direction_for_napari(
+        direction, env, suppress_warning=already_warned
+    )
+    # Mark as warned if we didn't suppress (warning may have been shown)
+    if not already_warned:
+        _mark_viewer_warned(viewer)
+    return result
+
 
 # =============================================================================
 # Overlay Rendering Helper Functions

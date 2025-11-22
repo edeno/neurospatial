@@ -76,12 +76,14 @@
 | Medium (5k frames, 4 edges) | 98.75 | 2.11 | **46.8x** |
 | Large (100k frames, 6 edges) | 2628.52 | 62.35 | **42.2x** |
 
-### 2.2 Fix Transform Fallback Warning State
+### 2.2 Fix Transform Fallback Warning State - COMPLETE
 
-- [ ] Replace `_NAPARI_TRANSFORM_FALLBACK_WARNED` global
-- [ ] Use per-viewer state: `viewer.metadata.setdefault("_napari_transform_warned", False)`
-- [ ] Test: one warning per viewer/env combination
-- [ ] Test: multiple envs warn once each
+- [x] Replace `_TRANSFORM_FALLBACK_WARNED` global behavior with per-viewer tracking
+- [x] Add `suppress_warning` parameter to `transform_coords_for_napari` and `transform_direction_for_napari`
+- [x] Add helper functions `_check_viewer_warned`, `_mark_viewer_warned` in napari backend
+- [x] Add wrapper functions `_transform_coords_with_viewer`, `_transform_direction_with_viewer`
+- [x] Test: one warning per viewer/env combination (15 new tests)
+- [x] Test: multiple envs warn once each
 
 ### 2.3 Tracks Color Handling Cleanup
 
@@ -251,7 +253,7 @@
 |-------|--------|-------|
 | Phase 0: Profiling | Complete | Timing instrumentation, datasets, baseline metrics all done |
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
-| Phase 2: Napari | In Progress | 2.1 COMPLETE (42-47x speedup!), 2.2-2.5 pending |
+| Phase 2: Napari | In Progress | 2.1 COMPLETE (42-47x speedup!), 2.2 COMPLETE, 2.3-2.5 pending |
 | Phase 3: Overlays | Not started | |
 | Phase 4: Widget | Not started | |
 | Phase 5: Video | Not started | |

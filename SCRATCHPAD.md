@@ -421,6 +421,49 @@ valid_end = end_coords[valid_frame_indices]
 # Build vectors using array operations
 ```
 
-## Next Task: Phase 2.2 - Fix Transform Fallback Warning State
+## Completed: Phase 2.2 - Fix Transform Fallback Warning State
 
-Replace `_NAPARI_TRANSFORM_FALLBACK_WARNED` global with per-viewer state.
+### What Was Done
+
+1. **Added `suppress_warning` parameter** to transform functions in `transforms.py`:
+   - `transform_coords_for_napari(coords, env_or_scale, *, suppress_warning=False)`
+   - `transform_direction_for_napari(direction, env_or_scale, *, suppress_warning=False)`
+   - Updated `_warn_fallback(suppress=False)` to accept suppression
+
+2. **Added per-viewer warning tracking** in `napari_backend.py`:
+   - `_TRANSFORM_WARNED_KEY` - metadata key for tracking
+   - `_check_viewer_warned(viewer)` - check if viewer has warned
+   - `_mark_viewer_warned(viewer)` - mark viewer as having warned
+   - `_transform_coords_with_viewer(coords, env, viewer)` - wrapper with tracking
+   - `_transform_direction_with_viewer(direction, env, viewer)` - wrapper with tracking
+
+3. **Added tests** in `tests/animation/test_transform_per_viewer_warning.py`:
+   - 15 new tests covering all scenarios
+   - Tests for suppress_warning parameter
+   - Tests for per-viewer state management
+   - Integration tests for viewer tracking wrappers
+   - Module-level fallback behavior tests
+
+### Key Design Decisions
+
+1. **Dual-layer approach**:
+   - Module-level `_TRANSFORM_FALLBACK_WARNED` flag provides session-level safety net
+   - Per-viewer tracking via `viewer.metadata` allows each viewer to warn once
+
+2. **Backward compatible**:
+   - `suppress_warning` is keyword-only with default `False`
+   - Existing code works unchanged
+
+3. **Wrapper functions** instead of modifying all call sites:
+   - `_transform_coords_with_viewer` and `_transform_direction_with_viewer`
+   - Can be used in `_render_*` functions when per-viewer tracking is needed
+
+### Test Results
+
+- All 15 new tests pass
+- All 63 related tests pass (transforms + napari overlays)
+- ruff and mypy pass
+
+## Next Task: Phase 2.3 - Tracks Color Handling Cleanup
+
+Use `features` + `color_by="color"` at layer creation instead of post-creation workaround.

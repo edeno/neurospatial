@@ -156,9 +156,19 @@ def make_env_scale(env: Any) -> EnvScale | None:
     return EnvScale.from_env(env)
 
 
-def _warn_fallback() -> None:
-    """Emit warning about fallback transform behavior (once per session)."""
+def _warn_fallback(suppress: bool = False) -> None:
+    """Emit warning about fallback transform behavior (once per session).
+
+    Parameters
+    ----------
+    suppress : bool, optional
+        If True, suppress the warning even if it would normally be shown.
+        Used by napari backend for per-viewer warning tracking.
+        Default is False (allow warning to be emitted).
+    """
     global _TRANSFORM_FALLBACK_WARNED
+    if suppress:
+        return
     if not _TRANSFORM_FALLBACK_WARNED:
         warnings.warn(
             "Napari coordinate transform falling back to simple axis swap.\n"
@@ -177,6 +187,8 @@ def _warn_fallback() -> None:
 def transform_coords_for_napari(
     coords: NDArray[np.float64],
     env_or_scale: Any | EnvScale | None = None,
+    *,
+    suppress_warning: bool = False,
 ) -> NDArray[np.float64]:
     """Transform coordinates from environment (x, y) to napari pixel (row, col).
 
@@ -196,6 +208,9 @@ def transform_coords_for_napari(
     env_or_scale : Environment or EnvScale, optional
         Environment instance or pre-computed EnvScale for coordinate transformation.
         Required for 2D coords to avoid misalignment.
+    suppress_warning : bool, optional
+        If True, suppress the fallback warning even if it would normally be shown.
+        Used by napari backend for per-viewer warning tracking. Default is False.
 
     Returns
     -------
@@ -219,7 +234,7 @@ def transform_coords_for_napari(
 
         if scale is None:
             # Fallback: just swap x and y (may cause alignment issues)
-            _warn_fallback()
+            _warn_fallback(suppress=suppress_warning)
             return coords[..., ::-1]
 
         x_coords = coords[..., 0]
@@ -245,6 +260,8 @@ def transform_coords_for_napari(
 def transform_direction_for_napari(
     direction: NDArray[np.float64],
     env_or_scale: Any | EnvScale | None = None,
+    *,
+    suppress_warning: bool = False,
 ) -> NDArray[np.float64]:
     """Transform direction vectors from environment (dx, dy) to napari (dr, dc).
 
@@ -259,6 +276,9 @@ def transform_direction_for_napari(
     env_or_scale : Environment or EnvScale, optional
         Environment instance or pre-computed EnvScale for scaling.
         If None, only swaps axes and inverts Y.
+    suppress_warning : bool, optional
+        If True, suppress the fallback warning even if it would normally be shown.
+        Used by napari backend for per-viewer warning tracking. Default is False.
 
     Returns
     -------
@@ -284,7 +304,7 @@ def transform_direction_for_napari(
 
         if scale is None:
             # Fallback: just swap axes and invert Y (may cause alignment issues)
-            _warn_fallback()
+            _warn_fallback(suppress=suppress_warning)
             result = np.empty_like(direction)
             result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
             result[..., 1] = dx
