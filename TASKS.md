@@ -258,9 +258,9 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
   - [x] Use `build_env_to_napari_matrix()` (DRY)
   - [x] Handle fallback for non-grid environments
 - [x] Implement fallback transform for non-grid envs (returns identity matrix)
-- [ ] Manual test: verify video aligns with field at known corners
+- [x] Manual test: verify video aligns with field at known corners
 
-**M4 Checkpoint**: Napari displays video with correct spatial alignment (pending manual test)
+**M4 Checkpoint**: Napari displays video with correct spatial alignment ✓
 
 ### Task 4.2: Video Export Backend
 

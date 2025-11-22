@@ -64,7 +64,7 @@
   - 743 tests passing (741 animation + 2 new edge case tests)
   - Code review approved
 
-- **Completed M4 (partial)**: 4.1 - Napari Backend
+- **Completed M4**: 4.1 - Napari Backend
   - Added `build_env_to_napari_matrix()` to transforms.py
     - 3x3 homogeneous matrix encoding env→napari transform
     - Matches `transform_coords_for_napari()` exactly (6 unit tests)
@@ -77,10 +77,18 @@
   - Implemented `_build_video_napari_affine()`
     - Chains video→env→napari transforms
     - Falls back to identity for non-grid environments
+  - Implemented `_make_video_frame_callback()`
+    - Connects to viewer.dims.events.current_step
+    - Updates all video layers when animation frame changes
   - Integrated video layer rendering in render_napari() and _render_multi_field_napari()
   - 9 new tests for video overlays, all passing
   - 758 animation tests passing total
-  - Pending: manual test to verify spatial alignment
+  - **Bug fixes during manual testing**:
+    - Fixed `VideoData.get_frame()` to use VideoReader subscript access
+    - Fixed `_build_video_napari_affine()` to get actual VideoReader dimensions
+    - Added `_make_video_frame_callback()` to update video on scrubbing
+  - Manual test created: `test_video_alignment.py`
+  - **Manual test PASSED**: video fills environment, corners aligned, scrubbing works, playback works
 
 ---
 
