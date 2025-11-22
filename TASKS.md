@@ -448,12 +448,31 @@ if dpi > 150:
 - Warning suggests lower DPI
 - Dry-run shows frame count, time, size estimates
 
-### 5.4 Re-profile Video Export
+### 5.4 Re-profile Video Export - COMPLETE
 
-- [ ] Time per frame in worker function
-- [ ] Total runtime for typical dataset
-- [ ] Total runtime for large dataset
-- [ ] File sizes comparison
+**Completed 2025-11-22**: Measured video export performance after Phase 5.1-5.3 improvements.
+
+- [x] Time per frame in worker function
+- [x] Total runtime for typical dataset
+- [x] Total runtime for large dataset
+- [x] File sizes comparison
+
+**Results vs Baseline:**
+
+| Config | Frames | Baseline Serial | Current Serial | Change |
+|--------|--------|-----------------|----------------|--------|
+| small | 100 | 2,995 ms | 2,988 ms | -0.2% |
+| medium | 500 | 7,885 ms | 7,860 ms | -0.3% |
+| large | 500 | 8,444 ms | 8,041 ms | -4.8% |
+
+| Config | ms/frame | Parallel Speedup |
+|--------|----------|------------------|
+| small | 29.88 | 1.11x |
+| medium | 15.72 | 1.91x |
+| large | 16.08 | 1.97x |
+
+**Conclusion**: Performance unchanged (within noise). Phase 5.1-5.3 were robustness
+improvements (frame naming, ffmpeg I/O, DPI warning), not optimizations.
 
 ---
 
@@ -507,8 +526,8 @@ if dpi > 150:
 | Phase 1: Infrastructure | Complete | 1.1-1.3 done (visual verification pending interactive test) |
 | Phase 2: Napari | Complete | 2.1-2.5 COMPLETE (42-50x skeleton speedup!) |
 | Phase 3: Overlays | Complete | 3.1-3.2 already vectorized, 3.3 skipped, 3.4-3.5 done |
-| Phase 4: Widget | **Complete** | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
-| Phase 5: Video | Not started | |
+| Phase 4: Widget | Complete | 4.1-4.4 done (1.8-2.2x speedup, bug fix + O(1) scrubbing) |
+| Phase 5: Video | **Complete** | 5.1-5.4 done (robustness improvements, no regression) |
 | Phase 6: Skeleton | Not started | |
 | Phase 7: Tests/Docs | In Progress | 7.2 benchmark scripts done |
 

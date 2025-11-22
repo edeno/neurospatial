@@ -998,6 +998,67 @@ Created `tests/animation/test_dpi_guard.py` with 11 tests:
 - All 11 tests pass
 - ruff and mypy pass with no issues
 
-## Next Task: Phase 5.4 - Re-profile Video Export
+## Completed: Phase 5.4 - Re-profile Video Export (2025-11-22)
+
+### Benchmark Results
+
+**Video Backend Performance** (measured via `bench_video.py`):
+
+| Config | Frames | Serial (ms) | ms/frame | Parallel (ms) | Speedup |
+|--------|--------|-------------|----------|---------------|---------|
+| small | 100 | 2,988 | 29.88 | 2,681 | 1.11x |
+| medium | 500 | 7,860 | 15.72 | 4,125 | 1.91x |
+| large | 500 | 8,041 | 16.08 | 4,084 | 1.97x |
+
+**Comparison vs Baseline:**
+
+| Config | Baseline Serial | Current Serial | Change |
+|--------|-----------------|----------------|--------|
+| small | 2,995 ms | 2,988 ms | -0.2% |
+| medium | 7,885 ms | 7,860 ms | -0.3% |
+| large | 8,444 ms | 8,041 ms | -4.8% |
+
+| Config | Baseline Parallel | Current Parallel | Change |
+|--------|-------------------|------------------|--------|
+| small | 2,757 ms | 2,681 ms | -2.8% |
+| medium | 3,967 ms | 4,125 ms | +4.0% |
+| large | 4,010 ms | 4,084 ms | +1.8% |
+
+**File Sizes:**
+
+| Config | File Size |
+|--------|-----------|
+| small (100 frames) | 0.18 MB |
+| medium (500 frames) | 0.09 MB |
+| large (500 frames) | 0.09 MB |
+
+### Analysis
+
+1. **Performance unchanged**: Phase 5.1-5.3 were robustness improvements (frame naming verification, ffmpeg I/O control, DPI warning), not performance optimizations. Results are within measurement noise.
+
+2. **Time per frame**: ~15-30ms depending on grid size and overlay complexity
+   - small (40x40 grid with overlays): 29.88 ms/frame
+   - medium/large (100x100 grid, no overlays): 15.72-16.08 ms/frame
+
+3. **Parallel speedup**: ~1.9-2.0x for 500 frames with 4 workers
+   - Small frame counts (<200) have limited benefit due to worker startup overhead
+
+4. **Memory usage**: Dominated by field data
+   - small: ~230 MB
+   - medium: ~250 MB
+   - large: ~660 MB (100x100x100k fields in memory)
+
+### Phase 5 Summary
+
+All Phase 5 (Video Backend Robustness) tasks are now complete:
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 5.1 Frame naming | Complete | Already correct, added 16 tests |
+| 5.2 ffmpeg I/O | Complete | stdout→DEVNULL, stderr→PIPE, 6 tests |
+| 5.3 DPI guard | Complete | Warning for dpi>150, 11 tests |
+| 5.4 Re-profile | Complete | No performance regression |
+
+## Next Task: Phase 6.1 - Normalize Edges in Skeleton
 
 See TASKS.md for details.
