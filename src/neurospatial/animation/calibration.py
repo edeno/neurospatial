@@ -17,9 +17,10 @@ from numpy.typing import NDArray
 from neurospatial.transforms import (
     VideoCalibration,
     calibrate_from_landmarks,
-    calibrate_from_scale_bar,
-    flip_y,
     scale_2d,
+)
+from neurospatial.transforms import (
+    flip_y as flip_y_transform,
 )
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ def calibrate_video(
     landmarks_px: NDArray[np.float64] | None = None,
     landmarks_env: NDArray[np.float64] | None = None,
     cm_per_px: float | None = None,
+    flip_y: bool = True,
 ) -> VideoCalibration:
     """Calibrate video coordinates to environment space.
 
@@ -57,8 +59,22 @@ def calibrate_video(
         Corresponding landmark coordinates in environment space as (x, y) in cm.
         Must be provided together with landmarks_px.
     cm_per_px : float, optional
-        Direct scale factor if known (cm per pixel). Uses standard Y-flip
-        transformation with uniform scaling.
+        Direct scale factor if known (cm per pixel).
+    flip_y : bool, default=True
+        Whether to flip the Y-axis when transforming coordinates.
+
+        - ``True`` (default): Environment uses scientific/Cartesian coordinates
+          (Y increases upward). This is the common case for tracking data in
+          cm or meters from DeepLabCut, SLEAP, etc.
+        - ``False``: Environment uses image/pixel coordinates (Y increases
+          downward). Use this when your environment is already in pixel space.
+
+        This parameter only applies to ``cm_per_px`` and ``scale_bar`` methods.
+        For ``landmarks``, the Y-flip is implicit in the correspondences.
+
+        If ``env.units`` is set, the default behavior is inferred:
+        - ``env.units == "pixels"``: Assumes ``flip_y=False`` (warns if True)
+        - Otherwise: Assumes ``flip_y=True`` (scientific convention)
 
     Returns
     -------
@@ -77,27 +93,37 @@ def calibrate_video(
     Warns
     -----
     UserWarning
-        If environment bounds extend beyond calibrated video coverage.
+        If environment bounds extend beyond calibrated video coverage, or if
+        ``env.units='pixels'`` but ``cm_per_px`` is provided (unusual combination).
 
     Notes
     -----
-    The calibration includes Y-axis flip to convert from video coordinates
-    (origin at top-left) to environment coordinates (origin at bottom-left).
-    This is the SINGLE location for Y-flip; downstream rendering uses
-    ``origin="lower"`` in matplotlib imshow to preserve this convention.
+    **Coordinate Conventions**
+
+    Video coordinates use image convention: origin at top-left, Y increases
+    downward. Scientific data typically uses Cartesian convention: origin at
+    bottom-left, Y increases upward.
+
+    The ``flip_y`` parameter controls whether to flip the Y-axis:
+
+    - ``flip_y=True``: Converts video Y-down to environment Y-up
+    - ``flip_y=False``: No Y-flip (both use same convention)
+
+    The video overlay itself serves as visual validation - if the overlay
+    appears inverted, toggle ``flip_y``.
 
     Examples
     --------
     >>> from neurospatial.animation import calibrate_video, VideoOverlay
     >>>
-    >>> # Using scale bar method
+    >>> # Using scale bar method (scientific coordinates, Y-up)
     >>> calibration = calibrate_video(
     ...     "session.mp4",
     ...     env,
     ...     scale_bar=((100, 200), (300, 200), 50.0),  # 200px = 50cm
     ... )
     >>>
-    >>> # Using landmark correspondences
+    >>> # Using landmark correspondences (Y-flip implicit in correspondences)
     >>> corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]])
     >>> corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])
     >>> calibration = calibrate_video(
@@ -107,11 +133,19 @@ def calibrate_video(
     ...     landmarks_env=corners_env,
     ... )
     >>>
-    >>> # Using direct scale factor
+    >>> # Using direct scale factor (most common)
     >>> calibration = calibrate_video(
     ...     "session.mp4",
     ...     env,
     ...     cm_per_px=0.25,
+    ... )
+    >>>
+    >>> # If overlay appears inverted, toggle flip_y
+    >>> calibration = calibrate_video(
+    ...     "session.mp4",
+    ...     env,
+    ...     cm_per_px=0.25,
+    ...     flip_y=False,  # For pixel-space environments
     ... )
     >>>
     >>> # Use calibration with VideoOverlay
@@ -156,15 +190,53 @@ def calibrate_video(
             f"HOW: Provide exactly one calibration method."
         )
 
+    # Check for unusual env.units='pixels' + cm_per_px combination
+    env_units = getattr(env, "units", None)
+    if env_units == "pixels" and cm_per_px is not None:
+        warnings.warn(
+            f"WHAT: env.units='pixels' but cm_per_px={cm_per_px} provided.\n"
+            f"WHY: This is an unusual combination. If your environment uses pixel "
+            f"coordinates, you typically don't need a scale factor.\n"
+            f"HOW: If converting from pixels to another unit, set env.units to that "
+            f"unit (e.g., 'cm'). Using flip_y=False since pixel coordinates typically "
+            f"use image convention (Y-down).",
+            UserWarning,
+            stacklevel=2,
+        )
+
     # Build transform based on method
     if scale_bar is not None:
         (p1_px, p2_px, known_length_cm) = scale_bar
-        transform = calibrate_from_scale_bar(
-            p1_px=p1_px,
-            p2_px=p2_px,
-            known_length_cm=known_length_cm,
-            frame_size_px=frame_size_px,
-        )
+
+        # Validate inputs
+        if known_length_cm <= 0:
+            raise ValueError(
+                f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
+                f"WHY: A scale bar must have positive real-world length.\n"
+                f"HOW: Provide a positive value for known_length_cm."
+            )
+
+        # Compute pixel distance between endpoints
+        dx = p2_px[0] - p1_px[0]
+        dy = p2_px[1] - p1_px[1]
+        px_distance = np.sqrt(dx * dx + dy * dy)
+
+        if px_distance == 0:
+            raise ValueError(
+                f"WHAT: Scale bar has zero pixel length (p1={p1_px}, p2={p2_px}).\n"
+                f"WHY: Cannot compute scale from coincident endpoints.\n"
+                f"HOW: Provide two distinct points for the scale bar."
+            )
+
+        # Compute scale factor
+        cm_per_px_computed = known_length_cm / px_distance
+        _, frame_height = frame_size_px
+
+        # Build transform with conditional Y-flip
+        if flip_y:
+            transform = scale_2d(cm_per_px_computed) @ flip_y_transform(frame_height)
+        else:
+            transform = scale_2d(cm_per_px_computed)
 
     elif landmarks_px is not None or landmarks_env is not None:
         # Validate both landmarks are provided
@@ -202,7 +274,7 @@ def calibrate_video(
         )
 
     else:  # cm_per_px is not None
-        # Direct scale factor with Y-flip
+        # Direct scale factor with conditional Y-flip
         assert cm_per_px is not None  # Asserted by method validation above
         if cm_per_px <= 0:
             raise ValueError(
@@ -211,7 +283,12 @@ def calibrate_video(
                 f"HOW: Provide a positive value, e.g., cm_per_px=0.25."
             )
         _, frame_height = frame_size_px
-        transform = flip_y(frame_height) @ scale_2d(cm_per_px, cm_per_px)
+
+        # Build transform with conditional Y-flip
+        if flip_y:
+            transform = scale_2d(cm_per_px) @ flip_y_transform(frame_height)
+        else:
+            transform = scale_2d(cm_per_px)
 
     # Create calibration object
     calibration = VideoCalibration(

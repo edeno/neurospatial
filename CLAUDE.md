@@ -237,8 +237,15 @@ calibration = calibrate_video(
     landmarks_env=corners_env,
 )
 
-# Method 3: Direct scale factor
+# Method 3: Direct scale factor (most common)
 calibration = calibrate_video("session.mp4", env, cm_per_px=0.25)
+
+# The flip_y parameter controls Y-axis convention (default: True for scientific data)
+# - flip_y=True (default): Environment uses Y-up (scientific/Cartesian convention)
+# - flip_y=False: Environment uses Y-down (image/pixel convention)
+
+# If overlay appears inverted, toggle flip_y
+calibration = calibrate_video("session.mp4", env, cm_per_px=0.25, flip_y=False)
 
 # Use calibration with VideoOverlay
 video = VideoOverlay(source="session.mp4", calibration=calibration)
@@ -253,6 +260,16 @@ env.animate_fields(fields, overlays=[video], backend="napari")
 | Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
 | Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
 | Video as background | `z_order="below"` | Only works if field has transparent regions |
+
+**Video Calibration Coordinate Conventions:**
+
+| Environment Units | `flip_y` | When to Use |
+|-------------------|----------|-------------|
+| cm (most common)  | `True` (default) | Scientific tracking data (DeepLabCut, SLEAP, etc.) |
+| meters            | `True` (default) | Same as cm, just convert: `cm_per_px = m_per_px * 100` |
+| pixels            | `False` | Environment already in image coordinates |
+
+The video itself serves as visual validation - if the overlay appears inverted, toggle `flip_y`.
 
 **Coordinate Conventions for Overlays:**
 

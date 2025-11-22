@@ -566,8 +566,18 @@ def _build_video_napari_affine(
     xmin, xmax, ymin, ymax = video_data.env_bounds
 
     if video_data.transform_to_env is not None:
-        # Use provided transform
-        video_to_env = video_data.transform_to_env.A  # 3x3 homogeneous matrix
+        # User's transform expects (x, y) input, but napari provides (row, col)
+        # Need to convert: (row, col) → (x, y) → env_coords
+        # where x = col, y = row (swap axes)
+        row_col_to_xy = np.array(
+            [
+                [0.0, 1.0, 0.0],  # x = col
+                [1.0, 0.0, 0.0],  # y = row
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        video_to_env = video_data.transform_to_env.A @ row_col_to_xy
     else:
         # Build scale+translate from video pixels to env bounds
         # Video pixel (0,0) is top-left, (video_w, video_h) is bottom-right
