@@ -355,14 +355,14 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 6.4: Validation Tests
 
-- [ ] Create [tests/animation/test_video_validation.py](tests/animation/test_video_validation.py)
-- [ ] Environment validation:
-  - [ ] `test_rejects_1d_environment`
-  - [ ] `test_non_grid_2d_environment_works_with_warning`
-  - [ ] `test_non_grid_extent_uses_dimension_ranges`
-- [ ] Napari-free operation:
-  - [ ] `test_video_export_without_napari`
-  - [ ] `test_import_without_napari`
+- [x] Create [tests/animation/test_video_validation.py](tests/animation/test_video_validation.py)
+- [x] Environment validation:
+  - [x] `test_rejects_1d_environment`
+  - [x] `test_non_grid_2d_environment_works_with_warning`
+  - [x] `test_non_grid_extent_uses_dimension_ranges`
+- [x] Napari-free operation:
+  - [x] `test_video_export_without_napari`
+  - [x] `test_import_without_napari`
 
 ### Task 6.5: Add Test Fixtures
 

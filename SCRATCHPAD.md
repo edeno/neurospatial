@@ -187,11 +187,19 @@
   - All 3 export tests passing
   - Napari tests properly marked with `@pytest.mark.slow` and `@pytest.mark.xdist_group`
 
+- **Completed M6 (partial)**: 6.4 - Validation Tests
+  - Created `tests/animation/test_video_validation.py` with 8 tests:
+    - Environment validation: `test_rejects_1d_environment`, `test_accepts_2d_grid_environment`, `test_accepts_2d_polygon_environment`
+    - Non-grid support: `test_non_grid_2d_environment_works_with_warning`, `test_non_grid_extent_uses_dimension_ranges`
+    - Napari-free operation: `test_video_export_without_napari`, `test_import_without_napari`, `test_video_overlay_creation_without_napari`
+  - All 8 tests passing
+  - Verified `_validate_video_env()` correctly rejects 1D envs and accepts 2D envs
+
 ---
 
 ## Current Task
 
-**Next**: Milestone 6 - Task 6.4 (Validation Tests)
+**Next**: Milestone 6 - Task 6.5 (Add Test Fixtures)
 
 ---
 
