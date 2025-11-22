@@ -485,7 +485,7 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 > **Priority**: Low - Improves maintainability
 
-- [ ] Add schema documentation to [src/neurospatial/animation/backends/html_backend.py](src/neurospatial/animation/backends/html_backend.py):
+- [x] Add schema documentation to [src/neurospatial/animation/backends/html_backend.py](src/neurospatial/animation/backends/html_backend.py):
 
   ```python
   # Overlay JSON Schema:
@@ -496,7 +496,7 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
   # }
   ```
 
-- [ ] Add type stub or TypedDict for overlay JSON structure
+- [x] Add type stub or TypedDict for overlay JSON structure
 
 ### Task 8.7: Improve VideoReader Performance (FUTURE)
 

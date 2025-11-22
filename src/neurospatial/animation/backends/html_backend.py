@@ -1,4 +1,55 @@
-"""Standalone HTML player backend with instant scrubbing."""
+"""Standalone HTML player backend with instant scrubbing.
+
+Overlay JSON Schema
+-------------------
+The HTML backend serializes overlay data to JSON for rendering in the browser.
+The schema is:
+
+.. code-block:: json
+
+    {
+        "positions": [
+            {
+                "data": [[x0, y0], [x1, y1], ...],  // (n_frames, 2) trajectory
+                "color": "red",                      // CSS color string
+                "size": 10.0,                        // Marker size in pixels
+                "trail_length": 5                    // Frames of trail to show
+            },
+            // ... more position overlays
+        ],
+        "regions": [
+            {
+                "name": "goal",
+                "kind": "point",                     // "point" or "polygon"
+                "coordinates": [x, y]                // Point: [x, y]
+            },
+            {
+                "name": "arena",
+                "kind": "polygon",
+                "coordinates": [[x0, y0], [x1, y1], ...]  // Polygon vertices
+            },
+            // ... more regions
+        ],
+        "dimension_ranges": [[x_min, x_max], [y_min, y_max]],
+        "region_alpha": 0.3                          // 0.0-1.0 transparency
+    }
+
+Coordinate System
+-----------------
+All coordinates are in environment space (cm), NOT pixels. The JavaScript
+renderer transforms these to canvas coordinates based on dimension_ranges.
+
+- Position data: (n_frames, 2) array as nested lists, each row is [x, y]
+- Region coordinates: Environment (x, y) coordinates
+- dimension_ranges: Bounding box for coordinate scaling
+
+Limitations
+-----------
+- Only PositionOverlay and regions are supported
+- BodypartOverlay and HeadDirectionOverlay are silently skipped (warning emitted)
+- VideoOverlay is not supported (warning emitted)
+- Large overlay datasets (>1 MB JSON) may cause browser rendering delays
+"""
 
 from __future__ import annotations
 
@@ -8,7 +59,7 @@ import json
 import os
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,6 +68,110 @@ from tqdm import tqdm
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
+
+
+# =============================================================================
+# TypedDict definitions for overlay JSON structure
+# =============================================================================
+
+
+class PositionOverlayJSON(TypedDict):
+    """JSON structure for a single position overlay.
+
+    Attributes
+    ----------
+    data : list[list[float]]
+        Trajectory data as nested list of [x, y] coordinates per frame.
+        Shape: (n_frames, 2) flattened to nested lists.
+    color : str
+        CSS color string (e.g., "red", "#FF0000", "rgb(255, 0, 0)").
+    size : float
+        Marker size in environment units.
+    trail_length : int
+        Number of previous frames to show as decaying trail.
+    """
+
+    data: list[list[float]]
+    color: str
+    size: float
+    trail_length: int
+
+
+class PointRegionJSON(TypedDict):
+    """JSON structure for a point region.
+
+    Attributes
+    ----------
+    name : str
+        Region identifier.
+    kind : str
+        Always "point" for this type.
+    coordinates : list[float]
+        Point location as [x, y] in environment coordinates.
+    """
+
+    name: str
+    kind: str  # Literal["point"]
+    coordinates: list[float]
+
+
+class PolygonRegionJSON(TypedDict):
+    """JSON structure for a polygon region.
+
+    Attributes
+    ----------
+    name : str
+        Region identifier.
+    kind : str
+        Always "polygon" for this type.
+    coordinates : list[list[float]]
+        Polygon vertices as [[x0, y0], [x1, y1], ...] in environment coordinates.
+    """
+
+    name: str
+    kind: str  # Literal["polygon"]
+    coordinates: list[list[float]]
+
+
+class OverlayDataJSON(TypedDict, total=False):
+    """Complete JSON structure for overlay data passed to JavaScript.
+
+    This TypedDict documents the structure of the JSON data embedded in HTML
+    animations. The JavaScript renderer consumes this structure for drawing
+    overlays on the canvas.
+
+    Attributes
+    ----------
+    positions : list[PositionOverlayJSON]
+        List of position overlay objects with trajectory data.
+    regions : list[PointRegionJSON | PolygonRegionJSON]
+        List of region objects (points or polygons).
+    dimension_ranges : list[list[float]]
+        Environment bounding box as [[x_min, x_max], [y_min, y_max]].
+    region_alpha : float
+        Transparency for region rendering (0.0 = transparent, 1.0 = opaque).
+
+    Examples
+    --------
+    >>> overlay_json: OverlayDataJSON = {
+    ...     "positions": [
+    ...         {
+    ...             "data": [[0, 0], [1, 1]],
+    ...             "color": "red",
+    ...             "size": 10,
+    ...             "trail_length": 5,
+    ...         }
+    ...     ],
+    ...     "regions": [{"name": "goal", "kind": "point", "coordinates": [50, 50]}],
+    ...     "dimension_ranges": [[0, 100], [0, 100]],
+    ...     "region_alpha": 0.3,
+    ... }
+    """
+
+    positions: list[PositionOverlayJSON]
+    regions: list[PointRegionJSON | PolygonRegionJSON]
+    dimension_ranges: list[list[float]]
+    region_alpha: float
 
 
 def _estimate_overlay_json_size(

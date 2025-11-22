@@ -208,8 +208,9 @@
 
 ## Current Task
 
-**Completed**: Milestone 8 - Task 8.5 (Add VideoReaderProtocol for Type Safety)
-**Next**: Milestone 8 - Task 8.6 (Document Overlay JSON Schema for HTML)
+**Completed**: Milestone 8 - Task 8.6 (Document Overlay JSON Schema for HTML)
+**Next**: Milestone 8 - Task 8.7 (Improve VideoReader Performance) - marked FUTURE, skip
+        Milestone 8 - Task 8.8 (Improve animate_fields Docstring)
 
 ---
 
@@ -356,4 +357,16 @@ None currently.
   - Added `VideoReaderProtocol` to animation module exports
   - Updated docstrings to reference VideoReaderProtocol
   - All 58 video tests passing
+  - ruff and mypy pass
+
+- **Completed M8**: 8.6 - Document Overlay JSON Schema for HTML
+  - Added comprehensive module docstring with JSON schema documentation
+  - Created TypedDict classes for type-safe JSON structure:
+    - `PositionOverlayJSON` - position overlay data structure
+    - `PointRegionJSON` - point region structure
+    - `PolygonRegionJSON` - polygon region structure
+    - `OverlayDataJSON` - complete overlay data structure
+  - Documented coordinate system (environment space, not pixels)
+  - Documented limitations (position + regions only)
+  - All 18 HTML backend tests passing
   - ruff and mypy pass
