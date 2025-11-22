@@ -124,16 +124,16 @@ When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
 
 ### Task 1.2: Add VideoCalibration Dataclass
 
-- [ ] Implement `VideoCalibration` dataclass in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
-  - [ ] `transform_px_to_cm: Affine2D` attribute
-  - [ ] `frame_size_px: tuple[int, int]` attribute (width, height)
-  - [ ] `transform_cm_to_px` property (cached inverse)
-  - [ ] `cm_per_px` property (approximate scale)
-- [ ] Add `to_dict()` / `from_dict()` for JSON serialization
-- [ ] Write unit tests:
-  - [ ] `test_calibration_inverse`
-  - [ ] `test_calibration_serialization`
-- [ ] Verify: `uv run pytest tests/test_transforms.py -v -k VideoCalibration`
+- [x] Implement `VideoCalibration` dataclass in [src/neurospatial/transforms.py](src/neurospatial/transforms.py)
+  - [x] `transform_px_to_cm: Affine2D` attribute
+  - [x] `frame_size_px: tuple[int, int]` attribute (width, height)
+  - [x] `transform_cm_to_px` property (cached inverse)
+  - [x] `cm_per_px` property (approximate scale)
+- [x] Add `to_dict()` / `from_dict()` for JSON serialization
+- [x] Write unit tests:
+  - [x] `test_calibration_inverse`
+  - [x] `test_calibration_serialization`
+- [x] Verify: `uv run pytest tests/test_transforms.py -v -k VideoCalibration`
 
 **M1 Checkpoint**: All calibration tests pass
 

@@ -276,3 +276,118 @@ class TestFlipYIntegration:
         bottom_px = np.array([[0.0, 480.0]])
         bottom_cm = transform(bottom_px)
         assert_allclose(bottom_cm[0, 1], 0.0, atol=1e-10)
+
+
+class TestVideoCalibration:
+    """Tests for VideoCalibration dataclass."""
+
+    def test_basic_creation(self):
+        """VideoCalibration can be created with transform and frame size."""
+        from neurospatial.transforms import VideoCalibration
+
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),
+            known_length_cm=50.0,
+            frame_size_px=(640, 480),
+        )
+
+        calib = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+
+        assert calib.frame_size_px == (640, 480)
+        assert isinstance(calib.transform_px_to_cm, Affine2D)
+
+    def test_cm_per_px_property(self):
+        """cm_per_px returns approximate scale factor."""
+        from neurospatial.transforms import VideoCalibration
+
+        # 100 pixels = 50 cm -> cm_per_px = 0.5
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),
+            known_length_cm=50.0,
+            frame_size_px=(640, 480),
+        )
+
+        calib = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+
+        assert_allclose(calib.cm_per_px, 0.5, atol=1e-10)
+
+    def test_transform_cm_to_px_inverse(self):
+        """transform_cm_to_px is the inverse of transform_px_to_cm."""
+        from neurospatial.transforms import VideoCalibration
+
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(200.0, 0.0),
+            known_length_cm=100.0,
+            frame_size_px=(640, 480),
+        )
+
+        calib = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+
+        # Test roundtrip px -> cm -> px
+        test_px = np.array([[100.0, 200.0]])
+        result_cm = calib.transform_px_to_cm(test_px)
+        roundtrip_px = calib.transform_cm_to_px(result_cm)
+
+        assert_allclose(roundtrip_px, test_px, atol=1e-10)
+
+    def test_to_dict_from_dict_roundtrip(self):
+        """Serialization roundtrip preserves calibration."""
+        from neurospatial.transforms import VideoCalibration
+
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),
+            known_length_cm=50.0,
+            frame_size_px=(640, 480),
+        )
+
+        original = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+
+        # Roundtrip through dict
+        d = original.to_dict()
+        restored = VideoCalibration.from_dict(d)
+
+        # Check restored calibration works identically
+        test_px = np.array([[320.0, 240.0]])
+        original_cm = original.transform_px_to_cm(test_px)
+        restored_cm = restored.transform_px_to_cm(test_px)
+
+        assert_allclose(restored_cm, original_cm, atol=1e-10)
+        assert restored.frame_size_px == original.frame_size_px
+
+    def test_to_dict_contains_expected_keys(self):
+        """to_dict produces expected structure."""
+        from neurospatial.transforms import VideoCalibration
+
+        transform = calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(100.0, 0.0),
+            known_length_cm=50.0,
+            frame_size_px=(640, 480),
+        )
+
+        calib = VideoCalibration(
+            transform_px_to_cm=transform,
+            frame_size_px=(640, 480),
+        )
+
+        d = calib.to_dict()
+
+        assert "transform_px_to_cm" in d
+        assert "frame_size_px" in d
+        assert d["frame_size_px"] == [640, 480]

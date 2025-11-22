@@ -675,6 +675,123 @@ def calibrate_from_landmarks(
     return Affine2D(result.A)
 
 
+@dataclass
+class VideoCalibration:
+    """Container for video-to-environment coordinate calibration.
+
+    Stores the pixel-to-cm transform along with video metadata for
+    convenient access to both forward and inverse transforms.
+
+    Parameters
+    ----------
+    transform_px_to_cm : Affine2D
+        Transform that converts pixel coordinates to cm coordinates.
+        Should include Y-axis flip (video origin top-left to env bottom-left).
+    frame_size_px : tuple[int, int]
+        Video frame size as (width, height) in pixels.
+
+    Attributes
+    ----------
+    transform_px_to_cm : Affine2D
+        Forward transform from pixels to cm.
+    frame_size_px : tuple[int, int]
+        Video frame dimensions.
+    transform_cm_to_px : Affine2D
+        Inverse transform from cm to pixels (cached property).
+    cm_per_px : float
+        Approximate scale factor (computed from transform matrix).
+
+    Notes
+    -----
+    The calibration can be serialized to/from dict for JSON storage.
+
+    Examples
+    --------
+    >>> from neurospatial.transforms import calibrate_from_scale_bar, VideoCalibration
+    >>> transform = calibrate_from_scale_bar(
+    ...     p1_px=(0.0, 0.0),
+    ...     p2_px=(100.0, 0.0),
+    ...     known_length_cm=50.0,
+    ...     frame_size_px=(640, 480),
+    ... )
+    >>> calib = VideoCalibration(transform, frame_size_px=(640, 480))
+    >>> calib.cm_per_px  # Approximate scale
+    0.5
+    """
+
+    transform_px_to_cm: Affine2D
+    frame_size_px: tuple[int, int]
+
+    # Cached inverse transform
+    _transform_cm_to_px: Affine2D | None = None
+
+    @property
+    def transform_cm_to_px(self) -> Affine2D:
+        """Get the inverse transform (cm to pixels).
+
+        Returns
+        -------
+        Affine2D
+            Transform that converts cm coordinates to pixel coordinates.
+        """
+        if self._transform_cm_to_px is None:
+            # Use object.__setattr__ to bypass frozen=True if using frozen dataclass
+            object.__setattr__(
+                self, "_transform_cm_to_px", self.transform_px_to_cm.inverse()
+            )
+        return self._transform_cm_to_px  # type: ignore[return-value]
+
+    @property
+    def cm_per_px(self) -> float:
+        """Get approximate scale factor (cm per pixel).
+
+        Returns the average of x and y scale factors from the transform matrix.
+
+        Returns
+        -------
+        float
+            Approximate cm per pixel scale factor.
+        """
+        # Extract scale from transform matrix diagonal
+        # For uniform scaling, A[0,0] = A[1,1] = scale
+        # For non-uniform, average the absolute values
+        sx = float(abs(self.transform_px_to_cm.A[0, 0]))
+        sy = float(abs(self.transform_px_to_cm.A[1, 1]))
+        return (sx + sy) / 2.0
+
+    def to_dict(self) -> dict:
+        """Serialize calibration to dict for JSON storage.
+
+        Returns
+        -------
+        dict
+            Dictionary with transform matrix and frame size.
+        """
+        return {
+            "transform_px_to_cm": self.transform_px_to_cm.A.tolist(),
+            "frame_size_px": list(self.frame_size_px),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> VideoCalibration:
+        """Restore calibration from dict.
+
+        Parameters
+        ----------
+        d : dict
+            Dictionary from to_dict().
+
+        Returns
+        -------
+        VideoCalibration
+            Restored calibration object.
+        """
+        transform = Affine2D(np.array(d["transform_px_to_cm"]))
+        frame_size_list = d["frame_size_px"]
+        frame_size = (int(frame_size_list[0]), int(frame_size_list[1]))
+        return cls(transform_px_to_cm=transform, frame_size_px=frame_size)
+
+
 # --- 3D Transform Factories ------------------------------------------
 def translate_3d(tx: float = 0.0, ty: float = 0.0, tz: float = 0.0) -> AffineND:
     """Create 3D translation transformation.
