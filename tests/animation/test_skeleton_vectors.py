@@ -154,9 +154,10 @@ class TestBuildSkeletonVectorsShape:
 
         edge_names = features["edge_name"]
 
-        # Should contain "head-body" and "body-tail"
+        # Should contain "body-head" and "body-tail" (canonical edge names)
+        # Edges are canonicalized: ("head", "body") → ("body", "head") since "body" < "head"
         unique_names = set(edge_names)
-        assert "head-body" in unique_names
+        assert "body-head" in unique_names
         assert "body-tail" in unique_names
 
 
@@ -206,7 +207,8 @@ class TestBuildSkeletonVectorsTimeStamps:
             frame_mask = times == frame
             frame_edges = edge_names[frame_mask]
             assert len(frame_edges) == 2
-            assert set(frame_edges) == {"head-body", "body-tail"}
+            # Canonical edge names: "body" < "head", "body" < "tail"
+            assert set(frame_edges) == {"body-head", "body-tail"}
 
 
 class TestBuildSkeletonVectorsCoordinateTransform:
@@ -223,19 +225,20 @@ class TestBuildSkeletonVectorsCoordinateTransform:
             bodypart_data_with_skeleton, simple_env
         )
 
-        # Get expected transformed coordinates for frame 0, head
-        head_env_coords = bodypart_data_with_skeleton.bodyparts["head"][0:1]
-        head_napari = _transform_coords_for_napari(head_env_coords, simple_env)[0]
+        # Get expected transformed coordinates for frame 0, body
+        # Canonical edge is ("body", "head"), so start point is "body"
+        body_env_coords = bodypart_data_with_skeleton.bodyparts["body"][0:1]
+        body_napari = _transform_coords_for_napari(body_env_coords, simple_env)[0]
 
-        # Find the head-body edge for frame 0
+        # Find the body-head edge for frame 0 (canonical: "body" < "head")
         times = vectors[:, 0, 0]
         edge_names = features["edge_name"]
 
-        frame0_head_body_mask = (times == 0) & (edge_names == "head-body")
-        start_point = vectors[frame0_head_body_mask, 0, 1:3][0]  # [row, col]
+        frame0_body_head_mask = (times == 0) & (edge_names == "body-head")
+        start_point = vectors[frame0_body_head_mask, 0, 1:3][0]  # [row, col]
 
-        # Should match transformed coordinates
-        np.testing.assert_allclose(start_point, head_napari, rtol=1e-5)
+        # Should match transformed coordinates (start point is now body)
+        np.testing.assert_allclose(start_point, body_napari, rtol=1e-5)
 
     def test_start_and_end_points_different(
         self, bodypart_data_with_skeleton, simple_env
@@ -411,11 +414,12 @@ class TestBuildSkeletonVectorsMissingBodyparts:
 
         vectors, features = _build_skeleton_vectors(bodypart_data, simple_env)
 
-        # Only head-body edges should be included (3 frames)
+        # Only body-head edges should be included (3 frames)
+        # Canonical: ("head", "body") → ("body", "head") since "body" < "head"
         assert vectors.shape[0] == 3
 
-        # All edges should be head-body
-        assert all(name == "head-body" for name in features["edge_name"])
+        # All edges should be body-head (canonical form)
+        assert all(name == "body-head" for name in features["edge_name"])
 
 
 # =============================================================================

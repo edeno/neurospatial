@@ -1059,6 +1059,60 @@ All Phase 5 (Video Backend Robustness) tasks are now complete:
 | 5.3 DPI guard | Complete | Warning for dpi>150, 11 tests |
 | 5.4 Re-profile | Complete | No performance regression |
 
-## Next Task: Phase 6.1 - Normalize Edges in Skeleton
+## Completed: Phase 6.1 - Normalize Edges in Skeleton (2025-11-22)
+
+### What Was Done
+
+Added edge canonicalization and deduplication to the Skeleton dataclass.
+
+### Implementation
+
+1. **Added `_canonicalize_edge()` helper function**:
+   - Converts edge to canonical form: `(min(src, dst), max(src, dst))`
+   - Uses lexicographic string comparison
+   - Example: `("head", "body")` → `("body", "head")` since "body" < "head"
+
+2. **Added `_normalize_edges()` helper function**:
+   - Canonicalizes all edges
+   - Deduplicates (including reversed duplicates)
+   - Preserves order based on first occurrence
+
+3. **Called from `__post_init__`**:
+   - All factory methods benefit automatically
+   - Normalization happens before validation
+
+### Tests Added
+
+14 new tests in `TestSkeletonEdgeNormalization`:
+- `test_reversed_edge_is_canonicalized`
+- `test_already_canonical_edge_unchanged`
+- `test_mixed_canonical_and_reversed_edges`
+- `test_duplicate_edges_deduplicated`
+- `test_reversed_duplicate_edges_deduplicated`
+- `test_multiple_duplicates_reduced_to_one`
+- `test_edge_order_preserved_after_dedup`
+- `test_string_comparison_for_canonical_form`
+- `test_case_sensitive_comparison`
+- `test_self_loop_edges_preserved`
+- `test_duplicate_self_loops_deduplicated`
+- `test_from_edge_list_normalizes_edges`
+- `test_from_dict_normalizes_edges`
+- `test_complex_skeleton_normalization`
+
+### Breaking Change
+
+Edge names in skeleton vectors now use canonical form:
+- Before: `"head-body"` (original edge order)
+- After: `"body-head"` (canonical order)
+
+Updated 4 tests in `test_skeleton_vectors.py` to expect canonical edge names.
+
+### Test Results
+
+- 54 skeleton-related tests pass
+- 30 napari overlay tests pass
+- ruff and mypy pass
+
+## Next Task: Phase 6.2 - Precompute Adjacency
 
 See TASKS.md for details.

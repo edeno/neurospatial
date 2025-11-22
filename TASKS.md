@@ -478,11 +478,24 @@ improvements (frame naming, ffmpeg I/O, DPI warning), not optimizations.
 
 ## Phase 6: Skeleton Module Enhancements
 
-### 6.1 Normalize Edges in `Skeleton`
+### 6.1 Normalize Edges in `Skeleton` - COMPLETE
 
-- [ ] In `__post_init__` or factory: canonicalize edges to sorted `(min(node), max(node))` (what if the edges are strings?)
-- [ ] Optionally deduplicate edges
-- [ ] Test: reversed duplicates handled gracefully
+**Completed 2025-11-22**: Added edge canonicalization and deduplication to Skeleton.
+
+- [x] In `__post_init__`: canonicalize edges to `(min(src, dst), max(src, dst))` using lexicographic string comparison
+- [x] Deduplicate edges (including reversed duplicates like `("a","b")` and `("b","a")`)
+- [x] Preserve order based on first occurrence
+- [x] Test: 14 new tests in `TestSkeletonEdgeNormalization`
+- [x] Updated skeleton vector tests to expect canonical edge names
+
+**Implementation Details:**
+
+- Added `_canonicalize_edge()` helper function
+- Added `_normalize_edges()` helper function
+- Edges like `("head", "body")` become `("body", "head")` since "body" < "head" lexicographically
+- All factory methods (`from_edge_list`, `from_dict`, etc.) benefit automatically via `__post_init__`
+
+**Note**: Node names are expected to be strings (per type annotation). The comparison uses Python's string comparison, which is case-sensitive (uppercase < lowercase in ASCII).
 
 ### 6.2 Precompute Adjacency
 

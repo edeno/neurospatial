@@ -22,6 +22,57 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # =============================================================================
+# Helper functions
+# =============================================================================
+
+
+def _canonicalize_edge(edge: tuple[str, str]) -> tuple[str, str]:
+    """Convert edge to canonical form: (min(src, dst), max(src, dst)).
+
+    This ensures that ("a", "b") and ("b", "a") are represented the same way,
+    since skeleton edges are undirected for visualization purposes.
+
+    Parameters
+    ----------
+    edge : tuple[str, str]
+        Edge as (source_node, target_node) pair.
+
+    Returns
+    -------
+    tuple[str, str]
+        Edge in canonical form with nodes sorted lexicographically.
+    """
+    src, dst = edge
+    return (src, dst) if src <= dst else (dst, src)
+
+
+def _normalize_edges(edges: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Normalize edges: canonicalize direction and remove duplicates.
+
+    Parameters
+    ----------
+    edges : tuple[tuple[str, str], ...]
+        Original edges, possibly with reversed pairs or duplicates.
+
+    Returns
+    -------
+    tuple[tuple[str, str], ...]
+        Normalized edges in canonical form, deduplicated, preserving order
+        of first occurrence.
+    """
+    seen: set[tuple[str, str]] = set()
+    normalized: list[tuple[str, str]] = []
+
+    for edge in edges:
+        canonical = _canonicalize_edge(edge)
+        if canonical not in seen:
+            seen.add(canonical)
+            normalized.append(canonical)
+
+    return tuple(normalized)
+
+
+# =============================================================================
 # Skeleton dataclass
 # =============================================================================
 
@@ -114,11 +165,22 @@ class Skeleton:
     metadata: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate skeleton structure after initialization."""
+        """Validate skeleton structure after initialization.
+
+        Also normalizes edges:
+        - Canonicalizes edge direction: (src, dst) → (min(src, dst), max(src, dst))
+        - Deduplicates edges (including reversed duplicates)
+        - Preserves order based on first occurrence
+        """
         # Deep copy mutable fields to prevent aliasing
         if self.node_colors is not None:
             object.__setattr__(self, "node_colors", dict(self.node_colors))
         object.__setattr__(self, "metadata", copy.deepcopy(self.metadata))
+
+        # Normalize edges: canonicalize direction and deduplicate
+        # Edges are undirected, so ("a", "b") and ("b", "a") are the same
+        normalized_edges = _normalize_edges(self.edges)
+        object.__setattr__(self, "edges", normalized_edges)
 
         # Validate nodes
         if len(self.nodes) == 0:

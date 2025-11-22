@@ -310,3 +310,163 @@ class TestSkeletonStr:
         assert "'test'" in s
         assert "3 nodes" in s
         assert "2 edges" in s
+
+
+class TestSkeletonEdgeNormalization:
+    """Test Skeleton edge canonicalization and deduplication.
+
+    Edges are undirected for visualization purposes, so:
+    - ("a", "b") and ("b", "a") should be treated as the same edge
+    - Duplicates (including reversed duplicates) should be removed
+    - Edges should be stored in canonical form: sorted lexicographically
+    """
+
+    def test_reversed_edge_is_canonicalized(self):
+        """Test that reversed edges are converted to canonical form."""
+        # ("b", "a") should become ("a", "b") since "a" < "b" lexicographically
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("b", "a"),),
+        )
+        assert skeleton.edges == (("a", "b"),)
+
+    def test_already_canonical_edge_unchanged(self):
+        """Test that already canonical edges are unchanged."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"),),
+        )
+        assert skeleton.edges == (("a", "b"),)
+
+    def test_mixed_canonical_and_reversed_edges(self):
+        """Test skeleton with mix of canonical and reversed edges."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b", "c"),
+            edges=(("a", "b"), ("c", "b")),  # Second edge reversed
+        )
+        # Both edges should be in canonical form
+        assert ("a", "b") in skeleton.edges
+        assert ("b", "c") in skeleton.edges
+
+    def test_duplicate_edges_deduplicated(self):
+        """Test that exact duplicate edges are removed."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"), ("a", "b")),  # Exact duplicate
+        )
+        assert skeleton.edges == (("a", "b"),)
+        assert skeleton.n_edges == 1
+
+    def test_reversed_duplicate_edges_deduplicated(self):
+        """Test that reversed duplicates are deduplicated."""
+        # ("a", "b") and ("b", "a") are the same edge
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"), ("b", "a")),
+        )
+        assert skeleton.edges == (("a", "b"),)
+        assert skeleton.n_edges == 1
+
+    def test_multiple_duplicates_reduced_to_one(self):
+        """Test that multiple duplicates (including reversed) become one edge."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b"),
+            edges=(("a", "b"), ("b", "a"), ("a", "b"), ("b", "a")),
+        )
+        assert skeleton.edges == (("a", "b"),)
+        assert skeleton.n_edges == 1
+
+    def test_edge_order_preserved_after_dedup(self):
+        """Test that edge order is preserved based on first occurrence."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a", "b", "c"),
+            edges=(("a", "b"), ("c", "b"), ("b", "a")),  # Last is dup of first
+        )
+        # Should have edges in order of first occurrence (canonicalized)
+        assert skeleton.edges == (("a", "b"), ("b", "c"))
+
+    def test_string_comparison_for_canonical_form(self):
+        """Test that string comparison is used for canonical form."""
+        # "nose" < "tail" lexicographically
+        skeleton = Skeleton(
+            name="test",
+            nodes=("tail", "nose"),
+            edges=(("tail", "nose"),),
+        )
+        assert skeleton.edges == (("nose", "tail"),)
+
+    def test_case_sensitive_comparison(self):
+        """Test that comparison is case-sensitive (uppercase < lowercase in ASCII)."""
+        # 'A' (65) < 'a' (97) in ASCII
+        skeleton = Skeleton(
+            name="test",
+            nodes=("A", "a"),
+            edges=(("a", "A"),),  # "a" > "A"
+        )
+        assert skeleton.edges == (("A", "a"),)
+
+    def test_self_loop_edges_preserved(self):
+        """Test that self-loops (same start/end) are preserved."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a",),
+            edges=(("a", "a"),),
+        )
+        assert skeleton.edges == (("a", "a"),)
+
+    def test_duplicate_self_loops_deduplicated(self):
+        """Test that duplicate self-loops are deduplicated."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("a",),
+            edges=(("a", "a"), ("a", "a")),
+        )
+        assert skeleton.edges == (("a", "a"),)
+        assert skeleton.n_edges == 1
+
+    def test_from_edge_list_normalizes_edges(self):
+        """Test that from_edge_list also normalizes edges."""
+        skeleton = Skeleton.from_edge_list(
+            [("b", "a"), ("c", "b"), ("a", "b")],  # Reversed and dup
+        )
+        # Should be canonicalized and deduplicated
+        assert ("a", "b") in skeleton.edges
+        assert ("b", "c") in skeleton.edges
+        assert skeleton.n_edges == 2
+
+    def test_from_dict_normalizes_edges(self):
+        """Test that from_dict also normalizes edges."""
+        data = {
+            "name": "test",
+            "nodes": ["a", "b"],
+            "edges": [["b", "a"], ["a", "b"]],  # Reversed and dup
+        }
+        skeleton = Skeleton.from_dict(data)
+        assert skeleton.edges == (("a", "b"),)
+        assert skeleton.n_edges == 1
+
+    def test_complex_skeleton_normalization(self):
+        """Test normalization on a more realistic skeleton."""
+        skeleton = Skeleton(
+            name="test",
+            nodes=("nose", "neck", "body", "tail"),
+            edges=(
+                ("nose", "neck"),
+                ("neck", "body"),  # Will be reversed to ("body", "neck")
+                ("tail", "body"),  # Will be reversed to ("body", "tail")
+                ("neck", "nose"),  # Duplicate of first edge (reversed)
+            ),
+        )
+        # Should have 3 unique edges in canonical form
+        # Canonical: lexicographic order: "body" < "neck" < "nose" < "tail"
+        assert skeleton.n_edges == 3
+        assert ("neck", "nose") in skeleton.edges  # "neck" < "nose"
+        assert ("body", "neck") in skeleton.edges  # "body" < "neck"
+        assert ("body", "tail") in skeleton.edges  # "body" < "tail"
