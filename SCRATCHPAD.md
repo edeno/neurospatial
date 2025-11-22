@@ -965,6 +965,39 @@ Created `tests/animation/test_ffmpeg_io.py` with 6 tests:
 - All 6 tests pass
 - ruff and mypy pass with no issues
 
-## Next Task: Phase 5.3 - DPI and Size Guard
+## Completed: Phase 5.3 - DPI and Size Guard (2025-11-22)
+
+### Problem
+
+High DPI values can cause:
+- Very large video files
+- Slow rendering times
+- High memory usage
+
+Users should be warned before this happens.
+
+### Solution
+
+Added `UserWarning` when `dpi > 150`:
+- Shows estimated resolution (e.g., "1600x1200 pixel frames")
+- Suggests using `dpi=100` or `dpi=150`
+- Warning only (doesn't restrict users who need high DPI)
+
+### New Tests
+
+Created `tests/animation/test_dpi_guard.py` with 11 tests:
+
+| Test Class | Count | Coverage |
+|------------|-------|----------|
+| TestDPIWarning | 5 | Warning behavior for various DPI values |
+| TestDryRunEstimates | 5 | Dry-run output verification |
+| TestDPIEstimatedResolution | 1 | Resolution scaling |
+
+### Test Results
+
+- All 11 tests pass
+- ruff and mypy pass with no issues
+
+## Next Task: Phase 5.4 - Re-profile Video Export
 
 See TASKS.md for details.

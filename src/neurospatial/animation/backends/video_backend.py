@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -243,6 +244,23 @@ def render_video(
         n_workers = max(1, cpu_count // 2)
     elif n_workers < 1:
         raise ValueError(f"n_workers must be positive (got {n_workers})")
+
+    # Warn about high DPI (can cause large file sizes and slow rendering)
+    if dpi > 150:
+        # Estimate output resolution (matplotlib default figsize is 8x6)
+        default_figsize = (8, 6)  # inches
+        width_px = int(default_figsize[0] * dpi)
+        height_px = int(default_figsize[1] * dpi)
+        warnings.warn(
+            f"High DPI detected: dpi={dpi} will produce {width_px}x{height_px} pixel frames.\n"
+            f"This may result in:\n"
+            f"  - Large video file sizes\n"
+            f"  - Slow rendering times\n"
+            f"  - High memory usage\n"
+            f"Consider using dpi=100 or dpi=150 for most use cases.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Dry run: estimate time and file size
     if dry_run:

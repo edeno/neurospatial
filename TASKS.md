@@ -414,12 +414,39 @@ result = subprocess.run(
 - Basic ffmpeg arguments
 - Text mode enabled
 
-### 5.3 DPI and Size Guard
+### 5.3 DPI and Size Guard - COMPLETE
 
-- [ ] Add warning when `dpi > 150`
-- [ ] Show estimated resolution in warning
-- [ ] Use dry-run code to show estimated size/time
-- [ ] Consider clamping to reasonable upper bound
+**Completed 2025-11-22**: Added DPI warning with resolution estimate.
+
+- [x] Add warning when `dpi > 150`
+- [x] Show estimated resolution in warning (e.g., "1600x1200 pixel frames")
+- [x] Use dry-run code to show estimated size/time (already existed)
+- [N/A] Consider clamping to reasonable upper bound (warning is sufficient, don't restrict users)
+
+**Implementation Details:**
+
+Added `UserWarning` when `dpi > 150`:
+
+```python
+if dpi > 150:
+    width_px = int(8 * dpi)   # 8 inches default width
+    height_px = int(6 * dpi)  # 6 inches default height
+    warnings.warn(
+        f"High DPI detected: dpi={dpi} will produce {width_px}x{height_px} pixel frames.\n"
+        f"This may result in large file sizes, slow rendering, high memory usage.\n"
+        f"Consider using dpi=100 or dpi=150 for most use cases.",
+        UserWarning,
+    )
+```
+
+**New Tests** (`tests/animation/test_dpi_guard.py`): 11 tests covering:
+
+- No warning for dpi=100 (default)
+- No warning for dpi=150 (threshold)
+- Warning for dpi > 150
+- Warning includes resolution estimate
+- Warning suggests lower DPI
+- Dry-run shows frame count, time, size estimates
 
 ### 5.4 Re-profile Video Export
 
