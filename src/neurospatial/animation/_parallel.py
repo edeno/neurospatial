@@ -1226,9 +1226,11 @@ def _render_worker_frames(task: dict) -> None:
     if frame_labels and frame_labels[0]:
         ax.set_title(frame_labels[0], fontsize=14)
 
-    # Try to identify the primary image artist to update
-    # This assumes env.plot_field uses imshow/Images; otherwise we fall back
-    primary_im: AxesImage | None = ax.images[0] if ax.images else None
+    # Try to identify the primary image artist (field) to update.
+    # Use ax.images[-1] (last image) because env.plot_field() is called last,
+    # ensuring the field artist is the most recently added image.
+    # This supports future video overlay rendering before the field (z_order="below").
+    primary_im: AxesImage | None = ax.images[-1] if ax.images else None
     reuse_artists = bool(reuse_flag and primary_im is not None)
 
     # Create overlay artist manager for efficient artist reuse

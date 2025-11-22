@@ -29,36 +29,71 @@
 
 > **Pre-requisite**: Read `_render_worker()` in `_parallel.py` first.
 
-- [ ] Review current `ax.images[0]` usage in [src/neurospatial/animation/_parallel.py](src/neurospatial/animation/_parallel.py)
-- [ ] Create `FrameArtists` dataclass or dict to track artists by purpose
-- [ ] Update `_render_worker()` to track field artist explicitly
-- [ ] Update [src/neurospatial/animation/backends/widget_backend.py](src/neurospatial/animation/backends/widget_backend.py) if needed
-- [ ] Run tests: `uv run pytest tests/animation/ -v`
+- [x] Review current `ax.images[0]` usage in [src/neurospatial/animation/_parallel.py](src/neurospatial/animation/_parallel.py)
+- [x] Create `FrameArtists` dataclass or dict to track artists by purpose
+- [x] Update `_render_worker()` to track field artist explicitly
+- [x] Update [src/neurospatial/animation/backends/widget_backend.py](src/neurospatial/animation/backends/widget_backend.py) if needed
+- [x] Run tests: `uv run pytest tests/animation/ -v`
+
+**Fix Applied**: Changed `ax.images[0]` to `ax.images[-1]` in `_parallel.py:1233`.
+Field is always added last by `env.plot_field()`, so `[-1]` is correct even when
+video layers are rendered first (z_order="below"). Widget backend was clean.
 
 ### I.3: Verify DRY Transform Reuse
 
-- [ ] Confirm `flip_y()` exists at [src/neurospatial/transforms.py:459-476](src/neurospatial/transforms.py#L459-L476)
-- [ ] Confirm `simple_scale()` exists at [src/neurospatial/calibration.py:7-68](src/neurospatial/calibration.py#L7-L68)
-- [ ] Document plan to wrap these in new calibration helpers (no code changes yet)
+- [x] Confirm `flip_y()` exists at [src/neurospatial/transforms.py:459-476](src/neurospatial/transforms.py#L459-L476)
+- [x] Confirm `simple_scale()` exists at [src/neurospatial/calibration.py:7-68](src/neurospatial/calibration.py#L7-L68)
+- [x] Document plan to wrap these in new calibration helpers (no code changes yet)
+
+**DRY Plan**: Task 1.1 will use existing functions:
+
+- `flip_y(frame_height_px)` - Y-axis flip for video origin conversion
+- `scale_2d(sx, sy)` - uniform/anisotropic scaling (transforms.py:396)
+- Pattern: `flip_y(height) @ scale_2d(cm_per_px, cm_per_px)` for px→cm with Y-flip
 
 ### I.4: Verify Napari Field Orientation
 
-- [ ] Review `field_to_rgb_for_napari()` in [src/neurospatial/animation/rendering.py](src/neurospatial/animation/rendering.py)
-- [ ] Document the transpose + flip pattern for video affine alignment
-- [ ] Create test plan for alignment verification (Task 6.3)
+- [x] Review `field_to_rgb_for_napari()` in [src/neurospatial/animation/rendering.py](src/neurospatial/animation/rendering.py)
+- [x] Document the transpose + flip pattern for video affine alignment
+- [x] Create test plan for alignment verification (Task 6.3)
+
+**Napari Orientation Pattern** (rendering.py:440-450):
+
+1. **Transpose**: `(n_x, n_y, 3)` → `(n_y, n_x, 3)` for napari (row, col) convention
+2. **Y-Flip**: `np.flip(transposed, axis=0)` because:
+   - Environment: Y increases upward (row 0 = min Y = bottom)
+   - Napari: Y increases downward (row 0 = top)
+
+**Video Affine Alignment**: Task 4.1 will implement `build_env_to_napari_matrix()` that encodes this same transformation in matrix form for the video layer affine parameter.
 
 ### I.5: Add imageio Dependency
 
-- [ ] Add `imageio>=2.35.0` to dev dependencies in [pyproject.toml](pyproject.toml)
-- [ ] Add `imageio-ffmpeg>=0.5.1` to optional `[video]` extras
-- [ ] Run `uv sync` to update lockfile
-- [ ] Verify: `uv run python -c "import imageio; print(imageio.__version__)"`
+- [x] Add `imageio>=2.35.0` to dev dependencies in [pyproject.toml](pyproject.toml)
+- [x] Add `imageio-ffmpeg>=0.5.1` to optional `[video]` extras
+- [x] Run `uv sync` to update lockfile
+- [x] Verify: `uv run python -c "import imageio; print(imageio.__version__)"`
 
 ### I.6: Verify dimension_ranges Validation
 
-- [ ] Review `EnvScale.from_env()` at [src/neurospatial/animation/transforms.py:123-130](src/neurospatial/animation/transforms.py#L123-L130)
-- [ ] Plan `_validate_video_env()` function for Task 3.2
-- [ ] Document fallback behavior for non-grid 2D environments
+- [x] Review `EnvScale.from_env()` at [src/neurospatial/animation/transforms.py:123-130](src/neurospatial/animation/transforms.py#L123-L130)
+- [x] Plan `_validate_video_env()` function for Task 3.2
+- [x] Document fallback behavior for non-grid 2D environments
+
+**Current Behavior** (EnvScale.from_env):
+Returns `None` if env lacks `dimension_ranges` OR `layout.grid_shape`.
+When `None`, `_warn_fallback()` emits WHAT/WHY/HOW warning.
+
+**Task 3.2 Validation Plan** (`_validate_video_env()`):
+
+1. **2D Required**: `env.n_dims == 2` or raise `ValueError` (1D/3D not supported)
+2. **dimension_ranges Required**: Must exist and be finite (for video bounding box)
+3. **grid_shape Optional**: Non-grid 2D envs work with fallback warning
+
+**Fallback for Non-Grid 2D**:
+
+- Use `env.dimension_ranges` for video extent (bounding box)
+- Emit existing `_warn_fallback()` warning (alignment may be approximate)
+- Video still renders, covers full bounding box
 
 **M0 Checkpoint**: `uv run pytest` passes, no regressions
 

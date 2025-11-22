@@ -55,6 +55,7 @@ dev = [
     "ipython>=8.0.0",
     "mypy>=1.18.2",
     "hypothesis>=6.92.0",
+    "imageio>=2.35.0",  # For video test fixtures
 ]
 docs = [
     "mkdocs>=1.6.0",
@@ -74,6 +75,11 @@ notebooks = [
 ]
 opencv = [
     "opencv-python>=4.11.0.86",
+]
+video = [
+    "opencv-python>=4.11.0.86",  # Fast video reading (preferred backend)
+    "imageio>=2.35.0",           # Fallback video reading
+    "imageio-ffmpeg>=0.5.1",     # For ffprobe timestamp extraction
 ]
 animation = [
     "napari[all]>=0.4.18,<0.6",  # GPU-accelerated interactive viewer
@@ -265,6 +271,10 @@ module = [
     "napari.*",
     "ipywidgets",
     "ipywidgets.*",
+    "imageio",
+    "imageio.*",
+    "imageio_ffmpeg",
+    "imageio_ffmpeg.*",
 ]
 ignore_missing_imports = true
 
