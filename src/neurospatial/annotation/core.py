@@ -102,8 +102,19 @@ def annotate_video(
 
     Notes
     -----
-    The napari viewer runs in blocking mode. The function returns only after
-    the user closes the viewer (via the "Save and Close" button or window close).
+    This function blocks until the napari viewer is closed. The viewer runs
+    in the same Python process, and the function returns only after the user
+    closes it (via the "Save and Close" button, Escape key, or window close).
+
+    If multiple environment boundaries are drawn, only the last one is used
+    and a warning is emitted.
+
+    Environments with Holes
+    ^^^^^^^^^^^^^^^^^^^^^^^
+    Users can draw "hole" polygons inside the environment boundary to create
+    excluded areas. Press M to cycle to hole mode (red) after drawing the
+    boundary. Holes are subtracted from the boundary using Shapely's
+    difference operation before creating the Environment.
 
     Coordinate Systems
     ^^^^^^^^^^^^^^^^^^
@@ -150,7 +161,13 @@ def annotate_video(
 
     # Load video frame
     reader = VideoReader(str(video_path))
-    frame = reader[frame_index]  # (H, W, 3) RGB uint8
+    try:
+        frame = reader[frame_index]  # (H, W, 3) RGB uint8
+    except (IndexError, KeyError) as e:
+        raise IndexError(
+            f"Frame index {frame_index} is out of range for video '{video_path.name}'. "
+            f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
+        ) from e
 
     # Create viewer with reasonable default size for annotation work
     viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
@@ -182,6 +199,9 @@ def annotate_video(
         area="right",
     )
 
+    # Set initial status bar with shortcut reminder
+    viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
+
     # Run napari (blocking until viewer closes)
     napari.run()
 
@@ -200,16 +220,27 @@ def annotate_video(
         return AnnotationResult(environment=None, regions=Regions([]))
 
     # Convert shapes to regions
-    regions, env_boundary = shapes_to_regions(
+    regions, env_boundary, holes = shapes_to_regions(
         shapes_data, names, roles, calibration, simplify_tolerance
     )
+
+    # Warn if holes exist but no environment boundary
+    if holes and env_boundary is None:
+        import warnings
+
+        warnings.warn(
+            f"{len(holes)} hole(s) were drawn but no environment boundary exists. "
+            "Holes are only meaningful when an environment boundary is defined.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Build environment if requested and boundary exists
     environment = None
     if mode in ("environment", "both") and env_boundary is not None:
         # bin_size was validated at function start for these modes
         assert bin_size is not None
-        environment = env_from_boundary_region(env_boundary, bin_size)
+        environment = env_from_boundary_region(env_boundary, bin_size, holes=holes)
         # Attach regions to environment
         for name, region in regions.items():
             environment.regions.add(
@@ -252,7 +283,6 @@ def _add_initial_regions(
     from shapely import get_coordinates
 
     from neurospatial.annotation._napari_widget import (
-        ROLE_COLORS,
         rebuild_features,
         sync_face_colors_from_features,
     )
@@ -288,7 +318,5 @@ def _add_initial_regions(
         # Sync face colors from features
         sync_face_colors_from_features(shapes_layer)
 
-        # Restore feature_defaults for new shapes (environment first)
-        shapes_layer.feature_defaults["role"] = "environment"
-        shapes_layer.feature_defaults["name"] = "arena"
-        shapes_layer.current_face_color = ROLE_COLORS["environment"]
+        # Note: Don't reset feature_defaults here - let the widget control the mode.
+        # The widget's initial_mode determines what role/name new shapes will have.

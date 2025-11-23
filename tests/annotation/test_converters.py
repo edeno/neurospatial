@@ -24,11 +24,12 @@ class TestShapesToRegions:
         names = ["test_region"]
         roles = ["region"]
 
-        regions, env_boundary = shapes_to_regions(shapes_data, names, roles)
+        regions, env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
 
         assert len(regions) == 1
         assert "test_region" in regions
         assert env_boundary is None
+        assert len(holes) == 0
         # Verify coordinates swapped: (row, col) -> (x, y)
         assert regions["test_region"].kind == "polygon"
 
@@ -41,12 +42,13 @@ class TestShapesToRegions:
         names = ["arena", "reward_zone"]
         roles = ["environment", "region"]
 
-        regions, env_boundary = shapes_to_regions(shapes_data, names, roles)
+        regions, env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
 
         assert len(regions) == 1
         assert "reward_zone" in regions
         assert env_boundary is not None
         assert env_boundary.name == "arena"
+        assert len(holes) == 0
 
     def test_with_calibration(self):
         """Apply calibration transform to coordinates."""
@@ -70,7 +72,7 @@ class TestShapesToRegions:
         names = ["scaled_region"]
         roles = ["region"]
 
-        regions, _ = shapes_to_regions(shapes_data, names, roles, calibration)
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles, calibration)
 
         assert len(regions) == 1
         poly = regions["scaled_region"].data
@@ -87,7 +89,7 @@ class TestShapesToRegions:
         names = ["line", "triangle"]
         roles = ["region", "region"]
 
-        regions, _ = shapes_to_regions(shapes_data, names, roles)
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles)
 
         assert len(regions) == 1
         assert "triangle" in regions
@@ -100,7 +102,7 @@ class TestShapesToRegions:
         names = ["test"]
         roles = ["region"]
 
-        regions, _ = shapes_to_regions(shapes_data, names, roles)
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles)
 
         metadata = regions["test"].metadata
         assert metadata["source"] == "napari_annotation"
@@ -137,12 +139,12 @@ class TestShapesToRegions:
         roles = ["region"]
 
         # Without simplification
-        regions_full, _ = shapes_to_regions(shapes_data, names, roles)
+        regions_full, _, _ = shapes_to_regions(shapes_data, names, roles)
         poly_full = regions_full["detailed"].data
         n_coords_full = len(poly_full.exterior.coords)
 
         # With simplification (tolerance=5.0 should remove colinear points)
-        regions_simple, _ = shapes_to_regions(
+        regions_simple, _, _ = shapes_to_regions(
             shapes_data, names, roles, simplify_tolerance=5.0
         )
         poly_simple = regions_simple["detailed"].data
@@ -162,11 +164,31 @@ class TestShapesToRegions:
         roles = ["environment", "environment"]
 
         with pytest.warns(UserWarning, match="Multiple environment boundaries"):
-            _, env_boundary = shapes_to_regions(shapes_data, names, roles)
+            _, env_boundary, _ = shapes_to_regions(shapes_data, names, roles)
 
         # Only the last one should be returned
         assert env_boundary is not None
         assert env_boundary.name == "boundary2"
+
+    def test_hole_extraction(self):
+        """Extract holes from shapes."""
+        shapes_data = [
+            np.array([[0, 0], [0, 100], [100, 100], [100, 0]], dtype=float),  # boundary
+            np.array([[20, 20], [20, 40], [40, 40], [40, 20]], dtype=float),  # hole
+            np.array([[60, 60], [60, 80], [80, 80], [80, 60]], dtype=float),  # region
+        ]
+        names = ["arena", "obstacle", "reward_zone"]
+        roles = ["environment", "hole", "region"]
+
+        regions, env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
+
+        assert len(regions) == 1
+        assert "reward_zone" in regions
+        assert env_boundary is not None
+        assert env_boundary.name == "arena"
+        assert len(holes) == 1
+        assert holes[0].name == "obstacle"
+        assert holes[0].metadata["role"] == "hole"
 
 
 class TestEnvFromBoundaryRegion:

@@ -22,7 +22,7 @@ def shapes_to_regions(
     roles: list[str],
     calibration: VideoCalibration | None = None,
     simplify_tolerance: float | None = None,
-) -> tuple[Regions, Region | None]:
+) -> tuple[Regions, Region | None, list[Region]]:
     """
     Convert napari polygon shapes to Regions.
 
@@ -34,7 +34,7 @@ def shapes_to_regions(
     names : list of str
         Name for each shape.
     roles : list of str
-        Role for each shape: "environment" or "region".
+        Role for each shape: "environment", "hole", or "region".
     calibration : VideoCalibration, optional
         If provided, transforms pixel coordinates to world coordinates (cm)
         using ``calibration.transform_px_to_cm``.
@@ -49,17 +49,26 @@ def shapes_to_regions(
         All regions with role="region".
     env_boundary : Region or None
         The region with role="environment", if any.
+    holes : list of Region
+        All regions with role="hole" (to be subtracted from environment).
 
     Notes
     -----
     Napari shapes use (row, col) order. This function converts to (x, y)
     pixel coordinates before applying calibration.
+
+    If multiple shapes with role="environment" are present, the last one is
+    used as the environment boundary and a warning is emitted.
+
+    Holes are only meaningful when an environment boundary exists. They are
+    used to create excluded areas within the environment.
     """
     import warnings
 
     from neurospatial.regions import Region, Regions
 
     regions_list: list[Region] = []
+    holes_list: list[Region] = []
     env_boundary: Region | None = None
     env_boundary_count = 0
 
@@ -104,6 +113,8 @@ def shapes_to_regions(
         if role == "environment":
             env_boundary_count += 1
             env_boundary = region
+        elif role == "hole":
+            holes_list.append(region)
         else:
             regions_list.append(region)
 
@@ -116,12 +127,70 @@ def shapes_to_regions(
             stacklevel=2,
         )
 
-    return Regions(regions_list), env_boundary
+    return Regions(regions_list), env_boundary, holes_list
+
+
+def subtract_holes_from_boundary(
+    boundary: Region,
+    holes: list[Region],
+) -> Region:
+    """
+    Subtract hole polygons from an environment boundary.
+
+    Uses Shapely's difference operation to create a boundary with holes.
+    This is used to create environments with excluded interior areas.
+
+    Parameters
+    ----------
+    boundary : Region
+        The environment boundary polygon.
+    holes : list of Region
+        Hole polygons to subtract from the boundary.
+
+    Returns
+    -------
+    Region
+        New boundary region with holes subtracted.
+
+    Notes
+    -----
+    Holes that don't intersect the boundary have no effect.
+    The resulting polygon may have interior rings (holes) that
+    Environment.from_polygon handles correctly.
+    """
+    from neurospatial.regions import Region
+
+    if not holes:
+        return boundary
+
+    # Start with the boundary polygon
+    result_poly = cast("Polygon", boundary.data)
+
+    # Subtract each hole
+    for hole in holes:
+        hole_poly = cast("Polygon", hole.data)
+        result_poly = result_poly.difference(hole_poly)
+
+    # Ensure result is valid
+    if not result_poly.is_valid:
+        result_poly = result_poly.buffer(0)
+
+    # Create new region with updated polygon
+    metadata = dict(boundary.metadata)
+    metadata["holes_subtracted"] = len(holes)
+
+    return Region(
+        name=boundary.name,
+        kind="polygon",
+        data=result_poly,
+        metadata=metadata,
+    )
 
 
 def env_from_boundary_region(
     boundary: Region,
     bin_size: float,
+    holes: list[Region] | None = None,
     **from_polygon_kwargs,
 ) -> Environment:
     """
@@ -133,6 +202,9 @@ def env_from_boundary_region(
         Region with kind="polygon" defining the environment boundary.
     bin_size : float
         Bin size for discretization (in same units as boundary coordinates).
+    holes : list of Region, optional
+        Hole polygons to subtract from the boundary before creating the
+        environment. These create excluded areas within the environment.
     **from_polygon_kwargs
         Additional arguments passed to ``Environment.from_polygon()``.
 
@@ -149,11 +221,16 @@ def env_from_boundary_region(
     See Also
     --------
     Environment.from_polygon : Factory method used internally.
+    subtract_holes_from_boundary : Used to subtract holes from boundary.
     """
     from neurospatial import Environment
 
     if boundary.kind != "polygon":
         raise ValueError(f"Boundary must be polygon, got {boundary.kind}")
+
+    # Subtract holes if provided
+    if holes:
+        boundary = subtract_holes_from_boundary(boundary, holes)
 
     # Cast is safe because we validated kind=="polygon" above
     return Environment.from_polygon(

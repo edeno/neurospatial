@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from magicgui.widgets import (
     Container,
-    FloatSlider,
     Label,
     LineEdit,
     PushButton,
@@ -22,14 +21,15 @@ if TYPE_CHECKING:
 
 # Role categories - order determines color cycle mapping
 # Environment first since users typically define boundary first
-ROLE_CATEGORIES = ["environment", "region"]
+ROLE_CATEGORIES = ["environment", "hole", "region"]
 
 # Color scheme for role-based visualization
 ROLE_COLORS = {
     "environment": "cyan",
+    "hole": "red",
     "region": "yellow",
 }
-ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]  # ["cyan", "yellow"]
+ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]
 
 
 def rebuild_features(roles: list[str], names: list[str]) -> pd.DataFrame:
@@ -144,21 +144,21 @@ def create_annotation_widget(
         value=(
             "─── WORKFLOW ───\n"
             "1. Draw environment boundary (cyan)\n"
-            "2. Press R → draw named regions (yellow)\n"
-            "3. Press Escape or Done when finished\n"
+            "2. Press M → add holes (red) if needed\n"
+            "3. Press M → draw named regions (yellow)\n"
+            "4. Escape or Save and Close when finished\n"
             "\n"
             "─── DRAWING ───\n"
-            "Click points to draw polygon, ENTER to finish\n"
+            "• Click points to draw polygon, ENTER to finish\n"
+            "• Unnamed shapes auto-named: hole_1, region_1, ...\n"
             "\n"
             "─── SHORTCUTS ───\n"
-            "E = environment mode\n"
-            "R = region mode\n"
-            "M = cycle modes\n"
-            "3 = move shape\n"
-            "4 = edit vertices\n"
-            "Delete = remove shape\n"
-            "Escape = finish\n"
-            "Ctrl+Z = undo"
+            "• M = cycle modes (environment → hole → region)\n"
+            "• 3 = move shape\n"
+            "• 4 = edit vertices\n"
+            "• Delete = remove shape\n"
+            "• Escape = save and close\n"
+            "• Ctrl+Z = undo"
         )
     )
 
@@ -177,7 +177,7 @@ def create_annotation_widget(
     # Radio buttons for mode selection (more visible than dropdown)
     # Use simple string values - display enhancement via labels
     role_selector = RadioButtons(
-        choices=["environment", "region"],
+        choices=["environment", "hole", "region"],
         value=initial_mode,
         orientation="vertical",
         label="Annotation Type:",
@@ -188,22 +188,16 @@ def create_annotation_widget(
         value="" if start_in_region_mode else "arena",
         label="Shape Name:",
         visible=start_in_region_mode,
+        tooltip="Enter name for next shape, or select a shape and press Enter to rename",
     )
+    # Set placeholder text (magicgui uses native widget underneath)
+    name_input.native.setPlaceholderText("Enter region name...")
 
     # Shapes list for tracking annotations
     shapes_list = Select(
         choices=[],
         label="Annotations:",
         allow_multiple=False,
-    )
-
-    # Opacity control
-    opacity_slider = FloatSlider(
-        value=0.5,
-        min=0.1,
-        max=1.0,
-        step=0.1,
-        label="Opacity:",
     )
 
     apply_btn = PushButton(
@@ -217,8 +211,8 @@ def create_annotation_widget(
         enabled=False,  # Disabled until shape selected
     )
     save_btn = PushButton(
-        text="Done",
-        tooltip="Finish annotation and return results. Shortcut: Escape",
+        text="Save and Close",
+        tooltip="Close viewer and return annotations to Python. Shortcut: Escape",
     )
 
     # --- Helper Functions ---
@@ -226,6 +220,8 @@ def create_annotation_widget(
         """Update mode indicator label with action-oriented wording."""
         if role == "environment":
             mode_indicator.value = "Drawing: ENVIRONMENT BOUNDARY (cyan polygon)"
+        elif role == "hole":
+            mode_indicator.value = "Drawing: HOLE IN ENVIRONMENT (red polygon)"
         else:
             mode_indicator.value = "Drawing: NAMED REGION (yellow polygon)"
 
@@ -233,31 +229,36 @@ def create_annotation_widget(
         """Update annotation count display."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
-            annotation_status.value = "Annotations: 0 environment, 0 regions"
+            annotation_status.value = "Annotations: 0 environment, 0 holes, 0 regions"
             return
 
         features = shapes.features
         env_count = sum(1 for r in features["role"] if str(r) == "environment")
+        hole_count = sum(1 for r in features["role"] if str(r) == "hole")
         region_count = sum(1 for r in features["role"] if str(r) == "region")
-        annotation_status.value = (
-            f"Annotations: {env_count} environment, {region_count} regions"
-        )
+        annotation_status.value = f"Annotations: {env_count} environment, {hole_count} holes, {region_count} regions"
 
     def update_shapes_list():
-        """Refresh the shapes list from layer data."""
+        """Refresh the shapes list from layer data, sorted alphabetically by name."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
             shapes_list.choices = []
             return
 
-        # Build list of shape descriptions
+        # Build list of shape descriptions with sort keys
         features = shapes.features
-        choices = []
+        choices_with_keys = []
         for i in range(len(shapes.data)):
             name = features["name"].iloc[i] if i < len(features) else f"shape_{i}"
             role = features["role"].iloc[i] if i < len(features) else "region"
-            choices.append(f"{i}: {name} ({role})")
-        shapes_list.choices = choices
+            display_str = f"{i}: {name} ({role})"
+            # Sort key: environment first, then alphabetically by name
+            sort_key = (0 if str(role) == "environment" else 1, str(name).lower())
+            choices_with_keys.append((sort_key, display_str))
+
+        # Sort and extract display strings
+        choices_with_keys.sort(key=lambda x: x[0])
+        shapes_list.choices = [c for _, c in choices_with_keys]
 
     def select_shape_in_layer(idx: int):
         """Select a shape in the layer by index."""
@@ -268,13 +269,22 @@ def create_annotation_widget(
     def update_button_states():
         """Enable/disable buttons based on current selection state."""
         shapes = get_shapes()
-        has_selection = shapes is not None and len(shapes.selected_data) > 0
+        # Handle None selected_data (older napari versions) by treating as empty
+        has_selection = (
+            shapes is not None
+            and getattr(shapes, "selected_data", None) is not None
+            and len(shapes.selected_data) > 0
+        )
         delete_btn.enabled = has_selection
         apply_btn.enabled = has_selection
 
     def cycle_annotation_mode():
-        """Cycle between environment and region modes."""
+        """Cycle between environment, hole, and region modes."""
         if role_selector.value == "environment":
+            role_selector.value = "hole"
+            name_input.value = ""
+            name_input.visible = False  # Hide for hole (auto-named)
+        elif role_selector.value == "hole":
             role_selector.value = "region"
             name_input.value = ""
             name_input.visible = True  # Show name input for regions
@@ -298,7 +308,10 @@ def create_annotation_widget(
             name_input.visible = True
             if not name_input.value:  # Clear if switching to region
                 name_input.value = ""
-        else:
+        elif role == "hole":
+            name_input.visible = False
+            name_input.value = ""  # Holes are auto-named
+        else:  # environment
             name_input.visible = False
             name_input.value = "arena"
 
@@ -329,13 +342,6 @@ def create_annotation_widget(
                 name_input.value = shapes.features["name"].iloc[idx]
         except (ValueError, IndexError):
             pass
-
-    @opacity_slider.changed.connect
-    def on_opacity_changed(opacity: float):
-        """Update shapes layer opacity."""
-        shapes = get_shapes()
-        if shapes is not None:
-            shapes.opacity = opacity
 
     @apply_btn.clicked.connect
     def apply_to_selected():
@@ -369,6 +375,25 @@ def create_annotation_widget(
             viewer.status = f"Renamed to '{applied_name}'"
         else:
             viewer.status = f"Renamed {count} shapes"
+
+    # Connect Enter key in name input to apply name to selected
+    # Use event filter to prevent Enter from propagating to napari's canvas
+    from qtpy.QtCore import QEvent, QObject
+
+    class EnterKeyFilter(QObject):
+        """Event filter to handle Enter key in name input without propagating to napari."""
+
+        def eventFilter(self, obj, event):  # noqa: N802 - Qt override
+            if event.type() == QEvent.KeyPress:
+                from qtpy.QtCore import Qt
+
+                if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                    apply_to_selected()
+                    return True  # Consume the event, don't propagate
+            return False  # Let other events through
+
+    _enter_filter = EnterKeyFilter(name_input.native)
+    name_input.native.installEventFilter(_enter_filter)
 
     @delete_btn.clicked.connect
     def delete_selected():
@@ -415,12 +440,15 @@ def create_annotation_widget(
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
             # Show confirmation dialog when no annotations exist
+            # Use napari window as parent for proper modality
             from qtpy.QtWidgets import QMessageBox
 
+            parent = viewer.window._qt_window
             reply = QMessageBox.question(
-                None,
+                parent,
                 "No Annotations",
-                "No annotations were drawn. Close anyway?",
+                "Close without saving any annotations?\n\n"
+                "Python will receive an empty result.",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -429,43 +457,17 @@ def create_annotation_widget(
         viewer.close()
 
     # --- Keyboard Shortcuts ---
-    @viewer.bind_key("e")
-    def set_environment_mode(viewer):
-        """Set mode to draw environment boundary."""
-        role_selector.value = "environment"
-        name_input.value = "arena"
-        name_input.visible = False  # Progressive disclosure
-        update_mode_indicator("environment")
-        # Status bar feedback for mode switch
-        viewer.status = "Mode: ENVIRONMENT - draw boundary polygon (cyan)"
-        shapes = get_shapes()
-        if shapes:
-            shapes.feature_defaults["role"] = "environment"
-            shapes.feature_defaults["name"] = "arena"
-            shapes.current_face_color = ROLE_COLORS["environment"]
-
-    @viewer.bind_key("r")
-    def set_region_mode(viewer):
-        """Set mode to draw named region."""
-        role_selector.value = "region"
-        # Clear name to prompt user to enter a meaningful name
-        name_input.value = ""
-        name_input.visible = True  # Progressive disclosure
-        update_mode_indicator("region")
-        # Status bar feedback for mode switch
-        viewer.status = "Mode: REGION - enter a name, then draw polygon (yellow)"
-        shapes = get_shapes()
-        if shapes:
-            shapes.feature_defaults["role"] = "region"
-            shapes.feature_defaults["name"] = ""
-            shapes.current_face_color = ROLE_COLORS["region"]
-
     @viewer.bind_key("m")
     def toggle_mode(viewer):
-        """Cycle between environment and region modes."""
+        """Cycle between environment, hole, and region modes."""
         cycle_annotation_mode()
         # Status bar feedback
-        viewer.status = f"Mode: {role_selector.value.upper()}"
+        if role_selector.value == "environment":
+            viewer.status = "Mode: ENVIRONMENT - draw boundary polygon (cyan)"
+        elif role_selector.value == "hole":
+            viewer.status = "Mode: HOLE - draw exclusion area inside boundary (red)"
+        else:
+            viewer.status = "Mode: REGION - enter name, then draw polygon (yellow)"
 
     @viewer.bind_key("Escape")
     def finish_annotation(viewer):
@@ -499,6 +501,67 @@ def create_annotation_widget(
                 [str(n) for n in shapes.features["name"]] if features_len > 0 else []
             )
 
+            # Check if user is trying to add a second environment boundary
+            # Only count environments from shapes that existed BEFORE this addition
+            # (features might include auto-populated entries from napari)
+            pre_existing_count = _prev_shape_count[0]
+            existing_env_count = sum(
+                1
+                for i, r in enumerate(roles)
+                if i < pre_existing_count and str(r) == "environment"
+            )
+            if role_selector.value == "environment" and existing_env_count > 0:
+                # Show dialog asking if they want to replace the existing boundary
+                from qtpy.QtWidgets import QMessageBox
+
+                parent = viewer.window._qt_window
+                reply = QMessageBox.question(
+                    parent,
+                    "Environment Already Exists",
+                    "An environment boundary already exists.\n\n"
+                    "Replace it with this new boundary?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.Yes:
+                    # Delete the existing environment boundary
+                    env_indices = [
+                        i for i, r in enumerate(roles) if str(r) == "environment"
+                    ]
+                    # Remove from data, roles, names (in reverse order)
+                    new_data = [
+                        shapes.data[i]
+                        for i in range(len(shapes.data) - delta)
+                        if i not in env_indices
+                    ]
+                    # Also include the new shape(s)
+                    new_data.extend(shapes.data[-delta:])
+                    roles = [r for i, r in enumerate(roles) if i not in env_indices]
+                    names = [n for i, n in enumerate(names) if i not in env_indices]
+                    shapes.data = new_data
+                    current_count = len(shapes.data)
+                    viewer.status = "Replaced existing environment boundary"
+                else:
+                    # Delete the just-drawn shape
+                    # Must defer to avoid reentrancy with napari's _finish_drawing()
+                    from qtpy.QtCore import QTimer
+
+                    # Update count IMMEDIATELY to prevent dialog re-triggering
+                    # (napari may fire multiple data events for single shape)
+                    target_count = _prev_shape_count[0]  # What we want after deletion
+                    _prev_shape_count[0] = current_count  # Prevent re-entry
+
+                    def delete_shape():
+                        nonlocal _prev_shape_count
+                        # Delete back to target count
+                        if len(shapes.data) > target_count:
+                            shapes.data = shapes.data[:target_count]
+                        _prev_shape_count[0] = len(shapes.data)
+
+                    QTimer.singleShot(0, delete_shape)
+                    viewer.status = "Shape removed (environment already exists)"
+                    return  # Exit early - deferred deletion will handle cleanup
+
             # Add entries for any new shapes (handles multiple additions)
             while len(roles) < current_count:
                 roles.append(role_selector.value)
@@ -509,6 +572,9 @@ def create_annotation_widget(
                     role = role_selector.value
                     if role == "environment":
                         current_name = "arena"
+                    elif role == "hole":
+                        hole_count = sum(1 for r in roles if str(r) == "hole")
+                        current_name = f"hole_{hole_count}"
                     else:
                         region_count = sum(1 for r in roles if str(r) == "region")
                         current_name = f"region_{region_count}"
@@ -523,29 +589,20 @@ def create_annotation_widget(
             update_shapes_list()
             update_annotation_status()
 
-            # Check if we just drew an environment boundary - auto-switch to region mode
+            # Status feedback for shape added (no auto-switch - user controls mode with M)
             last_role = str(shapes.features["role"].iloc[-1])
             last_name = str(shapes.features["name"].iloc[-1])
             if last_role == "environment":
-                # Auto-switch to region mode for next shape
-                role_selector.value = "region"
-                update_mode_indicator("region")
-                shapes.feature_defaults["role"] = "region"
-                shapes.current_face_color = ROLE_COLORS["region"]
-                # Status bar feedback for auto-switch
                 viewer.status = (
-                    f"Added environment '{last_name}' → switched to REGION mode"
+                    f"Added environment '{last_name}' (press M to add holes or regions)"
                 )
-                # Clear name to prompt user to enter meaningful region name
-                new_name = ""
+            elif last_role == "hole":
+                viewer.status = f"Added hole '{last_name}'"
             else:
-                # Status feedback for region added
                 viewer.status = f"Added region '{last_name}'"
                 # Clear name for next region (encourage meaningful naming)
-                new_name = ""
-
-            name_input.value = new_name
-            shapes.feature_defaults["name"] = new_name
+                name_input.value = ""
+                shapes.feature_defaults["name"] = ""
 
         elif delta < 0:
             # Shape was deleted externally (e.g., via Delete key)
@@ -558,6 +615,16 @@ def create_annotation_widget(
     if shapes is not None:
         shapes.events.data.connect(on_data_changed)
         _prev_shape_count[0] = len(shapes.data)
+
+        # Initialize shape defaults from widget state (ensures consistency)
+        # This is the single source of truth for annotation mode
+        shapes.feature_defaults["role"] = role_selector.value
+        if role_selector.value == "environment":
+            shapes.feature_defaults["name"] = "arena"
+            shapes.current_face_color = ROLE_COLORS["environment"]
+        else:
+            shapes.feature_defaults["name"] = ""
+            shapes.current_face_color = ROLE_COLORS["region"]
 
         # Note: shapes.events.selected_data doesn't exist in napari
         # (see napari issue #6886). Use highlight event as proxy for selection.
@@ -575,7 +642,6 @@ def create_annotation_widget(
             role_selector,
             name_input,
             shapes_list,
-            opacity_slider,
             apply_btn,
             delete_btn,
             save_btn,
