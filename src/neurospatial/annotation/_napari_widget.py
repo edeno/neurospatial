@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING
 
 import numpy as np
 from magicgui.widgets import (
@@ -15,106 +15,24 @@ from magicgui.widgets import (
 )
 from numpy.typing import NDArray
 
+from neurospatial.annotation._helpers import (
+    ROLE_CATEGORIES,
+    ROLE_COLOR_CYCLE,
+    ROLE_COLORS,
+    rebuild_features,
+    sync_face_colors_from_features,
+)
+from neurospatial.annotation._state import AnnotationModeState, make_unique_name
 from neurospatial.annotation._types import Role
 
 if TYPE_CHECKING:
     import napari
-    import pandas as pd
-
-# Role categories - order determines color cycle mapping
-# Environment first since users typically define boundary first
-# Derived from Role type alias for single source of truth
-ROLE_CATEGORIES: list[Role] = list(get_args(Role))
-
-# Color scheme for role-based visualization
-# Use str keys for runtime flexibility (values come from pandas DataFrames as str)
-ROLE_COLORS: dict[str, str] = {
-    "environment": "cyan",
-    "hole": "red",
-    "region": "yellow",
-}
-ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]
-
-
-def rebuild_features(roles: list[Role], names: list[str]) -> pd.DataFrame:
-    """
-    Create a fresh features DataFrame with proper categorical types.
-
-    Centralizes feature DataFrame construction to ensure consistency
-    across all shape update operations.
-
-    Parameters
-    ----------
-    roles : list of Role
-        Role for each shape ("environment", "hole", or "region").
-    names : list of str
-        Name for each shape.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with categorical 'role' and string 'name' columns.
-    """
-    import pandas as pd
-
-    return pd.DataFrame(
-        {
-            "role": pd.Categorical(roles, categories=ROLE_CATEGORIES),
-            "name": pd.Series(names, dtype=str),
-        }
-    )
-
-
-def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
-    """
-    Update face colors to match feature roles.
-
-    Napari's face_color_cycle doesn't always work reliably when features
-    are updated programmatically. This function explicitly syncs colors.
-
-    Parameters
-    ----------
-    shapes_layer : napari.layers.Shapes
-        Shapes layer to update.
-    """
-    if shapes_layer is None or len(shapes_layer.data) == 0:
-        return
-
-    roles = shapes_layer.features.get("role", [])
-    face_colors = [ROLE_COLORS.get(str(r), "yellow") for r in roles]
-    shapes_layer.face_color = face_colors
-
-
-def make_unique_name(base_name: str, existing_names: list[str]) -> str:
-    """
-    Generate a unique name by appending a suffix if needed.
-
-    Parameters
-    ----------
-    base_name : str
-        The desired name.
-    existing_names : list of str
-        Names that are already in use.
-
-    Returns
-    -------
-    str
-        A unique name (base_name if available, or base_name_N if not).
-    """
-    if base_name not in existing_names:
-        return base_name
-
-    # Find next available suffix
-    counter = 2
-    while f"{base_name}_{counter}" in existing_names:
-        counter += 1
-    return f"{base_name}_{counter}"
 
 
 def create_annotation_widget(
     viewer: napari.Viewer,
     shapes_layer_name: str = "Annotations",
-    initial_mode: str = "environment",
+    initial_mode: Role = "environment",
 ) -> Container:
     """
     Create annotation control widget using magicgui.
@@ -223,6 +141,10 @@ def create_annotation_widget(
         tooltip="Close viewer and return annotations to Python. Shortcut: Escape",
     )
 
+    # --- State Management ---
+    # Pure state object for tracking mode and counts (testable without napari)
+    state = AnnotationModeState(role=initial_mode)
+
     # --- Helper Functions ---
     def update_mode_indicator(role: str):
         """Update mode indicator label with visual color feedback.
@@ -249,17 +171,14 @@ def create_annotation_widget(
         )
 
     def update_annotation_status():
-        """Update annotation count display."""
+        """Update annotation count display from current state."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
-            annotation_status.value = "Annotations: 0 environment, 0 holes, 0 regions"
-            return
-
-        features = shapes.features
-        env_count = sum(1 for r in features["role"] if str(r) == "environment")
-        hole_count = sum(1 for r in features["role"] if str(r) == "hole")
-        region_count = sum(1 for r in features["role"] if str(r) == "region")
-        annotation_status.value = f"Annotations: {env_count} environment, {hole_count} holes, {region_count} regions"
+            state.sync_counts_from_roles([])
+        else:
+            roles = [str(r) for r in shapes.features.get("role", [])]
+            state.sync_counts_from_roles(roles)
+        annotation_status.value = state.status_text()
 
     def update_shapes_list():
         """Refresh the shapes list from layer data in creation order."""
@@ -302,35 +221,27 @@ def create_annotation_widget(
         apply_btn.enabled = has_selection
 
     def cycle_annotation_mode():
-        """Cycle between environment, hole, and region modes."""
-        if role_selector.value == "environment":
-            role_selector.value = "hole"
-            name_input.value = ""  # Holes auto-named if empty
-        elif role_selector.value == "hole":
-            role_selector.value = "region"
-            name_input.value = ""  # Regions auto-named if empty
-        else:
-            role_selector.value = "environment"
-            name_input.value = "arena"  # Default environment name
+        """Cycle between environment, hole, and region modes using state."""
+        state.cycle_role()
+        role_selector.value = state.role
+        name_input.value = state.default_name()
 
     # --- Event Handlers ---
     @role_selector.changed.connect
     def on_role_changed(role: str):
-        """Update feature_defaults when role selector changes."""
+        """Update feature_defaults and state when role selector changes."""
+        # Sync state with UI (handles both programmatic and user changes)
+        # Cast validated - role_selector only allows valid Role values
+        from typing import cast
+
+        state.role = cast("Role", role)
         shapes = get_shapes()
         if shapes is not None:
             shapes.feature_defaults["role"] = role
-            # Update colors for visual feedback
+            shapes.feature_defaults["name"] = state.default_name()
             shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
         update_mode_indicator(role)
-        # Set sensible default names for each mode
-        # Name input always visible - UX: recognition over recall
-        if role == "region":
-            name_input.value = ""  # Empty = user should provide name
-        elif role == "hole":
-            name_input.value = ""  # Empty = auto-named hole_N
-        else:  # environment
-            name_input.value = "arena"  # Common default for environments
+        name_input.value = state.default_name()
 
     @name_input.changed.connect
     def on_name_changed(name: str):
@@ -402,7 +313,7 @@ def create_annotation_widget(
 
     # Connect Enter key in name input to apply name to selected
     # Use event filter to prevent Enter from propagating to napari's canvas
-    from qtpy.QtCore import QEvent, QObject  # type: ignore[attr-defined]
+    from qtpy.QtCore import QEvent, QObject
 
     class EnterKeyFilter(QObject):
         """Event filter to handle Enter key in name input without propagating to napari."""
@@ -548,7 +459,7 @@ def create_annotation_widget(
                 for i, r in enumerate(roles)
                 if i < pre_existing_count and str(r) == "environment"
             )
-            if role_selector.value == "environment" and existing_env_count > 0:
+            if state.role == "environment" and existing_env_count > 0:
                 # Show dialog asking if they want to replace the existing boundary
                 from qtpy.QtWidgets import QMessageBox
 
@@ -625,26 +536,20 @@ def create_annotation_widget(
             name_was_modified = False
             requested_name = None
             while len(roles) < current_count:
-                roles.append(role_selector.value)
-                # Use current name, or generate fallback if empty
+                roles.append(state.role)
+                # Use current name, or generate auto-name via state object
                 current_name = name_input.value.strip()
                 if not current_name:
-                    # Fallback name if user didn't enter one
-                    role = role_selector.value
-                    if role == "environment":
-                        current_name = "arena"
-                    elif role == "hole":
-                        hole_count = sum(1 for r in roles if str(r) == "hole")
-                        current_name = f"hole_{hole_count}"
-                    else:
-                        region_count = sum(1 for r in roles if str(r) == "region")
-                        current_name = f"region_{region_count}"
+                    # Auto-generate name using state (handles role-specific naming)
+                    current_name = state.generate_auto_name(names)
                 # Ensure unique name to prevent overwrites in Regions container
                 requested_name = current_name
                 unique_name = make_unique_name(current_name, names)
                 if unique_name != requested_name:
                     name_was_modified = True
                 names.append(unique_name)
+                # Track shape added in state for future auto-naming
+                state.record_shape_added(state.role)
 
             # Use centralized feature builder
             shapes.features = rebuild_features(roles, names)
