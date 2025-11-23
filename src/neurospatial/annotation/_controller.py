@@ -46,6 +46,21 @@ class UpdateFeaturesResult(NamedTuple):
     last_role: str
 
 
+class RenameResult(NamedTuple):
+    """Result from rename_shape().
+
+    Attributes
+    ----------
+    assigned_name : str
+        The name that was actually assigned (may differ if duplicate).
+    name_was_modified : bool
+        True if name was changed due to duplicate.
+    """
+
+    assigned_name: str
+    name_was_modified: bool
+
+
 class ShapesLayerController:
     """
     Adapter applying annotation state to napari shapes layer.
@@ -279,7 +294,7 @@ class ShapesLayerController:
 
         return delete_count
 
-    def rename_shape(self, idx: int, new_name: str) -> tuple[str, bool]:
+    def rename_shape(self, idx: int, new_name: str) -> RenameResult:
         """
         Rename a shape, ensuring uniqueness.
 
@@ -292,10 +307,8 @@ class ShapesLayerController:
 
         Returns
         -------
-        assigned_name : str
-            The name that was actually assigned (may differ if duplicate).
-        name_was_modified : bool
-            True if name was changed due to duplicate.
+        RenameResult
+            Named tuple with assigned_name and name_was_modified.
         """
         features_df = self.shapes.features.copy()
 
@@ -311,4 +324,4 @@ class ShapesLayerController:
         self.shapes.features = features_df
         self.shapes.refresh()
 
-        return unique_name, unique_name != new_name
+        return RenameResult(unique_name, unique_name != new_name)

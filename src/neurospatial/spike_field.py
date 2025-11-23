@@ -7,7 +7,7 @@ into occupancy-normalized spatial fields (firing rate maps).
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -470,7 +470,7 @@ def compute_place_field(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    method: str = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
 ) -> NDArray[np.float64]:

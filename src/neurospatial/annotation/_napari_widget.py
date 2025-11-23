@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from magicgui.widgets import (
@@ -154,7 +154,7 @@ def create_annotation_widget(
         return ShapesLayerController(shapes, state)
 
     # --- Helper Functions ---
-    def update_mode_indicator(role: str):
+    def update_mode_indicator(role: str) -> None:
         """Update mode indicator label with visual color feedback.
 
         Sets both the text and background color to match the shape color,
@@ -178,28 +178,28 @@ def create_annotation_widget(
             f"padding: 5px; font-weight: bold; border-radius: 3px;"
         )
 
-    def update_annotation_status():
+    def update_annotation_status() -> None:
         """Update annotation count display from current state."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
             state.sync_counts_from_roles([])
         else:
-            roles = [str(r) for r in shapes.features.get("role", [])]
+            roles = [cast("Role", str(r)) for r in shapes.features.get("role", [])]
             state.sync_counts_from_roles(roles)
         annotation_status.value = state.status_text()
 
-    def update_shapes_list():
+    def update_shapes_list() -> None:
         """Refresh the shapes list from layer data in creation order."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
-            shapes_list.choices = []
+            shapes_list.choices = ()
             return
 
         # Build list of (label, value) tuples in creation order
         # Magicgui Select expects (label, value) format where label is displayed
         # Using tuples ensures index extraction works even if names contain colons
         features = shapes.features
-        choices = []
+        choices: list[tuple[str, int]] = []
         for i in range(len(shapes.data)):
             name = features["name"].iloc[i] if i < len(features) else f"shape_{i}"
             role = features["role"].iloc[i] if i < len(features) else "region"
@@ -208,15 +208,15 @@ def create_annotation_widget(
             choices.append((display_label, i))
 
         # Preserve creation order - no sorting
-        shapes_list.choices = choices
+        shapes_list.choices = tuple(choices)
 
-    def select_shape_in_layer(idx: int):
+    def select_shape_in_layer(idx: int) -> None:
         """Select a shape in the layer by index."""
         shapes = get_shapes()
         if shapes is not None and 0 <= idx < len(shapes.data):
             shapes.selected_data = {idx}
 
-    def update_button_states():
+    def update_button_states() -> None:
         """Enable/disable buttons based on current selection state."""
         shapes = get_shapes()
         # Handle None selected_data (older napari versions) by treating as empty
@@ -228,7 +228,7 @@ def create_annotation_widget(
         delete_btn.enabled = has_selection
         apply_btn.enabled = has_selection
 
-    def cycle_annotation_mode():
+    def cycle_annotation_mode() -> None:
         """Cycle between environment, hole, and region modes using state."""
         state.cycle_role()
         role_selector.value = state.role
@@ -240,7 +240,6 @@ def create_annotation_widget(
         """Update feature_defaults and state when role selector changes."""
         # Sync state with UI (handles both programmatic and user changes)
         # Cast validated - role_selector only allows valid Role values
-        from typing import cast
 
         state.role = cast("Role", role)
         # Controller handles layer defaults synchronization
@@ -319,18 +318,22 @@ def create_annotation_widget(
 
     # Connect Enter key in name input to apply name to selected
     # Use event filter to prevent Enter from propagating to napari's canvas
-    from qtpy.QtCore import QEvent, QObject
+    from typing import Any
 
-    class EnterKeyFilter(QObject):
+    from qtpy import QtCore
+
+    qt_core: Any = QtCore
+
+    class EnterKeyFilter(qt_core.QObject):
         """Event filter to handle Enter key in name input without propagating to napari."""
 
         def eventFilter(self, obj, event):  # noqa: N802 - Qt override
-            if event.type() == QEvent.KeyPress:
-                from qtpy.QtCore import Qt
-
-                if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                    apply_to_selected()
-                    return True  # Consume the event, don't propagate
+            if event.type() == qt_core.QEvent.KeyPress and event.key() in (
+                qt_core.Qt.Key_Return,
+                qt_core.Qt.Key_Enter,
+            ):
+                apply_to_selected()
+                return True  # Consume the event, don't propagate
             return False  # Let other events through
 
     _enter_filter = EnterKeyFilter(name_input.native)

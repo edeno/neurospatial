@@ -258,6 +258,19 @@ check_untyped_defs = false
 ignore_missing_imports = true
 
 # Note: numpy.typing.mypy_plugin is deprecated in NumPy 2.3+
+
+[[tool.mypy.overrides]]
+module = [
+    "neurospatial.spatial",
+    "neurospatial.field_ops",
+    "neurospatial.spike_field",
+    "neurospatial.io",
+    "neurospatial.alignment",
+    "neurospatial.environment.core",
+    "neurospatial.simulation.validation",
+]
+disallow_untyped_defs = true
+check_untyped_defs = true
 # NumPy now has built-in type stubs that work without plugins
 
 # Ignore missing imports for libraries without type stubs
