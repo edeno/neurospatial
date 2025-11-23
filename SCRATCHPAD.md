@@ -14,6 +14,25 @@
 
 ## Session Log
 
+### 2025-11-23: M1.3.2 Complete - TimeIntervals Reading Function
+
+- Created 8 tests for `read_intervals()` in `tests/nwb/test_events.py`
+- Tests cover:
+  - Reading trials table (predefined NWB table)
+  - Reading epochs table (predefined NWB table)
+  - Reading custom intervals (user-defined TimeIntervals)
+  - start_time/stop_time columns in output
+  - Error handling: interval not found (KeyError)
+  - Additional columns preserved
+  - Empty intervals table handling
+  - Data integrity verification
+- Implemented `read_intervals()` in `_events.py`:
+  - No extension dependency (uses built-in pynwb TimeIntervals)
+  - Supports predefined tables: trials, epochs, invalid_times
+  - Supports custom intervals via nwbfile.intervals
+  - Returns pandas DataFrame with start_time, stop_time, and all columns
+- All 8 tests pass, ruff check clean, mypy passes
+
 ### 2025-11-23: M1.3.1 Complete - Events Reading Function
 
 - Created 11 tests for `read_events()` in `tests/nwb/test_events.py`

@@ -114,6 +114,90 @@ def read_events(
     return df
 
 
+def read_intervals(
+    nwbfile: NWBFile,
+    interval_name: str,
+) -> pd.DataFrame:
+    """
+    Read time intervals from NWB file.
+
+    Reads TimeIntervals tables from the NWB file, including predefined tables
+    (trials, epochs, invalid_times) and custom interval tables.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to read from.
+    interval_name : str
+        Name of the TimeIntervals table to read. Common names include:
+        - "trials" : Trial intervals (predefined)
+        - "epochs" : Epoch intervals (predefined)
+        - "invalid_times" : Invalid time periods (predefined)
+        - Custom names for user-defined interval tables
+
+    Returns
+    -------
+    DataFrame
+        Intervals data with start_time, stop_time, and any additional columns.
+
+    Raises
+    ------
+    KeyError
+        If TimeIntervals table not found in NWB file.
+
+    Notes
+    -----
+    Unlike read_events() which reads point events from ndx-events EventsTable,
+    this function reads interval data with start/stop times from the built-in
+    NWB TimeIntervals type. No extension dependencies required.
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO
+    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    ...     nwbfile = io.read()
+    ...     trials = read_intervals(nwbfile, "trials")
+    ...     print(f"Found {len(trials)} trials")
+    """
+    from neurospatial.nwb._core import _require_pynwb, logger
+
+    # Verify pynwb is installed
+    _require_pynwb()
+
+    # Check predefined interval tables first
+    if interval_name == "trials" and nwbfile.trials is not None:
+        logger.debug("Reading trials table from NWB file")
+        return nwbfile.trials.to_dataframe()
+
+    if interval_name == "epochs" and nwbfile.epochs is not None:
+        logger.debug("Reading epochs table from NWB file")
+        return nwbfile.epochs.to_dataframe()
+
+    if interval_name == "invalid_times" and nwbfile.invalid_times is not None:
+        logger.debug("Reading invalid_times table from NWB file")
+        return nwbfile.invalid_times.to_dataframe()
+
+    # Check custom intervals (stored in nwbfile.intervals)
+    if interval_name in nwbfile.intervals:
+        logger.debug("Reading custom intervals '%s' from NWB file", interval_name)
+        return nwbfile.intervals[interval_name].to_dataframe()
+
+    # Not found - provide helpful error message
+    available = []
+    if nwbfile.trials is not None:
+        available.append("trials")
+    if nwbfile.epochs is not None:
+        available.append("epochs")
+    if nwbfile.invalid_times is not None:
+        available.append("invalid_times")
+    available.extend(list(nwbfile.intervals.keys()))
+
+    raise KeyError(
+        f"TimeIntervals '{interval_name}' not found in NWB file. "
+        f"Available intervals: {available}"
+    )
+
+
 def write_laps(
     nwbfile: NWBFile,
     lap_times: NDArray[np.float64],

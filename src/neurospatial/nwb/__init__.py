@@ -15,6 +15,7 @@ Reading Functions:
     read_head_direction : Read head direction from NWB CompassDirection
     read_pose : Read pose estimation data from ndx-pose PoseEstimation
     read_events : Read events from ndx-events EventsTable
+    read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
@@ -60,6 +61,10 @@ def __getattr__(name: str):
         from neurospatial.nwb._events import read_events
 
         return read_events
+    if name == "read_intervals":
+        from neurospatial.nwb._events import read_intervals
+
+        return read_intervals
 
     # Reading functions from _environment.py
     if name == "read_environment":
@@ -122,6 +127,7 @@ __all__ = [
     "read_environment",
     "read_events",
     "read_head_direction",
+    "read_intervals",
     "read_pose",
     "read_position",
     "write_environment",
