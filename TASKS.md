@@ -66,12 +66,12 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Return tuple: (positions: NDArray, timestamps: NDArray)
   - [x] Verify shapes: positions (n_samples, n_dims), timestamps (n_samples,)
 
-- [ ] **M1.1.3** Head direction reading function
-  - [ ] Write tests for `read_head_direction()` in `tests/nwb/test_behavior.py`
-    - [ ] Test basic CompassDirection reading
-    - [ ] Test error when no CompassDirection found
-  - [ ] Implement `read_head_direction()` in `_behavior.py`
-  - [ ] Return tuple: (angles: NDArray, timestamps: NDArray)
+- [x] **M1.1.3** Head direction reading function
+  - [x] Write tests for `read_head_direction()` in `tests/nwb/test_behavior.py`
+    - [x] Test basic CompassDirection reading
+    - [x] Test error when no CompassDirection found
+  - [x] Implement `read_head_direction()` in `_behavior.py`
+  - [x] Return tuple: (angles: NDArray, timestamps: NDArray)
 
 ### M1.2 Pose/Skeleton Reading
 

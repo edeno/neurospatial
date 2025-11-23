@@ -16,7 +16,7 @@ from neurospatial.nwb._core import _find_containers_by_type, _require_pynwb, log
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
-    from pynwb.behavior import Position, SpatialSeries
+    from pynwb.behavior import CompassDirection, Position, SpatialSeries
 
 
 def read_position(
@@ -64,13 +64,13 @@ def read_position(
     from pynwb.behavior import Position as PositionType
 
     # Find Position container
-    position_container = _get_position_container(
-        nwbfile, PositionType, processing_module
+    position_container = _get_behavior_container(
+        nwbfile, PositionType, "Position", processing_module
     )
 
     # Get SpatialSeries from Position container
     spatial_series = _get_spatial_series(
-        position_container, position_name, "SpatialSeries"
+        position_container, position_name, "SpatialSeries", "Position"
     )
 
     # Extract position data and timestamps
@@ -80,32 +80,35 @@ def read_position(
     return positions, timestamps
 
 
-def _get_position_container(
+def _get_behavior_container(
     nwbfile: NWBFile,
     target_type: type,
+    type_name: str,
     processing_module: str | None,
-) -> Position:
+) -> Position | CompassDirection:
     """
-    Get Position container from NWB file.
+    Get a behavior container (Position or CompassDirection) from NWB file.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to search.
     target_type : type
-        The Position type class.
+        The container type class (Position or CompassDirection).
+    type_name : str
+        Human-readable name for error messages (e.g., "Position", "CompassDirection").
     processing_module : str, optional
         If provided, look only in this specific module.
 
     Returns
     -------
-    Position
-        The Position container.
+    Position | CompassDirection
+        The behavior container.
 
     Raises
     ------
     KeyError
-        If no Position found or if specified module doesn't exist.
+        If no container found or if specified module doesn't exist.
     """
     if processing_module is not None:
         # Look in specific module
@@ -115,15 +118,20 @@ def _get_position_container(
                 f"Available modules: {list(nwbfile.processing.keys())}"
             )
         module = nwbfile.processing[processing_module]
-        # Find Position in this module
+        # Find container in this module
         for obj_name in module.data_interfaces:
             obj = module.data_interfaces[obj_name]
             if isinstance(obj, target_type):
                 logger.debug(
-                    "Found Position at processing/%s/%s", processing_module, obj_name
+                    "Found %s at processing/%s/%s",
+                    type_name,
+                    processing_module,
+                    obj_name,
                 )
                 return obj
-        raise KeyError(f"No Position found in processing module '{processing_module}'")
+        raise KeyError(
+            f"No {type_name} found in processing module '{processing_module}'"
+        )
 
     # Auto-discover using priority search
     found = _find_containers_by_type(nwbfile, target_type)
@@ -131,7 +139,7 @@ def _get_position_container(
     if not found:
         searched_locations = ["processing/*", "acquisition"]
         raise KeyError(
-            f"No Position data found in NWB file. Searched: {searched_locations}"
+            f"No {type_name} data found in NWB file. Searched: {searched_locations}"
         )
 
     # Return the first one (highest priority due to sort order)
@@ -139,30 +147,33 @@ def _get_position_container(
     if len(found) > 1:
         all_paths = [p for p, _ in found]
         logger.info(
-            "Multiple Position containers found: %s. Using '%s'", all_paths, path
+            "Multiple %s containers found: %s. Using '%s'", type_name, all_paths, path
         )
     else:
-        logger.debug("Found Position at %s", path)
+        logger.debug("Found %s at %s", type_name, path)
 
     return container
 
 
 def _get_spatial_series(
-    position_container: Position,
+    container: Position | CompassDirection,
     series_name: str | None,
     series_type_name: str,
+    container_type_name: str = "Position",
 ) -> SpatialSeries:
     """
-    Get a SpatialSeries from a Position container.
+    Get a SpatialSeries from a behavior container.
 
     Parameters
     ----------
-    position_container : Position
-        The Position container to extract from.
+    container : Position | CompassDirection
+        The behavior container to extract from.
     series_name : str or None
         Name of the specific series. If None, auto-selects.
     series_type_name : str
         Name to use in error messages (e.g., "SpatialSeries").
+    container_type_name : str, default "Position"
+        Name of the container type for error messages.
 
     Returns
     -------
@@ -175,19 +186,19 @@ def _get_spatial_series(
         If specified series not found or container is empty.
     """
     # Get available series names
-    available_series = sorted(position_container.spatial_series.keys())
+    available_series = sorted(container.spatial_series.keys())
 
     if not available_series:
-        raise KeyError(f"Position container has no {series_type_name}")
+        raise KeyError(f"{container_type_name} container has no {series_type_name}")
 
     if series_name is not None:
         # Look for specific series
-        if series_name not in position_container.spatial_series:
+        if series_name not in container.spatial_series:
             raise KeyError(
                 f"{series_type_name} '{series_name}' not found. "
                 f"Available: {available_series}"
             )
-        return position_container.spatial_series[series_name]
+        return container.spatial_series[series_name]
 
     # Auto-select: use first alphabetically
     if len(available_series) > 1:
@@ -198,7 +209,7 @@ def _get_spatial_series(
             available_series[0],
         )
 
-    return position_container.spatial_series[available_series[0]]
+    return container.spatial_series[available_series[0]]
 
 
 def _get_timestamps(spatial_series: SpatialSeries) -> NDArray[np.float64]:
@@ -242,10 +253,11 @@ def read_head_direction(
         The NWB file to read from.
     processing_module : str, optional
         Name of the processing module containing CompassDirection data.
-        If None, auto-discovers using priority order.
+        If None, auto-discovers using priority order:
+        processing/behavior > processing/* > acquisition.
     compass_name : str, optional
         Name of the specific SpatialSeries within CompassDirection.
-        If None and multiple exist, uses first alphabetically.
+        If None and multiple exist, uses first alphabetically with INFO log.
 
     Returns
     -------
@@ -257,7 +269,8 @@ def read_head_direction(
     Raises
     ------
     KeyError
-        If no CompassDirection container found.
+        If no CompassDirection container found, or if specified compass_name
+        not found.
     ImportError
         If pynwb is not installed.
 
@@ -268,4 +281,21 @@ def read_head_direction(
     ...     nwbfile = io.read()
     ...     angles, timestamps = read_head_direction(nwbfile)
     """
-    raise NotImplementedError("read_head_direction not yet implemented")
+    _require_pynwb()
+    from pynwb.behavior import CompassDirection as CompassDirectionType
+
+    # Find CompassDirection container
+    compass_container = _get_behavior_container(
+        nwbfile, CompassDirectionType, "CompassDirection", processing_module
+    )
+
+    # Get SpatialSeries from CompassDirection container
+    spatial_series = _get_spatial_series(
+        compass_container, compass_name, "SpatialSeries", "CompassDirection"
+    )
+
+    # Extract angle data (1D) and timestamps
+    angles = np.asarray(spatial_series.data[:], dtype=np.float64).ravel()
+    timestamps = _get_timestamps(spatial_series)
+
+    return angles, timestamps

@@ -6,13 +6,35 @@
 
 ## Current Status
 
-- **Active Task**: M1.1.3 - Head direction reading function
+- **Active Task**: M1.2.1 - Pose reading function
 - **Blocker**: None
-- **Next Action**: Write tests for `read_head_direction()` in `tests/nwb/test_behavior.py`
+- **Next Action**: Write tests for `read_pose()` in `tests/nwb/test_pose.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.1.3 Complete - Head Direction Reading Function
+
+- Created 14 tests for `read_head_direction()` in `tests/nwb/test_behavior.py`
+- Tests cover:
+  - Basic CompassDirection reading (2 tests - data and match original)
+  - Explicit processing_module parameter
+  - Explicit compass_name parameter
+  - Error handling: no CompassDirection found, named compass not found, module not found, empty container
+  - Multiple SpatialSeries selection (alphabetical, INFO log)
+  - Priority behavior (behavior module over others)
+  - Acquisition fallback
+  - Rate-based timestamp computation (with and without starting_time offset)
+  - 2D column vector input (edge case for different storage formats)
+- Refactored helper functions for code reuse:
+  - Renamed `_get_position_container()` to `_get_behavior_container()` with `type_name` parameter
+  - Updated `_get_spatial_series()` with `container_type_name` parameter
+- Implemented `read_head_direction()` in `_behavior.py`:
+  - Uses `.ravel()` to handle both 1D and 2D column vector angle data
+  - Same auto-discovery and error handling patterns as `read_position()`
+- Code review: APPROVED
+- All 29 tests pass (15 position + 14 head direction), ruff check clean, mypy passes
 
 ### 2025-11-23: M1.1.2 Complete - Position Reading Function
 
