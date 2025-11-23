@@ -6,13 +6,45 @@
 
 ## Current Status
 
-- **Active Task**: M1.4.4 - Environment from position factory
+- **Active Task**: M1 Complete - All NWB Reading tasks done
 - **Blocker**: None
-- **Next Action**: Write tests for `environment_from_position()` in `tests/nwb/test_overlays.py`
+- **Next Action**: Start M2.1.1 - Place field writing
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.4.4 Complete - Environment from Position Factory
+
+- Architectural decision: Moved `environment_from_position()` from `_overlays.py` to `_environment.py`
+  - Function creates Environment, not an overlay
+  - Better cohesion with environment-related functions
+- Created 15 tests for `environment_from_position()` in `tests/nwb/test_environment.py`
+- Tests cover:
+  - Basic Environment creation from NWB Position data
+  - Position bounds matching (environment extent matches position data)
+  - units parameter propagation (explicit and auto-detection from SpatialSeries)
+  - frame parameter propagation
+  - infer_active_bins parameter forwarding
+  - kwargs forwarded to Environment.from_samples()
+  - processing_module parameter forwarding
+  - position_name parameter for multiple SpatialSeries
+  - Error handling: Position not found (KeyError)
+  - Error handling: processing_module not found (KeyError)
+  - bin_size required (TypeError)
+  - Different bin sizes produce different grid resolutions
+  - Environment is fitted and ready to use
+  - Connectivity graph properly created
+- Implemented `environment_from_position()` in `_environment.py`:
+  - Reads position data via `read_position()`
+  - Auto-detects units from SpatialSeries via `_get_position_units()` helper
+  - Creates Environment via `Environment.from_samples()`
+  - Sets metadata (units, frame)
+  - Calls `_require_pynwb()` for consistency with other NWB functions
+- Updated `__init__.py` to import from `_environment.py` instead of `_overlays.py`
+- Removed placeholder from `_overlays.py`
+- Code review: APPROVED
+- All 15 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.4.3 Complete - Head Direction Overlay Factory
 

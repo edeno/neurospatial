@@ -98,11 +98,13 @@ def __getattr__(name: str):
 
         return write_environment
 
-    # Factory functions from _overlays.py
+    # Factory functions
     if name == "environment_from_position":
-        from neurospatial.nwb._overlays import environment_from_position
+        from neurospatial.nwb._environment import environment_from_position
 
         return environment_from_position
+
+    # Overlay factory functions from _overlays.py
     if name == "position_overlay_from_nwb":
         from neurospatial.nwb._overlays import position_overlay_from_nwb
 

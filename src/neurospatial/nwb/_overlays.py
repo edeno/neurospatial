@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
-    from neurospatial import Environment
     from neurospatial.animation.overlays import (
         BodypartOverlay,
         HeadDirectionOverlay,
@@ -221,48 +220,3 @@ def head_direction_overlay_from_nwb(
         length=length,
         **kwargs,
     )
-
-
-def environment_from_position(
-    nwbfile: NWBFile,
-    bin_size: float,
-    *,
-    processing_module: str | None = None,
-    position_name: str | None = None,
-    units: str = "cm",
-    **kwargs: Any,
-) -> Environment:
-    """
-    Create Environment from NWB Position data.
-
-    Convenience function that reads position data and creates an Environment
-    using Environment.from_samples().
-
-    Parameters
-    ----------
-    nwbfile : NWBFile
-        The NWB file to read from.
-    bin_size : float
-        Bin size for environment discretization.
-    processing_module : str, optional
-        Name of processing module containing Position.
-    position_name : str, optional
-        Name of specific SpatialSeries within Position.
-    units : str, default "cm"
-        Spatial units for the environment.
-    **kwargs
-        Additional arguments passed to Environment.from_samples().
-
-    Returns
-    -------
-    Environment
-        Environment discretized from position data.
-
-    Examples
-    --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
-    ...     nwbfile = io.read()
-    ...     env = environment_from_position(nwbfile, bin_size=2.0)
-    """
-    raise NotImplementedError("environment_from_position not yet implemented")

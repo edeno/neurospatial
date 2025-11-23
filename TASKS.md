@@ -143,13 +143,15 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Implement `head_direction_overlay_from_nwb()` in `_overlays.py`
   - [x] Return HeadDirectionOverlay with angles and times
 
-- [ ] **M1.4.4** Environment from position factory
-  - [ ] Write tests for `environment_from_position()` in `tests/nwb/test_overlays.py` (should this go in overlays??)
-    - [ ] Test Environment creation from Position with bin_size
-    - [ ] Test units parameter propagation
-    - [ ] Test infer_active_bins parameter
-  - [ ] Implement `environment_from_position()` in `_overlays.py`
-  - [ ] Return Environment.from_samples() result
+- [x] **M1.4.4** Environment from position factory
+  - [x] Write tests for `environment_from_position()` in `tests/nwb/test_environment.py`
+    - [x] Test Environment creation from Position with bin_size
+    - [x] Test units parameter propagation
+    - [x] Test infer_active_bins parameter
+    - [x] Test kwargs forwarded to Environment.from_samples()
+    - [x] Test error when Position not found
+  - [x] Implement `environment_from_position()` in `_environment.py`
+  - [x] Return Environment.from_samples() result
 
 ---
 
