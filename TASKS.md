@@ -54,17 +54,17 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Test search order: processing/behavior > processing/* > acquisition
   - [x] Verify logging behavior for auto-discovery
 
-- [ ] **M1.1.2** Position reading function
-  - [ ] Write tests for `read_position()` in `tests/nwb/test_behavior.py`
-    - [ ] Test basic position reading
-    - [ ] Test with explicit processing_module parameter
-    - [ ] Test with explicit position_name parameter
-    - [ ] Test error when no Position found (KeyError)
-    - [ ] Test error when named Position not found (KeyError with available list)
-    - [ ] Test multiple SpatialSeries selection (alphabetical, INFO log)
-  - [ ] Implement `read_position()` in `_behavior.py`s
-  - [ ] Return tuple: (positions: NDArray, timestamps: NDArray)
-  - [ ] Verify shapes: positions (n_samples, n_dims), timestamps (n_samples,)
+- [x] **M1.1.2** Position reading function
+  - [x] Write tests for `read_position()` in `tests/nwb/test_behavior.py`
+    - [x] Test basic position reading
+    - [x] Test with explicit processing_module parameter
+    - [x] Test with explicit position_name parameter
+    - [x] Test error when no Position found (KeyError)
+    - [x] Test error when named Position not found (KeyError with available list)
+    - [x] Test multiple SpatialSeries selection (alphabetical, INFO log)
+  - [x] Implement `read_position()` in `_behavior.py`
+  - [x] Return tuple: (positions: NDArray, timestamps: NDArray)
+  - [x] Verify shapes: positions (n_samples, n_dims), timestamps (n_samples,)
 
 - [ ] **M1.1.3** Head direction reading function
   - [ ] Write tests for `read_head_direction()` in `tests/nwb/test_behavior.py`

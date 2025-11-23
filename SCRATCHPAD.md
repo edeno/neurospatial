@@ -6,13 +6,33 @@
 
 ## Current Status
 
-- **Active Task**: M1.1.2 - Position reading function
+- **Active Task**: M1.1.3 - Head direction reading function
 - **Blocker**: None
-- **Next Action**: Write tests for `read_position()` in `tests/nwb/test_behavior.py`
+- **Next Action**: Write tests for `read_head_direction()` in `tests/nwb/test_behavior.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.1.2 Complete - Position Reading Function
+
+- Created `tests/nwb/test_behavior.py` with 15 tests for `read_position()`
+- Tests cover:
+  - Basic position reading (2D data)
+  - Explicit processing_module parameter
+  - Explicit position_name parameter
+  - Error handling: no Position found, named Position not found, module not found
+  - Multiple SpatialSeries selection (alphabetical, INFO log)
+  - Priority behavior (behavior module over others, processing over acquisition)
+  - 1D and 3D position data
+  - Rate-based timestamp computation (with and without starting_time offset)
+  - Empty Position container handling
+- Implemented `read_position()` in `_behavior.py` with helper functions:
+  - `_get_position_container()` - finds Position container with priority search
+  - `_get_spatial_series()` - extracts SpatialSeries with auto-selection
+  - `_get_timestamps()` - handles both explicit and rate-computed timestamps
+- Code review: APPROVED
+- All tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.1.1 Complete - Core Discovery Utilities
 
