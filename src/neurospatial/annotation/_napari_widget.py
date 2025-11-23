@@ -61,23 +61,29 @@ def create_annotation_widget(
     # --- Widget Components ---
     instructions = Label(
         value=(
-            "WORKFLOW:\n"
-            "1. Draw environment boundary (CYAN)\n"
-            "2. Press R to switch to regions (YELLOW)\n"
-            "3. Draw named regions inside boundary\n"
+            "─── WORKFLOW ───\n"
+            "1. Draw environment boundary (cyan)\n"
+            "2. Press R → draw named regions (yellow)\n"
+            "3. Click Done when finished\n"
             "\n"
-            "DRAWING: You should already be in polygon mode.\n"
-            "Click points to draw outline, press ENTER to finish.\n"
+            "─── DRAWING ───\n"
+            "Click points to draw polygon, ENTER to finish\n"
             "\n"
-            "TO RENAME: Select shape, edit name below, click Rename\n"
-            "\n"
-            "SHORTCUTS: E=environment, R=region\n"
-            "EDIT: 3=move, 4=edit vertices, Delete=remove"
+            "─── SHORTCUTS ───\n"
+            "E = environment mode\n"
+            "R = region mode\n"
+            "3 = move shape\n"
+            "4 = edit vertices\n"
+            "Delete = remove shape\n"
+            "Ctrl+Z = undo"
         )
     )
 
-    # Mode indicator shows current annotation type
-    mode_indicator = Label(value=">>> Mode: ENVIRONMENT (CYAN) <<<")
+    # Mode indicator shows current annotation type with action-oriented wording
+    mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY (cyan polygon)")
+
+    # Annotation count status
+    annotation_status = Label(value="Annotations: 0 environment, 0 regions")
 
     role_selector = ComboBox(
         choices=["environment", "region"],
@@ -85,7 +91,7 @@ def create_annotation_widget(
         label="Type:",
     )
 
-    name_input = LineEdit(value="arena", label="Name (edit here):")
+    name_input = LineEdit(value="arena", label="Shape Name:")
 
     # Shapes list for tracking annotations
     shapes_list = Select(
@@ -103,15 +109,31 @@ def create_annotation_widget(
         label="Opacity:",
     )
 
-    apply_btn = PushButton(text="Rename Selected")
+    apply_btn = PushButton(text="Apply Name to Selected")
     delete_btn = PushButton(text="Delete Selected")
-    save_btn = PushButton(text="Save and Close")
+    save_btn = PushButton(text="Done")
 
     # --- Helper Functions ---
     def update_mode_indicator(role: str):
-        """Update mode indicator label."""
-        color = "CYAN" if role == "environment" else "YELLOW"
-        mode_indicator.value = f">>> Mode: {role.upper()} ({color}) <<<"
+        """Update mode indicator label with action-oriented wording."""
+        if role == "environment":
+            mode_indicator.value = "Drawing: ENVIRONMENT BOUNDARY (cyan polygon)"
+        else:
+            mode_indicator.value = "Drawing: NAMED REGION (yellow polygon)"
+
+    def update_annotation_status():
+        """Update annotation count display."""
+        shapes = get_shapes()
+        if shapes is None or len(shapes.data) == 0:
+            annotation_status.value = "Annotations: 0 environment, 0 regions"
+            return
+
+        features = shapes.features
+        env_count = sum(1 for r in features["role"] if str(r) == "environment")
+        region_count = sum(1 for r in features["role"] if str(r) == "region")
+        annotation_status.value = (
+            f"Annotations: {env_count} environment, {region_count} regions"
+        )
 
     def update_shapes_list():
         """Refresh the shapes list from layer data."""
@@ -245,7 +267,21 @@ def create_annotation_widget(
 
     @save_btn.clicked.connect
     def save_and_close():
-        """Close viewer to return control to Python."""
+        """Close viewer to return control to Python, with confirmation if empty."""
+        shapes = get_shapes()
+        if shapes is None or len(shapes.data) == 0:
+            # Show confirmation dialog when no annotations exist
+            from qtpy.QtWidgets import QMessageBox
+
+            reply = QMessageBox.question(
+                None,
+                "No Annotations",
+                "No annotations were drawn. Close anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
         viewer.close()
 
     # --- Keyboard Shortcuts ---
@@ -255,6 +291,8 @@ def create_annotation_widget(
         role_selector.value = "environment"
         name_input.value = "arena"
         update_mode_indicator("environment")
+        # Status bar feedback for mode switch
+        viewer.status = "Mode: ENVIRONMENT - draw boundary polygon (cyan)"
         shapes = get_shapes()
         if shapes:
             shapes.feature_defaults["role"] = "environment"
@@ -265,16 +303,15 @@ def create_annotation_widget(
     def set_region_mode(viewer):
         """Set mode to draw named region."""
         role_selector.value = "region"
-        # Auto-generate region name based on existing count
-        shapes = get_shapes()
-        region_count = 0
-        if shapes and len(shapes.features) > 0:
-            region_count = sum(1 for r in shapes.features["role"] if r == "region")
-        name_input.value = f"region_{region_count}"
+        # Clear name to prompt user to enter a meaningful name
+        name_input.value = ""
         update_mode_indicator("region")
+        # Status bar feedback for mode switch
+        viewer.status = "Mode: REGION - enter a name, then draw polygon (yellow)"
+        shapes = get_shapes()
         if shapes:
             shapes.feature_defaults["role"] = "region"
-            shapes.feature_defaults["name"] = f"region_{region_count}"
+            shapes.feature_defaults["name"] = ""
             shapes.current_face_color = ROLE_COLORS["region"]
 
     # --- Data Change Callback ---
@@ -283,7 +320,7 @@ def create_annotation_widget(
     _prev_shape_count = [0]  # Mutable container for closure
 
     def on_data_changed(event):
-        """Handle shape additions: update list, auto-switch mode, auto-name."""
+        """Handle shape additions: update list, auto-switch mode, update status."""
         import pandas as pd
 
         shapes = get_shapes()
@@ -303,7 +340,17 @@ def create_annotation_widget(
             # Add entries for any new shapes
             while len(roles) < current_count:
                 roles.append(role_selector.value)
-                names.append(name_input.value)
+                # Use current name, or generate fallback if empty
+                current_name = name_input.value.strip()
+                if not current_name:
+                    # Fallback name if user didn't enter one
+                    role = role_selector.value
+                    if role == "environment":
+                        current_name = "arena"
+                    else:
+                        region_count = sum(1 for r in roles if str(r) == "region")
+                        current_name = f"region_{region_count}"
+                names.append(current_name)
 
             # Create fresh DataFrame
             features_df = pd.DataFrame(
@@ -319,6 +366,7 @@ def create_annotation_widget(
             shapes.face_color = face_colors
 
             update_shapes_list()
+            update_annotation_status()
 
             # Check if we just drew an environment boundary - auto-switch to region mode
             last_role = str(features_df["role"].iloc[-1])
@@ -328,13 +376,13 @@ def create_annotation_widget(
                 update_mode_indicator("region")
                 shapes.feature_defaults["role"] = "region"
                 shapes.current_face_color = ROLE_COLORS["region"]
-                # Generate region name
-                region_count = sum(1 for r in features_df["role"] if str(r) == "region")
-                new_name = f"region_{region_count}"
+                # Status bar feedback for auto-switch
+                viewer.status = "Switched to REGION mode - enter a name for each region"
+                # Clear name to prompt user to enter meaningful region name
+                new_name = ""
             else:
-                # Increment region counter
-                region_count = sum(1 for r in features_df["role"] if str(r) == "region")
-                new_name = f"region_{region_count}"
+                # Clear name for next region (encourage meaningful naming)
+                new_name = ""
 
             name_input.value = new_name
             shapes.feature_defaults["name"] = new_name
@@ -342,6 +390,7 @@ def create_annotation_widget(
         elif current_count < _prev_shape_count[0]:
             # Shape was deleted externally (e.g., via Delete key)
             update_shapes_list()
+            update_annotation_status()
 
         _prev_shape_count[0] = current_count
 
@@ -355,6 +404,7 @@ def create_annotation_widget(
         widgets=[
             instructions,
             mode_indicator,
+            annotation_status,
             role_selector,
             name_input,
             shapes_list,
