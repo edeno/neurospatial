@@ -581,6 +581,23 @@ def create_annotation_widget(
                             # Block data events during deletion to prevent re-triggering
                             with shapes.events.data.blocker():
                                 shapes.data = shapes.data[:target_count]
+                                # Also truncate features to match data length
+                                if len(shapes.features) > target_count:
+                                    truncated_roles = [
+                                        str(r)
+                                        for r in shapes.features["role"][:target_count]
+                                    ]
+                                    truncated_names = [
+                                        str(n)
+                                        for n in shapes.features["name"][:target_count]
+                                    ]
+                                    shapes.features = rebuild_features(
+                                        truncated_roles, truncated_names
+                                    )
+                                    sync_face_colors_from_features(shapes)
+                            # Update UI to reflect the deletion
+                            update_shapes_list()
+                            update_annotation_status()
                         _prev_shape_count[0] = len(shapes.data)
 
                     QTimer.singleShot(0, delete_shape)
