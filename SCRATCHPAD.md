@@ -51,6 +51,33 @@
 - All critical and important issues addressed
 - Final verification checklist passed
 
+### 2025-11-22 Session 3: UX Improvements Based on User Testing
+
+**User Feedback** (from interactive testing):
+1. Should default to environment mode first
+2. Pressing E doesn't update the dropdown (keyboard shortcut sync issue)
+3. Should be able to track shapes and rename them
+4. Should be able to delete shapes
+5. Should be able to alter transparency
+6. Hard to know which tool to use to draw polygon
+
+**Implemented UX Improvements**:
+- **Default to environment mode**: Role selector now defaults to "environment", name defaults to "boundary"
+- **Mode indicator**: Added prominent "Mode: ENVIRONMENT (cyan)" label that updates with mode changes
+- **Keyboard shortcuts sync**: E/R keys now properly update dropdown, name field, and mode indicator
+- **Shapes list**: Added "Annotations" Select widget showing all shapes with index, name, and role
+- **Rename functionality**: Select shape from list, edit name, click "Rename Selected"
+- **Delete functionality**: Added "Delete Selected" button that removes selected shapes
+- **Opacity slider**: Added 0.1-1.0 opacity slider to see video through shapes
+- **Auto-switch to regions**: After drawing environment boundary, automatically switches to region mode
+- **Improved instructions**: Clear workflow steps, drawing instructions, and shortcuts
+
+**Files Modified**:
+- `src/neurospatial/annotation/_napari_widget.py` - Major UX overhaul
+- `data/annotate_video_example.py` - Updated docstring with new workflow
+
+**All 21 annotation tests pass**
+
 ---
 
 ## Blockers
