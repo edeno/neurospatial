@@ -283,6 +283,10 @@ module = [
     "imageio.*",
     "imageio_ffmpeg",
     "imageio_ffmpeg.*",
+    "qtpy",
+    "qtpy.*",
+    "magicgui",
+    "magicgui.*",
 ]
 ignore_missing_imports = true
 

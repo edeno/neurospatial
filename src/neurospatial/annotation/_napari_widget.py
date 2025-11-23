@@ -178,7 +178,7 @@ def create_annotation_widget(
     # Use simple string values - display enhancement via labels
     role_selector = RadioButtons(
         choices=["environment", "hole", "region"],
-        value=initial_mode,
+        value=initial_mode,  # type: ignore[call-arg]
         orientation="vertical",
         label="Annotation Type:",
     )
@@ -239,26 +239,26 @@ def create_annotation_widget(
         annotation_status.value = f"Annotations: {env_count} environment, {hole_count} holes, {region_count} regions"
 
     def update_shapes_list():
-        """Refresh the shapes list from layer data, sorted alphabetically by name."""
+        """Refresh the shapes list from layer data in creation order."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
             shapes_list.choices = []
             return
 
-        # Build list of shape descriptions with sort keys
+        # Build list of (label, value) tuples in creation order
+        # Magicgui Select expects (label, value) format where label is displayed
+        # Using tuples ensures index extraction works even if names contain colons
         features = shapes.features
-        choices_with_keys = []
+        choices = []
         for i in range(len(shapes.data)):
             name = features["name"].iloc[i] if i < len(features) else f"shape_{i}"
             role = features["role"].iloc[i] if i < len(features) else "region"
-            display_str = f"{i}: {name} ({role})"
-            # Sort key: environment first, then alphabetically by name
-            sort_key = (0 if str(role) == "environment" else 1, str(name).lower())
-            choices_with_keys.append((sort_key, display_str))
+            # Show index for easy reference: "#1: name (role)"
+            display_label = f"#{i + 1}: {name} ({role})"
+            choices.append((display_label, i))
 
-        # Sort and extract display strings
-        choices_with_keys.sort(key=lambda x: x[0])
-        shapes_list.choices = [c for _, c in choices_with_keys]
+        # Preserve creation order - no sorting
+        shapes_list.choices = choices
 
     def select_shape_in_layer(idx: int):
         """Select a shape in the layer by index."""
@@ -325,23 +325,22 @@ def create_annotation_widget(
     @shapes_list.changed.connect
     def on_shapes_list_selection(selection):
         """Select shape in layer when selected in list."""
-        if not selection:
+        if selection is None:
             return
         # Select widget returns a list even with allow_multiple=False
         if isinstance(selection, list):
             selection = selection[0] if selection else None
-        if not selection:
+        if selection is None:
             return
-        # Extract index from "idx: name (role)" format
-        try:
-            idx = int(str(selection).split(":")[0])
-            select_shape_in_layer(idx)
-            # Update name input to match selected shape
-            shapes = get_shapes()
-            if shapes is not None and idx < len(shapes.features):
-                name_input.value = shapes.features["name"].iloc[idx]
-        except (ValueError, IndexError):
-            pass
+        # With (value, label) tuples, selection is already the index value
+        idx = selection
+        if not isinstance(idx, int):
+            return
+        select_shape_in_layer(idx)
+        # Update name input to match selected shape
+        shapes = get_shapes()
+        if shapes is not None and idx < len(shapes.features):
+            name_input.value = shapes.features["name"].iloc[idx]
 
     @apply_btn.clicked.connect
     def apply_to_selected():
@@ -363,16 +362,24 @@ def create_annotation_widget(
                     if i != idx
                 ]
                 # Ensure unique name
-                unique_name = make_unique_name(name_input.value, other_names)
+                requested_name = name_input.value
+                unique_name = make_unique_name(requested_name, other_names)
                 features_df.loc[idx, "name"] = unique_name
                 applied_name = unique_name
+                # Track if name was changed due to duplicate
+                name_was_modified = unique_name != requested_name
 
         shapes.features = features_df
         shapes.refresh()
         update_shapes_list()
-        # Status feedback
+        # Status feedback - warn if name was modified due to duplicate
         if count == 1 and applied_name:
-            viewer.status = f"Renamed to '{applied_name}'"
+            if name_was_modified:
+                viewer.status = (
+                    f"Renamed to '{applied_name}' ('{name_input.value}' already exists)"
+                )
+            else:
+                viewer.status = f"Renamed to '{applied_name}'"
         else:
             viewer.status = f"Renamed {count} shapes"
 
@@ -412,19 +419,25 @@ def create_annotation_widget(
             i for i in range(len(shapes.data)) if i not in indices_to_delete
         ]
 
-        if not indices_to_keep:
-            # Delete all shapes
-            shapes.data = []
-            shapes.features = rebuild_features([], [])
-        else:
-            # Keep only non-deleted shapes and features
-            new_data = [shapes.data[i] for i in indices_to_keep]
-            new_roles = [str(shapes.features["role"].iloc[i]) for i in indices_to_keep]
-            new_names = [str(shapes.features["name"].iloc[i]) for i in indices_to_keep]
+        # Block data events during multi-assignment to prevent redundant redraws
+        with shapes.events.data.blocker():
+            if not indices_to_keep:
+                # Delete all shapes
+                shapes.data = []
+                shapes.features = rebuild_features([], [])
+            else:
+                # Keep only non-deleted shapes and features
+                new_data = [shapes.data[i] for i in indices_to_keep]
+                new_roles = [
+                    str(shapes.features["role"].iloc[i]) for i in indices_to_keep
+                ]
+                new_names = [
+                    str(shapes.features["name"].iloc[i]) for i in indices_to_keep
+                ]
 
-            shapes.data = new_data
-            shapes.features = rebuild_features(new_roles, new_names)
-            sync_face_colors_from_features(shapes)
+                shapes.data = new_data
+                shapes.features = rebuild_features(new_roles, new_names)
+                sync_face_colors_from_features(shapes)
 
         shapes.selected_data = set()
         shapes.mode = old_mode  # Restore layer mode
@@ -478,9 +491,17 @@ def create_annotation_widget(
     # Use events.data instead of mouse_drag_callbacks for reliable detection
     # of when shapes are actually added (learned from napari-segment-anything)
     _prev_shape_count = [0]  # Mutable container for closure
+    _pending_update = [False]  # Flag to prevent duplicate scheduled updates
 
-    def on_data_changed(event):
-        """Handle shape additions: update list, auto-switch mode, update status."""
+    def _process_data_change():
+        """
+        Handle shape additions: update list, auto-switch mode, update status.
+
+        This is called via QTimer.singleShot(0, ...) to accumulate rapid events
+        and process once, reducing UI latency.
+        """
+        _pending_update[0] = False  # Reset flag - we're now processing
+
         shapes = get_shapes()
         if shapes is None:
             return
@@ -538,7 +559,9 @@ def create_annotation_widget(
                     new_data.extend(shapes.data[-delta:])
                     roles = [r for i, r in enumerate(roles) if i not in env_indices]
                     names = [n for i, n in enumerate(names) if i not in env_indices]
-                    shapes.data = new_data
+                    # Block data events during assignment to prevent re-triggering
+                    with shapes.events.data.blocker():
+                        shapes.data = new_data
                     current_count = len(shapes.data)
                     viewer.status = "Replaced existing environment boundary"
                 else:
@@ -555,7 +578,9 @@ def create_annotation_widget(
                         nonlocal _prev_shape_count
                         # Delete back to target count
                         if len(shapes.data) > target_count:
-                            shapes.data = shapes.data[:target_count]
+                            # Block data events during deletion to prevent re-triggering
+                            with shapes.events.data.blocker():
+                                shapes.data = shapes.data[:target_count]
                         _prev_shape_count[0] = len(shapes.data)
 
                     QTimer.singleShot(0, delete_shape)
@@ -563,6 +588,8 @@ def create_annotation_widget(
                     return  # Exit early - deferred deletion will handle cleanup
 
             # Add entries for any new shapes (handles multiple additions)
+            name_was_modified = False
+            requested_name = None
             while len(roles) < current_count:
                 roles.append(role_selector.value)
                 # Use current name, or generate fallback if empty
@@ -579,7 +606,10 @@ def create_annotation_widget(
                         region_count = sum(1 for r in roles if str(r) == "region")
                         current_name = f"region_{region_count}"
                 # Ensure unique name to prevent overwrites in Regions container
+                requested_name = current_name
                 unique_name = make_unique_name(current_name, names)
+                if unique_name != requested_name:
+                    name_was_modified = True
                 names.append(unique_name)
 
             # Use centralized feature builder
@@ -592,14 +622,19 @@ def create_annotation_widget(
             # Status feedback for shape added (no auto-switch - user controls mode with M)
             last_role = str(shapes.features["role"].iloc[-1])
             last_name = str(shapes.features["name"].iloc[-1])
+            # Warn if name was modified due to duplicate
+            duplicate_note = (
+                f" ('{requested_name}' already exists)" if name_was_modified else ""
+            )
             if last_role == "environment":
                 viewer.status = (
-                    f"Added environment '{last_name}' (press M to add holes or regions)"
+                    f"Added environment '{last_name}'{duplicate_note} "
+                    "(press M to add holes or regions)"
                 )
             elif last_role == "hole":
-                viewer.status = f"Added hole '{last_name}'"
+                viewer.status = f"Added hole '{last_name}'{duplicate_note}"
             else:
-                viewer.status = f"Added region '{last_name}'"
+                viewer.status = f"Added region '{last_name}'{duplicate_note}"
                 # Clear name for next region (encourage meaningful naming)
                 name_input.value = ""
                 shapes.feature_defaults["name"] = ""
@@ -610,6 +645,20 @@ def create_annotation_widget(
             update_annotation_status()
 
         _prev_shape_count[0] = current_count
+
+    def on_data_changed(event):
+        """
+        Throttle data change events using QTimer.singleShot.
+
+        Napari's Shapes.events.data may fire several times for a single shape
+        addition. This wrapper schedules the actual processing to run once
+        after the event storm settles, reducing UI latency.
+        """
+        from qtpy.QtCore import QTimer
+
+        if not _pending_update[0]:
+            _pending_update[0] = True
+            QTimer.singleShot(0, _process_data_change)
 
     shapes = get_shapes()
     if shapes is not None:

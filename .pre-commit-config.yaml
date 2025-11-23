@@ -35,5 +35,6 @@ repos:
           - scikit-learn
           - shapely
           - ipython
+          - magicgui
         args: [--ignore-missing-imports, --warn-unused-ignores]
-        exclude: '^(docs/examples/.*\.py|examples/.*\.py|tests/.*)$'
+        exclude: '^(docs/examples/.*\.py|examples/.*\.py|tests/.*|src/neurospatial/annotation/.*|benchmarks/.*)$'

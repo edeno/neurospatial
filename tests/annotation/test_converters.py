@@ -223,3 +223,180 @@ class TestEnvFromBoundaryRegion:
         )
 
         assert env._is_fitted
+
+    def test_environment_with_holes(self):
+        """Create environment with holes subtracted from boundary."""
+
+        # Create boundary polygon
+        poly = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        boundary = Region(name="arena", kind="polygon", data=poly)
+
+        # Create hole polygon (smaller square inside)
+        hole_poly = shp.Polygon([(40, 40), (60, 40), (60, 60), (40, 60)])
+        hole = Region(name="obstacle", kind="polygon", data=hole_poly)
+
+        # Create environment with hole
+        env = env_from_boundary_region(boundary, bin_size=10.0, holes=[hole])
+
+        assert env._is_fitted
+        # Bin at center of hole should not exist (if bin resolution allows)
+        # The environment should have fewer bins than without hole
+        env_no_hole = env_from_boundary_region(boundary, bin_size=10.0)
+        assert env.n_bins <= env_no_hole.n_bins
+
+
+class TestSubtractHolesFromBoundary:
+    """Tests for subtract_holes_from_boundary function."""
+
+    def test_single_hole_subtraction(self):
+        """Subtract a single hole from boundary."""
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        # Create boundary polygon (100x100 square)
+        boundary_poly = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        boundary = Region(name="arena", kind="polygon", data=boundary_poly)
+
+        # Create hole polygon (20x20 square in center)
+        hole_poly = shp.Polygon([(40, 40), (60, 40), (60, 60), (40, 60)])
+        hole = Region(name="obstacle", kind="polygon", data=hole_poly)
+
+        result = subtract_holes_from_boundary(boundary, [hole])
+
+        # Result should have reduced area
+        assert result.data.area == pytest.approx(10000 - 400)  # 100*100 - 20*20
+        assert result.metadata["holes_subtracted"] == 1
+        # Result polygon should have an interior ring (the hole)
+        assert len(result.data.interiors) == 1
+
+    def test_multiple_holes_subtraction(self):
+        """Subtract multiple holes from boundary."""
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        # Create boundary polygon
+        boundary_poly = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        boundary = Region(name="arena", kind="polygon", data=boundary_poly)
+
+        # Create two holes
+        hole1_poly = shp.Polygon([(10, 10), (30, 10), (30, 30), (10, 30)])  # 20x20
+        hole2_poly = shp.Polygon([(70, 70), (90, 70), (90, 90), (70, 90)])  # 20x20
+        hole1 = Region(name="hole1", kind="polygon", data=hole1_poly)
+        hole2 = Region(name="hole2", kind="polygon", data=hole2_poly)
+
+        result = subtract_holes_from_boundary(boundary, [hole1, hole2])
+
+        # Result should have area reduced by both holes
+        assert result.data.area == pytest.approx(10000 - 400 - 400)
+        assert result.metadata["holes_subtracted"] == 2
+
+    def test_empty_holes_list(self):
+        """Return boundary unchanged when no holes provided."""
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        boundary_poly = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        boundary = Region(name="arena", kind="polygon", data=boundary_poly)
+
+        result = subtract_holes_from_boundary(boundary, [])
+
+        # Should return original boundary
+        assert result is boundary
+
+    def test_non_intersecting_hole(self):
+        """Hole that doesn't intersect boundary has no effect."""
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        # Boundary in one area
+        boundary_poly = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+        boundary = Region(name="arena", kind="polygon", data=boundary_poly)
+
+        # Hole outside boundary
+        hole_poly = shp.Polygon([(200, 200), (220, 200), (220, 220), (200, 220)])
+        hole = Region(name="outside", kind="polygon", data=hole_poly)
+
+        result = subtract_holes_from_boundary(boundary, [hole])
+
+        # Area should be unchanged
+        assert result.data.area == pytest.approx(10000)
+
+
+class TestCalibrationRoundTrip:
+    """Tests for calibration coordinate transforms."""
+
+    def test_px_to_cm_round_trip(self):
+        """Convert pixels to cm and back."""
+        # Create 2x scale transform (pixels to cm)
+        scale = 0.1  # 10 pixels = 1 cm
+        scale_matrix = np.array(
+            [
+                [scale, 0.0, 0.0],
+                [0.0, scale, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        transform = Affine2D(scale_matrix)
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        # Original points in pixels
+        pts_px = np.array([[100, 200], [300, 400]], dtype=float)
+
+        # Convert to cm
+        pts_cm = calibration.transform_px_to_cm(pts_px)
+        assert pts_cm[0, 0] == pytest.approx(10.0)  # 100 * 0.1
+        assert pts_cm[0, 1] == pytest.approx(20.0)  # 200 * 0.1
+
+        # Convert back to pixels
+        pts_px_back = calibration.transform_cm_to_px(pts_cm)
+        np.testing.assert_allclose(pts_px_back, pts_px)
+
+    def test_calibration_with_offset(self):
+        """Test calibration with translation component."""
+        # Scale 0.1 + translate origin
+        matrix = np.array(
+            [
+                [0.1, 0.0, -10.0],  # x: 0.1 * x - 10
+                [0.0, 0.1, -5.0],  # y: 0.1 * y - 5
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        transform = Affine2D(matrix)
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        # Point at (100, 50) pixels should become (0, 0) cm
+        pts_px = np.array([[100.0, 50.0]])
+        pts_cm = calibration.transform_px_to_cm(pts_px)
+        assert pts_cm[0, 0] == pytest.approx(0.0)
+        assert pts_cm[0, 1] == pytest.approx(0.0)
+
+        # Round trip
+        pts_px_back = calibration.transform_cm_to_px(pts_cm)
+        np.testing.assert_allclose(pts_px_back, pts_px)
+
+    def test_shapes_to_regions_calibration_consistency(self):
+        """Ensure shapes_to_regions applies calibration correctly."""
+        # Create a simple 2x scale calibration
+        scale_matrix = np.array(
+            [
+                [2.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        transform = Affine2D(scale_matrix)
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        # Simple unit square in napari (row, col) format
+        shapes_data = [np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)]
+        names = ["unit_square"]
+        roles = ["region"]
+
+        # Convert with calibration
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles, calibration)
+
+        # After coordinate swap (row,col -> x,y) and 2x scale:
+        # Original (row,col): (0,0), (0,1), (1,1), (1,0)
+        # As (x,y): (0,0), (1,0), (1,1), (0,1)
+        # After 2x: (0,0), (2,0), (2,2), (0,2)
+        poly = regions["unit_square"].data
+        bounds = poly.bounds  # (minx, miny, maxx, maxy)
+        assert bounds[2] == pytest.approx(2.0)  # maxx
+        assert bounds[3] == pytest.approx(2.0)  # maxy
+        assert poly.area == pytest.approx(4.0)  # 2x2 = 4
