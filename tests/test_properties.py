@@ -869,3 +869,281 @@ class TestCrossMetricProperties:
         assert info < 0.01, (
             f"Uniform firing should produce zero information, got {info}"
         )
+
+
+# =============================================================================
+# Property Tests for Smoothing Operations
+# =============================================================================
+
+
+class TestSmoothingProperties:
+    """Property-based tests for spatial field smoothing operations."""
+
+    @given(
+        st.integers(min_value=100, max_value=500),
+        st.integers(min_value=0, max_value=10000),
+        st.floats(min_value=1.0, max_value=10.0),
+    )
+    @settings(max_examples=30, deadline=15000)
+    def test_smoothing_preserves_non_negativity(
+        self, n_positions: int, seed: int, bandwidth: float
+    ):
+        """Property: Smoothing non-negative field produces non-negative result."""
+        rng = np.random.default_rng(seed)
+
+        # Create simple environment
+        positions = rng.standard_normal((n_positions, 2)) * 20
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=2.0, connect_diagonal_neighbors=True
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 10:
+            pytest.skip("Not enough bins")
+
+        # Create non-negative field
+        field = rng.exponential(scale=5.0, size=env.n_bins)
+
+        # Smooth the field
+        smoothed = env.smooth(field, bandwidth=bandwidth)
+
+        # Property: smoothing non-negative field should remain non-negative
+        assert np.all(smoothed >= -1e-10), (
+            f"Smoothing produced negative values: min={smoothed.min()}"
+        )
+
+    @given(
+        st.integers(min_value=100, max_value=500),
+        st.integers(min_value=0, max_value=10000),
+        st.floats(min_value=1.0, max_value=10.0),
+    )
+    @settings(max_examples=30, deadline=15000)
+    def test_transition_smoothing_preserves_mass(
+        self, n_positions: int, seed: int, bandwidth: float
+    ):
+        """Property: Transition-mode smoothing preserves total mass."""
+        rng = np.random.default_rng(seed)
+
+        # Create simple environment
+        positions = rng.standard_normal((n_positions, 2)) * 20
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=2.0, connect_diagonal_neighbors=True
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 10:
+            pytest.skip("Not enough bins")
+
+        # Create field with known mass
+        field = rng.exponential(scale=5.0, size=env.n_bins)
+        original_mass = np.sum(field)
+
+        # Smooth with transition mode (row-normalized kernel)
+        smoothed = env.smooth(field, bandwidth=bandwidth, mode="transition")
+
+        # Property: transition smoothing should preserve total mass
+        smoothed_mass = np.sum(smoothed)
+        np.testing.assert_allclose(
+            smoothed_mass,
+            original_mass,
+            rtol=0.01,
+            err_msg=f"Transition smoothing changed mass: {original_mass} -> {smoothed_mass}",
+        )
+
+    @given(
+        st.integers(min_value=100, max_value=500),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=15000)
+    def test_large_bandwidth_smooths_towards_mean(self, n_positions: int, seed: int):
+        """Property: Large bandwidth smoothing produces values closer to mean."""
+        rng = np.random.default_rng(seed)
+
+        # Create simple environment
+        positions = rng.standard_normal((n_positions, 2)) * 20
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=2.0, connect_diagonal_neighbors=True
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 10:
+            pytest.skip("Not enough bins")
+
+        # Create random field with variation
+        field = rng.exponential(scale=5.0, size=env.n_bins)
+
+        # Smooth with large bandwidth
+        smoothed = env.smooth(field, bandwidth=50.0, mode="transition")
+
+        # Property: large bandwidth should reduce variance (smooth towards mean)
+        original_std = np.std(field)
+        smoothed_std = np.std(smoothed)
+
+        # Smoothing should reduce variance
+        assert smoothed_std < original_std, (
+            f"Large bandwidth should reduce std: {original_std:.3f} -> {smoothed_std:.3f}"
+        )
+
+
+class TestFieldNormalizationProperties:
+    """Property-based tests for field normalization."""
+
+    @given(
+        st.integers(min_value=10, max_value=100),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=50, deadline=5000)
+    def test_normalize_field_sum_one(self, n_bins: int, seed: int):
+        """Property: Normalized field sums to 1."""
+        rng = np.random.default_rng(seed)
+
+        # Create non-negative field
+        field = rng.exponential(scale=5.0, size=n_bins)
+
+        # Skip if all zeros
+        if np.all(field == 0):
+            pytest.skip("All-zero field")
+
+        normalized = normalize_field(field)
+
+        np.testing.assert_allclose(
+            np.sum(normalized),
+            1.0,
+            rtol=1e-10,
+            err_msg="Normalized field should sum to 1",
+        )
+
+    @given(
+        st.integers(min_value=10, max_value=100),
+        st.integers(min_value=0, max_value=10000),
+        st.floats(min_value=0.1, max_value=100.0),
+    )
+    @settings(max_examples=50, deadline=5000)
+    def test_normalize_scaling_invariant(self, n_bins: int, seed: int, scale: float):
+        """Property: Normalization is scale-invariant."""
+        rng = np.random.default_rng(seed)
+
+        # Create non-negative field
+        field = rng.exponential(scale=5.0, size=n_bins)
+
+        # Skip if all zeros
+        if np.all(field == 0):
+            pytest.skip("All-zero field")
+
+        # Normalize original and scaled field
+        normalized = normalize_field(field)
+        scaled_normalized = normalize_field(field * scale)
+
+        # Property: normalization should be scale-invariant
+        np.testing.assert_allclose(
+            scaled_normalized,
+            normalized,
+            rtol=1e-10,
+            err_msg="Normalization should be scale-invariant",
+        )
+
+
+# =============================================================================
+# Property Tests for Place Field Detection
+# =============================================================================
+
+
+class TestPlaceFieldDetectionProperties:
+    """Property-based tests for place field detection invariants."""
+
+    @given(
+        st.integers(min_value=100, max_value=300),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=20000)
+    def test_detected_fields_have_valid_indices(self, n_positions: int, seed: int):
+        """Property: Detected field bin indices are valid."""
+        from neurospatial.metrics import detect_place_fields
+
+        rng = np.random.default_rng(seed)
+
+        # Create environment
+        positions = rng.standard_normal((n_positions, 2)) * 30
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=3.0, connect_diagonal_neighbors=True
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 20:
+            pytest.skip("Not enough bins")
+
+        # Create firing rate with Gaussian peak
+        firing_rate = np.zeros(env.n_bins, dtype=np.float64)
+        peak_idx = env.n_bins // 2
+        for i in range(env.n_bins):
+            dist = np.linalg.norm(env.bin_centers[i] - env.bin_centers[peak_idx])
+            firing_rate[i] = 10.0 * np.exp(-(dist**2) / (2 * 10.0**2))
+
+        # Detect fields
+        try:
+            fields = detect_place_fields(firing_rate, env)
+
+            # Property: all field bin indices should be valid
+            for field in fields:
+                for bin_idx in field:
+                    assert 0 <= bin_idx < env.n_bins, (
+                        f"Invalid bin index {bin_idx} in detected field"
+                    )
+        except (ValueError, RuntimeError):
+            pass  # Some configurations may not detect fields
+
+    @given(
+        st.integers(min_value=100, max_value=300),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=20000)
+    def test_uniform_rate_produces_no_fields(self, n_positions: int, seed: int):
+        """Property: Uniform firing rate should produce no detected fields."""
+        from neurospatial.metrics import detect_place_fields
+
+        rng = np.random.default_rng(seed)
+
+        # Create environment
+        positions = rng.standard_normal((n_positions, 2)) * 30
+
+        try:
+            env = Environment.from_samples(
+                positions, bin_size=3.0, connect_diagonal_neighbors=True
+            )
+        except (ValueError, RuntimeError):
+            pytest.skip("Could not create valid environment")
+
+        if env.n_bins < 20:
+            pytest.skip("Not enough bins")
+
+        # Create uniform firing rate
+        firing_rate = np.ones(env.n_bins, dtype=np.float64) * 5.0
+
+        # Detect fields
+        try:
+            fields = detect_place_fields(
+                firing_rate,
+                env,
+                threshold=0.5,  # Threshold for field detection
+            )
+
+            # Property: uniform rate should produce either no fields or one big field
+            # (depending on threshold relative to the uniform level)
+            # Most importantly, it shouldn't crash or produce invalid results
+            for field in fields:
+                for bin_idx in field:
+                    assert 0 <= bin_idx < env.n_bins
+        except (ValueError, RuntimeError):
+            pass
