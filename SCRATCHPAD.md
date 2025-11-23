@@ -6,13 +6,44 @@
 
 ## Current Status
 
-- **Active Task**: M1 Complete - All NWB Reading tasks done
+- **Active Task**: M2.1.1 Complete - Place field writing implemented
 - **Blocker**: None
-- **Next Action**: Start M2.1.1 - Place field writing
+- **Next Action**: Start M2.1.2 - Occupancy map writing
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M2.1.1 Complete - Place Field Writing
+
+- Created 19 tests for `write_place_field()` in `tests/nwb/test_fields.py`
+- Tests cover:
+  - Basic field writing to analysis/ module
+  - Field metadata (description, units)
+  - Data integrity verification
+  - Shape validation (1D, 2D, and 3D rejection)
+  - Duplicate name handling without overwrite
+  - overwrite=True replaces existing fields
+  - bin_centers reference stored and deduplicated
+  - Multiple fields share single bin_centers dataset
+  - Default name ("place_field")
+  - Empty description allowed
+  - Analysis module reuse
+  - NaN value preservation
+  - Custom unit parameter
+- Implemented `write_place_field()` in `_fields.py`:
+  - Uses `_validate_field_shape()` helper for shape validation
+  - Uses `_ensure_bin_centers()` helper for bin_centers deduplication
+  - Stores fields as TimeSeries in analysis/ processing module
+  - 1D fields stored as (1, n_bins) for NWB TimeSeries compatibility
+  - Supports custom unit parameter (default: "Hz")
+  - Includes comprehensive docstring with Notes section
+- Code review: APPROVED after addressing feedback
+  - Fixed mypy type error with timestamps variable
+  - Added unit parameter for customizable field units
+  - Added Notes section to docstring
+  - Added test for 3D field rejection
+- All 19 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.4.4 Complete - Environment from Position Factory
 

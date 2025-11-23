@@ -159,17 +159,17 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M2.1 Writing Spatial Fields
 
-- [ ] **M2.1.1** Place field writing
-  - [ ] Write tests for `write_place_field()` in `tests/nwb/test_fields.py`
-    - [ ] Test basic field writing to analysis/
-    - [ ] Test field metadata (description, units)
-    - [ ] Test shape validation (field.shape[0] == env.n_bins)
-    - [ ] Test error on duplicate name without overwrite=True
-    - [ ] Test overwrite=True replaces existing
-    - [ ] Test bin_centers reference stored
-  - [ ] Implement `write_place_field()` in `_fields.py`
-  - [ ] Create analysis/ processing module if needed
-  - [ ] Store as TimeSeries with bin_centers reference
+- [x] **M2.1.1** Place field writing
+  - [x] Write tests for `write_place_field()` in `tests/nwb/test_fields.py`
+    - [x] Test basic field writing to analysis/
+    - [x] Test field metadata (description, units)
+    - [x] Test shape validation (field.shape[0] == env.n_bins)
+    - [x] Test error on duplicate name without overwrite=True
+    - [x] Test overwrite=True replaces existing
+    - [x] Test bin_centers reference stored
+  - [x] Implement `write_place_field()` in `_fields.py`
+  - [x] Create analysis/ processing module if needed
+  - [x] Store as TimeSeries with bin_centers reference
 
 - [ ] **M2.1.2** Occupancy map writing
   - [ ] Write tests for `write_occupancy()` in `tests/nwb/test_fields.py`
@@ -328,7 +328,7 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 | Milestone | Status | Started | Completed |
 |-----------|--------|---------|-----------|
 | M0: Setup | Complete | 2025-11-23 | 2025-11-23 |
-| M1: Reading | In Progress | 2025-11-23 | - |
-| M2: Writing | Not Started | - | - |
+| M1: Reading | Complete | 2025-11-23 | 2025-11-23 |
+| M2: Writing | In Progress | 2025-11-23 | - |
 | M3: Round-trip | Not Started | - | - |
 | M4: Docs | Not Started | - | - |
