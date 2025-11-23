@@ -1,87 +1,289 @@
-- [ ] `compute_place_field` and metrics are single-cell; for large populations you re-do occupancy, kernels, and sometimes binning. Adding a population-level API (e.g., take an occupancy once, compute kernels once, then accept a spike-time list per unit) would give big speedups with minimal conceptual cost.
-- [ ] _extract_connected_component_graph in src/neurospatial/metrics/place_fields.py (line 200) uses frontier.pop(0) on a list; switching to collections.deque (popleft()) would avoid O(n²) behavior on large components.
-- [ ] Some tight loops over bins (e.g., in Gaussian KDE path of src/neurospatial/spike_field.py and certain layout helpers) could be further vectorized or batched, but these are secondary unless you’re routinely at very large n_bins.
-- [ ] One-click workflows: On top of the primitives, expose a few high-level “analysis recipes”:
-e.g. analyze_place_cell(env, spike_times, times, positions) that returns a small results object (field map, detected fields, Skaggs info, sparsity, stability, maybe some pre-made matplotlib axes).
-Similar wrappers for boundary-cell analysis and track-based behavioral segmentation (laps, trials, region dwell times) that internally use Environment.occupancy, bin_sequence, segmentation utilities, and metrics.
-- [ ] Richer result objects: Instead of returning only NumPy arrays, consider lightweight results containers for complex operations:
-Place-field analysis → an object with field, fields (list of bin-index arrays), metrics (Skaggs, sparsity, stability), and params. Each could have .to_dict() for logging/serialization. This makes provenance and reproducibility much easier for multi-analyst projects.
-- [ ] Visualization utilities: Add built-in plotting functions for common visualizations:
-  - [ ]Place fields with detected fields overlaid.
-  - [ ]Stability plots (e.g., correlation between first and second half).
-  - [ ]Occupancy maps with spike overlays.
-  - [ ]Fields over time for dynamic analyses.
-    - rendering of regions
-    - how does this work with different layouts? different dimensions?
-    - integrating with video of animal behavior (could be different sampling rates)
-    - should be able to display head direction
-    - should be able to display multiple body parts (e.g., nose, tail base)
-    - multiple synced environments
-    - Multi-Animal Support
-    - Mark specific events (rewards, errors, choice points) on timeline.
-    - Extend to 3D environments with 3D position tracking.
-- [ ] Head direction
-  - [ ] Implement head direction cell analysis, including circular occupancy, tuning curves, and metrics like mean vector length and preferred direction.
-  - [ ] Add utilities for circular statistics (e.g., Rayleigh test) to assess significance of head direction tuning.
-- [ ] Help users define environment boundaries and obstacle.
-- [ ] phase precession analysis
-- [ ] Distance of animal to goal over time
+# **1. Core Computation Engine**
 
-viz
+### **1.1 Population-level computation**
 
-- scale bar option
-- colorbar option
-- 3D with napari
-- viz spike raster on position heatmap (either static or dynamic)
-- visualize events timeline
-- visualize continuous variables (speed, acceleration, head direction)
-- visualize region events
-- track graph
+* [ ] **Shared occupancy & binning:**
 
-Session-level pipeline + config (Flagship feature, leverages existing code).
+  * Compute occupancy once per session.
+  * Precompute kernel maps (Gaussian, boxcar) once.
+  * Population APIs that accept spike-times per cell and reuse shared structures.
+  * Major speedup for large populations.
 
-One population / remapping module (even a minimal version).
+### **1.2 Performance improvements in existing code**
 
-NWB (or similar) adapter + one or two figure helpers.
+* [ ] `_extract_connected_component_graph`
 
-Annotation quality checks + small dashboard for quick exploration.
+  * Replace `frontier.pop(0)` with `collections.deque.popleft()` to avoid O(n²).
+* [ ] Vectorization improvements:
 
-Streaming/chunked analysis and, later, optional SAM-based assist.
+  * Gaussian KDE loops in `spike_field.py`.
+  * Layout helper loops in dense bins.
+  * Only necessary for very large bin counts.
 
-Cost-distance maps: distance under movement constraints (e.g., obstacles).
-Cost-distance maps (graph shortest paths with per-edge cost).
+---
 
-Visibility / line-of-sight (for studying cue visibility).
-zonal stats APIs
+# **2. Core Single-Cell Analyses (Neuro-GIS primitives)**
 
-Construct good spatio-temporal regressors from events and spatial features for GLMs
+### **2.1 Place field analysis**
 
-Cross-session / cross-animal comparability
+* [ ] `compute_place_field` rewrite to rely on shared occupancy.
+* [ ] Rich result object:
 
-With proper environment alignment and spatial representation:
+  * `field_map`, `fields[]`, `skaggs_info`, `sparsity`, `stability`, `params`.
+  * `.to_dict()` for logging / reproducibility.
 
-You can bring multiple animals’ arenas into a common coordinate frame.
+### **2.2 Head direction system**
 
-Events module: standardized way to represent behavioral events (rewards, choices, errors). Could visualize when events are active (opto stim, reward delivery, stimulus presentation). Easily compute event-triggered averages of neural activity (zone entries, exits, rewards, opto).
+* [ ] Circular occupancy (angular bins).
+* [ ] HD tuning curves.
+* [ ] Mean vector length, preferred direction.
+* [ ] Rayleigh test & circular statistics library.
 
-NWB import/export utilities
+### **2.3 Phase precession**
 
-decoding module (bayesian, ica, etc.)
+* [ ] Per-field phase–position analysis.
+* [ ] Circular–linear correlation.
+* [ ] Field-restricted spike-phase plots.
 
-Need to consider scalability and performance for large datasets (many neurons, long sessions).
+### **2.4 Distance-to-goal**
 
-Moran’s I on firing rate maps
+* [ ] Compute distance-to-goal over time (Euclidean or maze-graph).
+* [ ] Correlate with firing, behavior, running speed.
 
-Ripley’s K for spike patterns accounting for occupancy
+---
 
-Spatio-temporal K-functions
+# **3. Event + Spatio-Temporal Analysis Module**
 
-Variogram estimation for rate maps
+### **3.1 Events module (beh. events in space–time)**
 
-GLM-based “residual spatial structure” tests
+* [ ] Standardized `EventSeries` representation for:
 
-Point-process co-clustering (spikes vs reward events)
+  * rewards, cues, licks, errors, choices, opto, zone entries/exits.
+* [ ] IO utilities for events.
+* [ ] Event timeline visualization.
 
-Baddeley’s inhomogeneous K estimator
+### **3.2 Spatio-temporal field estimation**
 
-v
+* [ ] Event-triggered PSTHs.
+* [ ] Event-triggered rate maps (reward-locked).
+* [ ] Full spatio-temporal rate cubes:
+
+  * $$\lambda(x,y,\tau)$$
+
+### **3.3 Regressors for GLMs**
+
+* [ ] Time since reward, cue, zone entry.
+* [ ] Distance to reward (Euclidean or cost-distance).
+* [ ] Distance to walls, obstacles, region boundaries.
+* [ ] Head direction, speed, acceleration, behavioral phase.
+* [ ] “Reachability” features (speed-constrained).
+* [ ] All designed as GLM-ready.
+
+---
+
+# **4. Spatial Statistics (Neuro-GIS Statistics Layer)**
+
+### **4.1 Point-process spatial analyses**
+
+* [ ] Moran’s I on firing rate maps.
+* [ ] Ripley’s K (inhomogeneous for occupancy).
+* [ ] Baddeley’s inhomogeneous estimator.
+* [ ] Pair-correlation function g(r).
+* [ ] Cross-K (spikes vs reward events).
+* [ ] Point-process co-clustering between units or unit-vs-events.
+* [ ] Spatio-temporal K-functions.
+
+### **4.2 Spatial field statistics**
+
+* [ ] Variograms of rate maps (field smoothness, anisotropy).
+* [ ] Local Moran’s I (LISA).
+* [ ] Hotspot detection (Getis–Ord Gi*).
+* [ ] Zonal statistics on fields:
+
+  * per region mean firing, occupancy, reward frequency.
+
+### **4.3 GLM-based residual spatial structure**
+
+* [ ] Fit GLM to firing with covariates.
+* [ ] Compute spatial autocorrelation of residuals to detect unmodeled structure.
+
+---
+
+# **5. Geospatial Tools**
+
+### **5.1 Cost-distance maps**
+
+* [ ] Compute distance under movement constraints (walls, obstacles).
+* [ ] Graph-shortest-path distance, not Euclidean.
+* [ ] Cost maps for reward access, avoidance, hazard zones.
+
+### **5.2 Visibility / line-of-sight**
+
+* [ ] Viewshed analysis: what cues / boundaries are visible.
+* [ ] Use for cue-based remapping analyses.
+
+### **5.3 Maze graph (network model of environment)**
+
+* [ ] Automatic extraction of maze skeleton graph.
+* [ ] Graph distances, centrality, chokepoints.
+* [ ] Path prediction vs actual trajectories.
+* [ ] Useful for planning and replay analysis.
+
+### **5.4 Patch metrics (landscape ecology)**
+
+* [ ] Compute sizes, shapes, edge lengths of environment zones.
+* [ ] Useful for understanding field structure vs environment.
+
+---
+
+# **6. Visualization + napari Integration**
+
+### **6.1 Built-in plotting utilities**
+
+* [ ] Place fields with field outlines.
+* [ ] Stability correlation plots.
+* [ ] Occupancy maps with spike overlays.
+* [ ] Dynamic field evolution over time.
+* [ ] Rendering of regions, overlays, obstacles.
+* [ ] Population comparison plots.
+
+### **6.2 napari visualization**
+
+* [ ] Scale bar.
+* [ ] Color bar.
+* [ ] 3D support (3D tunnels, ramps, VR environments).
+* [ ] Dynamic spike raster overlayed on position heatmap.
+* [ ] Show events timeline synced to time slider.
+* [ ] Visualize continuous variables (speed, hd, acceleration).
+* [ ] Multi-body-part tracking (nose, tail base, ears).
+* [ ] Multi-animal support.
+* [ ] Sync multiple environments (multi-camera / VR).
+* [ ] Track graph overlay.
+* [ ] Integrate video (different sampling rates handled automatically).
+* [ ] Mark events (reward, errors, choice) on video + environment.
+
+---
+
+# **7. UX / Data Preparation**
+
+### **7.1 Easy annotation workflows**
+
+* [ ] Tools for defining environment boundaries + obstacles.
+* [ ] Annotation quality checks:
+
+  * self-intersection, small polygons, missing holes.
+* [ ] Dashboard for quick annotation and validation.
+
+---
+
+# **8. Session-Level Pipelines**
+
+### **8.1 Flagship session analysis pipeline**
+
+* [ ] Single-call `analyze_session()` wrapper:
+
+  * occupancy
+  * rate maps
+  * place fields
+  * head direction fields
+  * event-triggered maps
+  * statistics (Moran’s I, K, etc.)
+  * results container
+  * export
+* [ ] YAML/JSON config-based pipelines.
+
+### **8.2 Multi-session & population analysis**
+
+* [ ] Remapping module:
+
+  * cross-session alignment
+  * population vector correlations
+  * field overlap metrics
+  * drift / stability
+* [ ] Cross-animal alignment:
+
+  * common coordinate reference frames
+  * environment warping / transforms.
+
+---
+
+# **9. IO & Interoperability**
+
+### **9.1 NWB integration**
+
+* [ ] NWB import/export for:
+
+  * spikes
+  * LFP
+  * continuous behavior
+  * events
+  * regions (as DynamicTable or TimeIntervals).
+
+### **9.2 Other IO**
+
+* [ ] DeepLabCut/SLEAP tracking imports.
+* [ ] LabelMe/CVAT → Regions.
+* [ ] GeoJSON export for environments.
+* [ ] Standard “session bundle” export for downstream ML/GLM.
+
+---
+
+# **10. Scalability + Big Data**
+
+### **10.1 Performance & scaling**
+
+* [ ] Chunked / streaming analysis for long sessions.
+* [ ] Lazy evaluation of fields (compute when needed).
+* [ ] Spatial indexing (R-tree or kd-tree).
+* [ ] Efficient caching of:
+
+  * occupancy
+  * binning
+  * distance fields
+  * kernel maps.
+
+### **10.2 Parallelism**
+
+* [ ] Batch compute population metrics with joblib/dask.
+* [ ] Parallelized K-functions and GLMs.
+
+---
+
+# 🎯 **Structured Roadmap View (Suggested)**
+
+### **Phase 1: Foundations**
+
+* Population API (shared occupancy)
+* Result objects
+* Basic visualization utilities
+* Events module
+* NWB IO
+* Head direction system
+
+### **Phase 2: Spatial statistics + GIS**
+
+* K-functions, Moran’s I, variograms
+* Zonal stats
+* Cost-distance maps, maze graphs
+* Visibility / viewshed
+* Patch metrics
+
+### **Phase 3: Spatio-temporal analytics**
+
+* Event-triggered rate cubes
+* GLM regressors
+* Phase precession module
+* Dynamic place fields across time
+
+### **Phase 4: Pipelines + UX**
+
+* `analyze_session()` pipeline
+* Remapping / cross-animal alignment
+* napari dashboards for annotation + inspection
+* Multi-animal and video integration
+
+### **Phase 5: Scaling**
+
+* Chunked computation
+* Parallelism
+* Large-population optimizations
