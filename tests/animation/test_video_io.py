@@ -14,6 +14,17 @@ import pytest
 
 from neurospatial.animation._video_io import VideoReader
 
+# Check for optional dependencies
+try:
+    import cv2  # noqa: F401
+
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+# Skip entire module if cv2 is not installed
+pytestmark = pytest.mark.skipif(not HAS_CV2, reason="opencv-python not installed")
+
 
 @pytest.fixture
 def tiny_video_path(tmp_path: Path) -> Path:

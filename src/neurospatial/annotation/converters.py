@@ -26,6 +26,8 @@ def shapes_to_regions(
     simplify_tolerance: float | None = None,
     *,
     multiple_boundaries: MultipleBoundaryStrategy = "last",
+    validate: bool = True,
+    min_area: float = 1e-6,
 ) -> tuple[Regions, Region | None, list[Region]]:
     """
     Convert napari polygon shapes to Regions.
@@ -52,6 +54,12 @@ def shapes_to_regions(
         - "last": Use the last drawn boundary (default). A warning is emitted.
         - "first": Use the first drawn boundary. A warning is emitted.
         - "error": Raise ValueError if multiple boundaries are drawn.
+    validate : bool, default=True
+        Whether to validate polygon geometry and emit warnings for issues
+        like self-intersecting polygons or very small areas.
+    min_area : float, default=1e-6
+        Minimum polygon area threshold for validation. Polygons with area
+        below this trigger a warning (if validate=True).
 
     Returns
     -------
@@ -101,6 +109,12 @@ def shapes_to_regions(
             continue
 
         poly = shp.Polygon(pts_world)
+
+        # Validate polygon geometry before simplification
+        if validate:
+            from neurospatial.annotation.validation import validate_polygon_geometry
+
+            validate_polygon_geometry(poly, str(name), min_area=min_area)
 
         # Optional simplification (Douglas-Peucker algorithm)
         if simplify_tolerance is not None:
@@ -159,6 +173,25 @@ def shapes_to_regions(
             )
     elif len(env_boundaries) == 1:
         env_boundary = env_boundaries[0]
+
+    # Validate region overlap and containment
+    if validate:
+        from neurospatial.annotation.validation import (
+            validate_region_overlap,
+            validate_region_within_boundary,
+        )
+
+        regions_container = Regions(regions_list)
+
+        # Check for heavy overlap between regions
+        validate_region_overlap(regions_container)
+
+        # Check if regions are within boundary
+        if env_boundary is not None:
+            for region in regions_list:
+                validate_region_within_boundary(region, env_boundary)
+
+        return regions_container, env_boundary, holes_list
 
     return Regions(regions_list), env_boundary, holes_list
 

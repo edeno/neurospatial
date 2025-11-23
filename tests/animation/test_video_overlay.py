@@ -11,6 +11,7 @@ Qt crashes in parallel execution. Run with:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,23 @@ from neurospatial.animation.overlays import VideoOverlay
 
 if TYPE_CHECKING:
     from neurospatial.transforms import VideoCalibration
+
+# Check for optional dependencies
+try:
+    import napari  # noqa: F401
+
+    HAS_NAPARI = True
+except ImportError:
+    HAS_NAPARI = False
+
+try:
+    import cv2  # noqa: F401
+
+    HAS_CV2 = True
+except ImportError:
+    HAS_CV2 = False
+
+HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
 
 # =============================================================================
@@ -83,6 +101,8 @@ def video_overlay_array(
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_CV2, reason="opencv-python not installed")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 @pytest.mark.slow
 @pytest.mark.xdist_group(name="napari_gui")
 class TestNapariVideoOverlay:
@@ -235,6 +255,7 @@ class TestNapariVideoOverlay:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
 class TestVideoExportIntegration:
     """Test video overlay in video export backend."""
 

@@ -10,6 +10,7 @@ across all backends (napari, video, html, widget). Tests verify:
 - Proper integration from Environment.animate_fields() to backend rendering
 """
 
+import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
@@ -24,6 +25,16 @@ from neurospatial import (
     PositionOverlay,
 )
 from neurospatial.animation.skeleton import Skeleton
+
+# Check for optional dependencies
+try:
+    import napari  # noqa: F401
+
+    HAS_NAPARI = True
+except ImportError:
+    HAS_NAPARI = False
+
+HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
 # =============================================================================
 # Fixtures for Integration Tests
@@ -118,6 +129,7 @@ def env_with_regions(simple_env):
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariBackendIntegration:
     """Test Napari backend end-to-end with all overlay types."""
 
@@ -285,6 +297,7 @@ class TestNapariBackendIntegration:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
 class TestVideoBackendIntegration:
     """Test Video backend end-to-end with all overlay types."""
 
@@ -597,6 +610,7 @@ class TestWidgetBackendIntegration:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestMultiAnimalScenarios:
     """Test multi-animal support (multiple overlays of same type)."""
 
@@ -705,6 +719,8 @@ class TestMultiAnimalScenarios:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
 class TestCrossBackendConsistency:
     """Test that same overlay config produces consistent results across backends."""
 
@@ -805,6 +821,8 @@ class TestCrossBackendConsistency:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
 class TestMixedOverlayTypes:
     """Test animations with mixed overlay types in single call."""
 

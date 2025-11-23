@@ -60,7 +60,7 @@ class EnvScale:
     repeated coordinate transformation. This avoids re-computing bounds and
     scales on every transformation call.
 
-    Parameters
+    Attributes
     ----------
     x_min, x_max : float
         X-axis bounds in environment coordinates.
