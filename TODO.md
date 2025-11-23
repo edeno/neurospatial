@@ -32,6 +32,11 @@ viz
 - scale bar option
 - colorbar option
 - 3D with napari
+- viz spike raster on position heatmap (either static or dynamic)
+- visualize events timeline
+- visualize continuous variables (speed, acceleration, head direction)
+- visualize region events
+- track graph
 
 Session-level pipeline + config (Flagship feature, leverages existing code).
 
@@ -78,3 +83,5 @@ GLM-based “residual spatial structure” tests
 Point-process co-clustering (spikes vs reward events)
 
 Baddeley’s inhomogeneous K estimator
+
+v
