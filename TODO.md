@@ -161,6 +161,7 @@
 * [ ] Track graph overlay.
 * [ ] Integrate video (different sampling rates handled automatically).
 * [ ] Mark events (reward, errors, choice) on video + environment.
+* [ ] SAM based integration for quick region annotation.
 
 ---
 
