@@ -7,6 +7,7 @@ This guide provides detailed explanations of neurospatial's features and workflo
 - **[Environments](environments.md)**: Creating and working with Environment objects
 - **[Layout Engines](layout-engines.md)**: Understanding different discretization strategies
 - **[Regions](regions.md)**: Defining and managing regions of interest
+- **[Video Annotation](video-annotation.md)**: Define environments from video frames interactively
 - **[Composite Environments](composite-environments.md)**: Merging multiple environments
 - **[Alignment & Transforms](alignment.md)**: Transforming spatial representations
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
@@ -44,6 +45,7 @@ Each page covers a specific feature area with:
 - [Creating different environment types](environments.md#factory-methods)
 - [Choosing the right layout engine](layout-engines.md#quick-decision-guide)
 - [Defining regions](regions.md)
+- [Annotating video frames](video-annotation.md)
 - [Computing occupancy and firing rates](spatial-analysis.md#occupancy)
 - [Analyzing movement patterns](spatial-analysis.md#movement-patterns)
 - [Computing distance fields](spatial-analysis.md#distance-to)

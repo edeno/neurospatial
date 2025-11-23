@@ -155,6 +155,7 @@ nav:
       - Environments: user-guide/environments.md
       - Layout Engines: user-guide/layout-engines.md
       - Regions: user-guide/regions.md
+      - Video Annotation: user-guide/video-annotation.md
       - Composite Environments: user-guide/composite-environments.md
       - Alignment & Transforms: user-guide/alignment.md
       - Spatial Analysis: user-guide/spatial-analysis.md
