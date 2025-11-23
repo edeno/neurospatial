@@ -413,15 +413,6 @@ def create_annotation_widget(
 
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     apply_to_selected()
-                    # Flush Qt event queue to let napari complete its internal
-                    # state management, then clear selection. Without this flush,
-                    # napari may re-select the shape after we clear it.
-                    from qtpy.QtWidgets import QApplication
-
-                    QApplication.processEvents()
-                    shapes = get_shapes()
-                    if shapes is not None:
-                        shapes.selected_data = set()
                     return True  # Consume the event, don't propagate
             return False  # Let other events through
 
@@ -685,11 +676,8 @@ def create_annotation_widget(
                     "edit name above if needed"
                 )
 
-            # UX improvement: auto-select the new shape and update name input
-            # This allows user to see the current name and edit if needed
-            new_shape_idx = current_count - 1
-            shapes.selected_data = {new_shape_idx}
-            name_input.value = last_name  # Show current name so user can edit
+            # Update name input to show the assigned name
+            name_input.value = last_name
             shapes.feature_defaults["name"] = last_name
 
         elif delta < 0:
