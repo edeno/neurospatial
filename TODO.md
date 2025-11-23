@@ -29,8 +29,38 @@ Place-field analysis → an object with field, fields (list of bin-index arrays)
 
 viz
 
-- ability to annotate to get environment polygons or regions
-- ability to put video in background (need to handle different frame rates, handle transforms between video and environment coordinates)
 - scale bar option
 - colorbar option
 - 3D with napari
+
+Session-level pipeline + config (Flagship feature, leverages existing code).
+
+One population / remapping module (even a minimal version).
+
+NWB (or similar) adapter + one or two figure helpers.
+
+Annotation quality checks + small dashboard for quick exploration.
+
+Streaming/chunked analysis and, later, optional SAM-based assist.
+
+Cost-distance maps: distance under movement constraints (e.g., obstacles).
+Cost-distance maps (graph shortest paths with per-edge cost).
+
+Visibility / line-of-sight (for studying cue visibility).
+zonal stats APIs
+
+Construct good spatio-temporal regressors from events and spatial features for GLMs
+
+Cross-session / cross-animal comparability
+
+With proper environment alignment and spatial representation:
+
+You can bring multiple animals’ arenas into a common coordinate frame.
+
+Events module: standardized way to represent behavioral events (rewards, choices, errors). Could visualize when events are active (opto stim, reward delivery, stimulus presentation). Easily compute event-triggered averages of neural activity (zone entries, exits, rewards, opto).
+
+NWB import/export utilities
+
+decoding module (bayesian, ica, etc.)
+
+Need to consider scalability and performance for large datasets (many neurons, long sessions).
