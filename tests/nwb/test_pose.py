@@ -16,6 +16,80 @@ import pytest
 ndx_pose = pytest.importorskip("ndx_pose")
 
 
+def _create_nwb_with_pose(
+    nwbfile,
+    skeleton_name: str,
+    node_names: list[str],
+    edges: np.ndarray,
+    n_samples: int = 10,
+    n_dims: int = 2,
+):
+    """
+    Create NWB file with PoseEstimation using custom skeleton for testing.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to add pose estimation to.
+    skeleton_name : str
+        Name for the skeleton.
+    node_names : list[str]
+        Names of the skeleton nodes (bodyparts).
+    edges : np.ndarray
+        Edge array with shape (n_edges, 2) containing node indices.
+    n_samples : int, optional
+        Number of time samples. Default is 10.
+    n_dims : int, optional
+        Number of spatial dimensions. Default is 2.
+
+    Returns
+    -------
+    NWBFile
+        The modified NWB file with PoseEstimation added.
+    """
+    from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+    behavior_module = nwbfile.create_processing_module(
+        name="behavior", description="Behavior data"
+    )
+
+    skeleton = Skeleton(
+        name=skeleton_name,
+        nodes=node_names,
+        edges=edges,
+    )
+
+    timestamps = np.arange(n_samples) / 30.0
+    rng = np.random.default_rng(42)
+
+    pose_series = [
+        PoseEstimationSeries(
+            name=name,
+            data=rng.random((n_samples, n_dims)),
+            confidence=np.ones(n_samples),
+            timestamps=timestamps,
+            reference_frame="test",
+            unit="cm",
+        )
+        for name in node_names
+    ]
+
+    pose = PoseEstimation(
+        name="PoseEstimation",
+        pose_estimation_series=pose_series,
+        skeleton=skeleton,
+        source_software="Test",
+    )
+    behavior_module.add(pose)
+
+    nwbfile.create_processing_module(
+        name="Skeletons", description="Skeleton definitions"
+    )
+    nwbfile.processing["Skeletons"].add(skeleton)
+
+    return nwbfile
+
+
 class TestReadPose:
     """Tests for read_pose() function."""
 
@@ -542,3 +616,121 @@ class TestReadPoseImportError:
         # Should not raise when ndx_pose is installed
         result = _require_ndx_pose()
         assert result is not None
+
+
+class TestSkeletonRoundTrip:
+    """Tests for ndx-pose Skeleton → neurospatial Skeleton round-trip conversion.
+
+    These tests verify that Skeleton.from_ndx_pose() correctly converts
+    ndx-pose skeletons to neurospatial skeletons without data loss.
+    """
+
+    def test_skeleton_name_preserved(self, empty_nwb):
+        """Test that skeleton name is preserved through conversion."""
+        from neurospatial.nwb import read_pose
+
+        nwbfile = _create_nwb_with_pose(
+            empty_nwb,
+            skeleton_name="custom_skeleton_name",
+            node_names=["a", "b"],
+            edges=np.array([[0, 1]], dtype=np.uint8),
+        )
+
+        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+
+        # Verify name preserved
+        assert ns_skeleton.name == "custom_skeleton_name"
+
+    def test_skeleton_nodes_preserved(self, empty_nwb):
+        """Test that all skeleton nodes are preserved through conversion."""
+        from neurospatial.nwb import read_pose
+
+        node_names = ["nose", "left_ear", "right_ear", "neck", "body", "tail"]
+        nwbfile = _create_nwb_with_pose(
+            empty_nwb,
+            skeleton_name="multi_node_skeleton",
+            node_names=node_names,
+            edges=np.array(
+                [[0, 3], [1, 3], [2, 3], [3, 4], [4, 5]], dtype=np.uint8
+            ),  # nose-neck, left_ear-neck, right_ear-neck, neck-body, body-tail
+        )
+
+        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+
+        # Verify all nodes preserved
+        assert ns_skeleton.n_nodes == len(node_names)
+        assert set(ns_skeleton.nodes) == set(node_names)
+
+    def test_skeleton_edges_preserved(self, empty_nwb):
+        """Test that all skeleton edges are preserved through conversion."""
+        from neurospatial.nwb import read_pose
+
+        # Create skeleton with specific edges: a-b, b-c, c-d (chain structure)
+        node_names = ["a", "b", "c", "d"]
+        nwbfile = _create_nwb_with_pose(
+            empty_nwb,
+            skeleton_name="chain_skeleton",
+            node_names=node_names,
+            edges=np.array([[0, 1], [1, 2], [2, 3]], dtype=np.uint8),
+        )
+
+        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+
+        # Verify edge count preserved
+        assert ns_skeleton.n_edges == 3
+
+        # Verify edges are preserved (note: edges are canonicalized to sorted order)
+        # Expected edges: (a, b), (b, c), (c, d)
+        expected_edges_as_sets = [{"a", "b"}, {"b", "c"}, {"c", "d"}]
+        actual_edges_as_sets = [set(edge) for edge in ns_skeleton.edges]
+        for expected in expected_edges_as_sets:
+            assert expected in actual_edges_as_sets, f"Edge {expected} not found"
+
+    def test_skeleton_no_edges(self, empty_nwb):
+        """Test skeleton with no edges (isolated nodes) is converted correctly."""
+        from neurospatial.nwb import read_pose
+
+        # Create skeleton with no edges
+        node_names = ["point1", "point2", "point3"]
+        nwbfile = _create_nwb_with_pose(
+            empty_nwb,
+            skeleton_name="isolated_nodes",
+            node_names=node_names,
+            edges=np.array([], dtype=np.uint8).reshape(0, 2),
+        )
+
+        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+
+        # Verify nodes preserved but no edges
+        assert ns_skeleton.n_nodes == 3
+        assert ns_skeleton.n_edges == 0
+        assert set(ns_skeleton.nodes) == set(node_names)
+
+    def test_skeleton_complex_graph(self, empty_nwb):
+        """Test skeleton with complex branching structure (not just chain)."""
+        from neurospatial.nwb import read_pose
+
+        # Create skeleton with branching (star topology from center)
+        # center connects to: nose, left_ear, right_ear, tail
+        node_names = ["center", "nose", "left_ear", "right_ear", "tail"]
+        nwbfile = _create_nwb_with_pose(
+            empty_nwb,
+            skeleton_name="star_skeleton",
+            node_names=node_names,
+            edges=np.array([[0, 1], [0, 2], [0, 3], [0, 4]], dtype=np.uint8),
+        )
+
+        _bodyparts, _timestamps, ns_skeleton = read_pose(nwbfile)
+
+        # Verify structure
+        assert ns_skeleton.n_nodes == 5
+        assert ns_skeleton.n_edges == 4
+
+        # Verify adjacency for center node (should have 4 neighbors)
+        assert len(ns_skeleton.adjacency["center"]) == 4
+        assert set(ns_skeleton.adjacency["center"]) == {
+            "nose",
+            "left_ear",
+            "right_ear",
+            "tail",
+        }

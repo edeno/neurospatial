@@ -6,13 +6,25 @@
 
 ## Current Status
 
-- **Active Task**: M1.2.2 - Skeleton integration
+- **Active Task**: M1.3.1 - Events reading function
 - **Blocker**: None
-- **Next Action**: Verify existing `Skeleton.from_ndx_pose()` works with read data
+- **Next Action**: Write tests for `read_events()` in `tests/nwb/test_events.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.2.2 Complete - Skeleton Integration
+
+- Added 5 round-trip tests for ndx-pose Skeleton → neurospatial Skeleton conversion
+- Tests verify:
+  - Skeleton name preservation
+  - All nodes preserved
+  - All edges preserved (including edge canonicalization)
+  - Skeleton with no edges (isolated nodes)
+  - Complex graph structures (star topology)
+- Refactored tests to use `_create_nwb_with_pose()` helper function for reduced duplication
+- All 18 tests pass in `test_pose.py` (13 original + 5 round-trip)
 
 ### 2025-11-23: M1.2.1 Complete - Pose Reading Function
 

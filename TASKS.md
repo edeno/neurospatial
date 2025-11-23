@@ -88,9 +88,9 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Return tuple: (bodyparts: dict[str, NDArray], timestamps: NDArray, skeleton: Skeleton)
   - [x] Verify lazy import pattern for ndx-pose
 
-- [ ] **M1.2.2** Skeleton integration
-  - [ ] Verify existing `Skeleton.from_ndx_pose()` works with read data
-  - [ ] Add tests for round-trip: ndx-pose Skeleton → neurospatial Skeleton
+- [x] **M1.2.2** Skeleton integration
+  - [x] Verify existing `Skeleton.from_ndx_pose()` works with read data
+  - [x] Add tests for round-trip: ndx-pose Skeleton → neurospatial Skeleton
 
 ### M1.3 Events Reading
 
