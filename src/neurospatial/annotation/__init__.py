@@ -6,6 +6,7 @@ from neurospatial.annotation.io import (
     regions_from_cvat,
     regions_from_labelme,
 )
+from neurospatial.annotation.validation import validate_annotations
 
 __all__ = [
     "AnnotationResult",
@@ -14,4 +15,5 @@ __all__ = [
     "annotate_video",
     "regions_from_cvat",
     "regions_from_labelme",
+    "validate_annotations",
 ]

@@ -27,7 +27,8 @@ if TYPE_CHECKING:
 ROLE_CATEGORIES: list[Role] = list(get_args(Role))
 
 # Color scheme for role-based visualization
-ROLE_COLORS: dict[Role, str] = {
+# Use str keys for runtime flexibility (values come from pandas DataFrames as str)
+ROLE_COLORS: dict[str, str] = {
     "environment": "cyan",
     "hole": "red",
     "region": "yellow",
@@ -167,34 +168,41 @@ def create_annotation_widget(
 
     # Determine initial state based on mode
     start_in_region_mode = initial_mode == "region"
+    start_in_hole_mode = initial_mode == "hole"
 
-    # Mode indicator shows current annotation type with action-oriented wording
+    # Mode indicator shows current annotation type with colored background
+    # Initial text (will be styled after widget creation)
     if start_in_region_mode:
-        mode_indicator = Label(value="Drawing: NAMED REGION (yellow polygon)")
+        mode_indicator = Label(value="Drawing: NAMED REGION")
+    elif start_in_hole_mode:
+        mode_indicator = Label(value="Drawing: HOLE IN ENVIRONMENT")
     else:
-        mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY (cyan polygon)")
+        mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY")
 
     # Annotation count status
     annotation_status = Label(value="Annotations: 0 environment, 0 regions")
 
     # Radio buttons for mode selection (more visible than dropdown)
     # Use simple string values - display enhancement via labels
-    role_selector = RadioButtons(
+    role_selector = RadioButtons(  # type: ignore[call-arg]
         choices=["environment", "hole", "region"],
-        value=initial_mode,  # type: ignore[call-arg]
+        value=initial_mode,
         orientation="vertical",
         label="Annotation Type:",
     )
 
-    # Name input - visible only for region mode (progressive disclosure)
+    # Name input - always visible for discoverability
+    # Default values: "arena" for environment, "" for holes/regions (auto-named if empty)
+    initial_name = "" if start_in_region_mode or start_in_hole_mode else "arena"
+
     name_input = LineEdit(
-        value="" if start_in_region_mode else "arena",
-        label="Shape Name:",
-        visible=start_in_region_mode,
-        tooltip="Enter name for next shape, or select a shape and press Enter to rename",
+        value=initial_name,
+        label="Next Shape Name:",
+        visible=True,  # Always visible - UX: recognition over recall
+        tooltip="Name for the next shape you draw. Press Enter after selecting a shape to rename it.",
     )
     # Set placeholder text (magicgui uses native widget underneath)
-    name_input.native.setPlaceholderText("Enter region name...")
+    name_input.native.setPlaceholderText("Type name, press Enter to apply")
 
     # Shapes list for tracking annotations
     shapes_list = Select(
@@ -220,13 +228,28 @@ def create_annotation_widget(
 
     # --- Helper Functions ---
     def update_mode_indicator(role: str):
-        """Update mode indicator label with action-oriented wording."""
+        """Update mode indicator label with visual color feedback.
+
+        Sets both the text and background color to match the shape color,
+        making the current mode immediately visible at a glance.
+        """
+        color = ROLE_COLORS.get(role, "yellow")
+
+        # Include naming hint in the indicator - UX: visibility of system status
         if role == "environment":
-            mode_indicator.value = "Drawing: ENVIRONMENT BOUNDARY (cyan polygon)"
+            mode_indicator.value = "Drawing: ENVIRONMENT (name above)"
         elif role == "hole":
-            mode_indicator.value = "Drawing: HOLE IN ENVIRONMENT (red polygon)"
+            mode_indicator.value = "Drawing: HOLE (name above)"
         else:
-            mode_indicator.value = "Drawing: NAMED REGION (yellow polygon)"
+            mode_indicator.value = "Drawing: REGION (name above)"
+
+        # Set background color to match shape color for visual association
+        # Use dark text for light backgrounds, white for red
+        text_color = "white" if role == "hole" else "black"
+        mode_indicator.native.setStyleSheet(
+            f"background-color: {color}; color: {text_color}; "
+            f"padding: 5px; font-weight: bold; border-radius: 3px;"
+        )
 
     def update_annotation_status():
         """Update annotation count display."""
@@ -285,16 +308,13 @@ def create_annotation_widget(
         """Cycle between environment, hole, and region modes."""
         if role_selector.value == "environment":
             role_selector.value = "hole"
-            name_input.value = ""
-            name_input.visible = False  # Hide for hole (auto-named)
+            name_input.value = ""  # Holes auto-named if empty
         elif role_selector.value == "hole":
             role_selector.value = "region"
-            name_input.value = ""
-            name_input.visible = True  # Show name input for regions
+            name_input.value = ""  # Regions auto-named if empty
         else:
             role_selector.value = "environment"
-            name_input.value = "arena"
-            name_input.visible = False  # Hide for environment (uses "arena")
+            name_input.value = "arena"  # Default environment name
 
     # --- Event Handlers ---
     @role_selector.changed.connect
@@ -306,17 +326,14 @@ def create_annotation_widget(
             # Update colors for visual feedback
             shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
         update_mode_indicator(role)
-        # Progressive disclosure: show name input only for regions
+        # Set sensible default names for each mode
+        # Name input always visible - UX: recognition over recall
         if role == "region":
-            name_input.visible = True
-            if not name_input.value:  # Clear if switching to region
-                name_input.value = ""
+            name_input.value = ""  # Empty = user should provide name
         elif role == "hole":
-            name_input.visible = False
-            name_input.value = ""  # Holes are auto-named
+            name_input.value = ""  # Empty = auto-named hole_N
         else:  # environment
-            name_input.visible = False
-            name_input.value = "arena"
+            name_input.value = "arena"  # Common default for environments
 
     @name_input.changed.connect
     def on_name_changed(name: str):
@@ -388,7 +405,7 @@ def create_annotation_widget(
 
     # Connect Enter key in name input to apply name to selected
     # Use event filter to prevent Enter from propagating to napari's canvas
-    from qtpy.QtCore import QEvent, QObject
+    from qtpy.QtCore import QEvent, QObject  # type: ignore[attr-defined]
 
     class EnterKeyFilter(QObject):
         """Event filter to handle Enter key in name input without propagating to napari."""
@@ -398,7 +415,31 @@ def create_annotation_widget(
                 from qtpy.QtCore import Qt
 
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                    # Get the role of the selected shape BEFORE applying
+                    shapes = get_shapes()
+                    selected_role = None
+                    if shapes is not None and len(shapes.selected_data) > 0:
+                        idx = next(iter(shapes.selected_data))
+                        if idx < len(shapes.features):
+                            selected_role = str(shapes.features["role"].iloc[idx])
+
                     apply_to_selected()
+
+                    # UX: Auto-switch to region mode after naming an environment
+                    # This supports the common workflow: draw boundary -> draw regions
+                    if selected_role == "environment":
+                        role_selector.value = "region"
+                        viewer.status = (
+                            "Environment named! Switched to REGION mode - "
+                            "draw regions inside the boundary"
+                        )
+
+                    # Keep focus on input - prevents accidental M key mode switch
+                    # Use QTimer to ensure this happens after Qt processes the event
+                    from qtpy.QtCore import QTimer
+
+                    QTimer.singleShot(50, lambda: name_input.native.setFocus())
+
                     return True  # Consume the event, don't propagate
             return False  # Let other events through
 
@@ -648,16 +689,44 @@ def create_annotation_widget(
             )
             if last_role == "environment":
                 viewer.status = (
-                    f"Added environment '{last_name}'{duplicate_note} "
-                    "(press M to add holes or regions)"
+                    f"Added environment '{last_name}'{duplicate_note} - "
+                    "edit name above, or press M for holes/regions"
                 )
             elif last_role == "hole":
-                viewer.status = f"Added hole '{last_name}'{duplicate_note}"
+                viewer.status = (
+                    f"Added hole '{last_name}'{duplicate_note} - "
+                    "edit name above if needed"
+                )
             else:
-                viewer.status = f"Added region '{last_name}'{duplicate_note}"
-                # Clear name for next region (encourage meaningful naming)
-                name_input.value = ""
-                shapes.feature_defaults["name"] = ""
+                viewer.status = (
+                    f"Added region '{last_name}'{duplicate_note} - "
+                    "edit name above if needed"
+                )
+
+            # UX improvement: auto-select the new shape and focus name input
+            # This allows immediate renaming if the default name isn't desired
+            new_shape_idx = current_count - 1
+            shapes.selected_data = {new_shape_idx}
+            name_input.value = last_name  # Show current name so user can edit
+            shapes.feature_defaults["name"] = last_name
+
+            # Focus the name input so user can immediately type to rename
+            # Use aggressive multi-attempt approach because napari steals focus
+            from qtpy.QtCore import QTimer
+
+            def focus_and_select():
+                """Focus name input and select all text for easy editing."""
+                native = name_input.native
+                # Activate the widget's window first
+                if native.window():
+                    native.window().activateWindow()
+                native.setFocus()
+                native.selectAll()  # Select text so typing replaces it
+
+            # Schedule multiple focus attempts to overcome napari's focus stealing
+            # First attempt at 100ms, second at 300ms (backup)
+            QTimer.singleShot(100, focus_and_select)
+            QTimer.singleShot(300, focus_and_select)
 
         elif delta < 0:
             # Shape was deleted externally (e.g., via Delete key)
@@ -701,6 +770,9 @@ def create_annotation_widget(
         def on_highlight_changed(event):
             """Enable/disable buttons when selection highlight changes."""
             update_button_states()
+
+    # Apply initial styling to mode indicator (after widget is created)
+    update_mode_indicator(initial_mode)
 
     # --- Build Container ---
     widget = Container(

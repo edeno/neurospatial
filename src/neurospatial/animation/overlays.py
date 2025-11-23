@@ -55,8 +55,14 @@ class PositionOverlay:
     Parameters
     ----------
     data : ndarray of shape (n_samples, n_dims), dtype float64
-        Position coordinates in environment space. Each row is a position at
-        a time point. Dimensionality must match the environment (env.n_dims).
+        Position coordinates in **environment (x, y) format**. Each row is a
+        position at a time point. Dimensionality must match the environment
+        (env.n_dims).
+
+        **Important**: Use the same coordinate system as your tracking data
+        and Environment. Do NOT pre-convert to napari (row, col) format - the
+        animation system handles coordinate transformation automatically,
+        including axis swap and Y-axis inversion for proper display.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each position sample, in seconds. If None, samples are
         assumed uniformly spaced at the animation fps rate. Must be
@@ -158,6 +164,11 @@ class BodypartOverlay:
         shape (n_samples, n_dims), dtype float64. All body parts must have the
         same number of samples and dimensionality matching the environment
         (env.n_dims).
+
+        **Important**: Provide coordinates in **environment (x, y) format** -
+        the same coordinate system as your tracking data and Environment.
+        Do NOT pre-convert to napari (row, col) format. The animation system
+        handles coordinate transformation automatically.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each sample, in seconds. If None, samples are assumed
         uniformly spaced at the animation fps rate. Must be monotonically
@@ -278,8 +289,13 @@ class HeadDirectionOverlay:
           right (east), π/2 is up (north), etc. (standard mathematical
           convention)
         - Unit vectors: shape (n_samples, n_dims), dtype float64, with
-          direction vectors in environment coordinates. Dimensionality must
-          match the environment (env.n_dims).
+          direction vectors in **environment (x, y) format**. Dimensionality
+          must match the environment (env.n_dims).
+
+        **Important**: For unit vectors, use the same coordinate system as
+        your tracking data and Environment. Do NOT pre-convert to napari
+        (row, col) format. The animation system handles coordinate
+        transformation automatically.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each sample, in seconds. If None, samples are assumed
         uniformly spaced at the animation fps rate. Must be monotonically

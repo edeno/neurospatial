@@ -306,9 +306,25 @@ def animate_fields(
         )
 
     elif backend == "video":
-        from neurospatial.animation.backends.video_backend import render_video
+        from neurospatial.animation.backends.video_backend import (
+            check_ffmpeg_available,
+            render_video,
+        )
 
-        # Note: ffmpeg check is done inside render_video for single source of truth
+        # Early validation: fail fast before expensive setup if ffmpeg missing
+        if not check_ffmpeg_available():
+            raise RuntimeError(
+                "WHAT: ffmpeg is not installed or not found in PATH.\n\n"
+                "WHY: Video export requires ffmpeg for encoding frames into video.\n\n"
+                "HOW: Install ffmpeg:\n"
+                "  macOS:   brew install ffmpeg\n"
+                "  Ubuntu:  sudo apt install ffmpeg\n"
+                "  Windows: Download from https://ffmpeg.org/download.html\n\n"
+                "Or use a different backend:\n"
+                "  backend='napari' - Interactive viewer (no dependencies)\n"
+                "  backend='html'   - Standalone HTML file (no dependencies)\n"
+                "  backend='widget' - Jupyter notebook widget"
+            )
 
         if save_path is None:
             raise ValueError("save_path required for video backend")
