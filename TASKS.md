@@ -128,13 +128,13 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Implement `position_overlay_from_nwb()` in `_overlays.py`
   - [x] Return PositionOverlay with data and times
 
-- [ ] **M1.4.2** Bodypart overlay factory
-  - [ ] Write tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
-    - [ ] Test BodypartOverlay creation from PoseEstimation
-    - [ ] Test skeleton parameter auto-extraction
-    - [ ] Test colors, skeleton_color parameters passed through
-  - [ ] Implement `bodypart_overlay_from_nwb()` in `_overlays.py`
-  - [ ] Return BodypartOverlay with bodypart dict and skeleton
+- [x] **M1.4.2** Bodypart overlay factory
+  - [x] Write tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+    - [x] Test BodypartOverlay creation from PoseEstimation
+    - [x] Test skeleton parameter auto-extraction
+    - [x] Test colors, skeleton_color parameters passed through
+  - [x] Implement `bodypart_overlay_from_nwb()` in `_overlays.py`
+  - [x] Return BodypartOverlay with bodypart dict and skeleton
 
 - [ ] **M1.4.3** Head direction overlay factory
   - [ ] Write tests for `head_direction_overlay_from_nwb()` in `tests/nwb/test_overlays.py`

@@ -6,13 +6,35 @@
 
 ## Current Status
 
-- **Active Task**: M1.4.2 - Bodypart overlay factory
+- **Active Task**: M1.4.3 - Head direction overlay factory
 - **Blocker**: None
-- **Next Action**: Write tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- **Next Action**: Write tests for `head_direction_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.4.2 Complete - Bodypart Overlay Factory
+
+- Created 11 tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- Tests cover:
+  - Basic BodypartOverlay creation from NWB PoseEstimation data
+  - Data integrity verification (matches `read_pose()` output)
+  - Skeleton auto-extraction from PoseEstimation
+  - Skeleton matches `read_pose()` output
+  - colors parameter passed through
+  - Default colors is None (defer to skeleton colors)
+  - pose_estimation_name forwarding to `read_pose()`
+  - Additional kwargs passthrough (e.g., `interp`)
+  - Combined multiple parameters usage
+  - Error handling: PoseEstimation not found (KeyError)
+  - Error handling: named PoseEstimation not found (KeyError with available list)
+- Implemented `bodypart_overlay_from_nwb()` in `_overlays.py`:
+  - Uses lazy imports for `BodypartOverlay` and `read_pose`
+  - Delegates NWB reading to `read_pose()`
+  - Returns `BodypartOverlay` with data, times, skeleton, and colors
+- Code review: APPROVED
+- All 11 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.4.1 Complete - Position Overlay Factory
 

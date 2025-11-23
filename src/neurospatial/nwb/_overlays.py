@@ -89,8 +89,6 @@ def bodypart_overlay_from_nwb(
     *,
     pose_estimation_name: str | None = None,
     colors: dict[str, str] | None = None,
-    skeleton_color: str = "white",
-    skeleton_width: float = 2.0,
     **kwargs: Any,
 ) -> BodypartOverlay:
     """
@@ -103,28 +101,58 @@ def bodypart_overlay_from_nwb(
     pose_estimation_name : str, optional
         Name of specific PoseEstimation container.
     colors : dict[str, str], optional
-        Mapping from bodypart name to color.
-    skeleton_color : str, default "white"
-        Color for skeleton edges.
-    skeleton_width : float, default 2.0
-        Width of skeleton edges.
+        Mapping from bodypart name to color. If None, uses skeleton's
+        node_colors or default colors.
     **kwargs
-        Additional arguments passed to BodypartOverlay.
+        Additional arguments passed to BodypartOverlay. Supported kwargs:
+
+        - interp : {"linear", "nearest"}, optional
+            Interpolation method for temporal alignment. Default is "linear".
 
     Returns
     -------
     BodypartOverlay
         Overlay with bodypart trajectories and skeleton from NWB.
 
+    Raises
+    ------
+    KeyError
+        If no PoseEstimation container found, or if specified name not found.
+    ImportError
+        If ndx-pose is not installed.
+
     Examples
     --------
     >>> from pynwb import NWBHDF5IO
     >>> with NWBHDF5IO("session.nwb", "r") as io:
     ...     nwbfile = io.read()
-    ...     overlay = bodypart_overlay_from_nwb(nwbfile, skeleton_color="yellow")
+    ...     overlay = bodypart_overlay_from_nwb(nwbfile)
     >>> env.animate_fields(fields, overlays=[overlay])
+
+    With custom colors:
+
+    >>> overlay = bodypart_overlay_from_nwb(
+    ...     nwbfile,
+    ...     colors={"nose": "yellow", "body": "red", "tail": "blue"},
+    ... )
     """
-    raise NotImplementedError("bodypart_overlay_from_nwb not yet implemented")
+    from neurospatial.animation.overlays import BodypartOverlay
+    from neurospatial.nwb._pose import read_pose
+
+    # Read pose data from NWB
+    bodyparts, timestamps, skeleton = read_pose(
+        nwbfile,
+        pose_estimation_name=pose_estimation_name,
+    )
+
+    # Create and return BodypartOverlay
+    return BodypartOverlay(
+        data=bodyparts,
+        times=timestamps,
+        skeleton=skeleton,  # Auto-extracted from PoseEstimation.skeleton
+        colors=colors,
+        **kwargs,
+    )
 
 
 def head_direction_overlay_from_nwb(
