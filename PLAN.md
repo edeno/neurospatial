@@ -878,6 +878,25 @@ Before creating an extension:
 | 3.3 | Environment.from_nwb/to_nwb | Small | Phase 3.1-3.2 |
 | 4.1 | ndx-spatial-environment (separate repo) | Large | Community feedback |
 
+## Appendix: NWB Data Organization Overview
+
+<https://nwb-schema.readthedocs.io/en/latest/format_description.html>
+Neurodata Without Borders (NWB) files are organized in a hierarchical structure using HDF5 groups and datasets.
+
+At a high level, data is organized into the following main groups:
+
+    acquisition/ : data streams recorded from the system, including ephys, ophys, tracking, etc.,
+
+    intervals/ : experimental intervals,
+
+    stimulus/ : stimulus data,
+
+    general/ : experimental metadata, including protocol, notes and description of hardware device(s).
+
+    processing/ : standardized processing modules, often as part of intermediate analysis of data that is necessary to perform before scientific analysis,
+
+    analysis/ : lab-specific and custom scientific analysis of data.
+
 ---
 
 ## References
