@@ -3,9 +3,13 @@
 This module provides a thin adapter between pure annotation state and
 the napari Shapes layer, keeping side-effects isolated.
 
-Note: This controller is currently staged for future refactoring. The widget
-still contains some duplicate logic that could be migrated to use this
-controller for a cleaner separation of concerns. See issue #XXX for details.
+The controller handles:
+- Shape deletion with feature/state synchronization
+- Shape renaming with uniqueness enforcement
+- Mode synchronization (role colors and defaults)
+
+The widget uses the controller for layer mutations while handling
+UI-specific concerns (status messages, list updates, dialogs).
 """
 
 from __future__ import annotations

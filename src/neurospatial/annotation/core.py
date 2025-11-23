@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
-from neurospatial.annotation._types import MultipleBoundaryStrategy
+from neurospatial.annotation._types import MultipleBoundaryStrategy, Role
 
 if TYPE_CHECKING:
     import napari
@@ -188,7 +188,7 @@ def annotate_video(
     # Determine initial annotation mode based on user's intent
     # "regions" mode → start in region mode (user doesn't want environment boundary)
     # "environment" or "both" → start in environment mode
-    initial_annotation_mode = "region" if mode == "regions" else "environment"
+    initial_annotation_mode: Role = "region" if mode == "regions" else "environment"
 
     # Add shapes layer with annotation-optimized settings
     # (features-based coloring, text labels, keyboard shortcuts)
@@ -298,7 +298,7 @@ def _add_initial_regions(
     """
     from shapely import get_coordinates
 
-    from neurospatial.annotation._napari_widget import (
+    from neurospatial.annotation._helpers import (
         rebuild_features,
         sync_face_colors_from_features,
     )

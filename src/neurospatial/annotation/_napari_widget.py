@@ -15,6 +15,7 @@ from magicgui.widgets import (
 )
 from numpy.typing import NDArray
 
+from neurospatial.annotation._controller import ShapesLayerController
 from neurospatial.annotation._helpers import (
     ROLE_CATEGORIES,
     ROLE_COLOR_CYCLE,
@@ -145,6 +146,13 @@ def create_annotation_widget(
     # Pure state object for tracking mode and counts (testable without napari)
     state = AnnotationModeState(role=initial_mode)
 
+    def get_controller() -> ShapesLayerController | None:
+        """Get controller for current shapes layer, or None if layer doesn't exist."""
+        shapes = get_shapes()
+        if shapes is None:
+            return None
+        return ShapesLayerController(shapes, state)
+
     # --- Helper Functions ---
     def update_mode_indicator(role: str):
         """Update mode indicator label with visual color feedback.
@@ -235,11 +243,10 @@ def create_annotation_widget(
         from typing import cast
 
         state.role = cast("Role", role)
-        shapes = get_shapes()
-        if shapes is not None:
-            shapes.feature_defaults["role"] = role
-            shapes.feature_defaults["name"] = state.default_name()
-            shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
+        # Controller handles layer defaults synchronization
+        controller = get_controller()
+        if controller is not None:
+            controller.apply_mode()
         update_mode_indicator(role)
         name_input.value = state.default_name()
 
@@ -272,39 +279,38 @@ def create_annotation_widget(
 
     @apply_btn.clicked.connect
     def apply_to_selected():
-        """Apply current name to selected shapes."""
+        """Apply current name to selected shapes using controller."""
         shapes = get_shapes()
         if shapes is None or len(shapes.selected_data) == 0:
             return
 
-        count = len(shapes.selected_data)
-        # Use DataFrame operations for safer feature updates
-        features_df = shapes.features.copy()
-        applied_name = None
-        for idx in shapes.selected_data:
-            if 0 <= idx < len(features_df):
-                # Get existing names excluding this shape
-                other_names = [
-                    str(features_df.loc[i, "name"])
-                    for i in range(len(features_df))
-                    if i != idx
-                ]
-                # Ensure unique name
-                requested_name = name_input.value
-                unique_name = make_unique_name(requested_name, other_names)
-                features_df.loc[idx, "name"] = unique_name
-                applied_name = unique_name
-                # Track if name was changed due to duplicate
-                name_was_modified = unique_name != requested_name
+        controller = get_controller()
+        if controller is None:
+            return
 
-        shapes.features = features_df
-        shapes.refresh()
+        count = len(shapes.selected_data)
+        requested_name = name_input.value
+        applied_name = None
+        name_was_modified = False
+
+        # Controller handles renaming with uniqueness enforcement
+        for idx in shapes.selected_data:
+            if 0 <= idx < len(shapes.features):
+                assigned_name, was_modified = controller.rename_shape(
+                    idx, requested_name
+                )
+                applied_name = assigned_name
+                if was_modified:
+                    name_was_modified = True
+
+        # Widget handles UI updates
         update_shapes_list()
+
         # Status feedback - warn if name was modified due to duplicate
         if count == 1 and applied_name:
             if name_was_modified:
                 viewer.status = (
-                    f"Renamed to '{applied_name}' ('{name_input.value}' already exists)"
+                    f"Renamed to '{applied_name}' ('{requested_name}' already exists)"
                 )
             else:
                 viewer.status = f"Renamed to '{applied_name}'"
@@ -332,47 +338,21 @@ def create_annotation_widget(
 
     @delete_btn.clicked.connect
     def delete_selected():
-        """Delete selected shapes."""
+        """Delete selected shapes using controller."""
         shapes = get_shapes()
         if shapes is None or len(shapes.selected_data) == 0:
             return
 
-        # Preserve layer state
-        old_mode = shapes.mode
-        delete_count = len(shapes.selected_data)
+        controller = get_controller()
+        if controller is None:
+            return
 
-        # Get indices to keep (not selected)
-        indices_to_delete = set(shapes.selected_data)
-        indices_to_keep = [
-            i for i in range(len(shapes.data)) if i not in indices_to_delete
-        ]
+        # Controller handles layer mutations and state sync
+        delete_count = controller.delete_shapes_by_indices(set(shapes.selected_data))
 
-        # Block data events during multi-assignment to prevent redundant redraws
-        with shapes.events.data.blocker():
-            if not indices_to_keep:
-                # Delete all shapes
-                shapes.data = []
-                shapes.features = rebuild_features([], [])
-            else:
-                # Keep only non-deleted shapes and features
-                new_data = [shapes.data[i] for i in indices_to_keep]
-                new_roles = [
-                    str(shapes.features["role"].iloc[i]) for i in indices_to_keep
-                ]
-                new_names = [
-                    str(shapes.features["name"].iloc[i]) for i in indices_to_keep
-                ]
-
-                shapes.data = new_data
-                shapes.features = rebuild_features(new_roles, new_names)
-                sync_face_colors_from_features(shapes)
-
-        shapes.selected_data = set()
-        shapes.mode = old_mode  # Restore layer mode
-        shapes.refresh()
+        # Widget handles UI updates
         update_shapes_list()
         update_annotation_status()
-        # Status feedback
         viewer.status = f"Deleted {delete_count} shape(s)"
 
     @save_btn.clicked.connect
