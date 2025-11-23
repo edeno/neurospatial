@@ -8,6 +8,8 @@ import numpy as np
 import shapely.geometry as shp
 from shapely import Polygon
 
+from neurospatial.annotation._types import MultipleBoundaryStrategy, Role
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -19,9 +21,11 @@ if TYPE_CHECKING:
 def shapes_to_regions(
     shapes_data: list[NDArray[np.float64]],
     names: list[str],
-    roles: list[str],
+    roles: list[Role],
     calibration: VideoCalibration | None = None,
     simplify_tolerance: float | None = None,
+    *,
+    multiple_boundaries: MultipleBoundaryStrategy = "last",
 ) -> tuple[Regions, Region | None, list[Region]]:
     """
     Convert napari polygon shapes to Regions.
@@ -33,7 +37,7 @@ def shapes_to_regions(
         shape (n_vertices, 2) in napari (row, col) order.
     names : list of str
         Name for each shape.
-    roles : list of str
+    roles : list of Role
         Role for each shape: "environment", "hole", or "region".
     calibration : VideoCalibration, optional
         If provided, transforms pixel coordinates to world coordinates (cm)
@@ -42,6 +46,12 @@ def shapes_to_regions(
         If provided, simplifies polygons using Shapely's Douglas-Peucker
         algorithm. Tolerance is in output coordinate units (cm if calibration
         provided, else pixels). Recommended: 1.0 for cleaner boundaries.
+    multiple_boundaries : {"last", "first", "error"}, default="last"
+        How to handle multiple environment boundaries:
+
+        - "last": Use the last drawn boundary (default). A warning is emitted.
+        - "first": Use the first drawn boundary. A warning is emitted.
+        - "error": Raise ValueError if multiple boundaries are drawn.
 
     Returns
     -------
@@ -52,13 +62,16 @@ def shapes_to_regions(
     holes : list of Region
         All regions with role="hole" (to be subtracted from environment).
 
+    Raises
+    ------
+    ValueError
+        If ``multiple_boundaries="error"`` and multiple environment boundaries
+        are drawn.
+
     Notes
     -----
     Napari shapes use (row, col) order. This function converts to (x, y)
     pixel coordinates before applying calibration.
-
-    If multiple shapes with role="environment" are present, the last one is
-    used as the environment boundary and a warning is emitted.
 
     Holes are only meaningful when an environment boundary exists. They are
     used to create excluded areas within the environment.
@@ -69,8 +82,7 @@ def shapes_to_regions(
 
     regions_list: list[Region] = []
     holes_list: list[Region] = []
-    env_boundary: Region | None = None
-    env_boundary_count = 0
+    env_boundaries: list[Region] = []
 
     for poly_rc, name, role in zip(shapes_data, names, roles, strict=True):
         # Convert napari (row, col) to video (x, y) pixels
@@ -111,21 +123,42 @@ def shapes_to_regions(
         )
 
         if role == "environment":
-            env_boundary_count += 1
-            env_boundary = region
+            env_boundaries.append(region)
         elif role == "hole":
             holes_list.append(region)
         else:
             regions_list.append(region)
 
-    # Warn if multiple environment boundaries were drawn (only last one used)
-    if env_boundary_count > 1:
-        warnings.warn(
-            f"Multiple environment boundaries ({env_boundary_count}) were drawn. "
-            f"Only the last one ('{env_boundary.name if env_boundary else 'unknown'}') will be used.",
-            UserWarning,
-            stacklevel=2,
-        )
+    # Handle multiple environment boundaries according to strategy
+    env_boundary: Region | None = None
+    if len(env_boundaries) > 1:
+        if multiple_boundaries == "error":
+            names_list = [b.name for b in env_boundaries]
+            raise ValueError(
+                f"Multiple environment boundaries ({len(env_boundaries)}) were drawn: "
+                f"{names_list}. Set multiple_boundaries='last' or 'first' to select one, "
+                "or draw only one environment boundary."
+            )
+        elif multiple_boundaries == "first":
+            env_boundary = env_boundaries[0]
+            warnings.warn(
+                f"Multiple environment boundaries ({len(env_boundaries)}) were drawn. "
+                f"Using the first one ('{env_boundary.name}') as specified by "
+                "multiple_boundaries='first'.",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:  # "last" (default)
+            env_boundary = env_boundaries[-1]
+            warnings.warn(
+                f"Multiple environment boundaries ({len(env_boundaries)}) were drawn. "
+                f"Using the last one ('{env_boundary.name}') as specified by "
+                "multiple_boundaries='last'.",
+                UserWarning,
+                stacklevel=2,
+            )
+    elif len(env_boundaries) == 1:
+        env_boundary = env_boundaries[0]
 
     return Regions(regions_list), env_boundary, holes_list
 

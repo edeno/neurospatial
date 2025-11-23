@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 import numpy as np
 from magicgui.widgets import (
@@ -15,16 +15,19 @@ from magicgui.widgets import (
 )
 from numpy.typing import NDArray
 
+from neurospatial.annotation._types import Role
+
 if TYPE_CHECKING:
     import napari
     import pandas as pd
 
 # Role categories - order determines color cycle mapping
 # Environment first since users typically define boundary first
-ROLE_CATEGORIES = ["environment", "hole", "region"]
+# Derived from Role type alias for single source of truth
+ROLE_CATEGORIES: list[Role] = list(get_args(Role))
 
 # Color scheme for role-based visualization
-ROLE_COLORS = {
+ROLE_COLORS: dict[Role, str] = {
     "environment": "cyan",
     "hole": "red",
     "region": "yellow",
@@ -32,7 +35,7 @@ ROLE_COLORS = {
 ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]
 
 
-def rebuild_features(roles: list[str], names: list[str]) -> pd.DataFrame:
+def rebuild_features(roles: list[Role], names: list[str]) -> pd.DataFrame:
     """
     Create a fresh features DataFrame with proper categorical types.
 
@@ -41,8 +44,8 @@ def rebuild_features(roles: list[str], names: list[str]) -> pd.DataFrame:
 
     Parameters
     ----------
-    roles : list of str
-        Role for each shape ("environment" or "region").
+    roles : list of Role
+        Role for each shape ("environment", "hole", or "region").
     names : list of str
         Name for each shape.
 
@@ -788,7 +791,7 @@ def setup_shapes_layer_for_annotation(
 
 def get_annotation_data(
     shapes_layer: napari.layers.Shapes | None,
-) -> tuple[list[NDArray[np.float64]], list[str], list[str]]:
+) -> tuple[list[NDArray[np.float64]], list[str], list[Role]]:
     """
     Extract annotation data from shapes layer.
 
@@ -803,8 +806,8 @@ def get_annotation_data(
         List of polygon vertex arrays in napari (row, col) format.
     names : list of str
         Name for each shape.
-    roles : list of str
-        Role for each shape ("environment" or "region").
+    roles : list of Role
+        Role for each shape ("environment", "hole", or "region").
     """
     if shapes_layer is None or len(shapes_layer.data) == 0:
         return [], [], []
@@ -832,4 +835,7 @@ def get_annotation_data(
     while len(roles) < len(data):
         roles.append("region")
 
-    return data, [str(n) for n in names], [str(r) for r in roles]
+    # Cast roles to Role type (validated at runtime by napari widget constraints)
+    from typing import cast
+
+    return data, [str(n) for n in names], [cast("Role", str(r)) for r in roles]

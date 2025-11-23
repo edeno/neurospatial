@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 import shapely.geometry as shp
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
 
 from neurospatial.annotation.converters import (
     env_from_boundary_region,
@@ -400,3 +402,377 @@ class TestCalibrationRoundTrip:
         assert bounds[2] == pytest.approx(2.0)  # maxx
         assert bounds[3] == pytest.approx(2.0)  # maxy
         assert poly.area == pytest.approx(4.0)  # 2x2 = 4
+
+
+class TestMultipleBoundaryStrategies:
+    """Tests for multiple_boundaries parameter handling."""
+
+    def test_multiple_boundaries_first(self):
+        """Use first boundary when multiple_boundaries='first'."""
+        poly1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        poly2 = np.array([[50, 50], [150, 50], [150, 150], [50, 150]], dtype=float)
+        shapes_data = [poly1, poly2]
+        names = ["boundary1", "boundary2"]
+        roles = ["environment", "environment"]
+
+        with pytest.warns(UserWarning, match="first"):
+            _, env_boundary, _ = shapes_to_regions(
+                shapes_data, names, roles, multiple_boundaries="first"
+            )
+
+        assert env_boundary is not None
+        assert env_boundary.name == "boundary1"
+
+    def test_multiple_boundaries_error(self):
+        """Raise ValueError when multiple_boundaries='error'."""
+        poly1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        poly2 = np.array([[50, 50], [150, 50], [150, 150], [50, 150]], dtype=float)
+        shapes_data = [poly1, poly2]
+        names = ["boundary1", "boundary2"]
+        roles = ["environment", "environment"]
+
+        with pytest.raises(ValueError, match="Multiple environment boundaries"):
+            shapes_to_regions(shapes_data, names, roles, multiple_boundaries="error")
+
+    def test_single_boundary_no_error(self):
+        """Single boundary works with any strategy."""
+        poly = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        shapes_data = [poly]
+        names = ["arena"]
+        roles = ["environment"]
+
+        for strategy in ["first", "last", "error"]:
+            _, env_boundary, _ = shapes_to_regions(
+                shapes_data, names, roles, multiple_boundaries=strategy
+            )
+            assert env_boundary is not None
+            assert env_boundary.name == "arena"
+
+
+# --- Hypothesis-based property tests ---
+
+
+# Custom strategies for generating test data
+@st.composite
+def polygon_vertices(draw, min_vertices=3, max_vertices=20, coord_range=(0, 1000)):
+    """Generate valid polygon vertices in napari (row, col) format."""
+    n_vertices = draw(st.integers(min_value=min_vertices, max_value=max_vertices))
+    # Generate points and ensure they form a valid polygon
+    coords = draw(
+        st.lists(
+            st.tuples(
+                st.floats(
+                    min_value=coord_range[0],
+                    max_value=coord_range[1],
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                st.floats(
+                    min_value=coord_range[0],
+                    max_value=coord_range[1],
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+            ),
+            min_size=n_vertices,
+            max_size=n_vertices,
+        )
+    )
+    return np.array(coords, dtype=float)
+
+
+@st.composite
+def tiny_polygon_vertices(draw, size_range=(0.001, 1.0)):
+    """Generate tiny polygon (very small area)."""
+    # Generate a small square
+    base_x = draw(st.floats(min_value=0, max_value=100, allow_nan=False))
+    base_y = draw(st.floats(min_value=0, max_value=100, allow_nan=False))
+    size = draw(
+        st.floats(min_value=size_range[0], max_value=size_range[1], allow_nan=False)
+    )
+    return np.array(
+        [
+            [base_y, base_x],
+            [base_y, base_x + size],
+            [base_y + size, base_x + size],
+            [base_y + size, base_x],
+        ],
+        dtype=float,
+    )
+
+
+@st.composite
+def near_collinear_polygon(draw, n_extra_points=5):
+    """Generate polygon with near-collinear points on edges."""
+    # Base square
+    base_coords = [(0, 0), (0, 100), (100, 100), (100, 0)]
+
+    # Add near-collinear points on each edge
+    all_coords = []
+    for i in range(4):
+        all_coords.append(base_coords[i])
+        # Add points along the edge
+        start = base_coords[i]
+        end = base_coords[(i + 1) % 4]
+        for _j in range(n_extra_points):
+            t = draw(st.floats(min_value=0.1, max_value=0.9, allow_nan=False))
+            # Small perturbation perpendicular to edge
+            perturb = draw(st.floats(min_value=-0.01, max_value=0.01, allow_nan=False))
+            x = start[0] + t * (end[0] - start[0]) + perturb
+            y = start[1] + t * (end[1] - start[1]) + perturb
+            all_coords.append((x, y))
+
+    # Convert to napari (row, col) format
+    return np.array([(y, x) for x, y in all_coords], dtype=float)
+
+
+@st.composite
+def calibration_transform(draw, scale_range=(0.01, 10.0)):
+    """Generate a valid calibration transform."""
+    scale = draw(
+        st.floats(min_value=scale_range[0], max_value=scale_range[1], allow_nan=False)
+    )
+    offset_x = draw(st.floats(min_value=-100, max_value=100, allow_nan=False))
+    offset_y = draw(st.floats(min_value=-100, max_value=100, allow_nan=False))
+    matrix = np.array(
+        [
+            [scale, 0.0, offset_x],
+            [0.0, scale, offset_y],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    return VideoCalibration(Affine2D(matrix), frame_size_px=(640, 480))
+
+
+class TestHypothesisShapesToRegions:
+    """Property-based tests for shapes_to_regions using Hypothesis."""
+
+    @given(vertices=polygon_vertices())
+    @settings(max_examples=50, suppress_health_check=[HealthCheck.filter_too_much])
+    def test_valid_polygon_creates_region(self, vertices):
+        """Any valid polygon should create a region without error."""
+        # Create shapely polygon to check validity
+        poly = shp.Polygon(vertices[:, ::-1])  # Convert to (x, y)
+        assume(poly.is_valid and poly.area > 0)
+
+        shapes_data = [vertices]
+        names = ["test"]
+        roles = ["region"]
+
+        regions, env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
+
+        assert "test" in regions
+        assert env_boundary is None
+        assert len(holes) == 0
+
+    @given(vertices=tiny_polygon_vertices())
+    @settings(max_examples=50)
+    def test_tiny_polygons_preserved(self, vertices):
+        """Very small polygons should still create valid regions."""
+        shapes_data = [vertices]
+        names = ["tiny"]
+        roles = ["region"]
+
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles)
+
+        assert "tiny" in regions
+        assert regions["tiny"].data.area > 0
+
+    @given(vertices=near_collinear_polygon())
+    @settings(
+        max_examples=30,
+        suppress_health_check=[HealthCheck.filter_too_much, HealthCheck.too_slow],
+    )
+    def test_near_collinear_points_handled(self, vertices):
+        """Polygons with near-collinear points should be processed."""
+        # Create shapely polygon to check validity
+        poly = shp.Polygon(vertices[:, ::-1])
+        assume(poly.is_valid and poly.area > 0)
+
+        shapes_data = [vertices]
+        names = ["collinear"]
+        roles = ["region"]
+
+        regions, _, _ = shapes_to_regions(shapes_data, names, roles)
+
+        assert "collinear" in regions
+
+    @given(vertices=near_collinear_polygon())
+    @settings(
+        max_examples=30,
+        suppress_health_check=[HealthCheck.filter_too_much, HealthCheck.too_slow],
+    )
+    def test_simplification_reduces_collinear_points(self, vertices):
+        """Simplification should reduce near-collinear points."""
+        poly = shp.Polygon(vertices[:, ::-1])
+        assume(poly.is_valid and poly.area > 0)
+
+        shapes_data = [vertices]
+        names = ["test"]
+        roles = ["region"]
+
+        # Without simplification
+        regions_full, _, _ = shapes_to_regions(shapes_data, names, roles)
+        n_coords_full = len(regions_full["test"].data.exterior.coords)
+
+        # With simplification
+        regions_simple, _, _ = shapes_to_regions(
+            shapes_data, names, roles, simplify_tolerance=1.0
+        )
+        n_coords_simple = len(regions_simple["test"].data.exterior.coords)
+
+        # Simplified should have fewer or equal vertices
+        assert n_coords_simple <= n_coords_full
+
+    @given(calibration=calibration_transform())
+    @settings(max_examples=30)
+    def test_calibration_preserves_shape(self, calibration):
+        """Calibration should scale area proportionally."""
+        # Simple unit square
+        vertices = np.array([[0, 0], [0, 10], [10, 10], [10, 0]], dtype=float)
+        shapes_data = [vertices]
+        names = ["square"]
+        roles = ["region"]
+
+        # Without calibration
+        regions_px, _, _ = shapes_to_regions(shapes_data, names, roles)
+        area_px = regions_px["square"].data.area
+
+        # With calibration
+        regions_cal, _, _ = shapes_to_regions(
+            shapes_data, names, roles, calibration=calibration
+        )
+        area_cal = regions_cal["square"].data.area
+
+        # Get scale factor from calibration's internal transform (Affine2D uses A attribute)
+        scale = calibration.transform_px_to_cm.A[0, 0]  # Uniform scale assumed
+        expected_area = area_px * (scale**2)
+
+        assert area_cal == pytest.approx(expected_area, rel=1e-6)
+
+
+class TestHypothesisHoles:
+    """Property-based tests for hole handling."""
+
+    @given(
+        hole_scale=st.floats(min_value=0.1, max_value=0.5, allow_nan=False),
+        hole_offset_x=st.floats(min_value=0.2, max_value=0.5, allow_nan=False),
+        hole_offset_y=st.floats(min_value=0.2, max_value=0.5, allow_nan=False),
+    )
+    @settings(max_examples=30)
+    def test_hole_inside_boundary(self, hole_scale, hole_offset_x, hole_offset_y):
+        """Holes inside boundary reduce area correctly."""
+        # Boundary: 100x100 square at origin
+        boundary = np.array(
+            [[0, 0], [0, 100], [100, 100], [100, 0]],
+            dtype=float,
+        )
+
+        # Hole: smaller square inside boundary
+        hole_size = 100 * hole_scale
+        hx = 100 * hole_offset_x
+        hy = 100 * hole_offset_y
+        # Ensure hole fits inside boundary
+        assume(hx + hole_size < 100 and hy + hole_size < 100)
+
+        hole = np.array(
+            [
+                [hy, hx],
+                [hy, hx + hole_size],
+                [hy + hole_size, hx + hole_size],
+                [hy + hole_size, hx],
+            ],
+            dtype=float,
+        )
+
+        shapes_data = [boundary, hole]
+        names = ["arena", "obstacle"]
+        roles = ["environment", "hole"]
+
+        _, env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
+
+        assert env_boundary is not None
+        assert len(holes) == 1
+
+        # Subtract holes and verify area
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        result = subtract_holes_from_boundary(env_boundary, holes)
+        expected_area = 100 * 100 - hole_size * hole_size
+        assert result.data.area == pytest.approx(expected_area, rel=1e-6)
+
+    @given(n_holes=st.integers(min_value=1, max_value=5))
+    @settings(max_examples=20)
+    def test_multiple_non_overlapping_holes(self, n_holes):
+        """Multiple non-overlapping holes are all extracted."""
+        # Boundary
+        boundary = np.array(
+            [[0, 0], [0, 1000], [1000, 1000], [1000, 0]],
+            dtype=float,
+        )
+
+        shapes_data = [boundary]
+        names = ["arena"]
+        roles = ["environment"]
+
+        # Add non-overlapping holes in a grid pattern
+        hole_size = 50
+        for i in range(n_holes):
+            # Place holes in a row, well-separated
+            x_offset = 100 + i * 150
+            y_offset = 100
+            hole = np.array(
+                [
+                    [y_offset, x_offset],
+                    [y_offset, x_offset + hole_size],
+                    [y_offset + hole_size, x_offset + hole_size],
+                    [y_offset + hole_size, x_offset],
+                ],
+                dtype=float,
+            )
+            shapes_data.append(hole)
+            names.append(f"hole_{i}")
+            roles.append("hole")
+
+        _, _env_boundary, holes = shapes_to_regions(shapes_data, names, roles)
+
+        assert len(holes) == n_holes
+
+
+class TestHypothesisCalibrationRoundTrip:
+    """Property-based tests for calibration coordinate transforms."""
+
+    @given(
+        scale=st.floats(min_value=0.01, max_value=10.0, allow_nan=False),
+        offset_x=st.floats(min_value=-100, max_value=100, allow_nan=False),
+        offset_y=st.floats(min_value=-100, max_value=100, allow_nan=False),
+        pts=st.lists(
+            st.tuples(
+                # Use reasonable coordinate values (not subnormal floats)
+                st.floats(min_value=1.0, max_value=500, allow_nan=False),
+                st.floats(min_value=1.0, max_value=500, allow_nan=False),
+            ),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    @settings(max_examples=50)
+    def test_round_trip_preserves_coordinates(self, scale, offset_x, offset_y, pts):
+        """Converting px→cm→px should preserve coordinates."""
+        matrix = np.array(
+            [
+                [scale, 0.0, offset_x],
+                [0.0, scale, offset_y],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        calibration = VideoCalibration(Affine2D(matrix), frame_size_px=(640, 480))
+
+        pts_px = np.array(pts, dtype=float)
+
+        # Round trip
+        pts_cm = calibration.transform_px_to_cm(pts_px)
+        pts_back = calibration.transform_cm_to_px(pts_cm)
+
+        # Use both relative and absolute tolerance for numerical stability
+        np.testing.assert_allclose(pts_back, pts_px, rtol=1e-10, atol=1e-10)

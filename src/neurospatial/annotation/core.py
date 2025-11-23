@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
+from neurospatial.annotation._types import MultipleBoundaryStrategy
+
 if TYPE_CHECKING:
     import napari
 
@@ -38,6 +40,7 @@ def annotate_video(
     mode: Literal["environment", "regions", "both"] = "both",
     bin_size: float | None = None,
     simplify_tolerance: float | None = None,
+    multiple_boundaries: MultipleBoundaryStrategy = "last",
 ) -> AnnotationResult:
     """
     Launch interactive napari annotation on a video frame.
@@ -71,6 +74,12 @@ def annotate_video(
         algorithm. Removes jagged edges from freehand drawing. Tolerance
         is in output units (cm if calibration provided, else pixels).
         Recommended: 1.0-2.0 for typical use cases.
+    multiple_boundaries : {"last", "first", "error"}, default="last"
+        How to handle multiple environment boundaries:
+
+        - "last": Use the last drawn boundary (default). A warning is emitted.
+        - "first": Use the first drawn boundary. A warning is emitted.
+        - "error": Raise ValueError if multiple boundaries are drawn.
 
     Returns
     -------
@@ -82,7 +91,9 @@ def annotate_video(
     Raises
     ------
     ValueError
-        If bin_size is not provided when mode requires environment creation.
+        If bin_size is not provided when mode requires environment creation,
+        or if ``multiple_boundaries="error"`` and multiple environment
+        boundaries are drawn.
     ImportError
         If napari is not installed.
 
@@ -221,7 +232,12 @@ def annotate_video(
 
     # Convert shapes to regions
     regions, env_boundary, holes = shapes_to_regions(
-        shapes_data, names, roles, calibration, simplify_tolerance
+        shapes_data,
+        names,
+        roles,
+        calibration,
+        simplify_tolerance,
+        multiple_boundaries=multiple_boundaries,
     )
 
     # Warn if holes exist but no environment boundary
