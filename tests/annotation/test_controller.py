@@ -402,3 +402,165 @@ class TestShapesLayerControllerSyncState:
         assert state.hole_count == 2
         assert state.region_count == 0
         viewer.close()
+
+
+@pytest.mark.gui
+class TestShapesLayerControllerUpdateFeatures:
+    """Tests for update_features_for_new_shapes()."""
+
+    def test_update_features_adds_role_and_name(self):
+        """New shapes get role and auto-generated name."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            features=rebuild_features([], []),
+        )
+        state = AnnotationModeState(role="region", region_count=0)
+
+        controller = ShapesLayerController(shapes, state)
+        # Set up feature_defaults (like widget does)
+        controller.apply_mode()
+
+        # Simulate napari adding a shape
+        shapes.add_polygons([np.array([[0, 0], [10, 0], [10, 10], [0, 10]])])
+
+        # Controller updates features
+        result = controller.update_features_for_new_shapes(0, name_override=None)
+
+        assert result.assigned_name == "region_1"
+        assert result.name_was_modified is False
+        assert result.last_role == "region"
+        assert len(shapes.features) == 1
+        assert shapes.features["role"].iloc[0] == "region"
+        assert state.region_count == 1
+        viewer.close()
+
+    def test_update_features_with_name_override(self):
+        """Name override is used instead of auto-generated name."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            features=rebuild_features([], []),
+        )
+        state = AnnotationModeState(role="region", region_count=0)
+
+        controller = ShapesLayerController(shapes, state)
+        controller.apply_mode()
+        shapes.add_polygons([np.array([[0, 0], [10, 0], [10, 10], [0, 10]])])
+
+        result = controller.update_features_for_new_shapes(0, name_override="goal")
+
+        assert result.assigned_name == "goal"
+        assert result.name_was_modified is False
+        assert result.last_role == "region"
+        viewer.close()
+
+    def test_update_features_handles_duplicate_name(self):
+        """Duplicate name gets suffix."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
+            features=rebuild_features(["region"], ["goal"]),
+        )
+        state = AnnotationModeState(role="region", region_count=1)
+
+        controller = ShapesLayerController(shapes, state)
+        controller.apply_mode()
+        shapes.add_polygons([np.array([[20, 0], [30, 0], [30, 10], [20, 10]])])
+
+        result = controller.update_features_for_new_shapes(1, name_override="goal")
+
+        assert result.assigned_name == "goal_2"
+        assert result.name_was_modified is True
+        viewer.close()
+
+    def test_update_features_no_change_when_no_new_shapes(self):
+        """Returns empty result when no shapes were added."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
+            features=rebuild_features(["region"], ["goal"]),
+        )
+        state = AnnotationModeState(role="region", region_count=1)
+
+        controller = ShapesLayerController(shapes, state)
+
+        # prev_count equals current count - no new shapes
+        result = controller.update_features_for_new_shapes(1, name_override=None)
+
+        assert result.assigned_name == ""
+        assert result.name_was_modified is False
+        assert result.last_role == ""
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestShapesLayerControllerEnvironmentCheck:
+    """Tests for has_existing_environment()."""
+
+    def test_has_existing_environment_true(self):
+        """Returns True when environment exists."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
+            features=rebuild_features(["environment"], ["arena"]),
+        )
+        state = AnnotationModeState(role="environment", environment_count=1)
+
+        controller = ShapesLayerController(shapes, state)
+
+        assert controller.has_existing_environment() is True
+        viewer.close()
+
+    def test_has_existing_environment_false(self):
+        """Returns False when no environment exists."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
+            features=rebuild_features(["region"], ["goal"]),
+        )
+        state = AnnotationModeState(role="region", region_count=1)
+
+        controller = ShapesLayerController(shapes, state)
+
+        assert controller.has_existing_environment() is False
+        viewer.close()
+
+    def test_has_existing_environment_empty_layer(self):
+        """Returns False for empty layer."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Test",
+            features=rebuild_features([], []),
+        )
+        state = AnnotationModeState(role="environment")
+
+        controller = ShapesLayerController(shapes, state)
+
+        assert controller.has_existing_environment() is False
+        viewer.close()

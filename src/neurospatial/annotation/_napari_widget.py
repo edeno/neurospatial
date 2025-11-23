@@ -23,7 +23,7 @@ from neurospatial.annotation._helpers import (
     rebuild_features,
     sync_face_colors_from_features,
 )
-from neurospatial.annotation._state import AnnotationModeState, make_unique_name
+from neurospatial.annotation._state import AnnotationModeState
 from neurospatial.annotation._types import Role
 
 if TYPE_CHECKING:
@@ -512,38 +512,28 @@ def create_annotation_widget(
                     viewer.status = "Shape removed (environment already exists)"
                     return  # Exit early - deferred deletion will handle cleanup
 
-            # Add entries for any new shapes (handles multiple additions)
-            name_was_modified = False
-            requested_name = None
-            while len(roles) < current_count:
-                roles.append(state.role)
-                # Use current name, or generate auto-name via state object
-                current_name = name_input.value.strip()
-                if not current_name:
-                    # Auto-generate name using state (handles role-specific naming)
-                    current_name = state.generate_auto_name(names)
-                # Ensure unique name to prevent overwrites in Regions container
-                requested_name = current_name
-                unique_name = make_unique_name(current_name, names)
-                if unique_name != requested_name:
-                    name_was_modified = True
-                names.append(unique_name)
-                # Track shape added in state for future auto-naming
-                state.record_shape_added(state.role)
+            # Use controller to update features for new shapes
+            controller = get_controller()
+            if controller is None:
+                return
 
-            # Use centralized feature builder
-            shapes.features = rebuild_features(roles, names)
-            sync_face_colors_from_features(shapes)
+            # Get name from input (controller handles auto-naming if empty)
+            name_override = name_input.value.strip() or None
+            result = controller.update_features_for_new_shapes(
+                _prev_shape_count[0], name_override=name_override
+            )
 
+            # Widget handles UI updates
             update_shapes_list()
             update_annotation_status()
 
-            # Status feedback for shape added (no auto-switch - user controls mode with M)
-            last_role = str(shapes.features["role"].iloc[-1])
-            last_name = str(shapes.features["name"].iloc[-1])
-            # Warn if name was modified due to duplicate
+            # Status feedback for shape added
+            last_name = result.assigned_name
+            last_role = result.last_role
             duplicate_note = (
-                f" ('{requested_name}' already exists)" if name_was_modified else ""
+                f" ('{name_override}' already exists)"
+                if result.name_was_modified
+                else ""
             )
             if last_role == "environment":
                 viewer.status = (
@@ -563,7 +553,6 @@ def create_annotation_widget(
 
             # Update name input to show the assigned name
             name_input.value = last_name
-            shapes.feature_defaults["name"] = last_name
 
         elif delta < 0:
             # Shape was deleted externally (e.g., via Delete key)
@@ -632,7 +621,7 @@ def create_annotation_widget(
 
 def setup_shapes_layer_for_annotation(
     viewer: napari.Viewer,
-    initial_mode: str = "environment",
+    initial_mode: Role = "environment",
 ) -> napari.layers.Shapes:
     """
     Create and configure a Shapes layer optimized for annotation.

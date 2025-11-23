@@ -308,9 +308,7 @@ class TestAnnotationWidgetIntegration:
     def test_duplicate_names_get_unique_suffix(self):
         """Adding shapes with duplicate names should auto-generate unique names."""
         pytest.importorskip("napari")
-        from neurospatial.annotation._napari_widget import (
-            make_unique_name,
-        )
+        from neurospatial.annotation._state import make_unique_name
 
         # Test the make_unique_name function directly (unit test approach)
         # This is more reliable than testing async widget behavior
@@ -333,7 +331,7 @@ class TestAnnotationWidgetIntegration:
     def test_make_unique_name_in_rebuild_features(self):
         """rebuild_features should create proper categorical DataFrame."""
         pytest.importorskip("napari")
-        from neurospatial.annotation._napari_widget import rebuild_features
+        from neurospatial.annotation._helpers import rebuild_features
 
         # Test with mixed roles
         features = rebuild_features(

@@ -14,7 +14,7 @@ UI-specific concerns (status messages, list updates, dialogs).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from neurospatial.annotation._helpers import (
     ROLE_COLORS,
@@ -26,6 +26,24 @@ from neurospatial.annotation._types import Role
 
 if TYPE_CHECKING:
     import napari
+
+
+class UpdateFeaturesResult(NamedTuple):
+    """Result from update_features_for_new_shapes().
+
+    Attributes
+    ----------
+    assigned_name : str
+        The name assigned to the last new shape.
+    name_was_modified : bool
+        True if name was changed due to duplicate.
+    last_role : str
+        The role of the last new shape (or "" if no shapes added).
+    """
+
+    assigned_name: str
+    name_was_modified: bool
+    last_role: str
 
 
 class ShapesLayerController:
@@ -110,6 +128,17 @@ class ShapesLayerController:
             return 0
         return len(self.shapes.data)
 
+    def has_existing_environment(self) -> bool:
+        """Check if an environment shape already exists.
+
+        Returns
+        -------
+        bool
+            True if at least one shape has role "environment".
+        """
+        roles = self.get_existing_roles()
+        return any(r == "environment" for r in roles)
+
     def sync_state_from_layer(self) -> None:
         """
         Sync state counts from current layer data.
@@ -123,7 +152,7 @@ class ShapesLayerController:
         self,
         prev_count: int,
         name_override: str | None = None,
-    ) -> tuple[str, bool]:
+    ) -> UpdateFeaturesResult:
         """
         Update features for newly added shapes.
 
@@ -136,36 +165,35 @@ class ShapesLayerController:
 
         Returns
         -------
-        assigned_name : str
-            The name that was assigned to the last new shape.
-        name_was_modified : bool
-            True if name was changed due to duplicate.
+        UpdateFeaturesResult
+            Named tuple with assigned_name, name_was_modified, and last_role.
         """
         current_count = self.shape_count()
         delta = current_count - prev_count
 
         if delta <= 0:
-            return "", False
+            return UpdateFeaturesResult("", False, "")
 
-        # Get current features
+        # Get current features (napari may have auto-populated with defaults)
         features_len = (
             len(self.shapes.features) if self.shapes.features is not None else 0
         )
-        roles: list[Role] = (
-            [cast("Role", str(r)) for r in self.shapes.features["role"]]
-            if features_len > 0
-            else []
-        )
-        names = (
-            [str(n) for n in self.shapes.features["name"]] if features_len > 0 else []
-        )
+
+        # Keep existing features (for shapes that existed before)
+        # Only read up to prev_count to avoid auto-populated placeholder values
+        roles: list[Role] = []
+        names: list[str] = []
+        if features_len > 0:
+            for i in range(min(prev_count, features_len)):
+                roles.append(cast("Role", str(self.shapes.features["role"].iloc[i])))
+                names.append(str(self.shapes.features["name"].iloc[i]))
 
         # Track if name was modified
         name_was_modified = False
         assigned_name = ""
 
-        # Add entries for new shapes
-        while len(roles) < current_count:
+        # Add entries for new shapes (from prev_count to current_count)
+        for _ in range(delta):
             roles.append(self.state.role)
 
             # Determine name
@@ -192,7 +220,10 @@ class ShapesLayerController:
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
 
-        return assigned_name, name_was_modified
+        # Get the role of the last shape added
+        last_role = str(self.state.role)
+
+        return UpdateFeaturesResult(assigned_name, name_was_modified, last_role)
 
     def delete_shapes_by_indices(self, indices_to_delete: set[int]) -> int:
         """
