@@ -414,6 +414,10 @@ def create_annotation_widget(
 
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     apply_to_selected()
+                    # Clear selection after naming - prevents accidental edits
+                    shapes = get_shapes()
+                    if shapes is not None:
+                        shapes.selected_data = set()
                     return True  # Consume the event, don't propagate
             return False  # Let other events through
 
