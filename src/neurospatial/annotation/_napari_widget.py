@@ -413,15 +413,15 @@ def create_annotation_widget(
 
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
                     apply_to_selected()
-                    # Deselect shape after naming with delay (napari may re-select)
-                    from qtpy.QtCore import QTimer
+                    # Flush Qt event queue to let napari complete its internal
+                    # state management, then clear selection. Without this flush,
+                    # napari may re-select the shape after we clear it.
+                    from qtpy.QtWidgets import QApplication
 
-                    def clear_selection():
-                        shapes = get_shapes()
-                        if shapes is not None:
-                            shapes.selected_data = set()
-
-                    QTimer.singleShot(50, clear_selection)
+                    QApplication.processEvents()
+                    shapes = get_shapes()
+                    if shapes is not None:
+                        shapes.selected_data = set()
                     return True  # Consume the event, don't propagate
             return False  # Let other events through
 
