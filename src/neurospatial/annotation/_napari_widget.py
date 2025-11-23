@@ -150,16 +150,16 @@ def create_annotation_widget(
             "1. Draw environment boundary (cyan)\n"
             "2. Press M → add holes (red) if needed\n"
             "3. Press M → draw named regions (yellow)\n"
-            "4. Escape or Save and Close when finished\n"
+            "4. Save and Close when finished\n"
             "\n"
             "─── DRAWING ───\n"
             "• Click points to draw polygon, ENTER to finish\n"
-            "• Unnamed shapes auto-named: hole_1, region_1, ...\n"
+            "• Name your polygon in the input field below\n"
             "\n"
             "─── SHORTCUTS ───\n"
             "• M = cycle modes (environment → hole → region)\n"
-            "• Delete = remove shape\n"
-            "• Escape = save and close"
+            "• Delete = remove shape\n\n"
+            "Note: Holes are subtracted from the environment boundary.\n"
         )
     )
 
