@@ -64,3 +64,17 @@ NWB import/export utilities
 decoding module (bayesian, ica, etc.)
 
 Need to consider scalability and performance for large datasets (many neurons, long sessions).
+
+Moran’s I on firing rate maps
+
+Ripley’s K for spike patterns accounting for occupancy
+
+Spatio-temporal K-functions
+
+Variogram estimation for rate maps
+
+GLM-based “residual spatial structure” tests
+
+Point-process co-clustering (spikes vs reward events)
+
+Baddeley’s inhomogeneous K estimator
