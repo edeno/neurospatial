@@ -597,6 +597,82 @@ class TestReadPose:
         assert bodyparts["b"].shape == (50, 3)
         assert timestamps_out.shape == (50,)
 
+    def test_linked_timestamps(self, empty_nwb):
+        """Test reading pose with linked timestamps (common pattern from DeepLabCut).
+
+        In ndx-pose, subsequent series can reference timestamps from the first
+        series rather than duplicating them. This tests that pattern.
+        """
+        from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+        from neurospatial.nwb import read_pose
+
+        nwbfile = empty_nwb
+
+        behavior_module = nwbfile.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+
+        skeleton = Skeleton(
+            name="skel",
+            nodes=["a", "b", "c"],
+            edges=np.array([[0, 1], [1, 2]], dtype=np.uint8),
+        )
+
+        timestamps = np.arange(100) / 30.0
+
+        # First series has explicit timestamps
+        series_a = PoseEstimationSeries(
+            name="a",
+            data=np.random.rand(100, 2),
+            confidence=np.ones(100),
+            timestamps=timestamps,  # Explicit timestamps
+            reference_frame="test",
+            unit="cm",
+        )
+
+        # Subsequent series link to the first series (common pattern)
+        # In pynwb, this creates a link rather than duplicating data
+        series_b = PoseEstimationSeries(
+            name="b",
+            data=np.random.rand(100, 2),
+            confidence=np.ones(100),
+            timestamps=series_a,  # Link to series_a timestamps
+            reference_frame="test",
+            unit="cm",
+        )
+
+        series_c = PoseEstimationSeries(
+            name="c",
+            data=np.random.rand(100, 2),
+            confidence=np.ones(100),
+            timestamps=series_a,  # Link to series_a timestamps
+            reference_frame="test",
+            unit="cm",
+        )
+
+        pose = PoseEstimation(
+            name="PoseEstimation",
+            pose_estimation_series=[series_a, series_b, series_c],
+            skeleton=skeleton,
+            source_software="Test",
+        )
+        behavior_module.add(pose)
+
+        nwbfile.create_processing_module(
+            name="Skeletons", description="Skeleton definitions"
+        )
+        nwbfile.processing["Skeletons"].add(skeleton)
+
+        bodyparts, timestamps_out, _skeleton = read_pose(nwbfile)
+
+        # All bodyparts should be present
+        assert set(bodyparts.keys()) == {"a", "b", "c"}
+
+        # Timestamps should be correctly extracted (from first series alphabetically)
+        assert timestamps_out.shape == (100,)
+        np.testing.assert_array_almost_equal(timestamps_out, timestamps)
+
 
 class TestReadPoseImportError:
     """Tests for ndx-pose import error handling.
