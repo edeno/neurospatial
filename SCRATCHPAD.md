@@ -6,13 +6,34 @@
 
 ## Current Status
 
-- **Active Task**: M1.3.1 - Events reading function
+- **Active Task**: M1.4.1 - Position overlay factory
 - **Blocker**: None
-- **Next Action**: Write tests for `read_events()` in `tests/nwb/test_events.py`
+- **Next Action**: Write tests for `position_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.3.1 Complete - Events Reading Function
+
+- Created 11 tests for `read_events()` in `tests/nwb/test_events.py`
+- Tests cover:
+  - Basic EventsTable reading (data and timestamps)
+  - Data integrity verification against original NWB data
+  - Explicit processing_module parameter
+  - Error handling: EventsTable not found, module not found, wrong type (TypeError)
+  - DataFrame output with timestamp column
+  - Additional columns preserved (direction, duration)
+  - Empty EventsTable handling
+  - String columns preservation
+  - ImportError for missing ndx-events
+- Implemented `read_events()` in `_events.py`:
+  - Explicit table naming (no auto-discovery per design decision)
+  - Type validation using `isinstance()` for EventsTable
+  - Debug logging for consistency with other NWB modules
+  - Returns pandas DataFrame with timestamp and all columns
+- Code review: APPROVED
+- All 11 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.2.2 Complete - Skeleton Integration
 

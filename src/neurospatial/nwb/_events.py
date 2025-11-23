@@ -46,6 +46,8 @@ def read_events(
     ------
     KeyError
         If EventsTable not found in specified location.
+    TypeError
+        If the specified table is not an EventsTable.
     ImportError
         If ndx-events is not installed.
 
@@ -57,7 +59,59 @@ def read_events(
     ...     laps = read_events(nwbfile, "laps")
     ...     print(f"Found {len(laps)} lap events")
     """
-    raise NotImplementedError("read_events not yet implemented")
+    from ndx_events import EventsTable as EventsTableType
+
+    from neurospatial.nwb._core import _require_ndx_events, logger
+
+    # Verify ndx-events is installed (for type validation)
+    _require_ndx_events()
+
+    # Check if processing module exists
+    if processing_module not in nwbfile.processing:
+        raise KeyError(
+            f"Processing module '{processing_module}' not found in NWB file. "
+            f"Available modules: {list(nwbfile.processing.keys())}"
+        )
+
+    module = nwbfile.processing[processing_module]
+
+    # Check if table exists in module
+    if table_name not in module.data_interfaces:
+        available = list(module.data_interfaces.keys())
+        raise KeyError(
+            f"EventsTable '{table_name}' not found in processing/{processing_module}. "
+            f"Available tables: {available}"
+        )
+
+    events_table = module.data_interfaces[table_name]
+
+    # Validate it's an EventsTable
+    if not isinstance(events_table, EventsTableType):
+        raise TypeError(
+            f"'{table_name}' is not an EventsTable (got {type(events_table).__name__}). "
+            "Use read_events() only for EventsTable containers."
+        )
+
+    logger.debug(
+        "Reading EventsTable '%s' from processing/%s", table_name, processing_module
+    )
+
+    # Convert to DataFrame
+    # EventsTable extends DynamicTable which has to_dataframe() method
+    df = events_table.to_dataframe()
+
+    # Ensure timestamp column is present (EventsTable always has it)
+    # The to_dataframe() includes the index, but timestamp is a column in EventsTable
+    # Reset index to get id as a column if needed, but we primarily need timestamp
+    if "timestamp" not in df.columns:
+        # In some cases, timestamp might be stored differently
+        # EventsTable should always have timestamp as a column
+        raise KeyError(
+            f"EventsTable '{table_name}' does not have a 'timestamp' column. "
+            "This may not be a valid EventsTable."
+        )
+
+    return df
 
 
 def write_laps(

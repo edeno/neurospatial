@@ -94,17 +94,17 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M1.3 Events Reading
 
-- [ ] **M1.3.1** Events reading function
-  - [ ] Write tests for `read_events()` in `tests/nwb/test_events.py`
-    - [ ] Test basic EventsTable reading
-    - [ ] Test with explicit processing_module parameter
-    - [ ] Test error when EventsTable not found (KeyError)
-    - [ ] Test ImportError when ndx-events not installed
-    - [ ] Test DataFrame output with timestamp column
-    - [ ] Test additional columns preserved
-  - [ ] Implement `read_events()` in `_events.py`
-  - [ ] Return DataFrame with timestamps and event columns
-  - [ ] Verify lazy import pattern for ndx-events
+- [x] **M1.3.1** Events reading function
+  - [x] Write tests for `read_events()` in `tests/nwb/test_events.py`
+    - [x] Test basic EventsTable reading
+    - [x] Test with explicit processing_module parameter
+    - [x] Test error when EventsTable not found (KeyError)
+    - [x] Test ImportError when ndx-events not installed
+    - [x] Test DataFrame output with timestamp column
+    - [x] Test additional columns preserved
+  - [x] Implement `read_events()` in `_events.py`
+  - [x] Return DataFrame with timestamps and event columns
+  - [x] Verify lazy import pattern for ndx-events
 
 ### M1.4 Overlay Factory Functions
 
