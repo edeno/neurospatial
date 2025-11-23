@@ -6,13 +6,35 @@
 
 ## Current Status
 
-- **Active Task**: M1.2.1 - Pose reading function
+- **Active Task**: M1.2.2 - Skeleton integration
 - **Blocker**: None
-- **Next Action**: Write tests for `read_pose()` in `tests/nwb/test_pose.py`
+- **Next Action**: Verify existing `Skeleton.from_ndx_pose()` works with read data
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.2.1 Complete - Pose Reading Function
+
+- Created 13 tests for `read_pose()` in `tests/nwb/test_pose.py`
+- Tests cover:
+  - Basic PoseEstimation reading (data, timestamps, skeleton)
+  - Data integrity verification against original NWB data
+  - Explicit pose_estimation_name parameter
+  - Error handling: no PoseEstimation found, named pose not found
+  - Skeleton extraction from PoseEstimation (using `Skeleton.from_ndx_pose()`)
+  - Multiple bodyparts conversion to dict
+  - Multiple PoseEstimation containers selection (alphabetical, INFO log)
+  - Priority behavior (behavior module over others)
+  - Rate-based timestamp computation (with and without starting_time offset)
+  - 3D pose data support
+- Implemented `read_pose()` in `_pose.py`:
+  - Uses type-based container discovery via `_find_containers_by_type()`
+  - Converts ndx-pose Skeleton to neurospatial Skeleton
+  - Returns tuple: (bodyparts dict, timestamps, skeleton)
+  - Proper error handling with ValueError for empty containers
+- Code review: APPROVED
+- All 13 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.1.3 Complete - Head Direction Reading Function
 

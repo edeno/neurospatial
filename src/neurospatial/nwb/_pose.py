@@ -7,10 +7,12 @@ ndx-pose containers, including bodypart trajectories and skeleton definitions.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial.nwb._core import _find_containers_by_type, _require_ndx_pose, logger
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
@@ -58,4 +60,125 @@ def read_pose(
     ...     bodyparts, timestamps, skeleton = read_pose(nwbfile)
     ...     print(f"Found {len(bodyparts)} bodyparts")
     """
-    raise NotImplementedError("read_pose not yet implemented")
+    _require_ndx_pose()
+    from ndx_pose import PoseEstimation as PoseEstimationType
+
+    from neurospatial.animation.skeleton import Skeleton as NSSkeleton
+
+    # Find PoseEstimation container
+    pose_estimation = _get_pose_estimation_container(
+        nwbfile, PoseEstimationType, pose_estimation_name
+    )
+
+    # Extract bodyparts as dict
+    bodyparts: dict[str, NDArray[np.float64]] = {}
+    timestamps: NDArray[np.float64] | None = None
+
+    for series_name in sorted(pose_estimation.pose_estimation_series.keys()):
+        series = pose_estimation.pose_estimation_series[series_name]
+        bodyparts[series_name] = np.asarray(series.data[:], dtype=np.float64)
+
+        # Get timestamps from the first series (they should all be the same)
+        if timestamps is None:
+            timestamps = _get_timestamps(series)
+
+    if timestamps is None:
+        raise ValueError("PoseEstimation container has no pose estimation series")
+
+    # Convert ndx-pose Skeleton to neurospatial Skeleton
+    skeleton = NSSkeleton.from_ndx_pose(pose_estimation.skeleton)
+
+    return bodyparts, timestamps, skeleton
+
+
+def _get_pose_estimation_container(
+    nwbfile: NWBFile,
+    target_type: type,
+    pose_estimation_name: str | None,
+) -> Any:
+    """
+    Get a PoseEstimation container from NWB file.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to search.
+    target_type : type
+        The PoseEstimation type class.
+    pose_estimation_name : str, optional
+        If provided, look for this specific PoseEstimation by name.
+
+    Returns
+    -------
+    PoseEstimation
+        The PoseEstimation container.
+
+    Raises
+    ------
+    KeyError
+        If no container found or if specified name doesn't exist.
+    """
+    # Find all PoseEstimation containers using type-based search
+    found = _find_containers_by_type(nwbfile, target_type)
+
+    if not found:
+        searched_locations = ["processing/*"]
+        raise KeyError(
+            f"No PoseEstimation data found in NWB file. Searched: {searched_locations}"
+        )
+
+    if pose_estimation_name is not None:
+        # Look for specific name
+        for path, container in found:
+            if container.name == pose_estimation_name:
+                logger.debug(
+                    "Found PoseEstimation '%s' at %s", pose_estimation_name, path
+                )
+                return container
+        # Not found - raise with available names
+        available_names = [container.name for _, container in found]
+        raise KeyError(
+            f"PoseEstimation '{pose_estimation_name}' not found. "
+            f"Available: {sorted(available_names)}"
+        )
+
+    # Auto-select: use first by priority (behavior module first, then alphabetically)
+    path, container = found[0]
+    if len(found) > 1:
+        all_names = [c.name for _, c in found]
+        logger.info(
+            "Multiple PoseEstimation containers found: %s. Using '%s'",
+            all_names,
+            container.name,
+        )
+    else:
+        logger.debug("Found PoseEstimation at %s", path)
+
+    return container
+
+
+def _get_timestamps(series: Any) -> NDArray[np.float64]:
+    """
+    Get timestamps from a PoseEstimationSeries.
+
+    If explicit timestamps are not available, computes them from rate and starting_time.
+
+    Parameters
+    ----------
+    series : PoseEstimationSeries
+        The pose estimation series object.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Timestamps in seconds.
+    """
+    if series.timestamps is not None:
+        return np.asarray(series.timestamps[:], dtype=np.float64)
+
+    # Compute from rate
+    n_samples = len(series.data)
+    starting_time = float(series.starting_time or 0.0)
+    rate = float(series.rate)
+    timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
+    return np.asarray(timestamps, dtype=np.float64)

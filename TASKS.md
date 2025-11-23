@@ -75,18 +75,18 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M1.2 Pose/Skeleton Reading
 
-- [ ] **M1.2.1** Pose reading function
-  - [ ] Write tests for `read_pose()` in `tests/nwb/test_pose.py`
-    - [ ] Test basic PoseEstimation reading
-    - [ ] Test with explicit pose_estimation_name parameter
-    - [ ] Test error when no PoseEstimation found (KeyError)
-    - [ ] Test error when named pose not found (KeyError with available list)
-    - [ ] Test ImportError when ndx-pose not installed
-    - [ ] Test Skeleton extraction from PoseEstimation
-    - [ ] Test multiple bodyparts conversion to dict
-  - [ ] Implement `read_pose()` in `_pose.py`
-  - [ ] Return tuple: (bodyparts: dict[str, NDArray], timestamps: NDArray, skeleton: Skeleton)
-  - [ ] Verify lazy import pattern for ndx-pose
+- [x] **M1.2.1** Pose reading function
+  - [x] Write tests for `read_pose()` in `tests/nwb/test_pose.py`
+    - [x] Test basic PoseEstimation reading
+    - [x] Test with explicit pose_estimation_name parameter
+    - [x] Test error when no PoseEstimation found (KeyError)
+    - [x] Test error when named pose not found (KeyError with available list)
+    - [x] Test ImportError when ndx-pose not installed
+    - [x] Test Skeleton extraction from PoseEstimation
+    - [x] Test multiple bodyparts conversion to dict
+  - [x] Implement `read_pose()` in `_pose.py`
+  - [x] Return tuple: (bodyparts: dict[str, NDArray], timestamps: NDArray, skeleton: Skeleton)
+  - [x] Verify lazy import pattern for ndx-pose
 
 - [ ] **M1.2.2** Skeleton integration
   - [ ] Verify existing `Skeleton.from_ndx_pose()` works with read data
