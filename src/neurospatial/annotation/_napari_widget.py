@@ -513,7 +513,12 @@ def get_annotation_data(
         names = list(props.get("name", [f"region_{i}" for i in range(len(data))]))
         roles = list(props.get("role", ["region"] * len(data)))
 
-    # Ensure lists match data length
+    # Ensure lists match data length exactly
+    # Truncate if features have extra entries (can happen with napari sync issues)
+    names = names[: len(data)]
+    roles = roles[: len(data)]
+
+    # Pad if features are missing entries
     while len(names) < len(data):
         names.append(f"region_{len(names)}")
     while len(roles) < len(data):
