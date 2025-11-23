@@ -15,12 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.animation.overlays import (
-        BodypartOverlay,
-        HeadDirectionOverlay,
-        PositionOverlay,
-        VideoOverlay,
-    )
+    from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 
@@ -66,10 +61,7 @@ def animate_fields(
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
-    overlays: list[
-        PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
-    ]
-    | None = None,
+    overlays: list[OverlayProtocol] | None = None,
     frame_times: NDArray[np.float64] | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,

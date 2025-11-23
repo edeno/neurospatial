@@ -6,11 +6,12 @@ HeadDirectionOverlay) and their validation/conversion pipeline.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
+from numpy.typing import NDArray
 
 from neurospatial.animation.overlays import (
     BodypartOverlay,
@@ -1680,6 +1681,82 @@ class TestConvertOverlaysToData:
         assert not np.isnan(pos_data.data[1]).all()  # t=1.0 OK
         assert not np.isnan(pos_data.data[2]).all()  # t=2.0 OK
         assert np.isnan(pos_data.data[3]).all()  # t=3.0 > 2.0
+
+    def test_custom_overlay_protocol_implementation(self, mock_env):
+        """Test that custom overlays implementing OverlayProtocol work correctly."""
+        from dataclasses import dataclass
+
+        from neurospatial.animation.overlays import (
+            OverlayProtocol,
+            PositionData,
+            _convert_overlays_to_data,
+        )
+
+        @dataclass
+        class CustomOverlay:
+            """Custom overlay implementing OverlayProtocol."""
+
+            data: NDArray[np.float64]
+            custom_color: str = "green"
+            times: NDArray[np.float64] | None = None
+            interp: Literal["linear", "nearest"] = "linear"
+
+            def convert_to_data(
+                self,
+                frame_times: NDArray[np.float64],
+                n_frames: int,
+                env,
+            ) -> PositionData:
+                """Convert to PositionData."""
+                return PositionData(
+                    data=self.data,
+                    color=self.custom_color,
+                    size=5.0,
+                    trail_length=None,
+                )
+
+        # Create custom overlay
+        custom = CustomOverlay(
+            data=np.array([[1.0, 2.0], [3.0, 4.0]]),
+            custom_color="purple",
+        )
+
+        # Verify it satisfies the protocol
+        assert isinstance(custom, OverlayProtocol)
+
+        # Convert through pipeline
+        overlay_data = _convert_overlays_to_data(
+            overlays=[custom],
+            frame_times=np.array([0.0, 1.0]),
+            n_frames=2,
+            env=mock_env,
+        )
+
+        # Verify conversion worked
+        assert len(overlay_data.positions) == 1
+        pos_data = overlay_data.positions[0]
+        assert pos_data.color == "purple"
+        assert pos_data.size == 5.0
+        assert_array_equal(pos_data.data, custom.data)
+
+    def test_overlay_without_protocol_raises_typeerror(self, mock_env):
+        """Test that objects not implementing OverlayProtocol raise TypeError."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        class NotAnOverlay:
+            """Class that does not implement OverlayProtocol."""
+
+            pass
+
+        not_overlay = NotAnOverlay()
+
+        with pytest.raises(TypeError, match="must implement OverlayProtocol"):
+            _convert_overlays_to_data(
+                overlays=[not_overlay],  # type: ignore
+                frame_times=np.array([0.0, 1.0]),
+                n_frames=2,
+                env=mock_env,
+            )
 
 
 # =============================================================================

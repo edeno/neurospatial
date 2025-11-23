@@ -34,12 +34,7 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
-    from neurospatial.animation.overlays import (
-        BodypartOverlay,
-        HeadDirectionOverlay,
-        PositionOverlay,
-        VideoOverlay,
-    )
+    from neurospatial.animation.overlays import OverlayProtocol
 
 
 class EnvironmentVisualization:
@@ -479,10 +474,7 @@ class EnvironmentVisualization:
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
-        overlays: list[
-            PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
-        ]
-        | None = None,
+        overlays: list[OverlayProtocol] | None = None,
         frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,

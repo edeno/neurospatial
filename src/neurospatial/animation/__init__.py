@@ -26,12 +26,28 @@ VideoReaderProtocol : Protocol
     Interface for video readers (for type checking custom implementations)
 calibrate_video : function
     Convenience function to calibrate video to environment coordinates
+
+Extensibility
+-------------
+OverlayProtocol : Protocol
+    Protocol for creating custom overlays. Implement ``times``, ``interp``,
+    and ``convert_to_data()`` to create custom overlay types.
+PositionData, BodypartData, HeadDirectionData, VideoData : dataclass
+    Internal data containers returned by ``convert_to_data()``. Custom overlays
+    should return one of these types.
 """
 
 from neurospatial.animation._video_io import VideoReaderProtocol
 from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.core import subsample_frames
-from neurospatial.animation.overlays import VideoOverlay
+from neurospatial.animation.overlays import (
+    BodypartData,
+    HeadDirectionData,
+    OverlayProtocol,
+    PositionData,
+    VideoData,
+    VideoOverlay,
+)
 from neurospatial.animation.skeleton import (
     MOUSE_SKELETON,
     RAT_SKELETON,
@@ -44,8 +60,13 @@ __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
+    "BodypartData",
+    "HeadDirectionData",
+    "OverlayProtocol",
+    "PositionData",
     "Skeleton",
     "VideoCalibration",
+    "VideoData",
     "VideoOverlay",
     "VideoReaderProtocol",
     "calibrate_video",

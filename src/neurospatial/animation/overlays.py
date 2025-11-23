@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -38,6 +38,112 @@ if TYPE_CHECKING:
     from neurospatial.animation._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
     from neurospatial.transforms import Affine2D, VideoCalibration
+
+
+# =============================================================================
+# Overlay Protocol: Enables custom overlay extensions
+# =============================================================================
+
+
+@runtime_checkable
+class OverlayProtocol(Protocol):
+    """Protocol for animation overlays, enabling custom extensions.
+
+    Users can create custom overlays by implementing this protocol.
+    The ``convert_to_data()`` method is called during animation to transform
+    user-facing overlay configuration into internal data representation.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64] | None
+        Timestamps for overlay data samples, in seconds. If None, samples are
+        assumed uniformly spaced at the animation fps rate.
+    interp : {"linear", "nearest"}
+        Interpolation method for aligning overlay to animation frames.
+
+    See Also
+    --------
+    PositionOverlay : Built-in position trajectory overlay
+    BodypartOverlay : Built-in pose tracking overlay
+    HeadDirectionOverlay : Built-in heading visualization overlay
+    VideoOverlay : Built-in video background overlay
+
+    Examples
+    --------
+    Creating a custom overlay::
+
+        from dataclasses import dataclass
+        import numpy as np
+        from neurospatial.animation import PositionData
+
+
+        @dataclass
+        class MyCustomOverlay:
+            data: NDArray[np.float64]
+            times: NDArray[np.float64] | None = None
+            interp: Literal["linear", "nearest"] = "linear"
+            custom_attr: str = "default"
+
+            def convert_to_data(
+                self,
+                frame_times: NDArray[np.float64],
+                n_frames: int,
+                env: Any,
+            ) -> PositionData:
+                # If times provided, interpolate to frame times
+                if self.times is not None:
+                    # Use numpy.interp for each dimension
+                    aligned = np.column_stack(
+                        [
+                            np.interp(frame_times, self.times, self.data[:, d])
+                            for d in range(self.data.shape[1])
+                        ]
+                    )
+                else:
+                    aligned = self.data
+
+                return PositionData(
+                    data=aligned,
+                    color="green",
+                    size=10.0,
+                    trail_length=None,
+                )
+    """
+
+    times: NDArray[np.float64] | None
+    interp: Literal["linear", "nearest"]
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> PositionData | BodypartData | HeadDirectionData | VideoData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        PositionData | BodypartData | HeadDirectionData | VideoData
+            Internal data container aligned to frame times.
+
+        Notes
+        -----
+        Implementations should:
+        1. Validate overlay data (finite values, correct shape)
+        2. Align data to frame_times via interpolation if times provided
+        3. Return appropriate internal data type
+        """
+        ...
+
 
 # =============================================================================
 # Public API: User-facing overlay dataclasses
@@ -147,6 +253,57 @@ class PositionOverlay:
     size: float = 10.0
     trail_length: int | None = None
     interp: Literal["linear", "nearest"] = "linear"
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> PositionData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        PositionData
+            Internal data container aligned to frame times.
+        """
+        # Validate position data
+        _validate_finite_values(self.data, name="PositionOverlay.data")
+        _validate_shape(self.data, env.n_dims, name="PositionOverlay.data")
+
+        # Align to frame times (validates times if provided)
+        aligned_data = _align_to_frame_times(
+            self.data,
+            self.times,
+            frame_times,
+            n_frames,
+            self.interp,
+            name="PositionOverlay",
+        )
+
+        # Validate bounds (warning only)
+        _validate_bounds(
+            aligned_data,
+            env.dimension_ranges,
+            name="PositionOverlay.data",
+            threshold=0.1,
+        )
+
+        return PositionData(
+            data=aligned_data,
+            color=self.color,
+            size=self.size,
+            trail_length=self.trail_length,
+        )
 
 
 @dataclass
@@ -271,6 +428,72 @@ class BodypartOverlay:
     colors: dict[str, str] | None = None
     interp: Literal["linear", "nearest"] = "linear"
 
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> BodypartData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        BodypartData
+            Internal data container aligned to frame times.
+        """
+        # Validate skeleton consistency first
+        bodypart_names = list(self.data.keys())
+        _validate_skeleton_consistency(
+            self.skeleton, bodypart_names, name="BodypartOverlay.skeleton"
+        )
+
+        # Align each bodypart separately
+        aligned_bodyparts: dict[str, NDArray[np.float64]] = {}
+
+        for part_name, part_data in self.data.items():
+            # Validate each bodypart
+            _validate_finite_values(
+                part_data, name=f"BodypartOverlay.data['{part_name}']"
+            )
+            _validate_shape(
+                part_data, env.n_dims, name=f"BodypartOverlay.data['{part_name}']"
+            )
+
+            # Align to frame times (validates times if provided)
+            aligned_part = _align_to_frame_times(
+                part_data,
+                self.times,
+                frame_times,
+                n_frames,
+                self.interp,
+                name=f"BodypartOverlay.data['{part_name}']",
+            )
+
+            # Validate bounds (warning only)
+            _validate_bounds(
+                aligned_part,
+                env.dimension_ranges,
+                name=f"BodypartOverlay.data['{part_name}']",
+                threshold=0.1,
+            )
+
+            aligned_bodyparts[part_name] = aligned_part
+
+        return BodypartData(
+            bodyparts=aligned_bodyparts,
+            skeleton=self.skeleton,
+            colors=self.colors,
+        )
+
 
 @dataclass
 class HeadDirectionOverlay:
@@ -386,6 +609,52 @@ class HeadDirectionOverlay:
     length: float = 0.25
     width: float = 1.0
     interp: Literal["linear", "nearest"] = "linear"
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> HeadDirectionData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        HeadDirectionData
+            Internal data container aligned to frame times.
+        """
+        # Validate head direction data
+        _validate_finite_values(self.data, name="HeadDirectionOverlay.data")
+
+        # For head direction, validate shape only if 2D (vectors)
+        if self.data.ndim == 2:
+            _validate_shape(self.data, env.n_dims, name="HeadDirectionOverlay.data")
+
+        # Align to frame times (validates times if provided)
+        aligned_data = _align_to_frame_times(
+            self.data,
+            self.times,
+            frame_times,
+            n_frames,
+            self.interp,
+            name="HeadDirectionOverlay",
+        )
+
+        return HeadDirectionData(
+            data=aligned_data,
+            color=self.color,
+            length=self.length,
+            width=self.width,
+        )
 
 
 @dataclass
@@ -612,6 +881,109 @@ class VideoOverlay:
                 f"WHY: Video pixels are 0-255 values stored as unsigned 8-bit integers.\n"
                 f"HOW: Convert with arr.astype(np.uint8) if values are in 0-255 range."
             )
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> VideoData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        VideoData
+            Internal data container aligned to frame times.
+        """
+        import warnings
+
+        # Validate environment supports video overlays
+        _validate_video_env(env)
+
+        # Warn if no calibration provided
+        if self.calibration is None:
+            warnings.warn(
+                "VideoOverlay has no calibration. Video will be scaled to fit "
+                "environment bounds but may not align accurately with spatial data. "
+                "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
+                "or calibrate_from_landmarks().",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        # Determine video source: array or file path
+        if isinstance(self.source, np.ndarray):
+            # Array source - use directly as reader
+            reader: NDArray[np.uint8] | Any = self.source
+            n_video_frames = self.source.shape[0]
+        else:
+            # File path - create VideoReader
+            from neurospatial.animation._video_io import VideoReader
+
+            reader = VideoReader(
+                self.source,
+                cache_size=100,
+                downsample=self.downsample,
+                crop=self.crop,
+            )
+            n_video_frames = reader.n_frames
+
+        # Compute frame index mapping
+        if self.times is not None:
+            # Video has explicit times - map animation frames to video frames
+            _validate_monotonic_time(self.times, name="VideoOverlay.times")
+
+            if len(self.times) != n_video_frames:
+                raise ValueError(
+                    f"VideoOverlay.times length ({len(self.times)}) does not "
+                    f"match number of video frames ({n_video_frames})."
+                )
+
+            # Find nearest video frame for each animation frame
+            frame_indices = _find_nearest_indices(self.times, frame_times)
+        else:
+            # No times provided - assume 1:1 mapping
+            if n_video_frames != n_frames:
+                raise ValueError(
+                    f"VideoOverlay source has {n_video_frames} frames but "
+                    f"animation has {n_frames} frames. When times=None, "
+                    f"video frames must match animation frames."
+                )
+            frame_indices = np.arange(n_frames, dtype=np.int_)
+
+        # Compute environment bounds for transform
+        env_dim_ranges = env.dimension_ranges
+        x_range = env_dim_ranges[0]
+        y_range = env_dim_ranges[1]
+        env_bounds = (
+            float(x_range[0]),
+            float(x_range[1]),
+            float(y_range[0]),
+            float(y_range[1]),
+        )
+
+        # Transform from calibration (to be used by backends)
+        transform_to_env = (
+            self.calibration.transform_px_to_cm if self.calibration else None
+        )
+
+        return VideoData(
+            frame_indices=frame_indices,
+            reader=reader,
+            transform_to_env=transform_to_env,
+            env_bounds=env_bounds,
+            alpha=self.alpha,
+            z_order=self.z_order,
+        )
 
 
 # =============================================================================
@@ -1476,6 +1848,62 @@ def _build_frame_times(
     )
 
 
+def _align_to_frame_times(
+    data: NDArray[np.float64],
+    times: NDArray[np.float64] | None,
+    frame_times: NDArray[np.float64],
+    n_frames: int,
+    interp: Literal["linear", "nearest"],
+    name: str,
+) -> NDArray[np.float64]:
+    """Validate timestamps and align data to animation frame times.
+
+    This helper encapsulates the common pattern of validating overlay timestamps
+    and performing temporal interpolation to align overlay data with animation
+    frames.
+
+    Parameters
+    ----------
+    data : NDArray[np.float64]
+        Source data with shape (n_samples,) or (n_samples, n_dims).
+    times : NDArray[np.float64] | None
+        Source timestamps with shape (n_samples,). If None, data is assumed
+        to already match frame_times (requires len(data) == n_frames).
+    frame_times : NDArray[np.float64]
+        Animation frame timestamps with shape (n_frames,).
+    n_frames : int
+        Number of animation frames.
+    interp : {"linear", "nearest"}
+        Interpolation method to use when aligning.
+    name : str
+        Overlay name for error messages (e.g., "PositionOverlay").
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Data aligned to frame_times. Shape is (n_frames,) or (n_frames, n_dims).
+
+    Raises
+    ------
+    ValueError
+        If times are not monotonically increasing, or if len(data) != n_frames
+        when times is None.
+    """
+    if times is not None:
+        _validate_monotonic_time(times, name=f"{name}.times")
+        _validate_temporal_alignment(times, frame_times, name=name)
+        interp_fn = _interp_linear if interp == "linear" else _interp_nearest
+        return interp_fn(times, data, frame_times)
+    else:
+        if len(data) != n_frames:
+            raise ValueError(
+                f"{name} data length ({len(data)}) does not match n_frames "
+                f"({n_frames}). When times=None, data must have exactly "
+                f"n_frames samples."
+            )
+        return data
+
+
 def _interp_linear(
     t_src: NDArray[np.float64],
     x_src: NDArray[np.float64],
@@ -1743,9 +2171,7 @@ def _interp_nearest(
 
 
 def _convert_overlays_to_data(
-    overlays: list[
-        PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay
-    ],
+    overlays: list[OverlayProtocol],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
@@ -1754,23 +2180,23 @@ def _convert_overlays_to_data(
     """Convert overlay configurations to aligned internal data representation.
 
     This is the main conversion pipeline that:
-    1. Validates each overlay (monotonicity, finite values, shape, skeleton)
-    2. Aligns overlay data to animation frame times via interpolation
+    1. Calls each overlay's ``convert_to_data()`` method
+    2. Dispatches results to appropriate internal data lists
     3. Aggregates all overlays into a single OverlayData container
 
     Parameters
     ----------
-    overlays : list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay]
+    overlays : list[OverlayProtocol]
         List of overlay configurations to convert. Can be empty or contain
-        multiple instances of any overlay type. VideoOverlay is currently
-        passed through without conversion (handled by backends).
+        multiple instances of any overlay type implementing ``OverlayProtocol``.
+        Custom overlays must implement the ``convert_to_data()`` method.
     frame_times : NDArray[np.float64]
         Animation frame timestamps with shape (n_frames,). Used as interpolation
         targets for aligning overlay data.
     n_frames : int
         Number of animation frames. Used for validation.
     env : Any
-        Environment object with `n_dims` and `dimension_ranges` attributes.
+        Environment object with ``n_dims`` and ``dimension_ranges`` attributes.
         Used for validating overlay coordinate dimensions and bounds.
     show_regions : bool or list of str, default=False
         Region names to include in overlay data. If True, all region names
@@ -1782,8 +2208,8 @@ def _convert_overlays_to_data(
     -------
     OverlayData
         Aggregated container with all overlay data aligned to frame times.
-        Contains lists of PositionData, BodypartData, and HeadDirectionData
-        instances. Guaranteed to be pickle-safe.
+        Contains lists of PositionData, BodypartData, HeadDirectionData,
+        and VideoData instances.
 
     Raises
     ------
@@ -1794,6 +2220,10 @@ def _convert_overlays_to_data(
         - Shape mismatch between overlay and environment dimensions
         - Skeleton references missing bodypart names
         - No temporal overlap between overlay and frame times
+    TypeError
+        If overlay does not implement ``OverlayProtocol``, or if
+        ``convert_to_data()`` returns an unexpected type (must return
+        PositionData, BodypartData, HeadDirectionData, or VideoData).
 
     Notes
     -----
@@ -1814,6 +2244,10 @@ def _convert_overlays_to_data(
 
     For BodypartOverlay, each keypoint is interpolated separately, preserving
     independent temporal dynamics of body parts.
+
+    Custom overlays can be created by implementing ``OverlayProtocol``. The
+    ``convert_to_data()`` method must return one of the internal data types:
+    ``PositionData``, ``BodypartData``, ``HeadDirectionData``, or ``VideoData``.
 
     Examples
     --------
@@ -1851,241 +2285,33 @@ def _convert_overlays_to_data(
     head_direction_data_list: list[HeadDirectionData] = []
     video_data_list: list[VideoData] = []
 
-    # Get environment dimensions
-    env_n_dims = env.n_dims
-    env_dim_ranges = env.dimension_ranges
-
-    # Process each overlay
+    # Process each overlay using protocol dispatch
     for overlay in overlays:
-        if isinstance(overlay, PositionOverlay):
-            # Validate position data
-            _validate_finite_values(overlay.data, name="PositionOverlay.data")
-            _validate_shape(overlay.data, env_n_dims, name="PositionOverlay.data")
-
-            # Validate and align times
-            if overlay.times is not None:
-                _validate_monotonic_time(overlay.times, name="PositionOverlay.times")
-                _validate_temporal_alignment(
-                    overlay.times, frame_times, name="PositionOverlay"
-                )
-
-                # Interpolate to frame times using overlay's interp setting
-                interp_fn = (
-                    _interp_linear if overlay.interp == "linear" else _interp_nearest
-                )
-                aligned_data = interp_fn(overlay.times, overlay.data, frame_times)
-            else:
-                # No times provided - assume data matches frame times
-                if len(overlay.data) != n_frames:
-                    raise ValueError(
-                        f"PositionOverlay data length ({len(overlay.data)}) does not "
-                        f"match n_frames ({n_frames}). When times=None, data must "
-                        f"have exactly n_frames samples."
-                    )
-                aligned_data = overlay.data
-
-            # Validate bounds (warning only)
-            _validate_bounds(
-                aligned_data, env_dim_ranges, name="PositionOverlay.data", threshold=0.1
+        # Validate overlay implements protocol
+        if not isinstance(overlay, OverlayProtocol):
+            raise TypeError(
+                f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
+                f"Ensure your overlay has 'times', 'interp' attributes and a "
+                f"'convert_to_data()' method."
             )
 
-            # Create PositionData
-            position_data = PositionData(
-                data=aligned_data,
-                color=overlay.color,
-                size=overlay.size,
-                trail_length=overlay.trail_length,
+        # Delegate to overlay's convert_to_data method
+        internal_data = overlay.convert_to_data(frame_times, n_frames, env)
+
+        # Dispatch to appropriate list based on return type
+        if isinstance(internal_data, PositionData):
+            position_data_list.append(internal_data)
+        elif isinstance(internal_data, BodypartData):
+            bodypart_data_list.append(internal_data)
+        elif isinstance(internal_data, HeadDirectionData):
+            head_direction_data_list.append(internal_data)
+        elif isinstance(internal_data, VideoData):
+            video_data_list.append(internal_data)
+        else:
+            raise TypeError(
+                f"convert_to_data() must return PositionData, BodypartData, "
+                f"HeadDirectionData, or VideoData, got {type(internal_data).__name__}."
             )
-            position_data_list.append(position_data)
-
-        elif isinstance(overlay, BodypartOverlay):
-            # Validate skeleton consistency first
-            bodypart_names = list(overlay.data.keys())
-            _validate_skeleton_consistency(
-                overlay.skeleton, bodypart_names, name="BodypartOverlay.skeleton"
-            )
-
-            # Validate and align times
-            if overlay.times is not None:
-                _validate_monotonic_time(overlay.times, name="BodypartOverlay.times")
-                _validate_temporal_alignment(
-                    overlay.times, frame_times, name="BodypartOverlay"
-                )
-
-            # Align each bodypart separately
-            aligned_bodyparts: dict[str, NDArray[np.float64]] = {}
-
-            for part_name, part_data in overlay.data.items():
-                # Validate each bodypart
-                _validate_finite_values(
-                    part_data, name=f"BodypartOverlay.data['{part_name}']"
-                )
-                _validate_shape(
-                    part_data, env_n_dims, name=f"BodypartOverlay.data['{part_name}']"
-                )
-
-                # Align to frame times using overlay's interp setting
-                if overlay.times is not None:
-                    interp_fn = (
-                        _interp_linear
-                        if overlay.interp == "linear"
-                        else _interp_nearest
-                    )
-                    aligned_part = interp_fn(overlay.times, part_data, frame_times)
-                else:
-                    # No times provided - assume data matches frame times
-                    if len(part_data) != n_frames:
-                        raise ValueError(
-                            f"BodypartOverlay.data['{part_name}'] length "
-                            f"({len(part_data)}) does not match n_frames ({n_frames}). "
-                            f"When times=None, all bodypart data must have exactly "
-                            f"n_frames samples."
-                        )
-                    aligned_part = part_data
-
-                # Validate bounds (warning only)
-                _validate_bounds(
-                    aligned_part,
-                    env_dim_ranges,
-                    name=f"BodypartOverlay.data['{part_name}']",
-                    threshold=0.1,
-                )
-
-                aligned_bodyparts[part_name] = aligned_part
-
-            # Create BodypartData
-            bodypart_data = BodypartData(
-                bodyparts=aligned_bodyparts,
-                skeleton=overlay.skeleton,
-                colors=overlay.colors,
-            )
-            bodypart_data_list.append(bodypart_data)
-
-        elif isinstance(overlay, HeadDirectionOverlay):
-            # Validate head direction data
-            _validate_finite_values(overlay.data, name="HeadDirectionOverlay.data")
-
-            # For head direction, validate shape only if 2D (vectors)
-            if overlay.data.ndim == 2:
-                _validate_shape(
-                    overlay.data, env_n_dims, name="HeadDirectionOverlay.data"
-                )
-
-            # Validate and align times
-            if overlay.times is not None:
-                _validate_monotonic_time(
-                    overlay.times, name="HeadDirectionOverlay.times"
-                )
-                _validate_temporal_alignment(
-                    overlay.times, frame_times, name="HeadDirectionOverlay"
-                )
-
-                # Interpolate to frame times using overlay's interp setting
-                interp_fn = (
-                    _interp_linear if overlay.interp == "linear" else _interp_nearest
-                )
-                aligned_data = interp_fn(overlay.times, overlay.data, frame_times)
-            else:
-                # No times provided - assume data matches frame times
-                if len(overlay.data) != n_frames:
-                    raise ValueError(
-                        f"HeadDirectionOverlay data length ({len(overlay.data)}) does "
-                        f"not match n_frames ({n_frames}). When times=None, data must "
-                        f"have exactly n_frames samples."
-                    )
-                aligned_data = overlay.data
-
-            # Create HeadDirectionData
-            head_direction_data = HeadDirectionData(
-                data=aligned_data,
-                color=overlay.color,
-                length=overlay.length,
-                width=overlay.width,
-            )
-            head_direction_data_list.append(head_direction_data)
-
-        elif isinstance(overlay, VideoOverlay):
-            # Validate environment supports video overlays
-            _validate_video_env(env)
-
-            # Warn if no calibration provided
-            if overlay.calibration is None:
-                import warnings
-
-                warnings.warn(
-                    "VideoOverlay has no calibration. Video will be scaled to fit "
-                    "environment bounds but may not align accurately with spatial data. "
-                    "Consider providing a VideoCalibration via calibrate_from_scale_bar() "
-                    "or calibrate_from_landmarks().",
-                    UserWarning,
-                    stacklevel=2,
-                )
-
-            # Determine video source: array or file path
-            if isinstance(overlay.source, np.ndarray):
-                # Array source - use directly as reader
-                reader: NDArray[np.uint8] | Any = overlay.source
-                n_video_frames = overlay.source.shape[0]
-            else:
-                # File path - create VideoReader (to be implemented in 3.1)
-                from neurospatial.animation._video_io import VideoReader
-
-                reader = VideoReader(
-                    overlay.source,
-                    cache_size=100,
-                    downsample=overlay.downsample,
-                    crop=overlay.crop,
-                )
-                n_video_frames = reader.n_frames
-
-            # Compute frame index mapping
-            if overlay.times is not None:
-                # Video has explicit times - map animation frames to video frames
-                _validate_monotonic_time(overlay.times, name="VideoOverlay.times")
-
-                if len(overlay.times) != n_video_frames:
-                    raise ValueError(
-                        f"VideoOverlay.times length ({len(overlay.times)}) does not "
-                        f"match number of video frames ({n_video_frames})."
-                    )
-
-                # Find nearest video frame for each animation frame
-                frame_indices = _find_nearest_indices(overlay.times, frame_times)
-            else:
-                # No times provided - assume 1:1 mapping
-                if n_video_frames != n_frames:
-                    raise ValueError(
-                        f"VideoOverlay source has {n_video_frames} frames but "
-                        f"animation has {n_frames} frames. When times=None, "
-                        f"video frames must match animation frames."
-                    )
-                frame_indices = np.arange(n_frames, dtype=np.int_)
-
-            # Compute environment bounds for transform
-            x_range = env_dim_ranges[0]
-            y_range = env_dim_ranges[1]
-            env_bounds = (
-                float(x_range[0]),
-                float(x_range[1]),
-                float(y_range[0]),
-                float(y_range[1]),
-            )
-
-            # Transform from calibration (to be used by backends)
-            transform_to_env = (
-                overlay.calibration.transform_px_to_cm if overlay.calibration else None
-            )
-
-            # Create VideoData
-            video_data = VideoData(
-                frame_indices=frame_indices,
-                reader=reader,
-                transform_to_env=transform_to_env,
-                env_bounds=env_bounds,
-                alpha=overlay.alpha,
-                z_order=overlay.z_order,
-            )
-            video_data_list.append(video_data)
 
     # Normalize regions to dict[int, list[str]] format
     # Key 0 means "apply to all frames"

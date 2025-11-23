@@ -17,11 +17,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.animation.overlays import (
-        BodypartOverlay,
-        HeadDirectionOverlay,
-        PositionOverlay,
-    )
+    from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.regions import Regions
 
@@ -241,8 +237,7 @@ class EnvironmentProtocol(Protocol):
         contrast_limits: tuple[float, float] | None = None,
         show_colorbar: bool = False,
         colorbar_label: str = "",
-        overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay]
-        | None = None,
+        overlays: list[OverlayProtocol] | None = None,
         frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
