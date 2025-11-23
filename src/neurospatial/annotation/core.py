@@ -152,20 +152,30 @@ def annotate_video(
     reader = VideoReader(str(video_path))
     frame = reader[frame_index]  # (H, W, 3) RGB uint8
 
-    # Create viewer
+    # Create viewer with reasonable default size for annotation work
     viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
+    viewer.window.resize(1400, 900)  # Larger window for comfortable annotation
     viewer.add_image(frame, name="video_frame", rgb=True)
+
+    # Determine initial annotation mode based on user's intent
+    # "regions" mode → start in region mode (user doesn't want environment boundary)
+    # "environment" or "both" → start in environment mode
+    initial_annotation_mode = "region" if mode == "regions" else "environment"
 
     # Add shapes layer with annotation-optimized settings
     # (features-based coloring, text labels, keyboard shortcuts)
-    shapes = setup_shapes_layer_for_annotation(viewer)
+    shapes = setup_shapes_layer_for_annotation(
+        viewer, initial_mode=initial_annotation_mode
+    )
 
     # Add existing regions if provided
     if initial_regions is not None:
         _add_initial_regions(shapes, initial_regions, calibration)
 
     # Add annotation control widget (magicgui-based)
-    widget = create_annotation_widget(viewer, "Annotations")
+    widget = create_annotation_widget(
+        viewer, "Annotations", initial_mode=initial_annotation_mode
+    )
     viewer.window.add_dock_widget(
         widget,
         name="Annotation Controls",
@@ -239,10 +249,13 @@ def _add_initial_regions(
     This function modifies the shapes_layer in place. Non-polygon regions
     (points) are silently skipped as they cannot be represented as shapes.
     """
-    import pandas as pd
     from shapely import get_coordinates
 
-    from neurospatial.annotation._napari_widget import ROLE_CATEGORIES
+    from neurospatial.annotation._napari_widget import (
+        ROLE_COLORS,
+        rebuild_features,
+        sync_face_colors_from_features,
+    )
 
     data = []
     names = []
@@ -269,10 +282,13 @@ def _add_initial_regions(
         # Add shapes to layer
         shapes_layer.add(data, shape_type="polygon")
 
-        # Update features DataFrame (consistent with setup_shapes_layer_for_annotation)
-        shapes_layer.features = pd.DataFrame(
-            {
-                "role": pd.Categorical(roles, categories=ROLE_CATEGORIES),
-                "name": pd.Series(names, dtype=str),
-            }
-        )
+        # Update features DataFrame using centralized builder
+        shapes_layer.features = rebuild_features(roles, names)
+
+        # Sync face colors from features
+        sync_face_colors_from_features(shapes_layer)
+
+        # Restore feature_defaults for new shapes (environment first)
+        shapes_layer.feature_defaults["role"] = "environment"
+        shapes_layer.feature_defaults["name"] = "arena"
+        shapes_layer.current_face_color = ROLE_COLORS["environment"]

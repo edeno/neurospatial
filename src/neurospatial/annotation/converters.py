@@ -84,6 +84,9 @@ def shapes_to_regions(
         # Optional simplification (Douglas-Peucker algorithm)
         if simplify_tolerance is not None:
             poly = poly.simplify(tolerance=simplify_tolerance, preserve_topology=True)
+            # Ensure polygon is still valid after simplification
+            if not poly.is_valid:
+                poly = poly.buffer(0)  # Standard fix for self-intersections
 
         metadata = {
             "source": "napari_annotation",

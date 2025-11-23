@@ -6,18 +6,19 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from magicgui.widgets import (
-    ComboBox,
     Container,
     FloatSlider,
     Label,
     LineEdit,
     PushButton,
+    RadioButtons,
     Select,
 )
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     import napari
+    import pandas as pd
 
 # Role categories - order determines color cycle mapping
 # Environment first since users typically define boundary first
@@ -31,9 +32,85 @@ ROLE_COLORS = {
 ROLE_COLOR_CYCLE = [ROLE_COLORS[cat] for cat in ROLE_CATEGORIES]  # ["cyan", "yellow"]
 
 
+def rebuild_features(roles: list[str], names: list[str]) -> pd.DataFrame:
+    """
+    Create a fresh features DataFrame with proper categorical types.
+
+    Centralizes feature DataFrame construction to ensure consistency
+    across all shape update operations.
+
+    Parameters
+    ----------
+    roles : list of str
+        Role for each shape ("environment" or "region").
+    names : list of str
+        Name for each shape.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with categorical 'role' and string 'name' columns.
+    """
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "role": pd.Categorical(roles, categories=ROLE_CATEGORIES),
+            "name": pd.Series(names, dtype=str),
+        }
+    )
+
+
+def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
+    """
+    Update face colors to match feature roles.
+
+    Napari's face_color_cycle doesn't always work reliably when features
+    are updated programmatically. This function explicitly syncs colors.
+
+    Parameters
+    ----------
+    shapes_layer : napari.layers.Shapes
+        Shapes layer to update.
+    """
+    if shapes_layer is None or len(shapes_layer.data) == 0:
+        return
+
+    roles = shapes_layer.features.get("role", [])
+    face_colors = [ROLE_COLORS.get(str(r), "yellow") for r in roles]
+    shapes_layer.face_color = face_colors
+
+
+def make_unique_name(base_name: str, existing_names: list[str]) -> str:
+    """
+    Generate a unique name by appending a suffix if needed.
+
+    Parameters
+    ----------
+    base_name : str
+        The desired name.
+    existing_names : list of str
+        Names that are already in use.
+
+    Returns
+    -------
+    str
+        A unique name (base_name if available, or base_name_N if not).
+    """
+    if base_name not in existing_names:
+        return base_name
+
+    # Find next available suffix
+    counter = 2
+    while f"{base_name}_{counter}" in existing_names:
+        counter += 1
+    return f"{base_name}_{counter}"
+
+
 def create_annotation_widget(
     viewer: napari.Viewer,
     shapes_layer_name: str = "Annotations",
+    initial_mode: str = "environment",
 ) -> Container:
     """
     Create annotation control widget using magicgui.
@@ -44,6 +121,10 @@ def create_annotation_widget(
         The napari viewer instance.
     shapes_layer_name : str, default="Annotations"
         Name of the Shapes layer to manage.
+    initial_mode : str, default="environment"
+        Starting annotation mode: "environment" or "region".
+        Use "region" when user only needs to annotate regions
+        without an environment boundary.
 
     Returns
     -------
@@ -64,7 +145,7 @@ def create_annotation_widget(
             "─── WORKFLOW ───\n"
             "1. Draw environment boundary (cyan)\n"
             "2. Press R → draw named regions (yellow)\n"
-            "3. Click Done when finished\n"
+            "3. Press Escape or Done when finished\n"
             "\n"
             "─── DRAWING ───\n"
             "Click points to draw polygon, ENTER to finish\n"
@@ -72,26 +153,42 @@ def create_annotation_widget(
             "─── SHORTCUTS ───\n"
             "E = environment mode\n"
             "R = region mode\n"
+            "M = cycle modes\n"
             "3 = move shape\n"
             "4 = edit vertices\n"
             "Delete = remove shape\n"
+            "Escape = finish\n"
             "Ctrl+Z = undo"
         )
     )
 
+    # Determine initial state based on mode
+    start_in_region_mode = initial_mode == "region"
+
     # Mode indicator shows current annotation type with action-oriented wording
-    mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY (cyan polygon)")
+    if start_in_region_mode:
+        mode_indicator = Label(value="Drawing: NAMED REGION (yellow polygon)")
+    else:
+        mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY (cyan polygon)")
 
     # Annotation count status
     annotation_status = Label(value="Annotations: 0 environment, 0 regions")
 
-    role_selector = ComboBox(
+    # Radio buttons for mode selection (more visible than dropdown)
+    # Use simple string values - display enhancement via labels
+    role_selector = RadioButtons(
         choices=["environment", "region"],
-        value="environment",  # Default to environment first
-        label="Type:",
+        value=initial_mode,
+        orientation="vertical",
+        label="Annotation Type:",
     )
 
-    name_input = LineEdit(value="arena", label="Shape Name:")
+    # Name input - visible only for region mode (progressive disclosure)
+    name_input = LineEdit(
+        value="" if start_in_region_mode else "arena",
+        label="Shape Name:",
+        visible=start_in_region_mode,
+    )
 
     # Shapes list for tracking annotations
     shapes_list = Select(
@@ -109,9 +206,20 @@ def create_annotation_widget(
         label="Opacity:",
     )
 
-    apply_btn = PushButton(text="Apply Name to Selected")
-    delete_btn = PushButton(text="Delete Selected")
-    save_btn = PushButton(text="Done")
+    apply_btn = PushButton(
+        text="Apply Name to Selected",
+        tooltip="Rename selected shape(s) to current name",
+        enabled=False,  # Disabled until shape selected
+    )
+    delete_btn = PushButton(
+        text="Delete Selected",
+        tooltip="Remove selected shape(s). Shortcut: Delete key",
+        enabled=False,  # Disabled until shape selected
+    )
+    save_btn = PushButton(
+        text="Done",
+        tooltip="Finish annotation and return results. Shortcut: Escape",
+    )
 
     # --- Helper Functions ---
     def update_mode_indicator(role: str):
@@ -157,6 +265,24 @@ def create_annotation_widget(
         if shapes is not None and 0 <= idx < len(shapes.data):
             shapes.selected_data = {idx}
 
+    def update_button_states():
+        """Enable/disable buttons based on current selection state."""
+        shapes = get_shapes()
+        has_selection = shapes is not None and len(shapes.selected_data) > 0
+        delete_btn.enabled = has_selection
+        apply_btn.enabled = has_selection
+
+    def cycle_annotation_mode():
+        """Cycle between environment and region modes."""
+        if role_selector.value == "environment":
+            role_selector.value = "region"
+            name_input.value = ""
+            name_input.visible = True  # Show name input for regions
+        else:
+            role_selector.value = "environment"
+            name_input.value = "arena"
+            name_input.visible = False  # Hide for environment (uses "arena")
+
     # --- Event Handlers ---
     @role_selector.changed.connect
     def on_role_changed(role: str):
@@ -167,6 +293,14 @@ def create_annotation_widget(
             # Update colors for visual feedback
             shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
         update_mode_indicator(role)
+        # Progressive disclosure: show name input only for regions
+        if role == "region":
+            name_input.visible = True
+            if not name_input.value:  # Clear if switching to region
+                name_input.value = ""
+        else:
+            name_input.visible = False
+            name_input.value = "arena"
 
     @name_input.changed.connect
     def on_name_changed(name: str):
@@ -210,24 +344,42 @@ def create_annotation_widget(
         if shapes is None or len(shapes.selected_data) == 0:
             return
 
+        count = len(shapes.selected_data)
         # Use DataFrame operations for safer feature updates
         features_df = shapes.features.copy()
+        applied_name = None
         for idx in shapes.selected_data:
             if 0 <= idx < len(features_df):
-                features_df.loc[idx, "name"] = name_input.value
+                # Get existing names excluding this shape
+                other_names = [
+                    str(features_df.loc[i, "name"])
+                    for i in range(len(features_df))
+                    if i != idx
+                ]
+                # Ensure unique name
+                unique_name = make_unique_name(name_input.value, other_names)
+                features_df.loc[idx, "name"] = unique_name
+                applied_name = unique_name
 
         shapes.features = features_df
         shapes.refresh()
         update_shapes_list()
+        # Status feedback
+        if count == 1 and applied_name:
+            viewer.status = f"Renamed to '{applied_name}'"
+        else:
+            viewer.status = f"Renamed {count} shapes"
 
     @delete_btn.clicked.connect
     def delete_selected():
         """Delete selected shapes."""
-        import pandas as pd
-
         shapes = get_shapes()
         if shapes is None or len(shapes.selected_data) == 0:
             return
+
+        # Preserve layer state
+        old_mode = shapes.mode
+        delete_count = len(shapes.selected_data)
 
         # Get indices to keep (not selected)
         indices_to_delete = set(shapes.selected_data)
@@ -238,12 +390,7 @@ def create_annotation_widget(
         if not indices_to_keep:
             # Delete all shapes
             shapes.data = []
-            shapes.features = pd.DataFrame(
-                {
-                    "role": pd.Categorical([], categories=ROLE_CATEGORIES),
-                    "name": pd.Series([], dtype=str),
-                }
-            )
+            shapes.features = rebuild_features([], [])
         else:
             # Keep only non-deleted shapes and features
             new_data = [shapes.data[i] for i in indices_to_keep]
@@ -251,19 +398,16 @@ def create_annotation_widget(
             new_names = [str(shapes.features["name"].iloc[i]) for i in indices_to_keep]
 
             shapes.data = new_data
-            shapes.features = pd.DataFrame(
-                {
-                    "role": pd.Categorical(new_roles, categories=ROLE_CATEGORIES),
-                    "name": pd.Series(new_names, dtype=str),
-                }
-            )
-            # Update face colors
-            face_colors = [ROLE_COLORS.get(r, "yellow") for r in new_roles]
-            shapes.face_color = face_colors
+            shapes.features = rebuild_features(new_roles, new_names)
+            sync_face_colors_from_features(shapes)
 
         shapes.selected_data = set()
+        shapes.mode = old_mode  # Restore layer mode
         shapes.refresh()
         update_shapes_list()
+        update_annotation_status()
+        # Status feedback
+        viewer.status = f"Deleted {delete_count} shape(s)"
 
     @save_btn.clicked.connect
     def save_and_close():
@@ -290,6 +434,7 @@ def create_annotation_widget(
         """Set mode to draw environment boundary."""
         role_selector.value = "environment"
         name_input.value = "arena"
+        name_input.visible = False  # Progressive disclosure
         update_mode_indicator("environment")
         # Status bar feedback for mode switch
         viewer.status = "Mode: ENVIRONMENT - draw boundary polygon (cyan)"
@@ -305,6 +450,7 @@ def create_annotation_widget(
         role_selector.value = "region"
         # Clear name to prompt user to enter a meaningful name
         name_input.value = ""
+        name_input.visible = True  # Progressive disclosure
         update_mode_indicator("region")
         # Status bar feedback for mode switch
         viewer.status = "Mode: REGION - enter a name, then draw polygon (yellow)"
@@ -314,6 +460,18 @@ def create_annotation_widget(
             shapes.feature_defaults["name"] = ""
             shapes.current_face_color = ROLE_COLORS["region"]
 
+    @viewer.bind_key("m")
+    def toggle_mode(viewer):
+        """Cycle between environment and region modes."""
+        cycle_annotation_mode()
+        # Status bar feedback
+        viewer.status = f"Mode: {role_selector.value.upper()}"
+
+    @viewer.bind_key("Escape")
+    def finish_annotation(viewer):
+        """Finish annotation and close viewer."""
+        save_and_close()
+
     # --- Data Change Callback ---
     # Use events.data instead of mouse_drag_callbacks for reliable detection
     # of when shapes are actually added (learned from napari-segment-anything)
@@ -321,23 +479,27 @@ def create_annotation_widget(
 
     def on_data_changed(event):
         """Handle shape additions: update list, auto-switch mode, update status."""
-        import pandas as pd
-
         shapes = get_shapes()
         if shapes is None:
             return
 
         current_count = len(shapes.data)
-        if current_count > _prev_shape_count[0]:
-            # New shape was added - ensure features are set for the new shape
+        delta = current_count - _prev_shape_count[0]
+
+        if delta > 0:
+            # New shape(s) added - ensure features are set
             # Napari's feature_defaults sometimes doesn't work properly
 
             # Build new features list from scratch to avoid concat issues
             features_len = len(shapes.features) if shapes.features is not None else 0
-            roles = list(shapes.features["role"]) if features_len > 0 else []
-            names = list(shapes.features["name"]) if features_len > 0 else []
+            roles = (
+                [str(r) for r in shapes.features["role"]] if features_len > 0 else []
+            )
+            names = (
+                [str(n) for n in shapes.features["name"]] if features_len > 0 else []
+            )
 
-            # Add entries for any new shapes
+            # Add entries for any new shapes (handles multiple additions)
             while len(roles) < current_count:
                 roles.append(role_selector.value)
                 # Use current name, or generate fallback if empty
@@ -350,26 +512,20 @@ def create_annotation_widget(
                     else:
                         region_count = sum(1 for r in roles if str(r) == "region")
                         current_name = f"region_{region_count}"
-                names.append(current_name)
+                # Ensure unique name to prevent overwrites in Regions container
+                unique_name = make_unique_name(current_name, names)
+                names.append(unique_name)
 
-            # Create fresh DataFrame
-            features_df = pd.DataFrame(
-                {
-                    "role": pd.Categorical(roles, categories=ROLE_CATEGORIES),
-                    "name": pd.Series(names, dtype=str),
-                }
-            )
-            shapes.features = features_df
-
-            # Explicitly set face colors based on role (cycle doesn't work reliably)
-            face_colors = [ROLE_COLORS.get(str(r), "yellow") for r in roles]
-            shapes.face_color = face_colors
+            # Use centralized feature builder
+            shapes.features = rebuild_features(roles, names)
+            sync_face_colors_from_features(shapes)
 
             update_shapes_list()
             update_annotation_status()
 
             # Check if we just drew an environment boundary - auto-switch to region mode
-            last_role = str(features_df["role"].iloc[-1])
+            last_role = str(shapes.features["role"].iloc[-1])
+            last_name = str(shapes.features["name"].iloc[-1])
             if last_role == "environment":
                 # Auto-switch to region mode for next shape
                 role_selector.value = "region"
@@ -377,17 +533,21 @@ def create_annotation_widget(
                 shapes.feature_defaults["role"] = "region"
                 shapes.current_face_color = ROLE_COLORS["region"]
                 # Status bar feedback for auto-switch
-                viewer.status = "Switched to REGION mode - enter a name for each region"
+                viewer.status = (
+                    f"Added environment '{last_name}' → switched to REGION mode"
+                )
                 # Clear name to prompt user to enter meaningful region name
                 new_name = ""
             else:
+                # Status feedback for region added
+                viewer.status = f"Added region '{last_name}'"
                 # Clear name for next region (encourage meaningful naming)
                 new_name = ""
 
             name_input.value = new_name
             shapes.feature_defaults["name"] = new_name
 
-        elif current_count < _prev_shape_count[0]:
+        elif delta < 0:
             # Shape was deleted externally (e.g., via Delete key)
             update_shapes_list()
             update_annotation_status()
@@ -398,6 +558,13 @@ def create_annotation_widget(
     if shapes is not None:
         shapes.events.data.connect(on_data_changed)
         _prev_shape_count[0] = len(shapes.data)
+
+        # Note: shapes.events.selected_data doesn't exist in napari
+        # (see napari issue #6886). Use highlight event as proxy for selection.
+        @shapes.events.highlight.connect
+        def on_highlight_changed(event):
+            """Enable/disable buttons when selection highlight changes."""
+            update_button_states()
 
     # --- Build Container ---
     widget = Container(
@@ -419,7 +586,10 @@ def create_annotation_widget(
     return widget
 
 
-def setup_shapes_layer_for_annotation(viewer: napari.Viewer) -> napari.layers.Shapes:
+def setup_shapes_layer_for_annotation(
+    viewer: napari.Viewer,
+    initial_mode: str = "environment",
+) -> napari.layers.Shapes:
     """
     Create and configure a Shapes layer optimized for annotation.
 
@@ -432,6 +602,8 @@ def setup_shapes_layer_for_annotation(viewer: napari.Viewer) -> napari.layers.Sh
     ----------
     viewer : napari.Viewer
         The napari viewer instance.
+    initial_mode : str, default="environment"
+        Starting annotation mode: "environment" or "region".
 
     Returns
     -------
@@ -467,10 +639,14 @@ def setup_shapes_layer_for_annotation(viewer: napari.Viewer) -> napari.layers.Sh
         },
     )
 
-    # Set defaults for new shapes - environment first
-    shapes.feature_defaults["role"] = "environment"
-    shapes.feature_defaults["name"] = "arena"
-    shapes.current_face_color = ROLE_COLORS["environment"]
+    # Set defaults for new shapes based on initial mode
+    shapes.feature_defaults["role"] = initial_mode
+    if initial_mode == "region":
+        shapes.feature_defaults["name"] = ""
+        shapes.current_face_color = ROLE_COLORS["region"]
+    else:
+        shapes.feature_defaults["name"] = "arena"
+        shapes.current_face_color = ROLE_COLORS["environment"]
 
     # Start in polygon drawing mode
     shapes.mode = "add_polygon"
