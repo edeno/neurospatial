@@ -158,8 +158,6 @@ def create_annotation_widget(
             "\n"
             "─── SHORTCUTS ───\n"
             "• M = cycle modes (environment → hole → region)\n"
-            "• 3 = move shape\n"
-            "• 4 = edit vertices\n"
             "• Delete = remove shape\n"
             "• Escape = save and close\n"
             "• Ctrl+Z = undo"
@@ -415,31 +413,7 @@ def create_annotation_widget(
                 from qtpy.QtCore import Qt
 
                 if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                    # Get the role of the selected shape BEFORE applying
-                    shapes = get_shapes()
-                    selected_role = None
-                    if shapes is not None and len(shapes.selected_data) > 0:
-                        idx = next(iter(shapes.selected_data))
-                        if idx < len(shapes.features):
-                            selected_role = str(shapes.features["role"].iloc[idx])
-
                     apply_to_selected()
-
-                    # UX: Auto-switch to region mode after naming an environment
-                    # This supports the common workflow: draw boundary -> draw regions
-                    if selected_role == "environment":
-                        role_selector.value = "region"
-                        viewer.status = (
-                            "Environment named! Switched to REGION mode - "
-                            "draw regions inside the boundary"
-                        )
-
-                    # Keep focus on input - prevents accidental M key mode switch
-                    # Use QTimer to ensure this happens after Qt processes the event
-                    from qtpy.QtCore import QTimer
-
-                    QTimer.singleShot(50, lambda: name_input.native.setFocus())
-
                     return True  # Consume the event, don't propagate
             return False  # Let other events through
 
@@ -703,30 +677,12 @@ def create_annotation_widget(
                     "edit name above if needed"
                 )
 
-            # UX improvement: auto-select the new shape and focus name input
-            # This allows immediate renaming if the default name isn't desired
+            # UX improvement: auto-select the new shape and update name input
+            # This allows user to see the current name and edit if needed
             new_shape_idx = current_count - 1
             shapes.selected_data = {new_shape_idx}
             name_input.value = last_name  # Show current name so user can edit
             shapes.feature_defaults["name"] = last_name
-
-            # Focus the name input so user can immediately type to rename
-            # Use aggressive multi-attempt approach because napari steals focus
-            from qtpy.QtCore import QTimer
-
-            def focus_and_select():
-                """Focus name input and select all text for easy editing."""
-                native = name_input.native
-                # Activate the widget's window first
-                if native.window():
-                    native.window().activateWindow()
-                native.setFocus()
-                native.selectAll()  # Select text so typing replaces it
-
-            # Schedule multiple focus attempts to overcome napari's focus stealing
-            # First attempt at 100ms, second at 300ms (backup)
-            QTimer.singleShot(100, focus_and_select)
-            QTimer.singleShot(300, focus_and_select)
 
         elif delta < 0:
             # Shape was deleted externally (e.g., via Delete key)
