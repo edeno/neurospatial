@@ -99,6 +99,25 @@ animation = [
     #   - Ubuntu: apt-get install ffmpeg
     #   - Windows: Download from https://ffmpeg.org/download.html
 ]
+# NWB (Neurodata Without Borders) integration
+nwb = [
+    "pynwb>=2.5.0",
+    "hdmf>=3.0.0",
+]
+nwb-pose = [
+    "pynwb>=2.5.0",
+    "ndx-pose>=0.2.0",
+]
+nwb-events = [
+    "pynwb>=2.5.0",
+    "ndx-events>=0.4.0",
+]
+nwb-full = [
+    "pynwb>=2.5.0",
+    "hdmf>=3.0.0",
+    "ndx-pose>=0.2.0",
+    "ndx-events>=0.4.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -300,6 +319,15 @@ module = [
     "qtpy.*",
     "magicgui",
     "magicgui.*",
+    # NWB (optional dependencies)
+    "pynwb",
+    "pynwb.*",
+    "hdmf",
+    "hdmf.*",
+    "ndx_pose",
+    "ndx_pose.*",
+    "ndx_events",
+    "ndx_events.*",
 ]
 ignore_missing_imports = true
 
