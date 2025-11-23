@@ -63,7 +63,25 @@ def position_overlay_from_nwb(
     ...     overlay = position_overlay_from_nwb(nwbfile, trail_length=10)
     >>> env.animate_fields(fields, overlays=[overlay])
     """
-    raise NotImplementedError("position_overlay_from_nwb not yet implemented")
+    from neurospatial.animation.overlays import PositionOverlay
+    from neurospatial.nwb._behavior import read_position
+
+    # Read position data from NWB
+    positions, timestamps = read_position(
+        nwbfile,
+        processing_module=processing_module,
+        position_name=position_name,
+    )
+
+    # Create and return PositionOverlay
+    return PositionOverlay(
+        data=positions,
+        times=timestamps,
+        color=color,
+        size=size,
+        trail_length=trail_length,
+        **kwargs,
+    )
 
 
 def bodypart_overlay_from_nwb(

@@ -6,13 +6,32 @@
 
 ## Current Status
 
-- **Active Task**: M1.4.1 - Position overlay factory
+- **Active Task**: M1.4.2 - Bodypart overlay factory
 - **Blocker**: None
-- **Next Action**: Write tests for `position_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- **Next Action**: Write tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.4.1 Complete - Position Overlay Factory
+
+- Created 11 tests for `position_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- Tests cover:
+  - Basic PositionOverlay creation from NWB Position data
+  - Data integrity verification (matches `read_position()` output)
+  - color, size, trail_length parameters passed through
+  - Default parameters verification
+  - processing_module and position_name forwarding to `read_position()`
+  - Additional kwargs passthrough (e.g., `interp`)
+  - Combined multiple parameters usage
+  - Error handling: Position not found (KeyError)
+- Implemented `position_overlay_from_nwb()` in `_overlays.py`:
+  - Uses lazy imports for `PositionOverlay` and `read_position`
+  - Delegates NWB reading to `read_position()`
+  - Returns `PositionOverlay` with data, times, and styling parameters
+- Code review: APPROVED
+- All 11 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.3.2 Complete - TimeIntervals Reading Function
 

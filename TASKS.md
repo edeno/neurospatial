@@ -120,13 +120,13 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M1.4 Overlay Factory Functions
 
-- [ ] **M1.4.1** Position overlay factory
-  - [ ] Write tests for `position_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
-    - [ ] Test PositionOverlay creation from Position
-    - [ ] Test color, trail_length parameters passed through
-    - [ ] Test times parameter populated from timestamps
-  - [ ] Implement `position_overlay_from_nwb()` in `_overlays.py`
-  - [ ] Return PositionOverlay with data and times
+- [x] **M1.4.1** Position overlay factory
+  - [x] Write tests for `position_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+    - [x] Test PositionOverlay creation from Position
+    - [x] Test color, trail_length parameters passed through
+    - [x] Test times parameter populated from timestamps
+  - [x] Implement `position_overlay_from_nwb()` in `_overlays.py`
+  - [x] Return PositionOverlay with data and times
 
 - [ ] **M1.4.2** Bodypart overlay factory
   - [ ] Write tests for `bodypart_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
