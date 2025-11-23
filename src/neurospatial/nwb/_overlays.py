@@ -180,12 +180,20 @@ def head_direction_overlay_from_nwb(
     length : float, default 15.0
         Length of the arrow in environment units.
     **kwargs
-        Additional arguments passed to HeadDirectionOverlay.
+        Additional arguments passed to HeadDirectionOverlay. Supported kwargs:
+
+        - interp : {"linear", "nearest"}, optional
+            Interpolation method for temporal alignment. Default is "linear".
 
     Returns
     -------
     HeadDirectionOverlay
         Overlay with head direction angles and timestamps from NWB.
+
+    Raises
+    ------
+    KeyError
+        If no CompassDirection container found, or if specified name not found.
 
     Examples
     --------
@@ -195,7 +203,24 @@ def head_direction_overlay_from_nwb(
     ...     overlay = head_direction_overlay_from_nwb(nwbfile, color="cyan")
     >>> env.animate_fields(fields, overlays=[overlay])
     """
-    raise NotImplementedError("head_direction_overlay_from_nwb not yet implemented")
+    from neurospatial.animation.overlays import HeadDirectionOverlay
+    from neurospatial.nwb._behavior import read_head_direction
+
+    # Read head direction data from NWB
+    angles, timestamps = read_head_direction(
+        nwbfile,
+        processing_module=processing_module,
+        compass_name=compass_name,
+    )
+
+    # Create and return HeadDirectionOverlay
+    return HeadDirectionOverlay(
+        data=angles,
+        times=timestamps,
+        color=color,
+        length=length,
+        **kwargs,
+    )
 
 
 def environment_from_position(

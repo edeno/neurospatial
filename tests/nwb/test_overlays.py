@@ -321,3 +321,187 @@ class TestBodypartOverlayFromNwb:
                 sample_nwb_with_pose,
                 pose_estimation_name="NonexistentPose",
             )
+
+
+class TestHeadDirectionOverlayFromNwb:
+    """Tests for head_direction_overlay_from_nwb() function."""
+
+    def test_basic_overlay_creation(self, sample_nwb_with_head_direction):
+        """Test HeadDirectionOverlay creation from NWB CompassDirection data."""
+        from neurospatial.animation.overlays import HeadDirectionOverlay
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
+
+        # Should return HeadDirectionOverlay instance
+        assert isinstance(overlay, HeadDirectionOverlay)
+
+        # Data should have correct shape (1000 samples, 1D angles)
+        assert overlay.data.shape == (1000,)
+        assert overlay.data.dtype == np.float64
+
+        # Times should be populated from timestamps
+        assert overlay.times is not None
+        assert overlay.times.shape == (1000,)
+        assert overlay.times.dtype == np.float64
+        assert overlay.times[0] == 0.0
+        assert overlay.times[-1] > 0.0
+
+    def test_data_matches_original(self, sample_nwb_with_head_direction):
+        """Test that overlay data matches original NWB CompassDirection data."""
+        from neurospatial.nwb import (
+            head_direction_overlay_from_nwb,
+            read_head_direction,
+        )
+
+        overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
+
+        # Get original data for comparison
+        angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
+
+        np.testing.assert_array_almost_equal(overlay.data, angles)
+        np.testing.assert_array_almost_equal(overlay.times, timestamps)
+
+    def test_color_parameter_passed_through(self, sample_nwb_with_head_direction):
+        """Test that color parameter is passed to HeadDirectionOverlay."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        overlay = head_direction_overlay_from_nwb(
+            sample_nwb_with_head_direction, color="cyan"
+        )
+
+        assert overlay.color == "cyan"
+
+    def test_length_parameter_passed_through(self, sample_nwb_with_head_direction):
+        """Test that length parameter is passed to HeadDirectionOverlay."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        overlay = head_direction_overlay_from_nwb(
+            sample_nwb_with_head_direction, length=25.0
+        )
+
+        assert overlay.length == 25.0
+
+    def test_default_parameters(self, sample_nwb_with_head_direction):
+        """Test that default parameters are applied correctly."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
+
+        # Check defaults match function signature
+        assert overlay.color == "yellow"
+        assert overlay.length == 15.0
+
+    def test_processing_module_forwarded(self, empty_nwb):
+        """Test that processing_module parameter is forwarded to read_head_direction."""
+        from pynwb.behavior import CompassDirection, SpatialSeries
+
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        nwbfile = empty_nwb
+
+        # Create CompassDirection in a custom module
+        custom_module = nwbfile.create_processing_module(
+            name="tracking", description="Tracking data"
+        )
+        compass_direction = CompassDirection(name="CompassDirection")
+        compass_direction.add_spatial_series(
+            SpatialSeries(
+                name="head_direction",
+                data=np.ones(50) * 1.5,  # All pointing in same direction
+                timestamps=np.arange(50) / 10.0,
+                reference_frame="test",
+                unit="radians",
+            )
+        )
+        custom_module.add(compass_direction)
+
+        # Read with explicit module
+        overlay = head_direction_overlay_from_nwb(nwbfile, processing_module="tracking")
+
+        assert overlay.data.shape == (50,)
+        np.testing.assert_array_almost_equal(overlay.data, np.ones(50) * 1.5)
+
+    def test_compass_name_forwarded(self, empty_nwb):
+        """Test that compass_name parameter is forwarded to read_head_direction."""
+        from pynwb.behavior import CompassDirection, SpatialSeries
+
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        nwbfile = empty_nwb
+
+        # Create CompassDirection with multiple SpatialSeries
+        behavior_module = nwbfile.create_processing_module(
+            name="behavior", description="Behavioral data"
+        )
+        compass_direction = CompassDirection(name="CompassDirection")
+        compass_direction.add_spatial_series(
+            SpatialSeries(
+                name="head_angle",
+                data=np.ones(30) * 0.5,
+                timestamps=np.arange(30) / 10.0,
+                reference_frame="test",
+                unit="radians",
+            )
+        )
+        compass_direction.add_spatial_series(
+            SpatialSeries(
+                name="body_angle",
+                data=np.ones(40) * 2.0,
+                timestamps=np.arange(40) / 10.0,
+                reference_frame="test",
+                unit="radians",
+            )
+        )
+        behavior_module.add(compass_direction)
+
+        # Request specific series by name
+        overlay = head_direction_overlay_from_nwb(nwbfile, compass_name="body_angle")
+
+        # Check we got the 'body_angle' series (40 samples)
+        assert overlay.data.shape == (40,)
+        np.testing.assert_array_almost_equal(overlay.data, np.ones(40) * 2.0)
+
+    def test_additional_kwargs_passed_through(self, sample_nwb_with_head_direction):
+        """Test that additional kwargs are passed to HeadDirectionOverlay."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        # interp is a valid HeadDirectionOverlay parameter
+        overlay = head_direction_overlay_from_nwb(
+            sample_nwb_with_head_direction,
+            interp="nearest",
+        )
+
+        assert overlay.interp == "nearest"
+
+    def test_multiple_parameters_combined(self, sample_nwb_with_head_direction):
+        """Test creating overlay with multiple custom parameters."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        overlay = head_direction_overlay_from_nwb(
+            sample_nwb_with_head_direction,
+            color="magenta",
+            length=30.0,
+            interp="nearest",
+        )
+
+        assert overlay.color == "magenta"
+        assert overlay.length == 30.0
+        assert overlay.interp == "nearest"
+
+    def test_error_when_no_compass_direction_found(self, empty_nwb):
+        """Test KeyError when no CompassDirection container found."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        with pytest.raises(KeyError, match=r"No CompassDirection.*found"):
+            head_direction_overlay_from_nwb(empty_nwb)
+
+    def test_error_when_named_compass_not_found(self, sample_nwb_with_head_direction):
+        """Test KeyError when specified compass_name not found."""
+        from neurospatial.nwb import head_direction_overlay_from_nwb
+
+        with pytest.raises(KeyError, match=r"not found.*Available"):
+            head_direction_overlay_from_nwb(
+                sample_nwb_with_head_direction,
+                compass_name="NonexistentSeries",
+            )

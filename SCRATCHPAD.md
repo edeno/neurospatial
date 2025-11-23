@@ -6,13 +6,35 @@
 
 ## Current Status
 
-- **Active Task**: M1.4.3 - Head direction overlay factory
+- **Active Task**: M1.4.4 - Environment from position factory
 - **Blocker**: None
-- **Next Action**: Write tests for `head_direction_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- **Next Action**: Write tests for `environment_from_position()` in `tests/nwb/test_overlays.py`
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M1.4.3 Complete - Head Direction Overlay Factory
+
+- Created 11 tests for `head_direction_overlay_from_nwb()` in `tests/nwb/test_overlays.py`
+- Tests cover:
+  - Basic HeadDirectionOverlay creation from NWB CompassDirection data
+  - Data integrity verification (matches `read_head_direction()` output)
+  - color parameter passed through (default: "yellow")
+  - length parameter passed through (default: 15.0)
+  - Default parameters verification
+  - processing_module forwarding to `read_head_direction()`
+  - compass_name forwarding to `read_head_direction()`
+  - Additional kwargs passthrough (e.g., `interp`)
+  - Combined multiple parameters usage
+  - Error handling: CompassDirection not found (KeyError)
+  - Error handling: named compass series not found (KeyError with available list)
+- Implemented `head_direction_overlay_from_nwb()` in `_overlays.py`:
+  - Uses lazy imports for `HeadDirectionOverlay` and `read_head_direction`
+  - Delegates NWB reading to `read_head_direction()`
+  - Returns `HeadDirectionOverlay` with data, times, color, and length
+- Code review: APPROVED
+- All 11 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M1.4.2 Complete - Bodypart Overlay Factory
 
