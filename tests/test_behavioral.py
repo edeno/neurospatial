@@ -805,40 +805,137 @@ def test_time_to_goal_after_goal_reached():
 # =============================================================================
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_2d_straight():
     """Test curvature for straight 2D trajectory (should be ~0)."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create straight line trajectory
+    positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (20,), "Output length should match input (n_samples)"
+    assert np.allclose(curvature, 0.0, atol=0.01), (
+        "Straight line should have near-zero curvature"
+    )
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_2d_left_turn():
     """Test curvature for left turn in 2D (positive)."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create trajectory with 90-degree left turn (counterclockwise)
+    # Move right [0,0] → [10,0], then up [10,0] → [10,10]
+    positions = np.array(
+        [
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (3,), "Output length should match input"
+    # Middle point should have positive angle (left turn ≈ π/2 radians)
+    assert curvature[1] > 0, "Left turn should have positive curvature"
+    assert np.isclose(curvature[1], np.pi / 2, atol=0.1), (
+        f"Expected ~π/2, got {curvature[1]}"
+    )
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_2d_right_turn():
     """Test curvature for right turn in 2D (negative)."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create trajectory with 90-degree right turn (clockwise)
+    # Move right [0,0] → [10,0], then down [10,0] → [10,-10]
+    positions = np.array(
+        [
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, -10.0],
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (3,), "Output length should match input"
+    # Middle point should have negative angle (right turn ≈ -π/2 radians)
+    assert curvature[1] < 0, "Right turn should have negative curvature"
+    assert np.isclose(curvature[1], -np.pi / 2, atol=0.1), (
+        f"Expected ~-π/2, got {curvature[1]}"
+    )
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_3d():
     """Test curvature for 3D trajectory (uses first 2 dims)."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create 3D trajectory with left turn in XY plane, constant Z
+    positions_3d = np.array(
+        [
+            [0.0, 0.0, 5.0],
+            [10.0, 0.0, 5.0],
+            [10.0, 10.0, 5.0],
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions_3d)
+
+    # Assertions
+    assert curvature.shape == (3,), "Output length should match input"
+    # Should detect left turn from first 2 dimensions (ignoring Z)
+    assert curvature[1] > 0, "Left turn in XY plane should have positive curvature"
+    assert np.isclose(curvature[1], np.pi / 2, atol=0.1), "Should match 2D left turn"
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_smoothing():
     """Test curvature with temporal smoothing."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create noisy trajectory with underlying sinusoidal path
+    t = np.linspace(0, 2 * np.pi, 100)
+    x = t
+    y = np.sin(t)
+    noise = np.random.RandomState(42).normal(0, 0.05, (100, 2))
+    positions = np.column_stack([x, y]) + noise
+    times = np.linspace(0, 10, 100)  # 10 seconds total
+
+    # Compute curvature with and without smoothing
+    curvature_raw = compute_trajectory_curvature(positions, times, smooth_window=None)
+    curvature_smooth = compute_trajectory_curvature(positions, times, smooth_window=0.5)
+
+    # Assertions
+    assert curvature_raw.shape == curvature_smooth.shape == (100,)
+    # Smoothed version should have lower variance
+    assert np.std(curvature_smooth) < np.std(curvature_raw), (
+        "Smoothing should reduce variance"
+    )
 
 
-@pytest.mark.skip("not implemented")
 def test_compute_trajectory_curvature_output_length():
     """Test curvature output length matches input (n_samples, not n_samples-2)."""
-    pass
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create trajectory with varying lengths
+    for n_samples in [5, 10, 20, 100]:
+        positions = np.random.randn(n_samples, 2)
+
+        # Compute curvature
+        curvature = compute_trajectory_curvature(positions)
+
+        # Assertion: output length should match input
+        assert curvature.shape == (n_samples,), (
+            f"Expected length {n_samples}, got {len(curvature)}"
+        )
 
 
 # =============================================================================

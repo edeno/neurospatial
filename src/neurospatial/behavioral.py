@@ -603,7 +603,45 @@ def compute_trajectory_curvature(
     --------
     graph_turn_sequence : Discrete turn labels for graph-based tracks
     """
-    raise NotImplementedError("compute_trajectory_curvature not yet implemented")
+    from neurospatial.metrics import compute_turn_angles
+
+    # 1. Compute turn angles using existing function
+    # Returns length (n_angles,) where n_angles <= n_samples - 2
+    # Filters stationary periods automatically
+    angles = compute_turn_angles(trajectory_positions)
+
+    # 2. Pad to match input length (n_samples)
+    # compute_turn_angles returns variable length due to duplicate filtering
+    # Pad with 0 at start and end to reach n_samples
+    n_samples = len(trajectory_positions)
+    n_angles = len(angles)
+
+    # Calculate padding needed
+    if n_angles == 0:
+        # Edge case: < 3 unique positions
+        curvature = np.zeros(n_samples, dtype=np.float64)
+    else:
+        # Pad symmetrically: add (n_samples - n_angles) / 2 to each side
+        # If uneven, add extra to the end
+        pad_total = n_samples - n_angles
+        pad_left = pad_total // 2
+        pad_right = pad_total - pad_left
+        curvature = np.pad(
+            angles, (pad_left, pad_right), mode="constant", constant_values=0.0
+        )
+
+    # 3. Optional temporal smoothing
+    if smooth_window is not None and times is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        # Compute sigma from time resolution
+        dt_median = np.median(np.diff(times))
+        sigma = smooth_window / dt_median
+
+        # Apply Gaussian smoothing
+        curvature = gaussian_filter1d(curvature, sigma=sigma)
+
+    return curvature
 
 
 def graph_turn_sequence(
