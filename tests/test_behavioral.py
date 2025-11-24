@@ -453,34 +453,175 @@ def test_path_progress_large_environment():
 # =============================================================================
 
 
-@pytest.mark.skip("not implemented")
-def test_distance_to_region_scalar_target():
+def test_distance_to_region_scalar_target(simple_environment_with_regions):
     """Test distance to region with scalar target (constant goal)."""
-    pass
+    from neurospatial.behavioral import distance_to_region
+
+    env = simple_environment_with_regions
+
+    # Get start and goal bins
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Create trajectory from start to goal
+    trajectory_bins = np.array([start_bin, goal_bin])
+
+    # Compute distance to scalar target (goal_bin)
+    distances = distance_to_region(env, trajectory_bins, goal_bin)
+
+    # Check shape
+    assert distances.shape == (2,)
+
+    # Distance should be positive at start, zero at goal
+    assert distances[0] > 0
+    assert np.isclose(distances[1], 0.0, atol=1e-6)
+
+    # Test euclidean metric
+    distances_euclidean = distance_to_region(
+        env, trajectory_bins, goal_bin, metric="euclidean"
+    )
+    assert distances_euclidean.shape == (2,)
+    assert distances_euclidean[0] > 0
+    assert np.isclose(distances_euclidean[1], 0.0, atol=1e-6)
 
 
-@pytest.mark.skip("not implemented")
-def test_distance_to_region_dynamic_target():
+def test_distance_to_region_dynamic_target(simple_environment_with_regions):
     """Test distance to region with array of targets (dynamic goal)."""
-    pass
+    from neurospatial.behavioral import distance_to_region
+
+    env = simple_environment_with_regions
+
+    # Get bins for regions
+    start_bin = env.bins_in_region("start")[0]
+    goal1_bin = env.bins_in_region("goal1")[0]
+    goal2_bins = env.bins_in_region("goal2")
+
+    # Skip if goal2 has no bins
+    if len(goal2_bins) == 0:
+        pytest.skip("goal2 region has no bins in random environment")
+
+    goal2_bin = goal2_bins[0]
+
+    # Create trajectory: start → goal1
+    trajectory_bins = np.array([start_bin, goal1_bin])
+
+    # Dynamic targets: first timepoint targets goal1, second targets goal2
+    target_bins = np.array([goal1_bin, goal2_bin])
+
+    # Compute distances with dynamic targets
+    distances = distance_to_region(env, trajectory_bins, target_bins)
+
+    # Check shape
+    assert distances.shape == (2,)
+
+    # At first timepoint: we're at start, target is goal1 (should be positive distance)
+    assert distances[0] > 0
+
+    # At second timepoint: we're at goal1, target is goal2 (should be positive distance)
+    assert distances[1] > 0
 
 
-@pytest.mark.skip("not implemented")
-def test_distance_to_region_invalid_bins():
+def test_distance_to_region_invalid_bins(simple_environment_with_regions):
     """Test distance to region with invalid bins (should return NaN)."""
-    pass
+    from neurospatial.behavioral import distance_to_region
+
+    env = simple_environment_with_regions
+
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Test 1: Invalid trajectory bins
+    trajectory_bins = np.array([0, -1, 2])  # -1 is invalid
+    distances = distance_to_region(env, trajectory_bins, goal_bin)
+    assert distances.shape == (3,)
+    assert not np.isnan(distances[0])  # Valid bin
+    assert np.isnan(distances[1])  # Invalid bin → NaN
+    assert not np.isnan(distances[2])  # Valid bin
+
+    # Test 2: Invalid target bin (scalar)
+    trajectory_bins = np.array([0, 1, 2])
+    distances = distance_to_region(env, trajectory_bins, -1)
+    assert np.all(np.isnan(distances))  # All should be NaN with invalid target
+
+    # Test 3: Dynamic targets with some invalid
+    target_bins = np.array([goal_bin, -1, goal_bin])
+    distances = distance_to_region(env, trajectory_bins, target_bins)
+    assert not np.isnan(distances[0])  # Valid target
+    assert np.isnan(distances[1])  # Invalid target → NaN
+    assert not np.isnan(distances[2])  # Valid target
 
 
-@pytest.mark.skip("not implemented")
 def test_distance_to_region_multiple_goal_bins():
     """Test distance to region with multiple goal bins (distance to nearest)."""
-    pass
+    from neurospatial.behavioral import distance_to_region
+
+    # Create environment with known structure
+    positions = np.array(
+        [
+            [0, 0],  # bin 0 - start
+            [2, 0],  # bin 1
+            [4, 0],  # bin 2
+            [6, 0],  # bin 3 - goal region
+            [8, 0],  # bin 4 - goal region
+        ]
+    )
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # Add region covering multiple bins
+    env.regions.add("start", point=(0.0, 0.0))
+    env.regions.add("goal", point=(7.0, 0.0))  # Should cover both bins 3 and 4
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bins = env.bins_in_region("goal")
+
+    # Goal region should have multiple bins
+    assert len(goal_bins) >= 1
+
+    # Use first goal bin as scalar target
+    target_bin = goal_bins[0]
+
+    # Trajectory from start
+    trajectory_bins = np.array([start_bin])
+
+    # Compute distance - should be to nearest goal bin
+    distances = distance_to_region(env, trajectory_bins, target_bin)
+
+    # Distance should be positive
+    assert distances[0] > 0
 
 
-@pytest.mark.skip("not implemented")
 def test_distance_to_region_large_environment():
     """Test distance to region with large environment (memory fallback)."""
-    pass
+    from neurospatial.behavioral import distance_to_region
+
+    # Create large environment with >5000 bins
+    np.random.seed(42)
+    positions = np.random.uniform(0, 200, (5000, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # Skip if environment doesn't have enough bins
+    if env.n_bins < 5000:
+        pytest.skip(f"Environment has only {env.n_bins} bins, need ≥5000")
+
+    # Add regions
+    env.regions.add("start", point=(10.0, 10.0))
+    env.regions.add("goal", point=(190.0, 190.0))
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal")[0]
+
+    # Test 1: Scalar target (uses existing env.distance_to())
+    trajectory_bins = np.array([start_bin, goal_bin])
+    distances_scalar = distance_to_region(env, trajectory_bins, goal_bin)
+    assert distances_scalar.shape == (2,)
+    assert distances_scalar[0] > 0
+    assert np.isclose(distances_scalar[1], 0.0, atol=1e-6)
+
+    # Test 2: Dynamic targets (uses per-target fallback strategy)
+    target_bins = np.array([goal_bin, start_bin])  # Different target each timepoint
+    distances_dynamic = distance_to_region(env, trajectory_bins, target_bins)
+    assert distances_dynamic.shape == (2,)
+    assert distances_dynamic[0] > 0
+    assert distances_dynamic[1] > 0
 
 
 # =============================================================================

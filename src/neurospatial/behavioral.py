@@ -317,7 +317,73 @@ def distance_to_region(
     path_progress : Normalized progress along path
     cost_to_goal : Distance with terrain/learned cost
     """
-    raise NotImplementedError("distance_to_region not yet implemented")
+    # Check fitted state
+    if not env._is_fitted:
+        from neurospatial import EnvironmentNotFittedError
+
+        raise EnvironmentNotFittedError("Environment", "distance_to_region")
+
+    # Check if target_bins is scalar (int) vs array
+    is_scalar_target = np.isscalar(target_bins)
+
+    if is_scalar_target:
+        # Scalar target - use existing env.distance_to()
+        n_samples = len(trajectory_bins)
+        target_int = int(target_bins)
+
+        # Check if target is invalid
+        if target_int == -1:
+            # Invalid scalar target → all distances are NaN
+            return np.full(n_samples, np.nan, dtype=np.float64)
+
+        dist_field = env.distance_to([target_int], metric=metric)  # type: ignore[misc]
+        distances = dist_field[trajectory_bins].astype(np.float64)
+
+        # Handle invalid trajectory bins
+        invalid_mask = trajectory_bins == -1
+        distances[invalid_mask] = np.nan
+        return distances
+
+    else:
+        # Array of targets - need distance matrix
+        # Choose strategy based on environment size (same as path_progress)
+        n_samples = len(trajectory_bins)
+
+        if env.n_bins < 5000:
+            # Small environment - precompute full matrix
+            from neurospatial.distance import (
+                euclidean_distance_matrix,
+                geodesic_distance_matrix,
+            )
+
+            if metric == "geodesic":
+                dist_matrix = geodesic_distance_matrix(
+                    env.connectivity, env.n_bins, weight="distance"
+                )
+            else:
+                dist_matrix = euclidean_distance_matrix(env.bin_centers)
+
+            # Advanced indexing for vectorized lookup
+            distances = dist_matrix[trajectory_bins, target_bins]
+        else:
+            # Large environment - compute per unique target
+            unique_targets = np.unique(target_bins)
+            unique_targets = unique_targets[unique_targets != -1]  # Filter invalid
+
+            # Build distance array
+            distances = np.full(n_samples, np.nan, dtype=np.float64)
+
+            for target in unique_targets:
+                mask = target_bins == target
+                if np.any(mask):
+                    dist_field = env.distance_to([int(target)], metric=metric)  # type: ignore[misc]
+                    distances[mask] = dist_field[trajectory_bins[mask]]
+
+        # Handle invalid bins
+        invalid_mask = (trajectory_bins == -1) | (target_bins == -1)
+        distances[invalid_mask] = np.nan
+
+        return distances
 
 
 def cost_to_goal(
