@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-24 (v0.7.0 - NWB integration)
+**Last Updated**: 2025-11-24 (v0.8.0 - Behavioral metrics and goal-directed analysis)
 
 ## Table of Contents
 
@@ -117,6 +117,49 @@ trials = segment_trials(
 # Each trial has start_region and end_region
 for t in trials:
     print(f"{t.start_region} -> {t.end_region}: {'success' if t.success else 'timeout'}")
+
+# Behavioral & Goal-Directed Metrics (v0.8.0+)
+from neurospatial import (
+    path_progress,              # Normalized progress (0→1) along path
+    distance_to_region,         # Distance to goal region over time
+    cost_to_goal,               # RL cost with terrain/avoidance
+    time_to_goal,               # Time until goal arrival
+    compute_trajectory_curvature,  # Continuous curvature analysis
+    graph_turn_sequence,        # Discrete turn labels
+    trials_to_region_arrays,    # Helper for trial arrays
+)
+
+# Path progress for multiple trials (vectorized)
+trials = segment_trials(trajectory_bins, times, env,
+                        start_region="home", end_regions=["goal"])
+start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
+progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+
+# Distance to goal over time
+goal_bin = env.bins_in_region('reward_zone')[0]
+dist = distance_to_region(env, trajectory_bins, goal_bin)
+
+# Cost-to-goal with learned avoidance
+cost_map = np.ones(env.n_bins)
+cost_map[punishment_bins] = 10.0  # Avoid punishment zone
+cost = cost_to_goal(env, trajectory_bins, goal_bins, cost_map=cost_map)
+
+# Time remaining until goal arrival
+ttg = time_to_goal(times, trials)
+
+# Trajectory curvature (for GLM regressors)
+curvature = compute_trajectory_curvature(trajectory_positions, times)
+is_turning = np.abs(curvature) > np.pi / 4  # Sharp turns (>45°)
+
+# Turn sequence classification
+for trial in trials:
+    mask = (times >= trial.start_time) & (times <= trial.end_time)
+    turn_seq = graph_turn_sequence(
+        env, trajectory_bins[mask],
+        start_bin=env.bins_in_region(trial.start_region)[0],
+        end_bin=env.bins_in_region(trial.end_region)[0]
+    )
+    print(f"Trial {trial.start_region} → {trial.end_region}: {turn_seq}")  # e.g., "left-right"
 
 # Animate spatial fields over time (v0.3.0+)
 from neurospatial.animation import subsample_frames

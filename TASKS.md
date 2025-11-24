@@ -15,9 +15,9 @@
 - **Milestone 2**: Foundation Functions - 25/25 complete ✅ (M2.1 ✅, M2.2 ✅, M2.3 ✅, M2.4 ✅)
 - **Milestone 3**: Time and Curvature - 15/15 complete ✅ (M3.1 ✅, M3.2 ✅)
 - **Milestone 4**: Cost and Turn Analysis - 19/19 complete ✅ (M4.1 ✅, M4.2 ✅)
-- **Milestone 5**: Documentation - 0/5 complete
+- **Milestone 5**: Documentation - 4/21 complete (M5.1 ✅)
 
-**Total**: 60/70 tasks complete
+**Total**: 64/70 tasks complete
 
 ---
 
@@ -371,22 +371,22 @@
 **Estimated Time**: 2 hours
 **Dependencies**: Milestone 4 complete
 
-### M5.1: Update public API exports
+### M5.1: Update public API exports ✅ COMPLETE
 
-- [ ] **M5.1.1**: Update `src/neurospatial/__init__.py`
+- [x] **M5.1.1**: Update `src/neurospatial/__init__.py`
   - Add imports for all 7 behavioral functions
   - Update `__all__` list
   - Verify alphabetical ordering
 
-- [ ] **M5.1.2**: Write import tests
+- [x] **M5.1.2**: Write import tests
   - **FILE**: `tests/test_behavioral.py`
   - Test: `test_all_functions_exported()` (verify all 7 functions importable)
 
-- [ ] **M5.1.3**: Run import tests
+- [x] **M5.1.3**: Run import tests
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_all_functions_exported -v`
 
-- [ ] **M5.1.4**: Commit
-  - **COMMIT**: `feat(api): export behavioral analysis functions to public API`
+- [x] **M5.1.4**: Commit
+  - **COMMIT**: `feat(api): export behavioral analysis functions to public API` (completed in commit 6b2dfc4 during review feedback)
 
 ### M5.2: Update CLAUDE.md documentation
 
