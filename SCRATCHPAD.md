@@ -6,13 +6,51 @@
 
 ## Current Status
 
-- **Active Task**: M2.2.2 Complete - Region crossings writing implemented
+- **Active Task**: M3.1.1 Complete - Environment writing function implemented
 - **Blocker**: None
-- **Next Action**: Start M3.1.1 - Environment writing function
+- **Next Action**: Start M3.1.2 - Regions to DynamicTable (optional refinement) OR M3.2.1 - Environment reading function
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M3.1.1 Complete - Environment Writing Function
+
+- Created 21 tests for `write_environment()` in `tests/nwb/test_environment.py`
+- Tests cover:
+  - Basic Environment writing to scratch/
+  - bin_centers dataset with correct shape (n_bins, n_dims)
+  - edges dataset as edge list (n_edges, 2)
+  - edge_weights dataset (n_edges,)
+  - dimension_ranges dataset (n_dims, 2)
+  - Group attributes (units, frame, n_dims, layout_type)
+  - Regions stored as JSON in DynamicTable column
+  - Point regions stored correctly
+  - Polygon regions stored correctly
+  - metadata.json for extra attributes (including n_edges for deserialization)
+  - Default name ("spatial_environment")
+  - Custom name parameter
+  - Duplicate name error handling
+  - overwrite=True replaces existing
+  - Data integrity verification for bin_centers and edges
+  - Error on unfitted environment (RuntimeError)
+  - Alternative 2D environment test
+- Implemented `write_environment()` in `_environment.py`:
+  - Uses DynamicTable in scratch space (required by HDMF for uniform row counts)
+  - Arrays are padded to uniform row count, with actual counts stored in metadata JSON
+  - Extracts edge list and weights from connectivity graph
+  - Serializes regions to JSON via `_regions_to_json()` helper
+  - Stores metadata JSON with n_bins, n_edges, n_dims for proper deserialization
+  - Validates environment is fitted before writing
+  - Comprehensive NumPy-style docstring with Notes section explaining padding
+- Code review: Addressed critical feedback
+  - Added fitted state validation (RuntimeError if not fitted)
+  - Added n_edges to metadata JSON for deserialization
+  - Updated docstring to clarify padded storage format
+  - Added test for unfitted environment
+  - Fixed misleading test name (test_1d_environment → test_alternative_2d_environment)
+- All 21 tests pass, ruff check clean, mypy passes
+- **Milestone M3: Round-trip is now in progress**
 
 ### 2025-11-23: M2.2.2 Complete - Region Crossings Writing
 

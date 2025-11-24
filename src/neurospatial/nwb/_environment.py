@@ -7,33 +7,58 @@ to NWB scratch/ space using standard NWB types (no custom extension required).
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from neurospatial.nwb._core import _require_pynwb
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
     from neurospatial import Environment
 
+logger = logging.getLogger("neurospatial.nwb")
+
 
 def write_environment(
     nwbfile: NWBFile,
     env: Environment,
     name: str = "spatial_environment",
+    *,
+    overwrite: bool = False,
 ) -> None:
     """
     Write Environment to NWB scratch space using standard types.
 
-    Creates structure in scratch/:
-        scratch/{name}/
-            bin_centers       # Dataset (n_bins, n_dims)
-            edges             # Dataset (n_edges, 2) - edge list
-            edge_weights      # Dataset (n_edges,) - optional
-            dimension_ranges  # Dataset (n_dims, 2)
-            regions           # DynamicTable with point/polygon data
-            metadata.json     # Dataset (string) - JSON blob for extras
+    Creates a DynamicTable in scratch space containing environment data
+    as columns. Columns are accessible via ``scratch_data["column_name"]``.
 
-    Group attributes:
-        units, frame, n_dims, layout_type
+    Stored columns:
+
+    - bin_centers : NDArray, shape (n_rows, n_dims)
+        Bin center coordinates. First n_bins rows are valid data.
+    - edges : NDArray, shape (n_rows, 2)
+        Edge list for connectivity graph. First n_edges rows are valid data.
+    - edge_weights : NDArray, shape (n_rows,)
+        Edge weights (distances). First n_edges values are valid data.
+    - dimension_ranges : NDArray, shape (n_rows, 2)
+        Min/max extent per dimension. First n_dims rows are valid data.
+    - regions : list[str]
+        JSON-encoded regions data (repeated for DynamicTable compatibility).
+    - metadata : list[str]
+        JSON-encoded metadata including n_bins, n_edges, n_dims for
+        proper deserialization.
+
+    The description field contains: units, frame, n_dims, layout_type.
+
+    Notes
+    -----
+    Arrays are padded to uniform row count (required by HDMF DynamicTable).
+    Use the n_bins, n_edges, and n_dims values from metadata JSON to
+    extract the actual valid data during deserialization.
 
     Parameters
     ----------
@@ -42,10 +67,15 @@ def write_environment(
     env : Environment
         The Environment to serialize.
     name : str, default "spatial_environment"
-        Name for the environment group in scratch/.
+        Name for the environment in scratch/.
+    overwrite : bool, default False
+        If True, replace existing environment with same name.
+        If False, raise ValueError on duplicate name.
 
     Raises
     ------
+    ValueError
+        If environment with same name exists and overwrite=False.
     ImportError
         If pynwb is not installed.
 
@@ -57,7 +87,176 @@ def write_environment(
     ...     write_environment(nwbfile, env, name="linear_track")
     ...     io.write(nwbfile)
     """
-    raise NotImplementedError("write_environment not yet implemented")
+    _require_pynwb()
+    from hdmf.common import DynamicTable, VectorData
+
+    # Validate environment is fitted
+    if not env._is_fitted:
+        raise RuntimeError(
+            "Environment must be fitted before calling write_environment(). "
+            "Use factory methods like Environment.from_samples() to create "
+            "fitted environments."
+        )
+
+    # Check for existing environment
+    if name in nwbfile.scratch:
+        if not overwrite:
+            raise ValueError(
+                f"Environment '{name}' already exists in scratch. "
+                "Use overwrite=True to replace."
+            )
+        # Remove existing for replacement (in-memory only)
+        del nwbfile.scratch[name]
+        logger.info("Overwriting existing environment '%s'", name)
+
+    # Extract edge list and weights from connectivity graph
+    edges_list = list(env.connectivity.edges(data=True))
+    if edges_list:
+        edges = np.array([[e[0], e[1]] for e in edges_list], dtype=np.int64)
+        edge_weights = np.array(
+            [e[2].get("distance", 1.0) for e in edges_list], dtype=np.float64
+        )
+    else:
+        edges = np.empty((0, 2), dtype=np.int64)
+        edge_weights = np.empty((0,), dtype=np.float64)
+
+    # Collect metadata for description
+    units = env.units if env.units else "unknown"
+    frame = env.frame if env.frame else "unknown"
+    n_dims = env.bin_centers.shape[1]
+    layout_type = env.layout._layout_type_tag if env.layout else "unknown"
+
+    description = (
+        f"Spatial environment: units={units}, frame={frame}, "
+        f"n_dims={n_dims}, layout_type={layout_type}"
+    )
+
+    # Serialize regions to JSON
+    regions_data = _regions_to_json(env.regions) if env.regions else "{}"
+
+    # Serialize extra metadata (include array lengths for deserialization)
+    metadata = json.dumps(
+        {
+            "name": env.name,
+            "units": units,
+            "frame": frame,
+            "n_dims": n_dims,
+            "layout_type": layout_type,
+            "n_bins": env.n_bins,
+            "n_edges": len(edges),  # Needed for proper deserialization
+        }
+    )
+
+    # Use DynamicTable with row-aligned data (pad shorter arrays to match n_bins)
+    # This is required because DynamicTable needs uniform row counts
+    n_rows = max(env.n_bins, len(edges), n_dims, 1)
+
+    # Pad arrays to n_rows
+    bin_centers_padded = np.zeros((n_rows, n_dims), dtype=np.float64)
+    bin_centers_padded[: env.n_bins] = env.bin_centers
+
+    edges_padded = np.zeros((n_rows, 2), dtype=np.int64)
+    if len(edges) > 0:
+        edges_padded[: len(edges)] = edges
+
+    edge_weights_padded = np.zeros(n_rows, dtype=np.float64)
+    if len(edge_weights) > 0:
+        edge_weights_padded[: len(edge_weights)] = edge_weights
+
+    dim_ranges_padded = np.zeros((n_rows, 2), dtype=np.float64)
+    dim_ranges_padded[:n_dims] = env.dimension_ranges
+
+    # String data - repeat to match n_rows
+    regions_list = [regions_data] * n_rows
+    metadata_list = [metadata] * n_rows
+
+    # Create DynamicTable with padded columns
+    table = DynamicTable(
+        name=name,
+        description=description,
+        columns=[
+            VectorData(
+                name="bin_centers",
+                data=bin_centers_padded,
+                description=f"Bin center coordinates, actual shape ({env.n_bins}, {n_dims})",
+            ),
+            VectorData(
+                name="edges",
+                data=edges_padded,
+                description=f"Edge list for connectivity graph, actual shape ({len(edges)}, 2)",
+            ),
+            VectorData(
+                name="edge_weights",
+                data=edge_weights_padded,
+                description=f"Edge weights (distances), actual length {len(edge_weights)}",
+            ),
+            VectorData(
+                name="dimension_ranges",
+                data=dim_ranges_padded,
+                description=f"Min/max extent per dimension, actual shape ({n_dims}, 2)",
+            ),
+            VectorData(
+                name="regions",
+                data=regions_list,
+                description="JSON-encoded regions (points and polygons)",
+            ),
+            VectorData(
+                name="metadata",
+                data=metadata_list,
+                description="JSON-encoded metadata",
+            ),
+        ],
+    )
+
+    # Add to scratch space
+    nwbfile.add_scratch(table)
+    logger.debug(
+        "Wrote environment '%s' with %d bins and %d edges",
+        name,
+        env.n_bins,
+        len(edges),
+    )
+
+
+def _regions_to_json(regions) -> str:
+    """
+    Serialize Regions to JSON string.
+
+    Parameters
+    ----------
+    regions : Regions
+        The Regions container to serialize.
+
+    Returns
+    -------
+    str
+        JSON string containing region definitions.
+    """
+    if regions is None or len(regions) == 0:
+        return "{}"
+
+    regions_dict = {}
+    for region_name, region in regions.items():
+        region_data: dict[str, Any] = {"kind": region.kind}
+
+        if region.kind == "point":
+            # For points, region.data is an ndarray
+            if region.data is not None:
+                region_data["point"] = list(region.data)
+            else:
+                region_data["point"] = None
+        elif region.kind == "polygon":
+            # For polygons, region.data is a Shapely Polygon
+            if region.data is not None:
+                # Extract polygon coordinates
+                coords = list(region.data.exterior.coords)
+                region_data["polygon"] = coords
+            else:
+                region_data["polygon"] = None
+
+        regions_dict[region_name] = region_data
+
+    return json.dumps(regions_dict)
 
 
 def read_environment(

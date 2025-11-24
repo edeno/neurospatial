@@ -1,12 +1,14 @@
 """
-Tests for NWB environment factory functions.
+Tests for NWB environment functions.
 
-Tests for environment_from_position() which creates an Environment from
-NWB Position data.
+Tests for:
+- environment_from_position() - creates an Environment from NWB Position data
+- write_environment() - writes Environment to NWB scratch space
 """
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 # Skip all tests if pynwb is not installed
@@ -197,3 +199,306 @@ class TestEnvironmentFromPosition:
         assert env.connectivity is not None
         assert env.connectivity.number_of_nodes() == env.n_bins
         assert env.connectivity.number_of_edges() > 0
+
+
+class TestWriteEnvironment:
+    """Tests for write_environment() function."""
+
+    def test_basic_environment_writing(self, empty_nwb, sample_environment):
+        """Test basic Environment writing to scratch/."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment, name="test_env")
+
+        # Should exist in scratch
+        assert "test_env" in empty_nwb.scratch
+        scratch_data = empty_nwb.scratch["test_env"]
+        assert scratch_data is not None
+
+    def test_bin_centers_dataset(self, empty_nwb, sample_environment):
+        """Test bin_centers dataset stored with correct shape (n_bins, n_dims)."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # Access the bin_centers from the DynamicTable columns
+        assert "bin_centers" in scratch_data.colnames
+        bin_centers = scratch_data["bin_centers"][:]
+        # Data is padded, so check first n_bins rows
+        n_bins = sample_environment.n_bins
+        np.testing.assert_array_almost_equal(
+            bin_centers[:n_bins], sample_environment.bin_centers
+        )
+
+    def test_edges_dataset_as_edge_list(self, empty_nwb, sample_environment):
+        """Test edges dataset stored as edge list (n_edges, 2)."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert "edges" in scratch_data.colnames
+        edges = scratch_data["edges"][:]
+
+        # Should have shape (n_rows, 2) - padded to n_rows
+        assert edges.ndim == 2
+        assert edges.shape[1] == 2
+
+        # Get actual edges (non-zero rows)
+        expected_n_edges = sample_environment.connectivity.number_of_edges()
+        # Check that the first n_edges rows contain valid edges
+        actual_edges = edges[:expected_n_edges]
+        assert actual_edges.shape[0] == expected_n_edges
+
+    def test_edge_weights_dataset(self, empty_nwb, sample_environment):
+        """Test edge_weights dataset stored with correct shape (n_edges,)."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert "edge_weights" in scratch_data.colnames
+        edge_weights = scratch_data["edge_weights"][:]
+
+        # Data is padded, get first n_edges values
+        expected_n_edges = sample_environment.connectivity.number_of_edges()
+        actual_weights = edge_weights[:expected_n_edges]
+
+        # Weights should be non-negative (distances)
+        assert np.all(actual_weights >= 0)
+
+    def test_dimension_ranges_dataset(self, empty_nwb, sample_environment):
+        """Test dimension_ranges dataset stored with shape (n_dims, 2)."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert "dimension_ranges" in scratch_data.colnames
+        dim_ranges = scratch_data["dimension_ranges"][:]
+
+        # Data is padded, get first n_dims rows
+        n_dims = sample_environment.bin_centers.shape[1]
+
+        # Check values match environment dimension_ranges
+        np.testing.assert_array_almost_equal(
+            dim_ranges[:n_dims], sample_environment.dimension_ranges
+        )
+
+    def test_group_attributes_units(self, empty_nwb, sample_environment):
+        """Test units attribute is stored on group."""
+        from neurospatial.nwb import write_environment
+
+        sample_environment.units = "cm"
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # Access via description or comments which hold metadata
+        assert (
+            "cm" in scratch_data.description or "units=cm" in scratch_data.description
+        )
+
+    def test_group_attributes_frame(self, empty_nwb, sample_environment):
+        """Test frame attribute is stored on group."""
+        from neurospatial.nwb import write_environment
+
+        sample_environment.frame = "session_001"
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert (
+            "session_001" in scratch_data.description
+            or "frame=session_001" in scratch_data.description
+        )
+
+    def test_group_attributes_n_dims(self, empty_nwb, sample_environment):
+        """Test n_dims attribute is stored."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # n_dims should be in the description or metadata
+        n_dims = sample_environment.bin_centers.shape[1]
+        assert f"n_dims={n_dims}" in scratch_data.description
+
+    def test_group_attributes_layout_type(self, empty_nwb, sample_environment):
+        """Test layout_type attribute is stored."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # Layout type should be stored in description
+        layout_type = sample_environment.layout._layout_type_tag
+        assert layout_type in scratch_data.description
+
+    def test_default_name(self, empty_nwb, sample_environment):
+        """Test default name is 'spatial_environment'."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        assert "spatial_environment" in empty_nwb.scratch
+
+    def test_custom_name(self, empty_nwb, sample_environment):
+        """Test custom name parameter."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment, name="linear_track")
+
+        assert "linear_track" in empty_nwb.scratch
+        assert "spatial_environment" not in empty_nwb.scratch
+
+    def test_duplicate_name_error(self, empty_nwb, sample_environment):
+        """Test ValueError when writing duplicate name without overwrite."""
+        from neurospatial.nwb import write_environment
+
+        write_environment(empty_nwb, sample_environment)
+
+        with pytest.raises(ValueError, match="already exists"):
+            write_environment(empty_nwb, sample_environment)
+
+    def test_overwrite_replaces_existing(self, empty_nwb, sample_environment):
+        """Test overwrite=True replaces existing environment."""
+        from neurospatial.nwb import write_environment
+
+        # Write initial environment
+        write_environment(empty_nwb, sample_environment)
+
+        # Modify environment
+        modified_env = sample_environment
+        modified_env.units = "meters"
+
+        # Should succeed with overwrite=True
+        write_environment(empty_nwb, modified_env, overwrite=True)
+
+        # Check new data is present
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert "meters" in scratch_data.description
+
+    def test_point_regions_stored(self, empty_nwb, sample_environment):
+        """Test point regions are stored correctly."""
+        from neurospatial.nwb import write_environment
+
+        # Ensure we have point regions
+        sample_environment.regions.add("center", point=(50.0, 50.0))
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # Regions should be stored as column
+        assert "regions" in scratch_data.colnames
+
+    def test_polygon_regions_stored(self, empty_nwb):
+        """Test polygon regions are stored correctly with ragged vertices."""
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.nwb import write_environment
+
+        # Create environment with polygon region
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Add polygon region
+        triangle = Polygon([(10, 10), (30, 10), (20, 30)])
+        env.regions.add("reward_zone", polygon=triangle)
+
+        write_environment(empty_nwb, env)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert "regions" in scratch_data.colnames
+
+    def test_empty_regions(self, empty_nwb):
+        """Test environment with no regions."""
+        from neurospatial import Environment
+        from neurospatial.nwb import write_environment
+
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        # No regions added
+
+        # Should work without error
+        write_environment(empty_nwb, env)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        assert scratch_data is not None
+
+    def test_metadata_json_stored(self, empty_nwb, sample_environment):
+        """Test metadata.json stored for extra attributes."""
+        from neurospatial.nwb import write_environment
+
+        sample_environment.name = "test_arena"
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        # Metadata JSON should be stored as column
+        assert "metadata" in scratch_data.colnames
+
+    def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
+        """Test bin_centers data integrity after write."""
+        from neurospatial.nwb import write_environment
+
+        original_bin_centers = sample_environment.bin_centers.copy()
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        stored_bin_centers = scratch_data["bin_centers"][:]
+        n_bins = sample_environment.n_bins
+
+        np.testing.assert_array_equal(stored_bin_centers[:n_bins], original_bin_centers)
+
+    def test_data_integrity_edges(self, empty_nwb, sample_environment):
+        """Test edges data integrity after write."""
+        from neurospatial.nwb import write_environment
+
+        # Get original edges from connectivity graph
+        original_edges = np.array(list(sample_environment.connectivity.edges()))
+
+        write_environment(empty_nwb, sample_environment)
+
+        scratch_data = empty_nwb.scratch["spatial_environment"]
+        stored_edges = scratch_data["edges"][:]
+        n_edges = sample_environment.connectivity.number_of_edges()
+
+        # Get only the actual edges (first n_edges rows)
+        stored_edges = stored_edges[:n_edges]
+
+        # Edges should match (potentially different order, so sort)
+        original_sorted = np.sort(original_edges, axis=1)
+        stored_sorted = np.sort(stored_edges, axis=1)
+        original_sorted = original_sorted[np.lexsort(original_sorted.T)]
+        stored_sorted = stored_sorted[np.lexsort(stored_sorted.T)]
+
+        np.testing.assert_array_equal(stored_sorted, original_sorted)
+
+    def test_alternative_2d_environment(self, empty_nwb):
+        """Test writing environment created with different parameters."""
+        from neurospatial import Environment
+        from neurospatial.nwb import write_environment
+
+        # Create 2D environment with different parameters
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (500, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Should work without error
+        write_environment(empty_nwb, env)
+
+        assert "spatial_environment" in empty_nwb.scratch
+
+    def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
+        """Test RuntimeError when writing unfitted Environment."""
+        from neurospatial.nwb import write_environment
+
+        # Manually mark environment as unfitted to test validation
+        sample_environment._is_fitted = False
+
+        with pytest.raises(RuntimeError, match="must be fitted"):
+            write_environment(empty_nwb, sample_environment)

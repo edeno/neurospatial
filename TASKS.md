@@ -204,21 +204,21 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M3.1 Environment to Scratch
 
-- [ ] **M3.1.1** Environment writing function
-  - [ ] Write tests for `write_environment()` in `tests/nwb/test_environment.py`
-    - [ ] Test basic Environment writing to scratch/
-    - [ ] Test bin_centers dataset (n_bins, n_dims)
-    - [ ] Test edges dataset as edge list (n_edges, 2)
-    - [ ] Test edge_weights dataset (optional)
-    - [ ] Test dimension_ranges dataset (n_dims, 2)
-    - [ ] Test group attributes (units, frame, n_dims, layout_type)
-    - [ ] Test regions DynamicTable creation
-    - [ ] Test point regions stored correctly
-    - [ ] Test polygon regions stored correctly (ragged vertices)
-    - [ ] Test metadata.json for extra attributes
-  - [ ] Implement `write_environment()` in `_environment.py`
-  - [ ] Create scratch group structure per spec
-  - [ ] Handle edge extraction from nx.Graph
+- [x] **M3.1.1** Environment writing function
+  - [x] Write tests for `write_environment()` in `tests/nwb/test_environment.py`
+    - [x] Test basic Environment writing to scratch/
+    - [x] Test bin_centers dataset (n_bins, n_dims)
+    - [x] Test edges dataset as edge list (n_edges, 2)
+    - [x] Test edge_weights dataset (optional)
+    - [x] Test dimension_ranges dataset (n_dims, 2)
+    - [x] Test group attributes (units, frame, n_dims, layout_type)
+    - [x] Test regions DynamicTable creation
+    - [x] Test point regions stored correctly
+    - [x] Test polygon regions stored correctly (ragged vertices)
+    - [x] Test metadata.json for extra attributes
+  - [x] Implement `write_environment()` in `_environment.py`
+  - [x] Create scratch group structure per spec
+  - [x] Handle edge extraction from nx.Graph
 
 - [ ] **M3.1.2** Regions to DynamicTable
   - [ ] Write tests for regions DynamicTable conversion
@@ -330,5 +330,5 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 | M0: Setup | Complete | 2025-11-23 | 2025-11-23 |
 | M1: Reading | Complete | 2025-11-23 | 2025-11-23 |
 | M2: Writing | Complete | 2025-11-23 | 2025-11-23 |
-| M3: Round-trip | Not Started | - | - |
+| M3: Round-trip | In Progress | 2025-11-23 | - |
 | M4: Docs | Not Started | - | - |
