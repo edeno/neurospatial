@@ -1102,3 +1102,126 @@ class TestEnvironmentRoundTrip:
 
         # Layout type should be stored
         assert loaded_env._layout_type_used == "Graph"
+
+    def test_roundtrip_masked_grid_layout(self, tmp_path):
+        """Test MaskedGrid layout environment round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create a MaskedGrid layout with active region in the center
+        mask = np.zeros((10, 10), dtype=bool)
+        mask[2:8, 2:8] = True  # Active region in the center
+
+        # Grid edges define the spatial extent
+        x_edges = np.linspace(0, 50, 11)  # 10 bins from 0 to 50
+        y_edges = np.linspace(0, 50, 11)
+
+        env = Environment.from_mask(
+            active_mask=mask,
+            grid_edges=(x_edges, y_edges),
+        )
+
+        nwb_path = tmp_path / "test_masked_grid.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+        # Layout type should be stored
+        assert loaded_env._layout_type_used == "MaskedGrid"
+
+    def test_roundtrip_image_mask_layout(self, tmp_path):
+        """Test ImageMask layout environment round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create a binary image mask (circular arena)
+        y, x = np.ogrid[:50, :50]
+        center = (25, 25)
+        radius = 20
+        mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
+
+        env = Environment.from_image(
+            image_mask=mask,  # Boolean mask
+            bin_size=2.0,
+        )
+
+        nwb_path = tmp_path / "test_image_mask.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+        # Layout type should be stored
+        assert loaded_env._layout_type_used == "ImageMask"
+
+    def test_roundtrip_triangular_mesh_layout(self, tmp_path):
+        """Test TriangularMesh layout environment round-trip."""
+        from pynwb import NWBHDF5IO
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create a triangular mesh layout with a simple boundary
+        boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
+
+        env = Environment.from_layout(
+            kind="TriangularMesh",
+            layout_params={
+                "boundary_polygon": boundary,
+                "point_spacing": 5.0,  # Controls mesh density
+            },
+        )
+
+        nwb_path = tmp_path / "test_triangular_mesh.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+        # Layout type should be stored
+        assert loaded_env._layout_type_used == "TriangularMesh"
