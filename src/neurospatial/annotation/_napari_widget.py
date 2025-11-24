@@ -477,7 +477,7 @@ def create_annotation_widget(
                 else:
                     # Delete the just-drawn shape
                     # Must defer to avoid reentrancy with napari's _finish_drawing()
-                    from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
+                    from qtpy.QtCore import QTimer
 
                     # Update count IMMEDIATELY to prevent dialog re-triggering
                     # (napari may fire multiple data events for single shape)
@@ -572,7 +572,7 @@ def create_annotation_widget(
         addition. This wrapper schedules the actual processing to run once
         after the event storm settles, reducing UI latency.
         """
-        from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
+        from qtpy.QtCore import QTimer
 
         if not _pending_update[0]:
             _pending_update[0] = True

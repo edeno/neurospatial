@@ -36,5 +36,6 @@ repos:
           - shapely
           - ipython
           - magicgui
+          - qtpy
         args: [--ignore-missing-imports, --warn-unused-ignores]
         exclude: '^(docs/examples/.*\.py|examples/.*\.py|tests/.*|src/neurospatial/annotation/.*|benchmarks/.*)$'
