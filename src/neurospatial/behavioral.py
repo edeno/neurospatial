@@ -175,7 +175,92 @@ def path_progress(
     trials_to_region_arrays : Helper to construct start/goal arrays from trials
     distance_to_region : Distance to target region over time
     """
-    raise NotImplementedError("path_progress not yet implemented")
+    # Check fitted state
+    if not env._is_fitted:
+        from neurospatial import EnvironmentNotFittedError
+
+        raise EnvironmentNotFittedError("Environment", "path_progress")
+
+    # Import distance functions
+    from neurospatial.distance import (
+        euclidean_distance_matrix,
+        geodesic_distance_matrix,
+    )
+
+    n_samples = len(trajectory_bins)
+
+    # Choose strategy based on environment size
+    if env.n_bins < 5000:
+        # Small environment - precompute full distance matrix
+        if metric == "geodesic":
+            dist_matrix = geodesic_distance_matrix(
+                env.connectivity, env.n_bins, weight="distance"
+            )
+        else:  # euclidean
+            dist_matrix = euclidean_distance_matrix(env.bin_centers)
+
+        # Vectorized lookup: distance from start to current position
+        distances_from_start = dist_matrix[start_bins, trajectory_bins]
+
+        # Vectorized lookup: total distance from start to goal
+        total_distances = dist_matrix[start_bins, goal_bins]
+
+    else:
+        # Large environment - compute per-unique-pair distance fields
+        # This is more memory-efficient for large grids
+        from neurospatial import distance_field
+
+        # Initialize arrays
+        distances_from_start = np.full(n_samples, np.nan)
+        total_distances = np.full(n_samples, np.nan)
+
+        # Find unique (start, goal) pairs
+        # Filter out invalid bins (-1) before creating pairs
+        valid_mask = (start_bins >= 0) & (goal_bins >= 0)
+        valid_pairs = np.column_stack([start_bins[valid_mask], goal_bins[valid_mask]])
+        unique_pairs = np.unique(valid_pairs, axis=0)
+
+        # Compute distance field for each unique pair
+        for start_bin, goal_bin in unique_pairs:
+            # Find all timepoints with this (start, goal) pair
+            pair_mask = (start_bins == start_bin) & (goal_bins == goal_bin)
+
+            # Compute distance field from start
+            start_dist_field = distance_field(
+                env.connectivity,
+                [int(start_bin)],
+                metric=metric,
+                bin_centers=env.bin_centers if metric == "euclidean" else None,
+            )
+
+            # Get distances for this pair
+            distances_from_start[pair_mask] = start_dist_field[
+                trajectory_bins[pair_mask]
+            ]
+            total_distances[pair_mask] = start_dist_field[goal_bin]
+
+    # Compute progress
+    with np.errstate(divide="ignore", invalid="ignore"):
+        progress = distances_from_start / total_distances
+
+    # Handle edge cases
+
+    # 1. start_bin == goal_bin: Return 1.0 (already at goal)
+    same_start_goal = start_bins == goal_bins
+    progress[same_start_goal] = 1.0
+
+    # 2. Disconnected paths (total_distance = inf): Return NaN
+    disconnected = np.isinf(total_distances)
+    progress[disconnected] = np.nan
+
+    # 3. Invalid bins (-1): Return NaN
+    invalid_bins = (start_bins == -1) | (goal_bins == -1) | (trajectory_bins == -1)
+    progress[invalid_bins] = np.nan
+
+    # 4. Clip detours (progress > 1.0) to 1.0
+    progress = np.clip(progress, 0.0, 1.0)
+
+    return progress
 
 
 def distance_to_region(
