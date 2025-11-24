@@ -53,7 +53,7 @@ class OverlayProtocol(Protocol):
     The ``convert_to_data()`` method is called during animation to transform
     user-facing overlay configuration into internal data representation.
 
-    Parameters
+    Attributes
     ----------
     times : NDArray[np.float64] | None
         Timestamps for overlay data samples, in seconds. If None, samples are
