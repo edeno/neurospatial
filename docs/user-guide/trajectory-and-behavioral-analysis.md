@@ -571,10 +571,10 @@ trials = segment_trials(
 visited_arms = []
 errors = 0
 for trial in trials:
-    if trial.success and trial.outcome:
-        if trial.outcome in visited_arms:
+    if trial.success and trial.end_region:
+        if trial.end_region in visited_arms:
             errors += 1  # Re-entry error
-        visited_arms.append(trial.outcome)
+        visited_arms.append(trial.end_region)
 
 print(f"Working memory errors: {errors}")
 ```
@@ -892,7 +892,7 @@ print(f"Left choice stereotypy: {np.mean(left_similarities):.3f}")
 
 # Step 4: Detect goal-directed behavior
 for trial in trials[:5]:  # First 5 trials
-    if trial.outcome:
+    if trial.end_region:
         mask = (times >= trial.start_time) & (times <= trial.end_time)
         trial_bins = trajectory_bins[mask]
         trial_times = times[mask]
@@ -901,7 +901,7 @@ for trial in trials[:5]:  # First 5 trials
             trial_bins,
             trial_times,
             env,
-            goal_region=trial.outcome,
+            goal_region=trial.end_region,
             directedness_threshold=0.5,
             min_progress=10.0,
         )

@@ -19,6 +19,22 @@ trajectory_similarity
     Compare similarity between two trajectories
 detect_goal_directed_runs
     Detect goal-directed navigation segments
+
+Classes
+-------
+Trial
+    Dataclass representing a behavioral trial with fields:
+    - start_time: Trial onset time
+    - end_time: Trial offset time
+    - start_region: Region where trial started
+    - end_region: Region reached (None if timeout)
+    - success: True if trial reached end_region
+Crossing
+    Dataclass for region entry/exit events
+Lap
+    Dataclass for lap detection results
+Run
+    Dataclass for runs between regions
 """
 
 from neurospatial.segmentation.laps import Lap, detect_laps

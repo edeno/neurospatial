@@ -89,8 +89,35 @@
 
 ---
 
-### Next Task
-**Milestone 5**: Documentation - Update CLAUDE.md and docstrings
+**Milestone 5**: Documentation - COMPLETE
+
+#### Tasks Completed:
+- [x] **5.1** Updated `CLAUDE.md`:
+  - Added trial segmentation example to Quick Reference
+  - Added `write_trials`/`read_trials` to NWB Integration section
+  - Updated NWB Data Locations table with Trials → `intervals/trials/`
+  - Added to Import Patterns section
+- [x] **5.2** Updated `src/neurospatial/segmentation/__init__.py` docstring
+  - Added Classes section documenting Trial, Crossing, Lap, Run
+- [x] **5.3** Updated notebooks with `.end_region` (replaced `.outcome`):
+  - `examples/14_behavioral_segmentation.ipynb`
+  - `docs/examples/14_behavioral_segmentation.ipynb`
+  - `site/examples/14_behavioral_segmentation/14_behavioral_segmentation.ipynb`
+  - `docs/user-guide/trajectory-and-behavioral-analysis.md`
+
+---
+
+**Milestone 6**: Final Verification - COMPLETE
+
+#### Results:
+- [x] **6.1** Full test suite: **3884 passed, 10 skipped** (no failures)
+- [x] **6.2** Type checking: `mypy` - no issues found
+- [x] **6.3** Linting: `ruff check` and `ruff format` - all checks passed
+
+---
+
+### Feature Complete
+All milestones completed successfully. Ready for commit.
 
 ### Breaking Change Notice
 `Trial.outcome` renamed to `Trial.end_region`. This is documented in PLAN.md.

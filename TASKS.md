@@ -128,16 +128,16 @@ uv run python -c "from neurospatial.nwb import write_trials, read_trials; print(
 
 ### Tasks
 
-- [ ] **5.1** Update `CLAUDE.md`
+- [x] **5.1** Update `CLAUDE.md`
   - Add trial segmentation example to Quick Reference
   - Add `write_trials`/`read_trials` to NWB Integration section
   - Update NWB Data Locations table
   - Add to Import Patterns section
 
-- [ ] **5.2** Update `src/neurospatial/segmentation/__init__.py` docstring
+- [x] **5.2** Update `src/neurospatial/segmentation/__init__.py` docstring
   - Reflect `Trial` field changes if referenced
 
-- [ ] **5.3** Update notebooks (use jupyter notebook skill)
+- [x] **5.3** Update notebooks (use jupyter notebook skill)
 
 ### Verify
 
@@ -154,20 +154,20 @@ uv run pytest --doctest-modules src/neurospatial/nwb/_events.py
 
 ### Tasks
 
-- [ ] **6.1** Run full test suite
+- [x] **6.1** Run full test suite
 
   ```bash
   uv run pytest
   ```
 
-- [ ] **6.2** Run type checking
+- [x] **6.2** Run type checking
 
   ```bash
   uv run mypy src/neurospatial/segmentation/trials.py
   uv run mypy src/neurospatial/nwb/_events.py
   ```
 
-- [ ] **6.3** Run linting
+- [x] **6.3** Run linting
 
   ```bash
   uv run ruff check src/neurospatial/segmentation/trials.py src/neurospatial/nwb/_events.py

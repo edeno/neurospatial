@@ -105,6 +105,19 @@ env = Environment.from_samples(positions, bin_size=1.0)  # May warn, but will su
 # Disable warning if intentional (v0.2.1+)
 env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
 
+# Segment trials from trajectory data (v0.7.0+)
+from neurospatial.segmentation import segment_trials
+
+trials = segment_trials(
+    trajectory_bins, times, env,
+    start_region="home",
+    end_regions=["reward_left", "reward_right"],
+)
+
+# Each trial has start_region and end_region
+for t in trials:
+    print(f"{t.start_region} -> {t.end_region}: {'success' if t.success else 'timeout'}")
+
 # Animate spatial fields over time (v0.3.0+)
 from neurospatial.animation import subsample_frames
 
@@ -350,12 +363,14 @@ from neurospatial.nwb import (
     read_pose,                  # PoseEstimation → (bodyparts, timestamps, skeleton)
     read_events,                # EventsTable → DataFrame
     read_intervals,             # TimeIntervals → DataFrame (trials, epochs)
+    read_trials,                # Trials table → DataFrame
     read_environment,           # scratch/ → Environment
 
     # Writing functions
     write_place_field,          # Write place field to analysis/
     write_occupancy,            # Write occupancy map to analysis/
     write_laps,                 # Write lap events to processing/behavior/
+    write_trials,               # Write trials to intervals/trials/
     write_region_crossings,     # Write region crossing events
     write_environment,          # Write Environment to scratch/
 
@@ -404,7 +419,27 @@ with NWBHDF5IO("session.nwb", "r+") as io:
     # Write environment for round-trip (to scratch/)
     write_environment(nwbfile, env, name="linear_track")
 
+    # Write trials from Trial objects (from segment_trials)
+    write_trials(nwbfile, trials)
+
+    # Or write trials from raw arrays
+    write_trials(
+        nwbfile,
+        start_times=start_times,
+        stop_times=stop_times,
+        start_regions=start_regions,
+        end_regions=end_regions,
+        successes=successes,
+        overwrite=True,  # Replace existing trials
+    )
+
     io.write(nwbfile)
+
+# Read trials back from NWB
+with NWBHDF5IO("session.nwb", "r") as io:
+    nwbfile = io.read()
+    trials_df = read_trials(nwbfile)
+    # DataFrame with: start_time, stop_time, start_region, end_region, success
 
 # Round-trip: Read environment from NWB
 with NWBHDF5IO("session.nwb", "r") as io:
@@ -435,6 +470,7 @@ with NWBHDF5IO("session.nwb", "r+") as io:
 |-----------|--------------|----------|
 | Place fields | `analysis/` | `write_place_field()` |
 | Occupancy | `analysis/` | `write_occupancy()` |
+| Trials | `intervals/trials/` | `write_trials()` |
 | Lap events | `processing/behavior/` | `write_laps()` |
 | Region crossings | `processing/behavior/` | `write_region_crossings()` |
 | Environment | `scratch/` | `write_environment()` |
@@ -593,11 +629,13 @@ from neurospatial.nwb import (
     read_pose,               # PoseEstimation → (bodyparts, timestamps, skeleton)
     read_events,             # EventsTable → DataFrame
     read_intervals,          # TimeIntervals → DataFrame
+    read_trials,             # Trials table → DataFrame
     read_environment,        # scratch/ → Environment
 
     # Writing
     write_place_field,       # Write to analysis/
     write_occupancy,         # Write to analysis/
+    write_trials,            # Write to intervals/trials/
     write_laps,              # Write to processing/behavior/
     write_region_crossings,  # Write to processing/behavior/
     write_environment,       # Write to scratch/
