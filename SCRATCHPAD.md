@@ -6,13 +6,43 @@
 
 ## Current Status
 
-- **Active Task**: M2.1.1 Complete - Place field writing implemented
+- **Active Task**: M2.1.2 Complete - Occupancy map writing implemented
 - **Blocker**: None
-- **Next Action**: Start M2.1.2 - Occupancy map writing
+- **Next Action**: Start M2.2.1 - Lap events writing
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M2.1.2 Complete - Occupancy Map Writing
+
+- Created 18 tests for `write_occupancy()` in `tests/nwb/test_fields.py`
+- Tests cover:
+  - Basic occupancy writing to analysis/ module
+  - Occupancy metadata (description, unit)
+  - Data integrity verification
+  - Shape validation (1D only, 2D rejected)
+  - Duplicate name handling without overwrite
+  - overwrite=True replaces existing occupancy
+  - bin_centers reference stored and deduplicated
+  - Multiple spatial fields share single bin_centers dataset
+  - Default name ("occupancy")
+  - Empty description allowed
+  - Analysis module reuse
+  - NaN value preservation
+  - Zero value preservation
+  - Unit parameter variations (seconds, probability, counts)
+- Implemented `write_occupancy()` in `_fields.py`:
+  - Uses `_validate_1d_field_shape()` helper for 1D-only validation
+  - Reuses `_ensure_bin_centers()` helper for bin_centers deduplication
+  - Stores occupancy as TimeSeries in analysis/ processing module
+  - 1D occupancy stored as (1, n_bins) for NWB TimeSeries compatibility
+  - Default unit is "seconds" (common for time-in-bin occupancy)
+  - Includes comprehensive docstring with Notes and Examples
+- Code review: APPROVED with feedback
+  - Renamed `units` parameter to `unit` for consistency with `write_place_field()` and NWB
+  - Updated tests from `test_units_*` to `test_unit_*`
+- All 18 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M2.1.1 Complete - Place Field Writing
 

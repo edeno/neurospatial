@@ -61,6 +61,36 @@ def _validate_field_shape(field: NDArray, n_bins: int) -> None:
         )
 
 
+def _validate_1d_field_shape(field: NDArray, n_bins: int) -> None:
+    """
+    Validate that field is 1D with shape (n_bins,).
+
+    Used for occupancy maps which are always static (not time-varying).
+
+    Parameters
+    ----------
+    field : NDArray
+        The spatial field to validate.
+    n_bins : int
+        Expected number of bins from the environment.
+
+    Raises
+    ------
+    ValueError
+        If field is not 1D or doesn't match expected n_bins.
+    """
+    if field.ndim != 1:
+        raise ValueError(
+            f"Occupancy must be 1D (n_bins,), got shape {field.shape}. "
+            f"For time-varying data, use write_place_field() instead."
+        )
+    if field.shape[0] != n_bins:
+        raise ValueError(
+            f"Occupancy shape {field.shape} does not match env.n_bins={n_bins}. "
+            f"Expected shape ({n_bins},)."
+        )
+
+
 def _ensure_bin_centers(nwbfile: NWBFile, env: Environment) -> None:
     """
     Store bin_centers in analysis module if not already present.
@@ -218,11 +248,13 @@ def write_occupancy(
     name: str = "occupancy",
     description: str = "",
     *,
-    units: str = "seconds",
+    unit: str = "seconds",
     overwrite: bool = False,
 ) -> None:
     """
     Write occupancy map to NWB file.
+
+    Stores occupancy values aligned with environment bin centers in analysis/.
 
     Parameters
     ----------
@@ -231,21 +263,91 @@ def write_occupancy(
     env : Environment
         The Environment providing bin structure.
     occupancy : NDArray[np.float64], shape (n_bins,)
-        Occupancy values per bin.
+        Occupancy values per bin. Must be 1D array matching env.n_bins.
     name : str, default "occupancy"
         Name for the occupancy map in NWB.
     description : str, default ""
         Description of the occupancy map.
-    units : str, default "seconds"
-        Units for occupancy values (e.g., "seconds", "probability").
+    unit : str, default "seconds"
+        Units for occupancy values. Common options:
+
+        - "seconds" (default): Time spent in each bin
+        - "probability": Normalized occupancy (sums to 1)
+        - "counts": Raw bin visit counts
     overwrite : bool, default False
         If True, replace existing occupancy with same name.
+        If False, raise ValueError on duplicate name.
 
     Raises
     ------
     ValueError
+        If occupancy with same name exists and overwrite=False.
         If occupancy shape doesn't match env.n_bins.
+        If occupancy is not 1D.
     ImportError
         If pynwb is not installed.
+
+    Notes
+    -----
+    - Occupancy maps are always static (1D), unlike place fields which can
+      be time-varying (2D). For time-varying occupancy, use separate snapshots.
+    - The ``bin_centers`` dataset is stored once and shared across all fields
+      in the same analysis module to avoid data duplication.
+    - Static 1D occupancy is stored as ``(1, n_bins)`` for NWB TimeSeries
+      compatibility (time on 0th dimension).
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO
+    >>> from neurospatial import Environment
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> occupancy = env.occupancy(times, positions)  # Time in each bin
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    ...     nwbfile = io.read()
+    ...     write_occupancy(nwbfile, env, occupancy, name="session_occupancy")
+    ...     io.write(nwbfile)
+
+    For probability-normalized occupancy:
+
+    >>> prob_occupancy = occupancy / occupancy.sum()
+    >>> write_occupancy(nwbfile, env, prob_occupancy, unit="probability")
     """
-    raise NotImplementedError("write_occupancy not yet implemented")
+    _require_pynwb()
+    from pynwb import TimeSeries
+
+    # Validate occupancy shape (1D only)
+    _validate_1d_field_shape(occupancy, env.n_bins)
+
+    # Get or create analysis processing module
+    analysis = _get_or_create_processing_module(
+        nwbfile, "analysis", "Analysis results including spatial fields"
+    )
+
+    # Check for existing occupancy with same name
+    if name in analysis.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"Occupancy '{name}' already exists. Use overwrite=True to replace."
+            )
+        # Remove existing for replacement (in-memory only)
+        del analysis.data_interfaces[name]
+        logger.info("Overwriting existing occupancy '%s'", name)
+
+    # Ensure bin_centers are stored (deduplicated)
+    _ensure_bin_centers(nwbfile, env)
+
+    # Create TimeSeries for the occupancy map
+    # Static 1D occupancy stored as (1, n_bins) for NWB compatibility
+    data = occupancy.reshape(1, -1)  # Shape: (1, n_bins)
+
+    occupancy_ts = TimeSeries(
+        name=name,
+        description=description,
+        data=data,
+        unit=unit,
+        timestamps=[0.0],  # Single timepoint - static data
+        comments=f"Occupancy map with n_bins={env.n_bins}. See '{BIN_CENTERS_NAME}' for coordinates.",
+    )
+
+    analysis.add(occupancy_ts)
+    logger.debug("Wrote occupancy '%s' with shape %s", name, occupancy.shape)

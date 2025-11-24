@@ -171,12 +171,12 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Create analysis/ processing module if needed
   - [x] Store as TimeSeries with bin_centers reference
 
-- [ ] **M2.1.2** Occupancy map writing
-  - [ ] Write tests for `write_occupancy()` in `tests/nwb/test_fields.py`
-    - [ ] Test basic occupancy writing to analysis/
-    - [ ] Test normalization options (counts vs. probability)
-  - [ ] Implement `write_occupancy()` in `_fields.py`
-  - [ ] Store with appropriate units metadata
+- [x] **M2.1.2** Occupancy map writing
+  - [x] Write tests for `write_occupancy()` in `tests/nwb/test_fields.py`
+    - [x] Test basic occupancy writing to analysis/
+    - [x] Test normalization options (counts vs. probability)
+  - [x] Implement `write_occupancy()` in `_fields.py`
+  - [x] Store with appropriate units metadata
 
 ### M2.2 Writing Events
 
