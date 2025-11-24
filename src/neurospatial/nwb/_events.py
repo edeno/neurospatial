@@ -192,6 +192,9 @@ def write_laps(
     lap_types: NDArray[np.int_] | None = None,
     description: str = "Detected lap events",
     *,
+    start_regions: Sequence[str] | None = None,
+    end_regions: Sequence[str] | None = None,
+    stop_times: NDArray[np.float64] | None = None,
     name: str = "laps",
     overwrite: bool = False,
 ) -> None:
@@ -199,7 +202,7 @@ def write_laps(
     Write lap detection results to NWB EventsTable.
 
     Creates an EventsTable in the processing/behavior/ module containing
-    lap event timestamps and optional direction information.
+    lap event timestamps and optional direction, region, and stop time information.
 
     Parameters
     ----------
@@ -212,6 +215,15 @@ def write_laps(
         Must have same length as lap_times.
     description : str, default "Detected lap events"
         Description for the EventsTable.
+    start_regions : Sequence[str], optional
+        Start region names for each lap. If provided, added as 'start_region'
+        column. Must have same length as lap_times.
+    end_regions : Sequence[str], optional
+        End region names for each lap. If provided, added as 'end_region'
+        column. Must have same length as lap_times.
+    stop_times : NDArray[np.float64], optional
+        Lap end timestamps in seconds. If provided, added as 'stop_time' column.
+        Must have same length as lap_times and stop_times >= lap_times.
     name : str, default "laps"
         Name for the EventsTable in NWB.
     overwrite : bool, default False
@@ -223,7 +235,10 @@ def write_laps(
     ValueError
         If EventsTable with same name exists and overwrite=False.
         If lap_times is not 1D.
-        If lap_types length doesn't match lap_times.
+        If lap_types, start_regions, end_regions, or stop_times length
+        doesn't match lap_times.
+        If stop_times < lap_times for any entry.
+        If timestamps contain non-finite or negative values.
     ImportError
         If ndx-events is not installed.
 
@@ -239,9 +254,17 @@ def write_laps(
     >>> import numpy as np  # doctest: +SKIP
     >>> lap_times = np.array([1.0, 5.5, 10.2, 15.8])  # doctest: +SKIP
     >>> directions = np.array([0, 1, 0, 1])  # doctest: +SKIP
+    >>> start_regions = ["home", "goal", "home", "goal"]  # doctest: +SKIP
+    >>> end_regions = ["goal", "home", "goal", "home"]  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     write_laps(nwbfile, lap_times, lap_types=directions)
+    ...     write_laps(
+    ...         nwbfile,
+    ...         lap_times,
+    ...         lap_types=directions,
+    ...         start_regions=start_regions,
+    ...         end_regions=end_regions,
+    ...     )
     ...     io.write(nwbfile)
     """
     from neurospatial.nwb._core import (
@@ -262,8 +285,10 @@ def write_laps(
             "Each element should be a single timestamp."
         )
 
+    n_laps = len(lap_times)
+
     # Validate timestamps are finite and non-negative
-    if len(lap_times) > 0:
+    if n_laps > 0:
         if not np.all(np.isfinite(lap_times)):
             raise ValueError("lap_times contains non-finite values (NaN or Inf)")
         if np.any(lap_times < 0):
@@ -272,11 +297,55 @@ def write_laps(
     # Validate lap_types length if provided
     if lap_types is not None:
         lap_types = np.asarray(lap_types)
-        if len(lap_types) != len(lap_times):
+        if len(lap_types) != n_laps:
             raise ValueError(
                 f"lap_types length ({len(lap_types)}) must match "
-                f"lap_times length ({len(lap_times)})."
+                f"lap_times length ({n_laps})."
             )
+
+    # Validate start_regions length if provided
+    start_regions_list: list[str] | None = None
+    if start_regions is not None:
+        start_regions_list = list(start_regions)
+        if len(start_regions_list) != n_laps:
+            raise ValueError(
+                f"start_regions length ({len(start_regions_list)}) must match "
+                f"lap_times length ({n_laps})."
+            )
+
+    # Validate end_regions length if provided
+    end_regions_list: list[str] | None = None
+    if end_regions is not None:
+        end_regions_list = list(end_regions)
+        if len(end_regions_list) != n_laps:
+            raise ValueError(
+                f"end_regions length ({len(end_regions_list)}) must match "
+                f"lap_times length ({n_laps})."
+            )
+
+    # Validate stop_times if provided
+    stop_times_arr: NDArray[np.float64] | None = None
+    if stop_times is not None:
+        stop_times_arr = np.asarray(stop_times, dtype=np.float64)
+        if len(stop_times_arr) != n_laps:
+            raise ValueError(
+                f"stop_times length ({len(stop_times_arr)}) must match "
+                f"lap_times length ({n_laps})."
+            )
+        # Validate stop_times are finite and non-negative
+        if n_laps > 0:
+            if not np.all(np.isfinite(stop_times_arr)):
+                raise ValueError("stop_times contains non-finite values (NaN or Inf)")
+            if np.any(stop_times_arr < 0):
+                raise ValueError("stop_times contains negative timestamps")
+            # Check stop_times >= lap_times
+            if np.any(stop_times_arr < lap_times):
+                bad_idx = np.where(stop_times_arr < lap_times)[0][0]
+                raise ValueError(
+                    f"stop_time must be >= lap_time (start_time) for all laps. "
+                    f"Lap {bad_idx}: lap_time={lap_times[bad_idx]}, "
+                    f"stop_time={stop_times_arr[bad_idx]}"
+                )
 
     # Get or create behavior processing module
     behavior = _get_or_create_processing_module(
@@ -296,22 +365,32 @@ def write_laps(
     # Create EventsTable
     events_table = ndx_events_module.EventsTable(name=name, description=description)
 
-    # Add direction column if lap_types provided
+    # Add optional columns
     if lap_types is not None:
         events_table.add_column(name="direction", description="Lap direction/type")
+    if start_regions_list is not None:
+        events_table.add_column(name="start_region", description="Lap start region")
+    if end_regions_list is not None:
+        events_table.add_column(name="end_region", description="Lap end region")
+    if stop_times_arr is not None:
+        events_table.add_column(name="stop_time", description="Lap end timestamp")
 
     # Add rows for each lap
     for i, timestamp in enumerate(lap_times):
+        row_kwargs: dict[str, float | int | str] = {"timestamp": float(timestamp)}
         if lap_types is not None:
-            events_table.add_row(
-                timestamp=float(timestamp), direction=int(lap_types[i])
-            )
-        else:
-            events_table.add_row(timestamp=float(timestamp))
+            row_kwargs["direction"] = int(lap_types[i])
+        if start_regions_list is not None:
+            row_kwargs["start_region"] = start_regions_list[i]
+        if end_regions_list is not None:
+            row_kwargs["end_region"] = end_regions_list[i]
+        if stop_times_arr is not None:
+            row_kwargs["stop_time"] = float(stop_times_arr[i])
+        events_table.add_row(**row_kwargs)
 
     # Add to behavior module
     behavior.add(events_table)
-    logger.debug("Wrote EventsTable '%s' with %d lap events", name, len(lap_times))
+    logger.debug("Wrote EventsTable '%s' with %d lap events", name, n_laps)
 
 
 def write_region_crossings(

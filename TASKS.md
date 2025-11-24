@@ -82,13 +82,13 @@ uv run pytest tests/nwb/test_trials.py -v
 
 ### Tasks
 
-- [ ] **3.1** Extend `write_laps()` in `src/neurospatial/nwb/_events.py`
+- [x] **3.1** Extend `write_laps()` in `src/neurospatial/nwb/_events.py`
   - Add parameters: `start_regions`, `end_regions`, `stop_times`
   - Validate lengths match `lap_times`
   - Add columns to EventsTable when provided
   - Maintain backwards compatibility (all new params optional)
 
-- [ ] **3.2** Add tests in `tests/nwb/test_events.py`
+- [x] **3.2** Add tests in `tests/nwb/test_events.py`
   - `test_write_laps_with_start_regions`
   - `test_write_laps_with_end_regions`
   - `test_write_laps_with_stop_times`
@@ -136,6 +136,8 @@ uv run python -c "from neurospatial.nwb import write_trials, read_trials; print(
 
 - [ ] **5.2** Update `src/neurospatial/segmentation/__init__.py` docstring
   - Reflect `Trial` field changes if referenced
+
+- [ ] **5.3** Update notebooks (use jupyter notebook skill)
 
 ### Verify
 

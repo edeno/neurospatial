@@ -55,8 +55,42 @@
 
 **Milestone 4**: Update Exports - COMPLETE (done as part of M2)
 
+---
+
+**Milestone 3**: Extend `write_laps()` with region columns - COMPLETE
+
+#### Tasks Completed:
+- [x] **3.1** Extended `write_laps()` in `src/neurospatial/nwb/_events.py`
+  - Added parameters: `start_regions`, `end_regions`, `stop_times`
+  - Added validation for lengths matching `lap_times`
+  - Added columns to EventsTable when provided
+  - Maintained backwards compatibility (all new params optional)
+- [x] **3.2** Added 12 tests in `tests/nwb/test_events.py::TestWriteLapsRegionColumns`
+
+#### TDD Process Followed:
+1. Created test file FIRST with 12 test cases covering:
+   - Writing laps with start_regions column
+   - Writing laps with end_regions column
+   - Writing laps with stop_times column
+   - Writing laps with all optional columns
+   - Length mismatch validation for all new params
+   - stop_times >= lap_times validation
+   - stop_times NaN/negative validation
+   - Overwrite with regions
+   - Backwards compatibility
+2. Tests FAILED as expected (11 of 12 failed - only backwards compat passed)
+3. Implemented `write_laps()` extension:
+   - Added `start_regions`, `end_regions`, `stop_times` parameters
+   - Added validation for lengths and constraints
+   - Added columns to EventsTable conditionally
+4. All 12 tests PASSED
+5. All 16 existing `write_laps()` tests PASSED (backwards compatibility)
+6. ruff and mypy passed
+
+---
+
 ### Next Task
-**Milestone 3**: Extend `write_laps()` with region columns
+**Milestone 5**: Documentation - Update CLAUDE.md and docstrings
 
 ### Breaking Change Notice
 `Trial.outcome` renamed to `Trial.end_region`. This is documented in PLAN.md.
