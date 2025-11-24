@@ -180,6 +180,7 @@ class TestDetectPlaceFields:
 
     def test_detect_place_fields_no_fields(self):
         """Test detection with uniform low firing (detects one large field)."""
+        np.random.seed(42)
         positions = np.random.randn(5000, 2) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
@@ -986,6 +987,7 @@ class TestFieldShapeMetrics:
 
     def test_field_shape_metrics_circular(self):
         """Test shape metrics for circular field."""
+        np.random.seed(42)
         # Create 2D environment
         data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
