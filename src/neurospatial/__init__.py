@@ -203,6 +203,15 @@ from neurospatial.annotation import (
     regions_from_cvat,
     regions_from_labelme,
 )
+from neurospatial.behavioral import (
+    compute_trajectory_curvature,
+    cost_to_goal,
+    distance_to_region,
+    graph_turn_sequence,
+    path_progress,
+    time_to_goal,
+    trials_to_region_arrays,
+)
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
@@ -298,6 +307,14 @@ __all__ = [
     "detect_runs_between_regions",
     "segment_by_velocity",
     "segment_trials",
+    # Behavioral analysis
+    "compute_trajectory_curvature",
+    "cost_to_goal",
+    "distance_to_region",
+    "graph_turn_sequence",
+    "path_progress",
+    "time_to_goal",
+    "trials_to_region_arrays",
     # Spatial operations and queries
     "apply_kernel",
     "apply_transform_to_environment",

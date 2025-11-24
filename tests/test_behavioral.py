@@ -1554,7 +1554,23 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 # =============================================================================
 
 
-@pytest.mark.skip("not implemented")
 def test_all_functions_exported():
     """Verify all 7 behavioral functions are exported to public API."""
-    pass
+    import neurospatial
+
+    # Check all functions are importable from top-level
+
+    # Check all are in __all__
+    expected = [
+        "compute_trajectory_curvature",
+        "cost_to_goal",
+        "distance_to_region",
+        "graph_turn_sequence",
+        "path_progress",
+        "time_to_goal",
+        "trials_to_region_arrays",
+    ]
+
+    for func_name in expected:
+        assert func_name in neurospatial.__all__, f"{func_name} missing from __all__"
+        assert callable(getattr(neurospatial, func_name))

@@ -16,6 +16,77 @@ These metrics are designed for neuroscience applications such as:
 - Spatial value function estimation
 
 All functions are fully vectorized for performance on large datasets (100k+ timepoints).
+
+Typical Workflows
+-----------------
+**Multi-trial analysis** (T-maze, Y-maze, spatial bandit):
+    1. Segment trajectory into trials with ``segment_trials()``
+    2. Convert trials to bin arrays with ``trials_to_region_arrays()``
+    3. Compute metrics: ``path_progress()``, ``distance_to_region()``, etc.
+
+**Single-trajectory analysis** (continuous foraging):
+    1. Use constant goal: ``path_progress(..., goal_bins=np.full(n, goal_bin))``
+    2. Or compute instantaneous distance: ``distance_to_region(..., goal_bin)``
+
+**Trajectory-based regressors** (any task):
+    1. Compute curvature: ``compute_trajectory_curvature(positions, times)``
+    2. Classify turns: ``graph_turn_sequence(env, trajectory_bins, start, end)``
+
+Example
+-------
+Complete analysis pipeline for a spatial navigation task::
+
+    from neurospatial import (
+        segment_trials,
+        trials_to_region_arrays,
+        path_progress,
+        distance_to_region,
+        time_to_goal,
+        compute_trajectory_curvature,
+        graph_turn_sequence,
+    )
+    import pandas as pd
+
+    # 1. Segment trajectory into trials
+    trials = segment_trials(
+        trajectory_bins,
+        times,
+        env,
+        start_region="home",
+        end_regions=["goal_left", "goal_right"],
+    )
+
+    # 2. Extract trial-based regressors
+    start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
+    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    distance = distance_to_region(env, trajectory_bins, goal_bins)
+    ttg = time_to_goal(times, trials)
+
+    # 3. Compute trajectory-based regressors
+    curvature = compute_trajectory_curvature(trajectory_positions, times)
+    is_turning = np.abs(curvature) > np.pi / 4
+
+    # 4. Build GLM design matrix
+    covariates = pd.DataFrame(
+        {
+            "path_progress": progress,
+            "distance_to_goal": distance,
+            "time_to_goal": ttg,
+            "curvature": curvature,
+            "is_turning": is_turning,
+        }
+    )
+
+    # 5. Classify trial types
+    for trial in trials:
+        mask = (times >= trial.start_time) & (times <= trial.end_time)
+        turn_seq = graph_turn_sequence(
+            env,
+            trajectory_bins[mask],
+            start_bin=env.bins_in_region(trial.start_region)[0],
+            end_bin=env.bins_in_region(trial.end_region)[0],
+        )
+        print(f"Trial {trial.start_region} → {trial.end_region}: {turn_seq}")
 """
 
 from __future__ import annotations
@@ -61,6 +132,14 @@ def trials_to_region_arrays(
     This function has a small loop over trials (typically 10-100), but
     avoids looping over timepoints (typically 100k+). The returned arrays
     can be passed to vectorized functions like path_progress().
+
+    **Region Handling**:
+
+    - If a region has no bins (e.g., polygon doesn't overlap environment), that
+      trial's bins remain -1
+    - If a region has multiple bins (polygon region), uses the first bin (index 0)
+    - Failed trials (`trial.end_region is None`) have goal_bins = -1
+    - Timepoints outside all trials have both arrays = -1
 
     Examples
     --------
@@ -131,8 +210,8 @@ def path_progress(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Path progress from 0 to 1 at each timepoint. NaN for invalid bins
-        or disconnected paths.
+        Path progress from 0 to 1 at each timepoint. NaN for invalid bins (-1)
+        or when no path exists between bins.
 
     Notes
     -----
@@ -140,16 +219,23 @@ def path_progress(
     loop required is constructing start_bins/goal_bins arrays from trial
     information (see examples).
 
-    For small environments (n_bins < 5000), precomputes full distance matrix:
-        dist_matrix = geodesic_distance_matrix(env.connectivity, env.n_bins)
-        progress = dist_matrix[start_bins, trajectory_bins] /
-                   dist_matrix[start_bins, goal_bins]
+    **Performance strategy (automatic)**:
 
-    For large environments, computes distance fields per unique (start, goal) pair.
+    - **Small environments** (n_bins < 5000): Precomputes O(n_bins^2) distance matrix
+      (~200 MB for 5000 bins). Fast vectorized lookups::
+
+          dist_matrix = geodesic_distance_matrix(env.connectivity, env.n_bins)
+          progress = dist_matrix[start_bins, trajectory_bins] /
+                     dist_matrix[start_bins, goal_bins]
+
+    - **Large environments** (≥5000 bins): Computes per-pair distance fields.
+      Memory-efficient but slower for many unique pairs (~1-5 seconds per unique
+      (start, goal) pair).
 
     **Edge cases**:
+
     - start_bin == goal_bin: Returns 1.0 (already at goal)
-    - Disconnected paths: Returns NaN
+    - No path exists (graph disconnected): Returns NaN (distance = inf)
     - Invalid bins (-1): Returns NaN
     - Detours (progress > 1): Clipped to 1.0
 
@@ -181,13 +267,20 @@ def path_progress(
 
         raise EnvironmentNotFittedError("Environment", "path_progress")
 
+    # Validate array lengths
+    n_samples = len(trajectory_bins)
+    if len(start_bins) != n_samples or len(goal_bins) != n_samples:
+        raise ValueError(
+            f"Array length mismatch: trajectory_bins has {n_samples} samples, "
+            f"but start_bins has {len(start_bins)} and goal_bins has {len(goal_bins)}. "
+            f"All arrays must have the same length."
+        )
+
     # Import distance functions
     from neurospatial.distance import (
         euclidean_distance_matrix,
         geodesic_distance_matrix,
     )
-
-    n_samples = len(trajectory_bins)
 
     # Choose strategy based on environment size
     if env.n_bins < 5000:
@@ -298,8 +391,15 @@ def distance_to_region(
 
     Notes
     -----
-    For scalar targets, delegates to env.distance_to() (already exists).
-    For dynamic targets, precomputes distance matrix for vectorized lookup.
+    **Performance strategy (automatic)**:
+
+    - **Scalar targets**: Delegates to ``env.distance_to()`` for efficiency. Single
+      distance field computation.
+    - **Array targets (small env, n_bins < 5000)**: Precomputes O(n_bins^2) distance
+      matrix (~200 MB for 5000 bins). Fast vectorized lookups.
+    - **Array targets (large env, ≥5000 bins)**: Computes per-unique-target distance
+      fields. Memory-efficient but slower for many unique targets (~1-5 seconds per
+      unique target).
 
     Examples
     --------
@@ -311,6 +411,13 @@ def distance_to_region(
     >>> trials = segment_trials(trajectory_bins, times, env, ...)
     >>> _, goal_bins = trials_to_region_arrays(trials, times, env)
     >>> dist = distance_to_region(env, trajectory_bins, goal_bins)
+    >>>
+    >>> # Distance to nearest of multiple goals (spatial bandit task)
+    >>> goal_bins = [
+    ...     env.bins_in_region(name)[0] for name in ["goal1", "goal2", "goal3"]
+    ... ]
+    >>> distances = [distance_to_region(env, trajectory_bins, g) for g in goal_bins]
+    >>> dist_to_nearest = np.min(distances, axis=0)
 
     See Also
     --------
@@ -607,7 +714,13 @@ def compute_trajectory_curvature(
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps for temporal smoothing. If None, assumes uniform sampling.
     smooth_window : float, optional
-        Temporal smoothing window in seconds. Default: 0.2s.
+        Temporal smoothing window in seconds. Default: 0.2s (typical for 30-60 Hz
+        tracking data).
+
+        **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
+        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
+        to preserve rapid turns.
+
         Set to None for no smoothing.
 
     Returns
@@ -627,6 +740,11 @@ def compute_trajectory_curvature(
 
     `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
     filters stationary periods automatically, and returns length (n_samples - 2).
+
+    **Padding Strategy**: The returned curvature array matches input length by symmetric
+    padding with zeros. Since `compute_turn_angles()` filters stationary periods, the
+    actual number of angles may be less than (n_samples - 2). The remaining positions
+    are padded equally at start and end to maintain temporal centering.
 
     For N-D trajectories where N > 2, only the first 2 dimensions are used
     (consistent with `compute_turn_angles()` implementation).
@@ -729,6 +847,13 @@ def graph_turn_sequence(
         Minimum trajectory samples required on a transition to count.
         Filters out noise and brief crossings.
 
+        **Rule of thumb**: Set to 1-2 seconds of data (e.g., sampling_rate * 1.5).
+
+        - 30 Hz tracking: min_samples_per_edge=50 (1.67s)
+        - 120 Hz tracking: min_samples_per_edge=180 (1.5s)
+
+        For short trials or exploratory analysis, reduce to 10-20 samples.
+
     Returns
     -------
     str
@@ -750,6 +875,16 @@ def graph_turn_sequence(
     **Dimensionality:**
     - 2D: "left"/"right" determined by cross product sign
     - 3D+: "left"/"right" determined by projection onto primary movement plane
+
+    **Coordinate System:**
+
+    Turn direction assumes standard Cartesian coordinates (X right, Y up):
+
+    - Negative cross product → left turn (counterclockwise)
+    - Positive cross product → right turn (clockwise)
+
+    If your environment uses image coordinates (Y down), results will be inverted.
+    To convert: ``turn_seq.replace("left", "LEFT").replace("right", "left").replace("LEFT", "right")``
 
     Examples
     --------
