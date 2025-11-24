@@ -502,3 +502,206 @@ class TestWriteEnvironment:
 
         with pytest.raises(RuntimeError, match="must be fitted"):
             write_environment(empty_nwb, sample_environment)
+
+
+class TestReadEnvironment:
+    """Tests for read_environment() function."""
+
+    def test_basic_environment_reading(self, empty_nwb, sample_environment):
+        """Test basic Environment reading from scratch/."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        assert loaded_env is not None
+        assert loaded_env.n_bins == sample_environment.n_bins
+
+    def test_bin_centers_reconstruction(self, empty_nwb, sample_environment):
+        """Test bin_centers are correctly reconstructed."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        np.testing.assert_array_almost_equal(
+            loaded_env.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_connectivity_graph_reconstruction(self, empty_nwb, sample_environment):
+        """Test connectivity graph is reconstructed from edge list."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        # Same number of nodes and edges
+        assert (
+            loaded_env.connectivity.number_of_nodes()
+            == sample_environment.connectivity.number_of_nodes()
+        )
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == sample_environment.connectivity.number_of_edges()
+        )
+
+    def test_edge_weights_applied(self, empty_nwb, sample_environment):
+        """Test edge weights (distances) are restored on graph."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        # Check that edges have distance attribute
+        for _u, _v, data in loaded_env.connectivity.edges(data=True):
+            assert "distance" in data
+            assert data["distance"] >= 0
+
+    def test_dimension_ranges_reconstruction(self, empty_nwb, sample_environment):
+        """Test dimension_ranges are correctly reconstructed."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        np.testing.assert_array_almost_equal(
+            loaded_env.dimension_ranges, sample_environment.dimension_ranges
+        )
+
+    def test_units_attribute_restored(self, empty_nwb, sample_environment):
+        """Test units attribute is restored."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        sample_environment.units = "cm"
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        assert loaded_env.units == "cm"
+
+    def test_frame_attribute_restored(self, empty_nwb, sample_environment):
+        """Test frame attribute is restored."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        sample_environment.frame = "session_001"
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        assert loaded_env.frame == "session_001"
+
+    def test_point_regions_restored(self, empty_nwb, sample_environment):
+        """Test point regions are correctly restored."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        # sample_environment already has point regions from fixture
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        # Check regions exist
+        assert "start" in loaded_env.regions
+        assert "goal" in loaded_env.regions
+
+        # Check point region data
+        assert loaded_env.regions["start"].kind == "point"
+        np.testing.assert_array_almost_equal(
+            loaded_env.regions["start"].data, [10.0, 10.0]
+        )
+
+    def test_polygon_regions_restored(self, empty_nwb):
+        """Test polygon regions are correctly restored."""
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create environment with polygon region
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        triangle = Polygon([(10, 10), (30, 10), (20, 30)])
+        env.regions.add("reward_zone", polygon=triangle)
+
+        write_environment(empty_nwb, env)
+        loaded_env = read_environment(empty_nwb)
+
+        # Check polygon region exists and has correct kind
+        assert "reward_zone" in loaded_env.regions
+        assert loaded_env.regions["reward_zone"].kind == "polygon"
+
+        # Check polygon coordinates are restored
+        loaded_coords = list(loaded_env.regions["reward_zone"].data.exterior.coords)
+        original_coords = list(triangle.exterior.coords)
+        np.testing.assert_array_almost_equal(loaded_coords, original_coords)
+
+    def test_error_when_environment_not_found(self, empty_nwb):
+        """Test KeyError when environment not found in scratch/."""
+        from neurospatial.nwb import read_environment
+
+        with pytest.raises(KeyError, match="not found"):
+            read_environment(empty_nwb, name="nonexistent")
+
+    def test_custom_name_parameter(self, empty_nwb, sample_environment):
+        """Test reading environment with custom name."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment, name="linear_track")
+        loaded_env = read_environment(empty_nwb, name="linear_track")
+
+        assert loaded_env is not None
+        assert loaded_env.n_bins == sample_environment.n_bins
+
+    def test_environment_is_fitted(self, empty_nwb, sample_environment):
+        """Test loaded Environment is fitted and ready to use."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        # Should be fitted
+        assert loaded_env._is_fitted
+
+        # Should be able to use spatial queries
+        point = loaded_env.bin_centers[0]
+        bin_idx = loaded_env.bin_at(point)
+        assert bin_idx >= 0
+
+    def test_empty_regions_handled(self, empty_nwb):
+        """Test environment with no regions loads correctly."""
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        # No regions added
+
+        write_environment(empty_nwb, env)
+        loaded_env = read_environment(empty_nwb)
+
+        assert loaded_env is not None
+        assert len(loaded_env.regions) == 0
+
+    def test_name_attribute_restored(self, empty_nwb, sample_environment):
+        """Test environment name attribute is restored from metadata."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        sample_environment.name = "test_arena"
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        assert loaded_env.name == "test_arena"
+
+    def test_graph_node_attributes(self, empty_nwb, sample_environment):
+        """Test graph nodes have required attributes after loading."""
+        from neurospatial.nwb import read_environment, write_environment
+
+        write_environment(empty_nwb, sample_environment)
+        loaded_env = read_environment(empty_nwb)
+
+        # Check required node attributes exist
+        for node_id, node_data in loaded_env.connectivity.nodes(data=True):
+            assert "pos" in node_data
+            # pos should match bin_centers
+            np.testing.assert_array_almost_equal(
+                node_data["pos"], loaded_env.bin_centers[node_id]
+            )

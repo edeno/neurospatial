@@ -220,31 +220,31 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Create scratch group structure per spec
   - [x] Handle edge extraction from nx.Graph
 
-- [ ] **M3.1.2** Regions to DynamicTable
-  - [ ] Write tests for regions DynamicTable conversion
-    - [ ] Test point region serialization
-    - [ ] Test polygon region serialization
-    - [ ] Test multiple regions in single table
-  - [ ] Implement `_regions_to_dynamic_table()` helper
-  - [ ] Handle ragged arrays for polygon vertices
+- [x] **M3.1.2** Regions to DynamicTable
+  - [x] Write tests for regions DynamicTable conversion
+    - [x] Test point region serialization
+    - [x] Test polygon region serialization
+    - [x] Test multiple regions in single table
+  - [x] Implement `_regions_to_json()` helper (JSON approach instead of ragged arrays)
+  - [x] Handle polygon vertices via JSON serialization
 
 ### M3.2 Environment from Scratch
 
-- [ ] **M3.2.1** Environment reading function
-  - [ ] Write tests for `read_environment()` in `tests/nwb/test_environment.py`
-    - [ ] Test basic Environment reading from scratch/
-    - [ ] Test bin_centers reconstruction
-    - [ ] Test connectivity graph reconstruction from edge list
-    - [ ] Test edge weights applied to graph
-    - [ ] Test dimension_ranges reconstruction
-    - [ ] Test units/frame attributes restored
-    - [ ] Test regions DynamicTable reading
-    - [ ] Test point regions restored
-    - [ ] Test polygon regions restored
-    - [ ] Test error when environment not found (KeyError)
-  - [ ] Implement `read_environment()` in `_environment.py`
-  - [ ] Reconstruct nx.Graph from edge list
-  - [ ] Restore Environment with all attributes
+- [x] **M3.2.1** Environment reading function
+  - [x] Write tests for `read_environment()` in `tests/nwb/test_environment.py`
+    - [x] Test basic Environment reading from scratch/
+    - [x] Test bin_centers reconstruction
+    - [x] Test connectivity graph reconstruction from edge list
+    - [x] Test edge weights applied to graph
+    - [x] Test dimension_ranges reconstruction
+    - [x] Test units/frame attributes restored
+    - [x] Test regions DynamicTable reading
+    - [x] Test point regions restored
+    - [x] Test polygon regions restored
+    - [x] Test error when environment not found (KeyError)
+  - [x] Implement `read_environment()` in `_environment.py`
+  - [x] Reconstruct nx.Graph from edge list
+  - [x] Restore Environment with all attributes
 
 - [ ] **M3.2.2** DynamicTable to Regions
   - [ ] Write tests for DynamicTable → Regions conversion

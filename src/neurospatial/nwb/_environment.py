@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
+import networkx as nx
 import numpy as np
+from numpy.typing import NDArray
 
 from neurospatial.nwb._core import _require_pynwb
 
@@ -19,6 +22,7 @@ if TYPE_CHECKING:
     from pynwb import NWBFile
 
     from neurospatial import Environment
+    from neurospatial.regions import Regions
 
 logger = logging.getLogger("neurospatial.nwb")
 
@@ -288,6 +292,18 @@ def read_environment(
     ImportError
         If pynwb is not installed.
 
+    Notes
+    -----
+    The reconstructed Environment has some limitations compared to the original:
+
+    - The ``original_grid_nd_index`` node attribute uses simplified values ``(i,)``
+      rather than the original N-D indices. Operations depending on grid structure
+      may not work identically.
+    - Grid-specific attributes (``grid_shape``, ``active_mask``) are not preserved
+      and will be populated by the dummy layout used during reconstruction.
+    - The layout engine is a RegularGrid approximation; the original layout type
+      is stored in ``_layout_type_used`` for reference but cannot be fully restored.
+
     Examples
     --------
     >>> from pynwb import NWBHDF5IO
@@ -295,7 +311,256 @@ def read_environment(
     ...     nwbfile = io.read()
     ...     env = read_environment(nwbfile, name="linear_track")
     """
-    raise NotImplementedError("read_environment not yet implemented")
+    _require_pynwb()
+
+    from neurospatial import Environment
+
+    # Check if environment exists
+    if name not in nwbfile.scratch:
+        available = list(nwbfile.scratch.keys()) if nwbfile.scratch else []
+        raise KeyError(
+            f"Environment '{name}' not found in scratch/. Available: {available}"
+        )
+
+    scratch_data = nwbfile.scratch[name]
+
+    # Parse metadata JSON (get first row - all rows have same value)
+    metadata_json = scratch_data["metadata"][0]
+    metadata = json.loads(metadata_json)
+
+    n_bins = metadata["n_bins"]
+    n_edges = metadata["n_edges"]
+    n_dims = metadata["n_dims"]
+    env_name = metadata.get("name", "")
+    units = metadata.get("units")
+    frame = metadata.get("frame")
+    layout_type = metadata.get("layout_type", "RegularGrid")
+
+    # Extract arrays (truncate padding)
+    bin_centers = np.array(scratch_data["bin_centers"][:n_bins], dtype=np.float64)
+    edges = np.array(scratch_data["edges"][:n_edges], dtype=np.int64)
+    edge_weights = np.array(scratch_data["edge_weights"][:n_edges], dtype=np.float64)
+    dimension_ranges_raw = np.array(
+        scratch_data["dimension_ranges"][:n_dims], dtype=np.float64
+    )
+    dimension_ranges = [tuple(row) for row in dimension_ranges_raw]
+
+    # Reconstruct connectivity graph from edge list
+    connectivity = _reconstruct_graph(bin_centers, edges, edge_weights)
+
+    # Parse regions JSON
+    regions_json = scratch_data["regions"][0]
+    regions = _json_to_regions(regions_json)
+
+    # Create environment using a minimal layout, then override attributes
+    # We compute an approximate bin_size from the data for the dummy layout
+    bin_size = _estimate_bin_size(bin_centers, n_dims)
+
+    # Create a RegularGrid layout with dimension_ranges
+    env = Environment.from_layout(
+        kind="RegularGrid",
+        layout_params={
+            "bin_size": bin_size,
+            "dimension_ranges": dimension_ranges,
+            "infer_active_bins": False,
+        },
+        name=env_name,
+        regions=regions,
+    )
+
+    # Override computed attributes with stored values
+    env.bin_centers = bin_centers
+    env.connectivity = connectivity
+    env.dimension_ranges = dimension_ranges
+
+    # Set metadata
+    if units and units != "unknown":
+        env.units = units
+    if frame and frame != "unknown":
+        env.frame = frame
+
+    # Store layout type info
+    env._layout_type_used = layout_type
+
+    logger.debug(
+        "Read environment '%s' with %d bins and %d edges",
+        name,
+        n_bins,
+        n_edges,
+    )
+
+    return env
+
+
+def _reconstruct_graph(
+    bin_centers: NDArray[np.float64],
+    edges: NDArray[np.int64],
+    edge_weights: NDArray[np.float64],
+) -> nx.Graph:
+    """
+    Reconstruct connectivity graph from edge list and weights.
+
+    Parameters
+    ----------
+    bin_centers : NDArray, shape (n_bins, n_dims)
+        Bin center coordinates.
+    edges : NDArray, shape (n_edges, 2)
+        Edge list (node pairs).
+    edge_weights : NDArray, shape (n_edges,)
+        Edge weights (distances).
+
+    Returns
+    -------
+    nx.Graph
+        Reconstructed connectivity graph with node and edge attributes.
+
+    Raises
+    ------
+    IndexError
+        If edge references a node index that exceeds bin_centers length.
+    """
+    n_bins = len(bin_centers)
+    n_dims = bin_centers.shape[1] if bin_centers.ndim > 1 else 1
+
+    graph = nx.Graph()
+
+    # Add nodes with required attributes
+    for i in range(n_bins):
+        pos = tuple(bin_centers[i])
+        graph.add_node(
+            i,
+            pos=pos,
+            source_grid_flat_index=i,
+            original_grid_nd_index=(i,),  # Simplified for reconstructed graph
+        )
+
+    # Add edges with attributes
+    for idx, (u, v) in enumerate(edges):
+        u, v = int(u), int(v)
+        distance = float(edge_weights[idx])
+
+        # Compute vector between nodes
+        pos_u = bin_centers[u]
+        pos_v = bin_centers[v]
+        vector = tuple(pos_v - pos_u)
+
+        # Compute angle for 2D layouts
+        angle_2d = None
+        if n_dims == 2:
+            angle_2d = float(np.arctan2(vector[1], vector[0]))
+
+        graph.add_edge(
+            u,
+            v,
+            distance=distance,
+            vector=vector,
+            edge_id=idx,
+            angle_2d=angle_2d,
+        )
+
+    return graph
+
+
+def _json_to_regions(regions_json: str) -> Regions:
+    """
+    Deserialize regions from JSON string.
+
+    Parameters
+    ----------
+    regions_json : str
+        JSON string containing region definitions.
+
+    Returns
+    -------
+    Regions
+        Reconstructed Regions container.
+
+    Raises
+    ------
+    json.JSONDecodeError
+        If regions_json is not valid JSON.
+    KeyError
+        If a region is missing the 'kind' key.
+
+    Warns
+    -----
+    UserWarning
+        If a region has None data and is skipped during reconstruction.
+    """
+    from shapely.geometry import Polygon
+
+    from neurospatial.regions import Region, Regions
+
+    regions_dict = json.loads(regions_json)
+
+    if not regions_dict:
+        return Regions()
+
+    regions_list = []
+    for region_name, region_data in regions_dict.items():
+        kind = region_data["kind"]
+
+        if kind == "point":
+            point_coords = region_data.get("point")
+            if point_coords is not None:
+                point = np.array(point_coords, dtype=np.float64)
+                regions_list.append(Region(name=region_name, kind="point", data=point))
+            else:
+                warnings.warn(
+                    f"Region '{region_name}' has kind='point' but no point data. "
+                    "Skipping this region.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        elif kind == "polygon":
+            polygon_coords = region_data.get("polygon")
+            if polygon_coords is not None:
+                polygon = Polygon(polygon_coords)
+                regions_list.append(
+                    Region(name=region_name, kind="polygon", data=polygon)
+                )
+            else:
+                warnings.warn(
+                    f"Region '{region_name}' has kind='polygon' but no polygon data. "
+                    "Skipping this region.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+    return Regions(regions_list)
+
+
+def _estimate_bin_size(bin_centers: NDArray[np.float64], n_dims: int) -> float:
+    """
+    Estimate bin size from bin centers.
+
+    Uses the median distance between neighboring bin centers.
+
+    Parameters
+    ----------
+    bin_centers : NDArray, shape (n_bins, n_dims)
+        Bin center coordinates.
+    n_dims : int
+        Number of dimensions.
+
+    Returns
+    -------
+    float
+        Estimated bin size.
+    """
+    if len(bin_centers) < 2:
+        return 1.0
+
+    # Use KDTree to find nearest neighbors
+    from scipy.spatial import KDTree
+
+    tree = KDTree(bin_centers)
+    # Query for 2 nearest neighbors (including self)
+    distances, _ = tree.query(bin_centers, k=2)
+    # Take the second column (distance to nearest non-self neighbor)
+    nearest_distances = distances[:, 1]
+    # Use median as robust estimate
+    return float(np.median(nearest_distances))
 
 
 def environment_from_position(

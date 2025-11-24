@@ -6,13 +6,50 @@
 
 ## Current Status
 
-- **Active Task**: M3.1.1 Complete - Environment writing function implemented
+- **Active Task**: M3.2.1 Complete - Environment reading function implemented
 - **Blocker**: None
-- **Next Action**: Start M3.1.2 - Regions to DynamicTable (optional refinement) OR M3.2.1 - Environment reading function
+- **Next Action**: M3.2.2 - DynamicTable to Regions (already done via JSON) OR M3.3.1 - Environment.from_nwb() classmethod
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M3.2.1 Complete - Environment Reading Function
+
+- Created 15 tests for `read_environment()` in `tests/nwb/test_environment.py`
+- Tests cover:
+  - Basic Environment reading from scratch/
+  - bin_centers reconstruction (exact match)
+  - connectivity graph reconstruction from edge list
+  - edge weights (distances) applied to graph
+  - dimension_ranges reconstruction
+  - units/frame attributes restoration
+  - Point regions restored correctly
+  - Polygon regions restored correctly
+  - Error handling: environment not found (KeyError)
+  - Custom name parameter
+  - Environment is fitted and ready to use
+  - Graph node attributes (pos) match bin_centers
+  - Empty regions handled correctly
+  - Name attribute restored from metadata
+- Implemented `read_environment()` in `_environment.py` with helper functions:
+  - `_reconstruct_graph()` - rebuilds connectivity graph from edge list with all required node/edge attributes
+  - `_json_to_regions()` - deserializes regions from JSON with warnings for skipped regions
+  - `_estimate_bin_size()` - estimates bin size from bin_centers using median nearest-neighbor distance
+- Code review: APPROVED after addressing feedback
+  - Added proper imports for `NDArray`, `nx`, `warnings`
+  - Added `Regions` to TYPE_CHECKING imports
+  - Added warnings for skipped regions with None data
+  - Added Notes section to docstring documenting limitations
+  - Added Raises section to `_reconstruct_graph()` docstring
+- All 51 tests pass (36 write + 15 read), ruff check clean, mypy passes
+- **Round-trip capability now functional**: Environment can be written to and read from NWB
+
+### 2025-11-23: M3.1.2 Complete - Regions to DynamicTable (JSON approach)
+
+- Marked complete as regions are already serialized via `_regions_to_json()` helper
+- JSON approach chosen over ragged arrays for simplicity
+- Point and polygon regions both supported
 
 ### 2025-11-23: M3.1.1 Complete - Environment Writing Function
 
