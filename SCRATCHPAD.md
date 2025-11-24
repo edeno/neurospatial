@@ -343,9 +343,65 @@ None.
 
 ---
 
+### Code and UX Review ✅ COMPLETE
+
+**TDD Workflow Followed:**
+
+1. ✅ Launched code-reviewer and ux-reviewer subagents in parallel
+2. ✅ Received comprehensive feedback on Milestones 1-4 implementations
+3. ✅ Addressed all non-blocking feedback (except target_bins vs goal_bins naming - held for discussion)
+
+**Code Reviewer Verdict**: **APPROVE** ✓
+
+- Overall quality: Excellent, production-ready
+- Test coverage: 38 passed, 6 appropriately skipped
+- Type safety: Mypy passes with 0 errors
+- Performance: Fully vectorized, memory-aware
+- Only blocking issue: Functions not exported to public API
+
+**UX Reviewer Verdict**: **NEEDS_POLISH** → **RESOLVED**
+
+- Strong technical implementation, but discoverability issues
+- Critical: Functions not exported (FIXED)
+- Missing workflow guidance (FIXED)
+- Documentation gaps (FIXED)
+
+**Changes Made (commit 6b2dfc4):**
+
+1. **Blocking Issue Fixed:**
+   - Exported all 7 behavioral functions to public API in `__init__.py`
+   - Implemented `test_all_functions_exported()` to verify completeness
+
+2. **Documentation Improvements:**
+   - Added comprehensive workflow guidance to module docstring (multi-trial, single-trajectory, trajectory-based)
+   - Added complete example pipeline showing all functions composed together
+   - Documented padding strategy in `compute_trajectory_curvature()`
+   - Justified `smooth_window` default (0.2s for 30-60 Hz data)
+   - Clarified region handling in `trials_to_region_arrays()` (failed trials, polygon regions, edge cases)
+   - Clarified "disconnected paths" terminology (graph disconnection vs invalid bins)
+   - Documented memory threshold (5000 bins) and performance implications
+   - Added coordinate system section to `graph_turn_sequence()` (Cartesian vs image coordinates)
+   - Added guidance for `min_samples_per_edge` parameter (rule of thumb: 1-2 seconds)
+   - Added multi-goal distance example (spatial bandit task)
+
+3. **Code Improvements:**
+   - Added array length validation to `path_progress()` with clear error messages
+   - Fixed import ordering (ruff auto-fix)
+
+**All Tests Pass:**
+
+- 38 passed, 6 skipped ✅
+- Mypy: 0 errors ✅
+- Ruff: All checks pass ✅
+
+**Deferred for Discussion:**
+
+- Parameter naming standardization (`target_bins` vs `goal_bins`)
+
+---
+
 ## Next Steps
 
-- M4.2: Commit graph_turn_sequence implementation (IN PROGRESS)
-- M5.1: Update public API exports
-- M5.2: Update CLAUDE.md documentation
+- M5.1: ✅ COMPLETE (Public API exports added)
+- M5.2: Update CLAUDE.md documentation (NEXT)
 - Continue with Milestone 5: Documentation and Integration
