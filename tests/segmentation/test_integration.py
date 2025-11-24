@@ -176,9 +176,9 @@ class TestFullTrajectoryAnalysisWorkflow:
         assert len(trials) >= 2, "Should detect at least 2 trials"
         assert all(isinstance(trial, Trial) for trial in trials)
 
-        # Count outcomes
-        left_trials = [t for t in trials if t.outcome == "left"]
-        right_trials = [t for t in trials if t.outcome == "right"]
+        # Count end_regions
+        left_trials = [t for t in trials if t.end_region == "left"]
+        right_trials = [t for t in trials if t.end_region == "right"]
         assert len(left_trials) > 0, "Should detect left trials"
         assert len(right_trials) > 0, "Should detect right trials"
 
@@ -200,13 +200,13 @@ class TestFullTrajectoryAnalysisWorkflow:
             trial_bins = trajectory_bins[trial_mask]
             trial_times = times[trial_mask]
 
-            # Detect goal-directed behavior toward trial outcome
-            if trial.outcome:
+            # Detect goal-directed behavior toward trial end_region
+            if trial.end_region:
                 goal_runs = detect_goal_directed_runs(
                     trial_bins,
                     trial_times,
                     env,
-                    goal_region=trial.outcome,
+                    goal_region=trial.end_region,
                     directedness_threshold=0.3,  # Lower for synthetic data
                     min_progress=5.0,
                 )
@@ -230,8 +230,8 @@ class TestFullTrajectoryAnalysisWorkflow:
             # Compute similarity
             similarity = trajectory_similarity(bins1, bins2, env, method="jaccard")
 
-            # If same outcome, similarity should be higher
-            if trial1.outcome == trial2.outcome:
+            # If same end_region, similarity should be higher
+            if trial1.end_region == trial2.end_region:
                 # Same choice → higher similarity expected
                 assert similarity >= 0.0  # At least some overlap
             else:

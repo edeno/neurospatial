@@ -94,16 +94,18 @@ class TestSegmentTrials:
         for trial in trials:
             assert hasattr(trial, "start_time")
             assert hasattr(trial, "end_time")
-            assert hasattr(trial, "outcome")
+            assert hasattr(trial, "start_region")
+            assert hasattr(trial, "end_region")
             assert hasattr(trial, "success")
             assert trial.end_time > trial.start_time
-            assert trial.outcome in ["left", "right"]
+            assert trial.start_region == "start", "start_region should be 'start'"
+            assert trial.end_region in ["left", "right"]
             assert isinstance(trial.success, bool)
 
-        # Check outcomes
-        outcomes = [trial.outcome for trial in trials]
-        assert "left" in outcomes, "Should have at least one left trial"
-        assert "right" in outcomes, "Should have at least one right trial"
+        # Check end_regions
+        end_regions = [trial.end_region for trial in trials]
+        assert "left" in end_regions, "Should have at least one left trial"
+        assert "right" in end_regions, "Should have at least one right trial"
 
     def test_segment_trials_duration_filter_min(self):
         """Test that trials shorter than min_duration are excluded."""
@@ -175,7 +177,10 @@ class TestSegmentTrials:
         # Should detect the trial but mark as failed (timeout)
         if len(trials) > 0:
             assert not trials[0].success, "Long trial should be marked as failed"
-            assert trials[0].outcome is None, "Failed trial should have no outcome"
+            assert trials[0].end_region is None, (
+                "Failed trial should have no end_region"
+            )
+            assert trials[0].start_region == "start", "start_region should be 'start'"
 
     def test_segment_trials_successful_completion(self):
         """Test successful trial completion within duration bounds."""
@@ -210,7 +215,8 @@ class TestSegmentTrials:
         # Should detect successful trial
         assert len(trials) >= 1, "Should detect at least one trial"
         assert trials[0].success, "Trial should be successful"
-        assert trials[0].outcome == "goal"
+        assert trials[0].end_region == "goal"
+        assert trials[0].start_region == "start", "start_region should be 'start'"
         assert 5.0 <= (trials[0].end_time - trials[0].start_time) <= 50.0
 
     def test_segment_trials_empty_trajectory(self):

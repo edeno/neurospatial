@@ -27,7 +27,9 @@ class Trial:
         Time when trial started (start region entry, seconds).
     end_time : float
         Time when trial ended (end region entry or timeout, seconds).
-    outcome : str or None
+    start_region : str
+        Name of the region where trial started.
+    end_region : str or None
         Name of end region reached, or None if trial timed out.
     success : bool
         True if end region reached within max_duration, False if timeout.
@@ -35,7 +37,8 @@ class Trial:
 
     start_time: float
     end_time: float
-    outcome: str | None
+    start_region: str
+    end_region: str | None
     success: bool
 
 
@@ -90,7 +93,8 @@ def segment_trials(
         List of detected trials. Each trial has:
         - start_time: time of start region entry
         - end_time: time of end region entry or timeout
-        - outcome: name of end region reached (or None if timeout)
+        - start_region: name of start region
+        - end_region: name of end region reached (or None if timeout)
         - success: True if end region reached, False if timeout
 
     Raises
@@ -150,9 +154,9 @@ def segment_trials(
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
     >>> env = Environment.from_samples(positions, bin_size=3.0)
     >>> # Define regions: start at bottom, left/right at top
-    >>> env.regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
-    >>> env.regions.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
-    >>> env.regions.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
+    >>> _ = env.regions.add("start", polygon=Point(50.0, 10.0).buffer(8.0))
+    >>> _ = env.regions.add("left", polygon=Point(20.0, 80.0).buffer(8.0))
+    >>> _ = env.regions.add("right", polygon=Point(80.0, 80.0).buffer(8.0))
     >>> # Create trajectory with 2 trials: start→left, start→right
     >>> x_traj = np.concatenate(
     ...     [
@@ -187,8 +191,8 @@ def segment_trials(
     True
     >>> all(t.success for t in trials)  # Both should be successful
     True
-    >>> outcomes = [t.outcome for t in trials]
-    >>> "left" in outcomes and "right" in outcomes  # Both choices present
+    >>> end_regions = [t.end_region for t in trials]
+    >>> "left" in end_regions and "right" in end_regions  # Both choices present
     True
 
     References
@@ -280,7 +284,8 @@ def segment_trials(
                         Trial(
                             start_time=trial_start_time,
                             end_time=times[i - 1],
-                            outcome=None,
+                            start_region=start_region,
+                            end_region=None,
                             success=False,
                         )
                     )
@@ -303,7 +308,8 @@ def segment_trials(
                             Trial(
                                 start_time=trial_start_time,
                                 end_time=times[i],
-                                outcome=region,
+                                start_region=start_region,
+                                end_region=region,
                                 success=True,
                             )
                         )
@@ -323,7 +329,8 @@ def segment_trials(
                             Trial(
                                 start_time=trial_start_time,
                                 end_time=times[i],
-                                outcome=None,
+                                start_region=start_region,
+                                end_region=None,
                                 success=False,
                             )
                         )
@@ -340,7 +347,8 @@ def segment_trials(
                 Trial(
                     start_time=trial_start_time,
                     end_time=times[-1],
-                    outcome=None,
+                    start_region=start_region,
+                    end_region=None,
                     success=False,
                 )
             )
