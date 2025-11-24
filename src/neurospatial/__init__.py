@@ -235,8 +235,11 @@ from neurospatial.primitives import convolve, neighbor_reduce
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.segmentation import (
+    detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
+    detect_runs_between_regions,
+    segment_by_velocity,
     segment_trials,
 )
 from neurospatial.spatial import (
@@ -289,8 +292,11 @@ __all__ = [
     "skaggs_information",
     "sparsity",
     # Behavioral segmentation
+    "detect_goal_directed_runs",
     "detect_laps",
     "detect_region_crossings",
+    "detect_runs_between_regions",
+    "segment_by_velocity",
     "segment_trials",
     # Spatial operations and queries
     "apply_kernel",
