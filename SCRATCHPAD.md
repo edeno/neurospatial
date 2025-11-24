@@ -6,13 +6,47 @@
 
 ## Current Status
 
-- **Active Task**: M2.1.2 Complete - Occupancy map writing implemented
+- **Active Task**: M2.2.1 Complete - Lap events writing implemented
 - **Blocker**: None
-- **Next Action**: Start M2.2.1 - Lap events writing
+- **Next Action**: Start M2.2.2 - Region crossings writing
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M2.2.1 Complete - Lap Events Writing
+
+- Created 16 tests for `write_laps()` in `tests/nwb/test_events.py`
+- Tests cover:
+  - Basic lap times writing to processing/behavior/ module
+  - Direction/lap_types column support
+  - EventsTable creation and verification
+  - Custom description and name parameters
+  - Default description verification
+  - Duplicate name error handling
+  - overwrite=True replaces existing table
+  - Empty lap times array handling
+  - Shape validation (1D only, 2D rejected)
+  - lap_types length mismatch validation
+  - NaN value rejection in timestamps
+  - Inf value rejection in timestamps
+  - Negative timestamp rejection
+  - Data integrity verification via round-trip with read_events()
+  - Behavior module reuse with existing data
+  - Import error handling for ndx-events
+- Implemented `write_laps()` in `_events.py`:
+  - Uses `_get_or_create_processing_module()` for behavior module
+  - Uses `_require_ndx_events()` for dependency validation
+  - Creates ndx-events EventsTable with timestamp column
+  - Optional direction column for lap types
+  - Validates 1D shape, finite values, non-negative timestamps
+  - Supports name parameter for custom table names
+  - Supports overwrite parameter for replacement
+  - Comprehensive NumPy-style docstring with examples
+- Code review: APPROVED
+  - Added NaN/Inf/negative timestamp validation per reviewer feedback
+  - Removed unused sample_env fixture from tests
+- All 16 tests pass, ruff check clean, mypy passes
 
 ### 2025-11-23: M2.1.2 Complete - Occupancy Map Writing
 

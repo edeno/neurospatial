@@ -416,3 +416,288 @@ class TestReadIntervals:
         np.testing.assert_array_almost_equal(
             result["stop_time"].values, original["stop_time"][:]
         )
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestWriteLaps:
+    """Tests for write_laps() function (requires ndx-events)."""
+
+    def test_basic_lap_times_writing(self, empty_nwb):
+        """Test writing basic lap times to NWB file."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
+
+        # Write laps
+        write_laps(nwbfile, lap_times)
+
+        # Verify EventsTable was created
+        assert "behavior" in nwbfile.processing
+        assert "laps" in nwbfile.processing["behavior"].data_interfaces
+
+        # Verify data
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert len(laps_table) == 4
+
+        # Check timestamps
+        np.testing.assert_array_almost_equal(laps_table["timestamp"][:], lap_times)
+
+    def test_with_lap_types_direction(self, empty_nwb):
+        """Test writing laps with direction/lap_types column."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
+        lap_types = np.array([0, 1, 0, 1])  # 0=outbound, 1=inbound
+
+        # Write laps with directions
+        write_laps(nwbfile, lap_times, lap_types=lap_types)
+
+        # Verify direction column
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert "direction" in laps_table.colnames
+
+        # Check direction values
+        np.testing.assert_array_equal(laps_table["direction"][:], lap_types)
+
+    def test_events_table_creation_in_behavior(self, empty_nwb):
+        """Test EventsTable is created in processing/behavior/ module."""
+        from ndx_events import EventsTable
+
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 2.0, 3.0])
+
+        # Write laps
+        write_laps(nwbfile, lap_times)
+
+        # Verify processing/behavior exists
+        assert "behavior" in nwbfile.processing
+
+        # Verify laps is an EventsTable
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert isinstance(laps_table, EventsTable)
+
+    def test_custom_description(self, empty_nwb):
+        """Test custom description parameter."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 2.0])
+
+        # Write with custom description
+        write_laps(nwbfile, lap_times, description="Custom lap description")
+
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert laps_table.description == "Custom lap description"
+
+    def test_default_description(self, empty_nwb):
+        """Test default description is used."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0])
+
+        write_laps(nwbfile, lap_times)
+
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert "Detected lap events" in laps_table.description
+
+    def test_duplicate_name_error(self, empty_nwb):
+        """Test error when laps table already exists without overwrite."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 2.0])
+
+        # Write laps first time
+        write_laps(nwbfile, lap_times)
+
+        # Try to write again without overwrite
+        with pytest.raises(ValueError, match="already exists"):
+            write_laps(nwbfile, lap_times)
+
+    def test_overwrite_replaces_existing(self, empty_nwb):
+        """Test overwrite=True replaces existing laps table."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        original_times = np.array([1.0, 2.0])
+        new_times = np.array([5.0, 10.0, 15.0])
+
+        # Write original laps
+        write_laps(nwbfile, original_times)
+
+        # Overwrite with new data
+        write_laps(nwbfile, new_times, overwrite=True)
+
+        # Verify new data
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert len(laps_table) == 3
+        np.testing.assert_array_almost_equal(laps_table["timestamp"][:], new_times)
+
+    def test_empty_lap_times(self, empty_nwb):
+        """Test writing empty lap times array."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([])
+
+        # Write empty laps - should succeed
+        write_laps(nwbfile, lap_times)
+
+        laps_table = nwbfile.processing["behavior"]["laps"]
+        assert len(laps_table) == 0
+
+    def test_lap_times_must_be_1d(self, empty_nwb):
+        """Test error when lap_times is not 1D."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+        with pytest.raises(ValueError, match=r"1D|one-dimensional"):
+            write_laps(nwbfile, lap_times_2d)
+
+    def test_lap_types_length_mismatch(self, empty_nwb):
+        """Test error when lap_types length doesn't match lap_times."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 2.0, 3.0])
+        lap_types = np.array([0, 1])  # Wrong length
+
+        with pytest.raises(ValueError, match=r"length|shape"):
+            write_laps(nwbfile, lap_times, lap_types=lap_types)
+
+    def test_data_integrity(self, empty_nwb):
+        """Test data integrity after writing."""
+        from neurospatial.nwb import read_events, write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.5, 3.2, 7.8, 12.1])
+        lap_types = np.array([1, 0, 1, 0])
+
+        # Write laps
+        write_laps(nwbfile, lap_times, lap_types=lap_types)
+
+        # Read back using read_events
+        events = read_events(nwbfile, "laps")
+
+        # Verify data matches
+        np.testing.assert_array_almost_equal(events["timestamp"].values, lap_times)
+        np.testing.assert_array_equal(events["direction"].values, lap_types)
+
+    def test_behavior_module_reuse(self, empty_nwb):
+        """Test that existing behavior module is reused."""
+        from pynwb.behavior import Position, SpatialSeries
+
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+
+        # Create behavior module with Position data first
+        behavior = nwbfile.create_processing_module(
+            name="behavior", description="Behavioral data"
+        )
+        position = Position(name="Position")
+        position.add_spatial_series(
+            SpatialSeries(
+                name="pos",
+                data=np.ones((10, 2)),
+                timestamps=np.arange(10) / 10.0,
+                reference_frame="test",
+                unit="cm",
+            )
+        )
+        behavior.add(position)
+
+        # Write laps - should reuse existing module
+        lap_times = np.array([1.0, 2.0])
+        write_laps(nwbfile, lap_times)
+
+        # Verify both Position and laps exist in same module
+        assert "Position" in nwbfile.processing["behavior"].data_interfaces
+        assert "laps" in nwbfile.processing["behavior"].data_interfaces
+
+    def test_custom_name(self, empty_nwb):
+        """Test writing laps with custom table name."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, 2.0])
+
+        # Write with custom name
+        write_laps(nwbfile, lap_times, name="track_laps")
+
+        # Verify custom name used
+        assert "track_laps" in nwbfile.processing["behavior"].data_interfaces
+        assert "laps" not in nwbfile.processing["behavior"].data_interfaces
+
+    def test_lap_times_with_nan_raises_error(self, empty_nwb):
+        """Test error when lap_times contains NaN values."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, np.nan, 3.0])
+
+        with pytest.raises(ValueError, match=r"non-finite|NaN"):
+            write_laps(nwbfile, lap_times)
+
+    def test_lap_times_with_inf_raises_error(self, empty_nwb):
+        """Test error when lap_times contains Inf values."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([1.0, np.inf, 3.0])
+
+        with pytest.raises(ValueError, match=r"non-finite|Inf"):
+            write_laps(nwbfile, lap_times)
+
+    def test_lap_times_negative_raises_error(self, empty_nwb):
+        """Test error when lap_times contains negative timestamps."""
+        from neurospatial.nwb import write_laps
+
+        nwbfile = empty_nwb
+        lap_times = np.array([-1.0, 1.0, 3.0])
+
+        with pytest.raises(ValueError, match="negative"):
+            write_laps(nwbfile, lap_times)
+
+
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestWriteLapsImportError:
+    """Tests for import error handling in write_laps()."""
+
+    def test_import_error_message(self, monkeypatch):
+        """Test ImportError message when ndx-events is not installed."""
+        import sys
+
+        # Save and remove ndx_events from sys.modules
+        saved_modules = {}
+        modules_to_remove = [k for k in sys.modules if k.startswith("ndx_events")]
+        for mod in modules_to_remove:
+            saved_modules[mod] = sys.modules.pop(mod)
+
+        # Mock the import to fail
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "ndx_events" or name.startswith("ndx_events."):
+                raise ImportError("No module named 'ndx_events'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        try:
+            from neurospatial.nwb._core import _require_ndx_events
+
+            with pytest.raises(ImportError, match="ndx-events is required"):
+                _require_ndx_events()
+        finally:
+            # Restore modules
+            sys.modules.update(saved_modules)

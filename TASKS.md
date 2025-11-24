@@ -180,15 +180,15 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 
 ### M2.2 Writing Events
 
-- [ ] **M2.2.1** Lap events writing
-  - [ ] Write tests for `write_laps()` in `tests/nwb/test_events.py`
-    - [ ] Test basic lap times writing
-    - [ ] Test with lap_types (direction) column
-    - [ ] Test EventsTable creation in processing/behavior/
-    - [ ] Test ImportError when ndx-events not installed
-  - [ ] Implement `write_laps()` in `_events.py`
-  - [ ] Create processing/behavior module if needed
-  - [ ] Add EventsTable with timestamp and optional columns
+- [x] **M2.2.1** Lap events writing
+  - [x] Write tests for `write_laps()` in `tests/nwb/test_events.py`
+    - [x] Test basic lap times writing
+    - [x] Test with lap_types (direction) column
+    - [x] Test EventsTable creation in processing/behavior/
+    - [x] Test ImportError when ndx-events not installed
+  - [x] Implement `write_laps()` in `_events.py`
+  - [x] Create processing/behavior module if needed
+  - [x] Add EventsTable with timestamp and optional columns
 
 - [ ] **M2.2.2** Region crossings writing
   - [ ] Write tests for `write_region_crossings()` in `tests/nwb/test_events.py`

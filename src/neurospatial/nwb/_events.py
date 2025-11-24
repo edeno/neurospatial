@@ -203,35 +203,128 @@ def write_laps(
     lap_times: NDArray[np.float64],
     lap_types: NDArray[np.int_] | None = None,
     description: str = "Detected lap events",
+    *,
+    name: str = "laps",
+    overwrite: bool = False,
 ) -> None:
     """
     Write lap detection results to NWB EventsTable.
+
+    Creates an EventsTable in the processing/behavior/ module containing
+    lap event timestamps and optional direction information.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
     lap_times : NDArray[np.float64], shape (n_laps,)
-        Lap start timestamps in seconds.
+        Lap start timestamps in seconds. Must be 1D array.
     lap_types : NDArray[np.int_], optional
         Lap types/directions. If provided, added as 'direction' column.
+        Must have same length as lap_times.
     description : str, default "Detected lap events"
         Description for the EventsTable.
+    name : str, default "laps"
+        Name for the EventsTable in NWB.
+    overwrite : bool, default False
+        If True, replace existing EventsTable with same name.
+        If False, raise ValueError on duplicate name.
 
     Raises
     ------
+    ValueError
+        If EventsTable with same name exists and overwrite=False.
+        If lap_times is not 1D.
+        If lap_types length doesn't match lap_times.
     ImportError
         If ndx-events is not installed.
+
+    Notes
+    -----
+    The EventsTable is stored in the processing/behavior/ module, following
+    NWB conventions for behavioral data. The direction column uses integer
+    encoding (e.g., 0=outbound, 1=inbound) to allow flexible interpretation.
 
     Examples
     --------
     >>> from pynwb import NWBHDF5IO
+    >>> import numpy as np
+    >>> lap_times = np.array([1.0, 5.5, 10.2, 15.8])
+    >>> directions = np.array([0, 1, 0, 1])  # 0=outbound, 1=inbound
     >>> with NWBHDF5IO("session.nwb", "r+") as io:
     ...     nwbfile = io.read()
     ...     write_laps(nwbfile, lap_times, lap_types=directions)
     ...     io.write(nwbfile)
     """
-    raise NotImplementedError("write_laps not yet implemented")
+    from ndx_events import EventsTable
+
+    from neurospatial.nwb._core import (
+        _get_or_create_processing_module,
+        _require_ndx_events,
+        logger,
+    )
+
+    # Verify ndx-events is installed
+    _require_ndx_events()
+
+    # Validate lap_times is 1D
+    lap_times = np.asarray(lap_times, dtype=np.float64)
+    if lap_times.ndim != 1:
+        raise ValueError(
+            f"lap_times must be 1D array, got shape {lap_times.shape}. "
+            "Each element should be a single timestamp."
+        )
+
+    # Validate timestamps are finite and non-negative
+    if len(lap_times) > 0:
+        if not np.all(np.isfinite(lap_times)):
+            raise ValueError("lap_times contains non-finite values (NaN or Inf)")
+        if np.any(lap_times < 0):
+            raise ValueError("lap_times contains negative timestamps")
+
+    # Validate lap_types length if provided
+    if lap_types is not None:
+        lap_types = np.asarray(lap_types)
+        if len(lap_types) != len(lap_times):
+            raise ValueError(
+                f"lap_types length ({len(lap_types)}) must match "
+                f"lap_times length ({len(lap_times)})."
+            )
+
+    # Get or create behavior processing module
+    behavior = _get_or_create_processing_module(
+        nwbfile, "behavior", "Behavioral data including laps and events"
+    )
+
+    # Check for existing table with same name
+    if name in behavior.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"EventsTable '{name}' already exists. Use overwrite=True to replace."
+            )
+        # Remove existing table for replacement (in-memory only)
+        del behavior.data_interfaces[name]
+        logger.info("Overwriting existing EventsTable '%s'", name)
+
+    # Create EventsTable
+    events_table = EventsTable(name=name, description=description)
+
+    # Add direction column if lap_types provided
+    if lap_types is not None:
+        events_table.add_column(name="direction", description="Lap direction/type")
+
+    # Add rows for each lap
+    for i, timestamp in enumerate(lap_times):
+        if lap_types is not None:
+            events_table.add_row(
+                timestamp=float(timestamp), direction=int(lap_types[i])
+            )
+        else:
+            events_table.add_row(timestamp=float(timestamp))
+
+    # Add to behavior module
+    behavior.add(events_table)
+    logger.debug("Wrote EventsTable '%s' with %d lap events", name, len(lap_times))
 
 
 def write_region_crossings(
