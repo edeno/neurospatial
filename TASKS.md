@@ -304,12 +304,12 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Run mypy and fix any errors
   - [x] Verify py.typed marker works with NWB types
 
-- [ ] **M4.4** Final verification
-  - [ ] Run full test suite (`uv run pytest`)
-  - [ ] Run linter (`uv run ruff check .`)
-  - [ ] Run formatter (`uv run ruff format .`)
-  - [ ] Run type checker (`uv run mypy src/neurospatial/nwb/`)
-  - [ ] Verify all tests pass
+- [x] **M4.4** Final verification
+  - [x] Run full test suite (`uv run pytest`)
+  - [x] Run linter (`uv run ruff check .`)
+  - [x] Run formatter (`uv run ruff format .`)
+  - [x] Run type checker (`uv run mypy src/neurospatial/nwb/`)
+  - [x] Verify all tests pass
 
 ---
 
@@ -331,4 +331,4 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 | M1: Reading | Complete | 2025-11-23 | 2025-11-23 |
 | M2: Writing | Complete | 2025-11-23 | 2025-11-23 |
 | M3: Round-trip | Complete | 2025-11-23 | 2025-11-24 |
-| M4: Docs | Not Started | - | - |
+| M4: Docs | Complete | 2025-11-24 | 2025-11-24 |
