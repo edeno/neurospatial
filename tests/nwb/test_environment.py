@@ -705,3 +705,340 @@ class TestReadEnvironment:
             np.testing.assert_array_almost_equal(
                 node_data["pos"], loaded_env.bin_centers[node_id]
             )
+
+
+def _create_nwb_for_test():
+    """Create a minimal NWB file for testing."""
+    from datetime import datetime
+    from uuid import uuid4
+
+    from pynwb import NWBFile
+
+    return NWBFile(
+        session_description="Test session for round-trip",
+        identifier=str(uuid4()),
+        session_start_time=datetime.now().astimezone(),
+    )
+
+
+class TestEnvironmentRoundTrip:
+    """File-based round-trip tests: write to disk, read back."""
+
+    def test_full_roundtrip_to_file(self, tmp_path, sample_environment):
+        """Test Environment survives NWB write/read cycle to actual file."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_roundtrip.nwb"
+
+        # Write to file
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        # Read from file
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Verify round-trip
+        assert loaded_env.n_bins == sample_environment.n_bins
+        np.testing.assert_array_almost_equal(
+            loaded_env.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_roundtrip_bin_centers_exact(self, tmp_path, sample_environment):
+        """Test bin_centers are exactly preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_bin_centers.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Exact match (no floating point drift)
+        np.testing.assert_array_equal(
+            loaded_env.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_roundtrip_connectivity_preserved(self, tmp_path, sample_environment):
+        """Test connectivity graph structure is preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_connectivity.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Same structure
+        assert (
+            loaded_env.connectivity.number_of_nodes()
+            == sample_environment.connectivity.number_of_nodes()
+        )
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == sample_environment.connectivity.number_of_edges()
+        )
+
+        # Same edges (sorted for comparison)
+        original_edges = sorted(sample_environment.connectivity.edges())
+        loaded_edges = sorted(loaded_env.connectivity.edges())
+        assert original_edges == loaded_edges
+
+    def test_roundtrip_edge_weights_preserved(self, tmp_path, sample_environment):
+        """Test edge weights (distances) are preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_edge_weights.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Compare edge weights
+        for u, v in sample_environment.connectivity.edges():
+            original_dist = sample_environment.connectivity[u][v]["distance"]
+            loaded_dist = loaded_env.connectivity[u][v]["distance"]
+            np.testing.assert_almost_equal(loaded_dist, original_dist)
+
+    def test_roundtrip_regions_preserved(self, tmp_path, sample_environment):
+        """Test regions are preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_regions.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Same regions
+        assert set(loaded_env.regions.keys()) == set(sample_environment.regions.keys())
+
+        # Check region data
+        for name in sample_environment.regions:
+            original = sample_environment.regions[name]
+            loaded = loaded_env.regions[name]
+            assert loaded.kind == original.kind
+            np.testing.assert_array_almost_equal(loaded.data, original.data)
+
+    def test_roundtrip_metadata_preserved(self, tmp_path, sample_environment):
+        """Test metadata (units, frame, name) is preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        sample_environment.name = "test_arena"
+        sample_environment.units = "cm"
+        sample_environment.frame = "session_001"
+
+        nwb_path = tmp_path / "test_metadata.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert loaded_env.name == "test_arena"
+        assert loaded_env.units == "cm"
+        assert loaded_env.frame == "session_001"
+
+    def test_roundtrip_polygon_regions(self, tmp_path):
+        """Test polygon regions are preserved through file round-trip."""
+        from pynwb import NWBHDF5IO
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create environment with polygon region
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        triangle = Polygon([(10, 10), (30, 10), (20, 30)])
+        env.regions.add("reward_zone", polygon=triangle)
+
+        nwb_path = tmp_path / "test_polygon.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Check polygon coordinates
+        loaded_coords = list(loaded_env.regions["reward_zone"].data.exterior.coords)
+        original_coords = list(triangle.exterior.coords)
+        np.testing.assert_array_almost_equal(loaded_coords, original_coords)
+
+    def test_roundtrip_spatial_queries_work(self, tmp_path, sample_environment):
+        """Test loaded Environment can perform spatial queries."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        nwb_path = tmp_path / "test_queries.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Test bin_at works
+        test_point = loaded_env.bin_centers[0]
+        bin_idx = loaded_env.bin_at(test_point)
+        assert bin_idx == 0
+
+        # Test neighbors works
+        neighbors = loaded_env.neighbors(0)
+        assert len(neighbors) > 0
+
+        # Test distance_between works
+        if len(neighbors) > 0:
+            dist = loaded_env.distance_between(0, neighbors[0])
+            assert dist > 0
+
+    def test_roundtrip_3d_environment(self, tmp_path):
+        """Test 3D environment round-trip preserves all dimensions."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create 3D environment
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 50, (500, 3))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        nwb_path = tmp_path / "test_3d.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Verify 3D structure preserved
+        assert loaded_env.n_dims == 3
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+    def test_roundtrip_hexagonal_layout(self, tmp_path):
+        """Test hexagonal layout environment round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create hexagonal layout environment
+        env = Environment.from_layout(
+            kind="Hexagonal",
+            layout_params={
+                "hexagon_width": 5.0,  # Hexagonal uses hexagon_width
+                "dimension_ranges": [(0, 50), (0, 50)],
+            },
+        )
+
+        nwb_path = tmp_path / "test_hex.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+        # Layout type should be stored (though layout can't be fully restored)
+        assert loaded_env._layout_type_used == "Hexagonal"
+
+    def test_roundtrip_polygon_boundary_environment(self, tmp_path):
+        """Test polygon-bounded environment round-trip."""
+        from pynwb import NWBHDF5IO
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create L-shaped polygon boundary
+        boundary = Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)])
+        env = Environment.from_polygon(boundary, bin_size=5.0)
+
+        nwb_path = tmp_path / "test_polygon_boundary.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+
+        # Connectivity should be preserved
+        original_edges = sorted(env.connectivity.edges())
+        loaded_edges = sorted(loaded_env.connectivity.edges())
+        assert original_edges == loaded_edges
