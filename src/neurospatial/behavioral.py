@@ -510,7 +510,25 @@ def time_to_goal(
     segment_trials : Segment trajectory into trials
     path_progress : Normalized progress along path
     """
-    raise NotImplementedError("time_to_goal not yet implemented")
+    # Initialize with NaN (default for outside trials and failed trials)
+    ttg = np.full(len(times), np.nan, dtype=np.float64)
+
+    # Process each trial
+    for trial in trials:
+        if not trial.success:
+            continue  # Skip failed trials (leave as NaN)
+
+        # Find timepoints within this trial
+        mask = (times >= trial.start_time) & (times <= trial.end_time)
+        trial_times = times[mask]
+
+        # Compute countdown: time remaining until trial.end_time
+        ttg[mask] = trial.end_time - trial_times
+
+        # Clamp to 0.0 (handle any numerical issues)
+        ttg[mask] = np.maximum(ttg[mask], 0.0)
+
+    return ttg
 
 
 def compute_trajectory_curvature(

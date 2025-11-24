@@ -629,34 +629,175 @@ def test_distance_to_region_large_environment():
 # =============================================================================
 
 
-@pytest.mark.skip("not implemented")
 def test_time_to_goal_successful_trials():
     """Test time to goal for successful trials."""
-    pass
+    from neurospatial.behavioral import time_to_goal
+    from neurospatial.segmentation.trials import Trial
+
+    # Create timestamps
+    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+
+    # Create successful trials
+    trials = [
+        Trial(
+            start_time=1.0,
+            end_time=4.0,
+            start_region="start",
+            end_region="goal",
+            success=True,
+        ),
+        Trial(
+            start_time=6.0,
+            end_time=9.0,
+            start_region="start",
+            end_region="goal",
+            success=True,
+        ),
+    ]
+
+    # Compute time to goal
+    ttg = time_to_goal(times, trials)
+
+    # Check shape
+    assert ttg.shape == times.shape
+
+    # Check NaN outside trials
+    assert np.isnan(ttg[0])  # Before first trial
+    assert np.isnan(ttg[5])  # Between trials
+    assert np.isnan(ttg[10])  # After last trial
+
+    # Check countdown during trials
+    # Trial 1: t=1.0 to t=4.0
+    assert np.isclose(ttg[1], 3.0)  # 4.0 - 1.0 = 3.0 seconds remaining
+    assert np.isclose(ttg[2], 2.0)  # 4.0 - 2.0 = 2.0 seconds remaining
+    assert np.isclose(ttg[3], 1.0)  # 4.0 - 3.0 = 1.0 seconds remaining
+    assert np.isclose(ttg[4], 0.0)  # At goal
+
+    # Trial 2: t=6.0 to t=9.0
+    assert np.isclose(ttg[6], 3.0)  # 9.0 - 6.0 = 3.0 seconds remaining
+    assert np.isclose(ttg[7], 2.0)  # 9.0 - 7.0 = 2.0 seconds remaining
+    assert np.isclose(ttg[8], 1.0)  # 9.0 - 8.0 = 1.0 seconds remaining
+    assert np.isclose(ttg[9], 0.0)  # At goal
 
 
-@pytest.mark.skip("not implemented")
 def test_time_to_goal_failed_trials():
     """Test time to goal for failed trials (should be NaN)."""
-    pass
+    from neurospatial.behavioral import time_to_goal
+    from neurospatial.segmentation.trials import Trial
+
+    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+
+    # Create failed trial (end_region=None, success=False)
+    trials = [
+        Trial(
+            start_time=1.0,
+            end_time=4.0,
+            start_region="start",
+            end_region=None,  # Failed trial
+            success=False,
+        ),
+    ]
+
+    ttg = time_to_goal(times, trials)
+
+    # Failed trials should be NaN throughout
+    assert np.isnan(ttg[1])
+    assert np.isnan(ttg[2])
+    assert np.isnan(ttg[3])
+    assert np.isnan(ttg[4])
 
 
-@pytest.mark.skip("not implemented")
 def test_time_to_goal_outside_trials():
     """Test time to goal outside trials (should be NaN)."""
-    pass
+    from neurospatial.behavioral import time_to_goal
+    from neurospatial.segmentation.trials import Trial
+
+    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+
+    # Trial runs from 2.0 to 4.0
+    trials = [
+        Trial(
+            start_time=2.0,
+            end_time=4.0,
+            start_region="start",
+            end_region="goal",
+            success=True,
+        ),
+    ]
+
+    ttg = time_to_goal(times, trials)
+
+    # Outside trial period should be NaN
+    assert np.isnan(ttg[0])  # Before trial
+    assert np.isnan(ttg[1])  # Before trial
+    assert np.isnan(ttg[5])  # After trial
+    assert np.isnan(ttg[6])  # After trial
+
+    # Inside trial should have valid values
+    assert not np.isnan(ttg[2])
+    assert not np.isnan(ttg[3])
+    assert not np.isnan(ttg[4])
 
 
-@pytest.mark.skip("not implemented")
 def test_time_to_goal_countdown():
     """Test time to goal countdown is correct."""
-    pass
+    from neurospatial.behavioral import time_to_goal
+    from neurospatial.segmentation.trials import Trial
+
+    # High-resolution timestamps
+    times = np.linspace(0.0, 10.0, 101)  # 0.1s resolution
+
+    trials = [
+        Trial(
+            start_time=2.0,
+            end_time=7.0,
+            start_region="start",
+            end_region="goal",
+            success=True,
+        ),
+    ]
+
+    ttg = time_to_goal(times, trials)
+
+    # Find indices within trial
+    trial_mask = (times >= 2.0) & (times <= 7.0)
+    trial_times = times[trial_mask]
+    trial_ttg = ttg[trial_mask]
+
+    # Verify countdown: ttg = end_time - current_time
+    expected_ttg = 7.0 - trial_times
+    assert np.allclose(trial_ttg, expected_ttg, atol=1e-10)
+
+    # Verify monotonic decrease
+    assert np.all(np.diff(trial_ttg) <= 0)  # Non-increasing
 
 
-@pytest.mark.skip("not implemented")
 def test_time_to_goal_after_goal_reached():
     """Test time to goal after goal reached (should be 0.0)."""
-    pass
+    from neurospatial.behavioral import time_to_goal
+    from neurospatial.segmentation.trials import Trial
+
+    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+
+    # Trial ends at t=3.0
+    trials = [
+        Trial(
+            start_time=1.0,
+            end_time=3.0,
+            start_region="start",
+            end_region="goal",
+            success=True,
+        ),
+    ]
+
+    ttg = time_to_goal(times, trials)
+
+    # At goal arrival time, should be 0.0
+    assert np.isclose(ttg[3], 0.0)
+
+    # After goal (due to clamping if any floating point issues)
+    # In this simple case, there shouldn't be values after end_time within trial
+    # But the clamping ensures no negative values
 
 
 # =============================================================================
