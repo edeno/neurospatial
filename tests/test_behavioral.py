@@ -938,6 +938,143 @@ def test_compute_trajectory_curvature_output_length():
         )
 
 
+def test_compute_trajectory_curvature_multiple_turns():
+    """Test curvature with multiple consecutive turns (square path)."""
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create square path with 4 right turns (clockwise)
+    # Start at origin, move right, down, left, up
+    positions = np.array(
+        [
+            [0.0, 0.0],  # Start
+            [10.0, 0.0],  # Move right
+            [10.0, -10.0],  # Turn right (down)
+            [0.0, -10.0],  # Turn right (left)
+            [0.0, 0.0],  # Turn right (up) - back to start
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (5,), "Output length should match input"
+
+    # Each turn should be approximately -π/2 (right turn)
+    # Turn indices: 1, 2, 3 (middle points of the square)
+    # Note: Due to padding, exact indices may vary, but we should see negative angles
+    turn_angles = curvature[1:-1]  # Skip first and last (padding)
+    assert len(turn_angles) > 0, "Should detect turns in middle of path"
+
+    # At least one turn should be negative (right turns)
+    assert np.any(turn_angles < -0.5), "Should detect right turns (negative curvature)"
+
+
+def test_compute_trajectory_curvature_circular_arc():
+    """Test curvature on circular arc with known constant curvature."""
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create circular arc: quarter circle, radius=10
+    # Arc from 0° to 90° (π/2 radians)
+    theta = np.linspace(0, np.pi / 2, 20)
+    radius = 10.0
+    x = radius * np.cos(theta)
+    y = radius * np.sin(theta)
+    positions = np.column_stack([x, y])
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (20,), "Output length should match input"
+
+    # For a circular arc, curvature should be relatively constant
+    # (though not exactly due to discrete sampling and padding)
+    # Inner points should have similar curvature values
+    inner_curvature = curvature[5:-5]  # Exclude edges affected by padding
+
+    # Check that variance is low (relatively constant curvature)
+    variance = np.var(inner_curvature)
+    assert variance < 0.1, (
+        f"Circular arc should have relatively constant curvature, got variance {variance}"
+    )
+
+    # Curvature should be positive (counterclockwise arc)
+    mean_curvature = np.mean(inner_curvature)
+    assert mean_curvature > 0, "Counterclockwise arc should have positive curvature"
+
+
+def test_compute_trajectory_curvature_s_curve():
+    """Test curvature on S-curve with alternating turns."""
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create S-curve: left turn followed by right turn
+    positions = np.array(
+        [
+            [0.0, 0.0],  # Start
+            [5.0, 0.0],  # Move right
+            [10.0, 5.0],  # Turn left (up-right)
+            [15.0, 5.0],  # Straight
+            [20.0, 0.0],  # Turn right (down-right)
+            [25.0, 0.0],  # End straight
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (6,), "Output length should match input"
+
+    # Should detect both positive (left) and negative (right) turns
+    assert np.any(curvature > 0.1), "Should detect left turn (positive curvature)"
+    assert np.any(curvature < -0.1), "Should detect right turn (negative curvature)"
+
+    # Check that we have alternating signs (S-curve characteristic)
+    # Find indices with significant curvature
+    significant = np.abs(curvature) > 0.1
+    if np.sum(significant) >= 2:
+        # If we have at least 2 significant turns, check they alternate
+        significant_values = curvature[significant]
+        # Should have both positive and negative values
+        assert np.any(significant_values > 0) and np.any(significant_values < 0), (
+            "S-curve should have alternating turn directions"
+        )
+
+
+def test_compute_trajectory_curvature_zigzag():
+    """Test curvature on zigzag pattern with multiple sharp turns."""
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Create zigzag pattern: right, left, right, left
+    positions = np.array(
+        [
+            [0.0, 0.0],
+            [10.0, 0.0],  # Move right
+            [15.0, 5.0],  # Turn left (up)
+            [20.0, 0.0],  # Turn right (down)
+            [25.0, 5.0],  # Turn left (up)
+            [30.0, 0.0],  # Turn right (down)
+        ]
+    )
+
+    # Compute curvature
+    curvature = compute_trajectory_curvature(positions)
+
+    # Assertions
+    assert curvature.shape == (6,), "Output length should match input"
+
+    # Zigzag should have multiple significant turns
+    significant_turns = np.abs(curvature) > 0.1
+    assert np.sum(significant_turns) >= 2, (
+        "Zigzag should have multiple detectable turns"
+    )
+
+    # Should have both left and right turns
+    assert np.any(curvature > 0.1), "Should detect left turns"
+    assert np.any(curvature < -0.1), "Should detect right turns"
+
+
 # =============================================================================
 # M4.1: cost_to_goal() Tests
 # =============================================================================

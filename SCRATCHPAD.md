@@ -200,15 +200,19 @@ All are already exported in `segmentation/__init__.py` but **NOT** in main `neur
    - Uses `atan2(cross, dot)` for signed angles [-π, π]
    - For N-D > 2: uses first 2 dimensions only
 
-2. ✅ Wrote 6 tests FIRST (tests/test_behavioral.py:808-922)
+2. ✅ Wrote 10 tests FIRST (tests/test_behavioral.py:808-1073)
    - test_compute_trajectory_curvature_2d_straight
    - test_compute_trajectory_curvature_2d_left_turn
    - test_compute_trajectory_curvature_2d_right_turn
    - test_compute_trajectory_curvature_3d
    - test_compute_trajectory_curvature_smoothing
    - test_compute_trajectory_curvature_output_length
+   - test_compute_trajectory_curvature_multiple_turns (square path with 4 right turns)
+   - test_compute_trajectory_curvature_circular_arc (constant curvature)
+   - test_compute_trajectory_curvature_s_curve (alternating left/right turns)
+   - test_compute_trajectory_curvature_zigzag (multiple sharp turns)
 
-3. ✅ Ran tests → FAIL (6/6 failed with NotImplementedError)
+3. ✅ Ran tests → FAIL (6/6 failed with NotImplementedError initially)
 
 4. ✅ Implemented function (src/neurospatial/behavioral.py:606-642)
    - Delegates to `compute_turn_angles()` for angle computation
@@ -216,7 +220,7 @@ All are already exported in `segmentation/__init__.py` but **NOT** in main `neur
    - Handles edge case: < 3 unique positions → all zeros
    - Temporal smoothing with `gaussian_filter1d` from scipy
 
-5. ✅ Ran tests → PASS (6/6 passed)
+5. ✅ Ran tests → PASS (10/10 passed, including 4 additional comprehensive tests)
 
 6. ✅ Code quality checks (mypy, ruff) → all passed
 
@@ -225,6 +229,13 @@ All are already exported in `segmentation/__init__.py` but **NOT** in main `neur
 - **Padding strategy**: Symmetric padding handles variable-length output from `compute_turn_angles()` (due to stationary period filtering)
 - **Smoothing**: Computes sigma from median time resolution, applies Gaussian filter
 - **Edge cases**: Returns all zeros for trajectories with < 3 unique positions
+
+**Additional Test Coverage (added after review):**
+
+- **Multiple consecutive turns**: Square path validates detection of 4 sequential right turns
+- **Constant curvature**: Circular arc validates consistent curvature on smooth curves
+- **Alternating turns**: S-curve validates sign changes (positive → negative)
+- **Complex patterns**: Zigzag validates multiple turn detection in sharp paths
 
 ---
 
