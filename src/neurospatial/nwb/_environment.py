@@ -148,6 +148,7 @@ def write_environment(
             "layout_type": layout_type,
             "n_bins": env.n_bins,
             "n_edges": len(edges),  # Needed for proper deserialization
+            "is_1d": env.is_1d,  # Preserve 1D property for Graph layouts
         }
     )
 
@@ -381,6 +382,11 @@ def read_environment(
 
     # Store layout type info
     env._layout_type_used = layout_type
+
+    # Restore is_1d property for Graph layouts
+    is_1d = metadata.get("is_1d", False)
+    if is_1d:
+        env._is_1d_env = True
 
     logger.debug(
         "Read environment '%s' with %d bins and %d edges",

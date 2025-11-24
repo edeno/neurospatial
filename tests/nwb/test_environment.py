@@ -1042,3 +1042,63 @@ class TestEnvironmentRoundTrip:
         original_edges = sorted(env.connectivity.edges())
         loaded_edges = sorted(loaded_env.connectivity.edges())
         assert original_edges == loaded_edges
+
+    def test_roundtrip_1d_graph_layout(self, tmp_path):
+        """Test 1D GraphLayout (linearized track) environment round-trip."""
+        import networkx as nx
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import read_environment, write_environment
+
+        # Create a simple linear track graph
+        # Track: node 0 -- node 1 -- node 2 -- node 3 -- node 4
+        graph = nx.Graph()
+        for i in range(5):
+            graph.add_node(i, pos=(i * 20.0, 0.0))  # Nodes at 0, 20, 40, 60, 80
+        for i in range(4):
+            # GraphLayout requires edges with 'distance' attribute
+            graph.add_edge(i, i + 1, distance=20.0)
+
+        edge_order = [(i, i + 1) for i in range(4)]
+        env = Environment.from_graph(
+            graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0
+        )
+
+        assert env.is_1d, "GraphLayout should create a 1D environment"
+
+        nwb_path = tmp_path / "test_1d_graph.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Core data should match exactly
+        assert loaded_env.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded_env.bin_centers, env.bin_centers)
+
+        # Connectivity should be preserved
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        )
+
+        original_edges = sorted(env.connectivity.edges())
+        loaded_edges = sorted(loaded_env.connectivity.edges())
+        assert original_edges == loaded_edges
+
+        # is_1d property should be preserved (Graph layouts store 2D bin_centers
+        # but are conceptually 1D linearized tracks)
+        assert loaded_env.is_1d is True, "is_1d should be restored for Graph layouts"
+        assert env.is_1d is True, "Original env should be 1D"
+
+        # n_dims is based on bin_centers shape (2D for projected coordinates)
+        assert loaded_env.n_dims == env.n_dims
+
+        # Layout type should be stored
+        assert loaded_env._layout_type_used == "Graph"
