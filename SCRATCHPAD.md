@@ -400,8 +400,88 @@ None.
 
 ---
 
+---
+
+### M5.2 - Update CLAUDE.md Documentation ✅ COMPLETE
+
+**Commit**: c109df1
+
+**Changes Made:**
+
+1. Updated version reference from "v0.7.0 - NWB integration" to "v0.8.0 - Behavioral metrics and goal-directed analysis"
+2. Added comprehensive "Behavioral & Goal-Directed Metrics (v0.8.0+)" section to Quick Reference
+3. Documented all 7 behavioral functions with complete examples:
+   - `path_progress()` - Vectorized progress along geodesic paths
+   - `distance_to_region()` - Distance to goal over time
+   - `cost_to_goal()` - RL cost with terrain/avoidance
+   - `time_to_goal()` - Temporal countdown to goal
+   - `compute_trajectory_curvature()` - Continuous curvature analysis
+   - `graph_turn_sequence()` - Discrete turn labels
+   - `trials_to_region_arrays()` - Helper for trial arrays
+4. Added import statement showing all functions in public API
+
+**Status**: Documentation complete and committed
+
+---
+
+### M5.3.1 - Fix Test Fixture and Test Bug ✅ COMPLETE
+
+**Commit**: a7259cd
+
+**Issue Identified:**
+
+- 6 tests were being skipped due to fixture randomness
+- `simple_environment_with_regions()` fixture used `np.random.uniform(0, 10, (100, 2))`
+- This completely random sampling sometimes didn't generate bins in the "goal2" region
+- When goal2 had no bins, tests using it would skip
+
+**Root Cause Analysis:**
+
+- Uniform random sampling doesn't guarantee spatial coverage
+- With bin_size=2.0 creating a 5x5 grid (25 bins), some cells could have 0 samples
+- goal2 region at (9.0, 1.0) is in bottom-right cell - could be empty with random sampling
+
+**Fix Applied:**
+
+- Replaced uniform random sampling with **stratified sampling**
+- Loop through 5x5 grid of cells
+- Sample 4 points uniformly within each cell
+- Total: 25 cells × 4 points = 100 points (same as before)
+- Guarantees complete coverage: all regions (start, goal1, goal2) will have bins
+
+**Test Bug Fixed:**
+
+- `test_cost_to_goal_dynamic_goal` had incorrect assertion
+- At index 2: trajectory at goal1, targeting goal2 (not goal1!)
+- Assertion expected `cost[2] == 0.0` but should be `cost[2] > 0.0` (distance from goal1 to goal2)
+- Updated assertion and clarified comment
+
+**Results:**
+
+- Before: 38 passed, 6 skipped
+- After: 42 passed, 2 skipped
+- Remaining 2 skips are intentional (large environment tests with size requirements)
+
+**Tests Now Passing:**
+
+- test_path_progress_multiple_trials ✅ (was skipped)
+- test_trials_to_region_arrays_multiple_trials ✅ (was skipped)
+- test_cost_to_goal_dynamic_goal ✅ (was failing, now passing)
+- test_distance_to_region_dynamic_target ✅ (was skipped)
+
+**Remaining Intentional Skips:**
+
+- test_path_progress_large_environment - Skips if `env.n_bins < 5000` (performance test)
+- test_distance_to_region_large_environment - Skips if `env.n_bins < 5000` (performance test)
+
+**Status**: Fixture fix successful, all behavioral tests passing
+
+---
+
 ## Next Steps
 
 - M5.1: ✅ COMPLETE (Public API exports added)
-- M5.2: Update CLAUDE.md documentation (NEXT)
-- Continue with Milestone 5: Documentation and Integration
+- M5.2: ✅ COMPLETE (CLAUDE.md documentation updated)
+- M5.3.1: ✅ COMPLETE (Behavioral tests: 42 passed, 2 intentionally skipped)
+- M5.3.2: Full test suite running (IN PROGRESS)
+- Continue with Milestone 5: Code quality checks and final validation

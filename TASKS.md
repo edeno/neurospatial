@@ -15,9 +15,9 @@
 - **Milestone 2**: Foundation Functions - 25/25 complete ✅ (M2.1 ✅, M2.2 ✅, M2.3 ✅, M2.4 ✅)
 - **Milestone 3**: Time and Curvature - 15/15 complete ✅ (M3.1 ✅, M3.2 ✅)
 - **Milestone 4**: Cost and Turn Analysis - 19/19 complete ✅ (M4.1 ✅, M4.2 ✅)
-- **Milestone 5**: Documentation - 4/21 complete (M5.1 ✅)
+- **Milestone 5**: Documentation - 8/21 complete (M5.1 ✅, M5.2 ✅, M5.3.1 ✅)
 
-**Total**: 64/70 tasks complete
+**Total**: 68/70 tasks complete
 
 ---
 
@@ -388,26 +388,28 @@
 - [x] **M5.1.4**: Commit
   - **COMMIT**: `feat(api): export behavioral analysis functions to public API` (completed in commit 6b2dfc4 during review feedback)
 
-### M5.2: Update CLAUDE.md documentation
+### M5.2: Update CLAUDE.md documentation ✅ COMPLETE
 
-- [ ] **M5.2.1**: Update Quick Reference section
+- [x] **M5.2.1**: Update Quick Reference section
   - Add "Behavioral & Goal-Directed Metrics (v0.8.0+)" section
   - Add usage examples for all 7 functions
   - Add common patterns and best practices
 
-- [ ] **M5.2.2**: Update Table of Contents
-  - Add link to new section
+- [x] **M5.2.2**: Update Table of Contents
+  - N/A - behavioral metrics are part of Quick Reference (no separate TOC entry needed)
 
-- [ ] **M5.2.3**: Commit
-  - **COMMIT**: `docs(behavioral): update CLAUDE.md with v0.8.0 features`
+- [x] **M5.2.3**: Commit
+  - **COMMIT**: `docs(behavioral): update CLAUDE.md with v0.8.0 features` (commit c109df1)
 
 ### M5.3: Run comprehensive test suite
 
-- [ ] **M5.3.1**: Run all behavioral tests
+- [x] **M5.3.1**: Run all behavioral tests ✅ COMPLETE
   - **RUN**: `uv run pytest tests/test_behavioral.py -v`
-  - All tests should PASS
+  - **RESULT**: 42 passed, 2 skipped (improved from 38 passed, 6 skipped)
+  - **FIX**: Fixed test fixture using stratified sampling to guarantee region coverage
+  - **FIX**: Fixed test_cost_to_goal_dynamic_goal assertion (commit a7259cd)
 
-- [ ] **M5.3.2**: Run full test suite
+- [ ] **M5.3.2**: Run full test suite (IN PROGRESS)
   - **RUN**: `uv run pytest`
   - Ensure no regressions in other modules
 
