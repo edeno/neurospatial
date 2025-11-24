@@ -59,12 +59,11 @@ def read_events(
     ...     laps = read_events(nwbfile, "laps")
     ...     print(f"Found {len(laps)} lap events")
     """
-    from ndx_events import EventsTable as EventsTableType
-
     from neurospatial.nwb._core import _require_ndx_events, logger
 
-    # Verify ndx-events is installed (for type validation)
-    _require_ndx_events()
+    # Verify ndx-events is installed BEFORE importing EventsTable
+    # This ensures users see the friendly error message
+    ndx_events_module = _require_ndx_events()
 
     # Check if processing module exists
     if processing_module not in nwbfile.processing:
@@ -86,7 +85,7 @@ def read_events(
     events_table = module.data_interfaces[table_name]
 
     # Validate it's an EventsTable
-    if not isinstance(events_table, EventsTableType):
+    if not isinstance(events_table, ndx_events_module.EventsTable):
         raise TypeError(
             f"'{table_name}' is not an EventsTable (got {type(events_table).__name__}). "
             "Use read_events() only for EventsTable containers."
@@ -256,16 +255,15 @@ def write_laps(
     ...     write_laps(nwbfile, lap_times, lap_types=directions)
     ...     io.write(nwbfile)
     """
-    from ndx_events import EventsTable
-
     from neurospatial.nwb._core import (
         _get_or_create_processing_module,
         _require_ndx_events,
         logger,
     )
 
-    # Verify ndx-events is installed
-    _require_ndx_events()
+    # Verify ndx-events is installed BEFORE importing EventsTable
+    # This ensures users see the friendly error message
+    ndx_events_module = _require_ndx_events()
 
     # Validate lap_times is 1D
     lap_times = np.asarray(lap_times, dtype=np.float64)
@@ -307,7 +305,7 @@ def write_laps(
         logger.info("Overwriting existing EventsTable '%s'", name)
 
     # Create EventsTable
-    events_table = EventsTable(name=name, description=description)
+    events_table = ndx_events_module.EventsTable(name=name, description=description)
 
     # Add direction column if lap_types provided
     if lap_types is not None:
@@ -392,16 +390,15 @@ def write_region_crossings(
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
     ...     io.write(nwbfile)
     """
-    from ndx_events import EventsTable
-
     from neurospatial.nwb._core import (
         _get_or_create_processing_module,
         _require_ndx_events,
         logger,
     )
 
-    # Verify ndx-events is installed
-    _require_ndx_events()
+    # Verify ndx-events is installed BEFORE importing EventsTable
+    # This ensures users see the friendly error message
+    ndx_events_module = _require_ndx_events()
 
     # Validate crossing_times is 1D
     crossing_times = np.asarray(crossing_times, dtype=np.float64)
@@ -450,7 +447,7 @@ def write_region_crossings(
         logger.info("Overwriting existing EventsTable '%s'", name)
 
     # Create EventsTable
-    events_table = EventsTable(name=name, description=description)
+    events_table = ndx_events_module.EventsTable(name=name, description=description)
 
     # Add region and event_type columns
     events_table.add_column(name="region", description="Region name")

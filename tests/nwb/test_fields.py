@@ -364,6 +364,111 @@ class TestWritePlaceField:
             stored_centers = analysis["bin_centers"].data[:].squeeze()
             np.testing.assert_array_almost_equal(stored_centers, env.bin_centers)
 
+    def test_time_varying_field_with_physical_timestamps(
+        self, empty_nwb, sample_environment
+    ):
+        """Test time-varying field with explicit physical timestamps."""
+        from neurospatial.nwb import write_place_field
+
+        nwbfile = empty_nwb
+        env = sample_environment
+        n_time = 100
+
+        # Time-varying field with physical timestamps
+        field = np.random.default_rng(42).uniform(0, 10, (n_time, env.n_bins))
+        timestamps = np.linspace(0, 10, n_time)  # 10 seconds of data
+
+        write_place_field(nwbfile, env, field, name="time_field", timestamps=timestamps)
+
+        stored = nwbfile.processing["analysis"]["time_field"]
+
+        # Verify timestamps match
+        np.testing.assert_array_almost_equal(stored.timestamps[:], timestamps)
+
+        # Verify data shape and values
+        np.testing.assert_array_almost_equal(stored.data[:], field)
+
+    def test_time_varying_field_without_timestamps_uses_indices(
+        self, empty_nwb, sample_environment
+    ):
+        """Test time-varying field uses sequential indices when no timestamps provided."""
+        from neurospatial.nwb import write_place_field
+
+        nwbfile = empty_nwb
+        env = sample_environment
+        n_time = 50
+
+        # Time-varying field without timestamps
+        field = np.random.default_rng(42).uniform(0, 10, (n_time, env.n_bins))
+
+        write_place_field(nwbfile, env, field, name="indexed_field")
+
+        stored = nwbfile.processing["analysis"]["indexed_field"]
+
+        # Timestamps should be [0, 1, 2, ..., n_time-1]
+        expected_timestamps = np.arange(n_time, dtype=np.float64)
+        np.testing.assert_array_almost_equal(stored.timestamps[:], expected_timestamps)
+
+    def test_static_field_ignores_timestamps_parameter(
+        self, empty_nwb, sample_environment
+    ):
+        """Test that static 1D field ignores timestamps parameter."""
+        from neurospatial.nwb import write_place_field
+
+        nwbfile = empty_nwb
+        env = sample_environment
+
+        # Static field with timestamps parameter (should be ignored)
+        field = np.ones(env.n_bins)
+        timestamps = np.linspace(0, 10, 100)  # Ignored for 1D fields
+
+        # Should not raise
+        write_place_field(
+            nwbfile, env, field, name="static_field", timestamps=timestamps
+        )
+
+        stored = nwbfile.processing["analysis"]["static_field"]
+
+        # Should have single timestamp [0.0], not the provided timestamps
+        assert len(stored.timestamps[:]) == 1
+        assert stored.timestamps[0] == 0.0
+
+    def test_timestamps_length_mismatch_raises_error(
+        self, empty_nwb, sample_environment
+    ):
+        """Test that mismatched timestamps length raises ValueError."""
+        from neurospatial.nwb import write_place_field
+
+        nwbfile = empty_nwb
+        env = sample_environment
+        n_time = 50
+
+        # Time-varying field with wrong timestamps length
+        field = np.random.default_rng(42).uniform(0, 10, (n_time, env.n_bins))
+        timestamps = np.linspace(0, 10, n_time + 10)  # Wrong length!
+
+        with pytest.raises(ValueError, match=r"timestamps length.*must match"):
+            write_place_field(
+                nwbfile, env, field, name="bad_timestamps", timestamps=timestamps
+            )
+
+    def test_timestamps_must_be_1d(self, empty_nwb, sample_environment):
+        """Test that 2D timestamps array raises ValueError."""
+        from neurospatial.nwb import write_place_field
+
+        nwbfile = empty_nwb
+        env = sample_environment
+        n_time = 50
+
+        # Time-varying field with 2D timestamps (invalid)
+        field = np.random.default_rng(42).uniform(0, 10, (n_time, env.n_bins))
+        timestamps = np.ones((n_time, 2))  # 2D array!
+
+        with pytest.raises(ValueError, match=r"timestamps must be 1D"):
+            write_place_field(
+                nwbfile, env, field, name="bad_2d_timestamps", timestamps=timestamps
+            )
+
 
 class TestWriteOccupancy:
     """Tests for write_occupancy() function."""

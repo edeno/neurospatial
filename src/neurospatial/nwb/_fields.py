@@ -7,20 +7,21 @@ This module provides functions for writing spatial analysis results
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.nwb._core import _get_or_create_processing_module, _require_pynwb
+from neurospatial.nwb._core import (
+    _get_or_create_processing_module,
+    _require_pynwb,
+    logger,
+)
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
     from neurospatial import Environment
-
-logger = logging.getLogger("neurospatial.nwb")
 
 # Name for the shared bin_centers dataset in analysis module
 BIN_CENTERS_NAME = "bin_centers"
@@ -136,6 +137,7 @@ def write_place_field(
     description: str = "",
     *,
     unit: str = "Hz",
+    timestamps: NDArray[np.float64] | None = None,
     overwrite: bool = False,
 ) -> None:
     """
@@ -159,6 +161,10 @@ def write_place_field(
     unit : str, default "Hz"
         Units for the field values. Default "Hz" is SI-compliant for firing rates.
         Other options: "spikes/s", "probability", "a.u." (arbitrary units).
+    timestamps : NDArray[np.float64], optional
+        Physical timestamps for time-varying fields, shape ``(n_time,)``.
+        If provided for 2D fields, these timestamps are used instead of
+        abstract indices. Ignored for 1D static fields.
     overwrite : bool, default False
         If True, replace existing field with same name.
         If False, raise ValueError on duplicate name.
@@ -168,6 +174,7 @@ def write_place_field(
     ValueError
         If field with same name exists and overwrite=False.
         If field shape doesn't match env.n_bins.
+        If timestamps length doesn't match field's time dimension.
     ImportError
         If pynwb is not installed.
 
@@ -175,6 +182,12 @@ def write_place_field(
     -----
     - Static 1D fields of shape ``(n_bins,)`` are stored as ``(1, n_bins)``
       for NWB TimeSeries compatibility (time on 0th dimension).
+    - For 2D time-varying fields of shape ``(n_time, n_bins)``:
+
+      - If ``timestamps`` is provided, those physical timestamps are used.
+      - Otherwise, timestamps default to ``[0, 1, 2, ..., n_time-1]`` as
+        abstract indices.
+
     - The ``bin_centers`` dataset is stored once and shared across all fields
       in the same analysis module to avoid data duplication.
     - The ``overwrite`` parameter operates on in-memory NWB objects. When
@@ -189,12 +202,31 @@ def write_place_field(
     ...     nwbfile = io.read()
     ...     write_place_field(nwbfile, env, place_field, name="cell_001")
     ...     io.write(nwbfile)
+
+    For time-varying fields with physical timestamps:
+
+    >>> time_varying_field = np.random.rand(100, env.n_bins)  # 100 time points
+    >>> timestamps = np.linspace(0, 10, 100)  # 10 seconds of data
+    >>> write_place_field(nwbfile, env, time_varying_field, timestamps=timestamps)
     """
     _require_pynwb()
     from pynwb import TimeSeries
 
     # Validate field shape
     _validate_field_shape(field, env.n_bins)
+
+    # Validate timestamps if provided for 2D fields
+    if timestamps is not None and field.ndim == 2:
+        timestamps = np.asarray(timestamps, dtype=np.float64)
+        if timestamps.ndim != 1:
+            raise ValueError(
+                f"timestamps must be 1D array, got shape {timestamps.shape}"
+            )
+        if len(timestamps) != field.shape[0]:
+            raise ValueError(
+                f"timestamps length ({len(timestamps)}) must match "
+                f"field time dimension ({field.shape[0]})"
+            )
 
     # Get or create analysis processing module
     analysis = _get_or_create_processing_module(
@@ -217,15 +249,17 @@ def write_place_field(
     _ensure_bin_centers(nwbfile, env)
 
     # Create TimeSeries for the place field
-    # Use rate=1.0 for static fields, or actual rate for time-varying
-    timestamps_list: list[float] | NDArray[np.float64]
+    timestamps_for_ts: list[float] | NDArray[np.float64]
     if field.ndim == 1:
         # Static field - single timepoint
-        timestamps_list = [0.0]
+        timestamps_for_ts = [0.0]
         data = field.reshape(1, -1)  # Shape: (1, n_bins)
     else:
-        # Time-varying field - use sequential timestamps
-        timestamps_list = np.arange(field.shape[0], dtype=np.float64)
+        # Time-varying field - use provided timestamps or sequential indices
+        if timestamps is not None:
+            timestamps_for_ts = timestamps
+        else:
+            timestamps_for_ts = np.arange(field.shape[0], dtype=np.float64)
         data = field
 
     place_field_ts = TimeSeries(
@@ -233,7 +267,7 @@ def write_place_field(
         description=description,
         data=data,
         unit=unit,
-        timestamps=timestamps_list,
+        timestamps=timestamps_for_ts,
         comments=f"Spatial field with n_bins={env.n_bins}. See '{BIN_CENTERS_NAME}' for coordinates.",
     )
 

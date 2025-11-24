@@ -1,18 +1,53 @@
 # SCRATCHPAD.md - NWB Integration Notes
 
-**Last Updated**: 2025-11-23
+**Last Updated**: 2025-11-24
 
 ---
 
 ## Current Status
 
-- **Active Task**: M3.2.1 Complete - Environment reading function implemented
+- **Active Task**: Code review fixes complete
 - **Blocker**: None
-- **Next Action**: M3.2.2 - DynamicTable to Regions (already done via JSON) OR M3.3.1 - Environment.from_nwb() classmethod
+- **Next Action**: M4.1 - Update CLAUDE.md with NWB integration documentation
 
 ---
 
 ## Session Log
+
+### 2025-11-24: NWB Module Code Review Fixes
+
+Based on comprehensive code review feedback, implemented the following fixes:
+
+**High Priority Fixes:**
+
+1. **ndx-events import order** (`_events.py`) - Changed import pattern to call `_require_ndx_events()` BEFORE importing `EventsTable` to ensure users see friendly error messages. Applied to `read_events()`, `write_laps()`, `write_region_crossings()`.
+
+**Medium Priority Fixes:**
+
+1. **Schema versioning** (`_environment.py`) - Added `schema_version: "1.0"` to metadata JSON for future format migrations. Added version check in `read_environment()` with warning for unknown versions.
+2. **2D place field time axis semantics** (`_fields.py`) - Updated docstring to document that 2D time-varying fields use abstract indices `[0, 1, 2, ...]` by default.
+3. **Optional timestamps parameter** (`_fields.py`) - Added `timestamps: NDArray[np.float64] | None = None` parameter to `write_place_field()` for physical timestamps on time-varying fields. Includes validation for 1D shape and length matching.
+
+**Low Priority Fixes:**
+
+1. **Logger imports** - Centralized logger imports from `_core.py` in `_fields.py` and `_environment.py` instead of local definitions.
+2. **bin_sizes docstring** (`_environment.py`) - Clarified that `_ReconstructedLayout.bin_sizes()` returns volume estimates (spacing^n_dims), not linear sizes.
+3. **Type annotation** (`_environment.py`) - Fixed `point_to_bin_index()` return type from `np.int_` to `np.intp` for consistency.
+4. **is_1d discrepancy documentation** (`_environment.py`) - Added Notes section to `_ReconstructedLayout` docstring explaining that `env.layout.is_1d` may differ from `env.is_1d` for reconstructed 1D layouts.
+
+**New Tests Added:**
+
+- `test_time_varying_field_with_physical_timestamps` - Verifies physical timestamps stored correctly
+- `test_time_varying_field_without_timestamps_uses_indices` - Verifies default behavior
+- `test_static_field_ignores_timestamps_parameter` - Verifies 1D fields ignore timestamps
+- `test_timestamps_length_mismatch_raises_error` - Verifies validation
+- `test_timestamps_must_be_1d` - Verifies 2D timestamps rejected
+
+**Results:**
+
+- 359 tests pass (354 original + 5 new)
+- ruff check clean
+- mypy passes
 
 ### 2025-11-23: M3.2.1 Complete - Environment Reading Function
 
