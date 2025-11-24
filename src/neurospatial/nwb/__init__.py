@@ -95,12 +95,14 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_events": "neurospatial.nwb._events:read_events",
     "read_intervals": "neurospatial.nwb._events:read_intervals",
     "read_environment": "neurospatial.nwb._environment:read_environment",
+    "read_trials": "neurospatial.nwb._events:read_trials",
     # Writing functions
     "write_place_field": "neurospatial.nwb._fields:write_place_field",
     "write_occupancy": "neurospatial.nwb._fields:write_occupancy",
     "write_laps": "neurospatial.nwb._events:write_laps",
     "write_region_crossings": "neurospatial.nwb._events:write_region_crossings",
     "write_environment": "neurospatial.nwb._environment:write_environment",
+    "write_trials": "neurospatial.nwb._events:write_trials",
     # Factory functions
     "environment_from_position": "neurospatial.nwb._environment:environment_from_position",
     "position_overlay_from_nwb": "neurospatial.nwb._overlays:position_overlay_from_nwb",
@@ -134,9 +136,11 @@ __all__ = [
     "read_intervals",
     "read_pose",
     "read_position",
+    "read_trials",
     "write_environment",
     "write_laps",
     "write_occupancy",
     "write_place_field",
     "write_region_crossings",
+    "write_trials",
 ]

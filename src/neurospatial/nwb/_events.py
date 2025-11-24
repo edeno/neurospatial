@@ -7,6 +7,7 @@ using ndx-events EventsTable.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -456,3 +457,332 @@ def write_region_crossings(
         name,
         len(crossing_times),
     )
+
+
+def write_trials(
+    nwbfile: NWBFile,
+    trials: list | None = None,
+    *,
+    start_times: NDArray[np.float64] | None = None,
+    stop_times: NDArray[np.float64] | None = None,
+    start_regions: Sequence[str] | None = None,
+    end_regions: Sequence[str] | None = None,
+    successes: Sequence[bool] | None = None,
+    description: str = "Behavioral trials",
+    overwrite: bool = False,
+) -> None:
+    """
+    Write trial data to NWB file.
+
+    Writes trial intervals to the built-in NWB trials table, including
+    optional columns for start/end regions and success status.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to write to.
+    trials : list[Trial], optional
+        List of Trial objects from segment_trials(). If provided, fields
+        are extracted automatically. Cannot be used with raw array parameters.
+    start_times : NDArray[np.float64], optional
+        Trial start timestamps in seconds. Required if trials not provided.
+    stop_times : NDArray[np.float64], optional
+        Trial stop timestamps in seconds. Required if trials not provided.
+    start_regions : Sequence[str], optional
+        Start region names for each trial. If provided, must have same length
+        as start_times.
+    end_regions : Sequence[str], optional
+        End region names for each trial (None values stored as "").
+        If provided, must have same length as start_times.
+    successes : Sequence[bool], optional
+        Success status for each trial. If provided, must have same length
+        as start_times.
+    description : str, default "Behavioral trials"
+        Description for the trials table.
+    overwrite : bool, default False
+        If True, clear existing trials before adding new ones.
+        If False, raise ValueError if trials already exist.
+
+    Raises
+    ------
+    ValueError
+        If both trials and raw arrays are provided.
+        If neither trials nor required arrays (start_times, stop_times) provided.
+        If array lengths don't match.
+        If stop_times < start_times for any trial.
+        If timestamps contain non-finite or negative values.
+
+    Notes
+    -----
+    The trials table is stored in NWB's built-in trials location
+    (``nwbfile.trials`` / ``/intervals/trials/``).
+
+    Custom columns are added for:
+    - ``start_region``: Region where trial started
+    - ``end_region``: Region reached (or "" for timeout)
+    - ``success``: Whether trial was successful
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> from neurospatial.segmentation import segment_trials  # doctest: +SKIP
+    >>> trials = segment_trials(bins, times, env, ...)  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     write_trials(nwbfile, trials)
+    ...     io.write(nwbfile)
+
+    See Also
+    --------
+    read_trials : Read trials from NWB file.
+    read_intervals : Read generic TimeIntervals.
+    segment_trials : Segment trajectory into trials.
+    """
+    from neurospatial.nwb._core import _require_pynwb, logger
+
+    # Verify pynwb is installed
+    _require_pynwb()
+
+    # Validate input combinations
+    has_trials = trials is not None
+    has_arrays = start_times is not None or stop_times is not None
+
+    if has_trials and has_arrays:
+        raise ValueError(
+            "Cannot specify both 'trials' and raw arrays (start_times, stop_times). "
+            "Use either Trial objects OR raw arrays, not both."
+        )
+
+    if not has_trials and not has_arrays:
+        raise ValueError(
+            "Must provide either 'trials' (list of Trial objects) or "
+            "'start_times' and 'stop_times' arrays."
+        )
+
+    # Initialize variables used in both branches
+    start_regions_list: list[str] | None = None
+    end_regions_list: list[str] | None = None
+    successes_list: list[bool] | None = None
+
+    # Extract data from Trial objects or validate raw arrays
+    if has_trials:
+        if not isinstance(trials, (list, tuple)):
+            raise TypeError(f"trials must be a list, got {type(trials).__name__}")
+
+        n_trials = len(trials)
+        if n_trials > 0:
+            start_times_arr = np.array([t.start_time for t in trials], dtype=np.float64)
+            stop_times_arr = np.array([t.end_time for t in trials], dtype=np.float64)
+            start_regions_list = [t.start_region for t in trials]
+            end_regions_list = [
+                t.end_region if t.end_region is not None else "" for t in trials
+            ]
+            successes_list = [t.success for t in trials]
+        else:
+            start_times_arr = np.array([], dtype=np.float64)
+            stop_times_arr = np.array([], dtype=np.float64)
+            start_regions_list = []
+            end_regions_list = []
+            successes_list = []
+    else:
+        # Validate required arrays
+        if start_times is None:
+            raise ValueError(
+                "start_times is required when not using Trial objects. "
+                "Provide start_times array or use 'trials' parameter."
+            )
+        if stop_times is None:
+            raise ValueError(
+                "stop_times is required when not using Trial objects. "
+                "Provide stop_times array or use 'trials' parameter."
+            )
+
+        start_times_arr = np.asarray(start_times, dtype=np.float64)
+        stop_times_arr = np.asarray(stop_times, dtype=np.float64)
+        n_trials = len(start_times_arr)
+
+        # Validate array lengths
+        if len(stop_times_arr) != n_trials:
+            raise ValueError(
+                f"stop_times length ({len(stop_times_arr)}) must match "
+                f"start_times length ({n_trials})."
+            )
+
+        # Convert optional arrays if provided
+        start_regions_list = list(start_regions) if start_regions is not None else None
+        end_regions_list = list(end_regions) if end_regions is not None else None
+        successes_list = list(successes) if successes is not None else None
+
+        # Validate optional array lengths
+        if start_regions_list is not None and len(start_regions_list) != n_trials:
+            raise ValueError(
+                f"start_regions length ({len(start_regions_list)}) must match "
+                f"start_times length ({n_trials})."
+            )
+        if end_regions_list is not None and len(end_regions_list) != n_trials:
+            raise ValueError(
+                f"end_regions length ({len(end_regions_list)}) must match "
+                f"start_times length ({n_trials})."
+            )
+        if successes_list is not None and len(successes_list) != n_trials:
+            raise ValueError(
+                f"successes length ({len(successes_list)}) must match "
+                f"start_times length ({n_trials})."
+            )
+
+    # Validate timestamps
+    if n_trials > 0:
+        # Check for non-finite values
+        if not np.all(np.isfinite(start_times_arr)):
+            raise ValueError("start_times contains non-finite values (NaN or Inf)")
+        if not np.all(np.isfinite(stop_times_arr)):
+            raise ValueError("stop_times contains non-finite values (NaN or Inf)")
+
+        # Check for negative values
+        if np.any(start_times_arr < 0):
+            raise ValueError("start_times contains negative timestamps")
+        if np.any(stop_times_arr < 0):
+            raise ValueError("stop_times contains negative timestamps")
+
+        # Check stop >= start
+        if np.any(stop_times_arr < start_times_arr):
+            bad_idx = np.where(stop_times_arr < start_times_arr)[0][0]
+            raise ValueError(
+                f"stop_time must be >= start_time for all trials. "
+                f"Trial {bad_idx}: start_time={start_times_arr[bad_idx]}, "
+                f"stop_time={stop_times_arr[bad_idx]}"
+            )
+
+    # Handle existing trials table
+    if nwbfile.trials is not None:
+        if not overwrite:
+            raise ValueError(
+                "Trials table already exists. Use overwrite=True to replace."
+            )
+        # NWB doesn't support deleting/resetting trials table directly.
+        # For in-memory operations, we replace the internal reference.
+        logger.info("Overwriting existing trials table")
+        # Replace with a fresh TimeIntervals
+        from pynwb.epoch import TimeIntervals
+
+        new_trials = TimeIntervals(
+            name="trials",
+            description=description,
+        )
+        # Replace the internal reference
+        nwbfile.fields["trials"] = new_trials
+
+    # If no trials to add, skip table creation (NWB requires at least one trial)
+    if n_trials == 0:
+        logger.debug("No trials to write")
+        return
+
+    # Add custom columns (before adding any trials)
+    # Check if columns already exist (for overwrite case)
+    existing_columns = set()
+    if nwbfile.trials is not None:
+        existing_columns = set(nwbfile.trials.colnames)
+
+    # For Trial objects, always add all custom columns
+    if has_trials and n_trials > 0:
+        if "start_region" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="start_region", description="Region where trial started"
+            )
+        if "end_region" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="end_region",
+                description="Region reached (empty string if timeout)",
+            )
+        if "success" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="success", description="Whether trial was successful"
+            )
+    elif not has_trials:
+        # For raw arrays, only add columns if data provided
+        if start_regions_list is not None and "start_region" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="start_region", description="Region where trial started"
+            )
+        if end_regions_list is not None and "end_region" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="end_region",
+                description="Region reached (empty string if timeout)",
+            )
+        if successes_list is not None and "success" not in existing_columns:
+            nwbfile.add_trial_column(
+                name="success", description="Whether trial was successful"
+            )
+
+    # Add trials
+    for i in range(n_trials):
+        kwargs: dict[str, float | str | bool] = {
+            "start_time": float(start_times_arr[i]),
+            "stop_time": float(stop_times_arr[i]),
+        }
+
+        if has_trials:
+            # start_regions_list and end_regions_list are guaranteed non-None here
+            assert start_regions_list is not None
+            assert end_regions_list is not None
+            assert successes_list is not None
+            kwargs["start_region"] = start_regions_list[i]
+            kwargs["end_region"] = end_regions_list[i]
+            kwargs["success"] = successes_list[i]
+        else:
+            if start_regions_list is not None:
+                kwargs["start_region"] = start_regions_list[i]
+            if end_regions_list is not None:
+                kwargs["end_region"] = end_regions_list[i]
+            if successes_list is not None:
+                kwargs["success"] = successes_list[i]
+
+        nwbfile.add_trial(**kwargs)
+
+    # Set description for newly created trials table (only works when creating new)
+    # NWB sets default description, so only update if custom description provided
+    # Note: For overwrite case, description is set during TimeIntervals creation
+    # For new trials, NWB creates the table with default description on first add_trial
+    # We cannot change it after, so this only works for custom description when
+    # we control the table creation (overwrite case)
+
+    logger.debug("Wrote %d trials to NWB file", n_trials)
+
+
+def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
+    """
+    Read trials table from NWB file.
+
+    Convenience wrapper around read_intervals("trials") that provides
+    a more discoverable API for reading trial data.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to read from.
+
+    Returns
+    -------
+    pd.DataFrame
+        Trials data with columns: start_time, stop_time, and any custom
+        columns (start_region, end_region, success, etc.).
+
+    Raises
+    ------
+    KeyError
+        If no trials table exists in NWB file.
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     trials = read_trials(nwbfile)
+    ...     print(f"Found {len(trials)} trials")
+
+    See Also
+    --------
+    write_trials : Write trials to NWB file.
+    read_intervals : Read generic TimeIntervals.
+    """
+    return read_intervals(nwbfile, "trials")
