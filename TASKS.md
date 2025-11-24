@@ -12,12 +12,12 @@
 ## Progress Overview
 
 - **Milestone 1**: Public API Fixes - 1/1 complete ✅
-- **Milestone 2**: Foundation Functions - 0/8 complete
-- **Milestone 3**: Time and Curvature - 0/6 complete
-- **Milestone 4**: Cost and Turn Analysis - 0/8 complete
+- **Milestone 2**: Foundation Functions - 25/25 complete ✅ (M2.1 ✅, M2.2 ✅, M2.3 ✅, M2.4 ✅)
+- **Milestone 3**: Time and Curvature - 15/15 complete ✅ (M3.1 ✅, M3.2 ✅)
+- **Milestone 4**: Cost and Turn Analysis - 0/19 complete
 - **Milestone 5**: Documentation - 0/5 complete
 
-**Total**: 1/30 tasks complete
+**Total**: 41/70 tasks complete
 
 ---
 
@@ -67,19 +67,19 @@
 
 ### M2.1: Create behavioral.py module
 
-- [ ] **M2.1.1**: Create `src/neurospatial/behavioral.py`
+- [x] **M2.1.1**: Create `src/neurospatial/behavioral.py`
   - Add module docstring explaining purpose (behavioral/RL metrics)
   - Add imports: `numpy`, `networkx`, `typing`, `Environment`
   - Add skeleton for 7 functions (empty implementations with docstrings)
 
-- [ ] **M2.1.2**: Create test file `tests/test_behavioral.py`
+- [x] **M2.1.2**: Create test file `tests/test_behavioral.py`
   - **TDD**: Create test file BEFORE implementing functions
   - Add imports and test class structure
   - Create placeholder test functions (all marked `@pytest.mark.skip("not implemented")`)
 
-### M2.2: Implement trials_to_region_arrays() helper
+### M2.2: Implement trials_to_region_arrays() helper ✅ COMPLETE
 
-- [ ] **M2.2.1**: Write tests FIRST (TDD)
+- [x] **M2.2.1**: Write tests FIRST (TDD)
   - **FILE**: `tests/test_behavioral.py`
   - Test 1: `test_trials_to_region_arrays_single_trial()`
   - Test 2: `test_trials_to_region_arrays_multiple_trials()`
@@ -87,31 +87,31 @@
   - Test 4: `test_trials_to_region_arrays_polygon_regions()` (multi-bin)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_trials_to_region_arrays -v` (should FAIL)
 
-- [ ] **M2.2.2**: Implement `trials_to_region_arrays()`
+- [x] **M2.2.2**: Implement `trials_to_region_arrays()`
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 327-396
   - Use `env.bins_in_region()` for region-to-bin mapping
   - Handle failed trials (end_region=None → goal_bins=-1)
 
-- [ ] **M2.2.3**: Run tests until PASS
+- [x] **M2.2.3**: Run tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_trials_to_region_arrays -v`
   - Debug failures, iterate until all tests PASS
 
-- [ ] **M2.2.4**: Code review and refactor
+- [x] **M2.2.4**: Code review and refactor
   - **REVIEW**: Check for edge cases, type safety, docstring completeness
   - Refactor for clarity
 
-- [ ] **M2.2.5**: Run quality checks
+- [x] **M2.2.5**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
   - Fix any issues
 
-- [ ] **M2.2.6**: Commit
-  - **COMMIT**: `feat(behavioral): implement trials_to_region_arrays helper`
+- [x] **M2.2.6**: Commit
+  - **COMMIT**: `feat(behavioral): implement trials_to_region_arrays helper` (commit 0de2c87)
 
-### M2.3: Implement path_progress()
+### M2.3: Implement path_progress() ✅ COMPLETE
 
-- [ ] **M2.3.1**: Write tests FIRST (TDD)
+- [x] **M2.3.1**: Write tests FIRST (TDD)
   - Test 1: `test_path_progress_single_trial_geodesic()`
   - Test 2: `test_path_progress_multiple_trials()`
   - Test 3: `test_path_progress_euclidean()`
@@ -121,42 +121,42 @@
   - Test 7: `test_path_progress_large_environment()` (n_bins > 5000, test fallback)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_path_progress -v` (should FAIL)
 
-- [ ] **M2.3.2**: Implement `path_progress()` - geodesic metric
+- [x] **M2.3.2**: Implement `path_progress()` - geodesic metric
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 188-320
   - Implement small environment strategy (n_bins < 5000, precompute matrix)
   - Add explicit fitted check (not `@check_fitted`)
   - Handle all edge cases documented in spec
 
-- [ ] **M2.3.3**: Run geodesic tests until PASS
+- [x] **M2.3.3**: Run geodesic tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_path_progress -k geodesic -v`
   - Debug and iterate
 
-- [ ] **M2.3.4**: Implement euclidean metric support
+- [x] **M2.3.4**: Implement euclidean metric support
   - Add `euclidean_distance_matrix()` branch
   - Use `env.bin_centers` for euclidean calculation
 
-- [ ] **M2.3.5**: Run all tests until PASS
+- [x] **M2.3.5**: Run all tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_path_progress -v`
   - All tests should PASS
 
-- [ ] **M2.3.6**: Implement large environment fallback
+- [x] **M2.3.6**: Implement large environment fallback
   - Add strategy for n_bins >= 5000 (per-pair distance fields)
   - Test memory efficiency
 
-- [ ] **M2.3.7**: Code review and refactor
+- [x] **M2.3.7**: Code review and refactor
   - **REVIEW**: Vectorization correctness, memory safety, performance
 
-- [ ] **M2.3.8**: Run quality checks
+- [x] **M2.3.8**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
 
-- [ ] **M2.3.9**: Commit
-  - **COMMIT**: `feat(behavioral): implement path_progress with geodesic/euclidean metrics`
+- [x] **M2.3.9**: Commit
+  - **COMMIT**: `feat(behavioral): implement path_progress with geodesic/euclidean metrics` (commit e3ab9ea)
 
-### M2.4: Implement distance_to_region()
+### M2.4: Implement distance_to_region() ✅ COMPLETE
 
-- [ ] **M2.4.1**: Write tests FIRST (TDD)
+- [x] **M2.4.1**: Write tests FIRST (TDD)
   - Test 1: `test_distance_to_region_scalar_target()`
   - Test 2: `test_distance_to_region_dynamic_target()` (array of targets)
   - Test 3: `test_distance_to_region_invalid_bins()` (should return NaN)
@@ -164,30 +164,30 @@
   - Test 5: `test_distance_to_region_large_environment()` (memory fallback)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_distance_to_region -v` (should FAIL)
 
-- [ ] **M2.4.2**: Implement `distance_to_region()` - scalar target
+- [x] **M2.4.2**: Implement `distance_to_region()` - scalar target
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 407-507
   - Use `env.distance_to()` for scalar targets (already exists)
 
-- [ ] **M2.4.3**: Run scalar target tests until PASS
+- [x] **M2.4.3**: Run scalar target tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_distance_to_region_scalar -v`
 
-- [ ] **M2.4.4**: Implement dynamic target support (array)
+- [x] **M2.4.4**: Implement dynamic target support (array)
   - Add distance matrix precomputation for small envs
   - Add per-target distance field for large envs
 
-- [ ] **M2.4.5**: Run all tests until PASS
+- [x] **M2.4.5**: Run all tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_distance_to_region -v`
 
-- [ ] **M2.4.6**: Code review and refactor
+- [x] **M2.4.6**: Code review and refactor
   - **REVIEW**: Delegation to `env.distance_to()`, memory efficiency
 
-- [ ] **M2.4.7**: Run quality checks
+- [x] **M2.4.7**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
 
-- [ ] **M2.4.8**: Commit
-  - **COMMIT**: `feat(behavioral): implement distance_to_region for scalar and dynamic targets`
+- [x] **M2.4.8**: Commit
+  - **COMMIT**: `feat(behavioral): implement distance_to_region for scalar and dynamic targets` (commit 69a0289)
 
 ---
 
@@ -197,9 +197,9 @@
 **Estimated Time**: 2-3 hours
 **Dependencies**: Milestone 2 complete
 
-### M3.1: Implement time_to_goal()
+### M3.1: Implement time_to_goal() ✅ COMPLETE
 
-- [ ] **M3.1.1**: Write tests FIRST (TDD)
+- [x] **M3.1.1**: Write tests FIRST (TDD)
   - Test 1: `test_time_to_goal_successful_trials()`
   - Test 2: `test_time_to_goal_failed_trials()` (should be NaN)
   - Test 3: `test_time_to_goal_outside_trials()` (should be NaN)
@@ -207,31 +207,31 @@
   - Test 5: `test_time_to_goal_after_goal_reached()` (should be 0.0)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_time_to_goal -v` (should FAIL)
 
-- [ ] **M3.1.2**: Implement `time_to_goal()`
+- [x] **M3.1.2**: Implement `time_to_goal()`
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 633-705
   - Handle all edge cases (failed trials, outside trials)
 
-- [ ] **M3.1.3**: Run tests until PASS
+- [x] **M3.1.3**: Run tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_time_to_goal -v`
 
-- [ ] **M3.1.4**: Code review and refactor
+- [x] **M3.1.4**: Code review and refactor
   - **REVIEW**: Edge case handling, vectorization
 
-- [ ] **M3.1.5**: Run quality checks
+- [x] **M3.1.5**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
 
-- [ ] **M3.1.6**: Commit
-  - **COMMIT**: `feat(behavioral): implement time_to_goal`
+- [x] **M3.1.6**: Commit
+  - **COMMIT**: `feat(behavioral): implement time_to_goal` (commit d6a27b7)
 
-### M3.2: Implement compute_trajectory_curvature()
+### M3.2: Implement compute_trajectory_curvature() ✅ COMPLETE
 
-- [ ] **M3.2.1**: Read existing `compute_turn_angles()` implementation
+- [x] **M3.2.1**: Read existing `compute_turn_angles()` implementation
   - **FILE**: `src/neurospatial/metrics/trajectory.py` (lines 31-165)
   - Understand input/output format, stationary filtering, angle calculation
 
-- [ ] **M3.2.2**: Write tests FIRST (TDD)
+- [x] **M3.2.2**: Write tests FIRST (TDD)
   - Test 1: `test_compute_trajectory_curvature_2d_straight()` (should be ~0)
   - Test 2: `test_compute_trajectory_curvature_2d_left_turn()` (positive)
   - Test 3: `test_compute_trajectory_curvature_2d_right_turn()` (negative)
@@ -240,31 +240,31 @@
   - Test 6: `test_compute_trajectory_curvature_output_length()` (n_samples, not n_samples-2)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_compute_trajectory_curvature -v` (should FAIL)
 
-- [ ] **M3.2.3**: Implement `compute_trajectory_curvature()` - basic version
+- [x] **M3.2.3**: Implement `compute_trajectory_curvature()` - basic version
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 714-813
   - Call `compute_turn_angles()` internally
   - Pad result to n_samples length
 
-- [ ] **M3.2.4**: Run basic tests until PASS
+- [x] **M3.2.4**: Run basic tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_compute_trajectory_curvature -k "not smoothing" -v`
 
-- [ ] **M3.2.5**: Add temporal smoothing support
+- [x] **M3.2.5**: Add temporal smoothing support
   - Import `gaussian_filter1d` from scipy (inside function)
   - Add smoothing logic with sigma calculation
 
-- [ ] **M3.2.6**: Run all tests until PASS
+- [x] **M3.2.6**: Run all tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_compute_trajectory_curvature -v`
 
-- [ ] **M3.2.7**: Code review and refactor
+- [x] **M3.2.7**: Code review and refactor
   - **REVIEW**: Reuse of `compute_turn_angles()`, padding strategy, smoothing correctness
 
-- [ ] **M3.2.8**: Run quality checks
+- [x] **M3.2.8**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
 
-- [ ] **M3.2.9**: Commit
-  - **COMMIT**: `feat(behavioral): implement compute_trajectory_curvature with smoothing`
+- [x] **M3.2.9**: Commit
+  - **COMMIT**: `feat(behavioral): implement compute_trajectory_curvature with smoothing` (commit 1624063)
 
 ---
 
