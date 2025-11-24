@@ -14,10 +14,10 @@
 - **Milestone 1**: Public API Fixes - 1/1 complete ✅
 - **Milestone 2**: Foundation Functions - 25/25 complete ✅ (M2.1 ✅, M2.2 ✅, M2.3 ✅, M2.4 ✅)
 - **Milestone 3**: Time and Curvature - 15/15 complete ✅ (M3.1 ✅, M3.2 ✅)
-- **Milestone 4**: Cost and Turn Analysis - 0/19 complete
+- **Milestone 4**: Cost and Turn Analysis - 10/19 complete (M4.1 ✅)
 - **Milestone 5**: Documentation - 0/5 complete
 
-**Total**: 41/70 tasks complete
+**Total**: 51/70 tasks complete
 
 ---
 
@@ -274,9 +274,9 @@
 **Estimated Time**: 3-4 hours
 **Dependencies**: Milestone 3 complete
 
-### M4.1: Implement cost_to_goal()
+### M4.1: Implement cost_to_goal() ✅ COMPLETE
 
-- [ ] **M4.1.1**: Write tests FIRST (TDD)
+- [x] **M4.1.1**: Write tests FIRST (TDD)
   - Test 1: `test_cost_to_goal_uniform()` (equivalent to geodesic distance)
   - Test 2: `test_cost_to_goal_with_cost_map()` (punishment zones)
   - Test 3: `test_cost_to_goal_terrain_difficulty()` (narrow passages)
@@ -285,37 +285,37 @@
   - Test 6: `test_cost_to_goal_invalid_bins()` (should handle gracefully)
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_cost_to_goal -v` (should FAIL)
 
-- [ ] **M4.1.2**: Implement `cost_to_goal()` - uniform cost (baseline)
+- [x] **M4.1.2**: Implement `cost_to_goal()` - uniform cost (baseline)
   - **FILE**: `src/neurospatial/behavioral.py`
   - Follow spec from PLAN.md lines 516-624
   - For uniform cost, delegate to `distance_to_region()`
 
-- [ ] **M4.1.3**: Run uniform cost tests until PASS
+- [x] **M4.1.3**: Run uniform cost tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_cost_to_goal_uniform -v`
 
-- [ ] **M4.1.4**: Add cost map support
+- [x] **M4.1.4**: Add cost map support
   - Create weighted graph with modified edge weights
   - Use `distance_field()` with custom weights
 
-- [ ] **M4.1.5**: Run cost map tests until PASS
+- [x] **M4.1.5**: Run cost map tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_cost_to_goal -k "cost_map" -v`
 
-- [ ] **M4.1.6**: Add terrain difficulty support
+- [x] **M4.1.6**: Add terrain difficulty support
   - Multiply base distance by terrain difficulty
   - Combine with cost map if both present
 
-- [ ] **M4.1.7**: Run all tests until PASS
+- [x] **M4.1.7**: Run all tests until PASS
   - **RUN**: `uv run pytest tests/test_behavioral.py::test_cost_to_goal -v`
 
-- [ ] **M4.1.8**: Code review and refactor
+- [x] **M4.1.8**: Code review and refactor
   - **REVIEW**: Graph modification correctness, weight calculation, edge case handling
 
-- [ ] **M4.1.9**: Run quality checks
+- [x] **M4.1.9**: Run quality checks
   - **RUN**: `uv run mypy src/neurospatial/behavioral.py`
   - **RUN**: `uv run ruff check src/neurospatial/behavioral.py`
 
-- [ ] **M4.1.10**: Commit
-  - **COMMIT**: `feat(behavioral): implement cost_to_goal with cost maps and terrain difficulty`
+- [x] **M4.1.10**: Commit
+  - **COMMIT**: `feat(behavioral): implement cost_to_goal with cost maps and terrain difficulty` (commit 8a27bc2)
 
 ### M4.2: Implement graph_turn_sequence()
 
