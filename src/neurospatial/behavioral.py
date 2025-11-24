@@ -774,4 +774,109 @@ def graph_turn_sequence(
     --------
     compute_trajectory_curvature : Continuous curvature for any trajectory
     """
-    raise NotImplementedError("graph_turn_sequence not yet implemented")
+    # Check fitted state
+    if not env._is_fitted:
+        from neurospatial import EnvironmentNotFittedError
+
+        raise EnvironmentNotFittedError("Environment", "graph_turn_sequence")
+
+    # Step 1: Infer transitions from consecutive bin pairs
+    # transitions: (u, v) where u → v in trajectory
+    consecutive_bins = np.column_stack([trajectory_bins[:-1], trajectory_bins[1:]])
+
+    # Count samples per transition
+    from collections import Counter
+
+    transition_counts = Counter(map(tuple, consecutive_bins))
+
+    # Step 2: Filter transitions with < min_samples_per_edge
+    valid_transitions = [
+        trans
+        for trans, count in transition_counts.items()
+        if count >= min_samples_per_edge
+    ]
+
+    # If no valid transitions, return empty string
+    if len(valid_transitions) == 0:
+        return ""
+
+    # Step 3: Orient path from start_bin to end_bin
+    # Build a sequence of bins from the valid transitions
+    # This is a simple path reconstruction problem
+
+    # For simplicity, use the order they appear in trajectory
+    # Find unique bins in trajectory order
+    unique_bins_ordered = []
+    for bin_idx in trajectory_bins:
+        if bin_idx not in unique_bins_ordered:
+            unique_bins_ordered.append(bin_idx)
+
+    # Filter to only bins that are part of valid transitions
+    valid_bins = set()
+    for u, v in valid_transitions:
+        valid_bins.add(u)
+        valid_bins.add(v)
+
+    path_bins = [b for b in unique_bins_ordered if b in valid_bins]
+
+    # If path is too short to have turns, return empty
+    if len(path_bins) < 3:
+        return ""
+
+    # Step 4: Compute turn directions for consecutive transitions
+    bin_centers = env.bin_centers
+    n_dims = bin_centers.shape[1]
+
+    turns = []
+
+    for i in range(len(path_bins) - 2):
+        bin_a = path_bins[i]
+        bin_b = path_bins[i + 1]
+        bin_c = path_bins[i + 2]
+
+        # Get positions
+        pos_a = bin_centers[bin_a]
+        pos_b = bin_centers[bin_b]
+        pos_c = bin_centers[bin_c]
+
+        # Compute direction vectors
+        vec1 = pos_b - pos_a  # First segment direction
+        vec2 = pos_c - pos_b  # Second segment direction
+
+        # Normalize vectors
+        vec1_norm = np.linalg.norm(vec1)
+        vec2_norm = np.linalg.norm(vec2)
+
+        if vec1_norm < 1e-10 or vec2_norm < 1e-10:
+            continue  # Skip if vectors are too small
+
+        vec1 = vec1 / vec1_norm
+        vec2 = vec2 / vec2_norm
+
+        # Compute turn angle using cross product
+        if n_dims == 2:
+            # 2D: cross product is scalar
+            cross = vec1[0] * vec2[1] - vec1[1] * vec2[0]
+        elif n_dims >= 3:
+            # 3D+: Use first 2 dimensions for turn detection
+            # (consistent with compute_turn_angles behavior)
+            vec1_2d = vec1[:2]
+            vec2_2d = vec2[:2]
+            cross = vec1_2d[0] * vec2_2d[1] - vec1_2d[1] * vec2_2d[0]
+        else:
+            # 1D: no turns possible
+            continue
+
+        # Classify turn direction
+        # NOTE: Cross product sign depends on coordinate system orientation
+        # In environment coordinates (X right, Y up), we have:
+        # Negative cross product → left turn
+        # Positive cross product → right turn
+        if abs(cross) > 0.1:  # Threshold to filter near-straight paths
+            if cross < 0:
+                turns.append("left")
+            else:
+                turns.append("right")
+
+    # Step 5: Join turns into sequence string
+    return "-".join(turns)

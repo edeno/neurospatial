@@ -228,6 +228,116 @@ def env_all_active_2x2() -> Environment:
 
 
 @pytest.fixture(scope="session")
+def ymaze_graph() -> nx.Graph:
+    """
+    Defines a Y-shaped maze graph for turn sequence testing.
+
+    Structure:
+        Node 0 (center/junction): (0, 0)
+        Node 1 (straight/North arm): (0, 10)
+        Node 2 (left/Northwest arm): (-7, 7)
+        Node 3 (right/Northeast arm): (7, 7)
+
+    The animal starts at center (0) and can choose between:
+    - Straight ahead (0→1): No turn
+    - Left (0→2): Left turn (~45 degrees)
+    - Right (0→3): Right turn (~45 degrees)
+    """
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))  # Center/junction
+    graph.add_node(1, pos=(0.0, 10.0))  # Straight ahead (North)
+    graph.add_node(2, pos=(-7.0, 7.0))  # Left arm (Northwest)
+    graph.add_node(3, pos=(7.0, 7.0))  # Right arm (Northeast)
+
+    # Add edges with distances and edge_id
+    graph.add_edge(0, 1, distance=10.0, edge_id=0)  # Center → Straight
+    graph.add_edge(
+        0, 2, distance=np.sqrt(7**2 + 7**2), edge_id=1
+    )  # Center → Left (~9.9)
+    graph.add_edge(
+        0, 3, distance=np.sqrt(7**2 + 7**2), edge_id=2
+    )  # Center → Right (~9.9)
+    return graph
+
+
+@pytest.fixture(scope="session")
+def ymaze_env(ymaze_graph: nx.Graph) -> Environment:
+    """Y-maze environment for testing turn sequence detection.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    edge_order = [(0, 1), (0, 2), (0, 3)]
+    layout_build_params = {
+        "graph_definition": ymaze_graph,
+        "edge_order": edge_order,
+        "edge_spacing": 0.0,
+        "bin_size": 1.0,
+    }
+    layout_instance = GraphLayout()
+    layout_instance.build(**layout_build_params)
+
+    return Environment(
+        name="YMaze",
+        layout=layout_instance,
+        layout_type_used="Graph",
+        layout_params_used=layout_build_params,
+    )
+
+
+@pytest.fixture(scope="session")
+def tmaze_graph() -> nx.Graph:
+    """
+    Defines a T-shaped maze graph for turn sequence testing.
+
+    Structure:
+        Node 0 (start/bottom): (0, -10)
+        Node 1 (center/junction): (0, 0)
+        Node 2 (left arm): (-10, 0)
+        Node 3 (right arm): (10, 0)
+
+    The animal starts at bottom (0), travels to junction (1),
+    then must choose left (1→2) or right (1→3).
+    """
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, -10.0))  # Start (bottom)
+    graph.add_node(1, pos=(0.0, 0.0))  # Center/junction
+    graph.add_node(2, pos=(-10.0, 0.0))  # Left arm
+    graph.add_node(3, pos=(10.0, 0.0))  # Right arm
+
+    # Add edges with distances and edge_id
+    graph.add_edge(0, 1, distance=10.0, edge_id=0)  # Start → Center
+    graph.add_edge(1, 2, distance=10.0, edge_id=1)  # Center → Left
+    graph.add_edge(1, 3, distance=10.0, edge_id=2)  # Center → Right
+    return graph
+
+
+@pytest.fixture(scope="session")
+def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
+    """T-maze environment for testing turn sequence detection.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
+    edge_order = [(0, 1), (1, 2), (1, 3)]
+    layout_build_params = {
+        "graph_definition": tmaze_graph,
+        "edge_order": edge_order,
+        "edge_spacing": 0.0,
+        "bin_size": 1.0,
+    }
+    layout_instance = GraphLayout()
+    layout_instance.build(**layout_build_params)
+
+    return Environment(
+        name="TMaze",
+        layout=layout_instance,
+        layout_type_used="Graph",
+        layout_params_used=layout_build_params,
+    )
+
+
+@pytest.fixture(scope="session")
 def simple_3d_env() -> Environment:
     """A simple 3D environment for comprehensive 3D testing.
 

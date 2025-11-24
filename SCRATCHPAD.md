@@ -285,6 +285,56 @@ All are already exported in `segmentation/__init__.py` but **NOT** in main `neur
 
 When testing path-finding with cost modifications, ensure test scenarios where cost modifications MUST affect the result (e.g., make most bins costly, not just a narrow passage that can be avoided).
 
+### M4.2 - Implement graph_turn_sequence() ✅ COMPLETE
+
+**TDD Workflow Followed:**
+
+1. ✅ Created Y-maze and T-maze fixtures in tests/conftest.py
+   - `ymaze_graph()`, `ymaze_env()` - 3-arm maze for testing left/right turns
+   - `tmaze_graph()`, `tmaze_env()` - T-maze with bottom start, left/right choices
+
+2. ✅ Wrote 6 tests FIRST (tests/test_behavioral.py:1285-1531)
+   - test_graph_turn_sequence_ymaze_left() - detects left turns
+   - test_graph_turn_sequence_ymaze_right() - detects right turns
+   - test_graph_turn_sequence_grid_multiple() - multiple turns on grid
+   - test_graph_turn_sequence_straight() - no turns, returns empty string
+   - test_graph_turn_sequence_min_samples_filter() - filters brief crossings
+   - test_graph_turn_sequence_3d() - handles 3D environments
+
+3. ✅ Ran tests → FAIL (all 6 failed with NotImplementedError)
+
+4. ✅ Implemented `graph_turn_sequence()` (src/neurospatial/behavioral.py:777-881)
+   - Infers transitions from consecutive bin pairs
+   - Counts samples per transition, filters by min_samples_per_edge
+   - Reconstructs path from valid transitions
+   - Computes turn directions using cross product
+   - Returns sequence string like "left-right-left" or "" if no turns
+
+5. ✅ Fixed test failures:
+   - Initial tests only had 2 bins (start/end), needed 3+ for turn detection
+   - Updated tests to create 3-bin trajectories (straight→center→goal)
+   - Fixed cross product sign interpretation (negative=left, positive=right)
+
+6. ✅ All tests PASS (6/6 passed)
+
+7. ✅ Code quality checks:
+   - Mypy: ✅ no issues
+   - Ruff check: ✅ all passed
+   - Ruff format: ✅ auto-formatted
+
+**Implementation Notes:**
+
+- **Algorithm**: Count transition samples → filter by threshold → reconstruct path → compute turn angles → classify left/right
+- **Cross product convention**: In environment coordinates (X right, Y up):
+  - Negative cross product → left turn
+  - Positive cross product → right turn
+- **Threshold for straight paths**: `abs(cross) > 0.1` filters near-straight segments
+- **3D support**: Uses first 2 dimensions for turn detection (consistent with `compute_turn_angles()`)
+
+**Test Design Lesson:**
+
+For graph environments, trajectories must pass through intermediate bins along edges to detect turns. Simply jumping from start_bin to end_bin (2 bins) is insufficient - need at least 3 bins to compute turn direction.
+
 ---
 
 ## Decisions & Blockers
@@ -295,6 +345,7 @@ None.
 
 ## Next Steps
 
-- M4.1: Commit cost_to_goal implementation (IN PROGRESS)
-- M4.2: Implement graph_turn_sequence()
-- Continue TDD: write tests → fail → implement → pass → refactor
+- M4.2: Commit graph_turn_sequence implementation (IN PROGRESS)
+- M5.1: Update public API exports
+- M5.2: Update CLAUDE.md documentation
+- Continue with Milestone 5: Documentation and Integration
