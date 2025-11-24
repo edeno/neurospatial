@@ -19,16 +19,32 @@ from neurospatial.segmentation.trials import Trial
 def simple_environment_with_regions():
     """Create a simple 2D environment with point regions for testing."""
     # Create a 10x10 cm space with dense sampling for connectivity
-    # Use 100 samples distributed uniformly to ensure bins are connected
+    # Use stratified sampling to guarantee coverage of all regions
     np.random.seed(42)
-    positions = np.random.uniform(0, 10, (100, 2))
+
+    # Create a 5x5 grid of cells (bin_size=2.0 creates 5x5 bins in 10x10 space)
+    # Sample multiple points from each cell to ensure complete coverage
+    n_per_cell = 4  # 4 points per cell
+    positions = []
+    for i in range(5):  # 5 bins in x
+        for j in range(5):  # 5 bins in y
+            # Cell boundaries
+            x_min, x_max = i * 2.0, (i + 1) * 2.0
+            y_min, y_max = j * 2.0, (j + 1) * 2.0
+            # Sample points within cell
+            cell_positions = np.random.uniform(
+                [x_min, y_min], [x_max, y_max], (n_per_cell, 2)
+            )
+            positions.append(cell_positions)
+
+    positions = np.vstack(positions)  # 100 total points (25 cells × 4 points)
     env = Environment.from_samples(positions, bin_size=2.0)
     env.units = "cm"
 
-    # Add regions at known locations
-    env.regions.add("start", point=(1.0, 1.0))  # Near bottom-left
-    env.regions.add("goal1", point=(9.0, 9.0))  # Near top-right
-    env.regions.add("goal2", point=(9.0, 1.0))  # Near bottom-right
+    # Add regions at known locations (guaranteed to have bins)
+    env.regions.add("start", point=(1.0, 1.0))  # Bottom-left cell (bin 0,0)
+    env.regions.add("goal1", point=(9.0, 9.0))  # Top-right cell (bin 4,4)
+    env.regions.add("goal2", point=(9.0, 1.0))  # Bottom-right cell (bin 4,0)
 
     return env
 
@@ -1244,8 +1260,8 @@ def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
     # All costs should be non-negative
     assert np.all(cost >= 0)
 
-    # At goal1 when targeting goal1, cost should be 0
-    assert cost[2] == 0.0
+    # At goal1 but targeting goal2, cost should be positive (distance from goal1 to goal2)
+    assert cost[2] > 0.0
 
 
 def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
