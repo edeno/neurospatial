@@ -333,26 +333,141 @@ def write_region_crossings(
     region_names: NDArray[np.str_],
     event_types: NDArray[np.str_],
     description: str = "Region crossing events",
+    *,
+    name: str = "region_crossings",
+    overwrite: bool = False,
 ) -> None:
     """
     Write region crossing events to NWB EventsTable.
+
+    Creates an EventsTable in the processing/behavior/ module containing
+    region crossing event timestamps with region name and event type columns.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to write to.
     crossing_times : NDArray[np.float64], shape (n_crossings,)
-        Crossing timestamps in seconds.
+        Crossing timestamps in seconds. Must be 1D array.
     region_names : NDArray[np.str_], shape (n_crossings,)
-        Name of the region for each crossing.
+        Name of the region for each crossing (e.g., "start", "goal").
+        Must have same length as crossing_times.
     event_types : NDArray[np.str_], shape (n_crossings,)
-        Type of crossing event ('enter' or 'exit').
+        Type of crossing event. Common values are 'enter' and 'exit', but
+        arbitrary strings are allowed (e.g., 'approach', 'dwell', 'near').
+        Must have same length as crossing_times.
     description : str, default "Region crossing events"
         Description for the EventsTable.
+    name : str, default "region_crossings"
+        Name for the EventsTable in NWB.
+    overwrite : bool, default False
+        If True, replace existing EventsTable with same name.
+        If False, raise ValueError on duplicate name.
 
     Raises
     ------
+    ValueError
+        If EventsTable with same name exists and overwrite=False.
+        If crossing_times is not 1D.
+        If region_names or event_types length doesn't match crossing_times.
+        If crossing_times contains non-finite or negative values.
     ImportError
         If ndx-events is not installed.
+
+    Notes
+    -----
+    The EventsTable is stored in the processing/behavior/ module, following
+    NWB conventions for behavioral data. Each row represents a single crossing
+    event with timestamp, region name, and event type (enter/exit).
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO
+    >>> import numpy as np
+    >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])
+    >>> region_names = np.array(["start", "goal", "start", "goal"])
+    >>> event_types = np.array(["enter", "enter", "exit", "exit"])
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    ...     nwbfile = io.read()
+    ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+    ...     io.write(nwbfile)
     """
-    raise NotImplementedError("write_region_crossings not yet implemented")
+    from ndx_events import EventsTable
+
+    from neurospatial.nwb._core import (
+        _get_or_create_processing_module,
+        _require_ndx_events,
+        logger,
+    )
+
+    # Verify ndx-events is installed
+    _require_ndx_events()
+
+    # Validate crossing_times is 1D
+    crossing_times = np.asarray(crossing_times, dtype=np.float64)
+    if crossing_times.ndim != 1:
+        raise ValueError(
+            f"crossing_times must be 1D array, got shape {crossing_times.shape}. "
+            "Each element should be a single timestamp."
+        )
+
+    # Validate timestamps are finite and non-negative
+    if len(crossing_times) > 0:
+        if not np.all(np.isfinite(crossing_times)):
+            raise ValueError("crossing_times contains non-finite values (NaN or Inf)")
+        if np.any(crossing_times < 0):
+            raise ValueError("crossing_times contains negative timestamps")
+
+    # Convert region_names and event_types to arrays
+    region_names = np.asarray(region_names)
+    event_types = np.asarray(event_types)
+
+    # Validate lengths match
+    if len(region_names) != len(crossing_times):
+        raise ValueError(
+            f"region_names length ({len(region_names)}) must match "
+            f"crossing_times length ({len(crossing_times)})."
+        )
+    if len(event_types) != len(crossing_times):
+        raise ValueError(
+            f"event_types length ({len(event_types)}) must match "
+            f"crossing_times length ({len(crossing_times)})."
+        )
+
+    # Get or create behavior processing module
+    behavior = _get_or_create_processing_module(
+        nwbfile, "behavior", "Behavioral data including region crossings and events"
+    )
+
+    # Check for existing table with same name
+    if name in behavior.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"EventsTable '{name}' already exists. Use overwrite=True to replace."
+            )
+        # Remove existing table for replacement (in-memory only)
+        del behavior.data_interfaces[name]
+        logger.info("Overwriting existing EventsTable '%s'", name)
+
+    # Create EventsTable
+    events_table = EventsTable(name=name, description=description)
+
+    # Add region and event_type columns
+    events_table.add_column(name="region", description="Region name")
+    events_table.add_column(name="event_type", description="Crossing event type")
+
+    # Add rows for each crossing
+    for i, timestamp in enumerate(crossing_times):
+        events_table.add_row(
+            timestamp=float(timestamp),
+            region=str(region_names[i]),
+            event_type=str(event_types[i]),
+        )
+
+    # Add to behavior module
+    behavior.add(events_table)
+    logger.debug(
+        "Wrote EventsTable '%s' with %d region crossing events",
+        name,
+        len(crossing_times),
+    )

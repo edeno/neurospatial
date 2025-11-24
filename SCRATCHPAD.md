@@ -6,13 +6,50 @@
 
 ## Current Status
 
-- **Active Task**: M2.2.1 Complete - Lap events writing implemented
+- **Active Task**: M2.2.2 Complete - Region crossings writing implemented
 - **Blocker**: None
-- **Next Action**: Start M2.2.2 - Region crossings writing
+- **Next Action**: Start M3.1.1 - Environment writing function
 
 ---
 
 ## Session Log
+
+### 2025-11-23: M2.2.2 Complete - Region Crossings Writing
+
+- Created 18 tests for `write_region_crossings()` in `tests/nwb/test_events.py`
+- Tests cover:
+  - Basic crossing times writing to processing/behavior/ module
+  - Region name column (string values)
+  - Event type column (enter/exit/arbitrary strings)
+  - EventsTable creation and verification
+  - Custom description and name parameters
+  - Default description verification
+  - Duplicate name error handling
+  - overwrite=True replaces existing table
+  - Empty crossing times array handling
+  - Shape validation (1D only, 2D rejected)
+  - region_names length mismatch validation
+  - event_types length mismatch validation
+  - NaN value rejection in timestamps
+  - Inf value rejection in timestamps
+  - Negative timestamp rejection
+  - Data integrity verification via round-trip with read_events()
+  - Behavior module reuse with existing data
+- Implemented `write_region_crossings()` in `_events.py`:
+  - Uses `_get_or_create_processing_module()` for behavior module
+  - Uses `_require_ndx_events()` for dependency validation
+  - Creates ndx-events EventsTable with timestamp column
+  - Adds region and event_type columns for crossing metadata
+  - Validates 1D shape, finite values, non-negative timestamps
+  - Validates matching lengths for all parallel arrays
+  - Supports name parameter for custom table names
+  - Supports overwrite parameter for replacement
+  - Comprehensive NumPy-style docstring with examples
+- Code review: APPROVED
+  - Updated docstring to clarify event_types accepts arbitrary strings
+  - Not just "enter"/"exit" - supports custom event types like "approach", "dwell"
+- All 18 tests pass, ruff check clean, mypy passes
+- **Milestone M2: Writing is now complete**
 
 ### 2025-11-23: M2.2.1 Complete - Lap Events Writing
 

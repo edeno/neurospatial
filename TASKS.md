@@ -190,13 +190,13 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Create processing/behavior module if needed
   - [x] Add EventsTable with timestamp and optional columns
 
-- [ ] **M2.2.2** Region crossings writing
-  - [ ] Write tests for `write_region_crossings()` in `tests/nwb/test_events.py`
-    - [ ] Test basic crossing times writing
-    - [ ] Test region name column
-    - [ ] Test event_type column (enter/exit)
-  - [ ] Implement `write_region_crossings()` in `_events.py`
-  - [ ] Add EventsTable with region and event_type columns
+- [x] **M2.2.2** Region crossings writing
+  - [x] Write tests for `write_region_crossings()` in `tests/nwb/test_events.py`
+    - [x] Test basic crossing times writing
+    - [x] Test region name column
+    - [x] Test event_type column (enter/exit)
+  - [x] Implement `write_region_crossings()` in `_events.py`
+  - [x] Add EventsTable with region and event_type columns
 
 ---
 
@@ -329,6 +329,6 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 |-----------|--------|---------|-----------|
 | M0: Setup | Complete | 2025-11-23 | 2025-11-23 |
 | M1: Reading | Complete | 2025-11-23 | 2025-11-23 |
-| M2: Writing | In Progress | 2025-11-23 | - |
+| M2: Writing | Complete | 2025-11-23 | 2025-11-23 |
 | M3: Round-trip | Not Started | - | - |
 | M4: Docs | Not Started | - | - |
