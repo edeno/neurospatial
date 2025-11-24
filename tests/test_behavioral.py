@@ -1590,3 +1590,155 @@ def test_all_functions_exported():
     for func_name in expected:
         assert func_name in neurospatial.__all__, f"{func_name} missing from __all__"
         assert callable(getattr(neurospatial, func_name))
+
+
+# =============================================================================
+# Coverage Improvement Tests (Error Handling and Edge Cases)
+# =============================================================================
+
+
+def test_path_progress_unfitted_environment():
+    """Test path_progress raises error for unfitted environment."""
+    import pytest
+
+    from neurospatial import Environment, EnvironmentNotFittedError, path_progress
+
+    # Create environment and manually mark as unfitted
+    positions = np.random.uniform(0, 10, (100, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+    env._is_fitted = False  # Manually mark as unfitted
+
+    # Should raise EnvironmentNotFittedError
+    with pytest.raises(EnvironmentNotFittedError, match="path_progress"):
+        path_progress(
+            env,
+            trajectory_bins=np.array([0, 1, 2]),
+            start_bins=np.array([0, 0, 0]),
+            goal_bins=np.array([2, 2, 2]),
+        )
+
+
+def test_path_progress_array_length_mismatch():
+    """Test path_progress raises error for mismatched array lengths."""
+    import pytest
+
+    from neurospatial import path_progress
+
+    positions = np.random.uniform(0, 10, (100, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # Mismatched lengths
+    with pytest.raises(ValueError, match="Array length mismatch"):
+        path_progress(
+            env,
+            trajectory_bins=np.array([0, 1, 2]),
+            start_bins=np.array([0, 0]),  # Wrong length!
+            goal_bins=np.array([2, 2, 2]),
+        )
+
+
+def test_distance_to_region_unfitted_environment():
+    """Test distance_to_region raises error for unfitted environment."""
+    import pytest
+
+    from neurospatial import Environment, EnvironmentNotFittedError, distance_to_region
+
+    # Create environment and manually mark as unfitted
+    positions = np.random.uniform(0, 10, (100, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+    env._is_fitted = False  # Manually mark as unfitted
+
+    # Should raise EnvironmentNotFittedError
+    with pytest.raises(EnvironmentNotFittedError, match="distance_to_region"):
+        distance_to_region(
+            env,
+            trajectory_bins=np.array([0, 1, 2]),
+            target_bins=5,
+        )
+
+
+def test_graph_turn_sequence_unfitted_environment():
+    """Test graph_turn_sequence raises error for unfitted environment."""
+    import pytest
+
+    from neurospatial import Environment, EnvironmentNotFittedError
+    from neurospatial.behavioral import graph_turn_sequence
+
+    # Create environment and manually mark as unfitted
+    positions = np.random.uniform(0, 10, (100, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+    env._is_fitted = False  # Manually mark as unfitted
+
+    # Should raise EnvironmentNotFittedError
+    with pytest.raises(EnvironmentNotFittedError, match="graph_turn_sequence"):
+        graph_turn_sequence(
+            env,
+            trajectory_bins=np.array([0, 1, 2]),
+            start_bin=0,
+            end_bin=2,
+        )
+
+
+def test_compute_trajectory_curvature_edge_case_few_positions():
+    """Test curvature with < 3 unique positions returns zeros."""
+    from neurospatial.behavioral import compute_trajectory_curvature
+
+    # Only 2 unique positions (straight line)
+    positions = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])  # All same
+    times = np.array([0.0, 1.0, 2.0])
+
+    curvature = compute_trajectory_curvature(positions, times)
+
+    # Should return zeros (no curvature possible)
+    assert curvature.shape == (3,)
+    assert np.allclose(curvature, 0.0)
+
+
+def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions):
+    """Test cost_to_goal with dynamic goals AND cost_map."""
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    # Create trajectory visiting multiple bins
+    trajectory_bins = np.array([0, 5, 10, 15, 20])
+
+    # Dynamic goals (changes over time)
+    goal_bins = np.array([20, 20, 20, 10, 10])  # Goal switches
+
+    # Create cost map (make some bins costly)
+    cost_map = np.ones(env.n_bins)
+    cost_map[10:15] = 5.0  # High cost zone
+
+    # Compute cost with dynamic goals
+    costs = cost_to_goal(
+        env,
+        trajectory_bins,
+        goal_bins,
+        cost_map=cost_map,
+    )
+
+    # Should return valid costs
+    assert costs.shape == (5,)
+    # All values should be either non-negative or NaN
+    assert np.all((costs >= 0) | np.isnan(costs))
+
+    # First position (at bin 0, goal at bin 20) should have > 0 cost
+    assert costs[0] > 0
+
+
+def test_distance_to_region_invalid_scalar_target():
+    """Test distance_to_region with invalid scalar target (-1)."""
+    from neurospatial import distance_to_region
+
+    positions = np.random.uniform(0, 10, (100, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    trajectory_bins = np.array([0, 1, 2, 3, 4])
+
+    # Invalid scalar target
+    distances = distance_to_region(env, trajectory_bins, target_bins=-1)
+
+    # Should return all NaN
+    assert distances.shape == (5,)
+    assert np.all(np.isnan(distances))
