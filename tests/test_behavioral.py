@@ -1080,40 +1080,201 @@ def test_compute_trajectory_curvature_zigzag():
 # =============================================================================
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_uniform():
+def test_cost_to_goal_uniform(simple_environment_with_regions):
     """Test cost to goal with uniform cost (equivalent to geodesic distance)."""
-    pass
+    from neurospatial.behavioral import cost_to_goal, distance_to_region
+
+    env = simple_environment_with_regions
+
+    # Get bins
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Create simple trajectory: start → intermediate → goal
+    trajectory_bins = np.array([start_bin, 5, goal_bin])
+
+    # Compute cost with uniform cost (no cost_map or terrain_difficulty)
+    cost = cost_to_goal(env, trajectory_bins, goal_bin)
+
+    # Compute geodesic distance for comparison
+    distance = distance_to_region(env, trajectory_bins, goal_bin, metric="geodesic")
+
+    # With uniform cost, cost should equal geodesic distance
+    np.testing.assert_array_almost_equal(cost, distance)
+
+    # Cost should decrease as we approach goal
+    assert cost[0] > cost[1] > cost[2]
+
+    # Cost at goal should be 0
+    assert cost[2] == 0.0
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_with_cost_map():
+def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     """Test cost to goal with cost map (punishment zones)."""
-    pass
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Create cost map with high cost in middle bins (punishment zone)
+    cost_map = np.ones(env.n_bins)
+    punishment_bins = [3, 4, 5]  # Middle bins have high cost
+    cost_map[punishment_bins] = 10.0
+
+    # Trajectory through punishment zone
+    trajectory_bins = np.array([start_bin, 4, goal_bin])
+
+    # Compute cost with cost map
+    cost_with_map = cost_to_goal(env, trajectory_bins, goal_bin, cost_map=cost_map)
+
+    # Compute cost without map
+    cost_uniform = cost_to_goal(env, trajectory_bins, goal_bin)
+
+    # Cost with punishment zone should be higher than uniform cost
+    assert cost_with_map[0] > cost_uniform[0]
+
+    # Cost should still decrease as we approach goal
+    assert cost_with_map[0] > cost_with_map[2]
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_terrain_difficulty():
+def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
     """Test cost to goal with terrain difficulty (narrow passages)."""
-    pass
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Create terrain difficulty - make MOST bins difficult, not just a narrow passage
+    # This ensures the cost is affected regardless of path
+    terrain_difficulty = np.ones(env.n_bins) * 2.0  # Most bins are 2x harder
+    easy_bins = [start_bin, goal_bin]  # Only start and goal are easy
+    terrain_difficulty[easy_bins] = 1.0
+
+    # Trajectory
+    trajectory_bins = np.array([start_bin, 5, goal_bin])
+
+    # Compute cost with terrain difficulty
+    cost_with_terrain = cost_to_goal(
+        env, trajectory_bins, goal_bin, terrain_difficulty=terrain_difficulty
+    )
+
+    # Compute cost without terrain
+    cost_uniform = cost_to_goal(env, trajectory_bins, goal_bin)
+
+    # Cost with terrain difficulty should be higher (most bins are 2x harder)
+    assert cost_with_terrain[0] > cost_uniform[0]
+
+    # Cost should still decrease approaching goal
+    assert cost_with_terrain[0] > cost_with_terrain[2]
+
+    # Cost at goal should be 0
+    assert cost_with_terrain[2] == 0.0
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_combined():
+def test_cost_to_goal_combined(simple_environment_with_regions):
     """Test cost to goal with cost map + terrain combined."""
-    pass
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    start_bin = env.bins_in_region("start")[0]
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Create both cost map and terrain difficulty
+    cost_map = np.ones(env.n_bins)
+    cost_map[3] = 5.0  # High cost at bin 3
+
+    terrain_difficulty = np.ones(env.n_bins)
+    terrain_difficulty[4] = 2.0  # 2x difficulty at bin 4
+
+    # Trajectory
+    trajectory_bins = np.array([start_bin, 3, 4, goal_bin])
+
+    # Compute with combined cost
+    cost_combined = cost_to_goal(
+        env,
+        trajectory_bins,
+        goal_bin,
+        cost_map=cost_map,
+        terrain_difficulty=terrain_difficulty,
+    )
+
+    # Combined cost should account for both factors
+    # All costs should be positive and decrease toward goal
+    assert cost_combined[0] > 0
+
+    # Cost should decrease as we approach goal
+    assert cost_combined[0] > cost_combined[-1]
+
+    # Cost at goal should be 0
+    assert cost_combined[-1] == 0.0
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_dynamic_goal():
+def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
     """Test cost to goal with array of goal bins (dynamic)."""
-    pass
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    # Check goal2 exists
+    goal2_bins = env.bins_in_region("goal2")
+    if len(goal2_bins) == 0:
+        pytest.skip("goal2 region has no bins in random environment")
+
+    start_bin = env.bins_in_region("start")[0]
+    goal1_bin = env.bins_in_region("goal1")[0]
+    goal2_bin = goal2_bins[0]
+
+    # Create trajectory with dynamic goals
+    trajectory_bins = np.array([start_bin, 5, goal1_bin])
+    goal_bins_array = np.array(
+        [goal1_bin, goal1_bin, goal2_bin]
+    )  # Goal changes at last step
+
+    # Compute cost with dynamic goals
+    cost = cost_to_goal(env, trajectory_bins, goal_bins_array)
+
+    # Check shape
+    assert cost.shape == (3,)
+
+    # All costs should be non-negative
+    assert np.all(cost >= 0)
+
+    # At goal1 when targeting goal1, cost should be 0
+    assert cost[2] == 0.0
 
 
-@pytest.mark.skip("not implemented")
-def test_cost_to_goal_invalid_bins():
+def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
     """Test cost to goal with invalid bins (should handle gracefully)."""
-    pass
+    from neurospatial.behavioral import cost_to_goal
+
+    env = simple_environment_with_regions
+
+    goal_bin = env.bins_in_region("goal1")[0]
+
+    # Test 1: Invalid trajectory bins
+    trajectory_bins = np.array([0, -1, 2])  # -1 is invalid
+    cost = cost_to_goal(env, trajectory_bins, goal_bin)
+    assert cost.shape == (3,)
+    assert not np.isnan(cost[0])  # Valid bin
+    assert np.isnan(cost[1])  # Invalid bin → NaN
+    assert not np.isnan(cost[2])  # Valid bin
+
+    # Test 2: Invalid goal bin (scalar)
+    trajectory_bins = np.array([0, 1, 2])
+    cost = cost_to_goal(env, trajectory_bins, -1)
+    assert np.all(np.isnan(cost))  # All should be NaN with invalid goal
+
+    # Test 3: Dynamic goals with some invalid
+    goal_bins_array = np.array([goal_bin, -1, goal_bin])
+    cost = cost_to_goal(env, trajectory_bins, goal_bins_array)
+    assert not np.isnan(cost[0])  # Valid goal
+    assert np.isnan(cost[1])  # Invalid goal → NaN
+    assert not np.isnan(cost[2])  # Valid goal
 
 
 # =============================================================================

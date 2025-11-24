@@ -453,7 +453,65 @@ def cost_to_goal(
     --------
     distance_to_region : Simple geometric distance
     """
-    raise NotImplementedError("cost_to_goal not yet implemented")
+    # Import required modules
+    from neurospatial.distance import distance_field
+
+    # Case 1: No cost modifications - use standard geodesic distance
+    if cost_map is None and terrain_difficulty is None:
+        return distance_to_region(env, trajectory_bins, goal_bins, metric="geodesic")
+
+    # Case 2: Cost modifications - build weighted graph
+    g_weighted = env.connectivity.copy()
+
+    # Modify edge weights
+    for u, v, data in g_weighted.edges(data=True):
+        base_dist = data["distance"]
+
+        # Apply terrain difficulty (multiplicative)
+        if terrain_difficulty is not None:
+            # Average difficulty between connected nodes
+            difficulty = (terrain_difficulty[u] + terrain_difficulty[v]) / 2.0
+            base_dist *= difficulty
+
+        # Add cost (additive)
+        if cost_map is not None:
+            # Average cost between connected nodes
+            cost = (cost_map[u] + cost_map[v]) / 2.0
+            base_dist += cost
+
+        # Update edge weight
+        g_weighted[u][v]["weight"] = base_dist
+
+    # Compute distance field(s) with modified weights
+    if isinstance(goal_bins, (int, np.integer)):
+        # Scalar goal - single distance field
+        dist_field = distance_field(g_weighted, [int(goal_bins)], weight="weight")
+        costs = dist_field[trajectory_bins]
+
+        # Handle invalid bins
+        invalid_mask = (trajectory_bins == -1) | (goal_bins == -1)
+        costs[invalid_mask] = np.nan
+
+        return costs
+    else:
+        # Dynamic goals - compute per unique goal
+        unique_goals = np.unique(goal_bins)
+        unique_goals = unique_goals[unique_goals != -1]  # Filter invalid
+
+        # Build cost array
+        costs = np.full(len(trajectory_bins), np.nan, dtype=np.float64)
+
+        for goal in unique_goals:
+            mask = goal_bins == goal
+            if np.any(mask):
+                dist_field = distance_field(g_weighted, [int(goal)], weight="weight")
+                costs[mask] = dist_field[trajectory_bins[mask]]
+
+        # Handle invalid bins
+        invalid_mask = (trajectory_bins == -1) | (goal_bins == -1)
+        costs[invalid_mask] = np.nan
+
+        return costs
 
 
 def time_to_goal(
