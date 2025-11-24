@@ -1225,3 +1225,500 @@ class TestEnvironmentRoundTrip:
 
         # Layout type should be stored
         assert loaded_env._layout_type_used == "TriangularMesh"
+
+
+# =============================================================================
+# Parametrized tests for all layout types
+# =============================================================================
+
+
+def _create_regular_grid_env():
+    """Create a 2D RegularGrid environment for testing."""
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(42)
+    positions = rng.uniform(0, 100, (1000, 2))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    return env
+
+
+def _create_hexagonal_env():
+    """Create a Hexagonal layout environment for testing."""
+    from neurospatial import Environment
+
+    env = Environment.from_layout(
+        kind="Hexagonal",
+        layout_params={
+            "hexagon_width": 5.0,
+            "dimension_ranges": [(0, 50), (0, 50)],
+        },
+    )
+    return env
+
+
+def _create_graph_env():
+    """Create a 1D Graph layout environment for testing."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    for i in range(5):
+        graph.add_node(i, pos=(i * 20.0, 0.0))
+    for i in range(4):
+        graph.add_edge(i, i + 1, distance=20.0)
+
+    edge_order = [(i, i + 1) for i in range(4)]
+    env = Environment.from_graph(
+        graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0
+    )
+    return env
+
+
+def _create_masked_grid_env():
+    """Create a MaskedGrid layout environment for testing."""
+    from neurospatial import Environment
+
+    mask = np.zeros((10, 10), dtype=bool)
+    mask[2:8, 2:8] = True
+    x_edges = np.linspace(0, 50, 11)
+    y_edges = np.linspace(0, 50, 11)
+    env = Environment.from_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
+    return env
+
+
+def _create_image_mask_env():
+    """Create an ImageMask layout environment for testing."""
+    from neurospatial import Environment
+
+    y, x = np.ogrid[:50, :50]
+    center = (25, 25)
+    radius = 20
+    mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
+    env = Environment.from_image(image_mask=mask, bin_size=2.0)
+    return env
+
+
+def _create_polygon_env():
+    """Create a ShapelyPolygon layout environment for testing."""
+    from shapely.geometry import Polygon
+
+    from neurospatial import Environment
+
+    boundary = Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)])
+    env = Environment.from_polygon(boundary, bin_size=5.0)
+    return env
+
+
+def _create_triangular_mesh_env():
+    """Create a TriangularMesh layout environment for testing."""
+    from shapely.geometry import Polygon
+
+    from neurospatial import Environment
+
+    boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
+    env = Environment.from_layout(
+        kind="TriangularMesh",
+        layout_params={"boundary_polygon": boundary, "point_spacing": 5.0},
+    )
+    return env
+
+
+def _create_3d_grid_env():
+    """Create a 3D RegularGrid environment for testing."""
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(42)
+    positions = rng.uniform(0, 50, (500, 3))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    return env
+
+
+# Layout factory registry for parametrized tests
+ALL_LAYOUT_FACTORIES = [
+    ("RegularGrid", _create_regular_grid_env),
+    ("Hexagonal", _create_hexagonal_env),
+    ("Graph", _create_graph_env),
+    ("MaskedGrid", _create_masked_grid_env),
+    ("ImageMask", _create_image_mask_env),
+    ("ShapelyPolygon", _create_polygon_env),
+    ("TriangularMesh", _create_triangular_mesh_env),
+    ("3D_RegularGrid", _create_3d_grid_env),
+]
+
+
+class TestAllLayoutsRoundTrip:
+    """Parametrized tests verifying all properties for all layout types."""
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_bin_centers_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test bin_centers are exactly preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_bin_centers.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        np.testing.assert_array_equal(
+            loaded_env.bin_centers,
+            env.bin_centers,
+            err_msg=f"bin_centers mismatch for {layout_name}",
+        )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_connectivity_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test connectivity graph is preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_connectivity.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert (
+            loaded_env.connectivity.number_of_nodes()
+            == env.connectivity.number_of_nodes()
+        ), f"Node count mismatch for {layout_name}"
+        assert (
+            loaded_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
+        ), f"Edge count mismatch for {layout_name}"
+
+        original_edges = sorted(env.connectivity.edges())
+        loaded_edges = sorted(loaded_env.connectivity.edges())
+        assert original_edges == loaded_edges, f"Edge set mismatch for {layout_name}"
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_edge_weights_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test edge weights (distances) are preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_edge_weights.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        for u, v in env.connectivity.edges():
+            original_dist = env.connectivity[u][v]["distance"]
+            loaded_dist = loaded_env.connectivity[u][v]["distance"]
+            np.testing.assert_almost_equal(
+                loaded_dist,
+                original_dist,
+                err_msg=f"Edge ({u},{v}) weight mismatch for {layout_name}",
+            )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_metadata_all_layouts(self, tmp_path, layout_name, env_factory):
+        """Test metadata (units, frame, name) is preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        env.name = f"test_{layout_name}"
+        env.units = "cm"
+        env.frame = "session_001"
+
+        nwb_path = tmp_path / f"test_{layout_name}_metadata.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert loaded_env.name == f"test_{layout_name}", (
+            f"Name mismatch for {layout_name}"
+        )
+        assert loaded_env.units == "cm", f"Units mismatch for {layout_name}"
+        assert loaded_env.frame == "session_001", f"Frame mismatch for {layout_name}"
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_point_regions_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test point regions are preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+
+        # Add point regions at locations within the environment bounds
+        # Use bin centers to ensure points are within valid range
+        if env.n_bins >= 2:
+            env.regions.add("start", point=tuple(env.bin_centers[0]))
+            env.regions.add("goal", point=tuple(env.bin_centers[-1]))
+
+        nwb_path = tmp_path / f"test_{layout_name}_point_regions.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert set(loaded_env.regions.keys()) == set(env.regions.keys()), (
+            f"Region keys mismatch for {layout_name}"
+        )
+
+        for name in env.regions:
+            original = env.regions[name]
+            loaded = loaded_env.regions[name]
+            assert loaded.kind == original.kind, (
+                f"Region {name} kind mismatch for {layout_name}"
+            )
+            np.testing.assert_array_almost_equal(
+                loaded.data,
+                original.data,
+                err_msg=f"Region {name} data mismatch for {layout_name}",
+            )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_polygon_regions_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test polygon regions are preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+        from shapely.geometry import Polygon
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+
+        # Skip 1D layouts for polygon regions (they use 2D projected coordinates)
+        if env.n_dims >= 2:
+            # Create a small polygon region within the environment bounds
+            center = env.bin_centers.mean(axis=0)[:2]  # Use first 2 dims
+            size = 5.0  # Small region
+            triangle = Polygon(
+                [
+                    (center[0] - size, center[1] - size),
+                    (center[0] + size, center[1] - size),
+                    (center[0], center[1] + size),
+                ]
+            )
+            env.regions.add("reward_zone", polygon=triangle)
+
+        nwb_path = tmp_path / f"test_{layout_name}_polygon_regions.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        if "reward_zone" in env.regions:
+            assert "reward_zone" in loaded_env.regions, (
+                f"Polygon region missing for {layout_name}"
+            )
+            assert loaded_env.regions["reward_zone"].kind == "polygon", (
+                f"Polygon region kind wrong for {layout_name}"
+            )
+
+            loaded_coords = list(loaded_env.regions["reward_zone"].data.exterior.coords)
+            original_coords = list(env.regions["reward_zone"].data.exterior.coords)
+            np.testing.assert_array_almost_equal(
+                loaded_coords,
+                original_coords,
+                err_msg=f"Polygon coordinates mismatch for {layout_name}",
+            )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_spatial_queries_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test spatial queries work after round-trip for all layout types.
+
+        Note: Uses map_points_to_bins (KDTree-based) rather than bin_at because
+        read_environment reconstructs with a RegularGrid approximation layout.
+        The bin_at method uses layout-specific geometric containment which may
+        not work correctly for non-grid layouts after round-trip.
+        """
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import map_points_to_bins
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_queries.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Test map_points_to_bins works (KDTree-based nearest neighbor mapping)
+        # This should correctly map bin_centers[i] back to index i
+        test_points = loaded_env.bin_centers[:3]  # Test first 3 bins
+        bin_indices = map_points_to_bins(test_points, loaded_env)
+
+        # Verify each point maps to its own index
+        np.testing.assert_array_equal(
+            bin_indices,
+            np.array([0, 1, 2]),
+            err_msg=f"map_points_to_bins failed for {layout_name}",
+        )
+
+        # Test neighbors works on a node with edges
+        # Find a node with at least one neighbor
+        test_node = None
+        for node in range(loaded_env.n_bins):
+            if loaded_env.connectivity.degree(node) > 0:
+                test_node = node
+                break
+
+        if test_node is not None:
+            neighbors = loaded_env.neighbors(test_node)
+            assert len(neighbors) > 0, f"neighbors failed for {layout_name}"
+
+            # Test distance_between works
+            dist = loaded_env.distance_between(test_node, neighbors[0])
+            assert dist > 0, f"distance_between failed for {layout_name}"
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_dimension_ranges_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test dimension_ranges are preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_dim_ranges.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        np.testing.assert_array_almost_equal(
+            loaded_env.dimension_ranges,
+            env.dimension_ranges,
+            err_msg=f"dimension_ranges mismatch for {layout_name}",
+        )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_layout_type_stored_all_layouts(
+        self, tmp_path, layout_name, env_factory
+    ):
+        """Test layout type is stored and retrievable for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_layout_type.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Layout type should be stored (though exact type depends on factory)
+        assert hasattr(loaded_env, "_layout_type_used"), (
+            f"Missing _layout_type_used for {layout_name}"
+        )
+        assert loaded_env._layout_type_used is not None, (
+            f"_layout_type_used is None for {layout_name}"
+        )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_n_dims_all_layouts(self, tmp_path, layout_name, env_factory):
+        """Test n_dims is preserved for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_n_dims.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert loaded_env.n_dims == env.n_dims, (
+            f"n_dims mismatch for {layout_name}: got {loaded_env.n_dims}, expected {env.n_dims}"
+        )
+
+    @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
+    def test_roundtrip_is_fitted_all_layouts(self, tmp_path, layout_name, env_factory):
+        """Test loaded environment is fitted and usable for all layout types."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.nwb import read_environment, write_environment
+
+        env = env_factory()
+        nwb_path = tmp_path / f"test_{layout_name}_fitted.nwb"
+
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert loaded_env._is_fitted, f"Environment not fitted for {layout_name}"
