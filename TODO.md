@@ -288,3 +288,15 @@
 * Chunked computation
 * Parallelism
 * Large-population optimizations
+
+### Other
+
+* We should be able to seed the environment polygon from position (convex hull?), user can adjust in napari. We could also have templates for common mazes (linear, T, plus, circular, open field with obstacles).
+
+* Consider what to do for dynamic environments (moving obstacles, changing boundaries) in future versions. Regions can also be dynamic (e.g., zones that appear/disappear, optostimulation, reward delivery).
+
+* Consider integration with reinforcement learning environments (OpenAI Gym, DeepMind Lab) for simulated data analysis.
+
+* Consider integration with pynapple.
+
+* Consider what we could learn from video games (in terms of paradigms for spatial representation, navigation, and environment design). Also consider robotics literature for path planning and spatial mapping.
