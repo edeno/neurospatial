@@ -6,13 +6,80 @@
 
 ## Current Status
 
-- **Active Task**: Code review fixes complete
+- **Active Task**: M4.4 - Final verification
 - **Blocker**: None
-- **Next Action**: M4.1 - Update CLAUDE.md with NWB integration documentation
+- **Next Action**: M4.4 - Run full test suite and linters
 
 ---
 
 ## Session Log
+
+### 2025-11-24: M4.3 Complete - Type Annotations
+
+Type annotations already complete for all NWB functions:
+
+- Mypy passes with 0 errors on `src/neurospatial/nwb/`
+- All 9 NWB source files pass type checking
+- Type annotations use proper `TYPE_CHECKING` guards for optional imports
+- Return types properly annotated with NDArray, DataFrame, etc.
+
+### 2025-11-24: M4.2 Complete - Docstrings
+
+Audited and verified docstrings for all NWB public functions:
+
+**Findings:**
+
+- All 15 public functions already have comprehensive NumPy-style docstrings
+- Docstrings include: Parameters, Returns, Raises, Notes, and Examples sections
+- Internal helper functions also have proper docstrings
+
+**Actions:**
+
+- Added comprehensive Examples section to `__init__.py` module docstring
+- Added `# doctest: +SKIP` directives to all examples (require actual NWB files)
+- Verified doctests pass: 1 passed, 16 skipped (as expected)
+- Ran ruff format to fix line length issues in docstrings
+
+### 2025-11-24: M4.1 Complete - CLAUDE.md NWB Documentation
+
+Updated CLAUDE.md with comprehensive NWB integration documentation:
+
+**Quick Reference Section:**
+
+- Added complete NWB integration examples with reading/writing functions
+- Included NWB Data Locations table (analysis/, processing/behavior/, scratch/)
+- Added NWB Dependencies table (nwb, nwb-pose, nwb-events, nwb-full extras)
+
+**Import Patterns Section:**
+
+- Added NWB-specific imports organized by function type (reading, writing, factories)
+
+**Development Commands Section:**
+
+- Added NWB-specific test commands (`uv run pytest tests/nwb/ -v`)
+
+**Dependencies Section:**
+
+- Added Optional NWB dependencies subsection with install instructions
+
+**Testing Structure Section:**
+
+- Added `tests/nwb/` to the test directory list
+- Documented `pytest.importorskip()` pattern for graceful skipping
+
+**Troubleshooting Section:**
+
+- Added 6 NWB-specific troubleshooting entries:
+  - ImportError for missing pynwb
+  - KeyError when Position not found
+  - KeyError when PoseEstimation not found
+  - ValueError for duplicate place fields
+  - Environment round-trip property limitations
+  - RuntimeError for unfitted Environment
+
+**Metadata:**
+
+- Updated Last Updated date to 2025-11-24 (v0.7.0 - NWB integration)
 
 ### 2025-11-24: NWB Module Code Review Fixes
 

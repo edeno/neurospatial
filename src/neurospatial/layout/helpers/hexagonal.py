@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -524,7 +525,7 @@ def _create_hex_connectivity_graph(
     active_original_flat_indices: NDArray[np.int_],
     full_grid_bin_centers: NDArray[np.float64],
     centers_shape: tuple[int, int],
-):
+) -> nx.Graph:
     """Create a connectivity graph for active bins in a hexagonal grid.
 
     Nodes in the returned graph are indexed from `0` to `n_active_bins - 1`.

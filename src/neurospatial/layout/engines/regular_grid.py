@@ -38,7 +38,7 @@ class RegularGridLayout(_GridMixin):
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a RegularGridLayout engine."""
         self._layout_type_tag = "RegularGrid"
         self._build_params_used = {}

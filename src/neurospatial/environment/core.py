@@ -264,7 +264,7 @@ class Environment(
         layout_type_used: str | None = None,
         layout_params_used: dict[str, Any] | None = None,
         regions: Regions | None = None,
-    ):
+    ) -> None:
         """Initialize the Environment.
 
         Note: This constructor is primarily intended for internal use by factory

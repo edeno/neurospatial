@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import networkx as nx
 import numpy as np
@@ -22,6 +22,64 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.regions import Regions
+
+
+# =============================================================================
+# Type definitions for JSON metadata structures
+# =============================================================================
+
+
+class EnvironmentMetadata(TypedDict):
+    """
+    Type definition for environment metadata JSON structure.
+
+    This TypedDict defines the schema for environment metadata stored in NWB
+    scratch space. The schema_version field enables future migrations.
+    """
+
+    schema_version: str
+    name: str
+    units: str
+    frame: str
+    n_dims: int
+    layout_type: str
+    n_bins: int
+    n_edges: int
+    is_1d: bool
+    has_grid_data: bool
+
+
+class GridData(TypedDict, total=False):
+    """
+    Type definition for grid structure data.
+
+    This TypedDict defines the schema for grid-based layout data used to
+    reconstruct point_to_bin_index functionality after NWB round-trip.
+
+    Note: active_mask_flat is stored in a separate DynamicTable column (not JSON)
+    to avoid JSON serialization of large boolean arrays. It's added to this dict
+    during deserialization for convenience.
+    """
+
+    grid_edges: list[list[float]]  # Bin edges per dimension
+    grid_shape: list[int]  # Grid dimensions
+    total_grid_cells: int  # Total cells for padding calculation
+    active_mask_flat: NDArray[np.bool_]  # Added during deserialization (not in JSON)
+
+
+# =============================================================================
+# Column name constants for DynamicTable
+# =============================================================================
+
+# These constants reduce magic strings and centralize column naming
+COL_BIN_CENTERS = "bin_centers"
+COL_EDGES = "edges"
+COL_EDGE_WEIGHTS = "edge_weights"
+COL_DIMENSION_RANGES = "dimension_ranges"
+COL_REGIONS = "regions"
+COL_METADATA = "metadata"
+COL_GRID_DATA = "grid_data"
+COL_ACTIVE_MASK = "active_mask"
 
 
 def write_environment(
@@ -55,15 +113,6 @@ def write_environment(
 
     The description field contains: units, frame, n_dims, layout_type.
 
-    Notes
-    -----
-    Arrays are padded to uniform row count (required by HDMF DynamicTable).
-    Use the n_bins, n_edges, and n_dims values from metadata JSON to
-    extract the actual valid data during deserialization.
-
-    The metadata JSON includes a ``schema_version`` field (currently "1.0")
-    to enable future format migrations without breaking existing files.
-
     Parameters
     ----------
     nwbfile : NWBFile
@@ -79,14 +128,35 @@ def write_environment(
     Raises
     ------
     ValueError
-        If environment with same name exists and overwrite=False.
+        If environment is not fitted, or if environment with same name
+        exists and overwrite=False.
     ImportError
         If pynwb is not installed.
 
+    Notes
+    -----
+    **DynamicTable row alignment requirement:**
+
+    HDMF's DynamicTable requires all columns to have the same number of rows.
+    Since our data has varying lengths (n_bins bin centers, n_edges edges,
+    n_dims dimension ranges), we pad all arrays to a uniform ``n_rows`` and
+    store the actual valid counts in the metadata JSON.
+
+    **Why JSON strings are repeated in every row:**
+
+    Scalar metadata (regions JSON, metadata JSON, grid_data JSON) cannot be
+    stored as single-row columns because DynamicTable enforces row alignment.
+    HDMF does not support broadcasting from length-1 columns. Therefore, we
+    repeat the identical JSON string in every row. This is intentional and
+    expected - during deserialization, we read only the first row (index 0).
+
+    The metadata JSON includes a ``schema_version`` field (currently "1.0")
+    to enable future format migrations without breaking existing files.
+
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_environment(nwbfile, env, name="linear_track")
     ...     io.write(nwbfile)
@@ -96,7 +166,7 @@ def write_environment(
 
     # Validate environment is fitted
     if not env._is_fitted:
-        raise RuntimeError(
+        raise ValueError(
             "Environment must be fitted before calling write_environment(). "
             "Use factory methods like Environment.from_samples() to create "
             "fitted environments."
@@ -211,42 +281,42 @@ def write_environment(
         description=description,
         columns=[
             VectorData(
-                name="bin_centers",
+                name=COL_BIN_CENTERS,
                 data=bin_centers_padded,
                 description=f"Bin center coordinates, actual shape ({env.n_bins}, {n_dims})",
             ),
             VectorData(
-                name="edges",
+                name=COL_EDGES,
                 data=edges_padded,
                 description=f"Edge list for connectivity graph, actual shape ({len(edges)}, 2)",
             ),
             VectorData(
-                name="edge_weights",
+                name=COL_EDGE_WEIGHTS,
                 data=edge_weights_padded,
                 description=f"Edge weights (distances), actual length {len(edge_weights)}",
             ),
             VectorData(
-                name="dimension_ranges",
+                name=COL_DIMENSION_RANGES,
                 data=dim_ranges_padded,
                 description=f"Min/max extent per dimension, actual shape ({n_dims}, 2)",
             ),
             VectorData(
-                name="regions",
+                name=COL_REGIONS,
                 data=regions_list,
                 description="JSON-encoded regions (points and polygons)",
             ),
             VectorData(
-                name="metadata",
+                name=COL_METADATA,
                 data=metadata_list,
                 description="JSON-encoded metadata",
             ),
             VectorData(
-                name="grid_data",
+                name=COL_GRID_DATA,
                 data=grid_data_list,
                 description="JSON-encoded grid structure (grid_edges, grid_shape) for layout reconstruction",
             ),
             VectorData(
-                name="active_mask",
+                name=COL_ACTIVE_MASK,
                 data=active_mask_padded,
                 description="Flattened active bin mask for grid-based layouts",
             ),
@@ -408,8 +478,8 @@ def read_environment(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     env = read_environment(nwbfile, name="linear_track")
     """
@@ -425,8 +495,8 @@ def read_environment(
     scratch_data = nwbfile.scratch[name]
 
     # Parse metadata JSON (get first row - all rows have same value)
-    metadata_json = scratch_data["metadata"][0]
-    metadata = json.loads(metadata_json)
+    metadata_json = scratch_data[COL_METADATA][0]
+    metadata = cast("EnvironmentMetadata", json.loads(metadata_json))
 
     # Check schema version for forward compatibility
     schema_version = metadata.get("schema_version", "1.0")
@@ -448,30 +518,30 @@ def read_environment(
     has_grid_data = metadata.get("has_grid_data", False)
 
     # Extract arrays (truncate padding)
-    bin_centers = np.array(scratch_data["bin_centers"][:n_bins], dtype=np.float64)
-    edges = np.array(scratch_data["edges"][:n_edges], dtype=np.int64)
-    edge_weights = np.array(scratch_data["edge_weights"][:n_edges], dtype=np.float64)
+    bin_centers = np.array(scratch_data[COL_BIN_CENTERS][:n_bins], dtype=np.float64)
+    edges = np.array(scratch_data[COL_EDGES][:n_edges], dtype=np.int64)
+    edge_weights = np.array(scratch_data[COL_EDGE_WEIGHTS][:n_edges], dtype=np.float64)
     dimension_ranges_raw = np.array(
-        scratch_data["dimension_ranges"][:n_dims], dtype=np.float64
+        scratch_data[COL_DIMENSION_RANGES][:n_dims], dtype=np.float64
     )
     dimension_ranges = [tuple(row) for row in dimension_ranges_raw]
 
     # Parse regions JSON
-    regions_json = scratch_data["regions"][0]
+    regions_json = scratch_data[COL_REGIONS][0]
     regions = _json_to_regions(regions_json)
 
     # Parse grid data if available
-    grid_data = None
-    if has_grid_data and "grid_data" in scratch_data.colnames:
-        grid_data_json = scratch_data["grid_data"][0]
+    grid_data: GridData | None = None
+    if has_grid_data and COL_GRID_DATA in scratch_data.colnames:
+        grid_data_json = scratch_data[COL_GRID_DATA][0]
         grid_data = json.loads(grid_data_json)
 
         # Reconstruct active_mask from separate column
-        if grid_data and "active_mask" in scratch_data.colnames:
+        if grid_data and COL_ACTIVE_MASK in scratch_data.colnames:
             total_grid_cells = grid_data.get("total_grid_cells", 0)
             if total_grid_cells > 0:
                 active_mask_flat = np.array(
-                    scratch_data["active_mask"][:total_grid_cells], dtype=np.bool_
+                    scratch_data[COL_ACTIVE_MASK][:total_grid_cells], dtype=np.bool_
                 )
                 grid_data["active_mask_flat"] = active_mask_flat
 
@@ -520,7 +590,7 @@ def _reconstruct_environment(
     regions: Regions,
     env_name: str,
     layout_type: str,
-    grid_data: dict[str, Any] | None,
+    grid_data: GridData | None,
     n_dims: int,
 ) -> Environment:
     """
@@ -650,7 +720,7 @@ class _ReconstructedLayout:
         connectivity: nx.Graph,
         dimension_ranges: list[tuple[float, float]],
         layout_type: str,
-    ):
+    ) -> None:
         from scipy.spatial import KDTree
 
         self.bin_centers = bin_centers
@@ -719,7 +789,7 @@ class _ReconstructedLayout:
             len(self.bin_centers), median_spacing ** self.bin_centers.shape[1]
         )
 
-    def plot(self, ax=None, **kwargs):
+    def plot(self, ax: Any | None = None, **kwargs: Any) -> Any:
         """Basic plot method."""
         import matplotlib.pyplot as plt
 
@@ -960,14 +1030,14 @@ def environment_from_position(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     env = environment_from_position(nwbfile, bin_size=2.0)
 
     With explicit units and active bin inference:
 
-    >>> env = environment_from_position(
+    >>> env = environment_from_position(  # doctest: +SKIP
     ...     nwbfile,
     ...     bin_size=5.0,
     ...     units="cm",
@@ -1029,6 +1099,19 @@ def _get_position_units(
     -------
     str
         The units from the SpatialSeries, or "cm" as fallback.
+
+    Notes
+    -----
+    **Default fallback behavior:**
+
+    If the SpatialSeries does not have a ``unit`` attribute set (or it is None
+    or empty string), this function returns ``"cm"`` as a sensible default for
+    neuroscience tracking data.
+
+    This is a silent fallback - no warning is emitted. If you need to know
+    whether the units were auto-detected or defaulted, compare the returned
+    value against your expected units, or access the SpatialSeries directly
+    to check if ``unit`` is set.
     """
     from pynwb.behavior import Position as PositionType
 

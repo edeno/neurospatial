@@ -138,6 +138,13 @@ def annotate_video(
     regions_from_labelme : Import from LabelMe JSON
     regions_from_cvat : Import from CVAT XML
     """
+    # Validate parameters early (before expensive imports)
+    if mode in ("environment", "both") and bin_size is None:
+        raise ValueError(
+            f"bin_size is required when mode={mode!r}. "
+            "Provide bin_size for environment discretization."
+        )
+
     try:
         import napari
     except ImportError as e:
@@ -157,13 +164,6 @@ def annotate_video(
         shapes_to_regions,
     )
     from neurospatial.regions import Regions
-
-    # Validate parameters
-    if mode in ("environment", "both") and bin_size is None:
-        raise ValueError(
-            f"bin_size is required when mode={mode!r}. "
-            "Provide bin_size for environment discretization."
-        )
 
     # Validate video path
     video_path = Path(video_path)

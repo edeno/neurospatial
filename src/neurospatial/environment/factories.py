@@ -661,3 +661,106 @@ class EnvironmentFactories:
         # Mypy can't infer this for mixins, so we use cast() to help the type checker.
         env_cls = cast("type[Environment]", cls)
         return env_cls(name, layout_instance, kind, layout_params, regions=regions)
+
+    @classmethod
+    def from_nwb(
+        cls,
+        nwbfile: Any,
+        *,
+        scratch_name: str | None = None,
+        bin_size: float | None = None,
+        **kwargs: Any,
+    ) -> Environment:
+        """Create Environment from NWB file.
+
+        This classmethod provides two modes of operation:
+
+        1. **Load from scratch**: If `scratch_name` is provided, loads a previously
+           stored Environment from the NWB file's scratch space. Use this when
+           the Environment was saved using `env.to_nwb()`.
+
+        2. **Create from position**: If `bin_size` is provided (and `scratch_name`
+           is not), creates a new Environment by discretizing position data found
+           in the NWB file's behavior processing module.
+
+        Parameters
+        ----------
+        nwbfile : NWBFile
+            The NWB file to read from. Must be a pynwb.NWBFile instance.
+        scratch_name : str, optional
+            Name of the stored environment in scratch/. If provided, loads
+            the Environment from NWB scratch space (takes precedence over bin_size).
+        bin_size : float, optional
+            Bin size for environment discretization when creating from Position data.
+            Required if scratch_name is not provided.
+        **kwargs
+            Additional keyword arguments forwarded to environment_from_position()
+            when creating from position data. Common kwargs include:
+            - units : str - Spatial units for the environment
+            - frame : str - Coordinate frame identifier
+            - infer_active_bins : bool - Whether to only include visited bins
+            - bin_count_threshold : int - Minimum samples per bin
+
+        Returns
+        -------
+        Environment
+            The loaded or newly created Environment.
+
+        Raises
+        ------
+        ValueError
+            If neither scratch_name nor bin_size is provided.
+        KeyError
+            If scratch_name is provided but not found in NWB scratch space,
+            or if bin_size is provided but no Position data is found.
+        ImportError
+            If pynwb is not installed.
+
+        See Also
+        --------
+        to_nwb : Write Environment to NWB file.
+        neurospatial.nwb.read_environment : Low-level NWB reading function.
+        neurospatial.nwb.environment_from_position : Create from Position data.
+
+        Examples
+        --------
+        Load a previously stored environment from scratch:
+
+        >>> from pynwb import NWBHDF5IO
+        >>> from neurospatial import Environment
+        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        ...     nwbfile = io.read()
+        ...     env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+
+        Create environment from Position data:
+
+        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        ...     nwbfile = io.read()
+        ...     env = Environment.from_nwb(nwbfile, bin_size=5.0, units="cm")
+
+        """
+        # Validate arguments
+        if scratch_name is None and bin_size is None:
+            raise ValueError(
+                "Either scratch_name or bin_size must be provided. "
+                "Use scratch_name to load a stored environment, or bin_size "
+                "to create a new environment from Position data."
+            )
+
+        # Lazy import to keep pynwb optional
+        try:
+            from neurospatial.nwb import environment_from_position, read_environment
+        except ImportError as e:
+            raise ImportError(
+                "pynwb is required for NWB integration. Install with: pip install pynwb"
+            ) from e
+
+        # Load from scratch if scratch_name is provided (takes precedence)
+        if scratch_name is not None:
+            return cast("Environment", read_environment(nwbfile, name=scratch_name))
+
+        # Create from position data
+        return cast(
+            "Environment",
+            environment_from_position(nwbfile, bin_size=bin_size, **kwargs),
+        )

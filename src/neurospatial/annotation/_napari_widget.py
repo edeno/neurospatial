@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from magicgui.widgets import (
@@ -56,7 +56,7 @@ def create_annotation_widget(
     """
 
     # Get shapes layer
-    def get_shapes():
+    def get_shapes() -> napari.layers.Shapes | None:
         try:
             return viewer.layers[shapes_layer_name]
         except KeyError:
@@ -236,7 +236,7 @@ def create_annotation_widget(
 
     # --- Event Handlers ---
     @role_selector.changed.connect
-    def on_role_changed(role: str):
+    def on_role_changed(role: str) -> None:
         """Update feature_defaults and state when role selector changes."""
         # Sync state with UI (handles both programmatic and user changes)
         # Cast validated - role_selector only allows valid Role values
@@ -250,14 +250,14 @@ def create_annotation_widget(
         name_input.value = state.default_name()
 
     @name_input.changed.connect
-    def on_name_changed(name: str):
+    def on_name_changed(name: str) -> None:
         """Update feature_defaults when name changes."""
         shapes = get_shapes()
         if shapes is not None:
             shapes.feature_defaults["name"] = name
 
     @shapes_list.changed.connect
-    def on_shapes_list_selection(selection):
+    def on_shapes_list_selection(selection: Any) -> None:
         """Select shape in layer when selected in list."""
         if selection is None:
             return
@@ -277,7 +277,7 @@ def create_annotation_widget(
             name_input.value = shapes.features["name"].iloc[idx]
 
     @apply_btn.clicked.connect
-    def apply_to_selected():
+    def apply_to_selected() -> None:
         """Apply current name to selected shapes using controller."""
         shapes = get_shapes()
         if shapes is None or len(shapes.selected_data) == 0:
@@ -318,7 +318,6 @@ def create_annotation_widget(
 
     # Connect Enter key in name input to apply name to selected
     # Use event filter to prevent Enter from propagating to napari's canvas
-    from typing import Any
 
     from qtpy import QtCore
 
@@ -327,7 +326,7 @@ def create_annotation_widget(
     class EnterKeyFilter(qt_core.QObject):
         """Event filter to handle Enter key in name input without propagating to napari."""
 
-        def eventFilter(self, obj, event):  # noqa: N802 - Qt override
+        def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802 - Qt override
             if event.type() == qt_core.QEvent.KeyPress and event.key() in (
                 qt_core.Qt.Key_Return,
                 qt_core.Qt.Key_Enter,
@@ -340,7 +339,7 @@ def create_annotation_widget(
     name_input.native.installEventFilter(_enter_filter)
 
     @delete_btn.clicked.connect
-    def delete_selected():
+    def delete_selected() -> None:
         """Delete selected shapes using controller."""
         shapes = get_shapes()
         if shapes is None or len(shapes.selected_data) == 0:
@@ -359,7 +358,7 @@ def create_annotation_widget(
         viewer.status = f"Deleted {delete_count} shape(s)"
 
     @save_btn.clicked.connect
-    def save_and_close():
+    def save_and_close() -> None:
         """Close viewer to return control to Python, with confirmation if empty."""
         shapes = get_shapes()
         if shapes is None or len(shapes.data) == 0:
@@ -382,7 +381,7 @@ def create_annotation_widget(
 
     # --- Keyboard Shortcuts ---
     @viewer.bind_key("m")
-    def toggle_mode(viewer):
+    def toggle_mode(viewer: napari.Viewer) -> None:
         """Cycle between environment, hole, and region modes."""
         cycle_annotation_mode()
         # Status bar feedback
@@ -394,7 +393,7 @@ def create_annotation_widget(
             viewer.status = "Mode: REGION - enter name, then draw polygon (yellow)"
 
     @viewer.bind_key("Escape")
-    def finish_annotation(viewer):
+    def finish_annotation(viewer: napari.Viewer) -> None:
         """Finish annotation and close viewer."""
         save_and_close()
 
@@ -404,7 +403,7 @@ def create_annotation_widget(
     _prev_shape_count = [0]  # Mutable container for closure
     _pending_update = [False]  # Flag to prevent duplicate scheduled updates
 
-    def _process_data_change():
+    def _process_data_change() -> None:
         """
         Handle shape additions: update list, auto-switch mode, update status.
 
@@ -478,14 +477,14 @@ def create_annotation_widget(
                 else:
                     # Delete the just-drawn shape
                     # Must defer to avoid reentrancy with napari's _finish_drawing()
-                    from qtpy.QtCore import QTimer
+                    from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
 
                     # Update count IMMEDIATELY to prevent dialog re-triggering
                     # (napari may fire multiple data events for single shape)
                     target_count = _prev_shape_count[0]  # What we want after deletion
                     _prev_shape_count[0] = current_count  # Prevent re-entry
 
-                    def delete_shape():
+                    def delete_shape() -> None:
                         nonlocal _prev_shape_count
                         # Delete back to target count
                         if len(shapes.data) > target_count:
@@ -503,7 +502,8 @@ def create_annotation_widget(
                                         for n in shapes.features["name"][:target_count]
                                     ]
                                     shapes.features = rebuild_features(
-                                        truncated_roles, truncated_names
+                                        cast("list[Role]", truncated_roles),
+                                        truncated_names,
                                     )
                                     sync_face_colors_from_features(shapes)
                             # Update UI to reflect the deletion
@@ -564,7 +564,7 @@ def create_annotation_widget(
 
         _prev_shape_count[0] = current_count
 
-    def on_data_changed(event):
+    def on_data_changed(event: Any) -> None:
         """
         Throttle data change events using QTimer.singleShot.
 
@@ -572,7 +572,7 @@ def create_annotation_widget(
         addition. This wrapper schedules the actual processing to run once
         after the event storm settles, reducing UI latency.
         """
-        from qtpy.QtCore import QTimer
+        from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
 
         if not _pending_update[0]:
             _pending_update[0] = True
@@ -596,7 +596,7 @@ def create_annotation_widget(
         # Note: shapes.events.selected_data doesn't exist in napari
         # (see napari issue #6886). Use highlight event as proxy for selection.
         @shapes.events.highlight.connect
-        def on_highlight_changed(event):
+        def on_highlight_changed(event: Any) -> None:
             """Enable/disable buttons when selection highlight changes."""
             update_button_states()
 

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.nwb._adapters import timestamps_from_series
 from neurospatial.nwb._core import _find_containers_by_type, _require_pynwb, logger
 
 if TYPE_CHECKING:
@@ -55,8 +56,8 @@ def read_position(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     positions, timestamps = read_position(nwbfile)
     """
@@ -228,15 +229,7 @@ def _get_timestamps(spatial_series: SpatialSeries) -> NDArray[np.float64]:
     NDArray[np.float64]
         Timestamps in seconds.
     """
-    if spatial_series.timestamps is not None:
-        return np.asarray(spatial_series.timestamps[:], dtype=np.float64)
-
-    # Compute from rate
-    n_samples = len(spatial_series.data)
-    starting_time = float(spatial_series.starting_time or 0.0)
-    rate = float(spatial_series.rate)
-    timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
-    return np.asarray(timestamps, dtype=np.float64)
+    return timestamps_from_series(spatial_series)
 
 
 def read_head_direction(
@@ -276,8 +269,8 @@ def read_head_direction(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     angles, timestamps = read_head_direction(nwbfile)
     """

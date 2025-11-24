@@ -147,7 +147,7 @@ class BoundaryCellModel:
         max_rate: float = 15.0,
         baseline_rate: float = 0.001,
         distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
-    ):
+    ) -> None:
         # Validate parameters
         if preferred_distance < 0:
             msg = f"preferred_distance must be non-negative (got {preferred_distance})"

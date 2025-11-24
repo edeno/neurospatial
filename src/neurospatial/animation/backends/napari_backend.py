@@ -489,7 +489,7 @@ def _make_video_frame_callback(
     if not video_layers:
         return
 
-    def update_video_frames(event=None):
+    def update_video_frames(event: Any | None = None) -> None:
         """Update all video layers to show frame at current animation time."""
         # Get current animation frame from first dimension (time)
         if viewer.dims.ndim == 0:
@@ -1216,7 +1216,7 @@ def _add_speed_control_widget(
         playback_widget.fps.native.setMinimumWidth(200)
 
     # Connect play button to toggle playback
-    def toggle_playback(event=None):
+    def toggle_playback(event: Any | None = None) -> None:
         """Toggle animation playback."""
         playback_state["is_playing"] = not playback_state["is_playing"]
         if playback_state["is_playing"]:
@@ -1229,7 +1229,7 @@ def _add_speed_control_widget(
     playback_widget.play.changed.connect(toggle_playback)
 
     # Update frame counter when dims change
-    def update_frame_info(event=None):
+    def update_frame_info(event: Any | None = None) -> None:
         """Update frame counter and label display (throttled for high FPS during playback).
 
         Throttling only applies during playback to prevent Qt overhead at high FPS.
@@ -1286,7 +1286,7 @@ def _add_speed_control_widget(
     # Add spacebar keyboard shortcut to toggle playback
     # Must be defined here to access toggle_playback() function
     @viewer.bind_key("Space")
-    def spacebar_toggle(viewer_instance):
+    def spacebar_toggle(viewer_instance: napari.Viewer) -> None:
         """Toggle animation playback with spacebar (syncs with widget button)."""
         # Call the same toggle function as the button to keep them in sync
         toggle_playback()
@@ -1648,7 +1648,7 @@ def render_napari(
     except ImportError:
         # Fallback: Add spacebar shortcut without widget (magicgui not available)
         @viewer.bind_key("Space")
-        def toggle_playback(viewer):
+        def toggle_playback(viewer: napari.Viewer) -> None:
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
@@ -1897,7 +1897,7 @@ def _render_multi_field_napari(
     except ImportError:
 
         @viewer.bind_key("Space")
-        def toggle_playback(viewer):
+        def toggle_playback(viewer: napari.Viewer) -> None:
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
@@ -2088,7 +2088,7 @@ class LazyFieldRenderer:
         vmin: float,
         vmax: float,
         cache_size: int = DEFAULT_CACHE_SIZE,
-    ):
+    ) -> None:
         """Initialize lazy field renderer."""
         self.env = env
         self.fields = fields
@@ -2323,7 +2323,7 @@ class ChunkedLazyFieldRenderer:
         vmax: float,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         max_chunks: int = DEFAULT_MAX_CHUNKS,
-    ):
+    ) -> None:
         """Initialize chunked lazy field renderer."""
         self.env = env
         self.fields = fields

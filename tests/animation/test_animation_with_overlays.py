@@ -36,6 +36,13 @@ except ImportError:
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
+try:
+    import ipywidgets  # noqa: F401
+
+    HAS_IPYWIDGETS = True
+except ImportError:
+    HAS_IPYWIDGETS = False
+
 # =============================================================================
 # Fixtures for Integration Tests
 # =============================================================================
@@ -554,6 +561,7 @@ class TestHTMLBackendIntegration:
 # =============================================================================
 
 
+@pytest.mark.skipif(not HAS_IPYWIDGETS, reason="ipywidgets not installed")
 class TestWidgetBackendIntegration:
     """Test Widget backend end-to-end with overlays."""
 

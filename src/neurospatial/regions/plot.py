@@ -131,7 +131,7 @@ def plot_regions(
                 continue
 
             # exterior + (optional) holes  → Path
-            def _ring_to_path(r):
+            def _ring_to_path(r) -> MplPath:
                 pts = _map(np.asarray(r.coords)[:, :2])
                 return MplPath(pts)
 

@@ -192,22 +192,29 @@ def write_place_field(
       in the same analysis module to avoid data duplication.
     - The ``overwrite`` parameter operates on in-memory NWB objects. When
       working with file-backed NWB files, ensure changes are written back.
+    - For 2D fields, the time axis is stored as a simple integer index
+      (0, 1, ..., n_time-1). If you need physical timestamps for each
+      frame, store them separately alongside this TimeSeries.
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> from neurospatial import compute_place_field
-    >>> place_field = compute_place_field(env, spike_times, timestamps, positions)
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> from neurospatial import compute_place_field  # doctest: +SKIP
+    >>> place_field = compute_place_field(
+    ...     env, spike_times, timestamps, positions
+    ... )  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_place_field(nwbfile, env, place_field, name="cell_001")
     ...     io.write(nwbfile)
 
     For time-varying fields with physical timestamps:
 
-    >>> time_varying_field = np.random.rand(100, env.n_bins)  # 100 time points
-    >>> timestamps = np.linspace(0, 10, 100)  # 10 seconds of data
-    >>> write_place_field(nwbfile, env, time_varying_field, timestamps=timestamps)
+    >>> time_varying_field = np.random.rand(100, env.n_bins)  # doctest: +SKIP
+    >>> timestamps = np.linspace(0, 10, 100)  # doctest: +SKIP
+    >>> write_place_field(
+    ...     nwbfile, env, time_varying_field, timestamps=timestamps
+    ... )  # doctest: +SKIP
     """
     _require_pynwb()
     from pynwb import TimeSeries
@@ -332,19 +339,21 @@ def write_occupancy(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> from neurospatial import Environment
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> occupancy = env.occupancy(times, positions)  # Time in each bin
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
+    >>> occupancy = env.occupancy(times, positions)  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_occupancy(nwbfile, env, occupancy, name="session_occupancy")
     ...     io.write(nwbfile)
 
     For probability-normalized occupancy:
 
-    >>> prob_occupancy = occupancy / occupancy.sum()
-    >>> write_occupancy(nwbfile, env, prob_occupancy, unit="probability")
+    >>> prob_occupancy = occupancy / occupancy.sum()  # doctest: +SKIP
+    >>> write_occupancy(
+    ...     nwbfile, env, prob_occupancy, unit="probability"
+    ... )  # doctest: +SKIP
     """
     _require_pynwb()
     from pynwb import TimeSeries

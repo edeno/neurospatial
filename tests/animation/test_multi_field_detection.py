@@ -12,6 +12,14 @@ import pytest
 # Import the detection function directly for unit testing
 from neurospatial.animation.backends.napari_backend import _is_multi_field_input
 
+# Check for optional dependencies
+try:
+    import napari  # noqa: F401
+
+    HAS_NAPARI = True
+except ImportError:
+    HAS_NAPARI = False
+
 
 class TestMultiFieldDetectionEdgeCases:
     """Test edge cases for multi-field detection."""
@@ -46,6 +54,7 @@ class TestMultiFieldDetectionEdgeCases:
         assert _is_multi_field_input(fields) is True
 
 
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestMultiFieldValidationRobustness:
     """Test validation catches invalid inputs."""
 

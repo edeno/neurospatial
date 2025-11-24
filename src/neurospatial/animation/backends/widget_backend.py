@@ -925,7 +925,7 @@ def render_widget(
     # Throttle slider updates to ~30 Hz to avoid decode storms with large images
     _last_update_time = [0.0]  # Use list for mutable capture in closure
 
-    def on_slider_change(change):
+    def on_slider_change(change: dict[str, Any]) -> None:
         """Update display when slider value changes (throttled to ~30 Hz)."""
         if change["name"] != "value":
             return

@@ -27,8 +27,9 @@ Notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -1456,7 +1457,13 @@ def apply_transform_to_environment(
     class TransformedLayout:
         """Minimal layout wrapper for transformed environment."""
 
-        def __init__(self, centers, graph, dim_ranges, original_layout):
+        def __init__(
+            self,
+            centers: NDArray[np.float64],
+            graph: nx.Graph,
+            dim_ranges: list[tuple[float, float]] | None,
+            original_layout: Any,
+        ) -> None:
             self.bin_centers = centers
             self.connectivity = graph
             self.dimension_ranges = dim_ranges
@@ -1472,28 +1479,28 @@ def apply_transform_to_environment(
                 if hasattr(original_layout, attr):
                     setattr(self, attr, getattr(original_layout, attr))
 
-        def build(self):
+        def build(self) -> None:
             pass  # Already built
 
-        def point_to_bin_index(self, points):
+        def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int64]:
             # Use KD-tree on transformed centers
             from scipy.spatial import cKDTree
 
             kdtree = cKDTree(self.bin_centers)
             _, indices = kdtree.query(points)
-            return indices
+            return np.asarray(indices, dtype=np.int64)
 
-        def bin_sizes(self):
+        def bin_sizes(self) -> NDArray[np.float64]:
             # Approximate from nearest neighbors
             from scipy.spatial import cKDTree
 
             if len(self.bin_centers) < 2:
-                return np.array([1.0] * len(self.bin_centers))
+                return np.array([1.0] * len(self.bin_centers), dtype=np.float64)
             kdtree = cKDTree(self.bin_centers)
             dists, _ = kdtree.query(self.bin_centers, k=2)
-            return dists[:, 1] ** 2  # Approximate area
+            return np.asarray(dists[:, 1] ** 2, dtype=np.float64)  # Approximate area
 
-        def plot(self, *args, **kwargs):
+        def plot(self, *args: Any, **kwargs: Any) -> None:
             raise NotImplementedError(
                 "Plotting not implemented for transformed layouts"
             )

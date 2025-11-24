@@ -33,7 +33,7 @@ class ImageMaskLayout(_GridMixin):
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize an ImageMaskLayout engine."""
         self._layout_type_tag = "ImageMask"
         self._build_params_used = {}

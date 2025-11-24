@@ -40,9 +40,9 @@ class ShapelyPolygonLayout(_GridMixin):
     _build_params_used: dict[str, Any]
 
     # Layout Specific
-    _polygon_definition: Polygon | None = None
+    polygon_definition_: Polygon | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a ShapelyPolygonLayout engine."""
         self._layout_type_tag = "ShapelyPolygon"
         self._build_params_used = {}
@@ -189,8 +189,14 @@ class ShapelyPolygonLayout(_GridMixin):
             or self.connectivity is None
         ):
             raise RuntimeError("Layout not built. Call `build` first.")
+        if self.polygon_definition_ is None:
+            raise RuntimeError(
+                "Polygon definition is missing; ensure build() was called successfully."
+            )
 
-        is_2d_grid = len(self.grid_shape) == 2 and len(self.grid_edges) == 2
+        grid_shape = self.grid_shape
+        grid_edges = self.grid_edges
+        is_2d_grid = len(grid_shape) == 2 and len(grid_edges) == 2
 
         if is_2d_grid:
             if ax is None:

@@ -246,63 +246,63 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
   - [x] Reconstruct nx.Graph from edge list
   - [x] Restore Environment with all attributes
 
-- [ ] **M3.2.2** DynamicTable to Regions
-  - [ ] Write tests for DynamicTable → Regions conversion
-    - [ ] Test point region deserialization
-    - [ ] Test polygon region deserialization
-    - [ ] Test empty regions table handling
-  - [ ] Implement `_dynamic_table_to_regions()` helper
+- [x] **M3.2.2** DynamicTable to Regions
+  - [x] Write tests for DynamicTable → Regions conversion
+    - [x] Test point region deserialization
+    - [x] Test polygon region deserialization
+    - [x] Test empty regions table handling
+  - [x] Implement `_json_to_regions()` helper (JSON approach instead of DynamicTable ragged arrays)
 
 ### M3.3 Environment Class Methods
 
-- [ ] **M3.3.1** Environment.from_nwb() classmethod
-  - [ ] Write tests for `Environment.from_nwb()` in `tests/nwb/test_environment.py`
-    - [ ] Test loading from scratch (scratch_name parameter)
-    - [ ] Test creating from position (bin_size parameter)
-    - [ ] Test error when neither parameter provided
-    - [ ] Test kwargs forwarded to environment_from_position
-  - [ ] Implement `Environment.from_nwb()` in environment/factories.py
-  - [ ] Lazy import neurospatial.nwb functions
+- [x] **M3.3.1** Environment.from_nwb() classmethod
+  - [x] Write tests for `Environment.from_nwb()` in `tests/nwb/test_environment.py`
+    - [x] Test loading from scratch (scratch_name parameter)
+    - [x] Test creating from position (bin_size parameter)
+    - [x] Test error when neither parameter provided
+    - [x] Test kwargs forwarded to environment_from_position
+  - [x] Implement `Environment.from_nwb()` in environment/factories.py
+  - [x] Lazy import neurospatial.nwb functions
 
-- [ ] **M3.3.2** Environment.to_nwb() method
-  - [ ] Write tests for `Environment.to_nwb()` in `tests/nwb/test_environment.py`
-    - [ ] Test writing to NWB file
-    - [ ] Test custom name parameter
-  - [ ] Implement `Environment.to_nwb()` in environment/serialization.py
-  - [ ] Lazy import neurospatial.nwb functions
+- [x] **M3.3.2** Environment.to_nwb() method
+  - [x] Write tests for `Environment.to_nwb()` in `tests/nwb/test_environment.py`
+    - [x] Test writing to NWB file
+    - [x] Test custom name parameter
+  - [x] Implement `Environment.to_nwb()` in environment/serialization.py
+  - [x] Lazy import neurospatial.nwb functions
 
 ### M3.4 Round-trip Integration Tests
 
-- [ ] **M3.4.1** Full round-trip tests
-  - [ ] Write integration tests in `tests/nwb/test_roundtrip.py`
-    - [ ] Test Environment survives NWB write/read cycle
-    - [ ] Test bin_centers exactly preserved
-    - [ ] Test connectivity graph structure preserved
-    - [ ] Test edge weights preserved
-    - [ ] Test regions preserved (points and polygons)
-    - [ ] Test units and frame metadata preserved
-  - [ ] Test with different layout types (grid, polygon, masked)
-  - [ ] Test with 1D and 2D environments
+- [x] **M3.4.1** Full round-trip tests (implemented in test_environment.py)
+  - [x] Write integration tests in `tests/nwb/test_environment.py` (TestEnvironmentRoundTrip + TestAllLayoutsRoundTrip)
+    - [x] Test Environment survives NWB write/read cycle
+    - [x] Test bin_centers exactly preserved
+    - [x] Test connectivity graph structure preserved
+    - [x] Test edge weights preserved
+    - [x] Test regions preserved (points and polygons)
+    - [x] Test units and frame metadata preserved
+  - [x] Test with different layout types (grid, polygon, masked) - 8 layout types tested
+  - [x] Test with 1D and 2D environments - Graph and 3D layouts tested
 
 ---
 
 ## Milestone 4: Documentation and Polish
 
-- [ ] **M4.1** Update CLAUDE.md
-  - [ ] Add NWB integration section to Quick Reference
-  - [ ] Add NWB-specific import patterns
-  - [ ] Add NWB troubleshooting section
-  - [ ] Document optional dependency installation
+- [x] **M4.1** Update CLAUDE.md
+  - [x] Add NWB integration section to Quick Reference
+  - [x] Add NWB-specific import patterns
+  - [x] Add NWB troubleshooting section
+  - [x] Document optional dependency installation
 
-- [ ] **M4.2** Add docstrings
-  - [ ] Add NumPy docstrings to all public functions
-  - [ ] Add usage examples to module docstrings
-  - [ ] Verify doctests pass
+- [x] **M4.2** Add docstrings
+  - [x] Add NumPy docstrings to all public functions
+  - [x] Add usage examples to module docstrings
+  - [x] Verify doctests pass
 
-- [ ] **M4.3** Type annotations
-  - [ ] Add complete type annotations to all functions
-  - [ ] Run mypy and fix any errors
-  - [ ] Verify py.typed marker works with NWB types
+- [x] **M4.3** Type annotations
+  - [x] Add complete type annotations to all functions
+  - [x] Run mypy and fix any errors
+  - [x] Verify py.typed marker works with NWB types
 
 - [ ] **M4.4** Final verification
   - [ ] Run full test suite (`uv run pytest`)
@@ -330,5 +330,5 @@ This checklist implements the NWB Integration Plan for neurospatial. Each milest
 | M0: Setup | Complete | 2025-11-23 | 2025-11-23 |
 | M1: Reading | Complete | 2025-11-23 | 2025-11-23 |
 | M2: Writing | Complete | 2025-11-23 | 2025-11-23 |
-| M3: Round-trip | In Progress | 2025-11-23 | - |
+| M3: Round-trip | Complete | 2025-11-23 | 2025-11-24 |
 | M4: Docs | Not Started | - | - |

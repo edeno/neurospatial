@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.nwb._adapters import timestamps_from_series
 from neurospatial.nwb._core import _find_containers_by_type, _require_ndx_pose, logger
 
 if TYPE_CHECKING:
@@ -54,8 +55,8 @@ def read_pose(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     bodyparts, timestamps, skeleton = read_pose(nwbfile)
     ...     print(f"Found {len(bodyparts)} bodyparts")
@@ -173,12 +174,4 @@ def _get_timestamps(series: Any) -> NDArray[np.float64]:
     NDArray[np.float64]
         Timestamps in seconds.
     """
-    if series.timestamps is not None:
-        return np.asarray(series.timestamps[:], dtype=np.float64)
-
-    # Compute from rate
-    n_samples = len(series.data)
-    starting_time = float(series.starting_time or 0.0)
-    rate = float(series.rate)
-    timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
-    return np.asarray(timestamps, dtype=np.float64)
+    return timestamps_from_series(series)

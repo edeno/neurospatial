@@ -56,11 +56,11 @@ def position_overlay_from_nwb(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     overlay = position_overlay_from_nwb(nwbfile, trail_length=10)
-    >>> env.animate_fields(fields, overlays=[overlay])
+    >>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import PositionOverlay
     from neurospatial.nwb._behavior import read_position
@@ -122,15 +122,15 @@ def bodypart_overlay_from_nwb(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     overlay = bodypart_overlay_from_nwb(nwbfile)
-    >>> env.animate_fields(fields, overlays=[overlay])
+    >>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
 
     With custom colors:
 
-    >>> overlay = bodypart_overlay_from_nwb(
+    >>> overlay = bodypart_overlay_from_nwb(  # doctest: +SKIP
     ...     nwbfile,
     ...     colors={"nose": "yellow", "body": "red", "tail": "blue"},
     ... )
@@ -196,11 +196,11 @@ def head_direction_overlay_from_nwb(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     overlay = head_direction_overlay_from_nwb(nwbfile, color="cyan")
-    >>> env.animate_fields(fields, overlays=[overlay])
+    >>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import HeadDirectionOverlay
     from neurospatial.nwb._behavior import read_head_direction

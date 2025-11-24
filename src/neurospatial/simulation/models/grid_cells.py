@@ -137,7 +137,7 @@ class GridCellModel:
         phase_offset: NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
         baseline_rate: float = 0.1,
-    ):
+    ) -> None:
         """Initialize grid cell model."""
         # Validate 2D environment
         if env.n_dims != 2:

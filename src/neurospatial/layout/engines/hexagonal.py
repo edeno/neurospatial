@@ -45,9 +45,13 @@ class HexagonalLayout:
 
     # Layout Specific
     hexagon_width: float | None = None
+    hex_radius_: float | None = None
+    hex_orientation_: float | None = None
+    grid_offset_x_: float | None = None
+    grid_offset_y_: float | None = None
     _source_flat_to_active_id_map: dict[int, int] | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a HexagonalLayout engine."""
         self._layout_type_tag = "Hexagonal"
         self._build_params_used = {}
@@ -126,12 +130,26 @@ class HexagonalLayout:
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
+        if (
+            self.hex_radius_ is None
+            or self.grid_offset_x_ is None
+            or self.grid_offset_y_ is None
+            or self.grid_shape is None
+        ):
+            raise RuntimeError(
+                "Hexagonal grid generation failed; missing geometry parameters."
+            )
 
         # Safety check: warn or error if grid is very large
         n_dims = 2  # Hexagonal is always 2D
         check_grid_size_safety(self.grid_shape, n_dims)
 
         if infer_active_bins and positions is not None:
+            assert (
+                self.hex_radius_ is not None
+                and self.grid_offset_x_ is not None
+                and self.grid_offset_y_ is not None
+            )
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(
                 positions=positions,
                 centers_shape=self.grid_shape,
@@ -222,6 +240,11 @@ class HexagonalLayout:
                     "linewidth": 0.5,
                 },
             )
+            orientation = (
+                float(self.hex_orientation_)
+                if self.hex_orientation_ is not None
+                else 0.0
+            )
 
             ax.scatter(
                 self.bin_centers[:, 0],
@@ -234,7 +257,7 @@ class HexagonalLayout:
                     (x, y),
                     numVertices=6,
                     radius=self.hex_radius_,
-                    orientation=self.hex_orientation_,
+                    orientation=orientation,
                 )
                 for x, y in self.bin_centers
             ]

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-22 (v0.5.0 - Video overlay feature)
+**Last Updated**: 2025-11-24 (v0.7.0 - NWB integration)
 
 ## Table of Contents
 
@@ -335,6 +335,119 @@ result = annotate_video("experiment.mp4", bin_size=2.0, simplify_tolerance=1.0)
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
 
+**NWB Integration (v0.7.0+)**:
+
+```python
+# Install NWB support (optional dependencies)
+# pip install neurospatial[nwb]       # Basic NWB support
+# pip install neurospatial[nwb-full]  # Full NWB support with extensions
+
+from pynwb import NWBHDF5IO
+from neurospatial.nwb import (
+    # Reading functions
+    read_position,              # Position → (positions, timestamps)
+    read_head_direction,        # CompassDirection → (angles, timestamps)
+    read_pose,                  # PoseEstimation → (bodyparts, timestamps, skeleton)
+    read_events,                # EventsTable → DataFrame
+    read_intervals,             # TimeIntervals → DataFrame (trials, epochs)
+    read_environment,           # scratch/ → Environment
+
+    # Writing functions
+    write_place_field,          # Write place field to analysis/
+    write_occupancy,            # Write occupancy map to analysis/
+    write_laps,                 # Write lap events to processing/behavior/
+    write_region_crossings,     # Write region crossing events
+    write_environment,          # Write Environment to scratch/
+
+    # Factory functions
+    environment_from_position,  # Create Environment from NWB Position
+    position_overlay_from_nwb,  # PositionOverlay from NWB Position
+    bodypart_overlay_from_nwb,  # BodypartOverlay from ndx-pose
+    head_direction_overlay_from_nwb,  # HeadDirectionOverlay from NWB
+)
+
+# Read position data from NWB file
+with NWBHDF5IO("session.nwb", "r") as io:
+    nwbfile = io.read()
+
+    # Read position data
+    positions, timestamps = read_position(nwbfile)
+
+    # Create environment from position data
+    env = environment_from_position(nwbfile, bin_size=2.0, units="cm")
+
+    # Create overlays for animation
+    position_overlay = position_overlay_from_nwb(nwbfile, color="red", trail_length=10)
+    bodypart_overlay = bodypart_overlay_from_nwb(nwbfile, pose_estimation_name="DLC")
+    head_direction = head_direction_overlay_from_nwb(nwbfile, color="yellow")
+
+# Write analysis results to NWB
+with NWBHDF5IO("session.nwb", "r+") as io:
+    nwbfile = io.read()
+
+    # Write place field to analysis/
+    write_place_field(nwbfile, env, place_field, name="cell_001")
+
+    # Write occupancy to analysis/
+    write_occupancy(nwbfile, env, occupancy, unit="seconds")
+
+    # Write laps to processing/behavior/
+    write_laps(nwbfile, lap_times, lap_types=lap_directions)
+
+    # Write region crossings to processing/behavior/
+    write_region_crossings(
+        nwbfile, crossing_times,
+        region_names=["goal", "goal", "start"],
+        event_types=["enter", "exit", "enter"]
+    )
+
+    # Write environment for round-trip (to scratch/)
+    write_environment(nwbfile, env, name="linear_track")
+
+    io.write(nwbfile)
+
+# Round-trip: Read environment from NWB
+with NWBHDF5IO("session.nwb", "r") as io:
+    nwbfile = io.read()
+    loaded_env = read_environment(nwbfile, name="linear_track")
+    # loaded_env is fully reconstructed with bin_centers, connectivity, regions
+
+# Alternative: Use Environment methods for NWB integration
+with NWBHDF5IO("session.nwb", "r") as io:
+    nwbfile = io.read()
+
+    # Create from position data
+    env = Environment.from_nwb(nwbfile, bin_size=2.0, units="cm")
+
+    # Or load from scratch space
+    env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+
+# Write environment using method
+with NWBHDF5IO("session.nwb", "r+") as io:
+    nwbfile = io.read()
+    env.to_nwb(nwbfile, name="my_environment")
+    io.write(nwbfile)
+```
+
+**NWB Data Locations:**
+
+| Data Type | NWB Location | Function |
+|-----------|--------------|----------|
+| Place fields | `analysis/` | `write_place_field()` |
+| Occupancy | `analysis/` | `write_occupancy()` |
+| Lap events | `processing/behavior/` | `write_laps()` |
+| Region crossings | `processing/behavior/` | `write_region_crossings()` |
+| Environment | `scratch/` | `write_environment()` |
+
+**NWB Dependencies:**
+
+| Extra | Packages | Use Case |
+|-------|----------|----------|
+| `nwb` | pynwb, hdmf | Basic NWB support |
+| `nwb-pose` | pynwb, ndx-pose | Pose estimation data |
+| `nwb-events` | pynwb, ndx-events | EventsTable support |
+| `nwb-full` | All above | Full NWB support |
+
 **Type Checking Support (v0.2.1+)**:
 
 This package now includes a `py.typed` marker, enabling type checkers like mypy to use the library's type annotations:
@@ -470,6 +583,31 @@ from neurospatial.layout.engines.regular_grid import RegularGridLayout
 # Utility functions
 from neurospatial.alignment import get_2d_rotation_matrix, map_probabilities
 from neurospatial.transforms import Affine2D, translate, scale_2d
+
+# NWB integration (v0.7.0+ - requires optional dependencies)
+# Install with: pip install neurospatial[nwb-full]
+from neurospatial.nwb import (
+    # Reading
+    read_position,           # Position → (positions, timestamps)
+    read_head_direction,     # CompassDirection → (angles, timestamps)
+    read_pose,               # PoseEstimation → (bodyparts, timestamps, skeleton)
+    read_events,             # EventsTable → DataFrame
+    read_intervals,          # TimeIntervals → DataFrame
+    read_environment,        # scratch/ → Environment
+
+    # Writing
+    write_place_field,       # Write to analysis/
+    write_occupancy,         # Write to analysis/
+    write_laps,              # Write to processing/behavior/
+    write_region_crossings,  # Write to processing/behavior/
+    write_environment,       # Write to scratch/
+
+    # Factories
+    environment_from_position,
+    position_overlay_from_nwb,
+    bodypart_overlay_from_nwb,
+    head_direction_overlay_from_nwb,
+)
 ```
 
 ## Important Patterns & Constraints
@@ -735,6 +873,12 @@ uv run pytest --doctest-modules src/neurospatial/
 
 # Run tests matching a pattern
 uv run pytest -k "test_bin_size"
+
+# Run NWB integration tests (requires nwb-full extra)
+uv run pytest tests/nwb/ -v
+
+# Run NWB tests for specific module
+uv run pytest tests/nwb/test_environment.py -v
 ```
 
 ### Running the Package
@@ -861,6 +1005,15 @@ Development dependencies:
 - `ruff` - Fast Python linter and formatter
 - `ipython` - Enhanced interactive Python shell
 
+Optional NWB dependencies (v0.7.0+):
+
+- `pynwb` - NWB file format support
+- `hdmf` - Hierarchical Data Modeling Framework (pynwb dependency)
+- `ndx-pose` - Pose estimation extension (for PoseEstimation data)
+- `ndx-events` - Events extension (for EventsTable data)
+
+Install with: `pip install neurospatial[nwb-full]` or `uv add neurospatial[nwb-full]`
+
 ### Animation Overlay Architecture (v0.4.0+)
 
 The overlay system provides three public dataclasses for visualizing animal behavior alongside spatial fields:
@@ -926,9 +1079,12 @@ Tests mirror source structure:
 - `tests/test_alignment.py` - Alignment/transformation tests
 - `tests/layout/` - Layout engine-specific tests
 - `tests/regions/` - Region functionality tests
+- `tests/nwb/` - NWB integration tests (requires nwb-full extra)
 - `tests/conftest.py` - Shared fixtures (plus maze, sample environments)
 
 Fixtures in `conftest.py` provide common test environments (plus maze graphs, sample data).
+
+NWB fixtures in `tests/nwb/conftest.py` use `pytest.importorskip()` for graceful skipping when NWB dependencies are not installed.
 
 ## Documentation Style
 
@@ -1537,3 +1693,123 @@ warnings.filterwarnings('ignore', category=ResourceWarning)
 **Cause**: May be using outdated type stubs or IDE not recognizing runtime checks.
 
 **Note**: This project includes a `py.typed` marker (v0.2.1+) for type checking support. If you encounter type errors, ensure you're using the latest version. IDE warnings may be false positives that can be ignored if tests pass.
+
+### `ImportError: pynwb is required for NWB integration` (v0.7.0+)
+
+**Cause**: NWB dependencies are optional and not installed.
+
+**Solution**: Install the appropriate NWB extras:
+
+```bash
+# Basic NWB support (position, head direction, environment)
+pip install neurospatial[nwb]
+
+# With pose estimation support (ndx-pose)
+pip install neurospatial[nwb-pose]
+
+# With events support (ndx-events)
+pip install neurospatial[nwb-events]
+
+# Full NWB support (all extensions)
+pip install neurospatial[nwb-full]
+
+# Or with uv
+uv add neurospatial[nwb-full]
+```
+
+### `KeyError: No Position found` when reading NWB (v0.7.0+)
+
+**Cause**: NWB file doesn't contain Position data in expected location.
+
+**Solution**: Check where Position data is stored and specify explicitly:
+
+```python
+from neurospatial.nwb import read_position
+
+# Check what's in the NWB file
+print(nwbfile.processing.keys())           # Processing modules
+print(nwbfile.acquisition.keys())          # Acquisition containers
+
+# If Position is in a custom processing module
+positions, timestamps = read_position(nwbfile, processing_module="custom_module")
+
+# If there are multiple SpatialSeries, specify which one
+positions, timestamps = read_position(nwbfile, position_name="position_xy")
+```
+
+### `KeyError: No PoseEstimation found` when reading NWB (v0.7.0+)
+
+**Cause**: NWB file doesn't contain PoseEstimation (ndx-pose) data.
+
+**Solution**: Verify ndx-pose data exists and specify the name if multiple exist:
+
+```python
+from neurospatial.nwb import read_pose
+
+# List available PoseEstimation containers (look for ndx-pose data)
+# PoseEstimation is typically in processing/behavior/
+
+# If multiple PoseEstimation exist, specify by name
+bodyparts, timestamps, skeleton = read_pose(nwbfile, pose_estimation_name="DLC_pose")
+```
+
+### `ValueError: Place field '{name}' already exists` when writing to NWB (v0.7.0+)
+
+**Cause**: Attempting to write a place field with a name that already exists.
+
+**Solution**: Use `overwrite=True` to replace existing data:
+
+```python
+from neurospatial.nwb import write_place_field
+
+# Replace existing place field
+write_place_field(nwbfile, env, field, name="cell_001", overwrite=True)
+
+# Or use a different name
+write_place_field(nwbfile, env, field, name="cell_001_v2")
+```
+
+### Environment round-trip loses some properties (v0.7.0+)
+
+**Cause**: NWB storage uses reconstructed layout, not original layout engine.
+
+**Solution**: This is expected behavior. Round-trip preserves:
+
+- ✓ `bin_centers` (exact)
+- ✓ `connectivity` graph structure and edge weights
+- ✓ `dimension_ranges`
+- ✓ `units` and `frame` metadata
+- ✓ Regions (points and polygons)
+
+Not preserved:
+
+- ✗ Original layout engine type (reconstructed as generic layout)
+- ✗ Grid-specific metadata (`grid_shape`, `grid_edges`, `active_mask`)
+- ✗ Layout engine's `is_1d` property (always `False` for reconstructed)
+
+```python
+# Original environment
+env = Environment.from_samples(positions, bin_size=2.0)
+env.layout.__class__.__name__  # 'RegularGridLayout'
+
+# After round-trip
+loaded = read_environment(nwbfile)
+loaded.layout.__class__.__name__  # '_ReconstructedLayout'
+# But spatial queries still work identically
+```
+
+### `RuntimeError: Environment must be fitted` when writing to NWB (v0.7.0+)
+
+**Cause**: Attempting to write an unfitted Environment.
+
+**Solution**: Use factory methods to create fitted environments:
+
+```python
+# Wrong - unfitted environment
+env = Environment()
+write_environment(nwbfile, env)  # RuntimeError!
+
+# Right - use factory methods
+env = Environment.from_samples(positions, bin_size=2.0)
+write_environment(nwbfile, env)  # Works
+```

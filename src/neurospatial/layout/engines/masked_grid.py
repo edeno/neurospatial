@@ -35,7 +35,7 @@ class MaskedGridLayout(_GridMixin):
     _build_params_used: dict[str, Any]
     bin_size_: NDArray[np.float64] | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a MaskedGridLayout engine."""
         self._layout_type_tag = "MaskedGrid"
         self._build_params_used = {}

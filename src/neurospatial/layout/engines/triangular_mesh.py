@@ -50,7 +50,7 @@ class TriangularMeshLayout:
     )  # Store original indices of active ones
     _boundary_polygon_stored: Polygon | None  # Store the actual polygon object
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.bin_centers = np.empty((0, 2), dtype=float)
         self.connectivity = nx.Graph()
         self.dimension_ranges = None

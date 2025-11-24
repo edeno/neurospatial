@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial.nwb._adapters import events_table_to_dataframe
+
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
@@ -53,8 +55,8 @@ def read_events(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     laps = read_events(nwbfile, "laps")
     ...     print(f"Found {len(laps)} lap events")
@@ -95,22 +97,8 @@ def read_events(
         "Reading EventsTable '%s' from processing/%s", table_name, processing_module
     )
 
-    # Convert to DataFrame
-    # EventsTable extends DynamicTable which has to_dataframe() method
-    df = events_table.to_dataframe()
-
-    # Ensure timestamp column is present (EventsTable always has it)
-    # The to_dataframe() includes the index, but timestamp is a column in EventsTable
-    # Reset index to get id as a column if needed, but we primarily need timestamp
-    if "timestamp" not in df.columns:
-        # In some cases, timestamp might be stored differently
-        # EventsTable should always have timestamp as a column
-        raise KeyError(
-            f"EventsTable '{table_name}' does not have a 'timestamp' column. "
-            "This may not be a valid EventsTable."
-        )
-
-    return df
+    # Convert to validated DataFrame via adapter
+    return events_table_to_dataframe(events_table, table_name=table_name)
 
 
 def read_intervals(
@@ -152,8 +140,8 @@ def read_intervals(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> with NWBHDF5IO("session.nwb", "r") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     trials = read_intervals(nwbfile, "trials")
     ...     print(f"Found {len(trials)} trials")
@@ -246,11 +234,11 @@ def write_laps(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> import numpy as np
-    >>> lap_times = np.array([1.0, 5.5, 10.2, 15.8])
-    >>> directions = np.array([0, 1, 0, 1])  # 0=outbound, 1=inbound
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> import numpy as np  # doctest: +SKIP
+    >>> lap_times = np.array([1.0, 5.5, 10.2, 15.8])  # doctest: +SKIP
+    >>> directions = np.array([0, 1, 0, 1])  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_laps(nwbfile, lap_times, lap_types=directions)
     ...     io.write(nwbfile)
@@ -380,12 +368,12 @@ def write_region_crossings(
 
     Examples
     --------
-    >>> from pynwb import NWBHDF5IO
-    >>> import numpy as np
-    >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])
-    >>> region_names = np.array(["start", "goal", "start", "goal"])
-    >>> event_types = np.array(["enter", "enter", "exit", "exit"])
-    >>> with NWBHDF5IO("session.nwb", "r+") as io:
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> import numpy as np  # doctest: +SKIP
+    >>> crossing_times = np.array([1.0, 2.5, 5.0, 8.2])  # doctest: +SKIP
+    >>> region_names = np.array(["start", "goal", "start", "goal"])  # doctest: +SKIP
+    >>> event_types = np.array(["enter", "enter", "exit", "exit"])  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
     ...     io.write(nwbfile)

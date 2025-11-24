@@ -494,13 +494,13 @@ class TestWriteEnvironment:
         assert "spatial_environment" in empty_nwb.scratch
 
     def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
-        """Test RuntimeError when writing unfitted Environment."""
+        """Test ValueError when writing unfitted Environment."""
         from neurospatial.nwb import write_environment
 
         # Manually mark environment as unfitted to test validation
         sample_environment._is_fitted = False
 
-        with pytest.raises(RuntimeError, match="must be fitted"):
+        with pytest.raises(ValueError, match="must be fitted"):
             write_environment(empty_nwb, sample_environment)
 
 
@@ -1573,14 +1573,13 @@ class TestAllLayoutsRoundTrip:
     ):
         """Test spatial queries work after round-trip for all layout types.
 
-        Note: Uses map_points_to_bins (KDTree-based) rather than bin_at because
-        read_environment reconstructs with a RegularGrid approximation layout.
-        The bin_at method uses layout-specific geometric containment which may
-        not work correctly for non-grid layouts after round-trip.
+        For grid-based layouts (RegularGrid, MaskedGrid, ImageMask, ShapelyPolygon),
+        bin_at() uses proper grid-based geometric containment.
+        For non-grid layouts (Graph, Hexagonal, TriangularMesh), bin_at() uses
+        KDTree-based nearest neighbor mapping as a fallback.
         """
         from pynwb import NWBHDF5IO
 
-        from neurospatial import map_points_to_bins
         from neurospatial.nwb import read_environment, write_environment
 
         env = env_factory()
@@ -1595,16 +1594,15 @@ class TestAllLayoutsRoundTrip:
             nwbfile = io.read()
             loaded_env = read_environment(nwbfile)
 
-        # Test map_points_to_bins works (KDTree-based nearest neighbor mapping)
-        # This should correctly map bin_centers[i] back to index i
+        # Test bin_at works - each bin_center should map to its own index
         test_points = loaded_env.bin_centers[:3]  # Test first 3 bins
-        bin_indices = map_points_to_bins(test_points, loaded_env)
+        bin_indices = loaded_env.bin_at(test_points)
 
         # Verify each point maps to its own index
         np.testing.assert_array_equal(
             bin_indices,
             np.array([0, 1, 2]),
-            err_msg=f"map_points_to_bins failed for {layout_name}",
+            err_msg=f"bin_at failed for {layout_name}",
         )
 
         # Test neighbors works on a node with edges
@@ -1619,8 +1617,10 @@ class TestAllLayoutsRoundTrip:
             neighbors = loaded_env.neighbors(test_node)
             assert len(neighbors) > 0, f"neighbors failed for {layout_name}"
 
-            # Test distance_between works
-            dist = loaded_env.distance_between(test_node, neighbors[0])
+            # Test distance_between works (takes points, not node indices)
+            point1 = loaded_env.bin_centers[test_node]
+            point2 = loaded_env.bin_centers[neighbors[0]]
+            dist = loaded_env.distance_between(point1, point2)
             assert dist > 0, f"distance_between failed for {layout_name}"
 
     @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)
@@ -1722,3 +1722,192 @@ class TestAllLayoutsRoundTrip:
             loaded_env = read_environment(nwbfile)
 
         assert loaded_env._is_fitted, f"Environment not fitted for {layout_name}"
+
+
+# =============================================================================
+# Tests for Environment class methods (M3.3)
+# =============================================================================
+
+
+class TestEnvironmentFromNwb:
+    """Tests for Environment.from_nwb() classmethod."""
+
+    def test_from_nwb_with_scratch_name(self, tmp_path, sample_environment):
+        """Test loading Environment from scratch using scratch_name parameter."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import write_environment
+
+        nwb_path = tmp_path / "test_from_nwb_scratch.nwb"
+
+        # Write environment to scratch
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, sample_environment, name="my_environment")
+            io.write(nwbfile)
+
+        # Load using from_nwb with scratch_name
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = Environment.from_nwb(nwbfile, scratch_name="my_environment")
+
+        assert loaded_env.n_bins == sample_environment.n_bins
+        np.testing.assert_array_equal(
+            loaded_env.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_from_nwb_with_bin_size(self, sample_nwb_with_position):
+        """Test creating Environment from position data using bin_size parameter."""
+        from neurospatial import Environment
+
+        # Load using from_nwb with bin_size (creates from position data)
+        env = Environment.from_nwb(sample_nwb_with_position, bin_size=5.0)
+
+        assert env is not None
+        assert env.n_bins > 0
+        assert env._is_fitted
+
+    def test_from_nwb_error_when_neither_parameter_provided(self, empty_nwb):
+        """Test ValueError when neither scratch_name nor bin_size provided."""
+        from neurospatial import Environment
+
+        with pytest.raises(ValueError, match="Either scratch_name or bin_size"):
+            Environment.from_nwb(empty_nwb)
+
+    def test_from_nwb_kwargs_forwarded_to_from_position(self, sample_nwb_with_position):
+        """Test kwargs are forwarded to environment_from_position."""
+        from neurospatial import Environment
+
+        # With infer_active_bins=True
+        env_active = Environment.from_nwb(
+            sample_nwb_with_position, bin_size=5.0, infer_active_bins=True
+        )
+
+        # Without infer_active_bins
+        env_all = Environment.from_nwb(
+            sample_nwb_with_position, bin_size=5.0, infer_active_bins=False
+        )
+
+        assert env_active.n_bins <= env_all.n_bins
+
+    def test_from_nwb_units_parameter_propagated(self, sample_nwb_with_position):
+        """Test units parameter is propagated when creating from position."""
+        from neurospatial import Environment
+
+        env = Environment.from_nwb(
+            sample_nwb_with_position, bin_size=5.0, units="meters"
+        )
+
+        assert env.units == "meters"
+
+    def test_from_nwb_frame_parameter_propagated(self, sample_nwb_with_position):
+        """Test frame parameter is propagated when creating from position."""
+        from neurospatial import Environment
+
+        env = Environment.from_nwb(
+            sample_nwb_with_position, bin_size=5.0, frame="session_001"
+        )
+
+        assert env.frame == "session_001"
+
+    def test_from_nwb_scratch_name_takes_precedence(
+        self, tmp_path, sample_environment, sample_nwb_with_position
+    ):
+        """Test scratch_name takes precedence when both parameters provided."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.nwb import write_environment
+
+        nwb_path = tmp_path / "test_precedence.nwb"
+
+        # Create NWB with both position data and stored environment
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            # Start from position NWB and add stored environment
+            nwbfile = sample_nwb_with_position
+            write_environment(nwbfile, sample_environment, name="stored_env")
+            io.write(nwbfile)
+
+        # Load with both parameters - scratch_name should take precedence
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = Environment.from_nwb(
+                nwbfile, scratch_name="stored_env", bin_size=10.0
+            )
+
+        # Should match stored environment, not newly created one
+        assert loaded_env.n_bins == sample_environment.n_bins
+
+
+class TestEnvironmentToNwb:
+    """Tests for Environment.to_nwb() method."""
+
+    def test_to_nwb_basic(self, empty_nwb, sample_environment):
+        """Test basic writing to NWB file using to_nwb method."""
+        sample_environment.to_nwb(empty_nwb)
+
+        assert "spatial_environment" in empty_nwb.scratch
+
+    def test_to_nwb_custom_name(self, empty_nwb, sample_environment):
+        """Test custom name parameter for to_nwb."""
+        sample_environment.to_nwb(empty_nwb, name="my_env")
+
+        assert "my_env" in empty_nwb.scratch
+        assert "spatial_environment" not in empty_nwb.scratch
+
+    def test_to_nwb_overwrite_parameter(self, empty_nwb, sample_environment):
+        """Test overwrite parameter for to_nwb."""
+        # Write first time
+        sample_environment.to_nwb(empty_nwb)
+
+        # Should fail without overwrite
+        with pytest.raises(ValueError, match="already exists"):
+            sample_environment.to_nwb(empty_nwb)
+
+        # Should succeed with overwrite=True
+        sample_environment.units = "meters"
+        sample_environment.to_nwb(empty_nwb, overwrite=True)
+
+        assert "meters" in empty_nwb.scratch["spatial_environment"].description
+
+    def test_to_nwb_roundtrip(self, tmp_path, sample_environment):
+        """Test that to_nwb and from_nwb work together."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+
+        nwb_path = tmp_path / "test_method_roundtrip.nwb"
+
+        # Write using to_nwb method
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            sample_environment.to_nwb(nwbfile, name="test_env")
+            io.write(nwbfile)
+
+        # Read using from_nwb classmethod
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = Environment.from_nwb(nwbfile, scratch_name="test_env")
+
+        assert loaded_env.n_bins == sample_environment.n_bins
+        np.testing.assert_array_equal(
+            loaded_env.bin_centers, sample_environment.bin_centers
+        )
+
+    def test_to_nwb_preserves_metadata(self, empty_nwb, sample_environment):
+        """Test that to_nwb preserves environment metadata."""
+        from neurospatial.nwb import read_environment
+
+        sample_environment.name = "test_arena"
+        sample_environment.units = "cm"
+        sample_environment.frame = "session_001"
+
+        sample_environment.to_nwb(empty_nwb)
+
+        # Read back and verify metadata
+        loaded = read_environment(empty_nwb)
+
+        assert loaded.name == "test_arena"
+        assert loaded.units == "cm"
+        assert loaded.frame == "session_001"

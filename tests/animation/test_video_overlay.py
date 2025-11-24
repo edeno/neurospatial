@@ -256,6 +256,7 @@ class TestNapariVideoOverlay:
 
 
 @pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
+@pytest.mark.skipif(not HAS_CV2, reason="opencv-python not installed")
 class TestVideoExportIntegration:
     """Test video overlay in video export backend."""
 

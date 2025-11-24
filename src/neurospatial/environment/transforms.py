@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -600,7 +600,7 @@ class EnvironmentTransforms:
                         sizes[node] = np.mean(distances)
                 return sizes
 
-            def plot(self, ax=None, **kwargs):
+            def plot(self, ax: Any | None = None, **kwargs: Any) -> Any:
                 import matplotlib.pyplot as plt
 
                 if ax is None:

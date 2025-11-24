@@ -150,7 +150,7 @@ class CompositeEnvironment:
         auto_bridge: bool = True,
         max_mnn_distance: float | None = None,
         use_kdtree_query: bool = True,
-    ):
+    ) -> None:
         """Build a CompositeEnvironment from a list of pre-fitted Environment instances.
 
         Parameters
@@ -285,7 +285,7 @@ class CompositeEnvironment:
         j_env: int,
         j_bin: int,
         w: float,
-    ):
+    ) -> None:
         """Add a bridge edge between bin i_bin of sub-environment i_env and bin j_bin of sub-environment j_env,
         with weight w. Raises ValueError if indices are out-of-range.
         """
@@ -310,7 +310,7 @@ class CompositeEnvironment:
         )
         self._bridge_list.append(((i_env, i_bin), (j_env, j_bin), w))
 
-    def _infer_mnn_bridges(self, max_distance: float | None = None):
+    def _infer_mnn_bridges(self, max_distance: float | None = None) -> None:
         """Infer “bridge edges” between every pair of sub-environments using a Mutual Nearest Neighbor (MNN) approach:
 
         1. For each pair (i, j) with i < j:
@@ -534,7 +534,7 @@ class CompositeEnvironment:
 
         """
 
-        def _to_array(pt):
+        def _to_array(pt: NDArray[np.float64] | Sequence[float]) -> NDArray[np.float64]:
             arr = np.asarray(pt, dtype=float)
             if arr.ndim == 1:
                 arr = arr.reshape(1, self.n_dims)

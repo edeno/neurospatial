@@ -315,3 +315,91 @@ class EnvironmentSerialization:
         if not isinstance(environment, cls):
             raise TypeError(f"Loaded object is not type {cls.__name__}")
         return cast("Environment", environment)
+
+    def to_nwb(
+        self: EnvironmentProtocol,
+        nwbfile: Any,
+        name: str = "spatial_environment",
+        *,
+        overwrite: bool = False,
+    ) -> None:
+        """Write Environment to NWB file scratch space.
+
+        Serializes the Environment to the NWB file's scratch space, allowing
+        it to be stored alongside neural data and retrieved later using
+        ``Environment.from_nwb()``.
+
+        The stored data includes:
+
+        - bin_centers and connectivity graph structure
+        - dimension_ranges and edge weights
+        - regions (points and polygons)
+        - metadata (units, frame, name, layout_type)
+
+        Parameters
+        ----------
+        nwbfile : NWBFile
+            The NWB file to write to. Must be a pynwb.NWBFile instance.
+        name : str, default "spatial_environment"
+            Name for the environment in scratch/. Use this name when loading
+            with ``Environment.from_nwb(nwbfile, scratch_name=name)``.
+        overwrite : bool, default False
+            If True, replace existing environment with the same name.
+            If False, raise ValueError on duplicate name.
+
+        Raises
+        ------
+        ValueError
+            If environment with same name exists and overwrite=False.
+        RuntimeError
+            If Environment is not fitted (must be created with factory methods).
+        ImportError
+            If pynwb is not installed.
+
+        See Also
+        --------
+        from_nwb : Load Environment from NWB file.
+        neurospatial.nwb.write_environment : Low-level NWB writing function.
+
+        Examples
+        --------
+        Save environment to NWB file:
+
+        >>> from pynwb import NWBHDF5IO, NWBFile
+        >>> from datetime import datetime
+        >>> from neurospatial import Environment
+        >>> import numpy as np
+        >>>
+        >>> # Create environment
+        >>> positions = np.random.rand(1000, 2) * 100
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env.units = "cm"
+        >>>
+        >>> # Save to NWB
+        >>> nwbfile = NWBFile(
+        ...     session_description="Test session",
+        ...     identifier="test_001",
+        ...     session_start_time=datetime.now().astimezone(),
+        ... )
+        >>> env.to_nwb(nwbfile, name="linear_track")
+        >>>
+        >>> # Write to disk
+        >>> with NWBHDF5IO("session.nwb", "w") as io:
+        ...     io.write(nwbfile)
+
+        Load environment back:
+
+        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        ...     nwbfile = io.read()
+        ...     loaded_env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+
+        """
+        # Lazy import to keep pynwb optional
+        try:
+            from neurospatial.nwb import write_environment
+        except ImportError as e:
+            raise ImportError(
+                "pynwb is required for NWB integration. Install with: pip install pynwb"
+            ) from e
+
+        write_environment(nwbfile, self, name=name, overwrite=overwrite)

@@ -45,7 +45,7 @@ class GraphLayout(_KDTreeMixin):
     # Layout Specific
     linear_bin_centers_: NDArray[np.float64] | None = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize a GraphLayout engine."""
         self._layout_type_tag = "Graph"
         self._build_params_used = {}

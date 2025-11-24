@@ -30,95 +30,97 @@ Factory Functions:
     position_overlay_from_nwb : Create PositionOverlay from NWB Position
     bodypart_overlay_from_nwb : Create BodypartOverlay from ndx-pose
     head_direction_overlay_from_nwb : Create HeadDirectionOverlay from NWB
+
+Examples
+--------
+Reading position data:
+
+>>> from pynwb import NWBHDF5IO
+>>> from neurospatial.nwb import read_position
+>>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     positions, timestamps = read_position(nwbfile)
+
+Creating an environment from NWB position data:
+
+>>> from neurospatial.nwb import environment_from_position
+>>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     env = environment_from_position(nwbfile, bin_size=2.0, units="cm")
+
+Writing analysis results:
+
+>>> from neurospatial.nwb import write_place_field, write_occupancy
+>>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     write_place_field(nwbfile, env, place_field, name="cell_001")
+...     write_occupancy(nwbfile, env, occupancy)
+...     io.write(nwbfile)
+
+Environment round-trip (save and reload):
+
+>>> from neurospatial.nwb import write_environment, read_environment
+>>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     write_environment(nwbfile, env, name="linear_track")
+...     io.write(nwbfile)
+>>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     loaded_env = read_environment(nwbfile, name="linear_track")
+
+Creating animation overlays from NWB:
+
+>>> from neurospatial.nwb import position_overlay_from_nwb
+>>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+...     nwbfile = io.read()
+...     overlay = position_overlay_from_nwb(nwbfile, trail_length=10)
+>>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
 """
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import Any
+
 # Lazy imports - functions are imported when first accessed
 # This keeps NWB dependencies optional
 
-
-def __getattr__(name: str):
-    """Lazy import public API functions."""
-    # Reading functions from _behavior.py
-    if name == "read_position":
-        from neurospatial.nwb._behavior import read_position
-
-        return read_position
-    if name == "read_head_direction":
-        from neurospatial.nwb._behavior import read_head_direction
-
-        return read_head_direction
-
-    # Reading functions from _pose.py
-    if name == "read_pose":
-        from neurospatial.nwb._pose import read_pose
-
-        return read_pose
-
-    # Reading functions from _events.py
-    if name == "read_events":
-        from neurospatial.nwb._events import read_events
-
-        return read_events
-    if name == "read_intervals":
-        from neurospatial.nwb._events import read_intervals
-
-        return read_intervals
-
-    # Reading functions from _environment.py
-    if name == "read_environment":
-        from neurospatial.nwb._environment import read_environment
-
-        return read_environment
-
-    # Writing functions from _fields.py
-    if name == "write_place_field":
-        from neurospatial.nwb._fields import write_place_field
-
-        return write_place_field
-    if name == "write_occupancy":
-        from neurospatial.nwb._fields import write_occupancy
-
-        return write_occupancy
-
-    # Writing functions from _events.py
-    if name == "write_laps":
-        from neurospatial.nwb._events import write_laps
-
-        return write_laps
-    if name == "write_region_crossings":
-        from neurospatial.nwb._events import write_region_crossings
-
-        return write_region_crossings
-
-    # Writing functions from _environment.py
-    if name == "write_environment":
-        from neurospatial.nwb._environment import write_environment
-
-        return write_environment
-
+# Mapping of public API names to their module paths
+# Format: "name": "module_path:attribute_name"
+_LAZY_IMPORTS: dict[str, str] = {
+    # Reading functions
+    "read_position": "neurospatial.nwb._behavior:read_position",
+    "read_head_direction": "neurospatial.nwb._behavior:read_head_direction",
+    "read_pose": "neurospatial.nwb._pose:read_pose",
+    "read_events": "neurospatial.nwb._events:read_events",
+    "read_intervals": "neurospatial.nwb._events:read_intervals",
+    "read_environment": "neurospatial.nwb._environment:read_environment",
+    # Writing functions
+    "write_place_field": "neurospatial.nwb._fields:write_place_field",
+    "write_occupancy": "neurospatial.nwb._fields:write_occupancy",
+    "write_laps": "neurospatial.nwb._events:write_laps",
+    "write_region_crossings": "neurospatial.nwb._events:write_region_crossings",
+    "write_environment": "neurospatial.nwb._environment:write_environment",
     # Factory functions
-    if name == "environment_from_position":
-        from neurospatial.nwb._environment import environment_from_position
+    "environment_from_position": "neurospatial.nwb._environment:environment_from_position",
+    "position_overlay_from_nwb": "neurospatial.nwb._overlays:position_overlay_from_nwb",
+    "bodypart_overlay_from_nwb": "neurospatial.nwb._overlays:bodypart_overlay_from_nwb",
+    "head_direction_overlay_from_nwb": "neurospatial.nwb._overlays:head_direction_overlay_from_nwb",
+}
 
-        return environment_from_position
 
-    # Overlay factory functions from _overlays.py
-    if name == "position_overlay_from_nwb":
-        from neurospatial.nwb._overlays import position_overlay_from_nwb
+def __getattr__(name: str) -> Any:
+    """Lazy import public API functions."""
+    if name not in _LAZY_IMPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-        return position_overlay_from_nwb
-    if name == "bodypart_overlay_from_nwb":
-        from neurospatial.nwb._overlays import bodypart_overlay_from_nwb
+    module_path, attr_name = _LAZY_IMPORTS[name].split(":")
+    module = import_module(module_path)
+    value = getattr(module, attr_name)
 
-        return bodypart_overlay_from_nwb
-    if name == "head_direction_overlay_from_nwb":
-        from neurospatial.nwb._overlays import head_direction_overlay_from_nwb
-
-        return head_direction_overlay_from_nwb
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    # Cache in module globals for subsequent access
+    globals()[name] = value
+    return value
 
 
 __all__ = [

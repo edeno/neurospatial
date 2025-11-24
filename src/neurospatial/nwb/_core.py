@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("neurospatial.nwb")
 
 
-def _require_pynwb():
+def _require_pynwb() -> Any:
     """
     Lazily import pynwb, raising ImportError with helpful message if not installed.
 
@@ -41,7 +41,7 @@ def _require_pynwb():
         ) from e
 
 
-def _require_ndx_pose():
+def _require_ndx_pose() -> Any:
     """
     Lazily import ndx_pose, raising ImportError with helpful message if not installed.
 
@@ -66,7 +66,7 @@ def _require_ndx_pose():
         ) from e
 
 
-def _require_ndx_events():
+def _require_ndx_events() -> Any:
     """
     Lazily import ndx_events, raising ImportError with helpful message if not installed.
 
@@ -121,9 +121,9 @@ def _find_containers_by_type(
 
     Examples
     --------
-    >>> from pynwb.behavior import Position
-    >>> containers = _find_containers_by_type(nwbfile, Position)
-    >>> for path, container in containers:
+    >>> from pynwb.behavior import Position  # doctest: +SKIP
+    >>> containers = _find_containers_by_type(nwbfile, Position)  # doctest: +SKIP
+    >>> for path, container in containers:  # doctest: +SKIP
     ...     print(f"Found Position at {path}")
     """
     found = []

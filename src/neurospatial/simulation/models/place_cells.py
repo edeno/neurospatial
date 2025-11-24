@@ -169,7 +169,7 @@ class PlaceCellModel:
         ]
         | None = None,
         seed: int | None = None,
-    ):
+    ) -> None:
         self.env = env
         self.max_rate = max_rate
         self.baseline_rate = baseline_rate
