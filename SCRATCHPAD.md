@@ -2,6 +2,32 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_io.py Global RNG (Milestone 3.2)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all global RNG seed calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 4 `np.random.seed(42)` calls + 4 `np.random.randn()` calls
+- **After**: 0 global RNG seed calls (100% migrated)
+
+**Changes Made**:
+
+1. `TestSerialization.simple_env` fixture: `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.randn(500, 2)` → `rng.standard_normal((500, 2))`
+2. `test_serialization_without_units_frame`: Same pattern with (100, 2)
+3. `TestSecurityPathTraversal.simple_env` fixture: Same pattern with (100, 2)
+4. `TestPathlibSupport.simple_env` fixture: Same pattern with (100, 2)
+
+**Verification**:
+
+- All 26 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
 ### Task: Migrate test_trajectory_metrics.py Global RNG (Milestone 3.2)
 
 **Status**: ✅ COMPLETE

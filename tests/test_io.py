@@ -16,8 +16,8 @@ class TestSerialization:
     @pytest.fixture
     def simple_env(self):
         """Create a simple 2D environment for testing."""
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
         env.units = "cm"
         env.frame = "world"
@@ -147,8 +147,8 @@ class TestSerialization:
 
     def test_serialization_without_units_frame(self, tmp_path):
         """Test serialization when units/frame are not set."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_metadata")
 
         output_path = tmp_path / "test_env"
@@ -166,8 +166,8 @@ class TestSecurityPathTraversal:
     @pytest.fixture
     def simple_env(self):
         """Create a simple 2D environment for testing."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         return Environment.from_samples(data, bin_size=3.0, name="test_env")
 
     def test_to_file_rejects_path_traversal(self, simple_env, tmp_path):
@@ -240,8 +240,8 @@ class TestPathlibSupport:
     @pytest.fixture
     def simple_env(self):
         """Create a simple 2D environment for testing."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
         env.units = "cm"
         return env

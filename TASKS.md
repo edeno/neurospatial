@@ -124,7 +124,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Migrated 2 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
   - Migrated 3 `np.random.randn()` → `rng.standard_normal()`
   - Verify: All 12 tests pass
-- [ ] Migrate `tests/test_io.py` (4 occurrences)
+- [x] Migrate `tests/test_io.py` (4 occurrences) ✅
+  - Migrated 4 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+  - Migrated 4 `np.random.randn()` → `rng.standard_normal()`
+  - Verify: All 26 tests pass
 
 ### 3.3 Low-Priority Files
 
