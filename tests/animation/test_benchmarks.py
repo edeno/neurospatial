@@ -21,7 +21,11 @@ from neurospatial.animation import subsample_frames
 @pytest.fixture
 def benchmark_env():
     """Create environment for benchmarking (2D grid, 100x100 bins)."""
-    positions = np.random.uniform(0, 100, (1000, 2))
+    # Use deterministic grid instead of random sampling
+    x = np.linspace(0, 100, 101)
+    y = np.linspace(0, 100, 101)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=1.0)
     return env
 
@@ -29,7 +33,11 @@ def benchmark_env():
 @pytest.fixture
 def small_benchmark_env():
     """Create smaller environment for video benchmarks (50x50 bins)."""
-    positions = np.random.uniform(0, 50, (500, 2))
+    # Use deterministic grid instead of random sampling
+    x = np.linspace(0, 50, 51)
+    y = np.linspace(0, 50, 51)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=1.0)
     return env
 
@@ -61,8 +69,9 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
     )
 
     # Populate first and last frames only (for colormap range)
-    fields[0] = np.random.rand(benchmark_env.n_bins)
-    fields[-1] = np.random.rand(benchmark_env.n_bins)
+    rng = np.random.default_rng(42)
+    fields[0] = rng.random(benchmark_env.n_bins)
+    fields[-1] = rng.random(benchmark_env.n_bins)
     fields.flush()
 
     # Compute colormap range
@@ -83,8 +92,8 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
 
     # Benchmark random seeks
     seek_times = []
-    np.random.seed(42)
-    random_frames = np.random.randint(0, n_frames, size=n_seeks)
+    seek_rng = np.random.default_rng(42)
+    random_frames = seek_rng.integers(0, n_frames, size=n_seeks)
 
     for frame_idx in random_frames:
         start = time.perf_counter()
@@ -129,7 +138,8 @@ def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
 
     # Create fields (200 frames for more robust statistics)
     n_frames = 200
-    fields = [np.random.rand(small_benchmark_env.n_bins) for _ in range(n_frames)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(small_benchmark_env.n_bins) for _ in range(n_frames)]
 
     # Clear cache to ensure pickle-ability
     small_benchmark_env.clear_cache()
@@ -198,7 +208,8 @@ def test_html_generation_performance(benchmark_env, tmp_path):
     from neurospatial.animation.backends.html_backend import render_html
 
     n_frames = 100
-    fields = [np.random.rand(benchmark_env.n_bins) for _ in range(n_frames)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(benchmark_env.n_bins) for _ in range(n_frames)]
 
     output_path = tmp_path / "benchmark.html"
 
@@ -254,8 +265,9 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
     )
 
     # Populate first and last frames for colormap
-    fields[0] = np.random.rand(benchmark_env.n_bins)
-    fields[-1] = np.random.rand(benchmark_env.n_bins)
+    rng = np.random.default_rng(42)
+    fields[0] = rng.random(benchmark_env.n_bins)
+    fields[-1] = rng.random(benchmark_env.n_bins)
     fields.flush()
 
     # Compute colormap
@@ -287,8 +299,8 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
     _ = chunked_renderer[0]
 
     # Sequential access pattern (simulates playback)
-    np.random.seed(42)
-    start_frame = np.random.randint(0, n_frames - n_seeks)
+    seq_rng = np.random.default_rng(42)
+    start_frame = seq_rng.integers(0, n_frames - n_seeks)
     sequential_frames = np.arange(start_frame, start_frame + n_seeks)
 
     # Benchmark regular cache
@@ -304,7 +316,7 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
     chunked_time = time.perf_counter() - start
 
     # Random access pattern (simulates scrubbing)
-    random_frames = np.random.randint(0, n_frames, size=n_seeks)
+    random_frames = seq_rng.integers(0, n_frames, size=n_seeks)
 
     # Benchmark regular cache (random)
     start = time.perf_counter()

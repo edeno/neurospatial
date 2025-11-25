@@ -50,7 +50,11 @@ def get_memory_usage_mb():
 @pytest.fixture
 def memory_test_env():
     """Create environment for memory testing (100x100 bins)."""
-    positions = np.random.uniform(0, 100, (1000, 2))
+    # Use deterministic grid instead of random sampling
+    x = np.linspace(0, 100, 101)
+    y = np.linspace(0, 100, 101)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=1.0)
     return env
 
@@ -88,8 +92,9 @@ def test_napari_lazy_loading_memory(memory_test_env, tmp_path):
     )
 
     # Populate first and last frames for colormap
-    fields[0] = np.random.rand(n_bins)
-    fields[-1] = np.random.rand(n_bins)
+    rng = np.random.default_rng(42)
+    fields[0] = rng.random(n_bins)
+    fields[-1] = rng.random(n_bins)
     fields.flush()
 
     # Compute colormap
@@ -177,13 +182,17 @@ def test_parallel_rendering_cleanup(tmp_path):
     if not check_ffmpeg_available():
         pytest.skip("ffmpeg not available")
 
-    # Create small environment and fields
-    positions = np.random.uniform(0, 50, (500, 2))
+    # Create small environment and fields - deterministic grid
+    x = np.linspace(0, 50, 51)
+    y = np.linspace(0, 50, 51)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=1.0)
     env.clear_cache()
 
     n_frames = 50  # Small for fast test
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     # Force garbage collection and record baseline
     gc.collect()
@@ -287,8 +296,8 @@ def test_memmap_large_dataset_memory(tmp_path):
     create_overhead = memory_after_create - memory_baseline
 
     # Access 100 scattered frames (should trigger minimal loading)
-    np.random.seed(42)
-    random_indices = np.random.randint(0, n_frames, size=100)
+    rng = np.random.default_rng(42)
+    random_indices = rng.integers(0, n_frames, size=100)
     for idx in random_indices:
         _ = fields[idx]
 
@@ -359,7 +368,8 @@ def test_memory_requirements_documentation(memory_test_env):
     # Test 1: Small dataset (100 frames)
     print("\n1. Small Dataset (100 frames, ~1K bins):")
     n_bins = memory_test_env.n_bins
-    _ = [np.random.rand(n_bins) for _ in range(100)]  # Example allocation
+    rng = np.random.default_rng(42)
+    _ = [rng.random(n_bins) for _ in range(100)]  # Example allocation
     memory_small = (100 * n_bins * 8) / 1024 / 1024  # float64
     print(f"   Array memory: {memory_small:.1f} MB")
     print("   Recommended for: HTML backend, quick previews")

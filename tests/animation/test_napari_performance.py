@@ -35,18 +35,20 @@ def realistic_env():
     """Create realistic 2D environment for performance testing."""
     from neurospatial import Environment
 
-    # Large environment (100x100 cm arena)
-    np.random.seed(42)
-    positions = np.random.uniform(0, 100, (500, 2))
+    # Large environment (100x100 cm arena) - deterministic grid
+    x = np.linspace(0, 100, 51)
+    y = np.linspace(0, 100, 51)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     return Environment.from_samples(positions, bin_size=2.0)
 
 
 @pytest.fixture
 def realistic_fields(realistic_env: Environment) -> list[NDArray[np.float64]]:
     """Create realistic field sequence (100 frames)."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_frames = 100
-    return [np.random.rand(realistic_env.n_bins) for _ in range(n_frames)]
+    return [rng.random(realistic_env.n_bins) for _ in range(n_frames)]
 
 
 @pytest.fixture
@@ -59,7 +61,7 @@ def realistic_pose_overlay_data():
     from neurospatial.animation.skeleton import Skeleton
 
     n_frames = 100
-    np.random.seed(42)
+    # Trajectory is deterministic (sin/cos), no RNG needed
 
     # Create realistic trajectory with smooth motion
     t = np.linspace(0, 2 * np.pi, n_frames)
@@ -122,7 +124,7 @@ def realistic_position_overlay_data():
     from neurospatial.animation.overlays import PositionData
 
     n_frames = 100
-    np.random.seed(42)
+    # Trajectory is deterministic (sin/cos), no RNG needed
 
     # Circular trajectory
     t = np.linspace(0, 2 * np.pi, n_frames)
@@ -139,7 +141,7 @@ def realistic_head_direction_overlay_data():
     from neurospatial.animation.overlays import HeadDirectionData
 
     n_frames = 100
-    np.random.seed(42)
+    # Angles are deterministic (linspace), no RNG needed
 
     # Angles rotating smoothly
     data = np.linspace(0, 4 * np.pi, n_frames)  # Two full rotations
@@ -358,7 +360,8 @@ def test_napari_batched_vs_individual_updates():
 
     # Mock data for each layer
     n_frames = 100
-    layer_data = [np.random.rand(n_frames, 2) for _ in range(n_layers)]
+    rng = np.random.default_rng(42)
+    layer_data = [rng.random((n_frames, 2)) for _ in range(n_layers)]
 
     # Simulate batched update (current implementation)
     def batched_update(frame_idx: int):
@@ -519,22 +522,29 @@ def test_napari_scalability_with_frame_count():
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData, PositionData
 
+    rng = np.random.default_rng(42)
+
     # Test with different frame counts
     frame_counts = [50, 100, 200, 500]
     mean_times = []
 
+    # Create deterministic environment (reused across iterations)
+    from neurospatial import Environment
+
+    x = np.linspace(0, 100, 21)
+    y = np.linspace(0, 100, 21)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    env = Environment.from_samples(positions, bin_size=5.0)
+
     for n_frames in frame_counts:
-        # Create data
-        data = np.random.rand(n_frames, 2) * 100
+        # Create data with local RNG
+        data = rng.random((n_frames, 2)) * 100
         position_data = PositionData(data=data, color="red", size=10.0, trail_length=10)
         overlay_data = OverlayData(positions=[position_data])
 
-        # Create environment and fields
-        from neurospatial import Environment
-
-        positions = np.random.uniform(0, 100, (100, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        # Create fields
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
         # Mock napari viewer
         with patch(

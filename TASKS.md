@@ -158,8 +158,15 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Replaced 2 `np.random.seed(42)` with `rng = np.random.default_rng(42)`
   - Replaced 5 unseeded `np.random.rand()/randn()` with local RNG
   - Verify: All 28 tests pass
-- [ ] Migrate `tests/segmentation/*.py` (10 occurrences total)
-- [ ] Migrate `tests/animation/*.py` (5 occurrences total)
+- [x] Migrate `tests/segmentation/*.py` (10 occurrences total) ✅
+  - Migrated test_regions.py, test_laps.py, test_integration.py, test_similarity.py
+  - Replaced random environments with deterministic grids where possible
+  - Verify: All 57 tests pass
+- [x] Migrate `tests/animation/*.py` (8 occurrences total) ✅
+  - Migrated test_benchmarks.py: 2 seed + 6 unseeded occurrences
+  - Migrated test_napari_performance.py: 5 seed occurrences (4 replaced with deterministic, 1 with local RNG)
+  - Migrated test_memory_profiling.py: 1 seed + 4 unseeded occurrences
+  - Verify: All test files import successfully
 
 ### 3.4 Verification
 
