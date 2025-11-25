@@ -52,8 +52,7 @@ class TestComputeTurnAngles:
 
     def test_turn_angles_range(self):
         """Test that turn angles are in [-π, π] range."""
-        # Create meandering trajectory
-        np.random.seed(42)
+        # Create meandering trajectory (deterministic - no randomness needed)
         t = np.linspace(0, 4 * np.pi, 200)
         x = t * 5 + 20 * np.sin(t)
         y = 20 * np.cos(t)
@@ -274,10 +273,10 @@ class TestMeanSquareDisplacement:
 
     def test_msd_monotonic_increase(self):
         """Test that MSD generally increases with tau (for diffusive motion)."""
-        # Create 2D random walk trajectory
-        np.random.seed(42)
+        # Create 2D random walk trajectory with local RNG
+        rng = np.random.default_rng(42)
         n_steps = 100
-        steps = np.random.randn(n_steps, 2) * 2  # 2D random steps
+        steps = rng.standard_normal((n_steps, 2)) * 2  # 2D random steps
         positions = np.cumsum(steps, axis=0)
         times = np.arange(n_steps) * 0.1
 
@@ -354,8 +353,7 @@ class TestTrajectoryMetricsIntegration:
 
     def test_complete_workflow(self):
         """Test complete trajectory analysis workflow with continuous API."""
-        # Generate synthetic meandering trajectory (continuous positions)
-        np.random.seed(42)
+        # Generate synthetic meandering trajectory (deterministic - no randomness needed)
         t = np.linspace(0, 4 * np.pi, 200)
         x = t * 5 + 20 * np.sin(t)
         y = 20 * np.cos(t)

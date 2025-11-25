@@ -150,7 +150,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Replaced random environments with deterministic grids
   - Replaced 4 `np.random.seed(42)` with `rng = np.random.default_rng(42)`
   - Verify: All 23 tests pass
-- [ ] Migrate `tests/metrics/test_trajectory.py` (3 occurrences)
+- [x] Migrate `tests/metrics/test_trajectory.py` (3 occurrences) ✅
+  - Removed 2 unnecessary `np.random.seed(42)` (trajectories were deterministic)
+  - Replaced 1 `np.random.seed(42)` + `randn()` with `rng = np.random.default_rng(42)`
+  - Verify: All 21 tests pass
 - [ ] Migrate `tests/metrics/test_population.py` (2 occurrences)
 - [ ] Migrate `tests/segmentation/*.py` (10 occurrences total)
 - [ ] Migrate `tests/animation/*.py` (5 occurrences total)
