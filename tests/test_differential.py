@@ -48,7 +48,8 @@ class TestDifferentialOperatorComputation:
 
     def test_differential_operator_sparse(self):
         """Test that differential operator is sparse (CSC format)."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = compute_differential_operator(env)
@@ -126,7 +127,8 @@ class TestEnvironmentCachedProperty:
 
     def test_differential_operator_correct_shape(self):
         """Test that cached property returns correct shape."""
-        data = np.random.rand(50, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((50, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = env.differential_operator
@@ -169,8 +171,8 @@ class TestDifferentialOperatorEdgeCases:
 
     def test_differential_operator_irregular_spacing(self):
         """Test on irregularly spaced points."""
-        np.random.seed(42)
-        data = np.random.rand(20, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((20, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = env.differential_operator
@@ -182,7 +184,8 @@ class TestDifferentialOperatorEdgeCases:
 
     def test_differential_operator_preserves_symmetry(self):
         """Test that D @ D.T produces symmetric Laplacian."""
-        data = np.random.rand(30, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((30, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         D = env.differential_operator
@@ -202,7 +205,8 @@ class TestGradientOperator:
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Create a test field (one value per bin)
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(env.n_bins)
 
         # Import gradient function (will fail initially - this is TDD RED phase)
         from neurospatial.differential import gradient
@@ -272,7 +276,8 @@ class TestGradientOperator:
             gradient(env, field_too_small)
 
         # Wrong shape: too many elements
-        field_too_large = np.random.rand(env.n_bins + 5)
+        rng = np.random.default_rng(42)
+        field_too_large = rng.random(env.n_bins + 5)
 
         with pytest.raises(ValueError, match=r"field.*shape"):
             gradient(env, field_too_large)
@@ -289,7 +294,8 @@ class TestDivergenceOperator:
 
         # Create a test edge field (one value per edge)
         n_edges = len(env.connectivity.edges)
-        edge_field = np.random.rand(n_edges)
+        rng = np.random.default_rng(42)
+        edge_field = rng.random(n_edges)
 
         # Import divergence function (will fail initially - this is TDD RED phase)
         from neurospatial.differential import divergence
@@ -361,7 +367,8 @@ class TestDivergenceOperator:
 
         # Wrong shape: too many elements
         n_edges = len(env.connectivity.edges)
-        edge_field_too_large = np.random.rand(n_edges + 5)
+        rng = np.random.default_rng(42)
+        edge_field_too_large = rng.random(n_edges + 5)
 
         with pytest.raises(ValueError, match=r"edge_field.*shape"):
             divergence(env, edge_field_too_large)

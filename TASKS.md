@@ -131,7 +131,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ### 3.3 Low-Priority Files
 
-- [ ] Migrate `tests/test_differential.py` (1 occurrence)
+- [x] Migrate `tests/test_differential.py` (1 occurrence) ✅
+  - Migrated 1 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+  - Migrated 7 `np.random.rand()` → `rng.random()`
+  - Verify: All 21 tests pass
 - [ ] Migrate `tests/test_transforms_new.py` (2 occurrences)
 - [ ] Migrate `tests/test_behavioral.py` (2 occurrences)
 - [ ] Migrate `tests/environment/test_transitions.py` (3 occurrences)

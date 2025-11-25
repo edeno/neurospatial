@@ -2,6 +2,36 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_differential.py Global RNG (Milestone 3.3)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all global RNG calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 1 `np.random.seed(42)` call + 7 `np.random.rand()` calls
+- **After**: 0 global RNG calls (100% migrated)
+
+**Changes Made**:
+
+1. `test_differential_operator_sparse`: Added `rng = np.random.default_rng(42)` and replaced `np.random.rand(100, 2)` → `rng.random((100, 2))`
+2. `test_differential_operator_correct_shape`: Same pattern with (50, 2)
+3. `test_differential_operator_irregular_spacing`: Replaced `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.rand(20, 2)` → `rng.random((20, 2))`
+4. `test_differential_operator_preserves_symmetry`: Added local rng for (30, 2) data
+5. `test_gradient_shape`: Added local rng for field generation
+6. `test_gradient_validation`: Added local rng for `field_too_large`
+7. `test_divergence_shape`: Added local rng for `edge_field`
+8. `test_divergence_validation`: Added local rng for `edge_field_too_large`
+
+**Verification**:
+
+- All 21 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
 ### Task: Migrate test_io.py Global RNG (Milestone 3.2)
 
 **Status**: ✅ COMPLETE
