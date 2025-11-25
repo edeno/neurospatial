@@ -71,17 +71,12 @@ class TestSpikesToField:
         valid_bins = ~np.isnan(field)
         assert np.all(field[valid_bins] >= 0)
 
-    def test_spikes_to_field_empty_spikes(self):
+    def test_spikes_to_field_empty_spikes(
+        self, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test that empty spike train produces all zeros."""
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        times = np.linspace(0, 10, 1000)
-
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
 
         # Empty spike array
         spike_times = np.array([])
@@ -92,17 +87,12 @@ class TestSpikesToField:
         valid_bins = ~np.isnan(field)
         assert np.allclose(field[valid_bins], 0.0)
 
-    def test_spikes_to_field_out_of_bounds_time(self):
+    def test_spikes_to_field_out_of_bounds_time(
+        self, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test that spikes outside time range produce warning and are filtered."""
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        times = np.linspace(0, 10, 1000)
-
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
 
         # Spikes outside time range
         spike_times = np.array([-1.0, 5.0, 15.0])
@@ -115,18 +105,12 @@ class TestSpikesToField:
         assert field.shape == (env.n_bins,)
         assert not np.all(np.isnan(field))
 
-    def test_spikes_to_field_out_of_bounds_space(self):
+    def test_spikes_to_field_out_of_bounds_space(
+        self, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test that spikes outside environment bounds produce warning and are filtered."""
-        # Create environment covering 0-100 in both dimensions
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        times = np.linspace(0, 10, 1000)
-
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
 
         # Create spikes, but interpolate to positions that go outside bounds
         # This happens when spike occurs during trajectory edge
@@ -175,18 +159,12 @@ class TestSpikesToField:
         assert not np.all(np.isnan(field))
         assert np.sum(np.isfinite(field)) > 0
 
-    def test_spikes_to_field_nan_occupancy(self):
+    def test_spikes_to_field_nan_occupancy(
+        self, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test behavior when occupancy is zero everywhere (edge case)."""
-        # Create environment
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        times = np.linspace(0, 10, 1000)
-
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
 
         # Create spikes, but use very high min_occupancy to force all NaN
         spike_times = np.array([1.0, 2.0, 3.0])
@@ -278,12 +256,14 @@ class TestSpikesToField:
 class TestComputePlaceField:
     """Test suite for compute_place_field unified API with multiple methods."""
 
-    def test_default_method_is_diffusion_kde(self):
+    def test_default_method_is_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
         """Test that default method is diffusion_kde."""
-        positions = np.random.uniform(20, 80, (500, 2))
-        times = np.linspace(0, 50, 500)
-        spike_times = np.random.uniform(0, 50, 25)
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
 
         # Default call should use diffusion_kde
         field_default = compute_place_field(
@@ -302,13 +282,14 @@ class TestComputePlaceField:
         ["diffusion_kde", "gaussian_kde", "binned"],
         ids=["diffusion_kde", "gaussian_kde", "binned"],
     )
-    def test_all_methods_produce_valid_output(self, method):
+    def test_all_methods_produce_valid_output(
+        self, method, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
         """Test that all three methods produce valid firing rate maps."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
         rng = np.random.default_rng(42)
-        positions = rng.uniform(20, 80, (500, 2))
-        times = np.linspace(0, 50, 500)
         spike_times = rng.uniform(0, 50, 25)
-        env = Environment.from_samples(positions, bin_size=5.0)
 
         field = compute_place_field(
             env, spike_times, times, positions, method=method, bandwidth=5.0
@@ -324,13 +305,14 @@ class TestComputePlaceField:
         # Check that we have some valid bins
         assert np.sum(valid_bins) > 0
 
-    def test_diffusion_kde_no_nan_bins(self):
+    def test_diffusion_kde_no_nan_bins(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
         """Test that diffusion_kde naturally handles sparse occupancy without NaN."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
         rng = np.random.default_rng(42)
-        positions = rng.uniform(20, 80, (500, 2))
-        times = np.linspace(0, 50, 500)
         spike_times = rng.uniform(0, 50, 25)
-        env = Environment.from_samples(positions, bin_size=5.0)
 
         field = compute_place_field(
             env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
@@ -339,13 +321,12 @@ class TestComputePlaceField:
         # Diffusion KDE should have no NaN bins (naturally handles low occupancy)
         assert np.sum(np.isnan(field)) == 0
 
-    def test_binned_method_respects_min_occupancy(self):
+    def test_binned_method_respects_min_occupancy(
+        self, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test that binned method uses min_occupancy_seconds parameter."""
-        positions = np.column_stack(
-            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
-        )
-        times = np.linspace(0, 10, 1000)
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
         spike_times = np.array([1.0, 2.0, 3.0])
 
         # With high threshold, should have many NaN bins
@@ -428,13 +409,12 @@ class TestComputePlaceField:
         ["diffusion_kde", "gaussian_kde", "binned"],
         ids=["diffusion_kde", "gaussian_kde", "binned"],
     )
-    def test_empty_spikes(self, method):
+    def test_empty_spikes(
+        self, method, spike_field_env_100: Environment, spike_field_trajectory
+    ):
         """Test that all methods handle empty spike train correctly."""
-        positions = np.column_stack(
-            [np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)]
-        )
-        times = np.linspace(0, 10, 1000)
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = spike_field_env_100
+        times, positions = spike_field_trajectory
         spike_times = np.array([])
 
         field = compute_place_field(
@@ -522,14 +502,14 @@ class TestComputePlaceField:
         assert field.shape == (env.n_bins,)
         assert not np.all(np.isnan(field))
 
-    def test_diffusion_kde_spread_before_normalize(self):
+    def test_diffusion_kde_spread_before_normalize(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
         """Test that diffusion_kde spreads mass before normalizing (correct order)."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
         rng = np.random.default_rng(42)
-        # Create environment with some bins that have low occupancy
-        positions = rng.uniform(20, 80, (500, 2))
-        times = np.linspace(0, 50, 500)
         spike_times = rng.uniform(0, 50, 25)
-        env = Environment.from_samples(positions, bin_size=5.0)
 
         field_diffusion = compute_place_field(
             env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
@@ -738,3 +718,423 @@ class TestComputePlaceField:
         if len(firing_rate) > 0:
             # If any valid bins, firing rate should be reasonable
             assert np.all(firing_rate >= 0)
+
+
+class TestPrecomputedData:
+    """Test suite for precomputed data parameters in compute_place_field."""
+
+    def test_precomputed_trajectory_bins_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that precomputed trajectory_bins produces same result as computing fresh."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Precompute trajectory bins
+        trajectory_bins = env.bin_at(positions)
+
+        # Compute with precomputed trajectory_bins
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=5.0,
+            trajectory_bins=trajectory_bins,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_precomputed_dt_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that precomputed dt produces same result as computing fresh."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+        )
+
+        # Precompute dt
+        dt = np.diff(times, prepend=times[0])
+
+        # Compute with precomputed dt
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=5.0,
+            dt=dt,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_precomputed_kernel_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that precomputed kernel produces same result as computing fresh."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
+
+        bandwidth = 5.0
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+        )
+
+        # Precompute kernel
+        kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
+
+        # Compute with precomputed kernel
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+            kernel=kernel,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_precomputed_occupancy_density_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that precomputed occupancy_density produces same result."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
+
+        bandwidth = 5.0
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+        )
+
+        # Precompute occupancy density manually
+        trajectory_bins = env.bin_at(positions)
+        dt = np.diff(times, prepend=times[0])
+        kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
+
+        valid_mask = trajectory_bins >= 0
+        traj_bins_valid = trajectory_bins[valid_mask]
+        dt_valid = dt[valid_mask]
+        occupancy_counts = np.bincount(
+            traj_bins_valid, weights=dt_valid, minlength=env.n_bins
+        )
+        occupancy_density = kernel @ occupancy_counts
+
+        # Compute with precomputed occupancy_density
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+            occupancy_density=occupancy_density,
+            kernel=kernel,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_all_precomputed_diffusion_kde(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that all precomputed parameters together produce same result."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        rng = np.random.default_rng(42)
+        spike_times = rng.uniform(0, 50, 25)
+
+        bandwidth = 5.0
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+        )
+
+        # Precompute all data
+        trajectory_bins = env.bin_at(positions)
+        dt = np.diff(times, prepend=times[0])
+        kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
+
+        valid_mask = trajectory_bins >= 0
+        traj_bins_valid = trajectory_bins[valid_mask]
+        dt_valid = dt[valid_mask]
+        occupancy_counts = np.bincount(
+            traj_bins_valid, weights=dt_valid, minlength=env.n_bins
+        )
+        occupancy_density = kernel @ occupancy_counts
+
+        # Compute with all precomputed data
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="diffusion_kde",
+            bandwidth=bandwidth,
+            trajectory_bins=trajectory_bins,
+            dt=dt,
+            occupancy_density=occupancy_density,
+            kernel=kernel,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_precomputed_dt_gaussian_kde(self):
+        """Test that precomputed dt works with gaussian_kde method."""
+        rng = np.random.default_rng(42)
+        # Smaller dataset for gaussian_kde (slower method)
+        positions = rng.uniform(20, 80, (100, 2))
+        times = np.linspace(0, 10, 100)
+        spike_times = rng.uniform(0, 10, 10)
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+        )
+
+        # Precompute dt
+        dt = np.diff(times, prepend=times[0])
+
+        # Compute with precomputed dt
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="gaussian_kde",
+            bandwidth=8.0,
+            dt=dt,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    @pytest.mark.slow
+    def test_precomputed_occupancy_density_gaussian_kde(self):
+        """Test that precomputed occupancy_density works with gaussian_kde method.
+
+        Marked slow: gaussian_kde is computationally expensive.
+        """
+        rng = np.random.default_rng(42)
+        # Smaller dataset for gaussian_kde (slower method)
+        positions = rng.uniform(20, 80, (100, 2))
+        times = np.linspace(0, 10, 100)
+        spike_times = rng.uniform(0, 10, 10)
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        bandwidth = 8.0
+
+        # Compute without precomputed data
+        field_fresh = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="gaussian_kde",
+            bandwidth=bandwidth,
+        )
+
+        # Precompute occupancy density for gaussian_kde
+        dt = np.diff(times, prepend=times[0])
+        two_sigma_sq = 2 * bandwidth**2
+        occupancy_density = np.zeros(env.n_bins, dtype=np.float64)
+        for i, bin_center in enumerate(env.bin_centers):
+            traj_distances_sq = np.sum((positions - bin_center) ** 2, axis=1)
+            traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
+            occupancy_density[i] = np.sum(traj_weights * dt)
+
+        # Compute with precomputed occupancy_density
+        field_precomputed = compute_place_field(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="gaussian_kde",
+            bandwidth=bandwidth,
+            occupancy_density=occupancy_density,
+        )
+
+        assert_array_almost_equal(field_fresh, field_precomputed)
+
+    def test_precomputed_reuse_multiple_neurons(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that precomputed data can be reused for multiple neurons efficiently."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+
+        bandwidth = 5.0
+
+        # Precompute shared data once
+        trajectory_bins = env.bin_at(positions)
+        dt = np.diff(times, prepend=times[0])
+        kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
+
+        valid_mask = trajectory_bins >= 0
+        traj_bins_valid = trajectory_bins[valid_mask]
+        dt_valid = dt[valid_mask]
+        occupancy_counts = np.bincount(
+            traj_bins_valid, weights=dt_valid, minlength=env.n_bins
+        )
+        occupancy_density = kernel @ occupancy_counts
+
+        # Compute place fields for multiple "neurons" with different spike times
+        fields = []
+        for seed in range(5):
+            neuron_rng = np.random.default_rng(seed)
+            spike_times = neuron_rng.uniform(0, 50, 20)
+
+            field = compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=bandwidth,
+                trajectory_bins=trajectory_bins,
+                dt=dt,
+                occupancy_density=occupancy_density,
+                kernel=kernel,
+            )
+            fields.append(field)
+
+        # All fields should have valid shape and non-negative values
+        for field in fields:
+            assert field.shape == (env.n_bins,)
+            assert not np.all(np.isnan(field))
+            valid_bins = ~np.isnan(field)
+            assert np.all(field[valid_bins] >= 0)
+
+        # Fields should be different (different spike times)
+        for i in range(len(fields)):
+            for j in range(i + 1, len(fields)):
+                assert not np.allclose(fields[i], fields[j]), (
+                    "Fields should differ for different neurons"
+                )
+
+    def test_invalid_trajectory_bins_shape(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that invalid trajectory_bins shape raises ValueError."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        spike_times = np.array([1.0, 2.0, 3.0])
+
+        # Wrong length
+        bad_trajectory_bins = np.zeros(100, dtype=np.int64)
+
+        with pytest.raises(ValueError, match="must have same length as positions"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=5.0,
+                trajectory_bins=bad_trajectory_bins,
+            )
+
+    def test_invalid_dt_shape(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that invalid dt shape raises ValueError."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        spike_times = np.array([1.0, 2.0, 3.0])
+
+        # Wrong length
+        bad_dt = np.ones(100)
+
+        with pytest.raises(ValueError, match="must have same length as times"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=5.0,
+                dt=bad_dt,
+            )
+
+    def test_invalid_occupancy_density_shape(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that invalid occupancy_density shape raises ValueError."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        spike_times = np.array([1.0, 2.0, 3.0])
+
+        # Wrong length (not n_bins)
+        bad_occupancy_density = np.ones(10)
+
+        with pytest.raises(ValueError, match="must have length n_bins"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=5.0,
+                occupancy_density=bad_occupancy_density,
+            )
+
+    def test_invalid_kernel_shape(
+        self, spike_field_env_random: Environment, spike_field_random_trajectory
+    ):
+        """Test that invalid kernel shape raises ValueError."""
+        env = spike_field_env_random
+        times, positions = spike_field_random_trajectory
+        spike_times = np.array([1.0, 2.0, 3.0])
+
+        # Wrong shape (not n_bins x n_bins)
+        bad_kernel = np.ones((10, 10))
+
+        with pytest.raises(ValueError, match="must have shape"):
+            compute_place_field(
+                env,
+                spike_times,
+                times,
+                positions,
+                method="diffusion_kde",
+                bandwidth=5.0,
+                kernel=bad_kernel,
+            )
