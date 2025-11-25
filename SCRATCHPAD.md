@@ -2,6 +2,32 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_validation_new.py Global RNG (Milestone 3.2)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all global RNG calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 4 `np.random.seed(42)` calls + 4 `np.random.randn()` calls
+- **After**: 0 global RNG calls (100% migrated)
+
+**Changes Made**:
+
+1. `valid_env` fixture: `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.randn(200, 2)` → `rng.standard_normal((200, 2))`
+2. `test_strict_mode_warns_missing_units`: Same migration pattern
+3. `test_strict_mode_warns_missing_frame`: Same migration pattern
+4. `test_non_strict_mode_no_warnings`: Same migration pattern
+
+**Verification**:
+
+- All 8 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
 ### Task: Migrate test_transforms_3d.py Global RNG (Milestone 3.1)
 
 **Status**: ✅ COMPLETE

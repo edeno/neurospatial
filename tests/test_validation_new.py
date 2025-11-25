@@ -13,8 +13,8 @@ class TestValidateEnvironment:
     @pytest.fixture
     def valid_env(self):
         """Create a valid environment."""
-        np.random.seed(42)
-        data = np.random.randn(200, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((200, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="valid")
         env.units = "cm"
         env.frame = "world"
@@ -39,8 +39,8 @@ class TestValidateEnvironment:
 
     def test_strict_mode_warns_missing_units(self):
         """Test that strict mode warns about missing units."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_units")
         # Don't set units
         env.frame = "world"
@@ -50,8 +50,8 @@ class TestValidateEnvironment:
 
     def test_strict_mode_warns_missing_frame(self):
         """Test that strict mode warns about missing frame."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_frame")
         env.units = "cm"
         # Don't set frame
@@ -61,8 +61,8 @@ class TestValidateEnvironment:
 
     def test_non_strict_mode_no_warnings(self):
         """Test that non-strict mode doesn't warn about missing metadata."""
-        np.random.seed(42)
-        data = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="no_metadata")
 
         # Should not warn in non-strict mode

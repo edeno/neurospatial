@@ -112,7 +112,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ### 3.2 Medium-Priority Files
 
-- [ ] Migrate `tests/test_validation_new.py` (4 occurrences)
+- [x] Migrate `tests/test_validation_new.py` (4 occurrences) ✅
+  - Migrated 4 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+  - Migrated 4 `np.random.randn()` → `rng.standard_normal()`
+  - Verify: All 8 tests pass
 - [ ] Migrate `tests/environment/test_interpolate.py` (2 occurrences)
 - [ ] Migrate `tests/environment/test_trajectory_metrics.py` (2 occurrences)
 - [ ] Migrate `tests/test_io.py` (4 occurrences)
