@@ -415,7 +415,8 @@ def _add_positions_layer(
     viewer : napari.Viewer
         The napari viewer.
     positions : NDArray[np.float64]
-        Position data. Coordinate system depends on calibration:
+        Position data. NaN/Inf values are automatically filtered.
+        Coordinate system depends on calibration:
 
         - With calibration: environment units (cm), Y-up origin
         - Without calibration: video pixels (x, y), Y-down origin
@@ -426,7 +427,12 @@ def _add_positions_layer(
     -----
     Mirrors the pattern in add_initial_boundary_to_shapes for consistency.
     """
-    coords = positions.copy()
+    # Filter out NaN/Inf values (common in tracking data for lost frames)
+    valid_mask = np.all(np.isfinite(positions), axis=1)
+    coords = positions[valid_mask].copy()
+
+    if len(coords) == 0:
+        return  # No valid positions to display
 
     # Transform to pixels if calibration provided
     # NOTE: transform_cm_to_px handles Y-flip internally - don't double-flip!

@@ -91,7 +91,8 @@ def boundary_from_positions(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal positions in (x, y) format.
+        Animal positions in (x, y) format. NaN/Inf values are automatically
+        filtered with a warning (common in tracking data for lost frames).
     method : {"convex_hull", "alpha_shape", "kde"}, optional
         Boundary inference algorithm. Overrides config.method if provided.
     config : BoundaryConfig, optional
@@ -131,8 +132,27 @@ def boundary_from_positions(
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] != 2:
         raise ValueError(f"positions must have shape (n, 2), got {positions.shape}")
+
+    # Filter out NaN/Inf values (common in tracking data for lost frames)
+    valid_mask = np.all(np.isfinite(positions), axis=1)
+    n_invalid = (~valid_mask).sum()
+    positions = positions[valid_mask]
+
+    if n_invalid > 0:
+        import warnings
+
+        warnings.warn(
+            f"Filtered {n_invalid} positions with NaN/Inf values "
+            f"({n_invalid / (len(positions) + n_invalid) * 100:.1f}% of data).",
+            UserWarning,
+            stacklevel=2,
+        )
+
     if len(positions) < 3:
-        raise ValueError(f"positions must have at least 3 points, got {len(positions)}")
+        raise ValueError(
+            f"positions must have at least 3 valid points, got {len(positions)} "
+            f"(after filtering {n_invalid} NaN/Inf values)"
+        )
 
     # Check for degenerate cases (all points identical or collinear)
     unique_points = np.unique(positions, axis=0)

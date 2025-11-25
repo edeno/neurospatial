@@ -84,7 +84,7 @@ class TestBoundaryFromPositionsValidation:
         from neurospatial.annotation import boundary_from_positions
 
         positions = np.array([[0, 0], [1, 1]])
-        with pytest.raises(ValueError, match="at least 3 points"):
+        with pytest.raises(ValueError, match="at least 3 valid points"):
             boundary_from_positions(positions)
 
     def test_unique_points(self):
@@ -103,6 +103,76 @@ class TestBoundaryFromPositionsValidation:
         positions = np.array([[0, 0], [0, 10], [10, 10], [10, 0]])
         with pytest.raises(ValueError, match="Unknown method"):
             boundary_from_positions(positions, method="unknown_method")  # type: ignore[arg-type]
+
+    def test_filters_nan_values(self):
+        """NaN values are filtered with warning."""
+        from neurospatial.annotation import boundary_from_positions
+
+        # Valid positions with some NaN rows
+        positions = np.array(
+            [
+                [0, 0],
+                [np.nan, 10],  # NaN in x
+                [10, 10],
+                [10, np.nan],  # NaN in y
+                [10, 0],
+                [5, 5],
+            ]
+        )
+
+        with pytest.warns(UserWarning, match="Filtered 2 positions with NaN"):
+            boundary = boundary_from_positions(positions)
+
+        assert boundary.is_valid
+
+    def test_filters_inf_values(self):
+        """Inf values are filtered with warning."""
+        from neurospatial.annotation import boundary_from_positions
+
+        positions = np.array(
+            [
+                [0, 0],
+                [np.inf, 10],  # Inf in x
+                [10, 10],
+                [10, 0],
+                [5, 5],
+            ]
+        )
+
+        with pytest.warns(UserWarning, match="Filtered 1 positions with NaN"):
+            boundary = boundary_from_positions(positions)
+
+        assert boundary.is_valid
+
+    def test_all_nan_raises(self):
+        """All NaN positions raises ValueError."""
+        from neurospatial.annotation import boundary_from_positions
+
+        positions = np.array(
+            [
+                [np.nan, np.nan],
+                [np.nan, np.nan],
+                [np.nan, np.nan],
+            ]
+        )
+
+        with pytest.raises(ValueError, match="at least 3 valid points"):
+            boundary_from_positions(positions)
+
+    def test_no_warning_without_nan(self):
+        """No warning emitted when data has no NaN values."""
+        import warnings
+
+        from neurospatial.annotation import boundary_from_positions
+
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Fail on any warning
+            boundary = boundary_from_positions(positions)
+
+        assert boundary.is_valid
 
 
 class TestBoundaryFromPositionsConfigOverride:
