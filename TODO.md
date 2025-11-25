@@ -11,9 +11,9 @@
 
 ### **1.2 Performance improvements in existing code**
 
-* [ ] `_extract_connected_component_graph`
+* [x] `_extract_connected_component_graph`
 
-  * Replace `frontier.pop(0)` with `collections.deque.popleft()` to avoid O(n²).
+  * ~~Replace `frontier.pop(0)` with `collections.deque.popleft()` to avoid O(n²).~~
 * [ ] Vectorization improvements:
 
   * Gaussian KDE loops in `spike_field.py`.
@@ -26,7 +26,7 @@
 
 ### **2.1 Place field analysis**
 
-* [ ] `compute_place_field` rewrite to rely on shared occupancy.
+* [x] `compute_place_field` rewrite to rely on shared occupancy.
 * [ ] Rich result object:
 
   * `field_map`, `fields[]`, `skaggs_info`, `sparsity`, `stability`, `params`.
@@ -47,7 +47,9 @@
 
 ### **2.4 Distance-to-goal**
 
-* [ ] Compute distance-to-goal over time (Euclidean or maze-graph).
+* [x] Compute distance-to-goal over time (Euclidean or maze-graph).
+  * `distance_to_region()` - geodesic distance to goal
+  * `cost_to_goal()` - with terrain/learned cost weighting
 * [ ] Correlate with firing, behavior, running speed.
 
 ---
@@ -113,9 +115,11 @@
 
 ### **5.1 Cost-distance maps**
 
-* [ ] Compute distance under movement constraints (walls, obstacles).
-* [ ] Graph-shortest-path distance, not Euclidean.
-* [ ] Cost maps for reward access, avoidance, hazard zones.
+* [x] Compute distance under movement constraints (walls, obstacles).
+  * `distance_field()` - geodesic/euclidean distance from sources
+  * `cost_to_goal()` - with `cost_map` and `terrain_difficulty` params
+* [x] Graph-shortest-path distance, not Euclidean.
+* [x] Cost maps for reward access, avoidance, hazard zones.
 
 ### **5.2 Visibility / line-of-sight**
 
@@ -143,8 +147,10 @@
 * [ ] Place fields with field outlines.
 * [ ] Stability correlation plots.
 * [ ] Occupancy maps with spike overlays.
-* [ ] Dynamic field evolution over time.
-* [ ] Rendering of regions, overlays, obstacles.
+* [x] Dynamic field evolution over time.
+  * `env.animate_fields()` with napari/video/html/widget backends
+* [x] Rendering of regions, overlays, obstacles.
+  * `show_regions=True`, `PositionOverlay`, `BodypartOverlay`, `HeadDirectionOverlay`
 * [ ] Population comparison plots.
 
 ### **6.2 napari visualization**
@@ -155,11 +161,14 @@
 * [ ] Dynamic spike raster overlayed on position heatmap.
 * [ ] Show events timeline synced to time slider.
 * [ ] Visualize continuous variables (speed, hd, acceleration).
-* [ ] Multi-body-part tracking (nose, tail base, ears).
-* [ ] Multi-animal support.
-* [ ] Sync multiple environments (multi-camera / VR).
+* [x] Multi-body-part tracking (nose, tail base, ears).
+  * `BodypartOverlay` with skeleton rendering
+* [x] Multi-animal support.
+  * Multiple `PositionOverlay` instances
+* [ ] Sync multiple environments.
 * [ ] Track graph overlay.
-* [ ] Integrate video (different sampling rates handled automatically).
+* [x] Integrate video (different sampling rates handled automatically).
+  * `VideoOverlay` with `calibrate_video()`, auto temporal alignment
 * [ ] Mark events (reward, errors, choice) on video + environment.
 * [ ] SAM based integration for quick region annotation.
 
@@ -169,7 +178,9 @@
 
 ### **7.1 Easy annotation workflows**
 
-* [ ] Tools for defining environment boundaries + obstacles.
+* [x] Tools for defining environment boundaries + obstacles.
+  * `annotate_video()` - interactive napari annotation
+  * `boundary_from_positions()` - seed boundary from trajectory
 * [ ] Annotation quality checks:
 
   * self-intersection, small polygons, missing holes.
@@ -212,20 +223,22 @@
 
 ### **9.1 NWB integration**
 
-* [ ] NWB import/export for:
-
-  * spikes
-  * LFP
-  * continuous behavior
-  * events
-  * regions (as DynamicTable or TimeIntervals).
+* [x] NWB import/export for:
+  * Full `nwb/` module with read/write functions
+  * `read_position()`, `read_pose()`, `read_head_direction()`
+  * `write_place_field()`, `write_occupancy()`, `write_trials()`
+  * `write_environment()`, `read_environment()` (round-trip)
+  * ~~spikes~~ (use pynwb directly)
+  * ~~LFP~~ (use pynwb directly)
+  * [x] continuous behavior
+  * [x] events (`read_events()`, `write_region_crossings()`)
+  * [x] regions (via Environment scratch storage)
 
 ### **9.2 Other IO**
 
-* [ ] DeepLabCut/SLEAP tracking imports.
-* [ ] LabelMe/CVAT → Regions.
-* [ ] GeoJSON export for environments.
-* [ ] Standard “session bundle” export for downstream ML/GLM.
+* [x] LabelMe/CVAT → Regions.
+  * `regions_from_labelme()`, `regions_from_cvat()`
+* [ ] Standard "session bundle" export for downstream ML/GLM.
 
 ---
 
@@ -235,13 +248,14 @@
 
 * [ ] Chunked / streaming analysis for long sessions.
 * [ ] Lazy evaluation of fields (compute when needed).
-* [ ] Spatial indexing (R-tree or kd-tree).
-* [ ] Efficient caching of:
-
-  * occupancy
-  * binning
-  * distance fields
-  * kernel maps.
+* [x] Spatial indexing (R-tree or kd-tree).
+  * KDTree caching in `map_points_to_bins()` and `bin_at()`
+* [x] Efficient caching of:
+  * `env.clear_cache()` for cache management
+  * [x] binning (KDTree cached)
+  * [x] kernel maps (`env.compute_kernel(..., cache=True)`)
+  * [ ] occupancy
+  * [ ] distance fields
 
 ### **10.2 Parallelism**
 
@@ -291,7 +305,7 @@
 
 ### Other
 
-* We should be able to seed the environment polygon from position (convex hull?), user can adjust in napari. We could also have templates for common mazes (linear, T, plus, circular, open field with obstacles).
+* ~~We should be able to seed the environment polygon from position (convex hull?), user can adjust in napari.~~ ✅ DONE: `boundary_from_positions()` with alpha_shape/convex_hull, `annotate_video(initial_boundary=positions)`. Templates for common mazes (linear, T, plus, circular, open field with obstacles) still TODO.
 
 * Consider what to do for dynamic environments (moving obstacles, changing boundaries) in future versions. Regions can also be dynamic (e.g., zones that appear/disappear, optostimulation, reward delivery).
 
