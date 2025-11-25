@@ -120,7 +120,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Migrated 2 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
   - Migrated 2 `np.random.uniform()` → `rng.uniform()`
   - Verify: All 25 tests pass
-- [ ] Migrate `tests/environment/test_trajectory_metrics.py` (2 occurrences)
+- [x] Migrate `tests/environment/test_trajectory_metrics.py` (2 occurrences) ✅
+  - Migrated 2 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+  - Migrated 3 `np.random.randn()` → `rng.standard_normal()`
+  - Verify: All 12 tests pass
 - [ ] Migrate `tests/test_io.py` (4 occurrences)
 
 ### 3.3 Low-Priority Files

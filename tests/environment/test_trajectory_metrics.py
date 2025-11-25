@@ -112,8 +112,8 @@ class TestComputeTurnAngles:
     def test_angle_range(self):
         """Test that output angles are in [-π, π]."""
         # Random trajectory
-        np.random.seed(42)
-        positions = np.cumsum(np.random.randn(100, 2), axis=0)
+        rng = np.random.default_rng(42)
+        positions = np.cumsum(rng.standard_normal((100, 2)), axis=0)
 
         angles = compute_turn_angles(positions)
 
@@ -162,10 +162,10 @@ class TestComputeTurnAngles:
     def test_realistic_trajectory(self):
         """Test with realistic animal trajectory."""
         # Simulate random walk
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n_steps = 200
-        step_angles = np.random.randn(n_steps) * 0.3  # Small angle changes
-        step_lengths = np.abs(np.random.randn(n_steps)) * 2
+        step_angles = rng.standard_normal(n_steps) * 0.3  # Small angle changes
+        step_lengths = np.abs(rng.standard_normal(n_steps)) * 2
 
         # Build trajectory from steps
         cumulative_angle = np.cumsum(step_angles)
