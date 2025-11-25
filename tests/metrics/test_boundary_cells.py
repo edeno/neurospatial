@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from numpy.typing import NDArray
 
 from neurospatial import Environment
 
@@ -21,16 +20,11 @@ from neurospatial import Environment
 class TestBorderScore:
     """Test border_score function."""
 
-    def test_border_score_perfect_border_cell(self) -> None:
+    def test_border_score_perfect_border_cell(
+        self, dense_rectangular_grid_env: Environment
+    ) -> None:
         """Test border score for perfect border cell (field along one wall)."""
-        # Create rectangular environment
-        positions_list = []
-        for x in np.linspace(0, 50, 500):
-            for y in np.linspace(0, 50, 500):
-                positions_list.append([x, y])
-        positions: NDArray[np.float64] = np.array(positions_list)
-
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_rectangular_grid_env
 
         # Create firing rate map with activity only along left wall (x < 10)
         firing_rate = np.zeros(env.n_bins)
@@ -41,7 +35,6 @@ class TestBorderScore:
             else:
                 firing_rate[i] = 0.0
 
-        # Import after environment creation
         from neurospatial.metrics.boundary_cells import border_score
 
         score = border_score(firing_rate, env)
@@ -49,16 +42,11 @@ class TestBorderScore:
         # Perfect border cell should have high positive score (close to 1)
         assert score > 0.5, f"Expected border score > 0.5 for border cell, got {score}"
 
-    def test_border_score_central_field(self) -> None:
+    def test_border_score_central_field(
+        self, dense_50x50_bin5_env: Environment
+    ) -> None:
         """Test border score for central field (non-border cell)."""
-        # Create environment
-        positions = []
-        for x in np.linspace(0, 50, 500):
-            for y in np.linspace(0, 50, 500):
-                positions.append([x, y])
-        positions = np.array(positions)
-
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = dense_50x50_bin5_env
 
         # Create firing rate map with activity only in center
         firing_rate = np.zeros(env.n_bins)
@@ -77,15 +65,9 @@ class TestBorderScore:
             f"Expected border score < 0.3 for central field, got {score}"
         )
 
-    def test_border_score_corner_field(self) -> None:
+    def test_border_score_corner_field(self, dense_40x40_grid_env: Environment) -> None:
         """Test border score for field in corner (touches two walls)."""
-        positions = []
-        for x in np.linspace(0, 40, 400):
-            for y in np.linspace(0, 40, 400):
-                positions.append([x, y])
-        positions = np.array(positions)
-
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_40x40_grid_env
 
         # Create firing rate in corner (x < 10 AND y < 10)
         firing_rate = np.zeros(env.n_bins)
@@ -101,10 +83,11 @@ class TestBorderScore:
         # Corner field should have high score (touches boundaries)
         assert score > 0.4, f"Expected border score > 0.4 for corner field, got {score}"
 
-    def test_border_score_uniform_firing(self) -> None:
+    def test_border_score_uniform_firing(
+        self, dense_rectangular_grid_env: Environment
+    ) -> None:
         """Test border score with uniform firing everywhere."""
-        positions = np.random.randn(5000, 2) * 20
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_rectangular_grid_env
 
         # Uniform firing everywhere
         firing_rate = np.ones(env.n_bins) * 2.0
@@ -120,18 +103,17 @@ class TestBorderScore:
             f"Expected positive score for uniform firing covering boundaries, got {score}"
         )
 
-    def test_border_score_threshold_parameter(self) -> None:
+    def test_border_score_threshold_parameter(
+        self, dense_rectangular_grid_env: Environment
+    ) -> None:
         """Test that threshold parameter affects field segmentation."""
-        positions = np.random.randn(5000, 2) * 20
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_rectangular_grid_env
 
         # Create gradient firing rate (higher near edge)
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            # Distance from center
-            dist_from_center = np.linalg.norm(center)
-            firing_rate[i] = dist_from_center / 20.0  # Normalize
+        # For dense_rectangular_grid_env (0-50 extent), center is at (25, 25)
+        center_point = np.array([25.0, 25.0])
+        distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
+        firing_rate = distances / 25.0  # Normalize
 
         from neurospatial.metrics.boundary_cells import border_score
 
@@ -145,10 +127,9 @@ class TestBorderScore:
         assert -1.0 <= score_low <= 1.0
         assert -1.0 <= score_high <= 1.0
 
-    def test_border_score_all_nan(self) -> None:
+    def test_border_score_all_nan(self, small_2d_env: Environment) -> None:
         """Test border score with all NaN firing rates."""
-        positions = np.random.randn(2000, 2) * 15
-        env = Environment.from_samples(positions, bin_size=3.0)
+        env = small_2d_env
 
         # All NaN
         firing_rate = np.full(env.n_bins, np.nan)
@@ -160,10 +141,9 @@ class TestBorderScore:
         # Should return NaN for all-NaN input
         assert np.isnan(score), f"Expected NaN for all-NaN input, got {score}"
 
-    def test_border_score_all_zeros(self) -> None:
+    def test_border_score_all_zeros(self, small_2d_env: Environment) -> None:
         """Test border score with zero firing everywhere."""
-        positions = np.random.randn(2000, 2) * 15
-        env = Environment.from_samples(positions, bin_size=3.0)
+        env = small_2d_env
 
         # All zeros
         firing_rate = np.zeros(env.n_bins)
@@ -175,10 +155,9 @@ class TestBorderScore:
         # Should return NaN (no field detected)
         assert np.isnan(score), f"Expected NaN for zero firing, got {score}"
 
-    def test_border_score_shape_validation(self) -> None:
+    def test_border_score_shape_validation(self, small_2d_env: Environment) -> None:
         """Test input validation for firing_rate shape."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
 
         # Wrong shape
         firing_rate = np.ones((env.n_bins, 2))  # 2D instead of 1D
@@ -188,10 +167,9 @@ class TestBorderScore:
         with pytest.raises(ValueError, match=r"firing_rate\.shape"):
             border_score(firing_rate, env)
 
-    def test_border_score_threshold_validation(self) -> None:
+    def test_border_score_threshold_validation(self, small_2d_env: Environment) -> None:
         """Test validation of threshold parameter."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
         from neurospatial.metrics.boundary_cells import border_score
@@ -203,10 +181,9 @@ class TestBorderScore:
         with pytest.raises(ValueError, match="threshold must be in"):
             border_score(firing_rate, env, threshold=1.5)
 
-    def test_border_score_min_area_validation(self) -> None:
+    def test_border_score_min_area_validation(self, small_2d_env: Environment) -> None:
         """Test validation of min_area parameter."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
         from neurospatial.metrics.boundary_cells import border_score
@@ -215,10 +192,9 @@ class TestBorderScore:
         with pytest.raises(ValueError, match="min_area must be non-negative"):
             border_score(firing_rate, env, min_area=-10.0)
 
-    def test_border_score_parameter_order(self) -> None:
+    def test_border_score_parameter_order(self, small_2d_env: Environment) -> None:
         """Test that firing_rate comes before env (project convention)."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
         from neurospatial.metrics.boundary_cells import border_score
@@ -227,10 +203,9 @@ class TestBorderScore:
         score = border_score(firing_rate, env)
         assert isinstance(score, (float, np.floating))
 
-    def test_border_score_returns_float(self) -> None:
+    def test_border_score_returns_float(self, small_2d_env: Environment) -> None:
         """Test that border_score returns a scalar float."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
 
         # Create simple border field
         firing_rate = np.zeros(env.n_bins)
@@ -245,17 +220,17 @@ class TestBorderScore:
         assert np.ndim(score) == 0, "Border score should be scalar"
         assert isinstance(score, (float, np.floating)) or np.isnan(score)
 
-    def test_border_score_range(self) -> None:
+    def test_border_score_range(self, dense_rectangular_grid_env: Environment) -> None:
         """Test that border score is always in [-1, 1]."""
-        # Test multiple random environments
+        env = dense_rectangular_grid_env
+        rng = np.random.default_rng(42)
+
+        from neurospatial.metrics.boundary_cells import border_score
+
+        # Test multiple random firing rates on same environment
         for _ in range(5):
-            positions = np.random.randn(2000, 2) * 15
-            env = Environment.from_samples(positions, bin_size=3.0)
-
             # Random firing rate
-            firing_rate = np.random.rand(env.n_bins) * 5.0
-
-            from neurospatial.metrics.boundary_cells import border_score
+            firing_rate = rng.random(env.n_bins) * 5.0
 
             score = border_score(firing_rate, env)
 
@@ -265,10 +240,11 @@ class TestBorderScore:
                     f"Border score {score} out of range [-1, 1]"
                 )
 
-    def test_border_score_distance_metric_geodesic(self) -> None:
+    def test_border_score_distance_metric_geodesic(
+        self, dense_rectangular_grid_env: Environment
+    ) -> None:
         """Test border score with geodesic distance metric (default)."""
-        positions = np.random.randn(5000, 2) * 20
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_rectangular_grid_env
 
         # Create border cell
         firing_rate = np.zeros(env.n_bins)
@@ -288,10 +264,11 @@ class TestBorderScore:
         )
         assert -1.0 <= score_geodesic <= 1.0
 
-    def test_border_score_distance_metric_euclidean(self) -> None:
+    def test_border_score_distance_metric_euclidean(
+        self, dense_rectangular_grid_env: Environment
+    ) -> None:
         """Test border score with euclidean distance metric."""
-        positions = np.random.randn(5000, 2) * 20
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = dense_rectangular_grid_env
 
         # Create border cell
         firing_rate = np.zeros(env.n_bins)
@@ -305,15 +282,11 @@ class TestBorderScore:
         # Should return valid score
         assert -1.0 <= score <= 1.0, f"Expected score in [-1, 1], got {score}"
 
-    def test_border_score_distance_metrics_differ(self) -> None:
+    def test_border_score_distance_metrics_differ(
+        self, dense_50x50_bin5_env: Environment
+    ) -> None:
         """Test that geodesic and euclidean give different results."""
-        # Create environment with some obstacles/irregular connectivity
-        positions = []
-        for x in np.linspace(0, 50, 500):
-            for y in np.linspace(0, 50, 500):
-                positions.append([x, y])
-        positions = np.array(positions)
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = dense_50x50_bin5_env
 
         # Create central field that requires path around obstacles
         firing_rate = np.zeros(env.n_bins)
@@ -335,10 +308,11 @@ class TestBorderScore:
         # For regular grids, they might be similar, but we test they're computed
         # (exact equality would depend on environment structure)
 
-    def test_border_score_distance_metric_validation(self) -> None:
+    def test_border_score_distance_metric_validation(
+        self, small_2d_env: Environment
+    ) -> None:
         """Test validation of distance_metric parameter."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
         from neurospatial.metrics.boundary_cells import border_score
@@ -349,14 +323,11 @@ class TestBorderScore:
         ):
             border_score(firing_rate, env, distance_metric="invalid")
 
-    def test_border_score_euclidean_central_field(self) -> None:
+    def test_border_score_euclidean_central_field(
+        self, dense_50x50_bin5_env: Environment
+    ) -> None:
         """Test euclidean distance for central field (should have low score)."""
-        positions = []
-        for x in np.linspace(0, 50, 500):
-            for y in np.linspace(0, 50, 500):
-                positions.append([x, y])
-        positions = np.array(positions)
-        env = Environment.from_samples(positions, bin_size=5.0)
+        env = dense_50x50_bin5_env
 
         # Create central field
         firing_rate = np.zeros(env.n_bins)
@@ -376,18 +347,22 @@ class TestBorderScore:
 
 
 class TestComputeRegionCoverage:
-    """Test compute_region_coverage function."""
+    """Test compute_region_coverage function.
+
+    Note: These tests require inline Environment.from_samples() calls because they
+    add regions to the environment. Session-scoped fixtures cannot be used since
+    region additions would persist and conflict between tests.
+    """
 
     def test_region_coverage_basic(self) -> None:
         """Test basic region coverage computation with wall regions."""
         from shapely.geometry import box
 
-        # Create rectangular environment
-        positions = []
-        for x in np.linspace(0, 40, 400):
-            for y in np.linspace(0, 40, 400):
-                positions.append([x, y])
-        positions = np.array(positions)
+        # Inline environment required: adds wall regions (north, south, east, west)
+        x = np.linspace(0, 40, 400)
+        y = np.linspace(0, 40, 400)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
 
         env = Environment.from_samples(positions, bin_size=4.0)
 
@@ -494,10 +469,11 @@ class TestComputeRegionCoverage:
         # Empty region should have 0.0 coverage
         assert coverage["far_away"] == 0.0
 
-    def test_region_coverage_nonexistent_region(self) -> None:
+    def test_region_coverage_nonexistent_region(
+        self, small_2d_env: Environment
+    ) -> None:
         """Test region coverage with non-existent region raises error."""
-        positions = np.random.randn(1000, 2) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = small_2d_env
 
         firing_rate = np.zeros(env.n_bins)
         firing_rate[0] = 5.0
@@ -538,11 +514,11 @@ class TestComputeRegionCoverage:
         """Test region coverage when field covers entire region."""
         from shapely.geometry import box
 
-        positions = []
-        for x in np.linspace(0, 40, 400):
-            for y in np.linspace(0, 40, 400):
-                positions.append([x, y])
-        positions = np.array(positions)
+        # Create rectangular environment using vectorized meshgrid
+        x = np.linspace(0, 40, 400)
+        y = np.linspace(0, 40, 400)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
 
         env = Environment.from_samples(positions, bin_size=4.0)
 
@@ -564,11 +540,11 @@ class TestComputeRegionCoverage:
         """Test region coverage when field doesn't overlap region."""
         from shapely.geometry import box
 
-        positions = []
-        for x in np.linspace(0, 40, 400):
-            for y in np.linspace(0, 40, 400):
-                positions.append([x, y])
-        positions = np.array(positions)
+        # Create rectangular environment using vectorized meshgrid
+        x = np.linspace(0, 40, 400)
+        y = np.linspace(0, 40, 400)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
 
         env = Environment.from_samples(positions, bin_size=4.0)
 
