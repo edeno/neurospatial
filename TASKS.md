@@ -170,7 +170,7 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ### 3.4 Verification
 
-- [ ] Run parallel test suite 5 times to verify no flaky tests:
+- [x] Run parallel test suite 5 times to verify no flaky tests:
 
   ```bash
   for i in {1..5}; do uv run pytest -n auto -q; done
@@ -178,22 +178,22 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ---
 
-## Milestone 4: Organize Animation Fixtures
+## Milestone 4: Organize Animation Fixtures ✅ DONE
 
-### 4.1 Create Animation Conftest
+### 4.1 Create Animation Conftest ✅ DONE
 
-- [ ] Create `tests/animation/conftest.py` file
-- [ ] Move `sample_video` fixture from `tests/conftest.py` (lines 512-551)
-- [ ] Move `sample_video_array` fixture from `tests/conftest.py` (lines 555-573)
-- [ ] Move `sample_calibration` fixture from `tests/conftest.py` (lines 577-607)
-- [ ] Move `linearized_env` fixture from `tests/conftest.py` (lines 616-648)
-- [ ] Move `polygon_env` fixture from `tests/conftest.py` (lines 652-667)
-- [ ] Move `masked_env` fixture from `tests/conftest.py` (lines 671-698)
+- [x] Create `tests/animation/conftest.py` file
+- [x] Move `sample_video` fixture from `tests/conftest.py`
+- [x] Move `sample_video_array` fixture from `tests/conftest.py`
+- [x] Move `sample_calibration` fixture from `tests/conftest.py`
+- [x] Move `linearized_env` fixture from `tests/conftest.py`
+- [x] Move `polygon_env` fixture from `tests/conftest.py`
+- [x] Move `masked_env` fixture from `tests/conftest.py`
 
-### 4.2 Update Main Conftest
+### 4.2 Update Main Conftest ✅ DONE
 
-- [ ] Remove moved fixtures from `tests/conftest.py` (lines 507-699)
-- [ ] Verify animation tests still pass: `uv run pytest tests/animation/ -v`
+- [x] Remove moved fixtures from `tests/conftest.py` (193 lines removed, 887 → 694 lines)
+- [x] Verify animation tests still pass: 827 passed
 
 ---
 
@@ -243,7 +243,7 @@ Look for these patterns and add `@pytest.mark.slow`:
 
 ---
 
-## Milestone 7: Standardize Fixture Naming (Optional)
+## Milestone 7: Standardize Fixture Naming
 
 ### 7.1 Audit Current Names
 
@@ -258,6 +258,17 @@ Pattern: `{size}_{dims}d_{connectivity}_{layout}_env`
 - [ ] Document naming convention in conftest.py header comment
 
 ---
+
+## Milestone 8: Documentation Updates
+
+- [ ] Add a short “Testing Guidelines” section to tests/README.md summarizing:
+“Don’t test internals; do test behavior.”
+“Use fixtures and local RNGs.”
+“Avoid docstring and style tests; use tools instead.”
+- [ ] Remove Docstring-Based Tests
+  - Delete tests/test_common_pitfalls.py entirely.
+Remove any references to these tests from docs or TASKS.md.
+If you still want docstring coverage, rely on a doc linter or manual review, not runtime tests.
 
 ## Validation Checklist
 

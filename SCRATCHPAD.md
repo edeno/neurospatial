@@ -2,6 +2,36 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Organize Animation Fixtures (Milestone 4)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Move video overlay fixtures from `tests/conftest.py` to `tests/animation/conftest.py` for better organization.
+
+**Results**:
+
+- **Before**: Main conftest.py had 887 lines with video fixtures mixed in
+- **After**: Main conftest.py reduced to 694 lines (193 lines moved)
+
+**Fixtures Moved**:
+
+1. `sample_video` - Test video file (16x16 pixels, 10 frames)
+2. `sample_video_array` - Test video as numpy array
+3. `sample_calibration` - VideoCalibration for testing
+4. `linearized_env` - 1D environment for video overlay rejection tests
+5. `polygon_env` - 2D polygon environment for fallback tests
+6. `masked_env` - 2D masked grid for full video overlay support tests
+
+**Verification**:
+
+- All 827 animation tests pass ✅
+- All 42 spike_field tests pass (sanity check) ✅
+- Ruff check passes ✅
+- Mypy has pre-existing cv2 type stub issue (not a regression) ⚠️
+- Code review: APPROVED ✅
+
+---
+
 ### Task: Migrate test_differential.py Global RNG (Milestone 3.3)
 
 **Status**: ✅ COMPLETE
