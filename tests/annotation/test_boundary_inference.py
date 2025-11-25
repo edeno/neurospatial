@@ -371,3 +371,129 @@ class TestKDE:
         )
 
         assert low_threshold.area > high_threshold.area
+
+
+@pytest.mark.gui
+class TestAddInitialBoundaryToShapes:
+    """Tests for add_initial_boundary_to_shapes napari integration."""
+
+    def test_adds_boundary_to_empty_shapes_layer(self):
+        """Boundary polygon is added to empty shapes layer."""
+        napari = pytest.importorskip("napari")
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        from neurospatial.annotation._helpers import rebuild_features
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+        )
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Annotations",
+            features=rebuild_features([], []),
+        )
+
+        # Create a simple boundary polygon (in environment coordinates)
+        boundary = ShapelyPolygon([(0, 0), (100, 0), (100, 80), (0, 80)])
+
+        add_initial_boundary_to_shapes(shapes, boundary, calibration=None)
+
+        assert len(shapes.data) == 1
+        assert shapes.features["role"].iloc[0] == "environment"
+        assert shapes.features["name"].iloc[0] == "arena"
+
+        viewer.close()
+
+    def test_preserves_existing_shapes(self):
+        """Existing regions are preserved when adding boundary."""
+        napari = pytest.importorskip("napari")
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        from neurospatial.annotation._helpers import rebuild_features
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+        )
+
+        viewer = napari.Viewer(show=False)
+        # Pre-populate with an existing region (use 5 vertices for polygon, not rectangle)
+        shapes = viewer.add_shapes(
+            name="Annotations",
+            data=[np.array([[10, 10], [20, 10], [20, 20], [10, 20], [10, 10]])],
+            shape_type="polygon",
+            features=rebuild_features(["region"], ["goal_zone"]),
+        )
+
+        # Add boundary
+        boundary = ShapelyPolygon([(0, 0), (100, 0), (100, 80), (0, 80)])
+        add_initial_boundary_to_shapes(shapes, boundary, calibration=None)
+
+        # Should have 2 shapes now
+        assert len(shapes.data) == 2
+        # Boundary should be first (prepended)
+        assert shapes.features["role"].iloc[0] == "environment"
+        assert shapes.features["name"].iloc[0] == "arena"
+        # Existing region preserved in second position
+        assert shapes.features["role"].iloc[1] == "region"
+        assert shapes.features["name"].iloc[1] == "goal_zone"
+
+        viewer.close()
+
+    def test_converts_to_napari_row_col(self):
+        """Coordinates are converted from (x, y) to napari (row, col)."""
+        napari = pytest.importorskip("napari")
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        from neurospatial.annotation._helpers import rebuild_features
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+        )
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Annotations",
+            features=rebuild_features([], []),
+        )
+
+        # Simple rectangle: (x=10, y=20) -> napari (row=20, col=10)
+        boundary = ShapelyPolygon([(10, 20), (30, 20), (30, 50), (10, 50)])
+        add_initial_boundary_to_shapes(shapes, boundary, calibration=None)
+
+        # Check first vertex: (x=10, y=20) -> napari (row=20, col=10)
+        first_vertex = shapes.data[0][0]
+        assert first_vertex[0] == 20  # row = y
+        assert first_vertex[1] == 10  # col = x
+
+        viewer.close()
+
+    def test_applies_calibration_transform(self):
+        """Calibration transforms coordinates from cm to pixels."""
+        napari = pytest.importorskip("napari")
+        from shapely.geometry import Polygon as ShapelyPolygon
+
+        from neurospatial.annotation._helpers import rebuild_features
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+        )
+        from neurospatial.transforms import VideoCalibration, scale_2d
+
+        viewer = napari.Viewer(show=False)
+        shapes = viewer.add_shapes(
+            name="Annotations",
+            features=rebuild_features([], []),
+        )
+
+        # Simple 2x scale calibration (1 cm = 2 px)
+        # scale_2d(0.5) means px -> cm divides by 2, so cm -> px multiplies by 2
+        transform = scale_2d(0.5)  # px -> cm transform
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        # Boundary in cm coordinates
+        boundary = ShapelyPolygon([(0, 0), (50, 0), (50, 40), (0, 40)])
+        add_initial_boundary_to_shapes(shapes, boundary, calibration=calibration)
+
+        # After transform: coords should be doubled (cm -> px)
+        # (x=50, y=40) cm -> (x=100, y=80) px -> napari (row=80, col=100)
+        # Note: calibration.transform_cm_to_px multiplies by inverse scale
+        assert len(shapes.data) == 1
+
+        viewer.close()

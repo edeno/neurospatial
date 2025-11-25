@@ -477,7 +477,7 @@ def create_annotation_widget(
                 else:
                     # Delete the just-drawn shape
                     # Must defer to avoid reentrancy with napari's _finish_drawing()
-                    from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
+                    from qtpy.QtCore import QTimer
 
                     # Update count IMMEDIATELY to prevent dialog re-triggering
                     # (napari may fire multiple data events for single shape)
@@ -572,7 +572,7 @@ def create_annotation_widget(
         addition. This wrapper schedules the actual processing to run once
         after the event storm settles, reducing UI latency.
         """
-        from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
+        from qtpy.QtCore import QTimer
 
         if not _pending_update[0]:
             _pending_update[0] = True
@@ -740,3 +740,69 @@ def get_annotation_data(
     from typing import cast
 
     return data, [str(n) for n in names], [cast("Role", str(r)) for r in roles]
+
+
+def add_initial_boundary_to_shapes(
+    shapes_layer: napari.layers.Shapes,
+    boundary: Any,
+    calibration: Any = None,
+) -> None:
+    """
+    Add pre-drawn boundary polygon to shapes layer for editing.
+
+    Parameters
+    ----------
+    shapes_layer : napari.layers.Shapes
+        The annotation shapes layer (may already contain shapes from initial_regions).
+    boundary : Polygon
+        Shapely Polygon. Coordinate system depends on calibration:
+        - With calibration: environment units (cm), Y-up origin
+        - Without calibration: video pixels (x, y), Y-down origin
+    calibration : VideoCalibration, optional
+        Transform from environment coords (cm) to video pixels.
+        If None, boundary coords are assumed to be in video pixels already.
+
+    Notes
+    -----
+    Mirrors the pattern in _add_initial_regions() for consistency.
+    Preserves existing shapes/features and prepends the boundary to front.
+    """
+    from shapely import get_coordinates
+
+    # Preserve existing features before adding new shape
+    existing_roles = list(shapes_layer.features.get("role", []))
+    existing_names = list(shapes_layer.features.get("name", []))
+
+    # Get polygon exterior vertices
+    coords = get_coordinates(boundary.exterior)
+
+    # Transform to pixels if calibration provided
+    # NOTE: transform_cm_to_px handles Y-flip internally - don't double-flip!
+    if calibration is not None:
+        coords = calibration.transform_cm_to_px(coords)
+
+    # Convert to napari (row, col) order
+    coords_rc = coords[:, ::-1]
+
+    # Add to shapes layer (appends to existing shapes)
+    shapes_layer.add([coords_rc], shape_type="polygon")
+
+    # Extend features with the new boundary shape
+    # NOTE: Boundary should be first in the list for proper widget mode handling
+    new_roles: list[Role] = [
+        "environment",
+        *[cast("Role", str(r)) for r in existing_roles],
+    ]
+    new_names = ["arena", *[str(n) for n in existing_names]]
+    shapes_layer.features = rebuild_features(new_roles, new_names)
+
+    # Reorder data so boundary is first (environment boundary should be drawn first)
+    # This ensures the widget's mode logic works correctly
+    if len(existing_roles) > 0:
+        # Move the last shape (just added) to the front
+        data = list(shapes_layer.data)
+        data = [data[-1], *data[:-1]]
+        shapes_layer.data = data
+
+    # Sync face colors from features
+    sync_face_colors_from_features(shapes_layer)
