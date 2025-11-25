@@ -2,6 +2,29 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_spike_field.py Global RNG (Milestone 3.1)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Complete RNG migration for test_spike_field.py (only 1 remaining global RNG call).
+
+**Results**:
+
+- **Before**: 1 `np.random.randn()` call without local RNG
+- **After**: 0 global RNG calls (100% migrated)
+
+**Change Made**:
+
+- `test_boundary_single_bin`: Added `rng = np.random.default_rng(42)` and replaced `np.random.randn()` → `rng.standard_normal()`
+
+**Verification**:
+
+- All 42 tests pass ✅
+- Ruff check passes ✅
+- Mypy has pre-existing Protocol errors (unrelated to change)
+
+---
+
 ### Task: Migrate test_place_fields.py Global RNG (Milestone 3.1)
 
 **Status**: ✅ COMPLETE

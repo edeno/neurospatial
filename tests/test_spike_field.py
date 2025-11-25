@@ -696,9 +696,10 @@ class TestComputePlaceField:
 
     def test_boundary_single_bin(self):
         """Test edge case: environment with only one bin."""
+        rng = np.random.default_rng(42)
         # All positions in small area (will create ~1 bin)
         positions = np.full((100, 2), [50.0, 50.0])
-        positions += np.random.randn(100, 2) * 0.1  # Tiny variation
+        positions += rng.standard_normal((100, 2)) * 0.1  # Tiny variation
 
         times = np.linspace(0, 10, 100)
         spike_times = np.array([1.0, 5.0, 9.0])
