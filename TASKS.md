@@ -143,8 +143,13 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Replaced fragile random fixtures with deterministic grids
   - Kept `np.random.default_rng(42)` only where truly needed
   - Verify: All 51 tests pass
-- [ ] Migrate `tests/environment/test_transitions.py` (3 occurrences)
-- [ ] Migrate `tests/metrics/test_grid_cells.py` (4 occurrences)
+- [x] Migrate `tests/environment/test_transitions.py` (3 occurrences) ✅
+  - Already uses `np.random.default_rng(42)` correctly (no changes needed)
+  - Verify: All 40 tests pass
+- [x] Migrate `tests/metrics/test_grid_cells.py` (4 occurrences) ✅
+  - Replaced random environments with deterministic grids
+  - Replaced 4 `np.random.seed(42)` with `rng = np.random.default_rng(42)`
+  - Verify: All 23 tests pass
 - [ ] Migrate `tests/metrics/test_trajectory.py` (3 occurrences)
 - [ ] Migrate `tests/metrics/test_population.py` (2 occurrences)
 - [ ] Migrate `tests/segmentation/*.py` (10 occurrences total)

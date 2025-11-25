@@ -19,8 +19,10 @@ class TestSpatialAutocorrelation:
         """Test FFT method returns 2D autocorrelation on regular grid."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        # Create regular 2D grid environment
-        positions = np.random.randn(2000, 2) * 20
+        # Create regular 2D grid environment using deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Create simple firing pattern (single peak)
@@ -43,13 +45,15 @@ class TestSpatialAutocorrelation:
         """Test graph method returns (distances, correlations) tuple."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        # Create environment
-        positions = np.random.randn(2000, 2) * 20
+        # Create environment using deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Random firing pattern
-        np.random.seed(42)
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        # Random firing pattern - local RNG for isolation
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         # Compute autocorrelation with graph method
         result = spatial_autocorrelation(
@@ -72,11 +76,14 @@ class TestSpatialAutocorrelation:
         """Test auto method can detect appropriate method."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        # Create environment (auto will select graph or FFT based on structure)
-        positions = np.random.randn(2000, 2) * 20
+        # Create environment using deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         # Auto should work without error (returns either 2D array or tuple)
         result = spatial_autocorrelation(firing_rate, env, method="auto")
@@ -90,7 +97,10 @@ class TestSpatialAutocorrelation:
         """Test raises ValueError if firing_rate shape doesn't match env.n_bins."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        positions = np.random.randn(2000, 2) * 20
+        # Deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         firing_rate = np.zeros(env.n_bins + 10)  # Wrong size
@@ -102,7 +112,10 @@ class TestSpatialAutocorrelation:
         """Test raises ValueError if all firing rates are NaN."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        positions = np.random.randn(2000, 2) * 20
+        # Deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         firing_rate = np.full(env.n_bins, np.nan)
@@ -114,7 +127,10 @@ class TestSpatialAutocorrelation:
         """Test raises ValueError if all valid firing rates are constant."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        positions = np.random.randn(2000, 2) * 20
+        # Deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         firing_rate = np.full(env.n_bins, 5.0)  # All constant
@@ -126,10 +142,14 @@ class TestSpatialAutocorrelation:
         """Test raises ValueError on invalid method parameter."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        positions = np.random.randn(2000, 2) * 20
+        # Deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         with pytest.raises(ValueError, match="method must be"):
             spatial_autocorrelation(firing_rate, env, method="invalid")
@@ -138,12 +158,15 @@ class TestSpatialAutocorrelation:
         """Test FFT autocorrelation returns finite values."""
         from neurospatial.metrics.grid_cells import spatial_autocorrelation
 
-        positions = np.random.randn(2000, 2) * 20
+        # Deterministic grid
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Create firing pattern
-        np.random.seed(42)
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        # Create firing pattern with local RNG
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         autocorr = spatial_autocorrelation(firing_rate, env, method="fft")
 
@@ -208,9 +231,9 @@ class TestGridScore:
         """Test random noise produces near-zero grid score."""
         from neurospatial.metrics.grid_cells import grid_score
 
-        # Random autocorrelogram
-        np.random.seed(42)
-        autocorr = np.random.randn(50, 50) * 0.1
+        # Random autocorrelogram with local RNG
+        rng = np.random.default_rng(42)
+        autocorr = rng.standard_normal((50, 50)) * 0.1
 
         score = grid_score(autocorr)
 
@@ -221,7 +244,8 @@ class TestGridScore:
         """Test raises ValueError on 1D input."""
         from neurospatial.metrics.grid_cells import grid_score
 
-        autocorr = np.random.randn(50)
+        rng = np.random.default_rng(42)
+        autocorr = rng.standard_normal(50)
 
         with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
             grid_score(autocorr)
@@ -230,7 +254,8 @@ class TestGridScore:
         """Test raises ValueError on invalid radius parameters."""
         from neurospatial.metrics.grid_cells import grid_score
 
-        autocorr = np.random.randn(50, 50)
+        rng = np.random.default_rng(42)
+        autocorr = rng.standard_normal((50, 50))
 
         # inner_radius_fraction not in (0, 1)
         with pytest.raises(ValueError, match="inner_radius_fraction must be in"):
@@ -254,9 +279,9 @@ class TestGridScore:
         """Test grid score is in expected range [-2, 2]."""
         from neurospatial.metrics.grid_cells import grid_score
 
-        # Random autocorrelogram
-        np.random.seed(42)
-        autocorr = np.random.randn(50, 50)
+        # Random autocorrelogram with local RNG
+        rng = np.random.default_rng(42)
+        autocorr = rng.standard_normal((50, 50))
 
         score = grid_score(autocorr)
 
