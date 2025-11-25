@@ -37,8 +37,31 @@ All 5 tasks in Milestone 3 completed:
 **Test Results**: 162 passed, 3 skipped
 **Quality**: ruff and mypy pass
 
-### Next Task
-- **Milestone 4**: Public API Export (BoundaryConfig and boundary_from_positions already exported in M1)
+### Milestone 4: COMPLETE
+
+Public API already exported in M1:
+- [x] `BoundaryConfig` and `boundary_from_positions` in `__all__`
+
+### Milestone 5: COMPLETE
+
+All tests already implemented in M1:
+- [x] TestBoundaryConfig, TestBoundaryFromPositionsValidation, TestBoundaryFromPositionsConfigOverride
+- [x] TestKDE, TestAlphaShape, TestAddInitialBoundaryToShapes
+
+### Milestone 6: COMPLETE
+
+Added optional dependencies in pyproject.toml:
+- [x] `annotation-kde = ["scikit-image>=0.19.0"]`
+- [x] `annotation-alpha = ["alphashape>=1.3.0"]`
+- [x] `annotation = [...]` combined
+
+### Milestone 7: COMPLETE
+
+Added documentation in CLAUDE.md:
+- [x] Boundary seeding examples with `initial_boundary`, `boundary_config`, `show_positions`
+- [x] All three methods documented: `convex_hull`, `alpha_shape`, `kde`
+
+### ALL MILESTONES COMPLETE
 
 ### Notes
 - `BoundaryConfig` and `boundary_from_positions` exported via `neurospatial.annotation.__init__.py`

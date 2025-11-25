@@ -46,9 +46,9 @@ Expose new functionality in public API.
 
 **File**: `src/neurospatial/annotation/__init__.py` (MODIFY)
 
-- [ ] Export `BoundaryConfig` from `_boundary_inference`
-- [ ] Export `boundary_from_positions` from `_boundary_inference`
-- [ ] Add to `__all__` list
+- [x] Export `BoundaryConfig` from `_boundary_inference`
+- [x] Export `boundary_from_positions` from `_boundary_inference`
+- [x] Add to `__all__` list
 
 ## Milestone 5: Tests
 
@@ -56,13 +56,12 @@ Comprehensive test coverage for boundary inference.
 
 **File**: `tests/annotation/test_boundary_inference.py` (CREATE)
 
-- [ ] `TestBoundaryConfig`: default values, frozen immutability
-- [ ] `TestConvexHull`: basic hull, square points, minimum points validation
-- [ ] `TestBuffer`: area increase, scaling with bbox diagonal
-- [ ] `TestSimplify`: vertex reduction
-- [ ] `TestKDE`: import error handling, basic validity, max_bins cap, threshold effect on area
-- [ ] `TestAlphaShape`: import error handling, MultiPolygon warning
-- [ ] `TestWithConfig`: config overrides defaults, kwargs override config
+- [x] `TestBoundaryConfig`: default values, frozen immutability, custom values, method literal types
+- [x] `TestBoundaryFromPositionsValidation`: wrong shape, minimum points, unique points, unknown method
+- [x] `TestBoundaryFromPositionsConfigOverride`: default config, config object, kwargs override config, method override
+- [x] `TestKDE`: import error handling, basic validity, max_bins cap, threshold effect on area
+- [x] `TestAlphaShape`: import error handling, basic alpha shape, alpha parameter, MultiPolygon warning
+- [x] `TestAddInitialBoundaryToShapes`: adds boundary, preserves shapes, napari coords, calibration
 
 ## Milestone 6: Dependencies
 
@@ -70,9 +69,9 @@ Update optional dependencies for annotation extras.
 
 **File**: `pyproject.toml` (MODIFY)
 
-- [ ] Add `annotation-kde = ["scikit-image>=0.19.0"]` optional dependency
-- [ ] Add `annotation-alpha = ["alphashape>=1.3.0"]` optional dependency
-- [ ] Add `annotation = [...]` combined optional dependency
+- [x] Add `annotation-kde = ["scikit-image>=0.19.0"]` optional dependency
+- [x] Add `annotation-alpha = ["alphashape>=1.3.0"]` optional dependency
+- [x] Add `annotation = [...]` combined optional dependency
 
 ## Milestone 7: Documentation
 
@@ -80,8 +79,8 @@ Update CLAUDE.md with usage examples.
 
 **File**: `CLAUDE.md` (MODIFY)
 
-- [ ] Add boundary seeding examples to Quick Reference section
-- [ ] Document `annotate_video()` with `initial_boundary` parameter
-- [ ] Document `BoundaryConfig` usage for fine-tuning
-- [ ] Document `show_positions=True` for trajectory reference
-- [ ] Document `boundary_from_positions()` for composable usage
+- [x] Add boundary seeding examples to Quick Reference section
+- [x] Document `annotate_video()` with `initial_boundary` parameter
+- [x] Document `BoundaryConfig` usage for fine-tuning
+- [x] Document `show_positions=True` for trajectory reference
+- [x] Document `boundary_from_positions()` for composable usage

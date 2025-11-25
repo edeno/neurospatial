@@ -379,6 +379,48 @@ result = annotate_video("experiment.mp4", mode="regions")                    # O
 
 # Simplify hand-drawn polygons (removes jagged edges)
 result = annotate_video("experiment.mp4", bin_size=2.0, simplify_tolerance=1.0)
+
+# Boundary seeding from position data (v0.9.0+)
+# Pre-draw boundary from trajectory - edit rather than draw from scratch
+from neurospatial.annotation import BoundaryConfig, boundary_from_positions
+
+# Simple: pass positions directly (uses sensible defaults)
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    initial_boundary=positions,  # Auto-infer with convex hull, 2% buffer, 1% simplify
+)
+
+# With config for fine-tuning
+config = BoundaryConfig(method="kde", buffer_fraction=0.05)
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    initial_boundary=positions,
+    boundary_config=config,
+)
+
+# Show trajectory as reference while editing
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    initial_boundary=positions,
+    show_positions=True,  # Semi-transparent cyan Points layer
+)
+
+# Composable: create boundary explicitly for more control
+boundary = boundary_from_positions(
+    positions,
+    method="alpha_shape",  # or "convex_hull", "kde"
+    alpha=0.05,
+    buffer_fraction=0.03,
+)
+result = annotate_video("experiment.mp4", bin_size=2.0, initial_boundary=boundary)
+
+# Available boundary inference methods:
+# - "convex_hull" (default): Fast, always convex, no extra dependencies
+# - "alpha_shape": Concave hull, tighter fit. Install: pip install alphashape
+# - "kde": Density-based contour. Install: pip install scikit-image
 ```
 
 **Annotation Keyboard Shortcuts:**
