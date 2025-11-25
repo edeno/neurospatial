@@ -34,11 +34,11 @@ Wire boundary seeding into the main annotation function.
 
 **File**: `src/neurospatial/annotation/core.py` (MODIFY)
 
-- [ ] Add parameters: `initial_boundary`, `boundary_config`, `show_positions`
-- [ ] Detect NDArray vs Polygon for `initial_boundary` and dispatch appropriately
-- [ ] Handle conflict: warn and filter if both `initial_boundary` and environment region in `initial_regions`
-- [ ] Implement `_add_positions_layer()` helper for trajectory reference display
-- [ ] Ensure correct call order: `_add_initial_regions()` → `add_initial_boundary_to_shapes()` → positions layer
+- [x] Add parameters: `initial_boundary`, `boundary_config`, `show_positions`
+- [x] Detect NDArray vs Polygon for `initial_boundary` and dispatch appropriately
+- [x] Handle conflict: warn and filter if both `initial_boundary` and environment region in `initial_regions`
+- [x] Implement `_add_positions_layer()` helper for trajectory reference display
+- [x] Ensure correct call order: `_add_initial_regions()` → `add_initial_boundary_to_shapes()` → positions layer
 
 ## Milestone 4: Public API Export
 

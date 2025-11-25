@@ -25,8 +25,20 @@ All 5 tasks in Milestone 2 completed:
 **Test Results**: 22 passed, 3 skipped
 **Quality**: ruff and mypy pass (also fixed 2 pre-existing unused type-ignore comments)
 
+### Milestone 3: COMPLETE
+
+All 5 tasks in Milestone 3 completed:
+- [x] **M3.1**: Added `initial_boundary`, `boundary_config`, `show_positions` params to `annotate_video()`
+- [x] **M3.2**: Detect NDArray vs Polygon and dispatch (uses `isinstance` check, calls `boundary_from_positions()` for NDArray)
+- [x] **M3.3**: Implemented `_filter_environment_regions()` with warning when conflict detected
+- [x] **M3.4**: Implemented `_add_positions_layer()` helper with subsampling for large arrays
+- [x] **M3.5**: Correct call order: initial_regions → initial_boundary → positions layer
+
+**Test Results**: 162 passed, 3 skipped
+**Quality**: ruff and mypy pass
+
 ### Next Task
-- **Milestone 3**: `annotate_video()` Integration
+- **Milestone 4**: Public API Export (BoundaryConfig and boundary_from_positions already exported in M1)
 
 ### Notes
 - `BoundaryConfig` and `boundary_from_positions` exported via `neurospatial.annotation.__init__.py`

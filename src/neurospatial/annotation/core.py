@@ -5,12 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
+import numpy as np
+
 from neurospatial.annotation._types import MultipleBoundaryStrategy, Role
 
 if TYPE_CHECKING:
     import napari
+    from numpy.typing import NDArray
+    from shapely.geometry import Polygon
 
     from neurospatial import Environment
+    from neurospatial.annotation._boundary_inference import BoundaryConfig
     from neurospatial.regions import Regions
     from neurospatial.transforms import VideoCalibration
 
@@ -41,6 +46,9 @@ def annotate_video(
     bin_size: float | None = None,
     simplify_tolerance: float | None = None,
     multiple_boundaries: MultipleBoundaryStrategy = "last",
+    initial_boundary: Polygon | NDArray[np.float64] | None = None,
+    boundary_config: BoundaryConfig | None = None,
+    show_positions: bool = False,
 ) -> AnnotationResult:
     """
     Launch interactive napari annotation on a video frame.
@@ -80,6 +88,19 @@ def annotate_video(
         - "last": Use the last drawn boundary (default). A warning is emitted.
         - "first": Use the first drawn boundary. A warning is emitted.
         - "error": Raise ValueError if multiple boundaries are drawn.
+    initial_boundary : Polygon or NDArray, optional
+        Pre-drawn boundary for editing. Can be:
+
+        - Shapely Polygon: Used directly as boundary
+        - NDArray (n, 2): Position data to infer boundary from
+
+        If None, user draws boundary manually.
+    boundary_config : BoundaryConfig, optional
+        Configuration for boundary inference when initial_boundary is an array.
+        If None, uses BoundaryConfig defaults (convex_hull, 2% buffer, 1% simplify).
+    show_positions : bool, default=False
+        If True and initial_boundary is an array, show positions as a
+        Points layer for reference while editing.
 
     Returns
     -------
@@ -180,6 +201,32 @@ def annotate_video(
             f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
         ) from e
 
+    # Process initial boundary
+    boundary_polygon = None
+    positions_for_display = None
+
+    if initial_boundary is not None:
+        if isinstance(initial_boundary, np.ndarray):
+            # Infer boundary from positions
+            from neurospatial.annotation._boundary_inference import (
+                boundary_from_positions,
+            )
+
+            boundary_polygon = boundary_from_positions(
+                initial_boundary,
+                config=boundary_config,
+            )
+            if show_positions:
+                positions_for_display = initial_boundary
+        else:
+            # Assume Shapely Polygon
+            boundary_polygon = initial_boundary
+
+    # Handle conflict: initial_boundary vs environment region in initial_regions
+    # initial_boundary takes precedence - warn if both provided
+    if boundary_polygon is not None and initial_regions is not None:
+        initial_regions = _filter_environment_regions(initial_regions)
+
     # Create viewer with reasonable default size for annotation work
     viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
     viewer.window.resize(1400, 900)  # Larger window for comfortable annotation
@@ -196,9 +243,26 @@ def annotate_video(
         viewer, initial_mode=initial_annotation_mode
     )
 
-    # Add existing regions if provided
+    # IMPORTANT: Order matters for feature preservation
+    # 1. First add initial_regions (if any) - these are non-environment regions
     if initial_regions is not None:
         _add_initial_regions(shapes, initial_regions, calibration)
+
+    # 2. Then add initial_boundary - this prepends to front and reorders
+    if boundary_polygon is not None:
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+        )
+
+        add_initial_boundary_to_shapes(
+            shapes,
+            boundary_polygon,
+            calibration=calibration,
+        )
+
+    # 3. Finally add positions layer (separate layer, no conflict)
+    if positions_for_display is not None:
+        _add_positions_layer(viewer, positions_for_display, calibration)
 
     # Add annotation control widget (magicgui-based)
     widget = create_annotation_widget(
@@ -336,3 +400,94 @@ def _add_initial_regions(
 
         # Note: Don't reset feature_defaults here - let the widget control the mode.
         # The widget's initial_mode determines what role/name new shapes will have.
+
+
+def _add_positions_layer(
+    viewer: napari.Viewer,
+    positions: NDArray[np.float64],
+    calibration: VideoCalibration | None,
+) -> None:
+    """
+    Add positions as semi-transparent Points layer for reference.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer.
+    positions : NDArray[np.float64]
+        Position data. Coordinate system depends on calibration:
+
+        - With calibration: environment units (cm), Y-up origin
+        - Without calibration: video pixels (x, y), Y-down origin
+    calibration : VideoCalibration, optional
+        Transform from environment coords (cm) to video pixels.
+
+    Notes
+    -----
+    Mirrors the pattern in add_initial_boundary_to_shapes for consistency.
+    """
+    coords = positions.copy()
+
+    # Transform to pixels if calibration provided
+    # NOTE: transform_cm_to_px handles Y-flip internally - don't double-flip!
+    if calibration is not None:
+        coords = calibration.transform_cm_to_px(coords)
+
+    # Convert to napari (row, col) order
+    coords_rc = coords[:, ::-1]
+
+    # Subsample if too many points (for performance)
+    if len(coords_rc) > 5000:
+        step = len(coords_rc) // 5000
+        coords_rc = coords_rc[::step]
+
+    viewer.add_points(
+        coords_rc,
+        name="Trajectory (reference)",
+        size=3,
+        face_color="cyan",
+        opacity=0.3,
+        blending="translucent",
+    )
+
+
+def _filter_environment_regions(regions: Regions) -> Regions:
+    """
+    Filter out environment regions and warn if any were found.
+
+    This function is called when both initial_boundary and initial_regions
+    are provided. The initial_boundary takes precedence, so environment
+    regions in initial_regions are removed.
+
+    Parameters
+    ----------
+    regions : Regions
+        The regions collection to filter.
+
+    Returns
+    -------
+    Regions
+        New Regions collection without environment regions.
+    """
+    from neurospatial.regions import Regions
+
+    env_regions = [
+        name for name, r in regions.items() if r.metadata.get("role") == "environment"
+    ]
+
+    if env_regions:
+        import warnings
+
+        warnings.warn(
+            f"Both initial_boundary and environment regions in initial_regions "
+            f"({env_regions}) provided. Using initial_boundary; ignoring "
+            f"environment regions from initial_regions.",
+            UserWarning,
+            stacklevel=3,
+        )
+        # Filter out environment regions
+        return Regions(
+            r for r in regions.values() if r.metadata.get("role") != "environment"
+        )
+
+    return regions

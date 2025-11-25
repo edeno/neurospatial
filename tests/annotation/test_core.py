@@ -388,3 +388,215 @@ class TestAnnotationWidgetIntegration:
         assert face_colors is not None
 
         viewer.close()
+
+
+# =============================================================================
+# Tests for initial_boundary, boundary_config, show_positions (M3)
+# =============================================================================
+
+
+class TestAnnotateVideoInitialBoundaryValidation:
+    """Tests for initial_boundary parameter validation (no GUI required)."""
+
+    def test_initial_boundary_accepts_ndarray(self, tmp_path):
+        """initial_boundary accepts NDArray and infers boundary."""
+        pytest.importorskip("napari")
+
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        # Create position data
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
+
+        # Should fail on video read (empty file), not on initial_boundary
+        # This validates that the parameter is accepted
+        with pytest.raises(ValueError, match="Could not open video file"):
+            annotate_video(
+                str(video_file),
+                bin_size=5.0,
+                initial_boundary=positions,
+            )
+
+    def test_initial_boundary_accepts_polygon(self, tmp_path):
+        """initial_boundary accepts Shapely Polygon directly."""
+        pytest.importorskip("napari")
+
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        boundary = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+
+        # Should fail on video read (empty file), not on initial_boundary
+        with pytest.raises(ValueError, match="Could not open video file"):
+            annotate_video(
+                str(video_file),
+                bin_size=5.0,
+                initial_boundary=boundary,
+            )
+
+
+@pytest.mark.gui
+class TestAddPositionsLayer:
+    """Tests for _add_positions_layer helper."""
+
+    def test_adds_points_layer(self):
+        """Positions are added as a Points layer."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation.core import _add_positions_layer
+
+        viewer = napari.Viewer(show=False)
+
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
+
+        _add_positions_layer(viewer, positions, calibration=None)
+
+        # Should have a Points layer
+        point_layers = [
+            layer for layer in viewer.layers if layer._type_string == "points"
+        ]
+        assert len(point_layers) == 1
+        assert "Trajectory" in point_layers[0].name
+
+        viewer.close()
+
+    def test_converts_to_napari_row_col(self):
+        """Positions are converted to napari (row, col) order."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation.core import _add_positions_layer
+
+        viewer = napari.Viewer(show=False)
+
+        # Simple positions: (x=10, y=20) -> napari (row=20, col=10)
+        positions = np.array([[10.0, 20.0], [30.0, 40.0]])
+
+        _add_positions_layer(viewer, positions, calibration=None)
+
+        point_layer = next(
+            layer for layer in viewer.layers if layer._type_string == "points"
+        )
+        data = point_layer.data
+
+        # (x=10, y=20) -> (row=20, col=10)
+        assert data[0, 0] == 20.0  # row = y
+        assert data[0, 1] == 10.0  # col = x
+
+        viewer.close()
+
+    def test_subsamples_large_positions(self):
+        """Large position arrays are subsampled for performance."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation.core import _add_positions_layer
+
+        viewer = napari.Viewer(show=False)
+
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (10000, 2))
+
+        _add_positions_layer(viewer, positions, calibration=None)
+
+        point_layer = next(
+            layer for layer in viewer.layers if layer._type_string == "points"
+        )
+
+        # Should be subsampled to ~5000 points
+        assert len(point_layer.data) < 6000
+
+        viewer.close()
+
+    def test_applies_calibration_transform(self):
+        """Calibration transforms positions from cm to pixels."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation.core import _add_positions_layer
+        from neurospatial.transforms import Affine2D, VideoCalibration
+
+        viewer = napari.Viewer(show=False)
+
+        # 2x scale calibration: 1 cm = 2 px (matrix is inverse)
+        scale_matrix = np.array(
+            [
+                [2.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        transform = Affine2D(scale_matrix)
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        # Positions in cm
+        positions = np.array([[10.0, 20.0]])  # 10 cm, 20 cm
+
+        _add_positions_layer(viewer, positions, calibration=calibration)
+
+        point_layer = next(
+            layer for layer in viewer.layers if layer._type_string == "points"
+        )
+        data = point_layer.data
+
+        # After transform_cm_to_px (0.5x) and row/col swap:
+        # (10, 20) cm -> (5, 10) px -> napari (10, 5)
+        assert data[0, 0] == pytest.approx(10.0)  # row = y_px
+        assert data[0, 1] == pytest.approx(5.0)  # col = x_px
+
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestInitialBoundaryConflictResolution:
+    """Tests for conflict resolution between initial_boundary and initial_regions."""
+
+    def test_warns_when_both_boundary_and_env_region_provided(self):
+        """Warning emitted when initial_boundary and environment region both provided."""
+        pytest.importorskip("napari")
+        from neurospatial.annotation.core import (
+            _filter_environment_regions,
+        )
+
+        # Create regions with environment
+        boundary_region = Region(
+            name="arena",
+            kind="polygon",
+            data=shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]),
+            metadata={"role": "environment"},
+        )
+        goal_region = Region(
+            name="goal",
+            kind="polygon",
+            data=shp.Polygon([(10, 10), (20, 10), (20, 20), (10, 20)]),
+            metadata={"role": "region"},
+        )
+        regions = Regions([boundary_region, goal_region])
+
+        # Filter should emit warning and remove environment regions
+        with pytest.warns(UserWarning, match="Both initial_boundary and environment"):
+            filtered = _filter_environment_regions(regions)
+
+        # Only non-environment regions should remain
+        assert "goal" in filtered
+        assert "arena" not in filtered
+
+    def test_no_warning_when_no_env_region(self):
+        """No warning when initial_regions has no environment regions."""
+        pytest.importorskip("napari")
+        from neurospatial.annotation.core import (
+            _filter_environment_regions,
+        )
+
+        # Only non-environment regions
+        goal_region = Region(
+            name="goal",
+            kind="polygon",
+            data=shp.Polygon([(10, 10), (20, 10), (20, 20), (10, 20)]),
+            metadata={"role": "region"},
+        )
+        regions = Regions([goal_region])
+
+        # Should not emit warning, return unchanged
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # Fail if any warning
+            filtered = _filter_environment_regions(regions)
+
+        assert "goal" in filtered
