@@ -30,15 +30,17 @@ def simple_env():
 @pytest.fixture
 def simple_fields(simple_env):
     """Create simple test fields."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    return [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    return [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
 
 @pytest.fixture
 def position_overlay_data():
     """Create test position overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 10
+    positions = rng.random((n_frames, 2)) * 10
     return OverlayData(
         positions=[PositionData(data=positions, color="red", size=10.0, trail_length=3)]
     )
@@ -47,9 +49,10 @@ def position_overlay_data():
 @pytest.fixture
 def bodypart_overlay_data():
     """Create test bodypart overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    nose = np.random.rand(n_frames, 2) * 10
-    tail = np.random.rand(n_frames, 2) * 10
+    nose = rng.random((n_frames, 2)) * 10
+    tail = rng.random((n_frames, 2)) * 10
     skeleton = Skeleton(
         name="test",
         nodes=("nose", "tail"),
@@ -71,8 +74,9 @@ def bodypart_overlay_data():
 @pytest.fixture
 def head_direction_overlay_data():
     """Create test head direction overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    angles = np.random.rand(n_frames) * 2 * np.pi
+    angles = rng.random(n_frames) * 2 * np.pi
     return OverlayData(
         head_directions=[HeadDirectionData(data=angles, color="yellow", length=5.0)]
     )
@@ -81,11 +85,12 @@ def head_direction_overlay_data():
 @pytest.fixture
 def all_overlays_data():
     """Create overlay data with all types."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 10
-    nose = np.random.rand(n_frames, 2) * 10
-    tail = np.random.rand(n_frames, 2) * 10
-    angles = np.random.rand(n_frames) * 2 * np.pi
+    positions = rng.random((n_frames, 2)) * 10
+    nose = rng.random((n_frames, 2)) * 10
+    tail = rng.random((n_frames, 2)) * 10
+    angles = rng.random(n_frames) * 2 * np.pi
 
     skeleton = Skeleton(
         name="test",
@@ -520,9 +525,10 @@ def test_cache_limit_respected_with_overlays(
     mock_render_func, mock_ipywidgets, mock_display, simple_env, position_overlay_data
 ):
     """Test cache limit is respected when rendering overlays."""
+    rng = np.random.default_rng(42)
     # Create more frames than cache limit
     n_frames = 20
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Mock ipywidgets components
     mock_image = MagicMock()
@@ -570,10 +576,11 @@ def test_multiple_position_overlays(
     mock_render_func, mock_ipywidgets, mock_display, simple_env, simple_fields
 ):
     """Test multiple position overlays (multi-animal) render correctly."""
+    rng = np.random.default_rng(42)
     # Create multi-animal position data
     n_frames = 10
-    animal1_positions = np.random.rand(n_frames, 2) * 10
-    animal2_positions = np.random.rand(n_frames, 2) * 10
+    animal1_positions = rng.random((n_frames, 2)) * 10
+    animal2_positions = rng.random((n_frames, 2)) * 10
 
     multi_overlay_data = OverlayData(
         positions=[

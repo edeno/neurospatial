@@ -273,8 +273,9 @@ class TestPlaceFieldDetectionAccuracy:
 
     def test_place_field_detection_with_longer_duration(self):
         """Test that longer recordings improve detection accuracy."""
+        rng = np.random.default_rng(42)
         bin_size = 2.0
-        data = np.random.uniform(0, 100, (1000, 2))
+        data = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(data, bin_size=bin_size)
         env.units = "cm"
 

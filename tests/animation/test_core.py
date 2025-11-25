@@ -23,8 +23,9 @@ class TestSubsampleFrames:
         """Test subsampling with ndarray input."""
         from neurospatial.animation.core import subsample_frames
 
+        rng = np.random.default_rng(42)
         # Create test data: 100 frames at 100 Hz
-        fields = np.random.rand(100, 50)  # 100 frames, 50 bins
+        fields = rng.random((100, 50))  # 100 frames, 50 bins
 
         # Subsample to 25 Hz (every 4th frame)
         result = subsample_frames(fields, target_fps=25, source_fps=100)
@@ -43,8 +44,9 @@ class TestSubsampleFrames:
         """Test subsampling with list input."""
         from neurospatial.animation.core import subsample_frames
 
+        rng = np.random.default_rng(42)
         # Create test data as list
-        fields = [np.random.rand(50) for _ in range(100)]
+        fields = [rng.random(50) for _ in range(100)]
 
         # Subsample to 25 Hz
         result = subsample_frames(fields, target_fps=25, source_fps=100)
@@ -62,7 +64,8 @@ class TestSubsampleFrames:
         """Test that target_fps > source_fps raises error."""
         from neurospatial.animation.core import subsample_frames
 
-        fields = np.random.rand(100, 50)
+        rng = np.random.default_rng(42)
+        fields = rng.random((100, 50))
 
         with pytest.raises(ValueError, match=r"target_fps.*cannot exceed.*source_fps"):
             subsample_frames(fields, target_fps=200, source_fps=100)
@@ -75,12 +78,13 @@ class TestSubsampleFrames:
 
         from neurospatial.animation.core import subsample_frames
 
+        rng = np.random.default_rng(42)
         with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
             tmpfile_path = Path(tmpfile.name)
             fields_mmap = np.memmap(
                 tmpfile.name, dtype="float32", mode="w+", shape=(1000, 50)
             )
-            fields_mmap[:] = np.random.rand(1000, 50)
+            fields_mmap[:] = rng.random((1000, 50))
             fields_mmap.flush()
 
             # Subsample
@@ -203,13 +207,14 @@ class TestAnimateFieldsValidation:
         from neurospatial.animation.core import animate_fields
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
+        rng = np.random.default_rng(42)
         # Create environment with layout but not fitted
         layout = RegularGridLayout()
         env = Environment(layout=layout)
         # Manually set _is_fitted to False (simulating unfitted state)
         env._is_fitted = False
 
-        fields = [np.random.rand(100) for _ in range(10)]
+        fields = [rng.random(100) for _ in range(10)]
 
         with pytest.raises(RuntimeError, match="Environment must be fitted"):
             animate_fields(env, fields, backend="html", save_path="test.html")
@@ -218,7 +223,8 @@ class TestAnimateFieldsValidation:
         """Test error when fields is empty."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         with pytest.raises(ValueError, match="fields cannot be empty"):
@@ -228,12 +234,13 @@ class TestAnimateFieldsValidation:
         """Test error when field shape doesn't match environment."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create fields with wrong size
         wrong_size = env.n_bins + 10
-        fields = [np.random.rand(wrong_size) for _ in range(5)]
+        fields = [rng.random(wrong_size) for _ in range(5)]
 
         with pytest.raises(ValueError, match=r"Field 0 has.*but environment has.*bins"):
             animate_fields(env, fields, backend="html", save_path="test.html")
@@ -242,11 +249,12 @@ class TestAnimateFieldsValidation:
         """Test that ndarray input is normalized to list of arrays."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Pass ndarray (n_frames, n_bins)
-        fields_ndarray = np.random.rand(10, env.n_bins)
+        fields_ndarray = rng.random((10, env.n_bins))
 
         # Mock HTML backend to check what it receives
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -264,11 +272,12 @@ class TestAnimateFieldsValidation:
         """Test error when ndarray has <2 dimensions."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 1D array (invalid)
-        fields = np.random.rand(env.n_bins)
+        fields = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match="must be at least 2D"):
             animate_fields(env, fields, backend="html", save_path="test.html")
@@ -281,9 +290,10 @@ class TestAnimateFieldsBackendRouting:
         """Test routing to HTML backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock HTML backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -299,9 +309,10 @@ class TestAnimateFieldsBackendRouting:
         """Test routing to Napari backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock Napari backend
         with patch(
@@ -318,9 +329,10 @@ class TestAnimateFieldsBackendRouting:
         """Test video backend checks ffmpeg availability."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock ffmpeg as unavailable
         with (
@@ -336,9 +348,10 @@ class TestAnimateFieldsBackendRouting:
         """Test video backend requires save_path."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock ffmpeg as available but no save_path
         with (
@@ -354,9 +367,10 @@ class TestAnimateFieldsBackendRouting:
         """Test video backend validates environment pickle-ability."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock ffmpeg as available and mock pickle to fail
         with (
@@ -379,9 +393,10 @@ class TestAnimateFieldsBackendRouting:
         """Test video backend doesn't validate pickle for single worker."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock backends
         with (
@@ -409,9 +424,10 @@ class TestAnimateFieldsBackendRouting:
         """Test routing to widget backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock widget backend
         with patch(
@@ -428,9 +444,10 @@ class TestAnimateFieldsBackendRouting:
         """Test error for unknown backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         with pytest.raises(ValueError, match="Unknown backend: invalid"):
             animate_fields(env, fields, backend="invalid")
@@ -443,9 +460,10 @@ class TestAnimateFieldsIntegration:
         """Test auto backend selection works end-to-end."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Auto-select HTML for .html extension
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -459,9 +477,10 @@ class TestAnimateFieldsIntegration:
         """Test that kwargs are passed through to backends."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Pass custom kwargs
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -491,12 +510,13 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher accepts new overlay parameters."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Create test overlay
-        overlay_pos = np.random.randn(10, 2) * 50
+        overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos, color="red", size=5.0)
 
         # Create frame times
@@ -524,12 +544,13 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher calls conversion funnel when overlays provided."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Create test overlays
-        overlay_pos = np.random.randn(10, 2) * 50
+        overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos)
 
         # Mock conversion funnel and backend
@@ -563,9 +584,10 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher skips conversion when overlays is None."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Mock conversion funnel and backend
         with (
@@ -593,12 +615,13 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher passes OverlayData to backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Create test overlay
-        overlay_pos = np.random.randn(10, 2) * 50
+        overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos)
 
         # Mock conversion and backend
@@ -633,13 +656,14 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher synthesizes frame_times from fps when not provided."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Create overlay with times (requires frame_times alignment)
         overlay_times = np.linspace(0, 10, 10)
-        overlay_pos = np.random.randn(10, 2) * 50
+        overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos, times=overlay_times)
 
         # Mock conversion and backend
@@ -675,12 +699,13 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher uses explicitly provided frame_times."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Create overlay and explicit frame times
-        overlay_pos = np.random.randn(10, 2) * 50
+        overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos)
         frame_times = np.linspace(0, 5, 10)  # Custom times
 
@@ -716,9 +741,10 @@ class TestDispatcherOverlayIntegration:
         """Test that dispatcher passes show_regions parameter to backend."""
         from neurospatial.animation.core import animate_fields
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Mock backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:

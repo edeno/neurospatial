@@ -50,7 +50,8 @@ def simple_env():
 @pytest.fixture
 def simple_fields(simple_env: Environment) -> list[NDArray[np.float64]]:
     """Create simple field sequence for testing (10 frames)."""
-    return [np.random.rand(simple_env.n_bins) for _ in range(10)]
+    rng = np.random.default_rng(42)
+    return [rng.random(simple_env.n_bins) for _ in range(10)]
 
 
 @pytest.fixture
@@ -1092,13 +1093,11 @@ def test_head_direction_without_position_uses_centroid(
 @pytest.fixture
 def video_data_array() -> tuple[NDArray[np.uint8], NDArray[np.int_]]:
     """Create video data as numpy array for testing."""
-
+    rng = np.random.default_rng(42)
     # 10 frames, 64x64 pixels, RGB
     n_frames = 10
     height, width = 64, 64
-    video_frames = np.random.randint(
-        0, 256, (n_frames, height, width, 3), dtype=np.uint8
-    )
+    video_frames = rng.integers(0, 256, (n_frames, height, width, 3), dtype=np.uint8)
     frame_indices = np.arange(n_frames)
 
     return video_frames, frame_indices
@@ -1271,11 +1270,10 @@ def test_video_layer_handles_missing_frames(
     mock_viewer.dims.current_step = (0, 0, 0, 0)
 
     # Create video with fewer frames than animation
+    rng = np.random.default_rng(42)
     n_video_frames = 5
     n_animation_frames = 10
-    video_frames = np.random.randint(
-        0, 256, (n_video_frames, 32, 32, 3), dtype=np.uint8
-    )
+    video_frames = rng.integers(0, 256, (n_video_frames, 32, 32, 3), dtype=np.uint8)
 
     # Frame indices with -1 for missing frames
     frame_indices = np.array([0, 1, 2, 3, 4, -1, -1, -1, -1, -1])
@@ -1291,9 +1289,7 @@ def test_video_layer_handles_missing_frames(
     overlay_data = OverlayData(videos=[video_data])
 
     # Extend simple_fields to match n_animation_frames
-    extended_fields = [
-        np.random.rand(simple_env.n_bins) for _ in range(n_animation_frames)
-    ]
+    extended_fields = [rng.random(simple_env.n_bins) for _ in range(n_animation_frames)]
 
     render_napari(simple_env, extended_fields, overlay_data=overlay_data)
 

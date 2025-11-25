@@ -254,6 +254,8 @@ class TestIntegrationWithPynwb:
 
         from neurospatial.nwb._adapters import timestamps_from_series
 
+        rng = np.random.default_rng(42)
+
         # Create position data with rate instead of timestamps
         behavior_module = empty_nwb.create_processing_module(
             "behavior", "Behavioral data"
@@ -261,7 +263,7 @@ class TestIntegrationWithPynwb:
         position = Position(name="Position")
         spatial_series = SpatialSeries(
             name="position",
-            data=np.random.rand(100, 2),
+            data=rng.random((100, 2)),
             reference_frame="arena",
             unit="cm",
             rate=30.0,  # 30 Hz sampling rate

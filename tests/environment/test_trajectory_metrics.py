@@ -30,8 +30,9 @@ class TestComputeTurnAngles:
 
     def test_continuous_positions_required(self):
         """Test that function expects continuous positions, not bin indices."""
+        rng = np.random.default_rng(42)
         # Create continuous trajectory
-        positions = np.random.randn(100, 2) * 10
+        positions = rng.standard_normal((100, 2)) * 10
 
         # This should work - continuous positions
         angles = compute_turn_angles(positions)
@@ -42,13 +43,14 @@ class TestComputeTurnAngles:
 
     def test_position_shape_validation(self):
         """Test that positions must be 2D array (n_samples, n_dims)."""
+        rng = np.random.default_rng(42)
         # 1D array should fail
         with pytest.raises(ValueError, match="positions must be 2D array"):
             compute_turn_angles(np.array([1, 2, 3]))
 
         # 3D array should fail
         with pytest.raises(ValueError, match="positions must be 2D array"):
-            compute_turn_angles(np.random.randn(10, 5, 2))
+            compute_turn_angles(rng.standard_normal((10, 5, 2)))
 
     def test_minimum_positions_required(self):
         """Test that function handles trajectories with <3 positions."""

@@ -128,9 +128,10 @@ class TestRebinFactorVariations:
 
     def test_rebin_factor_tuple(self):
         """Factor can be specified as tuple for anisotropic coarsening."""
+        rng = np.random.default_rng(42)
         # Create 10x6 grid
-        x = np.random.rand(1000) * 100
-        y = np.random.rand(1000) * 60
+        x = rng.random(1000) * 100
+        y = rng.random(1000) * 60
         data = np.column_stack([x, y])
         env = Environment.from_samples(data, bin_size=10.0)
 
@@ -167,8 +168,9 @@ class TestRebinConnectivity:
 
     def test_rebin_preserves_connectivity_structure(self):
         """Rebinned grid has correct connectivity."""
+        rng = np.random.default_rng(42)
         # Create 4x4 grid
-        data = np.random.rand(200, 2) * 40
+        data = rng.random((200, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Rebin to 2x2
@@ -186,7 +188,8 @@ class TestRebinConnectivity:
 
     def test_rebin_edge_attributes(self):
         """Rebinned connectivity has required edge attributes."""
-        data = np.random.rand(200, 2) * 40
+        rng = np.random.default_rng(42)
+        data = rng.random((200, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
         coarse = env.rebin(factor=2)
@@ -217,7 +220,8 @@ class TestRebinValidation:
 
     def test_rebin_invalid_factor_raises(self):
         """Invalid factor values raise ValueError."""
-        data = np.random.rand(200, 2) * 100
+        rng = np.random.default_rng(42)
+        data = rng.random((200, 2)) * 100
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor must be positive
@@ -229,8 +233,9 @@ class TestRebinValidation:
 
     def test_rebin_factor_too_large_raises(self):
         """Factor larger than grid dimension raises ValueError."""
+        rng = np.random.default_rng(42)
         # Create 4x4 grid
-        data = np.random.rand(100, 2) * 40
+        data = rng.random((100, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor 10 is too large for 4x4 grid
@@ -265,7 +270,8 @@ class TestRebinEdgeCases:
 
     def test_rebin_factor_1_returns_copy(self):
         """Factor 1 returns a new environment with full grid."""
-        data = np.random.rand(200, 2) * 100
+        rng = np.random.default_rng(42)
+        data = rng.random((200, 2)) * 100
         env = Environment.from_samples(data, bin_size=10.0)
 
         coarse = env.rebin(factor=1)
@@ -282,21 +288,23 @@ class TestRebinEdgeCases:
 
     def test_rebin_2d_vs_3d(self):
         """Rebinning works for 2D and 3D grids."""
+        rng = np.random.default_rng(42)
         # 2D grid
-        data_2d = np.random.rand(200, 2) * 40
+        data_2d = rng.random((200, 2)) * 40
         env_2d = Environment.from_samples(data_2d, bin_size=10.0)
         coarse_2d = env_2d.rebin(factor=2)
         assert coarse_2d.n_dims == 2
 
         # 3D grid
-        data_3d = np.random.rand(500, 3) * 40
+        data_3d = rng.random((500, 3)) * 40
         env_3d = Environment.from_samples(data_3d, bin_size=10.0)
         coarse_3d = env_3d.rebin(factor=2)
         assert coarse_3d.n_dims == 3
 
     def test_rebin_preserves_units_and_frame(self):
         """Rebinning preserves units and frame attributes."""
-        data = np.random.rand(200, 2) * 100
+        rng = np.random.default_rng(42)
+        data = rng.random((200, 2)) * 100
         env = Environment.from_samples(data, bin_size=10.0)
         env.units = "cm"
         env.frame = "session1"
@@ -312,14 +320,15 @@ class TestRebinIntegration:
 
     def test_rebin_then_smooth(self):
         """Rebinning then smoothing works correctly."""
-        data = np.random.rand(500, 2) * 100
+        rng = np.random.default_rng(42)
+        data = rng.random((500, 2)) * 100
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Rebin first
         coarse = env.rebin(factor=2)
 
         # Then smooth a field
-        field = np.random.rand(coarse.n_bins)
+        field = rng.random(coarse.n_bins)
         smoothed = coarse.smooth(field, bandwidth=5.0)
 
         assert smoothed.shape == (coarse.n_bins,)
@@ -327,7 +336,8 @@ class TestRebinIntegration:
 
     def test_rebin_bin_centers_mappable(self):
         """Can map original bin centers to rebinned environment."""
-        data = np.random.rand(200, 2) * 40
+        rng = np.random.default_rng(42)
+        data = rng.random((200, 2)) * 40
         env = Environment.from_samples(data, bin_size=10.0)
 
         coarse = env.rebin(factor=2)

@@ -152,8 +152,8 @@ class TestSmooth:
 
     def test_smooth_gaussian_reduces_variance(self, medium_2d_env):
         """Test that smoothing reduces variance for non-constant fields."""
-        # Create field with high variance
         rng = np.random.default_rng(42)
+        # Create field with high variance
         field = rng.random(medium_2d_env.n_bins) * 100
 
         smoothed = medium_2d_env.smooth(field, bandwidth=5.0, mode="transition")
@@ -243,35 +243,40 @@ class TestSmooth:
     # Validation tests
     def test_smooth_wrong_field_shape_raises(self, medium_2d_env):
         """Test that wrong field shape raises ValueError."""
-        field_wrong = np.random.rand(medium_2d_env.n_bins + 10)
+        rng = np.random.default_rng(42)
+        field_wrong = rng.random(medium_2d_env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
             medium_2d_env.smooth(field_wrong, bandwidth=2.0)
 
     def test_smooth_2d_field_raises(self, medium_2d_env):
         """Test that 2-D field raises ValueError."""
-        field_2d = np.random.rand(medium_2d_env.n_bins, 3)
+        rng = np.random.default_rng(42)
+        field_2d = rng.random((medium_2d_env.n_bins, 3))
 
         with pytest.raises(ValueError, match=r"Field must be 1-D array"):
             medium_2d_env.smooth(field_2d, bandwidth=2.0)
 
     def test_smooth_negative_bandwidth_raises(self, medium_2d_env):
         """Test that negative bandwidth raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
             medium_2d_env.smooth(field, bandwidth=-1.0)
 
     def test_smooth_zero_bandwidth_raises(self, medium_2d_env):
         """Test that zero bandwidth raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
             medium_2d_env.smooth(field, bandwidth=0.0)
 
     def test_smooth_invalid_mode_raises(self, medium_2d_env):
         """Test that invalid mode raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match=r"mode must be"):
             medium_2d_env.smooth(field, bandwidth=2.0, mode="invalid")
@@ -414,7 +419,8 @@ class TestInterpolate:
     # Validation tests
     def test_interpolate_wrong_field_shape_raises(self, medium_2d_env):
         """Test that wrong field shape raises ValueError."""
-        field_wrong = np.random.rand(medium_2d_env.n_bins + 10)
+        rng = np.random.default_rng(42)
+        field_wrong = rng.random(medium_2d_env.n_bins + 10)
         query_points = medium_2d_env.bin_centers[:5]
 
         with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
@@ -422,7 +428,8 @@ class TestInterpolate:
 
     def test_interpolate_2d_field_raises(self, medium_2d_env):
         """Test that 2-D field raises ValueError."""
-        field_2d = np.random.rand(medium_2d_env.n_bins, 3)
+        rng = np.random.default_rng(42)
+        field_2d = rng.random((medium_2d_env.n_bins, 3))
         query_points = medium_2d_env.bin_centers[:5]
 
         with pytest.raises(ValueError, match=r"Field must be 1-D array"):
@@ -430,24 +437,27 @@ class TestInterpolate:
 
     def test_interpolate_wrong_points_dimension_raises(self, medium_2d_env):
         """Test that wrong points dimension raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
         # 3D points for 2D environment
-        query_points_3d = np.random.rand(10, 3)
+        query_points_3d = rng.random((10, 3))
 
         with pytest.raises(ValueError, match=r"Points dimension.*must match"):
             medium_2d_env.interpolate(field, query_points_3d)
 
     def test_interpolate_1d_points_raises(self, medium_2d_env):
         """Test that 1-D points array raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
-        points_1d = np.random.rand(10)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
+        points_1d = rng.random(10)
 
         with pytest.raises(ValueError, match=r"Points must be 2-D array"):
             medium_2d_env.interpolate(field, points_1d)
 
     def test_interpolate_invalid_mode_raises(self, medium_2d_env):
         """Test that invalid mode raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
         query_points = medium_2d_env.bin_centers[:5]
 
         with pytest.raises(ValueError, match=r"mode must be"):
@@ -473,7 +483,8 @@ class TestInterpolate:
 
     def test_interpolate_points_with_nan_raises(self, medium_2d_env):
         """Test that points with NaN raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
         query_points = medium_2d_env.bin_centers[:5].copy()
         query_points[0, 0] = np.nan
 
@@ -482,7 +493,8 @@ class TestInterpolate:
 
     def test_interpolate_points_with_inf_raises(self, medium_2d_env):
         """Test that points with Inf raises ValueError."""
-        field = np.random.rand(medium_2d_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(medium_2d_env.n_bins)
         query_points = medium_2d_env.bin_centers[:5].copy()
         query_points[0, 0] = np.inf
 
@@ -491,7 +503,8 @@ class TestInterpolate:
 
     def test_interpolate_linear_on_graph_raises(self, graph_env):
         """Test that linear mode on graph layout raises NotImplementedError."""
-        field = np.random.rand(graph_env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(graph_env.n_bins)
         query_points = graph_env.bin_centers[:2]
 
         with pytest.raises(NotImplementedError, match=r"Linear interpolation.*only"):

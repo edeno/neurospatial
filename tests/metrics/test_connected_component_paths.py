@@ -24,7 +24,8 @@ from neurospatial import Environment
 def test_extract_connected_component_scipy_2d_grid():
     """Test scipy fast path on 2D grid environment."""
     # Create 2D grid environment
-    positions = np.random.rand(1000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Ensure this is a grid environment
@@ -59,7 +60,8 @@ def test_extract_connected_component_scipy_2d_grid():
 def test_extract_connected_component_scipy_3d_grid():
     """Test scipy fast path on 3D grid environment."""
     # Create 3D grid environment
-    positions = np.random.rand(1000, 3) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 3)) * 50
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Ensure this is a 3D grid environment
@@ -87,7 +89,8 @@ def test_extract_connected_component_scipy_3d_grid():
 def test_extract_connected_component_scipy_disconnected_regions():
     """Test scipy path correctly identifies only connected component containing seed."""
     # Create 2D grid environment
-    positions = np.random.rand(1000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Create mask with TWO disconnected regions
@@ -120,7 +123,8 @@ def test_extract_connected_component_scipy_rejects_non_grid():
     # For this test, we'll manually create an environment that's missing grid_shape
 
     # This is a simplified test - in practice, we'd use GraphLayout or other non-grid
-    positions = np.random.rand(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.random((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Manually remove grid_shape to simulate non-grid environment
@@ -144,7 +148,8 @@ def test_extract_connected_component_scipy_rejects_non_grid():
 def test_extract_connected_component_graph_2d_grid():
     """Test graph fallback path on 2D grid (should work on any graph)."""
     # Create 2D grid environment
-    positions = np.random.rand(1000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Create test mask
@@ -168,7 +173,8 @@ def test_extract_connected_component_graph_2d_grid():
 def test_extract_connected_component_graph_isolated_seed():
     """Test graph path handles isolated seed (no neighbors in mask)."""
     # Create simple environment
-    positions = np.random.rand(500, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.random((500, 2)) * 50
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Create mask with only ONE bin
@@ -193,7 +199,8 @@ def test_extract_connected_component_graph_isolated_seed():
 def test_extract_connected_component_routing_grid():
     """Test main function routes to scipy fast path for grid environments."""
     # Create 2D grid environment
-    positions = np.random.rand(1000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Verify this is a grid
@@ -220,7 +227,8 @@ def test_extract_connected_component_routing_grid():
 def test_extract_connected_component_scipy_vs_graph_equivalence():
     """Test scipy and graph paths produce identical results on grid."""
     # Create 2D grid environment
-    positions = np.random.rand(1000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Create test mask
@@ -254,7 +262,8 @@ def test_extract_connected_component_scipy_vs_graph_equivalence():
 def test_detect_place_fields_uses_scipy_path():
     """Test detect_place_fields uses scipy fast path for grid environments."""
     # Create 2D grid environment with synthetic place field
-    positions = np.random.rand(5000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((5000, 2)) * 100
     env = Environment.from_samples(positions, bin_size=5.0)
 
     # Create synthetic firing rate with one place field
@@ -277,7 +286,8 @@ def test_detect_place_fields_uses_scipy_path():
 def test_detect_place_fields_grid_vs_nongrid_equivalence():
     """Test detect_place_fields produces same results regardless of path used."""
     # Create identical environments - one will use scipy, one will use graph
-    positions = np.random.rand(2000, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((2000, 2)) * 100
     env_grid = Environment.from_samples(positions, bin_size=5.0)
 
     # Same firing rate for both
@@ -408,7 +418,8 @@ def test_connected_component_performance_scipy_vs_graph():
     import time
 
     # Create large 2D grid
-    positions = np.random.rand(10000, 2) * 200
+    rng = np.random.default_rng(42)
+    positions = rng.random((10000, 2)) * 200
     env = Environment.from_samples(positions, bin_size=2.0)
 
     print(f"\nEnvironment: {env.n_bins} bins, grid_shape={env.grid_shape}")

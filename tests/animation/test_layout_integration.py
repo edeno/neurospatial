@@ -39,8 +39,9 @@ def test_hexagonal_layout_with_video_backend(tmp_path):
     env.clear_cache()
 
     # Generate random fields (10 frames for speed)
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     output_path = tmp_path / "test_hexagonal.mp4"
 
@@ -123,8 +124,9 @@ def test_1d_graph_layout_with_html_backend(tmp_path):
     )
 
     # Generate random fields (10 frames for manageable HTML size)
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     output_path = tmp_path / "test_1d_track.html"
 
@@ -176,8 +178,9 @@ def test_triangular_mesh_layout_with_napari_backend(tmp_path):
     )
 
     # Generate random fields (10 frames)
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     # Render with napari backend
     viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
@@ -205,9 +208,10 @@ def test_masked_grid_layout_with_napari_backend():
 
     # Create masked grid with infer_active_bins=True
     # Generate sparse data points (circular region)
+    rng = np.random.default_rng(42)
     n_samples = 200
-    theta = np.random.rand(n_samples) * 2 * np.pi
-    r = np.random.rand(n_samples) * 30  # Radius up to 30
+    theta = rng.random(n_samples) * 2 * np.pi
+    r = rng.random(n_samples) * 30  # Radius up to 30
     positions = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
 
     # Create environment with active bin inference (circular mask)
@@ -227,8 +231,9 @@ def test_masked_grid_layout_with_napari_backend():
     assert env.n_bins < full_grid_bins  # Masked grid has fewer bins
 
     # Generate random fields (only for active bins)
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     # Render with napari backend (GPU acceleration)
     viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)

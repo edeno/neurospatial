@@ -139,10 +139,10 @@ class TestLinearOccupancyMassConservation:
         env = Environment.from_samples(positions, bin_size=1.0)
 
         # Complex trajectory crossing many bins
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n_samples = 20
         times = np.arange(n_samples, dtype=np.float64)
-        trajectory = np.random.uniform(0.5, 8.5, size=(n_samples, 2))
+        trajectory = rng.uniform(0.5, 8.5, size=(n_samples, 2))
 
         occupancy = env.occupancy(
             times, trajectory, time_allocation="linear", max_gap=None

@@ -165,6 +165,7 @@ class TestReadPosition:
 
         from neurospatial.nwb import read_position
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         # Add Position to acquisition (not processing)
@@ -172,7 +173,7 @@ class TestReadPosition:
         position.add_spatial_series(
             SpatialSeries(
                 name="pos",
-                data=np.random.rand(100, 2),
+                data=rng.random((100, 2)),
                 timestamps=np.arange(100) / 30.0,
                 reference_frame="test",
                 unit="cm",
@@ -264,6 +265,7 @@ class TestReadPosition:
 
         from neurospatial.nwb import read_position
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -273,7 +275,7 @@ class TestReadPosition:
         position.add_spatial_series(
             SpatialSeries(
                 name="pos",
-                data=np.random.rand(100, 3),  # 3D data
+                data=rng.random((100, 3)),  # 3D data
                 timestamps=np.arange(100) / 30.0,
                 reference_frame="room coordinates",
                 unit="cm",
@@ -292,6 +294,7 @@ class TestReadPosition:
 
         from neurospatial.nwb import read_position
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -301,7 +304,7 @@ class TestReadPosition:
         position.add_spatial_series(
             SpatialSeries(
                 name="pos",
-                data=np.random.rand(100, 2),
+                data=rng.random((100, 2)),
                 rate=30.0,  # 30 Hz, no explicit timestamps
                 starting_time=0.0,
                 reference_frame="test",
@@ -324,6 +327,7 @@ class TestReadPosition:
 
         from neurospatial.nwb import read_position
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -333,7 +337,7 @@ class TestReadPosition:
         position.add_spatial_series(
             SpatialSeries(
                 name="pos",
-                data=np.random.rand(100, 2),
+                data=rng.random((100, 2)),
                 rate=30.0,  # 30 Hz
                 starting_time=10.5,  # Start at 10.5 seconds
                 reference_frame="test",
@@ -580,6 +584,7 @@ class TestReadHeadDirection:
 
         from neurospatial.nwb import read_head_direction
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         # Add CompassDirection to acquisition (not processing)
@@ -587,7 +592,7 @@ class TestReadHeadDirection:
         compass.add_spatial_series(
             SpatialSeries(
                 name="heading",
-                data=np.random.rand(100) * 2 * np.pi,
+                data=rng.random(100) * 2 * np.pi,
                 timestamps=np.arange(100) / 30.0,
                 reference_frame="test",
                 unit="radians",
@@ -651,6 +656,7 @@ class TestReadHeadDirection:
 
         from neurospatial.nwb import read_head_direction
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -660,7 +666,7 @@ class TestReadHeadDirection:
         compass.add_spatial_series(
             SpatialSeries(
                 name="heading",
-                data=np.random.rand(100) * 2 * np.pi,
+                data=rng.random(100) * 2 * np.pi,
                 rate=30.0,  # 30 Hz, no explicit timestamps
                 starting_time=0.0,
                 reference_frame="test",
@@ -683,6 +689,7 @@ class TestReadHeadDirection:
 
         from neurospatial.nwb import read_head_direction
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -692,7 +699,7 @@ class TestReadHeadDirection:
         compass.add_spatial_series(
             SpatialSeries(
                 name="heading",
-                data=np.random.rand(100) * 2 * np.pi,
+                data=rng.random(100) * 2 * np.pi,
                 rate=30.0,  # 30 Hz
                 starting_time=10.5,  # Start at 10.5 seconds
                 reference_frame="test",

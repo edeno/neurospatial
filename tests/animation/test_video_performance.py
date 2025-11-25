@@ -41,7 +41,8 @@ from neurospatial.animation.skeleton import Skeleton
 def perf_env() -> Environment:
     """Create a moderately complex 2D environment for performance testing."""
     # Create environment with ~400 bins (realistic size)
-    positions = np.random.rand(1000, 2) * 200
+    rng = np.random.default_rng(42)
+    positions = rng.random((1000, 2)) * 200
     env = Environment.from_samples(positions, bin_size=10.0)
     env.clear_cache()  # Ensure pickle-able for parallel tests
     return env
@@ -50,15 +51,17 @@ def perf_env() -> Environment:
 @pytest.fixture
 def perf_fields(perf_env: Environment) -> list[NDArray[np.float64]]:
     """Create 100 frames of fields for performance testing."""
+    rng = np.random.default_rng(42)
     n_frames = 100
-    return [np.random.rand(perf_env.n_bins) for _ in range(n_frames)]
+    return [rng.random(perf_env.n_bins) for _ in range(n_frames)]
 
 
 @pytest.fixture
 def perf_position_overlay() -> OverlayData:
     """Create position overlay with trail for performance testing."""
+    rng = np.random.default_rng(42)
     n_frames = 100
-    positions = np.random.rand(n_frames, 2) * 100 + 50  # Center in environment
+    positions = rng.random((n_frames, 2)) * 100 + 50  # Center in environment
     pos_data = PositionData(
         data=positions,
         color="red",
@@ -71,10 +74,11 @@ def perf_position_overlay() -> OverlayData:
 @pytest.fixture
 def perf_bodypart_overlay() -> OverlayData:
     """Create bodypart overlay with skeleton for performance testing."""
+    rng = np.random.default_rng(42)
     n_frames = 100
     n_bodyparts = 5
     bodyparts = {
-        f"part{i}": np.random.rand(n_frames, 2) * 100 + 50 for i in range(n_bodyparts)
+        f"part{i}": rng.random((n_frames, 2)) * 100 + 50 for i in range(n_bodyparts)
     }
     nodes = tuple(f"part{i}" for i in range(n_bodyparts))
     edges = tuple((f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1))
@@ -98,16 +102,17 @@ def perf_bodypart_overlay() -> OverlayData:
 @pytest.fixture
 def perf_all_overlays() -> OverlayData:
     """Create all overlay types for comprehensive performance testing."""
+    rng = np.random.default_rng(42)
     n_frames = 100
 
     # Position with trail
-    positions = np.random.rand(n_frames, 2) * 100 + 50
+    positions = rng.random((n_frames, 2)) * 100 + 50
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=30)
 
     # Bodyparts with skeleton
     n_bodyparts = 5
     bodyparts = {
-        f"part{i}": np.random.rand(n_frames, 2) * 100 + 50 for i in range(n_bodyparts)
+        f"part{i}": rng.random((n_frames, 2)) * 100 + 50 for i in range(n_bodyparts)
     }
     nodes = tuple(f"part{i}" for i in range(n_bodyparts))
     edges = tuple((f"part{i}", f"part{i + 1}") for i in range(n_bodyparts - 1))

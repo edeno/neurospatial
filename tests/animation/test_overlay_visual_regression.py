@@ -78,9 +78,10 @@ def env_2d():
 @pytest.fixture
 def simple_field_2d(env_2d):
     """Create a simple spatial field for the 2D environment."""
+    rng = np.random.default_rng(42)
     # Create a Gaussian-like field centered in the environment
     n_bins = env_2d.n_bins
-    field = np.random.rand(n_bins) * 0.5 + 0.2  # Random baseline
+    field = rng.random(n_bins) * 0.5 + 0.2  # Random baseline
 
     # Add a "hot spot" near the center
     center_idx = n_bins // 2

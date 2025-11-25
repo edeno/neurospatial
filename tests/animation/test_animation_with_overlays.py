@@ -51,7 +51,8 @@ except ImportError:
 @pytest.fixture
 def simple_env():
     """Create a simple 2D environment for testing."""
-    positions = np.random.uniform(0, 100, (200, 2))
+    rng = np.random.default_rng(42)
+    positions = rng.uniform(0, 100, (200, 2))
     env = Environment.from_samples(positions, bin_size=5.0)
     env.units = "cm"
     env.frame = "test"
@@ -64,7 +65,8 @@ def spatial_fields():
 
     # Return function to generate fields for any environment
     def _make_fields(n_bins: int, n_frames: int = 20) -> np.ndarray:
-        return np.random.rand(n_frames, n_bins)
+        rng = np.random.default_rng(42)
+        return rng.random((n_frames, n_bins))
 
     return _make_fields
 
@@ -72,7 +74,8 @@ def spatial_fields():
 @pytest.fixture
 def position_overlay_data():
     """Create position overlay with 20 time points."""
-    data = np.random.uniform(0, 100, (20, 2))
+    rng = np.random.default_rng(42)
+    data = rng.uniform(0, 100, (20, 2))
     times = np.linspace(0, 2.0, 20)
     return PositionOverlay(
         data=data,
@@ -86,11 +89,12 @@ def position_overlay_data():
 @pytest.fixture
 def bodypart_overlay_data():
     """Create bodypart overlay with skeleton (20 time points)."""
+    rng = np.random.default_rng(42)
     bodyparts = {
-        "nose": np.random.uniform(0, 100, (20, 2)),
-        "head": np.random.uniform(0, 100, (20, 2)),
-        "body": np.random.uniform(0, 100, (20, 2)),
-        "tail": np.random.uniform(0, 100, (20, 2)),
+        "nose": rng.uniform(0, 100, (20, 2)),
+        "head": rng.uniform(0, 100, (20, 2)),
+        "body": rng.uniform(0, 100, (20, 2)),
+        "tail": rng.uniform(0, 100, (20, 2)),
     }
     skeleton = Skeleton(
         name="test",
@@ -636,9 +640,10 @@ class TestMultiAnimalScenarios:
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
 
         # Create multiple position overlays (3 animals)
+        rng = np.random.default_rng(42)
         overlays = [
             PositionOverlay(
-                data=np.random.uniform(0, 100, (20, 2)),
+                data=rng.uniform(0, 100, (20, 2)),
                 times=np.linspace(0, 2.0, 20),
                 color=color,
                 size=10.0,
@@ -675,13 +680,14 @@ class TestMultiAnimalScenarios:
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
 
         # Create multiple bodypart overlays (2 animals)
+        rng = np.random.default_rng(42)
         bodyparts_animal1 = {
-            "nose": np.random.uniform(0, 100, (20, 2)),
-            "tail": np.random.uniform(0, 100, (20, 2)),
+            "nose": rng.uniform(0, 100, (20, 2)),
+            "tail": rng.uniform(0, 100, (20, 2)),
         }
         bodyparts_animal2 = {
-            "nose": np.random.uniform(0, 100, (20, 2)),
-            "tail": np.random.uniform(0, 100, (20, 2)),
+            "nose": rng.uniform(0, 100, (20, 2)),
+            "tail": rng.uniform(0, 100, (20, 2)),
         }
 
         overlays = [
@@ -966,8 +972,9 @@ class TestErrorHandling:
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
 
         # Create 3D position overlay for 2D environment
+        rng = np.random.default_rng(42)
         invalid_overlay = PositionOverlay(
-            data=np.random.uniform(0, 100, (20, 3)),  # 3D, but env is 2D
+            data=rng.uniform(0, 100, (20, 3)),  # 3D, but env is 2D
             times=np.linspace(0, 2.0, 20),
             color="red",
         )

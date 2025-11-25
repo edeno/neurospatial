@@ -40,7 +40,8 @@ def test_get_layout_parameters_regular_grid():
 
 
 def test_create_layout_regular_grid():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
@@ -57,7 +58,8 @@ def test_create_layout_regular_grid():
 
 
 def test_regular_grid_point_to_bin_index():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
@@ -72,7 +74,8 @@ def test_regular_grid_point_to_bin_index():
 
 
 def test_regular_grid_bin_area_volume():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "RegularGrid",
         bin_size=2.0,
@@ -86,7 +89,8 @@ def test_regular_grid_bin_area_volume():
 
 
 def test_create_layout_hexagonal():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,
@@ -100,7 +104,8 @@ def test_create_layout_hexagonal():
 
 
 def test_hexagonal_point_to_bin_index():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,
@@ -114,7 +119,8 @@ def test_hexagonal_point_to_bin_index():
 
 
 def test_hexagonal_bin_area_volume():
-    data = np.random.rand(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 10
     layout = create_layout(
         "Hexagonal",
         hexagon_width=2.0,

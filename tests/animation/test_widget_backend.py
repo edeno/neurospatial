@@ -78,7 +78,8 @@ class MockOutput:
 @pytest.fixture
 def sample_env():
     """Create sample environment for testing."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
     return env
 
@@ -86,7 +87,8 @@ def sample_env():
 @pytest.fixture
 def sample_fields(sample_env):
     """Create sample fields for testing."""
-    fields = [np.random.rand(sample_env.n_bins) for _ in range(10)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(sample_env.n_bins) for _ in range(10)]
     return fields
 
 
@@ -253,7 +255,8 @@ def test_render_widget_pre_renders_frames(sample_env):
     from neurospatial.animation.backends.widget_backend import render_widget
 
     # Create more frames than cache size to test caching logic
-    fields = [np.random.rand(sample_env.n_bins) for _ in range(100)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(sample_env.n_bins) for _ in range(100)]
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
@@ -481,8 +484,9 @@ def test_widget_on_demand_rendering_for_uncached_frames(sample_env):
     from neurospatial.animation.backends.widget_backend import render_widget
 
     # Create more frames than default cache size (500)
+    rng = np.random.default_rng(42)
     n_frames = 600
-    fields = [np.random.rand(sample_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(sample_env.n_bins) for _ in range(n_frames)]
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
@@ -626,8 +630,9 @@ def test_persistent_figure_renderer_with_overlays(sample_env, sample_fields):
     from neurospatial.animation.overlays import OverlayData, PositionData
 
     # Create overlay data
+    rng = np.random.default_rng(42)
     n_frames = len(sample_fields)
-    trajectory = np.random.randn(n_frames, 2) * 20 + 25  # Random trajectory
+    trajectory = rng.standard_normal((n_frames, 2)) * 20 + 25  # Random trajectory
     overlay_data = OverlayData(
         positions=[
             PositionData(data=trajectory, color="red", size=10.0, trail_length=3)
@@ -730,7 +735,8 @@ def test_initial_cache_size_clamped_to_cache_limit(sample_env):
     from neurospatial.animation.backends.widget_backend import render_widget
 
     # Create more frames than both limits
-    fields = [np.random.rand(sample_env.n_bins) for _ in range(200)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(sample_env.n_bins) for _ in range(200)]
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()
@@ -775,7 +781,8 @@ def test_initial_cache_size_explicit_clamped_to_cache_limit(sample_env):
     """Test explicit initial_cache_size is clamped to cache_limit."""
     from neurospatial.animation.backends.widget_backend import render_widget
 
-    fields = [np.random.rand(sample_env.n_bins) for _ in range(200)]
+    rng = np.random.default_rng(42)
+    fields = [rng.random(sample_env.n_bins) for _ in range(200)]
 
     # Mock dependencies
     mock_ipywidgets = MagicMock()

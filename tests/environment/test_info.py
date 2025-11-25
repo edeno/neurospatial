@@ -77,7 +77,8 @@ class TestEnvironmentInfo:
     def test_info_shows_regions_count(self):
         """info() should show region count."""
         # Create own environment instead of modifying shared fixture
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Start with no regions
@@ -101,7 +102,8 @@ class TestEnvironmentInfo:
 
     def test_info_handles_empty_name(self):
         """info() should handle environments with empty names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="")
         result = env.info()
         # Should still be valid and show other info
@@ -111,7 +113,8 @@ class TestEnvironmentInfo:
 
     def test_info_handles_none_name(self):
         """info() should handle environments with None names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name=None)
         result = env.info()
         assert isinstance(result, str)
@@ -120,7 +123,8 @@ class TestEnvironmentInfo:
     def test_info_works_for_different_layout_types(self):
         """info() should work for different layout engines."""
         # RegularGrid
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env_regular = Environment.from_samples(data, bin_size=2.0, name="Regular")
         result_regular = env_regular.info()
         assert "RegularGrid" in result_regular
@@ -176,7 +180,8 @@ class TestInfoContentCompleteness:
     def test_info_with_variable_bin_sizes(self):
         """info() should handle environments with variable bin sizes."""
         # Create environment from mask with variable bin sizes
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="VarBins")
 
         result = env.info()
@@ -210,7 +215,8 @@ class TestInfoEdgeCases:
 
     def test_info_with_special_characters_in_name(self):
         """info() should handle special characters in names."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(
             data, bin_size=2.0, name="Test <Env> & 'Special' \"Chars\""
         )
@@ -222,7 +228,8 @@ class TestInfoEdgeCases:
 
     def test_info_with_very_large_n_bins(self):
         """info() should handle environments with very large bin counts."""
-        data = np.random.rand(10000, 2) * 1000
+        rng = np.random.default_rng(42)
+        data = rng.random((10000, 2)) * 1000
         env = Environment.from_samples(data, bin_size=0.1, name="LargeEnv")
         result = env.info()
         assert isinstance(result, str)
@@ -230,7 +237,8 @@ class TestInfoEdgeCases:
 
     def test_info_with_long_name(self):
         """info() should handle very long names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         long_name = "A" * 200  # Very long name
         env = Environment.from_samples(data, bin_size=2.0, name=long_name)
         result = env.info()

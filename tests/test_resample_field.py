@@ -23,6 +23,7 @@ class TestResampleFieldBasic:
 
     def test_nearest_method_same_resolution(self):
         """Test nearest method with same bin_size (identity-like)."""
+        rng = np.random.default_rng(42)
         # Source environment
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
@@ -32,7 +33,7 @@ class TestResampleFieldBasic:
         dst_env = Environment.from_samples(dst_data, bin_size=2.0)
 
         # Create field on source
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         # Resample to destination
         result = resample_field(field, src_env, dst_env, method="nearest")
@@ -43,6 +44,7 @@ class TestResampleFieldBasic:
 
     def test_nearest_method_different_resolution(self):
         """Test nearest method with different bin sizes."""
+        rng = np.random.default_rng(42)
         # Source: coarse resolution
         src_data = np.array([[i, j] for i in range(21) for j in range(21)])
         src_env = Environment.from_samples(src_data, bin_size=4.0)
@@ -52,7 +54,7 @@ class TestResampleFieldBasic:
         dst_env = Environment.from_samples(dst_data, bin_size=2.0)
 
         # Create field on source
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         # Resample to destination
         result = resample_field(field, src_env, dst_env, method="nearest")
@@ -63,13 +65,14 @@ class TestResampleFieldBasic:
 
     def test_nearest_is_default_method(self):
         """Test that method='nearest' is the default."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         result_explicit = resample_field(field, src_env, dst_env, method="nearest")
         result_default = resample_field(field, src_env, dst_env)
@@ -78,6 +81,7 @@ class TestResampleFieldBasic:
 
     def test_resampling_preserves_field_range(self):
         """Test that resampled field stays within original value range."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
@@ -85,7 +89,7 @@ class TestResampleFieldBasic:
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
         # Field with known range [0, 1]
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         result = resample_field(field, src_env, dst_env, method="nearest")
 
@@ -99,13 +103,14 @@ class TestResampleFieldDiffuse:
 
     def test_diffuse_method_with_bandwidth(self):
         """Test diffuse method with explicit bandwidth."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         result = resample_field(
             field, src_env, dst_env, method="diffuse", bandwidth=1.0
@@ -116,13 +121,14 @@ class TestResampleFieldDiffuse:
 
     def test_diffuse_requires_bandwidth(self):
         """Test that diffuse method requires bandwidth parameter."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="bandwidth must be provided"):
             resample_field(field, src_env, dst_env, method="diffuse")
@@ -221,6 +227,7 @@ class TestResampleFieldEdgeCases:
 
     def test_non_overlapping_environments(self):
         """Test resampling when environments don't overlap spatially."""
+        rng = np.random.default_rng(42)
         # Source environment at (0, 0) to (10, 10)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
@@ -229,7 +236,7 @@ class TestResampleFieldEdgeCases:
         dst_data = np.array([[100 + i, 100 + j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=2.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         result = resample_field(field, src_env, dst_env, method="nearest")
 
@@ -243,26 +250,28 @@ class TestResampleFieldInputValidation:
 
     def test_invalid_method(self):
         """Test that invalid method raises ValueError."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="method must be 'nearest' or 'diffuse'"):
             resample_field(field, src_env, dst_env, method="invalid")
 
     def test_field_size_mismatch(self):
         """Test that mismatched field and source environment sizes raise error."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        wrong_field = np.random.rand(src_env.n_bins + 5)
+        wrong_field = rng.random(src_env.n_bins + 5)
 
         with pytest.raises(
             ValueError, match=r"Field size .* does not match source environment"
@@ -271,19 +280,21 @@ class TestResampleFieldInputValidation:
 
     def test_negative_bandwidth(self):
         """Test that negative bandwidth raises error."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="bandwidth must be positive"):
             resample_field(field, src_env, dst_env, method="diffuse", bandwidth=-1.0)
 
     def test_dimension_mismatch(self):
         """Test that environments with different dimensions raise error."""
+        rng = np.random.default_rng(42)
         # 2D source
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
@@ -293,7 +304,7 @@ class TestResampleFieldInputValidation:
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         # This should work (both 2D)
         result = resample_field(field, src_env, dst_env, method="nearest")
@@ -404,10 +415,11 @@ class TestResampleFieldMathematicalProperties:
 
     def test_identity_resampling_same_environment(self):
         """Test that resampling to same environment is identity-like."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         # Resample to itself
         result = resample_field(field, src_env, src_env, method="nearest")
@@ -417,13 +429,14 @@ class TestResampleFieldMathematicalProperties:
 
     def test_diffuse_approximate_mass_conservation(self):
         """Test that diffuse method approximately conserves total mass."""
+        rng = np.random.default_rng(42)
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
 
         dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
         dst_env = Environment.from_samples(dst_data, bin_size=1.0)
 
-        field = np.random.rand(src_env.n_bins)
+        field = rng.random(src_env.n_bins)
 
         result = resample_field(
             field, src_env, dst_env, method="diffuse", bandwidth=1.0

@@ -1918,7 +1918,8 @@ class TestConvertVideoOverlay:
     @pytest.fixture
     def sample_video_array(self) -> np.ndarray:
         """Create sample video array (5 frames, 32x32, RGB)."""
-        return np.random.randint(0, 255, (5, 32, 32, 3), dtype=np.uint8)
+        rng = np.random.default_rng(42)
+        return rng.integers(0, 255, (5, 32, 32, 3), dtype=np.uint8)
 
     def test_video_overlay_converts_to_video_data(
         self, mock_env_2d, sample_video_array

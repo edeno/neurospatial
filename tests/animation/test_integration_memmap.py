@@ -23,8 +23,10 @@ def test_napari_with_memmap_large_dataset(tmp_path):
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
+    rng = np.random.default_rng(42)
+
     # Create environment
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create memory-mapped array (simulate large-scale session)
@@ -37,7 +39,7 @@ def test_napari_with_memmap_large_dataset(tmp_path):
 
     # Populate with test data (only a few frames - memmap doesn't load all)
     for i in range(min(10, n_frames)):  # Just populate first 10 frames
-        fields[i] = np.random.rand(env.n_bins)
+        fields[i] = rng.random(env.n_bins)
     fields.flush()
 
     # Test napari lazy loading (should NOT load all frames into memory)
@@ -57,8 +59,10 @@ def test_subsample_with_memmap_preserves_type(tmp_path):
     """Test subsample_frames() works with memory-mapped arrays."""
     from neurospatial.animation.core import subsample_frames
 
+    rng = np.random.default_rng(42)
+
     # Create environment
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create memory-mapped array
@@ -69,7 +73,7 @@ def test_subsample_with_memmap_preserves_type(tmp_path):
     )
 
     # Populate first frame only (demonstrate efficiency)
-    fields[0] = np.random.rand(env.n_bins)
+    fields[0] = rng.random(env.n_bins)
     fields.flush()
 
     # Subsample to 30 fps (from 250 Hz)
@@ -90,8 +94,10 @@ def test_html_backend_with_memmap_and_subsample(tmp_path):
     """Test HTML backend workflow: memmap → subsample → export."""
     from neurospatial.animation.backends.html_backend import render_html
 
+    rng = np.random.default_rng(42)
+
     # Create environment
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create memory-mapped array (simulate recording session)
@@ -103,7 +109,7 @@ def test_html_backend_with_memmap_and_subsample(tmp_path):
 
     # Populate with varying data
     for i in range(n_frames):
-        fields_full[i] = np.random.rand(env.n_bins) * (i / n_frames)
+        fields_full[i] = rng.random(env.n_bins) * (i / n_frames)
     fields_full.flush()
 
     # Subsample for HTML export (too many frames for HTML)
@@ -129,14 +135,16 @@ def test_html_backend_with_memmap_and_subsample(tmp_path):
 @pytest.mark.slow
 def test_memmap_cleanup(tmp_path):
     """Test that memory-mapped files are properly cleaned up."""
+    rng = np.random.default_rng(42)
+
     # Create environment
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create and use memory-mapped array
     memmap_file = tmp_path / "fields.dat"
     fields = np.memmap(memmap_file, dtype="float32", mode="w+", shape=(100, env.n_bins))
-    fields[:] = np.random.rand(100, env.n_bins)
+    fields[:] = rng.random((100, env.n_bins))
     fields.flush()
 
     # Verify file exists
@@ -161,8 +169,10 @@ def test_large_memmap_napari_chunked_cache(tmp_path):
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
+    rng = np.random.default_rng(42)
+
     # Create environment
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create large memory-mapped array (triggers chunked caching)
@@ -173,8 +183,8 @@ def test_large_memmap_napari_chunked_cache(tmp_path):
     )
 
     # Populate only first and last frames (demonstrate lazy loading)
-    fields[0] = np.random.rand(env.n_bins)
-    fields[-1] = np.random.rand(env.n_bins) * 2
+    fields[0] = rng.random(env.n_bins)
+    fields[-1] = rng.random(env.n_bins) * 2
     fields.flush()
 
     # Test napari with chunked cache (should auto-enable at 15K frames)

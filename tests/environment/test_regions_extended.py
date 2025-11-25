@@ -207,13 +207,14 @@ class TestMaskForRegion:
 
     def test_mask_for_region_can_index_arrays(self):
         """Test that mask can be used to index per-bin arrays."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("center", polygon=box(3, 3, 7, 7))
 
         # Create per-bin data
-        occupancy = np.random.rand(env.n_bins)
+        occupancy = rng.random(env.n_bins)
 
         mask = env.mask_for_region("center")
 

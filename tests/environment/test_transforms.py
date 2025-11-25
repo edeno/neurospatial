@@ -326,8 +326,11 @@ class TestSubset:
 
     def test_subset_by_region_names(self, medium_2d_env: Environment) -> None:
         """Test subsetting by named regions."""
-        # Add a region to the environment
-        center = medium_2d_env.bin_centers.mean(axis=0)
+        # Make a copy to avoid mutating session-scoped fixture
+        env = medium_2d_env.copy()
+
+        # Add a region to the copy
+        center = env.bin_centers.mean(axis=0)
         half_size = 10.0
         region_poly = box(
             center[0] - half_size,
@@ -336,10 +339,10 @@ class TestSubset:
             center[1] + half_size,
         )
 
-        medium_2d_env.regions.add("center_region", polygon=region_poly)
+        env.regions.add("center_region", polygon=region_poly)
 
         # Subset by region name
-        subset_env = medium_2d_env.subset(region_names=["center_region"])
+        subset_env = env.subset(region_names=["center_region"])
 
         assert subset_env.n_bins > 0
         assert subset_env.n_bins < medium_2d_env.n_bins
@@ -353,11 +356,14 @@ class TestSubset:
 
     def test_subset_point_region_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that point-type regions raise error."""
-        # Add a point region
-        medium_2d_env.regions.add("goal", point=np.array([0.0, 0.0]))
+        # Make a copy to avoid mutating session-scoped fixture
+        env = medium_2d_env.copy()
+
+        # Add a point region to the copy
+        env.regions.add("goal", point=np.array([0.0, 0.0]))
 
         with pytest.raises(ValueError, match="point-type region"):
-            medium_2d_env.subset(region_names=["goal"])
+            env.subset(region_names=["goal"])
 
     def test_subset_inverted_selection(self, medium_2d_env: Environment) -> None:
         """Test inverted selection (complement)."""
@@ -585,10 +591,11 @@ class TestRebinIntegration:
 
     def test_rebin_then_smooth(self, medium_2d_env: Environment) -> None:
         """Test rebinning followed by field smoothing."""
+        rng = np.random.default_rng(42)
         rebinned = medium_2d_env.rebin(factor=2)
 
         # Create a field on rebinned environment
-        field = np.random.rand(rebinned.n_bins)
+        field = rng.random(rebinned.n_bins)
 
         # Smooth should work
         smoothed = rebinned.smooth(field, bandwidth=5.0)
@@ -643,9 +650,8 @@ class TestSubsetIntegration:
 
         # Should be able to compute paths (if connected)
         if nx.is_connected(subset_env.connectivity):
-            path = subset_env.path_between(
-                subset_env.bin_centers[0], subset_env.bin_centers[-1]
-            )
+            # path_between expects bin indices (integers), not bin centers
+            path = subset_env.path_between(0, subset_env.n_bins - 1)
             assert isinstance(path, list)
             assert len(path) > 0
 

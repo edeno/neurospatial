@@ -63,7 +63,8 @@ class TestMultiFieldValidationRobustness:
         """Create simple 2D environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=10.0)
 
     def test_mixed_types_raises_error(self, simple_env):
@@ -74,10 +75,12 @@ class TestMultiFieldValidationRobustness:
         """
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
+
         # First element is a list, second is an array - invalid mixed input
         fields = [
-            [np.random.rand(simple_env.n_bins) for _ in range(5)],  # list
-            np.random.rand(simple_env.n_bins),  # array - wrong!
+            [rng.random(simple_env.n_bins) for _ in range(5)],  # list
+            rng.random(simple_env.n_bins),  # array - wrong!
         ]
 
         with pytest.raises(ValueError, match=r"inconsistent|mixed|type"):
@@ -91,10 +94,12 @@ class TestMultiFieldValidationRobustness:
         """
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
+
         # First element is array, but subsequent elements are lists - invalid
         fields = [
-            np.random.rand(simple_env.n_bins),  # array
-            [np.random.rand(simple_env.n_bins) for _ in range(5)],  # list - wrong!
+            rng.random(simple_env.n_bins),  # array
+            [rng.random(simple_env.n_bins) for _ in range(5)],  # list - wrong!
         ]
 
         # This should fail because types are mixed
@@ -110,15 +115,17 @@ class TestMismatchedShapeErrors:
         """Create simple 2D environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=10.0)
 
     def test_single_field_wrong_bins_error(self, simple_env):
         """Single-field with wrong number of bins should raise clear error."""
         from neurospatial.animation.core import animate_fields
 
+        rng = np.random.default_rng(42)
         wrong_n_bins = simple_env.n_bins + 10
-        fields = [np.random.rand(wrong_n_bins) for _ in range(5)]
+        fields = [rng.random(wrong_n_bins) for _ in range(5)]
 
         with pytest.raises(ValueError, match=r"values but environment has"):
             animate_fields(simple_env, fields, backend="napari")
@@ -127,8 +134,9 @@ class TestMismatchedShapeErrors:
         """Multi-field sequences with different lengths should raise error."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        seq1 = [np.random.rand(simple_env.n_bins) for _ in range(10)]
-        seq2 = [np.random.rand(simple_env.n_bins) for _ in range(5)]  # different!
+        rng = np.random.default_rng(42)
+        seq1 = [rng.random(simple_env.n_bins) for _ in range(10)]
+        seq2 = [rng.random(simple_env.n_bins) for _ in range(5)]  # different!
         fields = [seq1, seq2]
 
         with pytest.raises(ValueError, match="same length"):
@@ -138,9 +146,10 @@ class TestMismatchedShapeErrors:
         """Multi-field inner arrays with wrong bins should raise error."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         wrong_n_bins = simple_env.n_bins + 10
-        seq1 = [np.random.rand(simple_env.n_bins) for _ in range(5)]
-        seq2 = [np.random.rand(wrong_n_bins) for _ in range(5)]  # wrong bins!
+        seq1 = [rng.random(simple_env.n_bins) for _ in range(5)]
+        seq2 = [rng.random(wrong_n_bins) for _ in range(5)]  # wrong bins!
         fields = [seq1, seq2]
 
         # This should raise an error about bin mismatch

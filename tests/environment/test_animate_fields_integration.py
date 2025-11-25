@@ -20,7 +20,8 @@ class TestAnimateFieldsIntegration:
 
     def test_method_exists(self):
         """Test that animate_fields method exists on Environment."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
 
         assert hasattr(env, "animate_fields")
@@ -29,11 +30,12 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_delegates_to_core_dispatcher(self, mock_animate):
         """Test that method delegates to animation.core.animate_fields()."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create simple field data
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Call method
         env.animate_fields(fields, backend="html", save_path="test.html")
@@ -54,9 +56,10 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_forwards_all_parameters(self, mock_animate):
         """Test that all parameters are forwarded correctly."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
 
         # Call with many parameters
         env.animate_fields(
@@ -89,9 +92,10 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_returns_dispatcher_result(self, mock_animate):
         """Test that method returns the result from core dispatcher."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins)]
+        fields = [rng.random(env.n_bins)]
 
         # Mock return value
         mock_return = Mock()
@@ -104,9 +108,10 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_works_with_grid_layout(self, mock_animate):
         """Test that method works with regular grid layouts."""
-        positions = np.random.uniform(0, 100, (200, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (200, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
 
         env.animate_fields(fields, backend="html")
 
@@ -122,7 +127,8 @@ class TestAnimateFieldsIntegration:
         """Test that method works with hexagonal layouts."""
         from neurospatial.layout import create_layout
 
-        data = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 100, (100, 2))
         layout = create_layout(
             kind="hexagonal",
             hexagon_width=10.0,
@@ -130,7 +136,7 @@ class TestAnimateFieldsIntegration:
             infer_active_bins=True,
         )
         env = Environment(layout=layout, layout_type_used="hexagonal")
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
 
         env.animate_fields(fields, backend="html")
 
@@ -147,6 +153,8 @@ class TestAnimateFieldsIntegration:
 
         # Create simple 1D track graph manually
         import networkx as nx
+
+        rng = np.random.default_rng(42)
 
         # Create simple linear track graph
         track_graph = nx.Graph()
@@ -166,7 +174,7 @@ class TestAnimateFieldsIntegration:
         # 1D environment should work
         assert env.is_1d
 
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
         env.animate_fields(fields, backend="html")
 
         # Should have been called successfully
@@ -176,14 +184,15 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_works_with_masked_grid(self, mock_animate):
         """Test that method works with masked grid layouts."""
-        positions = np.random.uniform(0, 100, (500, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (500, 2))
         env = Environment.from_samples(
             positions,
             bin_size=5.0,
             infer_active_bins=True,
             bin_count_threshold=2,
         )
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
 
         env.animate_fields(fields, backend="html")
 
@@ -209,11 +218,12 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_accepts_ndarray_input(self, mock_animate):
         """Test that method accepts ndarray input (not just list)."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Pass ndarray instead of list
-        fields = np.random.rand(5, env.n_bins)
+        fields = rng.random((5, env.n_bins))
 
         env.animate_fields(fields, backend="html")
 
@@ -228,9 +238,10 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_default_backend_auto(self, mock_animate):
         """Test that default backend is 'auto'."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins)]
+        fields = [rng.random(env.n_bins)]
 
         # Call without specifying backend
         env.animate_fields(fields)
@@ -241,12 +252,13 @@ class TestAnimateFieldsIntegration:
     @patch("neurospatial.animation.core.animate_fields")
     def test_overlay_trajectory_parameter(self, mock_animate):
         """Test that overlay_trajectory parameter is forwarded."""
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins)]
+        fields = [rng.random(env.n_bins)]
 
         # Create trajectory
-        trajectory = np.random.uniform(0, 100, (50, 2))
+        trajectory = rng.uniform(0, 100, (50, 2))
 
         env.animate_fields(fields, overlay_trajectory=trajectory)
 

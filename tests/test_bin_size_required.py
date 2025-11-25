@@ -17,7 +17,8 @@ class TestBinSizeRequired:
 
     def test_from_samples_requires_bin_size(self):
         """from_samples() should raise TypeError if bin_size not provided."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
 
         # Should raise TypeError when bin_size is missing
         with pytest.raises(TypeError, match=r"missing.*required.*bin_size"):
@@ -25,7 +26,8 @@ class TestBinSizeRequired:
 
     def test_from_samples_accepts_explicit_bin_size(self):
         """from_samples() should work when bin_size is explicitly provided."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
 
         # Should work with explicit bin_size
         env = Environment.from_samples(data, bin_size=2.0)

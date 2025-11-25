@@ -16,7 +16,8 @@ def simple_env():
     """Create simple 2D environment for testing."""
     from neurospatial import Environment
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     return Environment.from_samples(positions, bin_size=10.0)
 
 
@@ -26,13 +27,14 @@ def multi_field_sequences(simple_env) -> list[list[NDArray[np.float64]]]:
 
     Returns 3 sequences of 10 frames each.
     """
+    rng = np.random.default_rng(42)
     n_bins = simple_env.n_bins
     sequences = []
     for seq_idx in range(3):
         sequence = []
         for _ in range(10):  # Frame index not used
             field = (
-                np.random.rand(n_bins) + seq_idx * 0.1
+                rng.random(n_bins) + seq_idx * 0.1
             )  # Different baseline per sequence
             sequence.append(field)
         sequences.append(sequence)
@@ -48,8 +50,9 @@ class TestMultiFieldDetection:
             _is_multi_field_input,
         )
 
+        rng = np.random.default_rng(42)
         # Single sequence: list of 1D arrays
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
         assert not _is_multi_field_input(fields)
 
     def test_multi_sequence_detection(self, simple_env, multi_field_sequences):
@@ -83,9 +86,10 @@ class TestMultiFieldValidation:
         """All field sequences must have same length."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         # Create sequences with different lengths
-        seq1 = [np.random.rand(simple_env.n_bins) for _ in range(10)]
-        seq2 = [np.random.rand(simple_env.n_bins) for _ in range(5)]  # Different length
+        seq1 = [rng.random(simple_env.n_bins) for _ in range(10)]
+        seq2 = [rng.random(simple_env.n_bins) for _ in range(5)]  # Different length
         fields = [seq1, seq2]
 
         with pytest.raises(
@@ -122,9 +126,10 @@ class TestHorizontalLayout:
         """Horizontal layout with 2 sequences."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         # Create 2 sequences
-        seq1 = [np.random.rand(simple_env.n_bins) for _ in range(5)]
-        seq2 = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        seq1 = [rng.random(simple_env.n_bins) for _ in range(5)]
+        seq2 = [rng.random(simple_env.n_bins) for _ in range(5)]
         fields = [seq1, seq2]
 
         viewer = render_napari(simple_env, fields, layout="horizontal")
@@ -195,10 +200,11 @@ class TestGridLayout:
         """Grid layout with 4 sequences (2x2)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         # Create 4 sequences
         sequences = []
         for _ in range(4):
-            seq = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+            seq = [rng.random(simple_env.n_bins) for _ in range(5)]
             sequences.append(seq)
 
         viewer = render_napari(simple_env, sequences, layout="grid")
@@ -217,10 +223,11 @@ class TestGridLayout:
         """Grid layout with 6 sequences (2x3 or 3x2)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         # Create 6 sequences
         sequences = []
         for _ in range(6):
-            seq = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+            seq = [rng.random(simple_env.n_bins) for _ in range(5)]
             sequences.append(seq)
 
         viewer = render_napari(simple_env, sequences, layout="grid")
@@ -284,8 +291,9 @@ class TestBackwardsCompatibility:
         """Single field sequence should work without layout parameter."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        rng = np.random.default_rng(42)
         # Single sequence (current behavior)
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         viewer = render_napari(simple_env, fields)  # No layout parameter
 
@@ -303,7 +311,8 @@ class TestBackwardsCompatibility:
         """Single field with frame labels should still work."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
         frame_labels = [f"Trial {i + 1}" for i in range(5)]
 
         viewer = render_napari(simple_env, fields, frame_labels=frame_labels)

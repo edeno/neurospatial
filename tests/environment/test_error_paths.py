@@ -11,7 +11,8 @@ import pytest
 from neurospatial.environment import Environment
 
 # Test data for creating environments
-SAMPLE_DATA_2D = np.random.randn(100, 2) * 10
+_rng = np.random.default_rng(42)
+SAMPLE_DATA_2D = _rng.standard_normal((100, 2)) * 10
 
 
 class TestPathBetweenErrorPaths:
@@ -104,8 +105,9 @@ class TestBinsInRegionErrorPaths:
         """Test polygon region query on 3D environment raises clear error."""
         from shapely.geometry import Polygon as ShapelyPolygon
 
+        rng = np.random.default_rng(42)
         # Create 3D environment
-        data_3d = np.random.randn(100, 3) * 10
+        data_3d = rng.standard_normal((100, 3)) * 10
         env = Environment.from_samples(data_3d, bin_size=2.0)
 
         # Add polygon region (only valid for 2D)

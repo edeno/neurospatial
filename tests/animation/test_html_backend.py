@@ -11,10 +11,11 @@ from neurospatial.animation.backends.html_backend import render_html
 
 def test_html_export_basic(tmp_path):
     """Test basic HTML player generation."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "test.html"
 
@@ -46,10 +47,11 @@ def test_html_export_basic(tmp_path):
 
 def test_html_export_without_labels(tmp_path):
     """Test HTML export generates default labels."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     output_path = tmp_path / "test.html"
 
@@ -68,11 +70,12 @@ def test_html_export_without_labels(tmp_path):
 
 def test_html_export_max_frames_limit(tmp_path):
     """Test HTML export enforces max frame limit."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Try to export 501 frames (exceeds default limit of 500)
-    fields = [np.random.rand(env.n_bins) for _ in range(501)]
+    fields = [rng.random(env.n_bins) for _ in range(501)]
 
     output_path = tmp_path / "large.html"
 
@@ -94,11 +97,12 @@ def test_html_export_max_frames_limit(tmp_path):
 
 def test_html_export_override_frame_limit(tmp_path):
     """Test HTML export can override frame limit."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Try to export 501 frames with higher limit
-    fields = [np.random.rand(env.n_bins) for _ in range(501)]
+    fields = [rng.random(env.n_bins) for _ in range(501)]
 
     output_path = tmp_path / "large.html"
 
@@ -115,12 +119,13 @@ def test_html_export_override_frame_limit(tmp_path):
 
 def test_html_export_large_file_warning(tmp_path):
     """Test HTML export warns about large file size."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Many frames with high DPI - will produce large HTML (but under 500 frame limit)
     # estimated_mb = 200 * 0.1 * (200/100)^2 = 80 MB > 50 MB threshold
-    fields = [np.random.rand(env.n_bins) for _ in range(200)]
+    fields = [rng.random(env.n_bins) for _ in range(200)]
 
     output_path = tmp_path / "large.html"
 
@@ -148,10 +153,11 @@ def test_html_export_large_file_warning(tmp_path):
 
 def test_html_player_javascript_controls(tmp_path):
     """Test HTML player has JavaScript controls."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "test.html"
 
@@ -185,10 +191,11 @@ def test_html_player_javascript_controls(tmp_path):
 
 def test_html_player_keyboard_shortcuts(tmp_path):
     """Test HTML player has keyboard shortcuts."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "test.html"
 
@@ -207,10 +214,11 @@ def test_html_player_keyboard_shortcuts(tmp_path):
 
 def test_html_export_custom_parameters(tmp_path):
     """Test HTML export respects custom parameters."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     output_path = tmp_path / "custom.html"
 
@@ -235,11 +243,12 @@ def test_html_export_custom_parameters(tmp_path):
 
 def test_html_export_vmin_vmax(tmp_path):
     """Test HTML export respects vmin/vmax."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create fields with known range
-    fields = [np.random.rand(env.n_bins) * 100 for _ in range(3)]
+    fields = [rng.random(env.n_bins) * 100 for _ in range(3)]
 
     output_path = tmp_path / "test.html"
 
@@ -258,10 +267,11 @@ def test_html_export_vmin_vmax(tmp_path):
 
 def test_html_export_auto_save_path():
     """Test HTML export creates default filename if save_path is None."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     # Call with save_path=None (should create animation.html)
     result = render_html(
@@ -280,10 +290,11 @@ def test_html_export_auto_save_path():
 
 def test_html_export_image_format_parameter(tmp_path):
     """Test HTML export accepts image_format parameter."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     output_path = tmp_path / "test.html"
 
@@ -300,10 +311,11 @@ def test_html_export_image_format_parameter(tmp_path):
 
 def test_html_export_gracefully_accepts_unused_parameters(tmp_path):
     """Test HTML export gracefully accepts parameters for other backends."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     output_path = tmp_path / "test.html"
 
@@ -321,9 +333,10 @@ def test_html_export_gracefully_accepts_unused_parameters(tmp_path):
 
 def test_html_title_escaping(tmp_path):
     """Test HTML title properly escapes dangerous characters."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
-    fields = [np.random.rand(env.n_bins) for _ in range(3)]
+    fields = [rng.random(env.n_bins) for _ in range(3)]
 
     output_path = tmp_path / "test.html"
 
@@ -348,10 +361,11 @@ def test_html_title_escaping(tmp_path):
 
 def test_html_export_non_embedded_mode(tmp_path):
     """Test HTML export with embed=False (disk-backed frames)."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(10)]
+    fields = [rng.random(env.n_bins) for _ in range(10)]
 
     output_path = tmp_path / "non_embedded.html"
 
@@ -394,10 +408,11 @@ def test_html_export_non_embedded_mode(tmp_path):
 
 def test_html_export_non_embedded_custom_frames_dir(tmp_path):
     """Test HTML export with embed=False and custom frames_dir."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "custom.html"
     frames_dir = tmp_path / "my_frames"
@@ -425,10 +440,11 @@ def test_html_export_non_embedded_custom_frames_dir(tmp_path):
 
 def test_html_export_non_embedded_with_labels(tmp_path):
     """Test HTML export with embed=False and frame labels."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
     labels = [f"Trial {i + 1}" for i in range(5)]
 
     output_path = tmp_path / "labeled.html"
@@ -453,10 +469,11 @@ def test_html_export_non_embedded_with_labels(tmp_path):
 
 def test_html_export_non_embedded_auto_workers(tmp_path):
     """Test HTML export with embed=False and n_workers=None (auto-select)."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "auto_workers.html"
 
@@ -483,10 +500,11 @@ def test_html_export_non_embedded_auto_workers(tmp_path):
 
 def test_html_export_non_embedded_negative_workers(tmp_path):
     """Test HTML export with embed=False raises error for negative n_workers."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     output_path = tmp_path / "test.html"
 
@@ -516,8 +534,8 @@ class TestOverlayJSONSchema:
     @pytest.fixture
     def env_with_regions(self):
         """Create environment with regions for testing."""
-
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Add point and polygon regions
@@ -534,7 +552,8 @@ class TestOverlayJSONSchema:
             _convert_overlays_to_data,
         )
 
-        trajectory = np.random.randn(10, 2) * 20
+        rng = np.random.default_rng(42)
+        trajectory = rng.standard_normal((10, 2)) * 20
         overlay = PositionOverlay(
             data=trajectory, color="red", size=10.0, trail_length=5
         )

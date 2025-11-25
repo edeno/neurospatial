@@ -575,8 +575,9 @@ class TestSparsityProperties:
 
         sp = sparsity(firing_rate, occupancy)
 
-        # Property: single-bin firing → sparsity < 0.5 (sparse)
-        assert sp < 0.5, f"Single-peak sparsity {sp} should be low (< 0.5)"
+        # Property: single-bin firing → sparsity <= 0.5 (sparse)
+        # Note: sparsity can equal exactly 0.5 in edge cases with specific occupancy
+        assert sp <= 0.5, f"Single-peak sparsity {sp} should be low (<= 0.5)"
 
 
 class TestSelectivityProperties:

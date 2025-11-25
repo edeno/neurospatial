@@ -46,11 +46,12 @@ class TestApplyKernelForward:
 
     def test_forward_mode_is_default(self):
         """Test that mode='forward' is the default."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         result_explicit = apply_kernel(field, K, mode="forward")
         result_default = apply_kernel(field, K)
@@ -59,13 +60,14 @@ class TestApplyKernelForward:
 
     def test_forward_preserves_normalization_transition(self):
         """Test forward mode with transition kernel preserves normalization."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
 
         # Normalized field (probability distribution)
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         field /= field.sum()
 
         result = apply_kernel(field, K, mode="forward")
@@ -79,12 +81,13 @@ class TestApplyKernelAdjoint:
 
     def test_adjoint_mode_basic(self):
         """Test basic adjoint kernel application."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Apply in adjoint mode
         result = apply_kernel(field, K, mode="adjoint")
@@ -93,12 +96,13 @@ class TestApplyKernelAdjoint:
 
     def test_adjoint_is_transpose_for_transition(self):
         """Test that adjoint is transpose for transition kernel without measure."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Adjoint without measure is just transpose
         result_adjoint = apply_kernel(field, K, mode="adjoint")
@@ -127,6 +131,7 @@ class TestApplyKernelDensityMode:
 
     def test_density_mode_with_bin_sizes(self):
         """Test forward density mode with bin sizes."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
@@ -137,7 +142,7 @@ class TestApplyKernelDensityMode:
         K = env.compute_kernel(bandwidth=1.0, mode="density")
 
         # Create density field
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         result = apply_kernel(field, K, mode="forward", bin_sizes=bin_sizes)
 
@@ -145,13 +150,14 @@ class TestApplyKernelDensityMode:
 
     def test_adjoint_density_mode_with_bin_sizes(self):
         """Test adjoint for density mode is mass-weighted."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         bin_sizes = env.bin_sizes
         K = env.compute_kernel(bandwidth=1.0, mode="density")
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Adjoint with bin_sizes
         result = apply_kernel(field, K, mode="adjoint", bin_sizes=bin_sizes)
@@ -165,13 +171,14 @@ class TestApplyKernelDensityMode:
 
     def test_density_mode_forward(self):
         """Test forward mode works with density kernels."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="density")
 
         # Density field (arbitrary values)
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Apply forward
         result = apply_kernel(field, K, mode="forward")
@@ -187,46 +194,50 @@ class TestApplyKernelInputValidation:
 
     def test_invalid_mode(self):
         """Test that invalid mode raises ValueError."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match="mode must be 'forward' or 'adjoint'"):
             apply_kernel(field, K, mode="invalid")
 
     def test_field_kernel_size_mismatch(self):
         """Test that mismatched field and kernel sizes raise error."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
-        wrong_field = np.random.rand(env.n_bins + 5)
+        wrong_field = rng.random(env.n_bins + 5)
 
         with pytest.raises(ValueError, match=r"Field size .* does not match kernel"):
             apply_kernel(wrong_field, K, mode="forward")
 
     def test_bin_sizes_size_mismatch(self):
         """Test that mismatched bin_sizes size raises error."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="density")
-        field = np.random.rand(env.n_bins)
-        wrong_bin_sizes = np.random.rand(env.n_bins + 5)
+        field = rng.random(env.n_bins)
+        wrong_bin_sizes = rng.random(env.n_bins + 5)
 
         with pytest.raises(ValueError, match=r"bin_sizes size .* does not match"):
             apply_kernel(field, K, mode="adjoint", bin_sizes=wrong_bin_sizes)
 
     def test_kernel_not_square(self):
         """Test that non-square kernel raises error."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Non-square matrix
-        K = np.random.rand(env.n_bins, env.n_bins + 5)
-        field = np.random.rand(env.n_bins)
+        K = rng.random((env.n_bins, env.n_bins + 5))
+        field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match="Kernel must be square"):
             apply_kernel(field, K, mode="forward")
@@ -237,13 +248,14 @@ class TestApplyKernelMathematicalProperties:
 
     def test_adjoint_inner_product_property(self):
         """Test that <Kx, y> = <x, K^T y> for transition mode."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
 
-        x = np.random.rand(env.n_bins)
-        y = np.random.rand(env.n_bins)
+        x = rng.random(env.n_bins)
+        y = rng.random(env.n_bins)
 
         # Forward: K @ x
         Kx = apply_kernel(x, K, mode="forward")
@@ -259,14 +271,15 @@ class TestApplyKernelMathematicalProperties:
 
     def test_adjoint_inner_product_with_bin_sizes(self):
         """Test weighted inner product property for density mode."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         bin_sizes = env.bin_sizes
         K = env.compute_kernel(bandwidth=1.0, mode="density")
 
-        x = np.random.rand(env.n_bins)
-        y = np.random.rand(env.n_bins)
+        x = rng.random(env.n_bins)
+        y = rng.random(env.n_bins)
 
         # Forward
         Kx = apply_kernel(x, K, mode="forward", bin_sizes=bin_sizes)
@@ -283,12 +296,13 @@ class TestApplyKernelMathematicalProperties:
 
     def test_forward_adjoint_roundtrip(self):
         """Test applying forward then adjoint."""
+        rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         K = env.compute_kernel(bandwidth=1.0, mode="transition")
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # K^T @ K @ field
         forward_result = apply_kernel(field, K, mode="forward")

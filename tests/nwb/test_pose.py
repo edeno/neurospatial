@@ -444,6 +444,7 @@ class TestReadPose:
 
         from neurospatial.nwb import read_pose
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -462,7 +463,7 @@ class TestReadPose:
             pose_estimation_series=[
                 PoseEstimationSeries(
                     name="a",
-                    data=np.random.rand(100, 2),
+                    data=rng.random((100, 2)),
                     confidence=np.ones(100),
                     rate=30.0,  # 30 Hz, no explicit timestamps
                     starting_time=0.0,
@@ -495,6 +496,7 @@ class TestReadPose:
 
         from neurospatial.nwb import read_pose
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -513,7 +515,7 @@ class TestReadPose:
             pose_estimation_series=[
                 PoseEstimationSeries(
                     name="a",
-                    data=np.random.rand(100, 2),
+                    data=rng.random((100, 2)),
                     confidence=np.ones(100),
                     rate=30.0,  # 30 Hz
                     starting_time=10.5,  # Start at 10.5 seconds
@@ -546,6 +548,7 @@ class TestReadPose:
 
         from neurospatial.nwb import read_pose
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -565,7 +568,7 @@ class TestReadPose:
             pose_estimation_series=[
                 PoseEstimationSeries(
                     name="a",
-                    data=np.random.rand(50, 3),  # 3D data
+                    data=rng.random((50, 3)),  # 3D data
                     confidence=np.ones(50),
                     timestamps=timestamps,
                     reference_frame="test",
@@ -573,7 +576,7 @@ class TestReadPose:
                 ),
                 PoseEstimationSeries(
                     name="b",
-                    data=np.random.rand(50, 3),  # 3D data
+                    data=rng.random((50, 3)),  # 3D data
                     confidence=np.ones(50),
                     timestamps=timestamps,
                     reference_frame="test",
@@ -607,6 +610,7 @@ class TestReadPose:
 
         from neurospatial.nwb import read_pose
 
+        rng = np.random.default_rng(42)
         nwbfile = empty_nwb
 
         behavior_module = nwbfile.create_processing_module(
@@ -624,7 +628,7 @@ class TestReadPose:
         # First series has explicit timestamps
         series_a = PoseEstimationSeries(
             name="a",
-            data=np.random.rand(100, 2),
+            data=rng.random((100, 2)),
             confidence=np.ones(100),
             timestamps=timestamps,  # Explicit timestamps
             reference_frame="test",
@@ -635,7 +639,7 @@ class TestReadPose:
         # In pynwb, this creates a link rather than duplicating data
         series_b = PoseEstimationSeries(
             name="b",
-            data=np.random.rand(100, 2),
+            data=rng.random((100, 2)),
             confidence=np.ones(100),
             timestamps=series_a,  # Link to series_a timestamps
             reference_frame="test",
@@ -644,7 +648,7 @@ class TestReadPose:
 
         series_c = PoseEstimationSeries(
             name="c",
-            data=np.random.rand(100, 2),
+            data=rng.random((100, 2)),
             confidence=np.ones(100),
             timestamps=series_a,  # Link to series_a timestamps
             reference_frame="test",

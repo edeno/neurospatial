@@ -27,7 +27,8 @@ class TestNormalizeField:
 
     def test_normalize_preserves_shape(self):
         """Normalization preserves field shape."""
-        field = np.random.rand(100)
+        rng = np.random.default_rng(42)
+        field = rng.random(100)
         normalized = normalize_field(field)
         assert normalized.shape == field.shape
 
@@ -90,7 +91,8 @@ class TestClamp:
 
     def test_clamp_preserves_shape(self):
         """Clamping preserves field shape."""
-        field = np.random.randn(100)
+        rng = np.random.default_rng(42)
+        field = rng.standard_normal(100)
         clamped = clamp(field, lo=0.0, hi=1.0)
         assert clamped.shape == field.shape
 
@@ -170,9 +172,10 @@ class TestCombineFields:
 
     def test_combine_preserves_shape(self):
         """Combination preserves field shape."""
-        f1 = np.random.rand(100)
-        f2 = np.random.rand(100)
-        f3 = np.random.rand(100)
+        rng = np.random.default_rng(42)
+        f1 = rng.random(100)
+        f2 = rng.random(100)
+        f3 = rng.random(100)
         combined = combine_fields([f1, f2, f3], mode="mean")
         assert combined.shape == f1.shape
 

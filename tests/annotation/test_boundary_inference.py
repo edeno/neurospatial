@@ -66,7 +66,8 @@ class TestBoundaryFromPositionsValidation:
         """Reject 3D arrays."""
         from neurospatial.annotation import boundary_from_positions
 
-        positions = np.random.rand(10, 3)
+        rng = np.random.default_rng(42)
+        positions = rng.random((10, 3))
         with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
             boundary_from_positions(positions)
 

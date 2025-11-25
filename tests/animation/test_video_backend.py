@@ -105,12 +105,13 @@ class TestVideoDryRun:
 
     def test_dry_run_prints_estimate(self, tmp_path, capsys):
         """Test dry run prints time and size estimate."""
+        rng = np.random.default_rng(42)
         # Create environment
-        positions = np.random.randn(100, 2) * 50
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create simple field sequence
-        fields = [np.random.rand(env.n_bins) for _ in range(20)]
+        fields = [rng.random(env.n_bins) for _ in range(20)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -146,9 +147,10 @@ class TestVideoDryRun:
 
     def test_dry_run_does_not_spawn_workers(self, tmp_path):
         """Test dry run doesn't spawn parallel workers."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -183,8 +185,9 @@ class TestVideoExportSerial:
     )
     def test_video_export_small_serial(self, tmp_path):
         """Test video export with n_workers=1 (serial rendering)."""
+        rng = np.random.default_rng(42)
         # Create environment
-        positions = np.random.randn(100, 2) * 50
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create simple field sequence (small for speed)
@@ -219,10 +222,11 @@ class TestVideoExportSerial:
     )
     def test_video_export_with_labels(self, tmp_path):
         """Test video export with frame labels."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
         labels = [f"Trial {i + 1}" for i in range(5)]
 
         output_path = tmp_path / "labeled.mp4"
@@ -245,10 +249,11 @@ class TestVideoExportSerial:
     )
     def test_video_export_custom_parameters(self, tmp_path):
         """Test video export with custom codec, dpi, bitrate."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "custom.mp4"
 
@@ -277,11 +282,12 @@ class TestVideoExportParallel:
     )
     def test_video_export_parallel(self, tmp_path):
         """Test parallel rendering with n_workers=2."""
-        positions = np.random.randn(200, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((200, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 20 frames for parallel test
-        fields = [np.random.rand(env.n_bins) for _ in range(20)]
+        fields = [rng.random(env.n_bins) for _ in range(20)]
 
         output_path = tmp_path / "parallel.mp4"
 
@@ -305,10 +311,11 @@ class TestVideoExportParallel:
     )
     def test_video_export_auto_workers(self, tmp_path):
         """Test automatic worker count selection (n_workers=None)."""
-        positions = np.random.randn(200, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((200, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         output_path = tmp_path / "auto_workers.mp4"
 
@@ -330,9 +337,10 @@ class TestVideoErrors:
 
     def test_video_missing_ffmpeg(self, tmp_path):
         """Test error when ffmpeg not available."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -350,9 +358,10 @@ class TestVideoErrors:
 
     def test_video_pickle_failure(self, tmp_path):
         """Test error when environment not pickle-able with n_workers>1."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -376,9 +385,10 @@ class TestVideoErrors:
 
     def test_video_no_pickle_check_serial(self, tmp_path):
         """Test pickle check skipped when n_workers=1."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -410,9 +420,10 @@ class TestVideoErrors:
         """Test error when ffmpeg encoding fails."""
         from neurospatial.animation.backends.video_backend import render_video
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -433,9 +444,10 @@ class TestVideoErrors:
 
     def test_video_negative_workers(self, tmp_path):
         """Test error for negative n_workers."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "test.mp4"
 
@@ -464,11 +476,12 @@ class TestParallelRendering:
         """Test frame partitioning across workers."""
         from neurospatial.animation._parallel import parallel_render_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 10 frames, 3 workers
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         # Mock ProcessPoolExecutor
         with patch("neurospatial.animation._parallel.ProcessPoolExecutor") as mock_pool:
@@ -509,9 +522,10 @@ class TestParallelRendering:
         """Test error when environment cannot be pickled."""
         from neurospatial.animation._parallel import parallel_render_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         # Mock pickle to fail
         with (
@@ -538,11 +552,12 @@ class TestParallelRendering:
         """Test worker function renders frames correctly."""
         from neurospatial.animation._parallel import _render_worker_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 5 frames for this worker
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
         labels = [f"Frame {i}" for i in range(5)]
 
         task = {
@@ -572,10 +587,11 @@ class TestParallelRendering:
         """Test worker rendering without frame labels."""
         from neurospatial.animation._parallel import _render_worker_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(3)]
+        fields = [rng.random(env.n_bins) for _ in range(3)]
 
         task = {
             "env": env,
@@ -600,11 +616,12 @@ class TestParallelRendering:
         """Test parallel rendering with artist reuse enabled (fast path)."""
         from neurospatial.animation._parallel import parallel_render_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 10 frames for test
-        fields = [np.random.rand(env.n_bins) for _ in range(10)]
+        fields = [rng.random(env.n_bins) for _ in range(10)]
 
         pattern = parallel_render_frames(
             env=env,
@@ -635,10 +652,11 @@ class TestParallelRendering:
         """Test parallel rendering with artist reuse disabled (fallback path)."""
         from neurospatial.animation._parallel import parallel_render_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         pattern = parallel_render_frames(
             env=env,
@@ -668,11 +686,12 @@ class TestParallelRendering:
         """Test worker function with artist reuse enabled."""
         from neurospatial.animation._parallel import _render_worker_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # 5 frames for this worker
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         task = {
             "env": env,
@@ -702,10 +721,11 @@ class TestParallelRendering:
         """Test artist reuse works correctly with frame labels."""
         from neurospatial.animation._parallel import _render_worker_frames
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
         labels = [f"Trial {i + 1}" for i in range(5)]
 
         task = {
@@ -738,9 +758,10 @@ class TestCodecSelection:
     )
     def test_h264_codec(self, tmp_path):
         """Test H264 codec selection."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "h264.mp4"
 
@@ -762,9 +783,10 @@ class TestCodecSelection:
     )
     def test_mpeg4_codec(self, tmp_path):
         """Test MPEG4 codec selection."""
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [np.random.rand(env.n_bins) for _ in range(5)]
+        fields = [rng.random(env.n_bins) for _ in range(5)]
 
         output_path = tmp_path / "mpeg4.mp4"
 

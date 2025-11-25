@@ -138,7 +138,8 @@ class TestMemorySafetyIntegration:
         """Test creating small environment doesn't trigger warnings."""
         from neurospatial import Environment
 
-        positions = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (100, 2))
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -155,9 +156,10 @@ class TestMemorySafetyIntegration:
         """
         from neurospatial import Environment
 
+        rng = np.random.default_rng(42)
         # Create positions that will result in large grid
         # 1500 x 1500 grid with bin_size=1.0 -> 2.25M bins ≈ 241MB (> 100MB warn)
-        positions = np.random.uniform(0, 1500, (1000, 2))
+        positions = rng.uniform(0, 1500, (1000, 2))
 
         with pytest.warns(ResourceWarning, match="Creating large grid"):
             # Small bin_size relative to range -> large grid

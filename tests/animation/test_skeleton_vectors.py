@@ -437,12 +437,13 @@ class TestBuildSkeletonVectorsLargeDataset:
         )
         from neurospatial.animation.overlays import BodypartData
 
+        rng = np.random.default_rng(42)
         # 1000 frames, 3 bodyparts, 2 edges
         n_frames = 1000
         bodyparts = {
-            "head": np.random.rand(n_frames, 2) * 10 + 5,
-            "body": np.random.rand(n_frames, 2) * 10 + 3,
-            "tail": np.random.rand(n_frames, 2) * 10 + 1,
+            "head": rng.random((n_frames, 2)) * 10 + 5,
+            "body": rng.random((n_frames, 2)) * 10 + 3,
+            "tail": rng.random((n_frames, 2)) * 10 + 1,
         }
         skeleton = Skeleton(
             name="test",
@@ -470,13 +471,14 @@ class TestBuildSkeletonVectorsLargeDataset:
         )
         from neurospatial.animation.overlays import BodypartData
 
+        rng = np.random.default_rng(42)
         # 10000 frames, 8 bodyparts, 7 edges
         n_frames = 10000
         n_bodyparts = 8
         n_edges = 7
 
         bodypart_names = [f"part_{i}" for i in range(n_bodyparts)]
-        bodyparts = {name: np.random.rand(n_frames, 2) * 20 for name in bodypart_names}
+        bodyparts = {name: rng.random((n_frames, 2)) * 20 for name in bodypart_names}
         edges = [(bodypart_names[i], bodypart_names[i + 1]) for i in range(n_edges)]
         skeleton = Skeleton(
             name="test",

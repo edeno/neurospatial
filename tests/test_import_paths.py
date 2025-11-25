@@ -119,7 +119,8 @@ def test_factory_methods_return_environment_type():
     """
     from neurospatial.environment import Environment
 
-    data = np.random.rand(100, 2)
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2))
     env = Environment.from_samples(data, bin_size=2.0)
 
     assert isinstance(env, Environment)

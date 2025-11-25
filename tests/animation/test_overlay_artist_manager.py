@@ -75,8 +75,9 @@ def mock_ax() -> MagicMock:
 @pytest.fixture
 def position_overlay_data() -> OverlayData:
     """Create test position overlay data with trail."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 10
+    positions = rng.random((n_frames, 2)) * 10
     return OverlayData(
         positions=[PositionData(data=positions, color="red", size=10.0, trail_length=3)]
     )
@@ -85,9 +86,10 @@ def position_overlay_data() -> OverlayData:
 @pytest.fixture
 def bodypart_overlay_data() -> OverlayData:
     """Create test bodypart overlay data with skeleton."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    nose = np.random.rand(n_frames, 2) * 10
-    tail = np.random.rand(n_frames, 2) * 10
+    nose = rng.random((n_frames, 2)) * 10
+    tail = rng.random((n_frames, 2)) * 10
     skeleton = Skeleton(
         name="test",
         nodes=("nose", "tail"),
@@ -109,8 +111,9 @@ def bodypart_overlay_data() -> OverlayData:
 @pytest.fixture
 def head_direction_overlay_data() -> OverlayData:
     """Create test head direction overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    angles = np.random.rand(n_frames) * 2 * np.pi
+    angles = rng.random(n_frames) * 2 * np.pi
     return OverlayData(
         head_directions=[HeadDirectionData(data=angles, color="yellow", length=5.0)]
     )
@@ -119,11 +122,12 @@ def head_direction_overlay_data() -> OverlayData:
 @pytest.fixture
 def all_overlays_data() -> OverlayData:
     """Create overlay data with all types."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 10
-    nose = np.random.rand(n_frames, 2) * 10
-    tail = np.random.rand(n_frames, 2) * 10
-    angles = np.random.rand(n_frames) * 2 * np.pi
+    positions = rng.random((n_frames, 2)) * 10
+    nose = rng.random((n_frames, 2)) * 10
+    tail = rng.random((n_frames, 2)) * 10
+    angles = rng.random(n_frames) * 2 * np.pi
 
     skeleton = Skeleton(
         name="test",
@@ -675,8 +679,9 @@ class TestOverlayArtistManagerEdgeCases:
         self, mock_ax: MagicMock, simple_env: Environment
     ):
         """Test manager handles NaN position data gracefully."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        positions = np.random.rand(n_frames, 2) * 10
+        positions = rng.random((n_frames, 2)) * 10
         positions[5] = [np.nan, np.nan]  # Frame 5 has NaN
 
         overlay_data = OverlayData(
@@ -705,9 +710,10 @@ class TestOverlayArtistManagerEdgeCases:
         self, mock_ax: MagicMock, simple_env: Environment
     ):
         """Test manager handles partial NaN bodypart data gracefully."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        nose = np.random.rand(n_frames, 2) * 10
-        tail = np.random.rand(n_frames, 2) * 10
+        nose = rng.random((n_frames, 2)) * 10
+        tail = rng.random((n_frames, 2)) * 10
         nose[5] = [np.nan, np.nan]  # Nose is NaN at frame 5
 
         skeleton = Skeleton(
@@ -747,8 +753,9 @@ class TestOverlayArtistManagerEdgeCases:
         self, mock_ax: MagicMock, simple_env: Environment
     ):
         """Test manager handles NaN head direction angle gracefully."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        angles = np.random.rand(n_frames) * 2 * np.pi
+        angles = rng.random(n_frames) * 2 * np.pi
         angles[5] = np.nan  # NaN angle at frame 5
 
         overlay_data = OverlayData(
@@ -799,9 +806,10 @@ class TestOverlayArtistManagerEdgeCases:
         self, mock_ax: MagicMock, simple_env: Environment
     ):
         """Test manager handles multiple position overlays (multi-animal)."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        positions1 = np.random.rand(n_frames, 2) * 10
-        positions2 = np.random.rand(n_frames, 2) * 10
+        positions1 = rng.random((n_frames, 2)) * 10
+        positions2 = rng.random((n_frames, 2)) * 10
 
         overlay_data = OverlayData(
             positions=[
@@ -826,8 +834,9 @@ class TestOverlayArtistManagerEdgeCases:
 
     def test_position_without_trail(self, mock_ax: MagicMock, simple_env: Environment):
         """Test manager handles position overlay without trail."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        positions = np.random.rand(n_frames, 2) * 10
+        positions = rng.random((n_frames, 2)) * 10
 
         overlay_data = OverlayData(
             positions=[
@@ -854,9 +863,10 @@ class TestOverlayArtistManagerEdgeCases:
         self, mock_ax: MagicMock, simple_env: Environment
     ):
         """Test manager handles bodypart overlay without skeleton."""
+        rng = np.random.default_rng(42)
         n_frames = 10
-        nose = np.random.rand(n_frames, 2) * 10
-        tail = np.random.rand(n_frames, 2) * 10
+        nose = rng.random((n_frames, 2)) * 10
+        tail = rng.random((n_frames, 2)) * 10
 
         overlay_data = OverlayData(
             bodypart_sets=[
@@ -900,7 +910,8 @@ class TestOverlayArtistManagerIntegration:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,
@@ -932,7 +943,8 @@ class TestOverlayArtistManagerIntegration:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,
@@ -971,7 +983,8 @@ class TestOverlayArtistManagerIntegration:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,

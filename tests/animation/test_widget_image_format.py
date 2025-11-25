@@ -34,14 +34,16 @@ def simple_env() -> Environment:
 @pytest.fixture
 def simple_field(simple_env: Environment) -> np.ndarray:
     """Create a simple test field."""
-    return np.random.rand(simple_env.n_bins)
+    rng = np.random.default_rng(42)
+    return rng.random(simple_env.n_bins)
 
 
 @pytest.fixture
 def position_overlay_data() -> OverlayData:
     """Create test position overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 10
+    positions = rng.random((n_frames, 2)) * 10
     return OverlayData(
         positions=[PositionData(data=positions, color="red", size=10.0, trail_length=3)]
     )
@@ -240,7 +242,8 @@ class TestPersistentFigureRendererImageFormat:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,
@@ -263,7 +266,8 @@ class TestPersistentFigureRendererImageFormat:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,
@@ -287,7 +291,8 @@ class TestPersistentFigureRendererImageFormat:
             PersistentFigureRenderer,
         )
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
 
         renderer = PersistentFigureRenderer(
             env=simple_env,
@@ -339,7 +344,8 @@ class TestRenderWidgetImageFormat:
         """Test render_widget accepts image_format parameter."""
         from neurospatial.animation.backends.widget_backend import render_widget
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         # Mock ipywidgets components
         mock_ipywidgets.Image = MagicMock
@@ -376,7 +382,8 @@ class TestRenderWidgetImageFormat:
         """Test render_widget passes image_format to render function."""
         from neurospatial.animation.backends.widget_backend import render_widget
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(10)]
+        rng = np.random.default_rng(42)
+        fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
         # Mock ipywidgets
         mock_ipywidgets.Image = MagicMock

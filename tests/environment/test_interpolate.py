@@ -74,11 +74,12 @@ class TestInterpolateBasic:
 
     def test_interpolate_multiple_points(self):
         """Test interpolation with multiple query points."""
-        data = np.random.uniform(0, 10, size=(100, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(100, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
-        field = np.random.rand(env.n_bins)
-        query_points = np.random.uniform(0, 10, size=(50, 2))
+        field = rng.random(env.n_bins)
+        query_points = rng.uniform(0, 10, size=(50, 2))
 
         result = env.interpolate(field, query_points, mode="nearest")
 
@@ -150,7 +151,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_field_shape_mismatch(self):
         """Field shape must match n_bins."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Wrong shape
@@ -162,7 +164,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_field_not_1d(self):
         """Field must be 1-dimensional."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         # 2D field
@@ -174,7 +177,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_points_wrong_ndim(self):
         """Points must be 2D array (n_points, n_dims)."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -187,7 +191,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_points_dimension_mismatch(self):
         """Points dimensionality must match environment."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -200,7 +205,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_invalid_mode(self):
         """Invalid mode should raise ValueError."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -211,7 +217,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_nan_in_field(self):
         """NaN values in field should raise ValueError."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -223,7 +230,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_inf_in_field(self):
         """Inf values in field should raise ValueError."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -235,7 +243,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_empty_points(self):
         """Empty points array should return empty result."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -247,7 +256,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_nan_in_points(self):
         """NaN values in points should raise ValueError."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -258,7 +268,8 @@ class TestInterpolateValidation:
 
     def test_interpolate_inf_in_points(self):
         """Inf values in points should raise ValueError."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.ones(env.n_bins)
@@ -273,10 +284,11 @@ class TestInterpolateEdgeCases:
 
     def test_interpolate_single_point(self):
         """Single query point."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         points = np.array([[5.0, 5.0]])
 
         result = env.interpolate(field, points, mode="nearest")
@@ -286,11 +298,12 @@ class TestInterpolateEdgeCases:
 
     def test_interpolate_constant_field(self):
         """Constant field should interpolate to constant."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         field = np.full(env.n_bins, 42.0)
-        points = np.random.uniform(0, 10, size=(20, 2))
+        points = rng.uniform(0, 10, size=(20, 2))
 
         result = env.interpolate(field, points, mode="nearest")
 
@@ -300,10 +313,11 @@ class TestInterpolateEdgeCases:
 
     def test_interpolate_at_bin_centers_exact(self):
         """Interpolation at bin centers should return exact field values."""
-        data = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, size=(50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Query at exact bin centers
         result = env.interpolate(field, env.bin_centers, mode="nearest")
@@ -345,8 +359,9 @@ class TestInterpolateMultipleLayouts:
 
         env = Environment.from_polygon(polygon=polygon, bin_size=1.0)
 
-        field = np.random.rand(env.n_bins)
-        points = np.random.uniform(0, 10, size=(20, 2))
+        rng = np.random.default_rng(42)
+        field = rng.random(env.n_bins)
+        points = rng.uniform(0, 10, size=(20, 2))
 
         result = env.interpolate(field, points, mode="nearest")
 

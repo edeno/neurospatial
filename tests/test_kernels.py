@@ -288,7 +288,8 @@ class TestEnvironmentComputeKernel:
 
     def test_compute_kernel_uses_layout_bin_sizes(self):
         """Test that compute_kernel automatically uses layout bin sizes."""
-        data = np.random.uniform(0, 10, (100, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, (100, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Should not raise error even though we don't pass bin_sizes
@@ -298,7 +299,8 @@ class TestEnvironmentComputeKernel:
 
     def test_compute_kernel_cache_behavior(self):
         """Test that kernel is cached properly."""
-        data = np.random.uniform(0, 10, (50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         # First call
@@ -320,7 +322,8 @@ class TestEnvironmentComputeKernel:
 
     def test_compute_kernel_cache_disabled(self):
         """Test that cache can be disabled."""
-        data = np.random.uniform(0, 10, (50, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Call with cache disabled

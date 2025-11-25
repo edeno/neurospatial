@@ -23,12 +23,13 @@ pytestmark = pytest.mark.xdist_group(name="napari_gui")
 @pytest.fixture
 def shared_test_data():
     """Create consistent test environment and fields for all backends."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create 10 frames of field data (manageable for all backends)
     n_frames = 10
-    fields = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     return env, fields
 

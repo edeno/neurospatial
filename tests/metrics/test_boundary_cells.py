@@ -401,7 +401,8 @@ class TestComputeRegionCoverage:
         """Test region coverage with specific regions parameter."""
         from shapely.geometry import box
 
-        positions = np.random.randn(2000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
         env.regions.add("region1", polygon=box(-20, -20, 0, 0))
@@ -430,7 +431,8 @@ class TestComputeRegionCoverage:
         """Test region coverage with regions=None uses all regions."""
         from shapely.geometry import box
 
-        positions = np.random.randn(2000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
         env.regions.add("region1", polygon=box(-20, -20, 0, 0))
@@ -452,7 +454,8 @@ class TestComputeRegionCoverage:
         """Test region coverage with empty region."""
         from shapely.geometry import box
 
-        positions = np.random.randn(2000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add region that doesn't overlap with any bins
@@ -488,7 +491,8 @@ class TestComputeRegionCoverage:
         """Test region coverage returns dict[str, float]."""
         from shapely.geometry import box
 
-        positions = np.random.randn(2000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
         env.regions.add("test_region", polygon=box(-10, -10, 10, 10))

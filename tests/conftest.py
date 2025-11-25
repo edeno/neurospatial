@@ -1,3 +1,34 @@
+"""Shared test fixtures for neurospatial test suite.
+
+Fixture Naming Convention
+=========================
+
+**General-purpose grid fixtures** follow the pattern:
+    {size}_{dims}d_{connectivity}_{layout}_env
+
+Where:
+    - size: tiny, small, medium, large (relative scale)
+    - dims: 1d, 2d, 3d (dimensionality)
+    - connectivity: ortho (orthogonal), diag (diagonal) - optional
+    - layout: grid, hex, graph - optional if obvious
+
+Examples:
+    - small_2d_env: Small 2D grid with orthogonal connectivity
+    - medium_2d_env_with_diagonal: Medium 2D grid with diagonal connectivity
+    - large_2d_env: Large 2D grid for stress tests
+
+**Domain-specific fixtures** use descriptive names:
+    - Maze environments: {maze_type}_env (e.g., tmaze_env, ymaze_env)
+    - Purpose fixtures: {purpose}_env_{detail} (e.g., spike_field_env_100)
+    - Layout fixtures: {layout}_env (e.g., simple_hex_env, simple_graph_env)
+
+Size Guidelines (approximate bin counts):
+    - tiny: <10 bins (validation tests)
+    - small: 10-50 bins (quick tests)
+    - medium: 50-1000 bins (standard tests)
+    - large: 1000+ bins (stress tests, mark as @pytest.mark.slow)
+"""
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -560,26 +591,30 @@ def simple_3d_env() -> Environment:
 def small_2d_env() -> Environment:
     """Small 2D environment for quick tests.
 
-    - Size: ~10x10 cm (SMALL_EXTENT)
-    - Bins: ~25 bins (bin_size=2.0)
-    - Samples: 100 positions (SMALL_N_POSITIONS)
+    - Size: 10x10 cm (5x5 bins at bin_size=2.0 = 25 bins total)
+    - Layout: RegularGrid (supports rebin() and other grid operations)
     - Connectivity: Orthogonal only (faster, simpler)
+
+    Deterministic: Uses meshgrid positions for fully reproducible
+    bin structure across all runs and parallel workers.
 
     Use for: Fast unit tests, basic functionality tests
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    rng = np.random.default_rng(DEFAULT_SEED)
-    positions = rng.standard_normal((SMALL_N_POSITIONS, 2)) * (SMALL_EXTENT / 2)
+    # Deterministic meshgrid covering [0, 10] x [0, 10]
+    # Dense enough to ensure all bins are active
+    x = np.linspace(0, 10, 20)
+    y = np.linspace(0, 10, 20)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
 
     return Environment.from_samples(
         positions=positions,
-        bin_size=MEDIUM_BIN_SIZE,
+        bin_size=MEDIUM_BIN_SIZE,  # 2.0
         name="Small2DEnv",
         connect_diagonal_neighbors=False,
-        infer_active_bins=True,
-        bin_count_threshold=1,
     )
 
 
@@ -587,26 +622,30 @@ def small_2d_env() -> Environment:
 def medium_2d_env() -> Environment:
     """Medium 2D environment for standard tests.
 
-    - Size: ~50x50 cm (MEDIUM_EXTENT)
-    - Bins: ~625 bins (bin_size=2.0)
-    - Samples: 1000 positions (MEDIUM_N_POSITIONS)
+    - Size: 50x50 cm (25x25 bins at bin_size=2.0 = 625 bins total)
+    - Layout: RegularGrid (supports rebin() and other grid operations)
     - Connectivity: Orthogonal only
+
+    Deterministic: Uses meshgrid positions for fully reproducible
+    bin structure across all runs and parallel workers.
 
     Use for: Standard feature tests, integration tests
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    rng = np.random.default_rng(DEFAULT_SEED)
-    positions = rng.standard_normal((MEDIUM_N_POSITIONS, 2)) * (MEDIUM_EXTENT / 2)
+    # Deterministic meshgrid covering [0, 50] x [0, 50]
+    # Dense enough to ensure all bins are active
+    x = np.linspace(0, 50, 100)
+    y = np.linspace(0, 50, 100)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
 
     return Environment.from_samples(
         positions=positions,
-        bin_size=MEDIUM_BIN_SIZE,
+        bin_size=MEDIUM_BIN_SIZE,  # 2.0
         name="Medium2DEnv",
         connect_diagonal_neighbors=False,
-        infer_active_bins=True,
-        bin_count_threshold=1,
     )
 
 
@@ -614,10 +653,12 @@ def medium_2d_env() -> Environment:
 def large_2d_env() -> Environment:
     """Large 2D environment for stress tests.
 
-    - Size: ~100x100 cm (LARGE_EXTENT)
-    - Bins: ~2500 bins (bin_size=2.0)
-    - Samples: 5000 positions (LARGE_N_POSITIONS)
+    - Size: 100x100 cm (50x50 bins at bin_size=2.0 = 2500 bins total)
+    - Layout: RegularGrid (supports rebin() and other grid operations)
     - Connectivity: Orthogonal only
+
+    Deterministic: Uses meshgrid positions for fully reproducible
+    bin structure across all runs and parallel workers.
 
     Use for: Performance tests, large-scale validation
     Mark tests using this as @pytest.mark.slow
@@ -625,16 +666,18 @@ def large_2d_env() -> Environment:
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    rng = np.random.default_rng(DEFAULT_SEED)
-    positions = rng.standard_normal((LARGE_N_POSITIONS, 2)) * (LARGE_EXTENT / 2)
+    # Deterministic meshgrid covering [0, 100] x [0, 100]
+    # Dense enough to ensure all bins are active
+    x = np.linspace(0, 100, 200)
+    y = np.linspace(0, 100, 200)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
 
     return Environment.from_samples(
         positions=positions,
-        bin_size=MEDIUM_BIN_SIZE,
+        bin_size=MEDIUM_BIN_SIZE,  # 2.0
         name="Large2DEnv",
         connect_diagonal_neighbors=False,
-        infer_active_bins=True,
-        bin_count_threshold=1,
     )
 
 
@@ -642,24 +685,25 @@ def large_2d_env() -> Environment:
 def small_1d_env() -> Environment:
     """Small 1D environment for quick linear track tests.
 
-    - Length: ~10 cm (SMALL_EXTENT)
-    - Bins: ~5 bins (bin_size=2.0)
-    - Samples: 100 positions (SMALL_N_POSITIONS)
+    - Length: 10 cm (5 bins at bin_size=2.0)
+    - Connectivity: Linear (each bin connects to neighbors)
+
+    Deterministic: Uses linspace positions for fully reproducible
+    bin structure across all runs and parallel workers.
 
     Use for: Fast tests of 1D-specific functionality
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    rng = np.random.default_rng(DEFAULT_SEED)
-    positions = rng.uniform(0, SMALL_EXTENT, size=(SMALL_N_POSITIONS, 1))
+    # Deterministic linear positions covering [0, 10]
+    # Dense enough to ensure all bins are active
+    positions = np.linspace(0, 10, 50).reshape(-1, 1)
 
     return Environment.from_samples(
         positions=positions,
-        bin_size=MEDIUM_BIN_SIZE,
+        bin_size=MEDIUM_BIN_SIZE,  # 2.0
         name="Small1DEnv",
-        infer_active_bins=True,
-        bin_count_threshold=1,
     )
 
 
@@ -667,24 +711,28 @@ def small_1d_env() -> Environment:
 def medium_2d_env_with_diagonal() -> Environment:
     """Medium 2D environment with diagonal connectivity.
 
-    - Size: ~50x50 cm (MEDIUM_EXTENT)
-    - Bins: ~625 bins (bin_size=2.0)
-    - Samples: 1000 positions (MEDIUM_N_POSITIONS)
+    - Size: 50x50 cm (25x25 bins at bin_size=2.0 = 625 bins total)
+    - Layout: RegularGrid (supports rebin() and other grid operations)
     - Connectivity: Diagonal enabled (8-connectivity)
+
+    Deterministic: Uses meshgrid positions for fully reproducible
+    bin structure across all runs and parallel workers.
 
     Use for: Tests requiring diagonal neighbor relationships
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    rng = np.random.default_rng(DEFAULT_SEED)
-    positions = rng.standard_normal((MEDIUM_N_POSITIONS, 2)) * (MEDIUM_EXTENT / 2)
+    # Deterministic meshgrid covering [0, 50] x [0, 50]
+    # Dense enough to ensure all bins are active
+    x = np.linspace(0, 50, 100)
+    y = np.linspace(0, 50, 100)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
 
     return Environment.from_samples(
         positions=positions,
-        bin_size=MEDIUM_BIN_SIZE,
+        bin_size=MEDIUM_BIN_SIZE,  # 2.0
         name="Medium2DEnvDiagonal",
         connect_diagonal_neighbors=True,
-        infer_active_bins=True,
-        bin_count_threshold=1,
     )

@@ -142,8 +142,9 @@ class TestOccupancy:
 
     def test_occupancy_validates_dimensions(self, small_2d_env):
         """Test that wrong position dimensions raise error."""
+        rng = np.random.default_rng(42)
         times = np.array([0.0, 1.0, 2.0])
-        positions = np.random.rand(3, 3)  # Wrong n_dims
+        positions = rng.random((3, 3))  # Wrong n_dims
 
         with pytest.raises(ValueError, match="dimensions"):
             small_2d_env.occupancy(times, positions)
@@ -341,8 +342,9 @@ class TestBinSequence:
 
     def test_bin_sequence_validates_dimensions(self, small_2d_env):
         """Test that wrong dimensions raise error."""
+        rng = np.random.default_rng(42)
         times = np.array([0.0, 1.0, 2.0])
-        positions = np.random.rand(3, 3)  # Wrong n_dims
+        positions = rng.random((3, 3))  # Wrong n_dims
 
         with pytest.raises(ValueError, match="dimensions"):
             small_2d_env.bin_sequence(times, positions)
@@ -563,14 +565,16 @@ class TestTemporalBinning:
     def test_occupancy_unequal_time_intervals(self, small_2d_env):
         """Test occupancy with unequal time intervals."""
         # Varying intervals: 1s, 2s, 3s
-        # Find 3 adjacent or nearby bins
+        # Find 3 distinct adjacent bins (bin_0 -> bin_1 -> bin_2)
         bin_0 = 0
         neighbors_0 = list(small_2d_env.neighbors(bin_0))
         if len(neighbors_0) > 0:
             bin_1 = neighbors_0[0]
             neighbors_1 = list(small_2d_env.neighbors(bin_1))
-            if len(neighbors_1) > 0:
-                bin_2 = neighbors_1[0]
+            # bin_2 must be different from bin_0 (bin_0 is neighbor of bin_1)
+            bin_2_candidates = [n for n in neighbors_1 if n != bin_0]
+            if len(bin_2_candidates) > 0:
+                bin_2 = bin_2_candidates[0]
 
                 times = np.array([0.0, 1.0, 3.0, 6.0])
                 positions = np.array(
@@ -582,7 +586,8 @@ class TestTemporalBinning:
                     ]
                 )
 
-                occ = small_2d_env.occupancy(times, positions)
+                # Use max_gap=None since intervals (1s, 2s, 3s) exceed default 0.5s
+                occ = small_2d_env.occupancy(times, positions, max_gap=None)
 
                 # Interval 0-1 (1s) starts in bin_0
                 # Interval 1-3 (2s) starts in bin_1
@@ -598,8 +603,8 @@ class TestTrajectoryIntegration:
 
     def test_full_trajectory_workflow(self, medium_2d_env):
         """Test complete workflow: trajectory -> occupancy + transitions."""
-        # Create realistic trajectory staying mostly within bounds
         rng = np.random.default_rng(42)
+        # Create realistic trajectory staying mostly within bounds
         n_samples = 100
         times = np.linspace(0, 10, n_samples)
 
@@ -709,8 +714,8 @@ class TestTrajectoryIntegration:
 
     def test_trajectory_3d_environment(self, simple_3d_env):
         """Test trajectory analysis works correctly in 3D."""
-        # Create 3D trajectory staying within bounds
         rng = np.random.default_rng(42)
+        # Create 3D trajectory staying within bounds
         n_samples = 50
         times = np.linspace(0, 5, n_samples)
 

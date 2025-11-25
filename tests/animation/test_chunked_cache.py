@@ -14,14 +14,16 @@ pytestmark = pytest.mark.xdist_group(name="napari_gui")
 @pytest.fixture
 def simple_env():
     """Create simple 2D environment for testing."""
-    positions = np.random.rand(50, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((50, 2)) * 100
     return Environment.from_samples(positions, bin_size=10.0)
 
 
 @pytest.fixture
 def sample_fields(simple_env):
     """Create sample field sequence (30 frames)."""
-    return [np.random.rand(simple_env.n_bins) for _ in range(30)]
+    rng = np.random.default_rng(42)
+    return [rng.random(simple_env.n_bins) for _ in range(30)]
 
 
 @pytest.fixture
@@ -235,13 +237,14 @@ class TestChunkedLRUCache:
             def __init__(self, n_bins, n_frames):
                 self.n_bins = n_bins
                 self.n_frames = n_frames
+                self.rng = np.random.default_rng(42)
 
             def __len__(self):
                 return self.n_frames
 
             def __getitem__(self, idx):
                 # Generate on-demand (simulating memory-mapped array)
-                return np.random.rand(self.n_bins)
+                return self.rng.random(self.n_bins)
 
         lazy_fields = LazyFields(simple_env.n_bins, n_frames)
 

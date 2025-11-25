@@ -21,7 +21,8 @@ from neurospatial.animation.core import animate_fields
 @pytest.fixture
 def test_env():
     """Create test environment."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
     return env
 
@@ -29,7 +30,8 @@ def test_env():
 @pytest.fixture
 def test_fields(test_env):
     """Create test fields matching environment."""
-    return [np.random.rand(test_env.n_bins) for _ in range(10)]
+    rng = np.random.default_rng(42)
+    return [rng.random(test_env.n_bins) for _ in range(10)]
 
 
 # ============================================================================
@@ -117,8 +119,9 @@ def test_pillow_missing_error_message(test_env, test_fields):
 
 def test_environment_not_fitted_error_message():
     """Verify unfitted environment error suggests factory methods."""
+    rng = np.random.default_rng(42)
     # Create environment and manually mark as unfitted
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
     # Manually break the fitted state
     env._is_fitted = False
@@ -134,7 +137,8 @@ def test_environment_not_fitted_error_message():
 
 def test_field_shape_mismatch_error_message(test_env):
     """Verify field shape mismatch shows expected vs actual."""
-    wrong_fields = [np.random.rand(test_env.n_bins + 10)]
+    rng = np.random.default_rng(42)
+    wrong_fields = [rng.random(test_env.n_bins + 10)]
 
     with pytest.raises(ValueError) as exc_info:
         animate_fields(test_env, wrong_fields)
@@ -157,8 +161,9 @@ def test_empty_fields_error_message(test_env):
 
 def test_fields_dimension_error_message(test_env):
     """Verify fields dimension error is clear."""
+    rng = np.random.default_rng(42)
     # 1D array (missing time dimension)
-    fields_1d = np.random.rand(test_env.n_bins)
+    fields_1d = rng.random(test_env.n_bins)
 
     with pytest.raises(ValueError) as exc_info:
         animate_fields(test_env, fields_1d)
@@ -218,8 +223,9 @@ def test_unknown_backend_error_message(test_env, test_fields):
 
 def test_html_max_frames_error_message(test_env):
     """Verify HTML max frames error provides subsample examples."""
+    rng = np.random.default_rng(42)
     # Create large dataset exceeding limit
-    large_fields = [np.random.rand(test_env.n_bins) for _ in range(2000)]
+    large_fields = [rng.random(test_env.n_bins) for _ in range(2000)]
 
     with pytest.raises(ValueError) as exc_info:
         animate_fields(test_env, large_fields, backend="html")
@@ -287,8 +293,9 @@ def test_image_format_validation_error_message(test_env, test_fields):
 
 def test_large_dataset_no_napari_error_message(test_env):
     """Verify large dataset error provides comprehensive options."""
+    rng = np.random.default_rng(42)
     # Create very large dataset
-    large_fields = [np.random.rand(test_env.n_bins) for _ in range(50_000)]
+    large_fields = [rng.random(test_env.n_bins) for _ in range(50_000)]
 
     # Mock napari as unavailable
     with patch(
@@ -345,15 +352,17 @@ def test_multi_field_layout_required_error_message():
     pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
+    rng = np.random.default_rng(42)
+
     # Create environment with known bin count
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Multi-field input without layout parameter
     # Must be list of lists of arrays (not ndarray) to trigger multi-field detection
     field_sequences = [
-        [np.random.rand(env.n_bins) for _ in range(10)],
-        [np.random.rand(env.n_bins) for _ in range(10)],
+        [rng.random(env.n_bins) for _ in range(10)],
+        [rng.random(env.n_bins) for _ in range(10)],
     ]
 
     # Call napari backend directly to bypass core validation
@@ -372,14 +381,16 @@ def test_multi_field_length_mismatch_error_message():
     pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
+    rng = np.random.default_rng(42)
+
     # Create environment with known bin count
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Different length sequences
     field_sequences = [
-        [np.random.rand(env.n_bins) for _ in range(10)],
-        [np.random.rand(env.n_bins) for _ in range(15)],
+        [rng.random(env.n_bins) for _ in range(10)],
+        [rng.random(env.n_bins) for _ in range(15)],
     ]
 
     # Call napari backend directly to bypass core validation
@@ -397,13 +408,15 @@ def test_multi_field_layer_names_count_error_message():
     pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import render_napari
 
+    rng = np.random.default_rng(42)
+
     # Create environment with known bin count
-    positions = np.random.randn(100, 2) * 50
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     field_sequences = [
-        [np.random.rand(env.n_bins) for _ in range(10)],
-        [np.random.rand(env.n_bins) for _ in range(10)],
+        [rng.random(env.n_bins) for _ in range(10)],
+        [rng.random(env.n_bins) for _ in range(10)],
     ]
 
     # Call napari backend directly to bypass core validation

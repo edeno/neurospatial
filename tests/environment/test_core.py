@@ -370,8 +370,8 @@ def data_for_morpho_ops() -> NDArray[np.float64]:
 def env_hexagonal() -> Environment:
     """A simple hexagonal environment with enough bins for neighbor tests."""
     # Generate more data points to ensure we have at least 7 active bins
-    np.random.seed(42)
-    data = np.random.rand(100, 2) * 5  # 100 points in a 5x5 area
+    rng = np.random.default_rng(42)
+    data = rng.random((100, 2)) * 5  # 100 points in a 5x5 area
     return Environment.from_samples(
         positions=data,
         layout="Hexagonal",
@@ -648,7 +648,8 @@ class TestDimensionality:
         assert np.allclose(areas, 1.0)
 
     def test_3d_regular_grid(self):
-        data = np.random.rand(100, 3) * 5
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 3)) * 5
         input_bin_size = 1.0
         env = Environment.from_samples(
             positions=data,
@@ -1148,7 +1149,8 @@ class TestPositionsParameterNaming:
 
     def test_from_samples_accepts_positions_parameter(self):
         """Test that from_samples() accepts 'positions' parameter."""
-        positions = np.random.rand(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 50
 
         # Should work with 'positions' parameter
         env = Environment.from_samples(
@@ -1182,7 +1184,8 @@ class TestPositionsParameterNaming:
 
     def test_from_samples_positions_with_hexagonal_layout(self):
         """Test 'positions' parameter works with hexagonal layout."""
-        positions = np.random.rand(200, 2) * 40
+        rng = np.random.default_rng(42)
+        positions = rng.random((200, 2)) * 40
 
         env = Environment.from_samples(
             positions=positions, bin_size=4.0, layout="Hexagonal", name="hex_test"
@@ -1194,7 +1197,8 @@ class TestPositionsParameterNaming:
 
     def test_from_samples_positions_with_morphological_ops(self):
         """Test 'positions' parameter with morphological operations."""
-        positions = np.random.rand(300, 2) * 30
+        rng = np.random.default_rng(42)
+        positions = rng.random((300, 2)) * 30
 
         env = Environment.from_samples(
             positions=positions,
@@ -1235,67 +1239,81 @@ class TestCacheManagement:
     - @cached_property values like differential_operator, boundary_bins, etc.
 
     These tests verify that caching works correctly and can be cleared when needed.
+
+    Note: Uses fresh copies of session-scoped fixtures to avoid mutating shared state.
     """
+
+    @pytest.fixture
+    def cache_test_env(self, grid_env_from_samples):
+        """Provide a fresh copy of grid_env_from_samples for cache testing.
+
+        This fixture creates a copy to avoid mutating the session-scoped
+        fixture, which would affect other tests.
+        """
+        return grid_env_from_samples.copy()
+
+    @pytest.fixture
+    def cache_test_graph_env(self, simple_graph_env):
+        """Provide a fresh copy of simple_graph_env for cache testing."""
+        return simple_graph_env.copy()
 
     def test_clear_cache_method_exists(self, grid_env_from_samples):
         """Test that clear_cache() method exists on Environment instances."""
         assert hasattr(grid_env_from_samples, "clear_cache")
         assert callable(grid_env_from_samples.clear_cache)
 
-    def test_clear_cache_clears_kdtree(self, grid_env_from_samples):
+    def test_clear_cache_clears_kdtree(self, cache_test_env):
         """Test that clear_cache() clears the KDTree cache."""
         from neurospatial.spatial import map_points_to_bins
 
         # Create KDTree cache by calling map_points_to_bins
         points = np.array([[5.0, 5.0]])
-        map_points_to_bins(points, grid_env_from_samples)
+        map_points_to_bins(points, cache_test_env)
 
         # Verify cache exists
-        assert hasattr(grid_env_from_samples, "_kdtree_cache")
-        assert grid_env_from_samples._kdtree_cache is not None
+        assert hasattr(cache_test_env, "_kdtree_cache")
+        assert cache_test_env._kdtree_cache is not None
 
         # Clear all caches
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Verify KDTree cache is cleared
-        assert grid_env_from_samples._kdtree_cache is None
+        assert cache_test_env._kdtree_cache is None
 
-    def test_clear_cache_clears_cached_properties(self, grid_env_from_samples):
+    def test_clear_cache_clears_cached_properties(self, cache_test_env):
         """Test that clear_cache() clears @cached_property values."""
         # Access several cached properties to trigger computation
-        _ = grid_env_from_samples.boundary_bins  # cached_property in metrics.py
-        _ = grid_env_from_samples.bin_sizes  # cached_property in queries.py
+        _ = cache_test_env.boundary_bins  # cached_property in metrics.py
+        _ = cache_test_env.bin_sizes  # cached_property in queries.py
 
         # Verify they're in __dict__ (cached)
-        assert "boundary_bins" in grid_env_from_samples.__dict__
-        assert "bin_sizes" in grid_env_from_samples.__dict__
+        assert "boundary_bins" in cache_test_env.__dict__
+        assert "bin_sizes" in cache_test_env.__dict__
 
         # Clear all caches
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Verify cached properties are cleared from __dict__
-        assert "boundary_bins" not in grid_env_from_samples.__dict__
-        assert "bin_sizes" not in grid_env_from_samples.__dict__
+        assert "boundary_bins" not in cache_test_env.__dict__
+        assert "bin_sizes" not in cache_test_env.__dict__
 
-    def test_clear_cache_clears_differential_operator(self, grid_env_from_samples):
+    def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
         # Access differential_operator (expensive computation)
-        diff_op_original = grid_env_from_samples.differential_operator
+        diff_op_original = cache_test_env.differential_operator
 
         # Verify it's cached
-        assert "differential_operator" in grid_env_from_samples.__dict__
-        assert (
-            grid_env_from_samples.differential_operator is diff_op_original
-        )  # Same object
+        assert "differential_operator" in cache_test_env.__dict__
+        assert cache_test_env.differential_operator is diff_op_original  # Same object
 
         # Clear caches
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Verify it's cleared
-        assert "differential_operator" not in grid_env_from_samples.__dict__
+        assert "differential_operator" not in cache_test_env.__dict__
 
         # Can recompute
-        diff_op_new = grid_env_from_samples.differential_operator
+        diff_op_new = cache_test_env.differential_operator
         assert diff_op_new is not None
 
         # New object was created (not the same reference)
@@ -1303,85 +1321,83 @@ class TestCacheManagement:
         assert diff_op_new.shape == diff_op_original.shape
         assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
 
-    def test_clear_cache_idempotent(self, grid_env_from_samples):
+    def test_clear_cache_idempotent(self, cache_test_env):
         """Test that calling clear_cache() multiple times doesn't error."""
         # Clear cache when nothing is cached
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Access a property
-        _ = grid_env_from_samples.boundary_bins
+        _ = cache_test_env.boundary_bins
 
         # Clear again
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Clear third time (should be safe)
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
-    def test_clear_cache_allows_recomputation(self, grid_env_from_samples):
+    def test_clear_cache_allows_recomputation(self, cache_test_env):
         """Test that after clearing, cached properties can be recomputed."""
         # Access property
-        boundary_original = grid_env_from_samples.boundary_bins
+        boundary_original = cache_test_env.boundary_bins
         assert len(boundary_original) > 0
 
         # Clear cache
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Access again - should recompute
-        boundary_new = grid_env_from_samples.boundary_bins
+        boundary_new = cache_test_env.boundary_bins
         assert len(boundary_new) > 0
 
         # Should be equal (same computation)
         np.testing.assert_array_equal(boundary_new, boundary_original)
 
-    def test_clear_cache_with_all_cached_properties(self, grid_env_from_samples):
+    def test_clear_cache_with_all_cached_properties(self, cache_test_env):
         """Test clearing when ALL cached properties are populated."""
         # Populate ALL caches (not just some)
         from neurospatial.spatial import map_points_to_bins
 
-        _ = grid_env_from_samples.boundary_bins
-        _ = grid_env_from_samples.bin_sizes
-        _ = grid_env_from_samples.differential_operator
-        _ = grid_env_from_samples._source_flat_to_active_node_id_map
-        _ = grid_env_from_samples.bin_attributes  # Added
-        _ = grid_env_from_samples.edge_attributes  # Added
+        _ = cache_test_env.boundary_bins
+        _ = cache_test_env.bin_sizes
+        _ = cache_test_env.differential_operator
+        _ = cache_test_env._source_flat_to_active_node_id_map
+        _ = cache_test_env.bin_attributes  # Added
+        _ = cache_test_env.edge_attributes  # Added
         # linearization_properties only exists for 1D environments - skip for 2D grid
-        map_points_to_bins(np.array([[5.0, 5.0]]), grid_env_from_samples)
+        map_points_to_bins(np.array([[5.0, 5.0]]), cache_test_env)
 
         # Verify all are cached
-        assert grid_env_from_samples._kdtree_cache is not None
-        assert "boundary_bins" in grid_env_from_samples.__dict__
-        assert "bin_sizes" in grid_env_from_samples.__dict__
-        assert "differential_operator" in grid_env_from_samples.__dict__
-        assert "_source_flat_to_active_node_id_map" in grid_env_from_samples.__dict__
-        assert "bin_attributes" in grid_env_from_samples.__dict__  # Added
-        assert "edge_attributes" in grid_env_from_samples.__dict__  # Added
+        assert cache_test_env._kdtree_cache is not None
+        assert "boundary_bins" in cache_test_env.__dict__
+        assert "bin_sizes" in cache_test_env.__dict__
+        assert "differential_operator" in cache_test_env.__dict__
+        assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
+        assert "bin_attributes" in cache_test_env.__dict__  # Added
+        assert "edge_attributes" in cache_test_env.__dict__  # Added
 
         # Clear all
-        grid_env_from_samples.clear_cache()
+        cache_test_env.clear_cache()
 
         # Verify ALL are cleared
-        assert grid_env_from_samples._kdtree_cache is None
-        assert "boundary_bins" not in grid_env_from_samples.__dict__
-        assert "bin_sizes" not in grid_env_from_samples.__dict__
-        assert "differential_operator" not in grid_env_from_samples.__dict__
-        assert (
-            "_source_flat_to_active_node_id_map" not in grid_env_from_samples.__dict__
-        )
-        assert "bin_attributes" not in grid_env_from_samples.__dict__  # Added
-        assert "edge_attributes" not in grid_env_from_samples.__dict__  # Added
+        assert cache_test_env._kdtree_cache is None
+        assert "boundary_bins" not in cache_test_env.__dict__
+        assert "bin_sizes" not in cache_test_env.__dict__
+        assert "differential_operator" not in cache_test_env.__dict__
+        assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
+        assert "bin_attributes" not in cache_test_env.__dict__  # Added
+        assert "edge_attributes" not in cache_test_env.__dict__  # Added
 
-    def test_clear_cache_clears_linearization_properties(self, simple_graph_env):
+    def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
         """Test that clear_cache() clears linearization_properties on 1D environments."""
         # linearization_properties only exists for 1D (GraphLayout) environments
-        if not simple_graph_env.is_1d:
+        if not cache_test_graph_env.is_1d:
             pytest.skip("Requires 1D environment")
 
         # Access linearization properties (triggers caching)
-        _ = simple_graph_env.linearization_properties
-        assert "linearization_properties" in simple_graph_env.__dict__
+        _ = cache_test_graph_env.linearization_properties
+        assert "linearization_properties" in cache_test_graph_env.__dict__
 
         # Clear cache
-        simple_graph_env.clear_cache()
+        cache_test_graph_env.clear_cache()
 
         # Verify cleared
-        assert "linearization_properties" not in simple_graph_env.__dict__
+        assert "linearization_properties" not in cache_test_graph_env.__dict__

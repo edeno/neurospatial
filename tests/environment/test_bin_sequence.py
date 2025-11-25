@@ -448,11 +448,12 @@ class TestBinSequenceMultipleLayouts:
 
     def test_regular_grid_2d(self):
         """Test bin_sequence on 2D regular grid."""
-        samples = np.random.uniform(0, 20, (100, 2))
+        rng = np.random.default_rng(42)
+        samples = rng.uniform(0, 20, (100, 2))
         env = Environment.from_samples(samples, bin_size=5.0)
 
         times = np.arange(50, dtype=float)
-        positions = np.random.uniform(0, 20, (50, 2))
+        positions = rng.uniform(0, 20, (50, 2))
 
         bins = env.bin_sequence(times, positions, dedup=False)
 
@@ -464,6 +465,7 @@ class TestBinSequenceMultipleLayouts:
         from shapely.geometry import box
 
         # Create polygon-based environment
+        rng = np.random.default_rng(42)
         polygon = box(0, 0, 10, 10)
         env = Environment.from_polygon(
             polygon=polygon,
@@ -471,7 +473,7 @@ class TestBinSequenceMultipleLayouts:
         )
 
         times = np.arange(20, dtype=float)
-        positions = np.random.uniform(0, 10, (20, 2))
+        positions = rng.uniform(0, 10, (20, 2))
 
         bins = env.bin_sequence(times, positions)
 

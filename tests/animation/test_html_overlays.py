@@ -33,7 +33,8 @@ def simple_env():
 @pytest.fixture
 def simple_fields(simple_env):
     """Create simple fields for testing."""
-    return [np.random.rand(simple_env.n_bins) for _ in range(10)]
+    rng = np.random.default_rng(42)
+    return [rng.random(simple_env.n_bins) for _ in range(10)]
 
 
 @pytest.fixture
@@ -451,10 +452,11 @@ class TestOverlaySizeGuardrails:
 
     def test_large_position_overlay_warns(self, simple_env, tmp_path):
         """Test warning when position overlay data is very large."""
+        rng = np.random.default_rng(42)
         # Create large position dataset (10,000 frames)
         n_frames = 10000
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
-        positions = np.random.rand(n_frames, 2) * 10.0
+        fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
+        positions = rng.random((n_frames, 2)) * 10.0
 
         overlay_data = OverlayData(
             positions=[
@@ -478,8 +480,9 @@ class TestOverlaySizeGuardrails:
         self, simple_env, simple_fields, tmp_path
     ):
         """Test that overlay size is included in file size estimation."""
+        rng = np.random.default_rng(42)
         # Create position overlay
-        positions = np.random.rand(10, 2) * 10.0
+        positions = rng.random((10, 2)) * 10.0
         overlay_data = OverlayData(
             positions=[
                 PositionData(data=positions, color="red", size=10.0, trail_length=5)
@@ -527,13 +530,14 @@ class TestOverlaySizeGuardrails:
     @pytest.mark.slow
     def test_large_overlay_json_warns(self, simple_env, tmp_path):
         """Test warning when overlay JSON size exceeds threshold (1MB)."""
+        rng = np.random.default_rng(42)
         # Create large overlay dataset (30,000 frames to exceed 1MB threshold)
         # At ~20 bytes/coord, 30k frames × 2 dims = 60k coords = ~1.2 MB
         n_frames = 30000
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(min(n_frames, 500))]
+        fields = [rng.random(simple_env.n_bins) for _ in range(min(n_frames, 500))]
 
         # Create overlay with large position data
-        positions = np.random.rand(n_frames, 2) * 100.0
+        positions = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[
@@ -561,10 +565,11 @@ class TestOverlaySizeGuardrails:
     @pytest.mark.slow
     def test_overlay_size_warning_includes_estimate(self, simple_env, tmp_path):
         """Test that overlay size warning includes size estimate."""
+        rng = np.random.default_rng(42)
         # Create large overlay dataset that triggers warning (> 1MB)
         n_frames = 30000
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
-        positions = np.random.rand(n_frames, 2) * 100.0
+        fields = [rng.random(simple_env.n_bins) for _ in range(500)]
+        positions = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[
@@ -595,9 +600,10 @@ class TestOverlaySizeGuardrails:
     @pytest.mark.slow
     def test_overlay_size_warning_suggests_subsampling(self, simple_env, tmp_path):
         """Test that overlay size warning suggests subsampling positions."""
+        rng = np.random.default_rng(42)
         n_frames = 30000
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
-        positions = np.random.rand(n_frames, 2) * 100.0
+        fields = [rng.random(simple_env.n_bins) for _ in range(500)]
+        positions = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[
@@ -628,9 +634,10 @@ class TestOverlaySizeGuardrails:
     @pytest.mark.slow
     def test_overlay_size_warning_suggests_video_backend(self, simple_env, tmp_path):
         """Test that overlay size warning suggests using video backend."""
+        rng = np.random.default_rng(42)
         n_frames = 30000
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
-        positions = np.random.rand(n_frames, 2) * 100.0
+        fields = [rng.random(simple_env.n_bins) for _ in range(500)]
+        positions = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[
@@ -652,13 +659,14 @@ class TestOverlaySizeGuardrails:
     @pytest.mark.slow
     def test_multiple_overlays_size_accumulated(self, simple_env, tmp_path):
         """Test that size estimation accounts for multiple overlays."""
+        rng = np.random.default_rng(42)
         n_frames = 12000  # 3 overlays × 12k frames ≈ 1.4 MB total
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(500)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(500)]
 
         # Create multiple position overlays (multi-animal)
-        positions1 = np.random.rand(n_frames, 2) * 100.0
-        positions2 = np.random.rand(n_frames, 2) * 100.0
-        positions3 = np.random.rand(n_frames, 2) * 100.0
+        positions1 = rng.random((n_frames, 2)) * 100.0
+        positions2 = rng.random((n_frames, 2)) * 100.0
+        positions3 = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[
@@ -687,15 +695,16 @@ class TestOverlaySizeGuardrails:
         """Test that regions contribute to overlay JSON size estimation."""
         from shapely.geometry import Polygon
 
+        rng = np.random.default_rng(42)
         n_frames = 500
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
         # Add many complex polygon regions to exceed 1MB
         # At ~30 bytes/vertex, need ~35k vertices for 1MB
         # 100 polygons × 400 vertices = 40k vertices ≈ 1.2 MB
         for i in range(100):
             # Create polygon with many vertices (400 vertices per polygon)
-            vertices = np.random.rand(400, 2) * 100.0
+            vertices = rng.random((400, 2)) * 100.0
             poly = Polygon(vertices)
             simple_env.regions.add(f"region_{i}", polygon=poly)
 
@@ -712,8 +721,9 @@ class TestOverlaySizeGuardrails:
 
     def test_small_overlay_no_warning(self, simple_env, simple_fields, tmp_path):
         """Test that small overlay data does not trigger warning."""
+        rng = np.random.default_rng(42)
         # Small overlay (10 frames, 1 position)
-        positions = np.random.rand(10, 2) * 10.0
+        positions = rng.random((10, 2)) * 10.0
         overlay_data = OverlayData(
             positions=[
                 PositionData(data=positions, color="red", size=10.0, trail_length=5)
@@ -740,9 +750,10 @@ class TestOverlaySizeGuardrails:
 
     def test_overlay_size_threshold_configurable(self, simple_env, tmp_path):
         """Test that overlay size warning threshold can be configured."""
+        rng = np.random.default_rng(42)
         n_frames = 500
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
-        positions = np.random.rand(n_frames, 2) * 100.0
+        fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
+        positions = rng.random((n_frames, 2)) * 100.0
 
         overlay_data = OverlayData(
             positions=[

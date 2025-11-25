@@ -16,10 +16,9 @@ class TestSubsetBasic:
 
     def test_subset_with_boolean_mask(self):
         """Subset with boolean mask selects correct bins."""
+        rng = np.random.default_rng(42)
         # Create 10x10 grid
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select first half of bins
         n_bins = env.n_bins
@@ -39,10 +38,9 @@ class TestSubsetBasic:
 
     def test_subset_with_region_names(self):
         """Subset with region names selects bins inside regions."""
+        rng = np.random.default_rng(42)
         # Create environment
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add a region covering left half
         env.regions.add("left_half", polygon=box(0, 0, 50, 100))
@@ -60,8 +58,9 @@ class TestSubsetBasic:
 
     def test_subset_with_polygon(self):
         """Subset with polygon selects bins whose centers are inside."""
+        rng = np.random.default_rng(42)
         # Create 10x10 grid
-        data = np.random.uniform(0, 100, (1000, 2))
+        data = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Crop to left half with polygon
@@ -81,10 +80,9 @@ class TestSubsetBasic:
 
     def test_subset_preserves_connectivity(self):
         """Subset preserves connectivity between selected bins."""
+        rng = np.random.default_rng(42)
         # Create grid
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select left half
         centers = env.bin_centers
@@ -107,9 +105,8 @@ class TestSubsetNodeRenumbering:
 
     def test_subset_renumbers_nodes_to_contiguous_range(self):
         """Node indices are renumbered to [0, n'-1]."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select scattered bins
         mask = np.zeros(env.n_bins, dtype=bool)
@@ -124,9 +121,8 @@ class TestSubsetNodeRenumbering:
 
     def test_subset_node_attributes_preserved(self):
         """Node attributes are preserved after renumbering."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select some bins
         mask = np.zeros(env.n_bins, dtype=bool)
@@ -147,9 +143,8 @@ class TestSubsetEdgeCases:
 
     def test_subset_empty_selection_raises_error(self):
         """Empty selection raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Empty mask
         mask = np.zeros(env.n_bins, dtype=bool)
@@ -159,9 +154,8 @@ class TestSubsetEdgeCases:
 
     def test_subset_all_bins_returns_equivalent_environment(self):
         """Selecting all bins returns equivalent environment."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select all bins
         mask = np.ones(env.n_bins, dtype=bool)
@@ -175,9 +169,8 @@ class TestSubsetEdgeCases:
 
     def test_subset_single_bin(self):
         """Subset with single bin works correctly."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select one bin
         mask = np.zeros(env.n_bins, dtype=bool)
@@ -192,9 +185,8 @@ class TestSubsetEdgeCases:
 
     def test_subset_disconnected_components(self):
         """Subset can create disconnected graph."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select bins from opposite corners (likely disconnected)
         centers = env.bin_centers
@@ -215,9 +207,8 @@ class TestSubsetValidation:
 
     def test_subset_requires_exactly_one_parameter(self):
         """Exactly one of {bins, region_names, polygon} must be provided."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # No parameters
         with pytest.raises(ValueError, match="Exactly one of"):
@@ -231,9 +222,8 @@ class TestSubsetValidation:
 
     def test_subset_mask_wrong_shape_raises_error(self):
         """Mask with wrong shape raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Wrong length
         mask = np.ones(env.n_bins + 10, dtype=bool)
@@ -243,9 +233,8 @@ class TestSubsetValidation:
 
     def test_subset_mask_wrong_dtype_raises_error(self):
         """Mask with wrong dtype raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Integer mask instead of boolean
         mask = np.arange(env.n_bins)
@@ -255,27 +244,24 @@ class TestSubsetValidation:
 
     def test_subset_invalid_region_name_raises_error(self):
         """Non-existent region name raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         with pytest.raises(ValueError, match=r"Region.*not found"):
             env.subset(region_names=["nonexistent_region"])
 
     def test_subset_empty_region_names_raises_error(self):
         """Empty region_names list raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         with pytest.raises(ValueError, match=r"region_names.*empty"):
             env.subset(region_names=[])
 
     def test_subset_point_region_raises_error(self):
         """Point-type regions raise ValueError with helpful message."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add a point region
         env.regions.add("goal", point=[50, 50])
@@ -290,9 +276,8 @@ class TestSubsetInvert:
 
     def test_subset_invert_selects_complement(self):
         """invert=True selects complement of mask."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Select left half
         mask = env.bin_centers[:, 0] < 50
@@ -307,9 +292,8 @@ class TestSubsetInvert:
 
     def test_subset_invert_with_region(self):
         """invert works with region_names."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Add region
         env.regions.add("center", polygon=box(40, 40, 60, 60))
@@ -327,9 +311,8 @@ class TestSubsetMetadataHandling:
 
     def test_subset_preserves_units_and_frame(self):
         """Subset preserves units and frame metadata."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
         env.units = "cm"
         env.frame = "session1"
 
@@ -344,9 +327,8 @@ class TestSubsetMetadataHandling:
 
     def test_subset_drops_regions(self):
         """Subset drops all regions."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
         env.regions.add("goal", point=[50, 50])
         env.regions.add("start", point=[10, 10])
 
@@ -363,8 +345,9 @@ class TestSubsetIntegration:
 
     def test_subset_then_occupancy(self):
         """Can compute occupancy on subset environment."""
+        rng = np.random.default_rng(42)
         # Create environment with trajectory
-        data = np.random.uniform(0, 100, (1000, 2))
+        data = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Subset to left half
@@ -373,7 +356,7 @@ class TestSubsetIntegration:
 
         # Generate trajectory in left half
         times = np.linspace(0, 10, 100)
-        positions = np.random.uniform(0, 50, (100, 2))  # Left half only
+        positions = rng.uniform(0, 50, (100, 2))  # Left half only
 
         # Compute occupancy (should work without errors)
         occ = sub_env.occupancy(times, positions)
@@ -383,16 +366,15 @@ class TestSubsetIntegration:
 
     def test_subset_then_smooth(self):
         """Can smooth fields on subset environment."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Subset
         mask = env.bin_centers[:, 0] < 50
         sub_env = env.subset(bins=mask)
 
         # Create field and smooth
-        field = np.random.rand(sub_env.n_bins)
+        field = rng.random(sub_env.n_bins)
         smoothed = sub_env.smooth(field, bandwidth=5.0)
 
         assert smoothed.shape == (sub_env.n_bins,)
@@ -400,9 +382,8 @@ class TestSubsetIntegration:
 
     def test_subset_preserves_graph_distances(self):
         """Edge distances preserved in subset graph."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (1000, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
 
         # Get original edge with distance
         original_edges = list(env.connectivity.edges(data=True))

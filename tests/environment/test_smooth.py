@@ -53,10 +53,11 @@ class TestSmoothBasic:
 
     def test_smooth_returns_correct_shape(self):
         """Smoothed field should have same shape as input field."""
-        positions = np.random.rand(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=3.0)
 
         assert smoothed.shape == field.shape
@@ -64,10 +65,11 @@ class TestSmoothBasic:
 
     def test_smooth_preserves_dtype(self):
         """Smoothed field should be float64."""
-        positions = np.random.rand(50, 2) * 30
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 30
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=2.0)
 
         assert smoothed.dtype == np.float64
@@ -78,11 +80,12 @@ class TestSmoothMassConservation:
 
     def test_smooth_transition_mode_conserves_mass(self):
         """Smoothing with mode='transition' should conserve total mass."""
-        positions = np.random.rand(100, 2) * 40
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 40
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Random field
-        field = np.random.rand(env.n_bins) * 10
+        field = rng.random(env.n_bins) * 10
 
         # Smooth with transition mode
         smoothed = env.smooth(field, bandwidth=3.0, mode="transition")
@@ -161,10 +164,11 @@ class TestSmoothModes:
 
     def test_smooth_transition_mode(self):
         """Test mode='transition' parameter."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=2.0, mode="transition")
 
         assert smoothed.shape == (env.n_bins,)
@@ -173,10 +177,11 @@ class TestSmoothModes:
 
     def test_smooth_density_mode(self):
         """Test mode='density' parameter."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=2.0, mode="density")
 
         assert smoothed.shape == (env.n_bins,)
@@ -187,41 +192,45 @@ class TestSmoothValidation:
 
     def test_smooth_wrong_field_shape_raises_error(self):
         """Field with wrong shape should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Wrong shape
-        field_wrong = np.random.rand(env.n_bins + 10)
+        field_wrong = rng.random(env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
             env.smooth(field_wrong, bandwidth=2.0)
 
     def test_smooth_negative_bandwidth_raises_error(self):
         """Negative bandwidth should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
             env.smooth(field, bandwidth=-1.0)
 
     def test_smooth_zero_bandwidth_raises_error(self):
         """Zero bandwidth should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
             env.smooth(field, bandwidth=0.0)
 
     def test_smooth_invalid_mode_raises_error(self):
         """Invalid mode should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match=r"mode must be"):
             env.smooth(field, bandwidth=2.0, mode="invalid")
@@ -233,18 +242,20 @@ class TestSmoothValidation:
 
     def test_smooth_2d_field_raises_error(self):
         """Field must be 1-D array. 2-D arrays should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # 2D field
-        field_2d = np.random.rand(env.n_bins, 3)
+        field_2d = rng.random((env.n_bins, 3))
 
         with pytest.raises(ValueError, match=r"Field must be 1-D array"):
             env.smooth(field_2d, bandwidth=2.0)
 
     def test_smooth_field_with_nan_raises_error(self):
         """Field containing NaN should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.ones(env.n_bins)
@@ -255,7 +266,8 @@ class TestSmoothValidation:
 
     def test_smooth_field_with_inf_raises_error(self):
         """Field containing Inf should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.ones(env.n_bins)
@@ -266,7 +278,8 @@ class TestSmoothValidation:
 
     def test_smooth_field_with_negative_inf_raises_error(self):
         """Field containing -Inf should raise ValueError."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.ones(env.n_bins)
@@ -277,7 +290,8 @@ class TestSmoothValidation:
 
     def test_smooth_empty_field_handled(self):
         """Empty field (all zeros) should be handled gracefully."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.zeros(env.n_bins)
@@ -292,21 +306,23 @@ class TestSmoothMultipleLayouts:
 
     def test_smooth_on_regular_grid(self):
         """Smooth should work on regular grid layouts."""
+        rng = np.random.default_rng(42)
         positions = np.array(
             [[x, y] for x in range(5) for y in range(5)], dtype=np.float64
         )
         env = Environment.from_samples(positions, bin_size=1.0)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=1.0)
 
         assert smoothed.shape == (env.n_bins,)
 
     def test_smooth_on_graph_layout(self, graph_env):
         """Smooth should work on graph layouts."""
+        rng = np.random.default_rng(42)
         env = graph_env
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
         smoothed = env.smooth(field, bandwidth=3.0)
 
         assert smoothed.shape == (env.n_bins,)
@@ -359,11 +375,12 @@ class TestSmoothCaching:
 
     def test_smooth_uses_kernel_cache(self):
         """Repeated calls with same bandwidth should use cached kernel."""
-        positions = np.random.rand(50, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        field1 = np.random.rand(env.n_bins)
-        field2 = np.random.rand(env.n_bins)
+        field1 = rng.random(env.n_bins)
+        field2 = rng.random(env.n_bins)
 
         # First call computes kernel
         smoothed1 = env.smooth(field1, bandwidth=3.0, mode="transition")

@@ -10,14 +10,16 @@ from neurospatial.composite import CompositeEnvironment
 @pytest.fixture
 def sample_env_2d():
     """Create a simple 2D environment for testing."""
-    data = np.random.randn(100, 2) * 10
+    rng = np.random.default_rng(42)
+    data = rng.standard_normal((100, 2)) * 10
     return Environment.from_samples(data, bin_size=2.0)
 
 
 @pytest.fixture
 def sample_env_3d():
     """Create a simple 3D environment for testing."""
-    data = np.random.randn(100, 3) * 10
+    rng = np.random.default_rng(43)
+    data = rng.standard_normal((100, 3)) * 10
     return Environment.from_samples(data, bin_size=2.0)
 
 
@@ -106,7 +108,10 @@ class TestValueValidation:
 
     def test_dimension_mismatch_multiple_envs(self, sample_env_2d, sample_env_3d):
         """Test dimension mismatch error with multiple environments."""
-        env_2d_2 = Environment.from_samples(np.random.randn(50, 2) * 10, bin_size=2.0)
+        rng = np.random.default_rng(44)
+        env_2d_2 = Environment.from_samples(
+            rng.standard_normal((50, 2)) * 10, bin_size=2.0
+        )
         with pytest.raises(
             ValueError,
             match="All sub-environments must share the same n_dims",
@@ -125,20 +130,29 @@ class TestValidConstruction:
 
     def test_valid_multiple_envs(self, sample_env_2d):
         """Test that multiple valid environments work."""
-        env2 = Environment.from_samples(np.random.randn(80, 2) * 10 + 50, bin_size=2.0)
+        rng = np.random.default_rng(45)
+        env2 = Environment.from_samples(
+            rng.standard_normal((80, 2)) * 10 + 50, bin_size=2.0
+        )
         comp = CompositeEnvironment([sample_env_2d, env2])
         assert comp.n_bins > sample_env_2d.n_bins
         assert comp.n_dims == 2
 
     def test_valid_tuple_input(self, sample_env_2d):
         """Test that tuple of environments works (not just list)."""
-        env2 = Environment.from_samples(np.random.randn(80, 2) * 10 + 50, bin_size=2.0)
+        rng = np.random.default_rng(46)
+        env2 = Environment.from_samples(
+            rng.standard_normal((80, 2)) * 10 + 50, bin_size=2.0
+        )
         comp = CompositeEnvironment((sample_env_2d, env2))
         assert comp.n_bins > sample_env_2d.n_bins
 
     def test_valid_3d_envs(self, sample_env_3d):
         """Test that multiple 3D environments work."""
-        env2 = Environment.from_samples(np.random.randn(80, 3) * 10 + 50, bin_size=2.0)
+        rng = np.random.default_rng(47)
+        env2 = Environment.from_samples(
+            rng.standard_normal((80, 3)) * 10 + 50, bin_size=2.0
+        )
         comp = CompositeEnvironment([sample_env_3d, env2])
         assert comp.n_dims == 3
         assert comp.n_bins > sample_env_3d.n_bins

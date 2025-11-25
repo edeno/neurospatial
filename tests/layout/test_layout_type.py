@@ -24,8 +24,9 @@ class TestLayoutTypeProperty:
         """RegularGridLayout should have layout_type 'grid'."""
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
+        rng = np.random.default_rng(42)
         layout = RegularGridLayout()
-        positions = np.random.randn(100, 2) * 50
+        positions = rng.standard_normal((100, 2)) * 50
         layout.build(positions=positions, bin_size=10.0)
 
         assert hasattr(layout, "layout_type")
@@ -81,8 +82,9 @@ class TestLayoutTypeProperty:
         """HexagonalLayout should have layout_type 'hexagonal'."""
         from neurospatial.layout.engines.hexagonal import HexagonalLayout
 
+        rng = np.random.default_rng(42)
         layout = HexagonalLayout()
-        positions = np.random.randn(50, 2) * 20
+        positions = rng.standard_normal((50, 2)) * 20
         layout.build(positions=positions, hexagon_width=5.0)
 
         assert hasattr(layout, "layout_type")
@@ -272,8 +274,9 @@ class TestLayoutTypeInWidgetBackend:
 
         from neurospatial import Environment
 
+        rng = np.random.default_rng(42)
         # Create a regular grid environment
-        positions = np.random.randn(100, 2) * 50
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Check that the layout has the required properties
@@ -301,8 +304,9 @@ class TestLayoutTypeInRendering:
         from neurospatial import Environment
         from neurospatial.animation.rendering import field_to_rgb_for_napari
 
+        rng = np.random.default_rng(42)
         # Create grid environment
-        positions = np.random.randn(100, 2) * 50
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Verify layout is grid-compatible
@@ -313,7 +317,7 @@ class TestLayoutTypeInRendering:
         cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
 
         # Create field
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Should return 2D RGB image
         rgb = field_to_rgb_for_napari(env, field, cmap_lookup, 0, 1)

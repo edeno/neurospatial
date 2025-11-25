@@ -75,8 +75,9 @@ def simple_env() -> Environment:
 @pytest.fixture
 def simple_fields(simple_env: Environment) -> NDArray[np.float64]:
     """Create simple fields (n_frames, n_bins) for testing."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = np.random.rand(n_frames, simple_env.n_bins).astype(np.float64)
+    fields = rng.random((n_frames, simple_env.n_bins)).astype(np.float64)
     return fields
 
 
@@ -93,11 +94,12 @@ def position_overlay_data() -> OverlayData:
 @pytest.fixture
 def bodypart_overlay_data() -> OverlayData:
     """Create bodypart overlay data."""
+    rng = np.random.default_rng(42)
     n_frames = 10
     bodyparts = {
-        "nose": np.random.uniform(2, 8, (n_frames, 2)),
-        "ear_left": np.random.uniform(2, 8, (n_frames, 2)),
-        "ear_right": np.random.uniform(2, 8, (n_frames, 2)),
+        "nose": rng.uniform(2, 8, (n_frames, 2)),
+        "ear_left": rng.uniform(2, 8, (n_frames, 2)),
+        "ear_right": rng.uniform(2, 8, (n_frames, 2)),
     }
     skeleton = Skeleton(
         name="test",

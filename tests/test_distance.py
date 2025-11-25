@@ -68,7 +68,8 @@ class TestEuclideanDistanceMatrix:
 
     def test_symmetry(self):
         """Test that distance matrix is symmetric."""
-        centers = np.random.rand(5, 2)
+        rng = np.random.default_rng(42)
+        centers = rng.random((5, 2))
 
         result = euclidean_distance_matrix(centers)
 

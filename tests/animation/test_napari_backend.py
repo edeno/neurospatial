@@ -37,7 +37,8 @@ def _create_mock_viewer():
 @pytest.fixture
 def simple_env():
     """Create simple 2D environment for testing."""
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
     return env
 
@@ -396,9 +397,10 @@ def test_render_napari_not_available():
     if NAPARI_AVAILABLE:
         pytest.skip("Napari is installed, cannot test unavailable case")
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
-    fields = [np.random.rand(env.n_bins) for _ in range(5)]
+    fields = [rng.random(env.n_bins) for _ in range(5)]
 
     with pytest.raises(ImportError, match="Napari backend requires napari"):
         render_napari(env, fields)

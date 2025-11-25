@@ -16,9 +16,10 @@ class TestPlotField:
 
     def test_grid_layout_pcolormesh(self):
         """Test that grid layouts use pcolormesh (QuadMesh)."""
-        positions = np.random.uniform(0, 100, (1000, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (1000, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         result_ax = env.plot_field(field, ax=ax, colorbar=False)
@@ -34,7 +35,8 @@ class TestPlotField:
         from neurospatial.layout import create_layout
 
         # Create hex environment using correct parameters
-        data = np.random.uniform(0, 100, (100, 2))
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0, 100, (100, 2))
         layout = create_layout(
             kind="hexagonal",
             hexagon_width=10.0,
@@ -42,7 +44,7 @@ class TestPlotField:
             infer_active_bins=True,
         )
         env = Environment(layout=layout, layout_type_used="hexagonal")
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         result_ax = env.plot_field(field, ax=ax, colorbar=False)
@@ -60,12 +62,13 @@ class TestPlotField:
         from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 
         # Create triangular mesh using correct parameters
+        rng = np.random.default_rng(42)
         polygon = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
         layout = TriangularMeshLayout()
         layout.build(polygon, point_spacing=20.0)
 
         env = Environment(layout=layout, layout_type_used="triangular_mesh")
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         result_ax = env.plot_field(field, ax=ax, colorbar=False)
@@ -78,9 +81,10 @@ class TestPlotField:
 
     def test_scatter_fallback(self):
         """Test scatter plot fallback for unknown layouts."""
-        positions = np.random.uniform(0, 100, (500, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (500, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         # Scatter is used as fallback for regular grid
@@ -91,10 +95,9 @@ class TestPlotField:
 
     def test_nan_handling_skip(self):
         """Test that NaN bins are skipped when nan_color=None."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
         field[::2] = np.nan  # Set half to NaN
 
         fig, ax = plt.subplots()
@@ -105,10 +108,9 @@ class TestPlotField:
 
     def test_nan_handling_color(self):
         """Test that NaN bins are colored when nan_color is set."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
         field[::2] = np.nan
 
         fig, ax = plt.subplots()
@@ -119,9 +121,8 @@ class TestPlotField:
 
     def test_all_nan_field_with_skip(self):
         """Test behavior when all field values are NaN and nan_color=None."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
         field = np.full(env.n_bins, np.nan)
 
         fig, ax = plt.subplots()
@@ -133,10 +134,9 @@ class TestPlotField:
 
     def test_auto_vmin_vmax(self):
         """Test automatic vmin/vmax from data."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.uniform(5.0, 15.0, env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.uniform(5.0, 15.0, env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -148,10 +148,9 @@ class TestPlotField:
 
     def test_custom_vmin_vmax(self):
         """Test explicit vmin/vmax."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, vmin=0.0, vmax=10.0, colorbar=False)
@@ -163,10 +162,9 @@ class TestPlotField:
 
     def test_colorbar_creation(self):
         """Test colorbar creation."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=True, colorbar_label="Test Label")
@@ -178,10 +176,9 @@ class TestPlotField:
 
     def test_no_colorbar(self):
         """Test disabling colorbar."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -193,24 +190,22 @@ class TestPlotField:
 
     def test_invalid_field_shape(self):
         """Test that invalid field shape raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
 
         # Wrong shape
-        bad_field = np.random.rand(env.n_bins + 10)
+        bad_field = rng.random(env.n_bins + 10)
 
         with pytest.raises(ValueError, match="field must be 1D array"):
             env.plot_field(bad_field)
 
     def test_invalid_field_2d(self):
         """Test that 2D field raises ValueError."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
 
         # 2D array instead of 1D
-        bad_field = np.random.rand(env.n_bins, 2)
+        bad_field = rng.random((env.n_bins, 2))
 
         with pytest.raises(ValueError, match="field must be 1D array"):
             env.plot_field(bad_field)
@@ -218,20 +213,18 @@ class TestPlotField:
     def test_3d_environment_not_supported(self):
         """Test that >2D environments raise NotImplementedError."""
         # Create 3D environment
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 3)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 3)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         with pytest.raises(NotImplementedError, match=r"Cannot plot.*3D"):
             env.plot_field(field)
 
     def test_custom_colormap(self):
         """Test custom colormap."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, cmap="hot", colorbar=False)
@@ -241,10 +234,9 @@ class TestPlotField:
 
     def test_rasterized_option(self):
         """Test rasterized option."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, rasterized=True, colorbar=False)
@@ -255,11 +247,10 @@ class TestPlotField:
 
     def test_axes_labels_2d(self):
         """Test that axes labels are set for 2D plots."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
         env.units = "cm"
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -272,10 +263,9 @@ class TestPlotField:
 
     def test_axes_aspect_equal(self):
         """Test that axes aspect ratio is set to equal for 2D plots."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -287,10 +277,9 @@ class TestPlotField:
 
     def test_creates_axes_if_none(self):
         """Test that axes are created if not provided."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
 
         result_ax = env.plot_field(field, ax=None, colorbar=False)
 
@@ -301,9 +290,8 @@ class TestPlotField:
 
     def test_vmin_equals_vmax_handling(self):
         """Test handling when vmin >= vmax."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
         # All same value
         field = np.full(env.n_bins, 5.0)
 
@@ -318,9 +306,10 @@ class TestPlotField:
         from neurospatial import compute_place_field
 
         # Generate synthetic data
-        positions = np.random.uniform(20, 80, (1000, 2))
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(20, 80, (1000, 2))
         times = np.linspace(0, 100, 1000)
-        spike_times = np.random.uniform(0, 100, 50)
+        spike_times = rng.uniform(0, 100, 50)
 
         # Create environment
         env = Environment.from_samples(positions, bin_size=5.0)
@@ -348,9 +337,10 @@ class TestPlotFieldEdgeCases:
     def test_empty_environment(self):
         """Test plotting on environment with minimal bins."""
         # Create tiny environment
+        rng = np.random.default_rng(42)
         positions = np.array([[50, 50], [51, 51]])
         env = Environment.from_samples(positions, bin_size=10.0)
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -359,10 +349,9 @@ class TestPlotFieldEdgeCases:
 
     def test_inf_values_in_field(self):
         """Test handling of inf values in field."""
-        env = Environment.from_samples(
-            np.random.uniform(0, 100, (500, 2)), bin_size=10.0
-        )
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
+        field = rng.random(env.n_bins)
         field[0] = np.inf
         field[1] = -np.inf
 
@@ -390,7 +379,8 @@ class TestPlotFieldEdgeCases:
             grid_edges=edges,
         )
         env = Environment(layout=layout, layout_type_used="masked_grid")
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)
@@ -412,7 +402,8 @@ class TestPlotFieldEdgeCases:
             bin_size=10.0,
         )
         env = Environment(layout=layout, layout_type_used="shapely_polygon")
-        field = np.random.rand(env.n_bins)
+        rng = np.random.default_rng(42)
+        field = rng.random(env.n_bins)
 
         fig, ax = plt.subplots()
         env.plot_field(field, ax=ax, colorbar=False)

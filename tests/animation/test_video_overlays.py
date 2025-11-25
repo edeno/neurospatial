@@ -49,7 +49,8 @@ def _mock_subprocess_result():
 @pytest.fixture
 def simple_env() -> Environment:
     """Create a simple 2D environment for testing."""
-    positions = np.random.rand(100, 2) * 100
+    rng = np.random.default_rng(42)
+    positions = rng.random((100, 2)) * 100
     env = Environment.from_samples(positions, bin_size=10.0)
     return env
 
@@ -57,13 +58,15 @@ def simple_env() -> Environment:
 @pytest.fixture
 def sample_fields(simple_env: Environment) -> list[NDArray[np.float64]]:
     """Create sample fields for animation."""
-    return [np.random.rand(simple_env.n_bins) for _ in range(10)]
+    rng = np.random.default_rng(42)
+    return [rng.random(simple_env.n_bins) for _ in range(10)]
 
 
 @pytest.fixture
 def position_overlay_data() -> OverlayData:
     """Create position overlay data for testing."""
-    positions = np.random.rand(10, 2) * 50 + 25  # Center in [25, 75]
+    rng = np.random.default_rng(42)
+    positions = rng.random((10, 2)) * 50 + 25  # Center in [25, 75]
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=5)
     return OverlayData(positions=[pos_data])
 
@@ -71,10 +74,11 @@ def position_overlay_data() -> OverlayData:
 @pytest.fixture
 def bodypart_overlay_data() -> OverlayData:
     """Create bodypart overlay data for testing."""
+    rng = np.random.default_rng(42)
     n_frames = 10
     bodyparts = {
-        "nose": np.random.rand(n_frames, 2) * 50 + 25,
-        "tail": np.random.rand(n_frames, 2) * 50 + 25,
+        "nose": rng.random((n_frames, 2)) * 50 + 25,
+        "tail": rng.random((n_frames, 2)) * 50 + 25,
     }
     skeleton = Skeleton(
         name="test",
@@ -105,16 +109,17 @@ def head_direction_overlay_data() -> OverlayData:
 @pytest.fixture
 def multi_overlay_data() -> OverlayData:
     """Create data with multiple overlay types."""
+    rng = np.random.default_rng(42)
     n_frames = 10
 
     # Position overlay
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
 
     # Bodypart overlay
     bodyparts = {
-        "nose": np.random.rand(n_frames, 2) * 50 + 25,
-        "tail": np.random.rand(n_frames, 2) * 50 + 25,
+        "nose": rng.random((n_frames, 2)) * 50 + 25,
+        "tail": rng.random((n_frames, 2)) * 50 + 25,
     }
     skeleton = Skeleton(
         name="test",
@@ -234,15 +239,16 @@ def test_position_overlay_renders_marker_and_trail(
     simple_env: Environment, tmp_path: Path, trail_length: int | None
 ):
     """Test that position overlay renders marker and optional trail."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
 
     pos_data = PositionData(
         data=positions, color="red", size=12.0, trail_length=trail_length
     )
     overlay_data = OverlayData(positions=[pos_data])
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Mock to capture parameters passed to parallel_render_frames
     parallel_calls = []
@@ -286,8 +292,9 @@ def test_position_overlay_renders_marker_and_trail(
 
 def test_position_overlay_trail_decay(simple_env: Environment):
     """Test that trails are rendered with decaying alpha."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
 
     pos_data = PositionData(data=positions, color="blue", size=10.0, trail_length=5)
 
@@ -310,12 +317,13 @@ def test_bodypart_overlay_renders_skeleton_with_linecollection(
     simple_env: Environment, tmp_path: Path
 ):
     """Test that skeleton is rendered using LineCollection (not loops)."""
+    rng = np.random.default_rng(42)
     n_frames = 10
     bodyparts = {
-        "nose": np.random.rand(n_frames, 2) * 50 + 25,
-        "tail": np.random.rand(n_frames, 2) * 50 + 25,
-        "left_ear": np.random.rand(n_frames, 2) * 50 + 25,
-        "right_ear": np.random.rand(n_frames, 2) * 50 + 25,
+        "nose": rng.random((n_frames, 2)) * 50 + 25,
+        "tail": rng.random((n_frames, 2)) * 50 + 25,
+        "left_ear": rng.random((n_frames, 2)) * 50 + 25,
+        "right_ear": rng.random((n_frames, 2)) * 50 + 25,
     }
     skeleton = Skeleton(
         name="test",
@@ -332,7 +340,7 @@ def test_bodypart_overlay_renders_skeleton_with_linecollection(
     )
     overlay_data = OverlayData(bodypart_sets=[bodypart_data])
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Mock to capture parameters passed to parallel_render_frames
     parallel_calls = []
@@ -403,13 +411,14 @@ def test_bodypart_overlay_handles_nan_values(simple_env: Environment):
 
 def test_head_direction_overlay_renders_arrows(simple_env: Environment, tmp_path: Path):
     """Test that head direction is rendered as arrows."""
+    rng = np.random.default_rng(42)
     n_frames = 8
     angles = np.linspace(0, 2 * np.pi, n_frames)
 
     head_dir_data = HeadDirectionData(data=angles, color="yellow", length=25.0)
     overlay_data = OverlayData(head_directions=[head_dir_data])
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     parallel_calls = []
 
@@ -472,8 +481,9 @@ def test_region_overlay_renders_with_alpha(
     env_with_regions: Environment, tmp_path: Path
 ):
     """Test that regions are rendered with specified alpha."""
+    rng = np.random.default_rng(42)
     n_frames = 5
-    fields = [np.random.rand(env_with_regions.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env_with_regions.n_bins) for _ in range(n_frames)]
 
     parallel_calls = []
 
@@ -521,8 +531,9 @@ def test_region_overlay_filters_by_name(env_with_regions: Environment, tmp_path:
     env_with_regions.regions.add("start", point=np.array([10.0, 10.0]))
     env_with_regions.regions.add("end", point=np.array([90.0, 90.0]))
 
+    rng = np.random.default_rng(42)
     n_frames = 5
-    fields = [np.random.rand(env_with_regions.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(env_with_regions.n_bins) for _ in range(n_frames)]
 
     parallel_calls = []
 
@@ -565,30 +576,31 @@ def test_region_overlay_filters_by_name(env_with_regions: Environment, tmp_path:
 
 def test_multiple_position_overlays(simple_env: Environment, tmp_path: Path):
     """Test rendering multiple position overlays (multi-animal)."""
+    rng = np.random.default_rng(42)
     n_frames = 10
 
     # Three animals with different colors
     animal1 = PositionData(
-        data=np.random.rand(n_frames, 2) * 50 + 25,
+        data=rng.random((n_frames, 2)) * 50 + 25,
         color="red",
         size=10.0,
         trail_length=5,
     )
     animal2 = PositionData(
-        data=np.random.rand(n_frames, 2) * 50 + 25,
+        data=rng.random((n_frames, 2)) * 50 + 25,
         color="blue",
         size=12.0,
         trail_length=3,
     )
     animal3 = PositionData(
-        data=np.random.rand(n_frames, 2) * 50 + 25,
+        data=rng.random((n_frames, 2)) * 50 + 25,
         color="green",
         size=8.0,
         trail_length=None,
     )
 
     overlay_data = OverlayData(positions=[animal1, animal2, animal3])
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     parallel_calls = []
 
@@ -628,8 +640,9 @@ def test_mixed_overlay_types(
     simple_env: Environment, tmp_path: Path, multi_overlay_data: OverlayData
 ):
     """Test rendering all overlay types together."""
+    rng = np.random.default_rng(42)
     n_frames = 10
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     parallel_calls = []
 
@@ -700,8 +713,9 @@ def test_parallel_rendering_with_overlays(
     simple_env: Environment, tmp_path: Path, multi_overlay_data: OverlayData
 ):
     """Test that overlays work with multiple workers (parallel rendering)."""
+    rng = np.random.default_rng(42)
     n_frames = 20
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     worker_count = 0
 
@@ -747,8 +761,9 @@ def test_parallel_rendering_with_overlays(
 
 def test_render_video_with_empty_overlay_data(simple_env: Environment, tmp_path: Path):
     """Test that empty OverlayData is handled gracefully."""
+    rng = np.random.default_rng(42)
     overlay_data = OverlayData()  # No overlays
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(5)]
 
     mock_result = Mock()
     mock_result.returncode = 0
@@ -788,16 +803,17 @@ def test_unpickleable_overlay_data_raises_clear_error(
     """Test that unpickleable overlay_data raises ValueError with WHAT/WHY/HOW."""
     from neurospatial.animation._parallel import parallel_render_frames
 
+    rng = np.random.default_rng(42)
     # Create overlay data with unpickleable content (lambda function)
     n_frames = 5
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
 
     # Make it unpickleable by adding a lambda
     overlay_data = OverlayData(positions=[pos_data])
     overlay_data._unpickleable = lambda x: x  # Add unpickleable attribute
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Should raise ValueError with clear error message
     with pytest.raises(ValueError, match=r"overlay_data.*pickle"):
@@ -821,14 +837,15 @@ def test_pickle_error_message_includes_solutions(
     """Test that pickle error includes WHAT/WHY/HOW with actionable solutions."""
     from neurospatial.animation._parallel import parallel_render_frames
 
+    rng = np.random.default_rng(42)
     # Create unpickleable overlay data
     n_frames = 5
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
     overlay_data = OverlayData(positions=[pos_data])
     overlay_data._bad_attr = lambda x: x  # Unpickleable
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Capture error message
     with pytest.raises(ValueError) as exc_info:
@@ -869,13 +886,14 @@ def test_pickle_check_skipped_for_serial_rendering(
     """Test that pickle validation is skipped when n_workers=1 (serial mode)."""
     from neurospatial.animation._parallel import parallel_render_frames
 
+    rng = np.random.default_rng(42)
     # Create overlay data (doesn't matter if pickle-able for n_workers=1)
     n_frames = 5
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
     overlay_data = OverlayData(positions=[pos_data])
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # With n_workers=1, should not raise even if unpickleable
     # (though in practice this test uses pickle-able data)
@@ -903,13 +921,14 @@ def test_pickleable_overlay_data_succeeds_with_parallel(
     """Test that pickle-able overlay_data works fine with n_workers > 1."""
     from neurospatial.animation._parallel import parallel_render_frames
 
+    rng = np.random.default_rng(42)
     # Create fully pickle-able overlay data
     n_frames = 10
-    positions = np.random.rand(n_frames, 2) * 50 + 25
+    positions = rng.random((n_frames, 2)) * 50 + 25
     pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=5)
     overlay_data = OverlayData(positions=[pos_data])
 
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # Should succeed with n_workers > 1
     frame_pattern = parallel_render_frames(
@@ -936,8 +955,9 @@ def test_none_overlay_data_is_always_pickle_safe(
     """Test that None overlay_data is always safe (no validation needed)."""
     from neurospatial.animation._parallel import parallel_render_frames
 
+    rng = np.random.default_rng(42)
     n_frames = 5
-    fields = [np.random.rand(simple_env.n_bins) for _ in range(n_frames)]
+    fields = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
 
     # With overlay_data=None, should always succeed
     frame_pattern = parallel_render_frames(
@@ -1440,6 +1460,7 @@ class TestWidgetBackendVideoOverlay:
         )
         from neurospatial.animation.overlays import VideoData
 
+        rng = np.random.default_rng(42)
         # Create VideoData
         frame_indices = np.arange(10, dtype=np.int_)
         video_data = VideoData(
@@ -1453,7 +1474,7 @@ class TestWidgetBackendVideoOverlay:
         overlay_data = OverlayData(videos=[video_data])
 
         # Create a simple field
-        field = np.random.rand(simple_env.n_bins)
+        field = rng.random(simple_env.n_bins)
 
         # Render frame with video overlay - should not raise
         png_bytes = render_field_to_png_bytes_with_overlays(
@@ -1496,6 +1517,7 @@ class TestHTMLBackendVideoOverlay:
         from neurospatial.animation.backends.html_backend import render_html
         from neurospatial.animation.overlays import VideoData
 
+        rng = np.random.default_rng(42)
         # Create VideoData
         frame_indices = np.arange(5, dtype=np.int_)
         video_data = VideoData(
@@ -1509,7 +1531,7 @@ class TestHTMLBackendVideoOverlay:
         overlay_data = OverlayData(videos=[video_data])
 
         # Create simple fields
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
 
         # Should emit warning about video overlay not being supported
         with warnings.catch_warnings(record=True) as w:
@@ -1560,6 +1582,7 @@ class TestHTMLBackendVideoOverlay:
         from neurospatial.animation.backends.html_backend import render_html
         from neurospatial.animation.overlays import VideoData
 
+        rng = np.random.default_rng(42)
         # Create VideoData
         frame_indices = np.arange(5, dtype=np.int_)
         video_data = VideoData(
@@ -1572,7 +1595,7 @@ class TestHTMLBackendVideoOverlay:
         )
         overlay_data = OverlayData(videos=[video_data])
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
         output_path = tmp_path / "output.html"
 
         # Suppress warnings for this test
@@ -1603,6 +1626,7 @@ class TestHTMLBackendVideoOverlay:
         from neurospatial.animation.backends.html_backend import render_html
         from neurospatial.animation.overlays import VideoData
 
+        rng = np.random.default_rng(42)
         # Create mixed overlay data (video + position)
         frame_indices = np.arange(5, dtype=np.int_)
         video_data = VideoData(
@@ -1613,11 +1637,11 @@ class TestHTMLBackendVideoOverlay:
             alpha=0.5,
             z_order="below",
         )
-        positions = np.random.rand(5, 2) * 50 + 25
+        positions = rng.random((5, 2)) * 50 + 25
         pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=3)
         overlay_data = OverlayData(videos=[video_data], positions=[pos_data])
 
-        fields = [np.random.rand(simple_env.n_bins) for _ in range(5)]
+        fields = [rng.random(simple_env.n_bins) for _ in range(5)]
         output_path = tmp_path / "output.html"
 
         # Suppress warnings for this test

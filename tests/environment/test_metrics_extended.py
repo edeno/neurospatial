@@ -598,16 +598,19 @@ class TestMetricsIntegration:
 
     def test_metrics_work_after_clear_cache(self, small_2d_env: Environment) -> None:
         """Test that metrics work after clearing cache."""
+        # Make a copy to avoid mutating session-scoped fixture
+        env = small_2d_env.copy()
+
         # Access metrics
-        _ = small_2d_env.boundary_bins
-        _ = small_2d_env.bin_attributes
+        _ = env.boundary_bins
+        _ = env.bin_attributes
 
         # Clear cache
-        small_2d_env.clear_cache()
+        env.clear_cache()
 
         # Should still work (recomputed)
-        boundary = small_2d_env.boundary_bins
+        boundary = env.boundary_bins
         assert len(boundary) > 0
 
-        bin_df = small_2d_env.bin_attributes
-        assert len(bin_df) == small_2d_env.n_bins
+        bin_df = env.bin_attributes
+        assert len(bin_df) == env.n_bins

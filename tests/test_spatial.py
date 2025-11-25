@@ -13,8 +13,7 @@ class TestMapPointsToBins:
     @pytest.fixture
     def grid_env(self):
         """Create a simple grid environment."""
-        np.random.seed(42)
-        # Create data on a regular grid
+        # Create data on a regular grid (deterministic, no RNG needed)
         x = np.linspace(0, 10, 100)
         y = np.linspace(0, 10, 100)
         xx, yy = np.meshgrid(x, y)
@@ -102,8 +101,8 @@ class TestMapPointsToBins:
 
     def test_batch_mapping_performance(self, grid_env):
         """Test that batch mapping works with many points."""
-        np.random.seed(42)
-        points = np.random.rand(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        points = rng.random((1000, 2)) * 10
 
         bins = map_points_to_bins(points, grid_env)
 
@@ -125,8 +124,8 @@ class TestEnvironmentClearCache:
     @pytest.fixture
     def env_with_caches(self):
         """Create environment and populate various caches."""
-        np.random.seed(42)
-        data = np.random.rand(100, 2) * 100
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 100
         env = Environment.from_samples(data, bin_size=5.0)
 
         # Populate KDTree cache
@@ -264,7 +263,8 @@ class TestEnvironmentClearCache:
 
     def test_clear_cache_on_fresh_environment(self):
         """Test clear_cache() on environment with no caches populated."""
-        data = np.random.rand(50, 2) * 50
+        rng = np.random.default_rng(42)
+        data = rng.random((50, 2)) * 50
         env = Environment.from_samples(data, bin_size=5.0)
 
         # Should not raise error on fresh environment
@@ -296,9 +296,10 @@ class TestEnvironmentClearCache:
 
     def test_clear_cache_different_environments_independent(self):
         """Test that clearing cache on one environment doesn't affect another."""
-        data1 = np.random.rand(50, 2) * 50
+        rng = np.random.default_rng(42)
+        data1 = rng.random((50, 2)) * 50
         env1 = Environment.from_samples(data1, bin_size=5.0)
-        data2 = np.random.rand(50, 2) * 50
+        data2 = rng.random((50, 2)) * 50
         env2 = Environment.from_samples(data2, bin_size=5.0)
 
         # Populate caches on both

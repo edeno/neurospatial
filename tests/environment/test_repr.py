@@ -52,7 +52,8 @@ class TestEnvironmentRepr:
 
     def test_repr_handles_empty_name(self):
         """__repr__ should handle environments with empty names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="")
         result = repr(env)
         # Should still be valid and show other info
@@ -62,7 +63,8 @@ class TestEnvironmentRepr:
 
     def test_repr_handles_none_name(self):
         """__repr__ should handle environments with None names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name=None)
         result = repr(env)
         assert isinstance(result, str)
@@ -81,7 +83,8 @@ class TestEnvironmentRepr:
     def test_repr_works_for_different_layout_types(self):
         """__repr__ should show different layout types correctly."""
         # RegularGrid
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env_regular = Environment.from_samples(data, bin_size=2.0, name="Regular")
         result_regular = repr(env_regular)
         assert "RegularGrid" in result_regular
@@ -182,7 +185,8 @@ class TestEnvironmentReprHtml:
 
     def test_repr_html_handles_empty_name(self):
         """_repr_html_() should handle empty names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="")
         result = env._repr_html_()
         assert isinstance(result, str)
@@ -240,7 +244,8 @@ class TestReprConsistency:
 
     def test_repr_methods_handle_special_characters_in_name(self):
         """Both repr methods should handle special characters in names."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         env = Environment.from_samples(
             data, bin_size=2.0, name="Test <Environment> & 'Special' \"Chars\""
         )
@@ -261,7 +266,8 @@ class TestReprEdgeCases:
 
     def test_repr_with_very_large_n_bins(self):
         """__repr__ should handle environments with very large bin counts."""
-        data = np.random.rand(10000, 2) * 1000
+        rng = np.random.default_rng(42)
+        data = rng.random((10000, 2)) * 1000
         env = Environment.from_samples(data, bin_size=0.1, name="LargeEnv")
         result = repr(env)
         assert isinstance(result, str)
@@ -269,7 +275,8 @@ class TestReprEdgeCases:
 
     def test_repr_with_long_name(self):
         """__repr__ should handle very long names gracefully."""
-        data = np.random.rand(100, 2) * 10
+        rng = np.random.default_rng(42)
+        data = rng.random((100, 2)) * 10
         long_name = "A" * 200  # Very long name
         env = Environment.from_samples(data, bin_size=2.0, name=long_name)
         result = repr(env)

@@ -19,6 +19,7 @@ class TestSimulationSession:
 
     def test_simulation_session_is_frozen(self, simple_2d_env):
         """SimulationSession should be immutable (frozen dataclass)."""
+        rng = np.random.default_rng(42)
         # Create minimal session
         positions = np.array([[50.0, 50.0], [51.0, 51.0]])
         times = np.array([0.0, 0.1])
@@ -40,7 +41,7 @@ class TestSimulationSession:
         # Attempt to modify should raise FrozenInstanceError
         with pytest.raises(AttributeError, match="cannot assign to field"):
             session.env = Environment.from_samples(
-                np.random.randn(100, 2), bin_size=2.0
+                rng.standard_normal((100, 2)), bin_size=2.0
             )
 
     def test_simulation_session_has_required_fields(self, simple_2d_env):

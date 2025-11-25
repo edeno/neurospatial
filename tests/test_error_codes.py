@@ -21,9 +21,10 @@ class TestErrorCodeE1001NoActiveBins:
 
     def test_e1001_appears_in_no_active_bins_error(self):
         """Test that E1001 error code appears when no active bins found."""
+        rng = np.random.default_rng(42)
         # Create data that will result in no active bins
         # Use high bin_count_threshold that no bins can meet
-        positions = np.random.randn(100, 2) * 10  # Data in ~[-30, 30] range
+        positions = rng.standard_normal((100, 2)) * 10  # Data in ~[-30, 30] range
 
         with pytest.raises(ValueError, match=r"\[E1001\]"):
             Environment.from_samples(
@@ -34,7 +35,8 @@ class TestErrorCodeE1001NoActiveBins:
 
     def test_e1001_error_includes_diagnostics(self):
         """Test that E1001 error includes diagnostic information."""
-        positions = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 10
 
         with pytest.raises(ValueError) as exc_info:
             Environment.from_samples(
@@ -56,7 +58,8 @@ class TestErrorCodeE1002InvalidBinSize:
 
     def test_e1002_appears_for_negative_bin_size(self):
         """Test that E1002 error code appears for negative bin_size."""
-        positions = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 10
 
         with pytest.raises(ValueError, match=r"\[E1002\]"):
             Environment.from_samples(
@@ -66,7 +69,8 @@ class TestErrorCodeE1002InvalidBinSize:
 
     def test_e1002_appears_for_zero_bin_size(self):
         """Test that E1002 error code appears for zero bin_size."""
-        positions = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 10
 
         with pytest.raises(ValueError, match=r"\[E1002\]"):
             Environment.from_samples(
@@ -76,7 +80,8 @@ class TestErrorCodeE1002InvalidBinSize:
 
     def test_e1002_appears_for_nan_bin_size(self):
         """Test that E1002 error code appears for NaN bin_size."""
-        positions = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 10
 
         with pytest.raises(ValueError, match=r"\[E1002\]"):
             Environment.from_samples(
@@ -86,7 +91,8 @@ class TestErrorCodeE1002InvalidBinSize:
 
     def test_e1002_appears_for_inf_bin_size(self):
         """Test that E1002 error code appears for infinite bin_size."""
-        positions = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 10
 
         with pytest.raises(ValueError, match=r"\[E1002\]"):
             Environment.from_samples(
@@ -100,12 +106,13 @@ class TestErrorCodeE1003DimensionMismatch:
 
     def test_e1003_appears_for_dimension_mismatch(self):
         """Test that E1003 error code appears when dimensions don't match."""
+        rng = np.random.default_rng(42)
         # Create 2D environment
-        positions_2d = np.random.randn(100, 2) * 10
+        positions_2d = rng.standard_normal((100, 2)) * 10
         env_2d = Environment.from_samples(positions_2d, bin_size=5.0)
 
         # Create 3D environment
-        positions_3d = np.random.randn(100, 3) * 10
+        positions_3d = rng.standard_normal((100, 3)) * 10
         env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
 
         # Try to combine them
@@ -114,10 +121,11 @@ class TestErrorCodeE1003DimensionMismatch:
 
     def test_e1003_error_includes_dimension_info(self):
         """Test that E1003 error includes actual dimension values."""
-        positions_2d = np.random.randn(100, 2) * 10
+        rng = np.random.default_rng(42)
+        positions_2d = rng.standard_normal((100, 2)) * 10
         env_2d = Environment.from_samples(positions_2d, bin_size=5.0)
 
-        positions_3d = np.random.randn(100, 3) * 10
+        positions_3d = rng.standard_normal((100, 3)) * 10
         env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
 
         with pytest.raises(ValueError) as exc_info:

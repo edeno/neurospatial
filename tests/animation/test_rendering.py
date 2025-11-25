@@ -61,10 +61,11 @@ def test_render_field_to_rgb():
     """Test field rendering to RGB array."""
     from neurospatial.animation.rendering import render_field_to_rgb
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    field = np.random.rand(env.n_bins)
+    field = rng.random(env.n_bins)
 
     rgb = render_field_to_rgb(env, field, cmap="viridis", vmin=0, vmax=1, dpi=50)
 
@@ -82,10 +83,11 @@ def test_render_field_to_png_bytes():
     """Test field rendering to PNG bytes."""
     from neurospatial.animation.rendering import render_field_to_png_bytes
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    field = np.random.rand(env.n_bins)
+    field = rng.random(env.n_bins)
 
     png_bytes = render_field_to_png_bytes(
         env, field, cmap="viridis", vmin=0, vmax=1, dpi=50
@@ -105,7 +107,8 @@ def test_field_to_rgb_for_napari_grid():
 
     from neurospatial.animation.rendering import field_to_rgb_for_napari
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create colormap lookup
@@ -114,7 +117,7 @@ def test_field_to_rgb_for_napari_grid():
     cmap_obj = plt.get_cmap("viridis")
     cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
 
-    field = np.random.rand(env.n_bins)
+    field = rng.random(env.n_bins)
 
     rgb = field_to_rgb_for_napari(env, field, cmap_lookup, vmin=0, vmax=1)
 
@@ -133,7 +136,8 @@ def test_field_to_rgb_for_napari_clipping():
 
     from neurospatial.animation.rendering import field_to_rgb_for_napari
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
     # Create colormap lookup
@@ -163,10 +167,11 @@ def test_render_field_to_image_bytes_jpeg_format():
 
     from neurospatial.animation.rendering import render_field_to_image_bytes
 
-    positions = np.random.randn(100, 2) * 50
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((100, 2)) * 50
     env = Environment.from_samples(positions, bin_size=10.0)
 
-    field = np.random.rand(env.n_bins)
+    field = rng.random(env.n_bins)
 
     # Test JPEG format
     jpeg_bytes = render_field_to_image_bytes(
@@ -315,7 +320,8 @@ class TestFieldToRgbForNapariZeroRange:
 
         from neurospatial.animation.rendering import field_to_rgb_for_napari
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create colormap lookup
@@ -358,7 +364,8 @@ class TestFieldToRgbForNapariZeroRange:
 
         from neurospatial.animation.rendering import field_to_rgb_for_napari
 
-        positions = np.random.randn(100, 2) * 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create colormap lookup
@@ -367,7 +374,7 @@ class TestFieldToRgbForNapariZeroRange:
         cmap_obj = plt.get_cmap("viridis")
         cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
 
-        field = np.random.rand(env.n_bins)
+        field = rng.random(env.n_bins)
 
         # Capture warnings
         with warnings.catch_warnings(record=True) as w:
