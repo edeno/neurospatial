@@ -8,7 +8,12 @@ from neurospatial import Environment
 
 
 class TestOccupancyBasic:
-    """Basic occupancy computation tests."""
+    """Basic occupancy computation tests.
+
+    Note: test_occupancy_simple_stationary requires inline environment creation
+    because it needs specific bin_size=5.0 on a 10x10 grid. The minimal_2d_grid_env
+    fixture uses bin_size=2.0, which would create different bin structure.
+    """
 
     def test_occupancy_simple_stationary(self):
         """Test occupancy with stationary samples in single bin."""
@@ -28,13 +33,9 @@ class TestOccupancyBasic:
         assert_allclose(occ.sum(), 10.0, rtol=1e-6)
         assert np.all(occ >= 0)
 
-    def test_occupancy_l_shaped_path(self):
+    def test_occupancy_l_shaped_path(self, minimal_20x20_grid_env):
         """Test occupancy on L-shaped trajectory with known durations."""
-        # Create environment covering [0, 20] x [0, 20] with proper grid
-        # Use more sample points to create a proper grid
-        np.random.seed(42)
-        grid_samples = np.random.uniform(0, 20, size=(100, 2))
-        env = Environment.from_samples(grid_samples, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # L-shaped path: horizontal segment, then vertical segment
         # Segment 1: (5, 5) for 0-3 seconds
@@ -60,10 +61,9 @@ class TestOccupancyBasic:
         occupied_bins = np.where(occ > 0)[0]
         assert len(occupied_bins) >= 1  # At least one bin visited
 
-    def test_occupancy_empty_arrays(self):
+    def test_occupancy_empty_arrays(self, minimal_2d_grid_env):
         """Test occupancy with empty input arrays."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([])
         positions = np.empty((0, 2))
@@ -74,10 +74,9 @@ class TestOccupancyBasic:
         assert_allclose(occ.sum(), 0.0)
         assert np.all(occ == 0.0)
 
-    def test_occupancy_single_sample(self):
+    def test_occupancy_single_sample(self, minimal_2d_grid_env):
         """Test occupancy with single sample (no intervals)."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([0.0])
         positions = np.array([[5.0, 5.0]])
@@ -92,10 +91,9 @@ class TestOccupancyBasic:
 class TestOccupancyGapHandling:
     """Test max_gap parameter for handling large time gaps."""
 
-    def test_occupancy_with_large_gaps(self):
+    def test_occupancy_with_large_gaps(self, minimal_20x20_grid_env):
         """Test that large gaps are excluded from occupancy."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # Two segments with 100-second gap
         times = np.array([0.0, 5.0, 105.0, 110.0])
@@ -115,10 +113,9 @@ class TestOccupancyGapHandling:
         # Should exclude the 100-second gap
         assert occ.sum() < 15.0  # Much less than total span
 
-    def test_occupancy_max_gap_none(self):
+    def test_occupancy_max_gap_none(self, minimal_20x20_grid_env):
         """Test that max_gap=None includes all intervals."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         times = np.array([0.0, 5.0, 105.0, 110.0])
         positions = np.array(
@@ -140,10 +137,9 @@ class TestOccupancyGapHandling:
 class TestOccupancySpeedFiltering:
     """Test speed filtering functionality."""
 
-    def test_occupancy_speed_threshold(self):
+    def test_occupancy_speed_threshold(self, minimal_20x20_grid_env):
         """Test that slow periods are excluded when min_speed is set."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         positions = np.array(
@@ -169,10 +165,9 @@ class TestOccupancySpeedFiltering:
         # Filtered occupancy should have less total time
         assert occ_filtered.sum() < occ_all.sum()
 
-    def test_occupancy_speed_requires_speed_array(self):
+    def test_occupancy_speed_requires_speed_array(self, minimal_2d_grid_env):
         """Test that min_speed without speed array raises error or is ignored."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]])
@@ -183,13 +178,25 @@ class TestOccupancySpeedFiltering:
 
 
 class TestOccupancySmoothing:
-    """Test kernel smoothing functionality."""
+    """Test kernel smoothing functionality.
+
+    Note: Both tests in this class require inline environment creation because
+    they need bin_size=2.0 for proper kernel smoothing behavior:
+    - test_occupancy_with_kernel_smoothing: bandwidth=3.0 spans ~1.5 bin widths
+    - test_occupancy_smoothing_mass_conservation: bandwidth=2.0 is exactly 1 bin width
+    The minimal_20x20_grid_env uses bin_size=5.0, which would produce different
+    smoothing characteristics.
+    """
 
     def test_occupancy_with_kernel_smoothing(self):
-        """Test that kernel smoothing spreads occupancy to neighbors."""
-        # Create environment with proper grid
-        np.random.seed(42)
-        grid_samples = np.random.uniform(0, 20, size=(200, 2))
+        """Test that kernel smoothing spreads occupancy to neighbors.
+
+        Requires inline environment: needs bin_size=2.0 for proper smoothing
+        behavior with bandwidth=3.0 (spreads to ~1.5 bin widths).
+        """
+        # Create environment with proper grid (bin_size=2.0 required for smoothing test)
+        rng = np.random.default_rng(42)
+        grid_samples = rng.uniform(0, 20, size=(200, 2))
         env = Environment.from_samples(grid_samples, bin_size=2.0)
 
         # Concentrate occupancy in center bin
@@ -209,14 +216,18 @@ class TestOccupancySmoothing:
         assert_allclose(occ_smoothed.sum(), occ_raw.sum(), rtol=1e-4)
 
     def test_occupancy_smoothing_mass_conservation(self):
-        """Test that smoothing conserves total occupancy time."""
-        # Create environment with proper grid
-        np.random.seed(42)
-        grid_samples = np.random.uniform(0, 20, size=(200, 2))
+        """Test that smoothing conserves total occupancy time.
+
+        Requires inline environment: needs bin_size=2.0 and random samples
+        to test mass conservation with bandwidth=2.0 (exactly 1 bin width).
+        """
+        # Create environment with proper grid (bin_size=2.0 required for smoothing test)
+        rng = np.random.default_rng(42)
+        grid_samples = rng.uniform(0, 20, size=(200, 2))
         env = Environment.from_samples(grid_samples, bin_size=2.0)
 
         times = np.linspace(0, 100, 1000)
-        positions = np.random.uniform(5, 15, size=(1000, 2))
+        positions = rng.uniform(5, 15, size=(1000, 2))
 
         # Use max_gap=1.0 to allow typical intervals (default 0.5 is too small)
         occ_raw = env.occupancy(times, positions, max_gap=1.0)
@@ -231,10 +242,9 @@ class TestOccupancySmoothing:
 class TestOccupancyOutsideBehavior:
     """Test handling of samples outside environment bounds."""
 
-    def test_occupancy_all_outside(self):
+    def test_occupancy_all_outside(self, minimal_2d_grid_env):
         """Test occupancy when all samples are outside environment."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         # All positions outside [0, 10] range
         times = np.array([0.0, 5.0, 10.0])
@@ -252,10 +262,9 @@ class TestOccupancyOutsideBehavior:
         assert_allclose(occ.sum(), 0.0)
         assert np.all(occ == 0.0)
 
-    def test_occupancy_mixed_inside_outside(self):
+    def test_occupancy_mixed_inside_outside(self, minimal_2d_grid_env):
         """Test occupancy with mix of inside and outside samples."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([0.0, 5.0, 10.0, 15.0])
         positions = np.array(
@@ -280,10 +289,9 @@ class TestOccupancyOutsideBehavior:
 class TestOccupancyValidation:
     """Test input validation and error handling."""
 
-    def test_occupancy_mismatched_lengths(self):
+    def test_occupancy_mismatched_lengths(self, minimal_2d_grid_env):
         """Test that mismatched times/positions raises error."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 5.0], [5.0, 5.0]])  # Only 2 positions
@@ -291,10 +299,9 @@ class TestOccupancyValidation:
         with pytest.raises(ValueError, match=r".*length.*"):
             env.occupancy(times, positions)
 
-    def test_occupancy_wrong_dimensions(self):
+    def test_occupancy_wrong_dimensions(self, minimal_2d_grid_env):
         """Test that positions with wrong dimensions raises error."""
-        data = np.array([[0, 0], [10, 10]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_2d_grid_env
 
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0], [5.0], [5.0]])  # 1D instead of 2D
@@ -306,14 +313,13 @@ class TestOccupancyValidation:
 class TestOccupancyMassConservation:
     """Property tests for mass conservation."""
 
-    def test_occupancy_conserves_time(self):
+    def test_occupancy_conserves_time(self, minimal_20x20_grid_env):
         """Test that total occupancy equals total valid time."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_20x20_grid_env
+        rng = np.random.default_rng(42)
 
         times = np.linspace(0, 50, 100)
-        np.random.seed(42)
-        positions = np.random.uniform(2, 18, size=(100, 2))
+        positions = rng.uniform(2, 18, size=(100, 2))
 
         occ = env.occupancy(times, positions, max_gap=1.0)
 
@@ -324,14 +330,13 @@ class TestOccupancyMassConservation:
 
         assert_allclose(occ.sum(), expected_time, rtol=1e-6)
 
-    def test_occupancy_nonnegative(self):
+    def test_occupancy_nonnegative(self, minimal_20x20_grid_env):
         """Test that occupancy is always non-negative."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=2.0)
+        env = minimal_20x20_grid_env
+        rng = np.random.default_rng(42)
 
         times = np.linspace(0, 10, 50)
-        np.random.seed(42)
-        positions = np.random.uniform(0, 20, size=(50, 2))
+        positions = rng.uniform(0, 20, size=(50, 2))
 
         occ = env.occupancy(times, positions)
 
@@ -339,18 +344,28 @@ class TestOccupancyMassConservation:
 
 
 class TestOccupancyPerformance:
-    """Performance tests."""
+    """Performance tests.
+
+    Note: test_occupancy_large_trajectory requires inline environment creation
+    because it needs a 100x100 grid for performance testing. This is a unique
+    large environment not available in shared fixtures, intentionally created
+    to validate scaling behavior with 100k samples.
+    """
 
     def test_occupancy_large_trajectory(self):
-        """Test occupancy computation on large trajectory (performance check)."""
+        """Test occupancy computation on large trajectory (performance check).
+
+        Requires inline environment: 100x100 grid needed for performance testing
+        (unique large environment size not available in fixtures).
+        """
         data = np.array([[0, 0], [100, 100]])
         env = Environment.from_samples(data, bin_size=5.0)
 
         # 100k samples (not 1M to keep test fast, but validates scaling)
+        rng = np.random.default_rng(42)
         n_samples = 100_000
         times = np.linspace(0, 1000, n_samples)
-        np.random.seed(42)
-        positions = np.random.uniform(10, 90, size=(n_samples, 2))
+        positions = rng.uniform(10, 90, size=(n_samples, 2))
 
         # Should complete quickly
         import time
@@ -370,10 +385,9 @@ class TestOccupancyPerformance:
 class TestOccupancyMultipleLayouts:
     """Test occupancy works across different layout types."""
 
-    def test_occupancy_on_regular_grid(self):
+    def test_occupancy_on_regular_grid(self, minimal_20x20_grid_env):
         """Test occupancy on regular grid layout."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         times = np.array([0.0, 10.0])
         positions = np.array([[10.0, 10.0], [10.0, 10.0]])
@@ -409,12 +423,9 @@ class TestOccupancyMultipleLayouts:
 class TestOccupancyReturnSeconds:
     """Test return_seconds parameter for time-weighted vs sample count occupancy."""
 
-    def test_occupancy_return_seconds_true(self):
+    def test_occupancy_return_seconds_true(self, minimal_20x20_grid_env):
         """Test that return_seconds=True returns time in seconds (time-weighted)."""
-        # Create proper 2D grid environment with multiple bins
-        np.random.seed(42)
-        grid_samples = np.random.uniform(0, 20, size=(100, 2))
-        env = Environment.from_samples(grid_samples, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # Create trajectory with varying time intervals at two distinct bins
         # Occupancy is assigned to the STARTING bin of each interval
@@ -444,12 +455,9 @@ class TestOccupancyReturnSeconds:
         assert_allclose(occ[bin_a_idx], 5.0, rtol=1e-6)
         assert_allclose(occ[bin_b_idx], 2.0, rtol=1e-6)
 
-    def test_occupancy_return_seconds_false(self):
+    def test_occupancy_return_seconds_false(self, minimal_20x20_grid_env):
         """Test that return_seconds=False returns sample counts (unweighted)."""
-        # Create proper 2D grid environment with multiple bins
-        np.random.seed(42)
-        grid_samples = np.random.uniform(0, 20, size=(100, 2))
-        env = Environment.from_samples(grid_samples, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # Create trajectory at two distinct bins (same structure as previous test)
         bin_centers = env.bin_centers
@@ -478,10 +486,9 @@ class TestOccupancyReturnSeconds:
         assert_allclose(occ[bin_a_idx], 2.0, rtol=1e-6)
         assert_allclose(occ[bin_b_idx], 1.0, rtol=1e-6)
 
-    def test_occupancy_return_seconds_stationary(self):
+    def test_occupancy_return_seconds_stationary(self, minimal_20x20_grid_env):
         """Test return_seconds parameter with stationary samples."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # Stationary for 10 seconds with 5 samples
         times = np.array([0.0, 2.0, 4.0, 6.0, 10.0])
@@ -500,10 +507,9 @@ class TestOccupancyReturnSeconds:
         # Ratio should be 10.0 / 4.0 = 2.5 (average time per interval)
         assert_allclose(occ_seconds.sum() / occ_counts.sum(), 2.5, rtol=1e-6)
 
-    def test_occupancy_return_seconds_multiple_bins(self):
+    def test_occupancy_return_seconds_multiple_bins(self, minimal_20x20_grid_env):
         """Test return_seconds with trajectory visiting multiple bins."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         # Visit 3 different bins with different durations
         times = np.array([0.0, 1.0, 4.0, 10.0])
@@ -524,10 +530,9 @@ class TestOccupancyReturnSeconds:
         occ_counts = env.occupancy(times, positions, return_seconds=False, max_gap=None)
         assert_allclose(occ_counts.sum(), 3.0, rtol=1e-6)
 
-    def test_occupancy_return_seconds_with_speed_filter(self):
+    def test_occupancy_return_seconds_with_speed_filter(self, minimal_20x20_grid_env):
         """Test that return_seconds works correctly with speed filtering."""
-        data = np.array([[0, 0], [20, 20]])
-        env = Environment.from_samples(data, bin_size=5.0)
+        env = minimal_20x20_grid_env
 
         times = np.array([0.0, 1.0, 2.0, 5.0])
         positions = np.array([[5.0, 5.0], [5.0, 5.0], [10.0, 10.0], [10.0, 10.0]])

@@ -43,19 +43,26 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 **Note**: 7 tests in TestComputeRegionCoverage remain inline because they add regions to environments.
 
-### 2.3 Refactor `test_occupancy.py` ← **NEXT PRIORITY**
+### 2.3 Refactor `test_occupancy.py` ✅ DONE
 
-**Current**: 23 calls, 0 fixture usage
-**Target**: ~5 calls
+**Before**: 22 inline calls, 0 fixture references
+**After**: 4 inline calls, 19 fixture references (82% reduction)
 
-- [ ] Read `tests/environment/test_occupancy.py` and identify all `from_samples()` calls
-- [ ] Replace standard 10x10 grids with `minimal_2d_grid_env` fixture
-- [ ] Replace 20x20 grids with `minimal_20x20_grid_env` fixture
-- [ ] Document any tests that legitimately need custom environments (add comment explaining why)
-- [ ] Parametrize tests with similar bin_size variations
-- [ ] Verify tests pass: `uv run pytest tests/environment/test_occupancy.py -v`
+- [x] Read `tests/environment/test_occupancy.py` and identify all `from_samples()` calls
+- [x] Replace 7 tests with `minimal_2d_grid_env` fixture
+- [x] Replace 12 tests with `minimal_20x20_grid_env` fixture
+- [x] Migrate 6 `np.random.seed()` calls to local `rng = np.random.default_rng(42)`
+- [x] Document tests that legitimately need custom environments (class docstrings)
+- [x] Verify tests pass: `uv run pytest tests/environment/test_occupancy.py -v`
 
-### 2.4 Refactor `test_transitions.py`
+**Note**: 4 tests remain inline with documented reasons:
+
+- `test_occupancy_simple_stationary`: needs bin_size=5.0 on 10x10 grid
+- `test_occupancy_with_kernel_smoothing`: needs bin_size=2.0 for smoothing behavior
+- `test_occupancy_smoothing_mass_conservation`: needs bin_size=2.0 for smoothing
+- `test_occupancy_large_trajectory`: 100x100 grid for performance testing
+
+### 2.4 Refactor `test_transitions.py` ← **NEXT PRIORITY**
 
 **Current**: 40 calls, 0 fixture usage
 **Target**: ~5 calls
@@ -82,9 +89,9 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Replace `np.random.rand(n, m)` → `rng.random((n, m))`
   - Verify: `uv run pytest tests/metrics/test_place_fields.py -v`
 
-- [ ] Migrate `tests/environment/test_occupancy.py` (8 occurrences)
-  - Apply same RNG migration pattern
-  - Verify: `uv run pytest tests/environment/test_occupancy.py -v`
+- [x] Migrate `tests/environment/test_occupancy.py` (8 occurrences) ✅ Done in Milestone 2.3
+  - Migrated 6 `np.random.seed()` to `rng = np.random.default_rng(42)`
+  - 3 tests now use fixtures and local rng, 3 inline tests use local rng
 
 - [ ] Migrate `tests/test_transforms_3d.py` (2 occurrences)
   - Apply same RNG migration pattern
@@ -215,8 +222,8 @@ Run after each milestone:
 
 | Metric | Original | Current | Target |
 |--------|----------|---------|--------|
-| `Environment.from_samples()` calls | 1,013 | 1,011 | ~100 |
+| `Environment.from_samples()` calls | 1,013 | 993 | ~100 |
 | Parametrized test groups | 6 | 37 | 50+ |
-| Global RNG (`np.random.seed`) | 74 | 84 | 0 |
+| Global RNG (`np.random.seed`) | 74 | 78 | 0 |
 | Duplicated fixtures | 2+ | 2+ | 0 |
 | Test execution time | baseline | TBD | -40-60% |
