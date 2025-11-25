@@ -107,8 +107,8 @@ class TestApplyTransformToEnvironment:
     @pytest.fixture
     def simple_2d_env(self):
         """Create a simple 2D environment."""
-        np.random.seed(42)
-        data = np.random.randn(200, 2) * 5
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((200, 2)) * 5
         env = Environment.from_samples(data, bin_size=2.0, name="test")
         env.units = "cm"
         env.frame = "session1"
@@ -212,8 +212,8 @@ class TestApplyTransformToEnvironment:
 
     def test_3d_environment_dimension_mismatch_raises_error(self):
         """Test that 3D environment with 2D transform raises error."""
-        np.random.seed(42)
-        data = np.random.randn(100, 3) * 5
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((100, 3)) * 5
         env_3d = Environment.from_samples(data, bin_size=2.0)
 
         # 2D transform on 3D environment should raise error
