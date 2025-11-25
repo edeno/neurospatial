@@ -197,20 +197,38 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ---
 
-## Milestone 5: Fixture Deduplication
+## Milestone 5: Fixture Deduplication ✅ DONE
 
-### 5.1 Remove Duplicate Fixtures
+### 5.1 Remove Duplicate Fixtures ✅ DONE
 
-- [ ] Delete `simple_graph_for_layout` from `tests/environment/test_core.py:691` (keep conftest.py version)
-- [ ] Audit `tests/simulation/conftest.py` for duplicates
-- [ ] Remove `simple_2d_env` from `tests/simulation/conftest.py` if identical to main conftest
-- [ ] Remove `rng` from `tests/simulation/conftest.py` if identical to main conftest
+- [x] Delete `simple_graph_for_layout` from `tests/environment/test_core.py` (keep conftest.py version)
+- [x] Delete `simple_hex_env` from `tests/environment/test_core.py` (keep conftest.py version)
+- [x] Delete `simple_graph_env` from `tests/environment/test_core.py` (keep conftest.py version)
+- [x] Delete `env_all_active_2x2` from `tests/environment/test_core.py` (keep conftest.py version)
+- [x] Delete same 3 fixtures from `tests/layout/test_layout_engine.py`
+- [x] Audit `tests/simulation/conftest.py` - NO duplicates found (fixtures are unique to simulation tests)
 
-### 5.2 Centralize Reusable Fixtures
+**Note**: `simple_2d_env` and `rng` in simulation/conftest.py are NOT duplicated in main conftest - they are unique fixtures for simulation tests and should be kept.
 
-- [ ] Review local fixtures in `tests/environment/test_core.py` (17+ fixtures at lines 350-900)
-- [ ] Move any general-purpose fixtures to `tests/conftest.py`
-- [ ] Keep test-specific fixtures local (document decision)
+### 5.2 Centralize Reusable Fixtures ✅ DONE
+
+- [x] Review local fixtures in `tests/environment/test_core.py` (11 fixtures remain)
+- [x] Confirmed remaining fixtures are test-specific and should stay local
+- [x] No general-purpose fixtures need to be moved to conftest.py
+
+**Remaining test_core.py fixtures (all test-specific)**:
+
+- `data_for_morpho_ops` - Test data for morphological operations
+- `env_hexagonal` - Hexagonal environment for neighbor tests
+- `env_with_disconnected_regions` - Environment with disconnected regions
+- `env_no_active_bins` - Edge case environment
+- `env_center_hole_3x3` - 3x3 grid with center hole
+- `env_hollow_square_4x4` - 4x4 hollow square
+- `env_line_1x3_in_3x3_grid` - 1x3 line in grid
+- `env_single_active_cell_3x3` - Single active cell
+- `env_no_active_cells_nd_mask` - No active cells
+- `env_1d_grid_3bins` - 1D grid for testing
+- `env_path_graph_3nodes` - Path graph environment
 
 ---
 

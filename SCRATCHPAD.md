@@ -2,6 +2,42 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Fixture Deduplication (Milestone 5)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Remove duplicate fixtures from test files and audit for potential centralization.
+
+**Results**:
+
+**Duplicates Removed from test_core.py:**
+
+1. `simple_graph_for_layout` - Identical to conftest.py version
+2. `simple_hex_env` - Similar to conftest.py version (unused in file)
+3. `simple_graph_env` - Identical to conftest.py version
+4. `env_all_active_2x2` - Identical to conftest.py version
+
+**Duplicates Removed from test_layout_engine.py:**
+
+1. `simple_graph_for_layout` - Identical to conftest.py version
+2. `simple_hex_env` - Similar to conftest.py version (unused)
+3. `simple_graph_env` - Identical to conftest.py version
+
+**Audit Results:**
+
+- `tests/simulation/conftest.py` - NO duplicates found (fixtures are unique)
+- Remaining 11 fixtures in test_core.py are test-specific and should stay local
+
+**Verification**:
+
+- All 53 test_core.py tests pass ✅
+- All 24 test_layout_engine.py tests pass ✅
+- All 87 combined tests (test_core.py + test_copy.py + test_composite.py) pass ✅
+- Ruff check passes ✅
+- Mypy has pre-existing Protocol errors (not a regression) ⚠️
+
+---
+
 ### Task: Organize Animation Fixtures (Milestone 4)
 
 **Status**: ✅ COMPLETE

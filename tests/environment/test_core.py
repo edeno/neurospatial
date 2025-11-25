@@ -689,64 +689,6 @@ class TestDimensionality:
 
 
 @pytest.fixture
-def simple_graph_for_layout() -> nx.Graph:
-    """Minimal graph with pos and distance attributes for GraphLayout."""
-    G = nx.Graph()
-    G.add_node(0, pos=(0.0, 0.0))
-    G.add_node(1, pos=(1.0, 0.0))
-    G.add_edge(0, 1, distance=1.0, edge_id=0)  # Add edge_id
-    return G
-
-
-@pytest.fixture
-def simple_hex_env(plus_maze_positions) -> Environment:
-    """Basic hexagonal environment for mask testing."""
-    return Environment.from_samples(
-        positions=plus_maze_positions,  # Use existing samples
-        bin_size=2.0,  # Required parameter
-        layout_type="Hexagonal",
-        hexagon_width=2.0,  # Reasonably large hexes
-        name="SimpleHexEnvForMask",
-        infer_active_bins=True,  # Important for source_flat_to_active_node_id_map
-        bin_count_threshold=0,
-    )
-
-
-@pytest.fixture
-def simple_graph_env(simple_graph_for_layout) -> Environment:
-    """Basic graph environment for mask testing."""
-    edge_order = [(0, 1)]
-    # For serialization to pass correctly, ensure layout_params_used are captured
-    layout_build_params = {
-        "graph_definition": simple_graph_for_layout,
-        "edge_order": edge_order,
-        "edge_spacing": 0.0,
-        "bin_size": 0.5,
-    }
-    layout_instance = GraphLayout()
-    layout_instance.build(**layout_build_params)
-    return Environment(
-        name="SimpleGraphEnvForMask",
-        layout=layout_instance,
-        layout_type_used="Graph",
-        layout_params_used=layout_build_params,
-    )
-
-
-@pytest.fixture
-def env_all_active_2x2() -> Environment:
-    """A 2x2 grid where all 4 cells are active."""
-    active_mask = np.array([[True, True], [True, True]], dtype=bool)
-    grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_mask(
-        active_mask=active_mask,
-        grid_edges=grid_edges,
-        name="AllActive2x2",
-        connect_diagonal_neighbors=False,  # Orthogonal connections for simpler graph
-    )
-
-
-@pytest.fixture
 def env_center_hole_3x3() -> Environment:
     """A 3x3 grid with the center cell inactive, others active."""
     active_mask = np.array(

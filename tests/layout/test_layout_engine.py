@@ -7,7 +7,6 @@ from shapely.geometry import Polygon as ShapelyPoly
 
 from neurospatial.environment import Environment
 from neurospatial.layout.base import LayoutEngine
-from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.factories import (
     create_layout,
     get_layout_parameters,
@@ -246,51 +245,6 @@ def test_create_layout_invalid_kind():
 def test_get_layout_parameters_invalid():
     with pytest.raises(ValueError):
         get_layout_parameters("NotARealLayout")
-
-
-@pytest.fixture
-def simple_graph_for_layout() -> nx.Graph:
-    """Minimal graph with pos and distance attributes for GraphLayout."""
-    G = nx.Graph()
-    G.add_node(0, pos=(0.0, 0.0))
-    G.add_node(1, pos=(1.0, 0.0))
-    G.add_edge(0, 1, distance=1.0, edge_id=0)  # Add edge_id
-    return G
-
-
-@pytest.fixture
-def simple_hex_env(plus_maze_positions) -> Environment:
-    """Basic hexagonal environment for mask testing."""
-    return Environment.from_samples(
-        positions=plus_maze_positions,  # Use existing samples
-        bin_size=2.0,  # Required parameter
-        layout_type="Hexagonal",
-        hexagon_width=2.0,  # Reasonably large hexes
-        name="SimpleHexEnvForMask",
-        infer_active_bins=True,  # Important for source_flat_to_active_node_id_map
-        bin_count_threshold=0,
-    )
-
-
-@pytest.fixture
-def simple_graph_env(simple_graph_for_layout) -> Environment:
-    """Basic graph environment for mask testing."""
-    edge_order = [(0, 1)]
-    # For serialization to pass correctly, ensure layout_params_used are captured
-    layout_build_params = {
-        "graph_definition": simple_graph_for_layout,
-        "edge_order": edge_order,
-        "edge_spacing": 0.0,
-        "bin_size": 0.5,
-    }
-    layout_instance = GraphLayout()
-    layout_instance.build(**layout_build_params)
-    return Environment(
-        name="SimpleGraphEnvForMask",
-        layout=layout_instance,
-        layout_type_used="Graph",
-        layout_params_used=layout_build_params,
-    )
 
 
 @pytest.fixture
