@@ -17,43 +17,38 @@ from neurospatial.segmentation.trials import Trial
 
 @pytest.fixture
 def simple_environment_with_regions():
-    """Create a simple 2D environment with point regions for testing."""
-    # Create a 10x10 cm space with dense sampling for connectivity
-    # Use stratified sampling to guarantee coverage of all regions
-    np.random.seed(42)
+    """Create a simple 2D environment with point regions for testing.
 
-    # Create a 5x5 grid of cells (bin_size=2.0 creates 5x5 bins in 10x10 space)
-    # Sample multiple points from each cell to ensure complete coverage
-    n_per_cell = 4  # 4 points per cell
-    positions = []
-    for i in range(5):  # 5 bins in x
-        for j in range(5):  # 5 bins in y
-            # Cell boundaries
-            x_min, x_max = i * 2.0, (i + 1) * 2.0
-            y_min, y_max = j * 2.0, (j + 1) * 2.0
-            # Sample points within cell
-            cell_positions = np.random.uniform(
-                [x_min, y_min], [x_max, y_max], (n_per_cell, 2)
-            )
-            positions.append(cell_positions)
+    Uses deterministic grid - no randomness needed for this fixture.
+    """
+    # Create deterministic 10x10 cm grid with bin_size=2.0 (6x6 = 36 bins)
+    x = np.linspace(0, 10, 6)
+    y = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
 
-    positions = np.vstack(positions)  # 100 total points (25 cells × 4 points)
     env = Environment.from_samples(positions, bin_size=2.0)
     env.units = "cm"
 
-    # Add regions at known locations (guaranteed to have bins)
-    env.regions.add("start", point=(1.0, 1.0))  # Bottom-left cell (bin 0,0)
-    env.regions.add("goal1", point=(9.0, 9.0))  # Top-right cell (bin 4,4)
-    env.regions.add("goal2", point=(9.0, 1.0))  # Bottom-right cell (bin 4,0)
+    # Add regions at bin centers (0, 2, 4, 6, 8, 10 in each dimension)
+    env.regions.add("start", point=(0.0, 0.0))  # Bottom-left bin
+    env.regions.add("goal1", point=(10.0, 10.0))  # Top-right bin
+    env.regions.add("goal2", point=(10.0, 0.0))  # Bottom-right bin
 
     return env
 
 
 @pytest.fixture
 def environment_with_polygon_regions():
-    """Create environment with polygon regions (multi-bin)."""
-    # Create 20x20 cm space with 2 cm bins (10x10 grid = 100 bins)
-    positions = np.random.uniform(0, 20, (200, 2))
+    """Create environment with polygon regions (multi-bin).
+
+    Uses deterministic grid - no randomness needed for this fixture.
+    """
+    # Create deterministic 20x20 cm grid with bin_size=2.0 (11x11 = 121 bins)
+    x = np.linspace(0, 20, 11)
+    y = np.linspace(0, 20, 11)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
     env.units = "cm"
 
@@ -434,9 +429,12 @@ def test_path_progress_large_environment():
     """Test path progress with large environment (n_bins > 5000, test fallback)."""
     from neurospatial.behavioral import path_progress
 
-    # Create large environment with >5000 bins
-    # 100x100 grid = 10,000 bins
-    positions = np.random.uniform(0, 200, (5000, 2))
+    # Create large environment with >5000 bins using deterministic grid
+    # 101x101 grid = 10,201 bins
+    x = np.linspace(0, 200, 101)
+    y = np.linspace(0, 200, 101)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Skip if environment doesn't have enough bins
@@ -609,9 +607,12 @@ def test_distance_to_region_large_environment():
     """Test distance to region with large environment (memory fallback)."""
     from neurospatial.behavioral import distance_to_region
 
-    # Create large environment with >5000 bins
-    np.random.seed(42)
-    positions = np.random.uniform(0, 200, (5000, 2))
+    # Create large environment with >5000 bins using deterministic grid
+    # 101x101 grid = 10,201 bins
+    x = np.linspace(0, 200, 101)
+    y = np.linspace(0, 200, 101)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Skip if environment doesn't have enough bins
@@ -941,9 +942,10 @@ def test_compute_trajectory_curvature_output_length():
     """Test curvature output length matches input (n_samples, not n_samples-2)."""
     from neurospatial.behavioral import compute_trajectory_curvature
 
-    # Create trajectory with varying lengths
+    # Create trajectory with varying lengths - random needed for varied test data
+    rng = np.random.default_rng(42)
     for n_samples in [5, 10, 20, 100]:
-        positions = np.random.randn(n_samples, 2)
+        positions = rng.standard_normal((n_samples, 2)) * 10
 
         # Compute curvature
         curvature = compute_trajectory_curvature(positions)
@@ -1603,8 +1605,10 @@ def test_path_progress_unfitted_environment():
 
     from neurospatial import Environment, EnvironmentNotFittedError, path_progress
 
-    # Create environment and manually mark as unfitted
-    positions = np.random.uniform(0, 10, (100, 2))
+    # Create environment and manually mark as unfitted - deterministic grid
+    x = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, x)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
     env._is_fitted = False  # Manually mark as unfitted
 
@@ -1624,7 +1628,10 @@ def test_path_progress_array_length_mismatch():
 
     from neurospatial import path_progress
 
-    positions = np.random.uniform(0, 10, (100, 2))
+    # Deterministic grid - no randomness needed
+    x = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, x)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Mismatched lengths
@@ -1643,8 +1650,10 @@ def test_distance_to_region_unfitted_environment():
 
     from neurospatial import Environment, EnvironmentNotFittedError, distance_to_region
 
-    # Create environment and manually mark as unfitted
-    positions = np.random.uniform(0, 10, (100, 2))
+    # Create environment and manually mark as unfitted - deterministic grid
+    x = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, x)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
     env._is_fitted = False  # Manually mark as unfitted
 
@@ -1664,8 +1673,10 @@ def test_graph_turn_sequence_unfitted_environment():
     from neurospatial import Environment, EnvironmentNotFittedError
     from neurospatial.behavioral import graph_turn_sequence
 
-    # Create environment and manually mark as unfitted
-    positions = np.random.uniform(0, 10, (100, 2))
+    # Create environment and manually mark as unfitted - deterministic grid
+    x = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, x)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
     env._is_fitted = False  # Manually mark as unfitted
 
@@ -1731,7 +1742,10 @@ def test_distance_to_region_invalid_scalar_target():
     """Test distance_to_region with invalid scalar target (-1)."""
     from neurospatial import distance_to_region
 
-    positions = np.random.uniform(0, 10, (100, 2))
+    # Deterministic grid - no randomness needed
+    x = np.linspace(0, 10, 6)
+    xx, yy = np.meshgrid(x, x)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
 
     trajectory_bins = np.array([0, 1, 2, 3, 4])
