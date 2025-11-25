@@ -24,7 +24,8 @@ def test_place_field_workflow_integration():
     Marked as slow because creating environment from 10,000 samples takes time on CI.
     """
     # Create synthetic place cell data
-    positions = np.random.randn(10000, 2) * 15
+    rng = np.random.default_rng(42)
+    positions = rng.standard_normal((10000, 2)) * 15
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Create place field
@@ -129,7 +130,8 @@ class TestDetectPlaceFields:
     def test_detect_place_fields_subfields(self):
         """Test subfield discrimination with coalescent fields."""
         # Create environment
-        positions = np.random.randn(10000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((10000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Create two close peaks that might be detected as subfields
@@ -165,7 +167,8 @@ class TestDetectPlaceFields:
 
     def test_detect_place_fields_interneuron_exclusion(self):
         """Test interneuron exclusion (high mean rate > 10 Hz)."""
-        positions = np.random.randn(5000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Create high firing rate everywhere (interneuron-like)
@@ -180,8 +183,8 @@ class TestDetectPlaceFields:
 
     def test_detect_place_fields_no_fields(self):
         """Test detection with uniform low firing (detects one large field)."""
-        np.random.seed(42)
-        positions = np.random.randn(5000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Uniform low firing rate everywhere
@@ -198,7 +201,8 @@ class TestDetectPlaceFields:
 
     def test_detect_place_fields_parameter_order(self):
         """Test that firing_rate comes before env (matches project convention)."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
         firing_rate = np.ones(env.n_bins)
 
@@ -215,7 +219,8 @@ class TestFieldMetrics:
     def test_field_size(self):
         """Test field size calculation (area in physical units)."""
         # Create 2D environment with known bin size
-        positions = np.random.randn(5000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Select a field (5 bins)
@@ -235,7 +240,8 @@ class TestFieldMetrics:
 
     def test_field_size_single_bin(self):
         """Test field size with single bin."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field_bins = np.array([0])
@@ -281,7 +287,8 @@ class TestFieldMetrics:
 
     def test_field_centroid_asymmetric(self):
         """Test centroid with asymmetric field (weighted toward high rates)."""
-        positions = np.random.randn(5000, 2) * 20
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # Create asymmetric field: peak offset from geometric center
@@ -440,7 +447,8 @@ class TestFieldStability:
 
     def test_field_stability_identical(self):
         """Test stability of identical rate maps (should be 1.0)."""
-        rate_map_1 = np.random.rand(100) * 5
+        rng = np.random.default_rng(42)
+        rate_map_1 = rng.random(100) * 5
         rate_map_2 = rate_map_1.copy()
 
         from neurospatial.metrics.place_fields import field_stability
@@ -452,9 +460,9 @@ class TestFieldStability:
 
     def test_field_stability_uncorrelated(self):
         """Test stability of uncorrelated rate maps (should be ~0)."""
-        np.random.seed(42)
-        rate_map_1 = np.random.rand(100)
-        rate_map_2 = np.random.rand(100)
+        rng = np.random.default_rng(42)
+        rate_map_1 = rng.random(100)
+        rate_map_2 = rng.random(100)
 
         from neurospatial.metrics.place_fields import field_stability
 
@@ -479,8 +487,9 @@ class TestFieldStability:
 
     def test_field_stability_parameter_naming(self):
         """Test parameter names match expected API."""
-        rate_map_1 = np.random.rand(50) * 5
-        rate_map_2 = np.random.rand(50) * 5
+        rng = np.random.default_rng(42)
+        rate_map_1 = rng.random(50) * 5
+        rate_map_2 = rng.random(50) * 5
 
         from neurospatial.metrics.place_fields import field_stability
 
@@ -522,8 +531,9 @@ class TestRateMapCoherence:
     def test_rate_map_coherence_perfectly_smooth(self):
         """Test coherence on perfectly smooth (constant) rate map."""
         # Create environment
+        rng = np.random.default_rng(42)
         positions = (
-            np.random.randn(500, 2) * 20
+            rng.standard_normal((500, 2)) * 20
         )  # Reduced from 2000 - sufficient for coherence test
         env = Environment.from_samples(positions, bin_size=4.0)
 
@@ -548,7 +558,7 @@ class TestRateMapCoherence:
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Random firing rates (no spatial structure)
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         from neurospatial.metrics.place_fields import rate_map_coherence
 
@@ -587,7 +597,8 @@ class TestRateMapCoherence:
 
     def test_rate_map_coherence_all_zeros(self):
         """Test coherence with zero firing everywhere."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # All zeros
@@ -602,14 +613,14 @@ class TestRateMapCoherence:
 
     def test_rate_map_coherence_with_nans(self):
         """Test coherence handles NaN values correctly."""
+        rng = np.random.default_rng(42)
         positions = (
-            np.random.randn(500, 2) * 20
+            rng.standard_normal((500, 2)) * 20
         )  # Reduced from 2000 - sufficient for coherence test
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Firing rate with some NaNs and varying values
-        np.random.seed(42)
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
         firing_rate[::5] = np.nan  # 20% NaN
 
         from neurospatial.metrics.place_fields import rate_map_coherence
@@ -623,8 +634,9 @@ class TestRateMapCoherence:
 
     def test_rate_map_coherence_method_parameter(self):
         """Test that method parameter works (pearson vs spearman)."""
+        rng = np.random.default_rng(42)
         positions = (
-            np.random.randn(500, 2) * 20
+            rng.standard_normal((500, 2)) * 20
         )  # Reduced from 2000 - sufficient for coherence test
         env = Environment.from_samples(positions, bin_size=4.0)
 
@@ -643,10 +655,11 @@ class TestRateMapCoherence:
 
     def test_rate_map_coherence_return_type(self):
         """Test that coherence returns scalar float."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         from neurospatial.metrics.place_fields import rate_map_coherence
 
@@ -658,13 +671,14 @@ class TestRateMapCoherence:
 
     def test_rate_map_coherence_range(self):
         """Test that coherence is always in [-1, 1]."""
+        rng = np.random.default_rng(42)
         # Test multiple random environments
         for _ in range(5):
-            positions = np.random.randn(2000, 2) * 15
+            positions = rng.standard_normal((2000, 2)) * 15
             env = Environment.from_samples(positions, bin_size=3.0)
 
             # Random firing rate
-            firing_rate = np.random.rand(env.n_bins) * 5.0
+            firing_rate = rng.random(env.n_bins) * 5.0
 
             from neurospatial.metrics.place_fields import rate_map_coherence
 
@@ -807,10 +821,11 @@ class TestSelectivity:
 
     def test_selectivity_range(self, small_2d_env):
         """Test that selectivity is always >= 1.0."""
+        rng = np.random.default_rng(42)
         env = small_2d_env
         # Test various firing patterns
         for _ in range(10):
-            firing_rate = np.random.rand(env.n_bins) * 10
+            firing_rate = rng.random(env.n_bins) * 10
             occupancy = np.ones(env.n_bins) / env.n_bins
 
             from neurospatial.metrics.place_fields import selectivity
@@ -823,8 +838,9 @@ class TestSelectivity:
 
     def test_selectivity_return_type(self, medium_2d_env):
         """Test that selectivity returns scalar float."""
+        rng = np.random.default_rng(42)
         env = medium_2d_env
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
         from neurospatial.metrics.place_fields import selectivity
@@ -867,7 +883,8 @@ class TestInOutFieldRatio:
 
     def test_in_out_field_ratio_empty_field(self):
         """Test ratio with empty field."""
-        firing_rate = np.random.rand(100) * 5.0
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(100) * 5.0
         field_bins = np.array([], dtype=np.int64)
 
         from neurospatial.metrics.place_fields import in_out_field_ratio
@@ -911,8 +928,9 @@ class TestInformationMetrics:
 
     def test_mutual_information_equals_info_per_second(self, medium_2d_env):
         """Test that MI equals information_per_second."""
+        rng = np.random.default_rng(42)
         env = medium_2d_env
-        firing_rate = np.random.rand(env.n_bins) * 10.0
+        firing_rate = rng.random(env.n_bins) * 10.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
         from neurospatial.metrics.place_fields import (
@@ -987,9 +1005,9 @@ class TestFieldShapeMetrics:
 
     def test_field_shape_metrics_circular(self):
         """Test shape metrics for circular field."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         # Create 2D environment
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create circular field
@@ -1015,8 +1033,9 @@ class TestFieldShapeMetrics:
 
     def test_field_shape_metrics_elongated(self):
         """Test shape metrics for elongated field."""
+        rng = np.random.default_rng(42)
         # Create 2D environment
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create elongated field along x-axis
@@ -1040,8 +1059,9 @@ class TestFieldShapeMetrics:
 
     def test_field_shape_metrics_3d_warning(self):
         """Test that 3D environment raises warning."""
+        rng = np.random.default_rng(42)
         # Create 3D environment
-        data = np.random.randn(500, 3) * 10
+        data = rng.standard_normal((500, 3)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
         firing_rate = np.zeros(env.n_bins)
@@ -1063,8 +1083,9 @@ class TestFieldShiftDistance:
 
     def test_field_shift_distance_no_shift(self):
         """Test shift distance when field hasn't moved."""
+        rng = np.random.default_rng(42)
         # Create two identical environments
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env1 = Environment.from_samples(data, bin_size=2.0)
         env2 = Environment.from_samples(data, bin_size=2.0)
 
@@ -1096,8 +1117,9 @@ class TestFieldShiftDistance:
 
     def test_field_shift_distance_euclidean(self):
         """Test Euclidean shift distance."""
+        rng = np.random.default_rng(42)
         # Create two environments
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env1 = Environment.from_samples(data, bin_size=2.0)
         env2 = Environment.from_samples(data, bin_size=2.0)
 
@@ -1132,8 +1154,8 @@ class TestFieldShiftDistance:
         """Test geodesic shift distance."""
         # Create same environment for both sessions with denser sampling
         # to ensure bins are well-distributed
-        np.random.seed(42)
-        data = np.random.randn(5000, 2) * 20
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((5000, 2)) * 20
         env = Environment.from_samples(data, bin_size=3.0)
 
         # Ensure environment has enough bins
@@ -1201,8 +1223,8 @@ class TestComputeFieldEMD:
         """Test EMD is zero for identical distributions."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create a firing rate distribution
@@ -1217,8 +1239,8 @@ class TestComputeFieldEMD:
         """Test EMD with Euclidean metric."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create two sparse distributions with uniform values in localized regions
@@ -1243,9 +1265,9 @@ class TestComputeFieldEMD:
         """Test EMD with geodesic metric."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         # Create denser sampling for better connectivity
-        data = np.random.randn(5000, 2) * 20
+        data = rng.standard_normal((5000, 2)) * 20
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create two sparse distributions
@@ -1268,8 +1290,8 @@ class TestComputeFieldEMD:
         """Test that normalization works correctly."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create sparse distributions with different total mass
@@ -1298,8 +1320,8 @@ class TestComputeFieldEMD:
         """Test EMD handles NaN values gracefully."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create sparse distributions
@@ -1327,8 +1349,8 @@ class TestComputeFieldEMD:
         """Test EMD with all-zero distributions."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # All zeros should return NaN with warning
@@ -1343,8 +1365,8 @@ class TestComputeFieldEMD:
         """Test EMD with single non-zero bin."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Single bin with mass
@@ -1361,8 +1383,8 @@ class TestComputeFieldEMD:
         """Test EMD raises error with mismatched dimensions."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         field1 = np.ones(env.n_bins)
@@ -1375,8 +1397,8 @@ class TestComputeFieldEMD:
         """Test EMD raises error with invalid metric."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         field1 = np.ones(env.n_bins)
@@ -1389,8 +1411,8 @@ class TestComputeFieldEMD:
         """Test EMD raises error when arrays don't match env.n_bins."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create arrays that don't match env.n_bins
@@ -1404,8 +1426,8 @@ class TestComputeFieldEMD:
         """Test EMD with sparse fields (few non-zero bins)."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Sparse fields (only a few bins with mass)
@@ -1426,9 +1448,9 @@ class TestComputeFieldEMD:
         """Test that Euclidean and geodesic EMD are similar in open field."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         # Dense sampling for good connectivity
-        data = np.random.randn(5000, 2) * 20
+        data = rng.standard_normal((5000, 2)) * 20
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create two sparse distributions
@@ -1456,8 +1478,8 @@ class TestComputeFieldEMD:
         """Test that EMD is symmetric: EMD(p, q) == EMD(q, p)."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
-        data = np.random.randn(500, 2) * 20  # Reduced from 1000 for faster tests
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
         env = Environment.from_samples(data, bin_size=2.0)
 
         # Create two different distributions
@@ -1484,13 +1506,13 @@ class TestComputeFieldEMD:
 
         # Create L-shaped environment with barrier in middle
         # This creates a non-convex environment where geodesic != Euclidean
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
 
         # Generate L-shaped data (two rectangles forming an L)
         # Horizontal bar: x in [0, 20], y in [0, 5]
-        horizontal = np.random.uniform([0, 0], [20, 5], size=(2000, 2))
+        horizontal = rng.uniform([0, 0], [20, 5], size=(2000, 2))
         # Vertical bar: x in [0, 5], y in [5, 20]
-        vertical = np.random.uniform([0, 5], [5, 20], size=(2000, 2))
+        vertical = rng.uniform([0, 5], [5, 20], size=(2000, 2))
         data = np.vstack([horizontal, vertical])
 
         env = Environment.from_samples(data, bin_size=2.0)
@@ -1528,11 +1550,11 @@ class TestComputeFieldEMD:
         """Test that disconnected bins trigger aggregated warning."""
         from neurospatial.metrics import compute_field_emd
 
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         # Create sparse environment with disconnected regions
         # Two separate clusters with no connectivity between them
-        cluster1 = np.random.randn(500, 2) * 3 + np.array([0, 0])
-        cluster2 = np.random.randn(500, 2) * 3 + np.array([50, 50])
+        cluster1 = rng.standard_normal((500, 2)) * 3 + np.array([0, 0])
+        cluster2 = rng.standard_normal((500, 2)) * 3 + np.array([50, 50])
         data = np.vstack([cluster1, cluster2])
 
         env = Environment.from_samples(data, bin_size=2.0)
@@ -1569,7 +1591,8 @@ class TestDetectPlaceFieldsValidation:
 
     def test_firing_rate_shape_mismatch_raises_error(self):
         """Test that ValueError is raised when firing_rate shape doesn't match env.n_bins."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import detect_place_fields
@@ -1583,9 +1606,10 @@ class TestDetectPlaceFieldsValidation:
 
     def test_threshold_out_of_range_raises_error(self):
         """Test that ValueError is raised when threshold is not in (0, 1)."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         from neurospatial.metrics.place_fields import detect_place_fields
 
@@ -1603,7 +1627,8 @@ class TestDetectPlaceFieldsValidation:
 
     def test_all_nan_firing_rate_returns_empty(self):
         """Test that all-NaN firing rate returns empty field list."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import detect_place_fields
@@ -1616,7 +1641,8 @@ class TestDetectPlaceFieldsValidation:
 
     def test_explicit_min_size_parameter(self):
         """Test that min_size parameter is respected."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import detect_place_fields
@@ -1667,7 +1693,8 @@ class TestFieldCentroidEdgeCases:
 
     def test_field_centroid_zero_firing_rate(self):
         """Test field_centroid when all firing rates are zero (unweighted centroid)."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import field_centroid
@@ -1687,7 +1714,8 @@ class TestSkaggsInformationEdgeCases:
 
     def test_skaggs_information_zero_mean_rate(self):
         """Test skaggs_information when mean rate is zero."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import skaggs_information
@@ -1700,7 +1728,8 @@ class TestSkaggsInformationEdgeCases:
 
     def test_skaggs_information_nan_mean_rate(self):
         """Test skaggs_information when mean rate is NaN."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import skaggs_information
@@ -1717,7 +1746,8 @@ class TestSparsityEdgeCases:
 
     def test_sparsity_zero_denominator(self):
         """Test sparsity when denominator is zero."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import sparsity
@@ -1730,7 +1760,8 @@ class TestSparsityEdgeCases:
 
     def test_sparsity_nan_denominator(self):
         """Test sparsity when denominator is NaN."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import sparsity
@@ -1783,20 +1814,22 @@ class TestRateMapCoherenceEdgeCases:
 
     def test_rate_map_coherence_wrong_shape_raises_error(self):
         """Test rate_map_coherence raises ValueError for wrong shape."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import rate_map_coherence
 
         # Wrong shape
-        firing_rate = np.random.rand(env.n_bins + 10)
+        firing_rate = rng.random(env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"firing_rate\.shape must be"):
             rate_map_coherence(firing_rate, env)
 
     def test_rate_map_coherence_all_nan_returns_nan(self):
         """Test rate_map_coherence returns NaN when all values are NaN."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import rate_map_coherence
@@ -1808,7 +1841,8 @@ class TestRateMapCoherenceEdgeCases:
 
     def test_rate_map_coherence_insufficient_points_returns_nan(self):
         """Test rate_map_coherence returns NaN when too few valid points."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import rate_map_coherence
@@ -1841,12 +1875,13 @@ class TestRateMapCoherenceEdgeCases:
 
     def test_rate_map_coherence_invalid_method_raises_error(self):
         """Test rate_map_coherence raises ValueError for invalid method."""
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         from neurospatial.metrics.place_fields import rate_map_coherence
 
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        firing_rate = rng.random(env.n_bins) * 5.0
 
         with pytest.raises(
             ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
@@ -1882,7 +1917,8 @@ class TestInOutFieldRatioEdgeCases:
         """Test in_out_field_ratio returns NaN when field covers entire environment."""
         from neurospatial.metrics.place_fields import in_out_field_ratio
 
-        firing_rate = np.random.rand(100) * 5.0
+        rng = np.random.default_rng(42)
+        firing_rate = rng.random(100) * 5.0
         field_bins = np.arange(100)  # All bins
 
         result = in_out_field_ratio(firing_rate, field_bins)
@@ -1958,10 +1994,11 @@ class TestFieldShapeMetricsEdgeCases:
         """Test field_shape_metrics returns empty dict for empty field_bins."""
         from neurospatial.metrics.place_fields import field_shape_metrics
 
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        firing_rate = np.random.rand(env.n_bins)
+        firing_rate = rng.random(env.n_bins)
         field_bins = np.array([], dtype=np.int64)
 
         result = field_shape_metrics(firing_rate, field_bins, env)
@@ -1974,7 +2011,8 @@ class TestFieldShapeMetricsEdgeCases:
         """Test field_shape_metrics returns NaN values when all rates are NaN."""
         from neurospatial.metrics.place_fields import field_shape_metrics
 
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         firing_rate = np.full(env.n_bins, np.nan)
@@ -1994,12 +2032,13 @@ class TestFieldShiftDistanceEdgeCases:
         """Test field_shift_distance returns NaN when centroids are NaN."""
         from neurospatial.metrics.place_fields import field_shift_distance
 
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         # All NaN firing rates will produce NaN centroids
         firing_rate_1 = np.full(env.n_bins, np.nan)
-        firing_rate_2 = np.random.rand(env.n_bins)
+        firing_rate_2 = rng.random(env.n_bins)
         field_bins_1 = np.array([10, 20, 30])
         field_bins_2 = np.array([40, 50, 60])
 
@@ -2020,8 +2059,9 @@ class TestFieldShiftDistanceEdgeCases:
         env2 = Environment.from_samples(positions2, bin_size=1.0)
 
         # Create firing rates and use bins that exist in both environments
-        firing_rate_1 = np.random.rand(env1.n_bins)
-        firing_rate_2 = np.random.rand(env2.n_bins)
+        rng = np.random.default_rng(42)
+        firing_rate_1 = rng.random(env1.n_bins)
+        firing_rate_2 = rng.random(env2.n_bins)
         # Use bins near center to ensure centroids are valid
         field_bins_1 = np.array([0, 1, 2])  # Use first few bins
         field_bins_2 = np.array([0, 1, 2])  # Use first few bins (if they exist in env2)
@@ -2053,7 +2093,8 @@ class TestComputeFieldEMDEdgeCases:
         """Test compute_field_emd returns 0 when both distributions are all zeros (unnormalized)."""
         from neurospatial.metrics.place_fields import compute_field_emd
 
-        positions = np.random.randn(1000, 2) * 10
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
         firing_rate_1 = np.zeros(env.n_bins)

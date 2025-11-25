@@ -95,7 +95,7 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 
 ### 3.1 High-Priority Files (Most Likely to Cause Flaky Tests)
 
-- [ ] Migrate `tests/metrics/test_place_fields.py` (20 occurrences)
+- [x] Migrate `tests/metrics/test_place_fields.py` (20 occurrences) ✅
   - Replace `np.random.seed(42)` → `rng = np.random.default_rng(42)`
   - Replace `np.random.randn(n, m)` → `rng.standard_normal((n, m))`
   - Replace `np.random.rand(n, m)` → `rng.random((n, m))`

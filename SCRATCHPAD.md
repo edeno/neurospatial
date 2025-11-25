@@ -2,7 +2,57 @@
 
 ## Current Work Session: 2025-11-25
 
-### Task: Complete test_transitions.py Refactoring (Milestone 2.4)
+### Task: Migrate test_place_fields.py Global RNG (Milestone 3.1)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all `np.random.seed()` and global RNG calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 20 `np.random.seed(42)` calls + many unseeded `np.random.randn/rand` calls
+- **After**: 0 global RNG calls (100% migrated)
+- **Total changes**: ~70+ RNG calls migrated to local RNG
+
+**Changes Made**:
+
+1. Migrated 20 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+2. Replaced all `np.random.randn(n, m)` → `rng.standard_normal((n, m))`
+3. Replaced all `np.random.rand(n, m)` → `rng.random((n, m))`
+4. Replaced all `np.random.uniform(...)` → `rng.uniform(...)`
+
+**Test Classes Updated**:
+
+- TestDetectPlaceFields (5 tests)
+- TestFieldMetrics (4 tests)
+- TestFieldStability (3 tests)
+- TestRateMapCoherence (6 tests)
+- TestSelectivity (4 tests)
+- TestInOutFieldRatio (1 test)
+- TestInformationMetrics (1 test)
+- TestFieldShapeMetrics (3 tests)
+- TestFieldShiftDistance (3 tests)
+- TestComputeFieldEMD (15 tests)
+- TestDetectPlaceFieldsValidation (4 tests)
+- TestFieldCentroidEdgeCases (1 test)
+- TestSkaggsInformationEdgeCases (2 tests)
+- TestSparsityEdgeCases (2 tests)
+- TestRateMapCoherenceEdgeCases (5 tests)
+- TestInOutFieldRatioEdgeCases (1 test)
+- TestFieldShapeMetricsEdgeCases (2 tests)
+- TestFieldShiftDistanceEdgeCases (2 tests)
+- TestComputeFieldEMDEdgeCases (1 test)
+- test_place_field_workflow_integration (integration test)
+
+**Verification**:
+
+- All 99 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
+## Previous Session: test_transitions.py Refactoring (Milestone 2.4)
 
 **Status**: ✅ COMPLETE
 
