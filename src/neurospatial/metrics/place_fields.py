@@ -25,6 +25,7 @@ References
 from __future__ import annotations
 
 import warnings
+from collections import deque
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -341,10 +342,10 @@ def _extract_connected_component_graph(
     """
     # Flood fill using graph connectivity (BFS)
     component_set = {seed_idx}
-    frontier = [seed_idx]
+    frontier = deque([seed_idx])
 
     while frontier:
-        current = frontier.pop(0)
+        current = frontier.popleft()
         # Get neighbors from graph
         neighbors = list(env.connectivity.neighbors(current))
         for neighbor in neighbors:

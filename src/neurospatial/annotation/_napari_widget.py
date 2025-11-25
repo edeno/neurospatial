@@ -477,8 +477,6 @@ def create_annotation_widget(
                 else:
                     # Delete the just-drawn shape
                     # Must defer to avoid reentrancy with napari's _finish_drawing()
-                    from qtpy.QtCore import QTimer
-
                     # Update count IMMEDIATELY to prevent dialog re-triggering
                     # (napari may fire multiple data events for single shape)
                     target_count = _prev_shape_count[0]  # What we want after deletion
@@ -511,7 +509,7 @@ def create_annotation_widget(
                             update_annotation_status()
                         _prev_shape_count[0] = len(shapes.data)
 
-                    QTimer.singleShot(0, delete_shape)
+                    qt_core.QTimer.singleShot(0, delete_shape)
                     viewer.status = "Shape removed (environment already exists)"
                     return  # Exit early - deferred deletion will handle cleanup
 
@@ -572,11 +570,9 @@ def create_annotation_widget(
         addition. This wrapper schedules the actual processing to run once
         after the event storm settles, reducing UI latency.
         """
-        from qtpy.QtCore import QTimer
-
         if not _pending_update[0]:
             _pending_update[0] = True
-            QTimer.singleShot(0, _process_data_change)
+            qt_core.QTimer.singleShot(0, _process_data_change)
 
     shapes = get_shapes()
     if shapes is not None:
