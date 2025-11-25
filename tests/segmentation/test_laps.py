@@ -175,7 +175,11 @@ class TestDetectLaps:
 
     def test_detect_laps_empty_trajectory(self):
         """Test lap detection on empty trajectory."""
-        env = Environment.from_samples(np.random.randn(100, 2) * 10 + 50, bin_size=5.0)
+        # Deterministic grid
+        x = np.linspace(40, 60, 11)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=5.0)
         trajectory_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
@@ -202,7 +206,8 @@ class TestDetectLaps:
 
     def test_detect_laps_parameter_order(self):
         """Test that parameters are in the expected order."""
-        positions = np.random.randn(50, 2) * 20 + 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
@@ -215,7 +220,8 @@ class TestDetectLaps:
 
     def test_detect_laps_validation_method(self):
         """Test validation of method parameter."""
-        positions = np.random.randn(50, 2) * 20 + 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
@@ -227,7 +233,8 @@ class TestDetectLaps:
 
     def test_detect_laps_validation_reference_required(self):
         """Test that reference method requires reference_lap parameter."""
-        positions = np.random.randn(50, 2) * 20 + 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
@@ -241,7 +248,8 @@ class TestDetectLaps:
 
     def test_detect_laps_validation_region_required(self):
         """Test that region method requires start_region parameter."""
-        positions = np.random.randn(50, 2) * 20 + 50
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((50, 2)) * 20 + 50
         env = Environment.from_samples(positions, bin_size=5.0)
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)

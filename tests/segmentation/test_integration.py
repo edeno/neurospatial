@@ -251,8 +251,8 @@ class TestFullTrajectoryAnalysisWorkflow:
         env.regions.add("goal", polygon=Point(40.0, 40.0).buffer(5.0))
 
         # Phase 1: Random exploration (first 100 samples)
-        np.random.seed(42)
-        explore_positions = np.random.uniform(10, 50, (100, 2))
+        rng = np.random.default_rng(42)
+        explore_positions = rng.uniform(10, 50, (100, 2))
         explore_times = np.linspace(0, 50, 100)
 
         # Phase 2: Goal-directed behavior (next 50 samples)

@@ -314,9 +314,9 @@ class TestSegmentByVelocity:
     def test_hysteresis_prevents_flickering(self):
         """Test that hysteresis prevents rapid switching."""
         # Create trajectory with noisy velocity near threshold
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n = 100
-        trajectory = np.cumsum(np.random.randn(n) * 0.5)[:, None]
+        trajectory = np.cumsum(rng.standard_normal(n) * 0.5)[:, None]
         times = np.linspace(0, 10, n)
 
         from neurospatial.segmentation.regions import segment_by_velocity

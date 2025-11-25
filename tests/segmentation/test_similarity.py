@@ -69,9 +69,10 @@ class TestTrajectorySimilarity:
 
     def test_trajectory_similarity_correlation(self):
         """Test correlation-based similarity metric."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 15)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Create two similar trajectories (same sequence, slight variation)
@@ -242,9 +243,10 @@ class TestDetectGoalDirectedRuns:
 
     def test_detect_goal_directed_runs_wandering_path(self):
         """Wandering path should have low directedness and be filtered out."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (500, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 34)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=3.0)
 
         # Add goal region
@@ -254,9 +256,9 @@ class TestDetectGoalDirectedRuns:
         goal_polygon = Point(goal_location).buffer(10.0)
         env.regions.add("goal", polygon=goal_polygon)
 
-        # Random walk (inefficient path)
-        np.random.seed(123)
-        trajectory_bins = np.random.randint(0, env.n_bins, 100, dtype=np.int64)
+        # Random walk (inefficient path) with local RNG
+        rng = np.random.default_rng(123)
+        trajectory_bins = rng.integers(0, env.n_bins, 100, dtype=np.int64)
         times = np.linspace(0, 100, len(trajectory_bins))
 
         runs = detect_goal_directed_runs(
@@ -274,9 +276,10 @@ class TestDetectGoalDirectedRuns:
 
     def test_detect_goal_directed_runs_min_progress_filter(self):
         """Test that min_progress filters out short runs."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 25)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add goal region
@@ -304,9 +307,10 @@ class TestDetectGoalDirectedRuns:
 
     def test_detect_goal_directed_runs_validation(self):
         """Test parameter validation."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 20)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
         trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
@@ -354,9 +358,10 @@ class TestDetectGoalDirectedRuns:
 
     def test_detect_goal_directed_runs_parameter_order(self):
         """Verify parameter order consistency."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 20)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
         from shapely.geometry import Point
@@ -388,9 +393,10 @@ class TestDetectGoalDirectedRuns:
 
     def test_detect_goal_directed_runs_empty_trajectory(self):
         """Empty trajectory should return empty list."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 20)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
         from shapely.geometry import Point
@@ -413,9 +419,10 @@ class TestSimilarityIntegration:
 
     def test_similarity_workflow(self):
         """Test complete workflow: detect similar trajectories."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (500, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 25)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Create three trajectories: two similar, one different
@@ -432,9 +439,10 @@ class TestSimilarityIntegration:
 
     def test_goal_directed_and_similarity(self):
         """Test detecting goal-directed runs and comparing their similarity."""
-        # Create 2D environment
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (200, 2))
+        # Create 2D environment with deterministic grid
+        x = np.linspace(0, 100, 25)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
         # Add goal region
