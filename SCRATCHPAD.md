@@ -2,6 +2,32 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_transforms_3d.py Global RNG (Milestone 3.1)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all global RNG calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 2 `np.random.seed(42)` calls + 2 unseeded `np.random.randn()` calls
+- **After**: 0 global RNG calls (100% migrated)
+
+**Changes Made**:
+
+1. `test_identity_nd_various_dimensions`: Added `rng = np.random.default_rng(42)` and replaced `np.random.randn(10, n_dims)` → `rng.standard_normal((10, n_dims))`
+2. `simple_3d_env` fixture: Replaced `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.randn(200, 3)` → `rng.standard_normal((200, 3))`
+3. `test_rotation_from_euler`: Added `rng = np.random.default_rng(42)` and replaced `np.random.randn(10, 3)` → `rng.standard_normal((10, 3))`
+4. `test_full_3d_alignment_workflow`: Replaced `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.randn(500, 3)` → `rng.standard_normal((500, 3))`
+
+**Verification**:
+
+- All 45 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
 ### Task: Migrate test_spike_field.py Global RNG (Milestone 3.1)
 
 **Status**: ✅ COMPLETE

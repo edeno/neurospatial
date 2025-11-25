@@ -220,11 +220,12 @@ class Test3DFactoryFunctions:
 
     def test_identity_nd_various_dimensions(self):
         """Test identity for various dimensions."""
+        rng = np.random.default_rng(42)
         for n_dims in [2, 3, 4, 5]:
             transform = identity_nd(n_dims=n_dims)
             assert transform.n_dims == n_dims
 
-            points = np.random.randn(10, n_dims)
+            points = rng.standard_normal((10, n_dims))
             result = transform(points)
             assert np.allclose(result, points)
 
@@ -338,8 +339,8 @@ class TestApplyTransformToEnvironment3D:
     @pytest.fixture
     def simple_3d_env(self):
         """Create a simple 3D environment."""
-        np.random.seed(42)
-        data = np.random.randn(200, 3) * 10
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((200, 3)) * 10
         env = Environment.from_samples(data, bin_size=5.0, name="test_3d")
         env.units = "cm"
         env.frame = "session1"
@@ -487,12 +488,13 @@ class TestScipyIntegration:
 
     def test_rotation_from_euler(self):
         """Test creating transform from Euler angles."""
+        rng = np.random.default_rng(42)
         # XYZ Euler angles
         R = Rotation.from_euler("xyz", [30, 45, 60], degrees=True).as_matrix()
         transform = from_rotation_matrix(R)
 
         # Test that it's a valid rotation (preserves distances)
-        points = np.random.randn(10, 3)
+        points = rng.standard_normal((10, 3))
         transformed = transform(points)
 
         orig_dists = np.linalg.norm(np.diff(points, axis=0), axis=1)
@@ -535,8 +537,8 @@ class TestScipyIntegration:
     def test_full_3d_alignment_workflow(self):
         """Test complete 3D alignment workflow with scipy.Rotation."""
         # Create source and target 3D environments
-        np.random.seed(42)
-        positions = np.random.randn(500, 3) * 15
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((500, 3)) * 15
         env1 = Environment.from_samples(positions, bin_size=5.0)
 
         # Apply known transformation

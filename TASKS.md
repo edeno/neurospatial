@@ -105,9 +105,10 @@ Phase 1 fixtures are complete. These tasks are for reference only.
   - Migrated 6 `np.random.seed()` to `rng = np.random.default_rng(42)`
   - 3 tests now use fixtures and local rng, 3 inline tests use local rng
 
-- [ ] Migrate `tests/test_transforms_3d.py` (2 occurrences)
-  - Apply same RNG migration pattern
-  - Verify: `uv run pytest tests/test_transforms_3d.py -v`
+- [x] Migrate `tests/test_transforms_3d.py` (4 occurrences) ✅
+  - Migrated 2 `np.random.seed(42)` → `rng = np.random.default_rng(42)`
+  - Migrated 2 `np.random.randn()` → `rng.standard_normal()`
+  - Verify: All 45 tests pass
 
 ### 3.2 Medium-Priority Files
 
