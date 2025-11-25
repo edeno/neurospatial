@@ -29,6 +29,28 @@ wheels = [
 ]
 
 [[package]]
+name = "alphashape"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "click-log" },
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "rtree" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "shapely" },
+    { name = "trimesh" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2e/83/67ff905694df5b34a777123b59fdfd05998d5a31766f188aafbf5b340055/alphashape-1.3.1.tar.gz", hash = "sha256:7a27340afc5f8ed301577acec46bb0cf2bada5410045f7289142e735ef6977ec", size = 26316, upload-time = "2021-04-16T17:47:19.486Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/ad/77fad9d6f974ec58d837cb49fb9b483d6227a420c4f908c3578633de1d47/alphashape-1.3.1-py2.py3-none-any.whl", hash = "sha256:96a5ddd5f09534a35f03a8916aeeaac00fe4d6bec2f9ad78f87f57be3007f795", size = 13122, upload-time = "2021-04-16T17:47:17.773Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -463,6 +485,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/46/61/de6cd827efad202d7057d93e0fed9294b96952e188f7384832791c7b2254/click-8.3.0.tar.gz", hash = "sha256:e7b8232224eba16f4ebe410c25ced9f7875cb5f3263ffc93cc3e8da705e229c4", size = 276943, upload-time = "2025-09-18T17:32:23.696Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/d3/9dcc0f5797f070ec8edf30fbadfb200e71d9db6b84d211e3b2085a7589a0/click-8.3.0-py3-none-any.whl", hash = "sha256:9b9f285302c6e3064f4330c05f05b81945b2a39544279343e6e7c5f27a9baddc", size = 107295, upload-time = "2025-09-18T17:32:22.42Z" },
+]
+
+[[package]]
+name = "click-log"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/32/228be4f971e4bd556c33d52a22682bfe318ffe57a1ddb7a546f347a90260/click-log-0.4.0.tar.gz", hash = "sha256:3970f8570ac54491237bcdb3d8ab5e3eef6c057df29f8c3d1151a51a9c23b975", size = 9985, upload-time = "2022-03-13T11:10:15.262Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ae/5a/4f025bc751087833686892e17e7564828e409c43b632878afeae554870cd/click_log-0.4.0-py2.py3-none-any.whl", hash = "sha256:a43e394b528d52112af599f2fc9e4b7cf3c15f94e53581f74fa6867e68c91756", size = 4273, upload-time = "2022-03-13T11:10:17.594Z" },
 ]
 
 [[package]]
@@ -2726,6 +2760,16 @@ animation = [
     { name = "napari", extra = ["all"] },
     { name = "pillow" },
 ]
+annotation = [
+    { name = "alphashape" },
+    { name = "scikit-image" },
+]
+annotation-alpha = [
+    { name = "alphashape" },
+]
+annotation-kde = [
+    { name = "scikit-image" },
+]
 dev = [
     { name = "coverage" },
     { name = "hypothesis" },
@@ -2787,6 +2831,8 @@ video = [
 
 [package.metadata]
 requires-dist = [
+    { name = "alphashape", marker = "extra == 'annotation'", specifier = ">=1.3.0" },
+    { name = "alphashape", marker = "extra == 'annotation-alpha'", specifier = ">=1.3.0" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.11.0" },
     { name = "hdmf", marker = "extra == 'nwb'", specifier = ">=3.0.0" },
     { name = "hdmf", marker = "extra == 'nwb-full'", specifier = ">=3.0.0" },
@@ -2833,13 +2879,15 @@ requires-dist = [
     { name = "pytest-mpl", marker = "extra == 'dev'", specifier = ">=0.18.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.3" },
+    { name = "scikit-image", marker = "extra == 'annotation'", specifier = ">=0.19.0" },
+    { name = "scikit-image", marker = "extra == 'annotation-kde'", specifier = ">=0.19.0" },
     { name = "scikit-learn", specifier = ">=1.2.0" },
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "shapely", specifier = ">=2.0.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "track-linearization", specifier = ">=2.4.0" },
 ]
-provides-extras = ["dev", "docs", "notebooks", "opencv", "video", "animation", "nwb", "nwb-pose", "nwb-events", "nwb-full"]
+provides-extras = ["dev", "docs", "notebooks", "opencv", "video", "animation", "nwb", "nwb-pose", "nwb-events", "nwb-full", "annotation-kde", "annotation-alpha", "annotation"]
 
 [[package]]
 name = "nodeenv"
@@ -4590,6 +4638,22 @@ wheels = [
 ]
 
 [[package]]
+name = "rtree"
+version = "1.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/09/7302695875a019514de9a5dd17b8320e7a19d6e7bc8f85dcfb79a4ce2da3/rtree-1.4.1.tar.gz", hash = "sha256:c6b1b3550881e57ebe530cc6cffefc87cd9bf49c30b37b894065a9f810875e46", size = 52425, upload-time = "2025-08-13T19:32:01.413Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/d9/108cd989a4c0954e60b3cdc86fd2826407702b5375f6dfdab2802e5fed98/rtree-1.4.1-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:d672184298527522d4914d8ae53bf76982b86ca420b0acde9298a7a87d81d4a4", size = 468484, upload-time = "2025-08-13T19:31:50.593Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/cf/2710b6fd6b07ea0aef317b29f335790ba6adf06a28ac236078ed9bd8a91d/rtree-1.4.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:a7e48d805e12011c2cf739a29d6a60ae852fb1de9fc84220bbcef67e6e595d7d", size = 436325, upload-time = "2025-08-13T19:31:52.367Z" },
+    { url = "https://files.pythonhosted.org/packages/55/e1/4d075268a46e68db3cac51846eb6a3ab96ed481c585c5a1ad411b3c23aad/rtree-1.4.1-py3-none-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:efa8c4496e31e9ad58ff6c7df89abceac7022d906cb64a3e18e4fceae6b77f65", size = 459789, upload-time = "2025-08-13T19:31:53.926Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/75/e5d44be90525cd28503e7f836d077ae6663ec0687a13ba7810b4114b3668/rtree-1.4.1-py3-none-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:12de4578f1b3381a93a655846900be4e3d5f4cd5e306b8b00aa77c1121dc7e8c", size = 507644, upload-time = "2025-08-13T19:31:55.164Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/85/b8684f769a142163b52859a38a486493b05bafb4f2fb71d4f945de28ebf9/rtree-1.4.1-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:b558edda52eca3e6d1ee629042192c65e6b7f2c150d6d6cd207ce82f85be3967", size = 1454478, upload-time = "2025-08-13T19:31:56.808Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/a4/c2292b95246b9165cc43a0c3757e80995d58bc9b43da5cb47ad6e3535213/rtree-1.4.1-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:f155bc8d6bac9dcd383481dee8c130947a4866db1d16cb6dff442329a038a0dc", size = 1555140, upload-time = "2025-08-13T19:31:58.031Z" },
+    { url = "https://files.pythonhosted.org/packages/74/25/5282c8270bfcd620d3e73beb35b40ac4ab00f0a898d98ebeb41ef0989ec8/rtree-1.4.1-py3-none-win_amd64.whl", hash = "sha256:efe125f416fd27150197ab8521158662943a40f87acab8028a1aac4ad667a489", size = 389358, upload-time = "2025-08-13T19:31:59.247Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/50/0a9e7e7afe7339bd5e36911f0ceb15fed51945836ed803ae5afd661057fd/rtree-1.4.1-py3-none-win_arm64.whl", hash = "sha256:3d46f55729b28138e897ffef32f7ce93ac335cb67f9120125ad3742a220800f0", size = 355253, upload-time = "2025-08-13T19:32:00.296Z" },
+]
+
+[[package]]
 name = "ruamel-yaml"
 version = "0.18.16"
 source = { registry = "https://pypi.org/simple" }
@@ -5461,6 +5525,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d5/a8/c448a60073c84d1d5dd73419c76fc3f62167b8afaf49c0afbf8b415d914f/triangle-20250106-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:fde20cb1f18a63faf3fa8d62210a1907367f5c7dd961cee8fb6a2f6fabbe8c53", size = 2008891, upload-time = "2025-01-07T04:56:15.163Z" },
     { url = "https://files.pythonhosted.org/packages/c8/5f/002f403604ce419867cf718c6d8a9405afe5ea8cf6a49d2fc440b7bf9eb9/triangle-20250106-cp313-cp313-win32.whl", hash = "sha256:54cc9eb2d585632f09fe95f6741e995284b9a990cbabd3cea36b392312d70e30", size = 1406951, upload-time = "2025-01-07T05:00:20.828Z" },
     { url = "https://files.pythonhosted.org/packages/94/45/7ef91af7b9b82fc049163d1840c0c2cabba774cca4752c3ddf3bef1fa71a/triangle-20250106-cp313-cp313-win_amd64.whl", hash = "sha256:f1eadad15ad9ceabf967342de54f6d4619647ddced83ddce18d33d8e08841b31", size = 1426523, upload-time = "2025-01-07T05:00:22.12Z" },
+]
+
+[[package]]
+name = "trimesh"
+version = "4.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/f3/bd9b67575bddcc7e4cca927461bd58006455208a2331262f7c9de0db8bb3/trimesh-4.10.0.tar.gz", hash = "sha256:502710a0b1f0317816507828a41e0cb1c595b895e344567fa42cd47388c2b72b", size = 831462, upload-time = "2025-11-24T19:57:51.693Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/81/951a108396aa850a096be95cd9ccd38ef9f33ae35b40b512be975e2c994d/trimesh-4.10.0-py3-none-any.whl", hash = "sha256:bdafda66d5c8a9564d7d82f5673c06f8b4fc51c86de959fafee0e169fcfea12a", size = 736626, upload-time = "2025-11-24T19:57:49.158Z" },
 ]
 
 [[package]]

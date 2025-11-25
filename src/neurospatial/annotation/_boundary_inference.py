@@ -26,9 +26,17 @@ class BoundaryConfig:
     ----------
     method : {"convex_hull", "alpha_shape", "kde"}
         Boundary inference algorithm. Default is "convex_hull".
+
+        - "convex_hull": Fast, robust, always produces single polygon.
+          Best for most cases where trajectory covers the environment.
+        - "alpha_shape": For concave environments (L-shapes, mazes).
+          Requires good spatial coverage. Install: pip install alphashape
+        - "kde": Density-based contour for irregular coverage or sparse
+          trajectories. Install: pip install scikit-image
     buffer_fraction : float
-        Buffer size as fraction of bounding box diagonal.
-        Default 0.02 (2%) adds small padding around boundary.
+        Buffer size as fraction of bounding box diagonal. For example,
+        if your trajectory spans 100 cm, buffer_fraction=0.02 adds
+        ~2 cm padding around the boundary. Default 0.02 (2%).
     simplify_fraction : float
         Simplification tolerance as fraction of bounding box diagonal.
         Default 0.01 (1%) removes jagged edges. Set to 0 to disable.
@@ -249,9 +257,13 @@ def _alpha_shape_boundary(
     if isinstance(result, MultiPolygon):
         largest = max(result.geoms, key=lambda g: g.area)
         warnings.warn(
-            f"Alpha shape produced {len(result.geoms)} disconnected regions. "
-            f"Using largest polygon (area={largest.area:.1f}). "
-            "Consider increasing alpha parameter for a single connected region.",
+            f"Alpha shape produced {len(result.geoms)} disconnected regions "
+            f"from your position data. Using largest polygon (area={largest.area:.1f}). "
+            f"This usually means your trajectory has spatial gaps or separate clusters.\n\n"
+            f"To fix:\n"
+            f"  1. Increase alpha from {alpha:.3f} to ~{alpha * 2:.3f} for a looser boundary\n"
+            f"  2. Use method='convex_hull' for guaranteed single polygon\n"
+            f"  3. Fill gaps in your position data before boundary inference",
             UserWarning,
             stacklevel=3,
         )
@@ -274,10 +286,14 @@ def _kde_boundary(
         Animal positions in (x, y) format.
     threshold : float
         Density threshold (0-1, fraction of max density).
+        Lower values capture more area; higher values are more selective.
     sigma : float
         Gaussian smoothing sigma in grid bins.
-    max_bins : int
-        Maximum bins per dimension.
+        Higher values produce smoother boundaries.
+    max_bins : int, default=512
+        Maximum bins per dimension for the density grid.
+        Caps memory usage for large coordinate ranges while maintaining
+        reasonable resolution. Actual bin count is min(max_bins, data_range/2).
 
     Returns
     -------
@@ -289,7 +305,8 @@ def _kde_boundary(
     ImportError
         If scikit-image not installed.
     ValueError
-        If no contour found at threshold.
+        If no contour found at threshold. Includes diagnostics and
+        suggested fixes.
     """
     try:
         from scipy.ndimage import gaussian_filter
@@ -319,9 +336,17 @@ def _kde_boundary(
     # Find contour at threshold
     contours = find_contours(hist_norm.T, level=threshold)
     if not contours:
+        max_density = hist_norm.max()
         raise ValueError(
-            f"No contour found at threshold {threshold}. "
-            "Try lowering kde_threshold or increasing kde_sigma."
+            f"No density contour found at threshold {threshold:.2f} "
+            f"(fraction of max density).\n"
+            f"Your position data may be too sparse or evenly distributed.\n\n"
+            f"To fix (try in order):\n"
+            f"  1. Lower kde_threshold from {threshold:.2f} to 0.05 (captures more area)\n"
+            f"  2. Increase kde_sigma from {sigma:.1f} to {sigma * 2:.1f} (smoother density)\n"
+            f"  3. Use method='convex_hull' instead (simpler, no tuning needed)\n\n"
+            f"Diagnostics: max_density={max_density:.3f}, threshold={threshold:.3f}, "
+            f"grid_size={n_bins}x{n_bins}"
         )
 
     # Take largest contour
