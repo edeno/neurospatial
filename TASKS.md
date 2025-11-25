@@ -47,17 +47,18 @@ Implement the simplest mazes first to establish patterns.
 
 **File**: `src/neurospatial/simulation/mazes/linear_track.py`
 
-- [ ] Create `LinearTrackDims(length=150.0, width=10.0)` frozen dataclass
-- [ ] Implement `make_linear_track(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment using `Environment.from_polygon()` (single rectangle)
-- [ ] Create track graph with `start` and `end` nodes + intermediate nodes
-- [ ] Add regions: `reward_left` (0, 0), `reward_right` (length, 0)
-- [ ] Set `env.units = "cm"`
-- [ ] Add doctests demonstrating usage
-- [ ] Add tests: `tests/simulation/mazes/test_linear_track.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_linear_track.py -v`
+- [x] Create `LinearTrackDims(length=150.0, width=10.0)` frozen dataclass
+- [x] Implement `make_linear_track(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment using `Environment.from_polygon()` (single rectangle)
+- [x] Create track graph with `start` and `end` nodes + intermediate nodes
+- [x] Add regions: `reward_left` (0, 0), `reward_right` (length, 0)
+- [x] Set `env.units = "cm"`
+- [x] Add doctests demonstrating usage
+- [x] Add tests: `tests/simulation/mazes/test_linear_track.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_linear_track.py -v`
 
 **Success criteria**:
+
 - `make_linear_track()` returns valid MazeEnvironments
 - `env_2d.units == "cm"`
 - Track graph is connected from start to end
@@ -79,6 +80,7 @@ Implement the simplest mazes first to establish patterns.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_t_maze.py -v`
 
 **Success criteria**:
+
 - Junction is at T-intersection
 - Track graph has 3 edges from junction node
 - All regions queryable
@@ -99,6 +101,7 @@ Implement the simplest mazes first to establish patterns.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_y_maze.py -v`
 
 **Success criteria**:
+
 - Arms are at correct 120° angles
 - Track graph has 3-way connectivity at center
 - Arm endpoints at correct positions (trigonometry verified)
@@ -125,6 +128,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_watermaze.py -v`
 
 **Success criteria**:
+
 - Pool is circular with correct diameter
 - Platform region is queryable
 - Quadrant regions partition the pool
@@ -145,6 +149,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_barnes.py -v`
 
 **Success criteria**:
+
 - Holes are evenly distributed on perimeter
 - Escape hole is one of the holes
 - 18 holes by default (original Barnes 1979)
@@ -167,6 +172,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_w_maze.py -v`
 
 **Success criteria**:
+
 - W shape is correct (3 vertical wells + horizontal base)
 - Track graph follows corridor path
 - All wells are accessible
@@ -185,6 +191,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_hex_small.py -v`
 
 **Success criteria**:
+
 - Hexagonal arrangement is correct
 - Triangular cluster shape (4-3-2-1 or similar)
 - Connectivity respects barrier constraints
@@ -208,6 +215,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_repeated_y.py -v`
 
 **Success criteria**:
+
 - 3 sequential Y-junctions
 - Dead ends have Warner-Warden split (two small corridors)
 - Track graph is connected
@@ -226,6 +234,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_repeated_t.py -v`
 
 **Success criteria**:
+
 - Comb/rake shape with 3 perpendicular arms
 - 90° angles at all junctions
 - Track graph correctly represents topology
@@ -245,6 +254,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_hampton_court.py -v`
 
 **Success criteria**:
+
 - Complex labyrinth structure with dead ends
 - Track graph navigable from start to goal
 - ~300 × 300 cm size
@@ -267,6 +277,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_radial_arm.py -v`
 
 **Success criteria**:
+
 - 8 arms by default (6 for mice variant)
 - Arms at correct angular spacing
 - Star graph topology from center
@@ -286,6 +297,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_cheeseboard.py -v`
 
 **Success criteria**:
+
 - Wells distributed across entire surface (not just perimeter)
 - Regular grid spacing
 - Wells within circular boundary only
@@ -308,6 +320,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_crossword.py -v`
 
 **Success criteria**:
+
 - 4×4 grid structure
 - 90° angles throughout
 - Four corner boxes identified as start/goal locations
@@ -326,6 +339,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_honeycomb.py -v`
 
 **Success criteria**:
+
 - 37 hexagonal platforms (1 center + 3 rings)
 - 6-connectivity in track graph
 - All platforms have region labels
@@ -344,6 +358,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_hamlet.py -v`
 
 **Success criteria**:
+
 - Pentagonal ring center with 5 arms
 - Each arm splits into 2 terminal boxes (10 total goals)
 - Track graph correctly represents connectivity
@@ -373,6 +388,7 @@ Implement circular arenas without complex topology.
 - [ ] Verify: `uv run pytest tests/simulation/mazes/test_rat_hexmaze.py -v`
 
 **Success criteria**:
+
 - 96 total nodes (3 × 32 from figure, or 4 × 24 from text)
 - 120° junction angles throughout
 - 3 distinct modules connected by bridges

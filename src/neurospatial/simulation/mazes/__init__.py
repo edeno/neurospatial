@@ -52,14 +52,19 @@ from neurospatial.simulation.mazes._geometry import (
     make_star_graph,
     union_polygons,
 )
+from neurospatial.simulation.mazes.linear_track import (
+    LinearTrackDims,
+    make_linear_track,
+)
 
 __all__ = [
+    "LinearTrackDims",
     "MazeDims",
     "MazeEnvironments",
-    # Geometry helpers
     "make_buffered_line",
     "make_circular_arena",
     "make_corridor_polygon",
+    "make_linear_track",
     "make_star_graph",
     "union_polygons",
 ]
