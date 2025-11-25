@@ -1126,7 +1126,10 @@ class TestEnvironment3D:
         trajectory = np.linspace(start_point, end_point, n_steps)
 
         # Calculate occupancy with max_gap=None to count all intervals
-        occupancy = simple_3d_env.occupancy(times, trajectory, max_gap=None)
+        # Use time_allocation='start' for MaskedGrid compatibility
+        occupancy = simple_3d_env.occupancy(
+            times, trajectory, max_gap=None, time_allocation="start"
+        )
 
         # Verify occupancy properties
         assert len(occupancy) == simple_3d_env.n_bins
@@ -1151,7 +1154,7 @@ class TestEnvironment3D:
             ]
         )
         stationary_occ = simple_3d_env.occupancy(
-            stationary_times, stationary_traj, max_gap=None
+            stationary_times, stationary_traj, max_gap=None, time_allocation="start"
         )
 
         # All time should be in one or a few bins
@@ -1160,11 +1163,35 @@ class TestEnvironment3D:
         # Should sum to ~10 seconds
         assert np.isclose(np.sum(stationary_occ), 10.0, rtol=0.1)
 
-        # Verify linear time allocation works in 3D
-        linear_occ = simple_3d_env.occupancy(
+    def test_3d_occupancy_linear_allocation(self):
+        """Test time_allocation='linear' in 3D requires RegularGridLayout.
+
+        Creates inline RegularGrid environment since MaskedGrid doesn't support
+        time_allocation='linear'.
+        """
+        # Create 3D RegularGrid environment from deterministic meshgrid
+        x = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+        y = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+        z = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+        xx, yy, zz = np.meshgrid(x, y, z)
+        positions = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
+        env_3d = Environment.from_samples(
+            positions, bin_size=2.0, name="test_3d_linear"
+        )
+
+        # Create trajectory
+        start_point = env_3d.bin_centers[0]
+        end_point = env_3d.bin_centers[-1]
+        n_steps = 100
+        times = np.linspace(0.0, 10.0, n_steps)
+        trajectory = np.linspace(start_point, end_point, n_steps)
+        total_time = times[-1] - times[0]
+
+        # Verify linear time allocation works in 3D with RegularGrid
+        linear_occ = env_3d.occupancy(
             times, trajectory, time_allocation="linear", max_gap=None
         )
-        assert len(linear_occ) == simple_3d_env.n_bins
+        assert len(linear_occ) == env_3d.n_bins
         assert np.all(np.isfinite(linear_occ))
         assert np.isclose(np.sum(linear_occ), total_time, rtol=0.1)
 

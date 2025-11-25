@@ -334,17 +334,11 @@ class TestEstimateTransform3D:
 
 
 class TestApplyTransformToEnvironment3D:
-    """Test apply_transform_to_environment with 3D environments."""
+    """Test apply_transform_to_environment with 3D environments.
 
-    @pytest.fixture
-    def simple_3d_env(self):
-        """Create a simple 3D environment."""
-        rng = np.random.default_rng(42)
-        data = rng.standard_normal((200, 3)) * 10
-        env = Environment.from_samples(data, bin_size=5.0, name="test_3d")
-        env.units = "cm"
-        env.frame = "session1"
-        return env
+    Uses session-scoped `simple_3d_env` fixture from conftest.py for most tests.
+    Tests that modify environment state create their own inline environments.
+    """
 
     def test_apply_3d_identity_transform(self, simple_3d_env):
         """Test applying 3D identity transform."""
@@ -454,12 +448,26 @@ class TestApplyTransformToEnvironment3D:
 
         assert transformed_env.name == "aligned_3d"
 
-    def test_3d_transform_with_regions(self, simple_3d_env):
-        """Test that 3D regions are transformed."""
-        simple_3d_env.regions.add("goal", point=np.array([5.0, 5.0, 5.0]))
+    def test_3d_transform_with_regions(self):
+        """Test that 3D regions are transformed.
+
+        Creates inline environment since test modifies state by adding regions.
+        """
+        # Create a fresh 3D environment (deterministic 5x5x5 grid)
+        # Bin edges at [0, 2, 4, 6, 8, 10] → 5 bins per dimension
+        mask = np.ones((5, 5, 5), dtype=bool)
+        edges = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
+        env = Environment.from_mask(
+            active_mask=mask,
+            grid_edges=(edges, edges, edges),
+            name="test_3d_regions",
+        )
+
+        # Add region (modifies environment)
+        env.regions.add("goal", point=np.array([5.0, 5.0, 5.0]))
 
         transform = translate_3d(10, 20, 30)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = apply_transform_to_environment(env, transform)
 
         assert "goal" in transformed_env.regions
         expected_point = np.array([15.0, 25.0, 35.0])

@@ -722,8 +722,8 @@ class TestTrajectoryIntegration:
             positions.append(positions[-1] + step)
         positions = np.array(positions)
 
-        # Compute occupancy
-        occ = simple_3d_env.occupancy(times, positions)
+        # Compute occupancy (use time_allocation='start' for MaskedGrid compatibility)
+        occ = simple_3d_env.occupancy(times, positions, time_allocation="start")
 
         # Should work without errors
         assert occ.shape == (simple_3d_env.n_bins,)

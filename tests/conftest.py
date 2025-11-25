@@ -525,25 +525,30 @@ def minimal_1d_env() -> Environment:
 def simple_3d_env() -> Environment:
     """A simple 3D environment for comprehensive 3D testing.
 
-    Creates a 3D grid from random samples in a 10x10x10 space.
-    Uses bin_size=2.0 and enables diagonal connectivity to test
-    full 3D neighbor connectivity (up to 26 neighbors per bin).
+    Creates a fully populated 5x5x5 grid (125 bins) with diagonal connectivity.
+    Uses bin_size=2.0 covering [0, 10] in each dimension.
+
+    Deterministic: Uses from_mask() with all-True mask for reproducible
+    bin structure across all runs.
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    # Generate random 3D position samples
-    rng = np.random.default_rng(42)  # Local RNG for test isolation
-    positions = rng.random((200, 3)) * 10.0  # 200 points in [0, 10] cube
+    # Fully populated 5x5x5 grid (125 bins total)
+    # Bin edges at [0, 2, 4, 6, 8, 10] → 5 bins per dimension
+    mask = np.ones((5, 5, 5), dtype=bool)
+    edges = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
+    grid_edges = (edges, edges, edges)
 
-    return Environment.from_samples(
-        positions=positions,
-        bin_size=2.0,
+    env = Environment.from_mask(
+        active_mask=mask,
+        grid_edges=grid_edges,
         name="Simple3DEnv",
         connect_diagonal_neighbors=True,  # Enable full 3D connectivity (up to 26 neighbors)
-        infer_active_bins=True,
-        bin_count_threshold=1,  # At least 1 sample per active bin
     )
+    env.units = "cm"
+    env.frame = "session1"
+    return env
 
 
 # =============================================================================
