@@ -237,6 +237,11 @@ def annotate_video(
     # "environment" or "both" → start in environment mode
     initial_annotation_mode: Role = "region" if mode == "regions" else "environment"
 
+    # Add positions layer FIRST so it appears below the shapes layer
+    # (napari layers are ordered bottom-to-top by insertion order)
+    if positions_for_display is not None:
+        _add_positions_layer(viewer, positions_for_display, calibration)
+
     # Add shapes layer with annotation-optimized settings
     # (features-based coloring, text labels, keyboard shortcuts)
     shapes = setup_shapes_layer_for_annotation(
@@ -260,9 +265,8 @@ def annotate_video(
             calibration=calibration,
         )
 
-    # 3. Finally add positions layer (separate layer, no conflict)
-    if positions_for_display is not None:
-        _add_positions_layer(viewer, positions_for_display, calibration)
+        # Start in vertex editing mode so users can immediately adjust boundary
+        shapes.mode = "direct"
 
     # Add annotation control widget (magicgui-based)
     widget = create_annotation_widget(
@@ -450,9 +454,11 @@ def _add_positions_layer(
     viewer.add_points(
         coords_rc,
         name="Trajectory (reference)",
-        size=3,
+        size=8,
         face_color="cyan",
-        opacity=0.3,
+        border_color="darkblue",
+        border_width=0.5,
+        opacity=0.5,
         blending="translucent",
     )
 

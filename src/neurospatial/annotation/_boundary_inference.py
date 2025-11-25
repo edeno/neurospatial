@@ -25,14 +25,15 @@ class BoundaryConfig:
     Parameters
     ----------
     method : {"convex_hull", "alpha_shape", "kde"}
-        Boundary inference algorithm. Default is "convex_hull".
+        Boundary inference algorithm. Default is "alpha_shape".
 
+        - "alpha_shape": Captures concave boundaries (L-shapes, mazes).
+          Provides tighter fit to actual trajectory. Falls back to
+          convex_hull if alphashape package not installed.
         - "convex_hull": Fast, robust, always produces single polygon.
-          Best for most cases where trajectory covers the environment.
-        - "alpha_shape": For concave environments (L-shapes, mazes).
-          Requires good spatial coverage. Install: pip install alphashape
+          Best when you want guaranteed simple results.
         - "kde": Density-based contour for irregular coverage or sparse
-          trajectories. Install: pip install scikit-image
+          trajectories. Requires scikit-image.
     buffer_fraction : float
         Buffer size as fraction of bounding box diagonal. For example,
         if your trajectory spans 100 cm, buffer_fraction=0.02 adds
@@ -45,10 +46,12 @@ class BoundaryConfig:
         Only used when method="alpha_shape". Default 0.05.
     kde_threshold : float
         Density threshold for KDE boundary (0-1, fraction of max density).
-        Only used when method="kde". Default 0.1.
+        Lower values capture more area. Only used when method="kde".
+        Default 0.05 (5% of peak density).
     kde_sigma : float
         Gaussian smoothing sigma for KDE (in grid bins).
-        Only used when method="kde". Default 3.0.
+        Higher values produce smoother, larger boundaries.
+        Only used when method="kde". Default 5.0.
     kde_max_bins : int
         Maximum number of bins per dimension for KDE grid.
         Caps memory usage for large coordinate ranges. Default 512.
@@ -61,18 +64,18 @@ class BoundaryConfig:
     >>> config.buffer_fraction
     0.05
 
-    >>> # Default config uses convex_hull with 2% buffer
+    >>> # Default config uses alpha_shape with 2% buffer
     >>> default_config = BoundaryConfig()
     >>> default_config.method
-    'convex_hull'
+    'alpha_shape'
     """
 
-    method: Literal["convex_hull", "alpha_shape", "kde"] = "convex_hull"
+    method: Literal["convex_hull", "alpha_shape", "kde"] = "alpha_shape"
     buffer_fraction: float = 0.02
     simplify_fraction: float = 0.01
     alpha: float = 0.05
-    kde_threshold: float = 0.1
-    kde_sigma: float = 3.0
+    kde_threshold: float = 0.05
+    kde_sigma: float = 5.0
     kde_max_bins: int = 512
 
 
@@ -181,7 +184,18 @@ def boundary_from_positions(
         boundary = _convex_hull_boundary(positions)
     elif effective_method == "alpha_shape":
         alpha = method_kwargs.get("alpha", cfg.alpha)
-        boundary = _alpha_shape_boundary(positions, alpha)
+        try:
+            boundary = _alpha_shape_boundary(positions, alpha)
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "alphashape package not installed. Falling back to convex_hull. "
+                "Install with: pip install alphashape",
+                UserWarning,
+                stacklevel=2,
+            )
+            boundary = _convex_hull_boundary(positions)
     elif effective_method == "kde":
         threshold = method_kwargs.get("kde_threshold", cfg.kde_threshold)
         sigma = method_kwargs.get("kde_sigma", cfg.kde_sigma)
