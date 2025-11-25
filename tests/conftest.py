@@ -337,6 +337,190 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
     )
 
 
+# =============================================================================
+# Dense Grid Fixtures for Metrics/Boundary Tests
+# =============================================================================
+# These fixtures replace inefficient nested-loop grid generation patterns.
+# Session-scoped for performance since environments are read-only in tests.
+
+
+@pytest.fixture(scope="session")
+def dense_rectangular_grid_env() -> Environment:
+    """Dense 50x50 rectangular grid for boundary/place field tests.
+
+    Uses vectorized meshgrid instead of nested loops for 100x faster creation.
+    Creates a grid with ~156 active bins at bin_size=4.0.
+
+    Use for: border_score tests, place field tests, region coverage tests.
+    """
+    x = np.linspace(0, 50, 500)
+    y = np.linspace(0, 50, 500)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    return Environment.from_samples(positions, bin_size=4.0)
+
+
+@pytest.fixture(scope="session")
+def dense_40x40_grid_env() -> Environment:
+    """Dense 40x40 rectangular grid for corner/edge tests.
+
+    Similar to dense_rectangular_grid_env but smaller extent.
+    Creates a grid with ~100 active bins at bin_size=4.0.
+
+    Use for: Corner field tests, edge case validation.
+    """
+    x = np.linspace(0, 40, 400)
+    y = np.linspace(0, 40, 400)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    return Environment.from_samples(positions, bin_size=4.0)
+
+
+@pytest.fixture(scope="session")
+def dense_50x50_bin5_env() -> Environment:
+    """Dense 50x50 rectangular grid with bin_size=5.0.
+
+    Same extent as dense_rectangular_grid_env but larger bins.
+    Creates a grid with ~100 active bins at bin_size=5.0.
+
+    Use for: Central field tests, euclidean distance tests.
+    """
+    x = np.linspace(0, 50, 500)
+    y = np.linspace(0, 50, 500)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    return Environment.from_samples(positions, bin_size=5.0)
+
+
+# =============================================================================
+# Spike Field Test Fixtures
+# =============================================================================
+# These fixtures replace the 39 identical Environment.from_samples() calls
+# in tests/test_spike_field.py.
+
+
+@pytest.fixture(scope="session")
+def spike_field_env_100() -> Environment:
+    """100x100 environment with bin_size=10 for spike field tests.
+
+    Standard diagonal trajectory covering the environment.
+    Creates ~100 active bins.
+
+    Use for: spike_to_field tests, compute_place_field tests.
+    """
+    positions = np.column_stack([np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)])
+    return Environment.from_samples(positions, bin_size=10.0)
+
+
+@pytest.fixture(scope="session")
+def spike_field_trajectory() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Standard trajectory for spike field tests (1000 points, 10 seconds).
+
+    Returns
+    -------
+    tuple[NDArray, NDArray]
+        (times, positions) where times is shape (1000,) and positions is (1000, 2).
+    """
+    positions = np.column_stack([np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)])
+    times = np.linspace(0, 10, 1000)
+    return times, positions
+
+
+@pytest.fixture(scope="session")
+def spike_field_env_random() -> Environment:
+    """Random uniform 60x60 environment with bin_size=5 for compute_place_field tests.
+
+    Uses seeded RNG for reproducibility.
+    Positions uniformly distributed in [20, 80] range.
+
+    Use for: compute_place_field tests with random coverage.
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.uniform(20, 80, (500, 2))
+    return Environment.from_samples(positions, bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def spike_field_random_trajectory() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Random trajectory for compute_place_field tests (500 points, 50 seconds).
+
+    Uses seeded RNG for reproducibility (DEFAULT_SEED=42).
+    Positions uniformly distributed in [20, 80] range.
+
+    Returns
+    -------
+    tuple[NDArray, NDArray]
+        (times, positions) where times is shape (500,) and positions is (500, 2).
+    """
+    rng = np.random.default_rng(DEFAULT_SEED)
+    positions = rng.uniform(20, 80, (500, 2))
+    times = np.linspace(0, 50, 500)
+    return times, positions
+
+
+# =============================================================================
+# Minimal Grid Fixtures for Occupancy/Transitions Tests
+# =============================================================================
+# These fixtures replace the 63 tiny environment creations
+# in test_occupancy.py (23) and test_transitions.py (40).
+
+
+@pytest.fixture(scope="session")
+def minimal_2d_grid_env() -> Environment:
+    """Minimal 10x10 grid for quick validation tests.
+
+    Creates a small environment from just 2 corner points.
+    Very fast to create, suitable for basic functionality tests.
+
+    Use for: Basic occupancy tests, simple validation.
+    """
+    data = np.array([[0, 0], [10, 10]], dtype=np.float64)
+    return Environment.from_samples(data, bin_size=2.0)
+
+
+@pytest.fixture(scope="session")
+def minimal_20x20_grid_env() -> Environment:
+    """Small 20x20 grid for trajectory tests.
+
+    Slightly larger than minimal_2d_grid_env for tests needing
+    more spatial resolution.
+
+    Use for: Trajectory occupancy tests, gap handling tests.
+    """
+    data = np.array([[0, 0], [20, 20]], dtype=np.float64)
+    return Environment.from_samples(data, bin_size=5.0)
+
+
+@pytest.fixture(scope="session")
+def linear_track_1d_env() -> Environment:
+    """Simple 1D linear track (6 positions, bin_size=2.5).
+
+    Creates a 1D environment suitable for transition testing.
+    Has ~4-5 bins along the track.
+
+    Use for: 1D transition tests, sequence validation.
+    """
+    return Environment.from_samples(
+        np.array([[i] for i in range(0, 11, 2)], dtype=np.float64),
+        bin_size=2.5,
+    )
+
+
+@pytest.fixture(scope="session")
+def minimal_1d_env() -> Environment:
+    """Minimal 1D environment from two endpoints (bin_size=5.0).
+
+    Creates a small 1D environment from just 2 corner points [0] and [10].
+    Very fast to create, suitable for validation/error tests.
+
+    Use for: Input validation tests, error handling tests.
+    """
+    return Environment.from_samples(
+        np.array([[0.0], [10.0]], dtype=np.float64),
+        bin_size=5.0,
+    )
+
+
 @pytest.fixture(scope="session")
 def simple_3d_env() -> Environment:
     """A simple 3D environment for comprehensive 3D testing.

@@ -2,7 +2,67 @@
 
 ## Current Work Session: 2025-11-25
 
-### Task: Complete test_occupancy.py Refactoring (Milestone 2.3)
+### Task: Complete test_transitions.py Refactoring (Milestone 2.4)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Reduce `Environment.from_samples()` calls from 44 → ~5 by using shared fixtures, and migrate global RNG to local RNG.
+
+**Results**:
+
+- **Before**: 44 inline `from_samples()` calls + 0 fixture references
+- **After**: 9 inline `from_samples()` calls + 31 fixture references
+- **Reduction**: 44 → 9 inline calls (80% reduction)
+- **RNG Migration**: 3 `np.random.seed()` → 0 (100% migrated)
+
+**Changes Made**:
+
+1. Created `minimal_1d_env` fixture in conftest.py for 1D validation tests
+
+2. Replaced 9 tests in TestTransitionsValidation with `minimal_1d_env`:
+   - test_missing_required_input, test_bins_with_times_positions_error
+   - test_times_without_positions, test_positions_without_times
+   - test_invalid_bin_indices, test_negative_lag, test_zero_lag
+   - test_empty_bins_array, test_single_bin_sequence
+
+3. Replaced 1 test in TestTransitionsBasic with `linear_track_1d_env`
+
+4. Replaced 2 tests in TestTransitionsAdjacencyFiltering with `linear_track_1d_env`
+
+5. Replaced 3 tests in TestTransitionsLag with `linear_track_1d_env`
+
+6. Replaced 4 tests in TestTransitionsEdgeCases with fixtures:
+   - 2 with `linear_track_1d_env`, 2 with `minimal_1d_env`
+
+7. Replaced 12 tests in TestTransitionsModelBased with fixtures:
+   - 9 with `linear_track_1d_env`, 3 with `minimal_1d_env`
+
+8. Migrated 3 global RNG calls to local `np.random.default_rng()`:
+   - test_transitions_on_hexagonal_grid
+   - test_transitions_on_masked_grid
+   - test_large_sequence
+
+**Why 9 tests remain inline** (all with documented reasons in docstrings):
+
+- `test_transitions_normalized`: needs 4-point environment
+- `test_transitions_from_trajectory`: needs 2D meshgrid for coverage
+- `test_symmetric_1d_track`: needs longer track (11 bins)
+- `test_grid_diagonal_transitions`: needs 2D grid for diagonal testing
+- `test_diffusion_locality`: needs longer track for locality effects
+- `test_transitions_on_hexagonal_grid`: needs 2D random for hexagonal
+- `test_transitions_on_masked_grid`: needs 2D random for masked grid
+- `test_large_sequence`: needs large 2D for performance testing
+- `test_model_based_sparse_format`: needs 2D for sparse format testing
+
+**Verification**:
+
+- All 40 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes (for test_transitions.py) ✅
+
+---
+
+## Previous Session: test_occupancy.py Refactoring (Milestone 2.3)
 
 **Status**: ✅ COMPLETE
 

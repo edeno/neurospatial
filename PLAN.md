@@ -10,7 +10,7 @@
 | 2.1 test_spike_field.py | ✅ DONE | Reduced from 39 → 19 calls, using 18 fixture references |
 | 2.2 test_boundary_cells.py | ✅ DONE | Reduced from 21 → 7 calls (67% reduction) |
 | 2.3 test_occupancy.py | ✅ DONE | Reduced from 22 → 4 calls (82% reduction), RNG migrated |
-| 2.4 test_transitions.py | ❌ NOT STARTED | Still 40 calls, 0 fixture usage |
+| 2.4 test_transitions.py | ✅ DONE | Reduced from 44 → 9 calls (80% reduction) |
 | 3. Parametrization | 🔶 IN PROGRESS | 37 parametrized groups (up from 6) |
 | 4. Animation conftest | ❌ NOT STARTED | `tests/animation/conftest.py` not created |
 | 5. Slow test markers | ✅ BASELINE | 71 tests marked (unchanged) |

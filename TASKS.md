@@ -62,17 +62,29 @@ Phase 1 fixtures are complete. These tasks are for reference only.
 - `test_occupancy_smoothing_mass_conservation`: needs bin_size=2.0 for smoothing
 - `test_occupancy_large_trajectory`: 100x100 grid for performance testing
 
-### 2.4 Refactor `test_transitions.py` ← **NEXT PRIORITY**
+### 2.4 Refactor `test_transitions.py` ✅ DONE
 
-**Current**: 40 calls, 0 fixture usage
-**Target**: ~5 calls
+**Before**: 44 inline calls, 0 fixture references
+**After**: 9 inline calls, 31 fixture references (80% reduction)
 
-- [ ] Read `tests/environment/test_transitions.py` and identify all `from_samples()` calls
-- [ ] Replace 1D track tests with `linear_track_1d_env` fixture
-- [ ] Replace 2D grid tests with `minimal_2d_grid_env` or `minimal_20x20_grid_env`
-- [ ] Parametrize bin sequence variations into combined tests
-- [ ] Document any tests requiring custom environments
-- [ ] Verify tests pass: `uv run pytest tests/environment/test_transitions.py -v`
+- [x] Read `tests/environment/test_transitions.py` and identify all `from_samples()` calls
+- [x] Replace 1D track tests with `linear_track_1d_env` fixture (18 tests)
+- [x] Replace validation tests with `minimal_1d_env` fixture (13 tests)
+- [x] Migrate 3 `np.random.seed()` calls to local `rng = np.random.default_rng(42)`
+- [x] Document tests requiring custom environments (class docstrings)
+- [x] Verify tests pass: `uv run pytest tests/environment/test_transitions.py -v`
+
+**Note**: 9 tests remain inline with documented reasons:
+
+- `test_transitions_normalized`: needs specific 4-point environment
+- `test_transitions_from_trajectory`: needs 2D meshgrid for trajectory testing
+- `test_symmetric_1d_track`: needs longer track (11 bins)
+- `test_grid_diagonal_transitions`: needs 2D grid for diagonal adjacency
+- `test_diffusion_locality`: needs longer track for locality testing
+- `test_transitions_on_hexagonal_grid`: needs 2D random environment
+- `test_transitions_on_masked_grid`: needs 2D random environment
+- `test_large_sequence`: needs larger 2D environment for performance
+- `test_model_based_sparse_format`: needs 2D environment for sparse format
 
 ---
 
