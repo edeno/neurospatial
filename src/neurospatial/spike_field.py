@@ -252,6 +252,11 @@ def _diffusion_kde(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     bandwidth: float,
+    *,
+    trajectory_bins: NDArray[np.int64] | None = None,
+    dt: NDArray[np.float64] | None = None,
+    occupancy_density: NDArray[np.float64] | None = None,
+    kernel: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Compute place field using graph-based diffusion KDE.
 
@@ -263,15 +268,37 @@ def _diffusion_kde(
     1. Count spikes and occupancy per bin
     2. Spread both using diffusion kernel (respects walls/boundaries)
     3. Normalize: firing_rate = spike_density / occupancy_density
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64]
+        Timestamps of spike occurrences.
+    times : NDArray[np.float64]
+        Timestamps of trajectory samples.
+    positions : NDArray[np.float64]
+        Position trajectory.
+    bandwidth : float
+        Smoothing bandwidth in environment units.
+    trajectory_bins : NDArray[np.int64] | None, optional
+        Precomputed bin indices for positions.
+    dt : NDArray[np.float64] | None, optional
+        Precomputed time intervals between position samples.
+    occupancy_density : NDArray[np.float64] | None, optional
+        Precomputed smoothed occupancy density.
+    kernel : NDArray[np.float64] | None, optional
+        Precomputed smoothing kernel matrix.
     """
     # Normalize positions to 2D
     if positions.ndim == 1:
         positions = positions[:, np.newaxis]
 
     # Get diffusion kernel (respects boundaries via graph)
-    kernel = cast("EnvironmentProtocol", env).compute_kernel(
-        bandwidth, mode="density", cache=True
-    )
+    if kernel is None:
+        kernel = cast("EnvironmentProtocol", env).compute_kernel(
+            bandwidth, mode="density", cache=True
+        )
 
     # === SPIKE DENSITY ===
     # Filter spikes to valid time range
@@ -305,19 +332,26 @@ def _diffusion_kde(
     spike_density = kernel @ spike_counts
 
     # === OCCUPANCY DENSITY ===
-    # Map trajectory to bins
-    traj_bins = env.bin_at(positions)
-    valid_traj_mask = traj_bins >= 0
-    traj_bins_valid = traj_bins[valid_traj_mask]
+    if occupancy_density is None:
+        # Map trajectory to bins (use precomputed if provided)
+        if trajectory_bins is None:
+            traj_bins = env.bin_at(positions)
+        else:
+            traj_bins = trajectory_bins
+        valid_traj_mask = traj_bins >= 0
+        traj_bins_valid = traj_bins[valid_traj_mask]
 
-    # Compute time spent per sample (dt)
-    dt = np.diff(times, prepend=times[0])[valid_traj_mask]
+        # Compute time spent per sample (use precomputed if provided)
+        dt_computed = np.diff(times, prepend=times[0]) if dt is None else dt
+        dt_valid = dt_computed[valid_traj_mask]
 
-    # Count occupancy per bin (weighted by dt)
-    occupancy_counts = np.bincount(traj_bins_valid, weights=dt, minlength=env.n_bins)
+        # Count occupancy per bin (weighted by dt)
+        occupancy_counts = np.bincount(
+            traj_bins_valid, weights=dt_valid, minlength=env.n_bins
+        )
 
-    # Spread occupancy using diffusion kernel
-    occupancy_density = kernel @ occupancy_counts
+        # Spread occupancy using diffusion kernel
+        occupancy_density = kernel @ occupancy_counts
 
     # === NORMALIZE ===
     firing_rate = np.zeros(env.n_bins, dtype=np.float64)
@@ -334,6 +368,10 @@ def _gaussian_kde(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     bandwidth: float,
+    *,
+    trajectory_bins: NDArray[np.int64] | None = None,
+    dt: NDArray[np.float64] | None = None,
+    occupancy_density: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Compute place field using standard Gaussian KDE.
 
@@ -346,7 +384,31 @@ def _gaussian_kde(
         spike_density = sum of Gaussian kernels centered at each spike
         occupancy_density = integral of Gaussian over trajectory
         firing_rate = spike_density / occupancy_density
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64]
+        Timestamps of spike occurrences.
+    times : NDArray[np.float64]
+        Timestamps of trajectory samples.
+    positions : NDArray[np.float64]
+        Position trajectory.
+    bandwidth : float
+        Smoothing bandwidth in environment units.
+    trajectory_bins : NDArray[np.int64] | None, optional
+        Precomputed bin indices for positions. Not used by this method
+        (included for API consistency).
+    dt : NDArray[np.float64] | None, optional
+        Precomputed time intervals between position samples.
+    occupancy_density : NDArray[np.float64] | None, optional
+        Precomputed occupancy density for each bin.
     """
+    # Silence unused parameter warning - trajectory_bins not used for gaussian_kde
+    # as we need actual positions for Euclidean distance calculation
+    _ = trajectory_bins
+
     # Normalize positions to 2D
     if positions.ndim == 1:
         positions = positions[:, np.newaxis]
@@ -370,8 +432,8 @@ def _gaussian_kde(
     else:
         spike_positions = np.zeros((0, positions.shape[1]))
 
-    # Compute dt for trajectory
-    dt = np.diff(times, prepend=times[0])
+    # Compute dt for trajectory (use precomputed if provided)
+    dt_computed = np.diff(times, prepend=times[0]) if dt is None else dt
 
     # For each bin center, compute KDE
     firing_rate = np.zeros(env.n_bins, dtype=np.float64)
@@ -386,14 +448,17 @@ def _gaussian_kde(
         else:
             spike_density = 0.0
 
-        # Occupancy density: integral of Gaussian over trajectory
-        traj_distances_sq = np.sum((positions - bin_center) ** 2, axis=1)
-        traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
-        occupancy_density = np.sum(traj_weights * dt)
+        # Occupancy density: use precomputed or compute
+        if occupancy_density is not None:
+            occ_dens = occupancy_density[i]
+        else:
+            traj_distances_sq = np.sum((positions - bin_center) ** 2, axis=1)
+            traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
+            occ_dens = np.sum(traj_weights * dt_computed)
 
         # Normalize
-        if occupancy_density > 0:
-            firing_rate[i] = spike_density / occupancy_density
+        if occ_dens > 0:
+            firing_rate[i] = spike_density / occ_dens
         else:
             firing_rate[i] = np.nan
 
@@ -473,6 +538,10 @@ def compute_place_field(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
+    trajectory_bins: NDArray[np.int64] | None = None,
+    dt: NDArray[np.float64] | None = None,
+    occupancy_density: NDArray[np.float64] | None = None,
+    kernel: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Compute place field from spike train with multiple estimation methods.
 
@@ -521,6 +590,22 @@ def compute_place_field(
         gaussian_kde, this parameter is ignored as low occupancy is handled
         naturally by the normalization. For binned method, 0.5 seconds is
         typical for place field analysis.
+    trajectory_bins : NDArray[np.int64] | None, default=None
+        Precomputed bin indices for positions. If provided, skips the
+        `env.bin_at(positions)` call. Useful when computing multiple place
+        fields from the same trajectory. Shape: (n_timepoints,).
+    dt : NDArray[np.float64] | None, default=None
+        Precomputed time intervals between position samples. If provided,
+        skips the `np.diff(times, prepend=times[0])` call. Shape: (n_timepoints,).
+    occupancy_density : NDArray[np.float64] | None, default=None
+        Precomputed smoothed occupancy density. If provided, skips occupancy
+        computation entirely. Useful when computing multiple place fields
+        from the same trajectory. Shape: (n_bins,). Only used with
+        method="diffusion_kde" or "gaussian_kde".
+    kernel : NDArray[np.float64] | None, default=None
+        Precomputed smoothing kernel matrix. If provided, skips the
+        `env.compute_kernel()` call. Shape: (n_bins, n_bins). Only used
+        with method="diffusion_kde".
 
     Returns
     -------
@@ -621,12 +706,55 @@ def compute_place_field(
             f"times and positions must have same length, got {len(times)} and {len(positions)}"
         )
 
+    # Validate precomputed parameter shapes
+    if trajectory_bins is not None and len(trajectory_bins) != len(positions):
+        raise ValueError(
+            f"trajectory_bins must have same length as positions, "
+            f"got {len(trajectory_bins)} and {len(positions)}"
+        )
+
+    if dt is not None and len(dt) != len(times):
+        raise ValueError(
+            f"dt must have same length as times, got {len(dt)} and {len(times)}"
+        )
+
+    if occupancy_density is not None and len(occupancy_density) != env.n_bins:
+        raise ValueError(
+            f"occupancy_density must have length n_bins={env.n_bins}, "
+            f"got {len(occupancy_density)}"
+        )
+
+    if kernel is not None and kernel.shape != (env.n_bins, env.n_bins):
+        raise ValueError(
+            f"kernel must have shape (n_bins, n_bins)=({env.n_bins}, {env.n_bins}), "
+            f"got {kernel.shape}"
+        )
+
     # Dispatch to appropriate backend
     match method:
         case "diffusion_kde":
-            return _diffusion_kde(env, spike_times, times, positions, bandwidth)
+            return _diffusion_kde(
+                env,
+                spike_times,
+                times,
+                positions,
+                bandwidth,
+                trajectory_bins=trajectory_bins,
+                dt=dt,
+                occupancy_density=occupancy_density,
+                kernel=kernel,
+            )
         case "gaussian_kde":
-            return _gaussian_kde(env, spike_times, times, positions, bandwidth)
+            return _gaussian_kde(
+                env,
+                spike_times,
+                times,
+                positions,
+                bandwidth,
+                trajectory_bins=trajectory_bins,
+                dt=dt,
+                occupancy_density=occupancy_density,
+            )
         case "binned":
             return _binned(
                 env, spike_times, times, positions, bandwidth, min_occupancy_seconds
