@@ -230,7 +230,8 @@ class TestPopulationVectorCorrelation:
     def test_population_vector_correlation_shape(self) -> None:
         """Test correlation matrix has correct shape."""
         # 3 cells, 50 bins
-        population_matrix = np.random.rand(3, 50)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((3, 50))
         corr_matrix = population_vector_correlation(population_matrix)
         # Should be 3x3 symmetric matrix
         assert corr_matrix.shape == (3, 3)
@@ -239,7 +240,8 @@ class TestPopulationVectorCorrelation:
 
     def test_population_vector_correlation_diagonal(self) -> None:
         """Test diagonal elements are 1.0 (self-correlation)."""
-        population_matrix = np.random.rand(5, 100)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((5, 100))
         corr_matrix = population_vector_correlation(population_matrix)
         # Diagonal should be all 1.0
         np.testing.assert_allclose(np.diag(corr_matrix), 1.0, rtol=1e-10)
@@ -247,7 +249,8 @@ class TestPopulationVectorCorrelation:
     def test_population_vector_correlation_identical_cells(self) -> None:
         """Test correlation of identical firing patterns."""
         # Two identical cells
-        pattern = np.random.rand(50)
+        rng = np.random.default_rng(42)
+        pattern = rng.random(50)
         population_matrix = np.vstack([pattern, pattern])
         corr_matrix = population_vector_correlation(population_matrix)
         # Off-diagonal should be 1.0 (perfect correlation)
@@ -257,10 +260,10 @@ class TestPopulationVectorCorrelation:
     def test_population_vector_correlation_orthogonal(self) -> None:
         """Test correlation of uncorrelated cells."""
         # Create orthogonal patterns (correlation ~ 0)
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n_bins = 1000  # Large number for better approximation
-        cell1 = np.random.randn(n_bins)
-        cell2 = np.random.randn(n_bins)
+        cell1 = rng.standard_normal(n_bins)
+        cell2 = rng.standard_normal(n_bins)
         population_matrix = np.vstack([cell1, cell2])
         corr_matrix = population_vector_correlation(population_matrix)
         # Should be close to 0 (not exactly due to randomness)
@@ -278,7 +281,8 @@ class TestPopulationVectorCorrelation:
 
     def test_population_vector_correlation_single_cell(self) -> None:
         """Test correlation matrix for single cell."""
-        population_matrix = np.random.rand(1, 50)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((1, 50))
         corr_matrix = population_vector_correlation(population_matrix)
         assert corr_matrix.shape == (1, 1)
         assert corr_matrix[0, 0] == pytest.approx(1.0)
@@ -286,8 +290,9 @@ class TestPopulationVectorCorrelation:
     def test_population_vector_correlation_constant_cells(self) -> None:
         """Test handling of cells with constant firing (zero variance)."""
         # Cell with constant firing rate (correlation undefined)
+        rng = np.random.default_rng(42)
         constant_cell = np.ones(50)
-        varying_cell = np.random.rand(50)
+        varying_cell = rng.random(50)
         population_matrix = np.vstack([constant_cell, varying_cell])
         corr_matrix = population_vector_correlation(population_matrix)
         # Correlation with constant cell should be NaN
@@ -318,8 +323,8 @@ class TestPopulationMetricsIntegration:
         spatial_info = np.array([1.2, 0.8, 1.5, 0.1, 1.0])
 
         # Create synthetic firing rate matrix
-        np.random.seed(42)
-        population_matrix = np.random.rand(n_cells, n_bins)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((n_cells, n_bins))
 
         # Test 1: Population coverage
         coverage = population_coverage(all_place_fields, n_bins)
