@@ -24,7 +24,7 @@ class BoundaryConfig:
 
     Parameters
     ----------
-    method : {"convex_hull", "alpha_shape", "kde"}
+    method : {"alpha_shape", "convex_hull"}
         Boundary inference algorithm. Default is "alpha_shape".
 
         - "alpha_shape": Captures concave boundaries (L-shapes, mazes).
@@ -32,8 +32,6 @@ class BoundaryConfig:
           convex_hull if alphashape package not installed.
         - "convex_hull": Fast, robust, always produces single polygon.
           Best when you want guaranteed simple results.
-        - "kde": Density-based contour for irregular coverage or sparse
-          trajectories. Requires scikit-image.
     buffer_fraction : float
         Buffer size as fraction of bounding box diagonal. For example,
         if your trajectory spans 100 cm, buffer_fraction=0.02 adds
@@ -44,23 +42,12 @@ class BoundaryConfig:
     alpha : float
         Alpha parameter for alpha_shape method (smaller = tighter fit).
         Only used when method="alpha_shape". Default 0.05.
-    kde_threshold : float
-        Density threshold for KDE boundary (0-1, fraction of max density).
-        Lower values capture more area. Only used when method="kde".
-        Default 0.05 (5% of peak density).
-    kde_sigma : float
-        Gaussian smoothing sigma for KDE (in grid bins).
-        Higher values produce smoother, larger boundaries.
-        Only used when method="kde". Default 5.0.
-    kde_max_bins : int
-        Maximum number of bins per dimension for KDE grid.
-        Caps memory usage for large coordinate ranges. Default 512.
 
     Examples
     --------
-    >>> config = BoundaryConfig(method="kde", buffer_fraction=0.05)
+    >>> config = BoundaryConfig(method="convex_hull", buffer_fraction=0.05)
     >>> config.method
-    'kde'
+    'convex_hull'
     >>> config.buffer_fraction
     0.05
 
@@ -70,18 +57,15 @@ class BoundaryConfig:
     'alpha_shape'
     """
 
-    method: Literal["convex_hull", "alpha_shape", "kde"] = "alpha_shape"
+    method: Literal["alpha_shape", "convex_hull"] = "alpha_shape"
     buffer_fraction: float = 0.02
     simplify_fraction: float = 0.01
     alpha: float = 0.05
-    kde_threshold: float = 0.05
-    kde_sigma: float = 5.0
-    kde_max_bins: int = 512
 
 
 def boundary_from_positions(
     positions: NDArray[np.float64],
-    method: Literal["convex_hull", "alpha_shape", "kde"] | None = None,
+    method: Literal["alpha_shape", "convex_hull"] | None = None,
     *,
     config: BoundaryConfig | None = None,
     buffer_fraction: float | None = None,
@@ -96,7 +80,7 @@ def boundary_from_positions(
     positions : NDArray[np.float64], shape (n_samples, 2)
         Animal positions in (x, y) format. NaN/Inf values are automatically
         filtered with a warning (common in tracking data for lost frames).
-    method : {"convex_hull", "alpha_shape", "kde"}, optional
+    method : {"alpha_shape", "convex_hull"}, optional
         Boundary inference algorithm. Overrides config.method if provided.
     config : BoundaryConfig, optional
         Full configuration object. If None, uses BoundaryConfig defaults.
@@ -105,7 +89,7 @@ def boundary_from_positions(
     simplify_fraction : float, optional
         Override config.simplify_fraction.
     **method_kwargs
-        Method-specific overrides (alpha, kde_threshold, kde_sigma, kde_max_bins).
+        Method-specific overrides (alpha for alpha_shape).
 
     Returns
     -------
@@ -116,8 +100,6 @@ def boundary_from_positions(
     ------
     ValueError
         If positions has wrong shape or insufficient points.
-    ImportError
-        If method="alpha_shape" and alphashape not installed.
 
     Examples
     --------
@@ -196,11 +178,6 @@ def boundary_from_positions(
                 stacklevel=2,
             )
             boundary = _convex_hull_boundary(positions)
-    elif effective_method == "kde":
-        threshold = method_kwargs.get("kde_threshold", cfg.kde_threshold)
-        sigma = method_kwargs.get("kde_sigma", cfg.kde_sigma)
-        max_bins = method_kwargs.get("kde_max_bins", cfg.kde_max_bins)
-        boundary = _kde_boundary(positions, threshold, sigma, max_bins)
     else:
         raise ValueError(f"Unknown method: {effective_method}")
 
@@ -304,97 +281,3 @@ def _alpha_shape_boundary(
         return largest
 
     return result
-
-
-def _kde_boundary(
-    positions: NDArray[np.float64],
-    threshold: float,
-    sigma: float,
-    max_bins: int = 512,
-) -> Polygon:
-    """Compute KDE-based boundary from density contour.
-
-    Parameters
-    ----------
-    positions : NDArray[np.float64], shape (n_samples, 2)
-        Animal positions in (x, y) format.
-    threshold : float
-        Density threshold (0-1, fraction of max density).
-        Lower values capture more area; higher values are more selective.
-    sigma : float
-        Gaussian smoothing sigma in grid bins.
-        Higher values produce smoother boundaries.
-    max_bins : int, default=512
-        Maximum bins per dimension for the density grid.
-        Caps memory usage for large coordinate ranges while maintaining
-        reasonable resolution. Actual bin count is min(max_bins, data_range/2).
-
-    Returns
-    -------
-    Polygon
-        Shapely Polygon representing density contour.
-
-    Raises
-    ------
-    ImportError
-        If scikit-image not installed.
-    ValueError
-        If no contour found at threshold. Includes diagnostics and
-        suggested fixes.
-    """
-    try:
-        from scipy.ndimage import gaussian_filter
-        from skimage.measure import find_contours
-    except ImportError as e:
-        raise ImportError(
-            "scikit-image is required for KDE boundary method. "
-            "Install with: pip install scikit-image"
-        ) from e
-
-    from shapely.geometry import Polygon
-
-    # Create 2D histogram with capped bin count
-    x_range = positions[:, 0].max() - positions[:, 0].min()
-    y_range = positions[:, 1].max() - positions[:, 1].min()
-    # Target ~2 unit bins but cap to prevent memory issues
-    n_bins = min(max_bins, max(50, int(max(x_range, y_range) / 2)))
-
-    hist, x_edges, y_edges = np.histogram2d(
-        positions[:, 0], positions[:, 1], bins=n_bins
-    )
-
-    # Smooth and normalize
-    hist_smooth = gaussian_filter(hist, sigma=sigma)
-    hist_norm = hist_smooth / hist_smooth.max()
-
-    # Find contour at threshold
-    contours = find_contours(hist_norm.T, level=threshold)
-    if not contours:
-        max_density = hist_norm.max()
-        raise ValueError(
-            f"No density contour found at threshold {threshold:.2f} "
-            f"(fraction of max density).\n"
-            f"Your position data may be too sparse or evenly distributed.\n\n"
-            f"To fix (try in order):\n"
-            f"  1. Lower kde_threshold from {threshold:.2f} to 0.05 (captures more area)\n"
-            f"  2. Increase kde_sigma from {sigma:.1f} to {sigma * 2:.1f} (smoother density)\n"
-            f"  3. Use method='convex_hull' instead (simpler, no tuning needed)\n\n"
-            f"Diagnostics: max_density={max_density:.3f}, threshold={threshold:.3f}, "
-            f"grid_size={n_bins}x{n_bins}"
-        )
-
-    # Take largest contour
-    largest = max(contours, key=len)
-
-    # Convert grid indices to coordinates
-    x_centers = (x_edges[:-1] + x_edges[1:]) / 2
-    y_centers = (y_edges[:-1] + y_edges[1:]) / 2
-
-    coords = np.column_stack(
-        [
-            np.interp(largest[:, 1], np.arange(len(x_centers)), x_centers),
-            np.interp(largest[:, 0], np.arange(len(y_centers)), y_centers),
-        ]
-    )
-
-    return Polygon(coords)

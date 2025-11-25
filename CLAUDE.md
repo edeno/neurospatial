@@ -388,11 +388,11 @@ from neurospatial.annotation import BoundaryConfig, boundary_from_positions
 result = annotate_video(
     "experiment.mp4",
     bin_size=2.0,
-    initial_boundary=positions,  # Auto-infer with convex hull, 2% buffer, 1% simplify
+    initial_boundary=positions,  # Auto-infer with alpha_shape, 2% buffer, 1% simplify
 )
 
 # With config for fine-tuning
-config = BoundaryConfig(method="kde", buffer_fraction=0.05)
+config = BoundaryConfig(method="convex_hull", buffer_fraction=0.05)
 result = annotate_video(
     "experiment.mp4",
     bin_size=2.0,
@@ -411,16 +411,16 @@ result = annotate_video(
 # Composable: create boundary explicitly for more control
 boundary = boundary_from_positions(
     positions,
-    method="alpha_shape",  # or "convex_hull", "kde"
+    method="alpha_shape",  # or "convex_hull"
     alpha=0.05,
     buffer_fraction=0.03,
 )
 result = annotate_video("experiment.mp4", bin_size=2.0, initial_boundary=boundary)
 
 # Available boundary inference methods:
-# - "convex_hull" (default): Fast, always convex, no extra dependencies
-# - "alpha_shape": Concave hull, tighter fit. Install: pip install alphashape
-# - "kde": Density-based contour. Install: pip install scikit-image
+# - "alpha_shape" (default): Concave hull, tighter fit. Install: pip install alphashape
+#   Falls back to convex_hull if alphashape not installed.
+# - "convex_hull": Fast, always convex, no extra dependencies
 ```
 
 **Annotation Keyboard Shortcuts:**

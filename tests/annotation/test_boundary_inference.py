@@ -13,13 +13,10 @@ class TestBoundaryConfig:
         from neurospatial.annotation import BoundaryConfig
 
         config = BoundaryConfig()
-        assert config.method == "convex_hull"
+        assert config.method == "alpha_shape"
         assert config.buffer_fraction == 0.02
         assert config.simplify_fraction == 0.01
         assert config.alpha == 0.05
-        assert config.kde_threshold == 0.1
-        assert config.kde_sigma == 3.0
-        assert config.kde_max_bins == 512
 
     def test_frozen(self):
         """Config is immutable."""
@@ -27,35 +24,29 @@ class TestBoundaryConfig:
 
         config = BoundaryConfig()
         with pytest.raises(AttributeError):
-            config.method = "kde"  # type: ignore[misc]
+            config.method = "convex_hull"  # type: ignore[misc]
 
     def test_custom_values(self):
         """Config accepts custom values."""
         from neurospatial.annotation import BoundaryConfig
 
         config = BoundaryConfig(
-            method="kde",
+            method="convex_hull",
             buffer_fraction=0.05,
             simplify_fraction=0.02,
             alpha=0.1,
-            kde_threshold=0.2,
-            kde_sigma=5.0,
-            kde_max_bins=256,
         )
-        assert config.method == "kde"
+        assert config.method == "convex_hull"
         assert config.buffer_fraction == 0.05
         assert config.simplify_fraction == 0.02
         assert config.alpha == 0.1
-        assert config.kde_threshold == 0.2
-        assert config.kde_sigma == 5.0
-        assert config.kde_max_bins == 256
 
     def test_method_literal_types(self):
         """Method must be one of the allowed values."""
         from neurospatial.annotation import BoundaryConfig
 
         # Valid methods should work
-        for method in ["convex_hull", "alpha_shape", "kde"]:
+        for method in ["convex_hull", "alpha_shape"]:
             config = BoundaryConfig(method=method)  # type: ignore[arg-type]
             assert config.method == method
 
@@ -159,8 +150,8 @@ class TestBoundaryFromPositionsValidation:
         with pytest.raises(ValueError, match="at least 3 valid points"):
             boundary_from_positions(positions)
 
-    def test_no_warning_without_nan(self):
-        """No warning emitted when data has no NaN values."""
+    def test_no_nan_warning_without_nan(self):
+        """No NaN filtering warning emitted when data has no NaN values."""
         import warnings
 
         from neurospatial.annotation import boundary_from_positions
@@ -168,9 +159,16 @@ class TestBoundaryFromPositionsValidation:
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (100, 2))
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # Fail on any warning
-            boundary = boundary_from_positions(positions)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            boundary = boundary_from_positions(
+                positions,
+                method="convex_hull",  # Use convex_hull to avoid alphashape warnings
+            )
+
+            # Check no NaN-related warnings
+            nan_warnings = [warning for warning in w if "NaN" in str(warning.message)]
+            assert len(nan_warnings) == 0
 
         assert boundary.is_valid
 
@@ -254,9 +252,10 @@ class TestBoundaryFromPositionsConfigOverride:
 class TestAlphaShape:
     """Tests for alpha shape boundary inference."""
 
-    def test_alpha_shape_import_error(self, monkeypatch):
-        """Clear error message if alphashape not installed."""
+    def test_alpha_shape_fallback_when_not_installed(self, monkeypatch):
+        """Falls back to convex_hull with warning if alphashape not installed."""
         import sys
+        import warnings
 
         from neurospatial.annotation import boundary_from_positions
 
@@ -265,13 +264,23 @@ class TestAlphaShape:
 
         positions = np.array([[0, 0], [0, 10], [10, 10], [10, 0], [5, 5]])
 
-        with pytest.raises(ImportError, match="alphashape package required"):
-            boundary_from_positions(
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            boundary = boundary_from_positions(
                 positions,
                 method="alpha_shape",
                 buffer_fraction=0,
                 simplify_fraction=0,
             )
+
+            # Should have warned about fallback
+            assert len(w) == 1
+            assert "alphashape package not installed" in str(w[0].message)
+            assert "Falling back to convex_hull" in str(w[0].message)
+
+        # Should still produce a valid boundary (convex hull fallback)
+        assert boundary.is_valid
+        assert isinstance(boundary, Polygon)
 
     def test_basic_alpha_shape(self):
         """Alpha shape boundary is valid polygon."""
@@ -345,102 +354,6 @@ class TestAlphaShape:
 
         # Should return largest polygon
         assert isinstance(boundary, Polygon)
-
-
-class TestKDE:
-    """Tests for KDE boundary inference."""
-
-    def test_kde_import_error(self, monkeypatch):
-        """Clear error message if scikit-image not installed."""
-        import sys
-
-        from neurospatial.annotation import boundary_from_positions
-
-        # Temporarily hide skimage module
-        monkeypatch.setitem(sys.modules, "skimage", None)
-        monkeypatch.setitem(sys.modules, "skimage.measure", None)
-
-        positions = np.array([[0, 0], [0, 10], [10, 10], [10, 0], [5, 5]])
-
-        with pytest.raises(ImportError, match="scikit-image is required"):
-            boundary_from_positions(
-                positions,
-                method="kde",
-                buffer_fraction=0,
-                simplify_fraction=0,
-            )
-
-    def test_basic_kde(self):
-        """KDE boundary is valid polygon."""
-        pytest.importorskip("skimage")
-
-        from neurospatial.annotation import boundary_from_positions
-
-        rng = np.random.default_rng(42)
-        # Use gaussian blob for clear density gradient (needed for contour detection)
-        positions = rng.normal(loc=50, scale=15, size=(1000, 2))
-
-        boundary = boundary_from_positions(
-            positions,
-            method="kde",
-            kde_sigma=3.0,
-            kde_threshold=0.1,
-            buffer_fraction=0,
-            simplify_fraction=0,
-        )
-
-        assert boundary.is_valid
-        assert isinstance(boundary, Polygon)
-
-    def test_max_bins_caps_grid_size(self):
-        """kde_max_bins prevents unbounded grid allocation."""
-        pytest.importorskip("skimage")
-
-        from neurospatial.annotation import boundary_from_positions
-
-        rng = np.random.default_rng(42)
-        # Large coordinate range that would create huge grid without cap
-        positions = rng.uniform(0, 10000, (1000, 2))
-
-        # Should not raise MemoryError due to max_bins cap
-        boundary = boundary_from_positions(
-            positions,
-            method="kde",
-            kde_max_bins=100,
-            buffer_fraction=0,
-            simplify_fraction=0,
-        )
-
-        assert boundary.is_valid
-
-    def test_threshold_affects_area(self):
-        """Lower threshold = larger boundary."""
-        pytest.importorskip("skimage")
-
-        from neurospatial.annotation import boundary_from_positions
-
-        rng = np.random.default_rng(42)
-        # Use gaussian blob for clear density gradient
-        positions = rng.normal(loc=50, scale=15, size=(1000, 2))
-
-        low_threshold = boundary_from_positions(
-            positions,
-            method="kde",
-            kde_threshold=0.05,  # Lower threshold = larger boundary
-            kde_sigma=3.0,
-            buffer_fraction=0,
-            simplify_fraction=0,
-        )
-        high_threshold = boundary_from_positions(
-            positions,
-            method="kde",
-            kde_threshold=0.3,  # Higher threshold = smaller boundary
-            kde_sigma=3.0,  # Same sigma for fair comparison
-            buffer_fraction=0,
-            simplify_fraction=0,
-        )
-
-        assert low_threshold.area > high_threshold.area
 
 
 @pytest.mark.gui
