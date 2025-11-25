@@ -680,33 +680,27 @@ Fixtures are defined in multiple locations, increasing maintenance cost and risk
 
 ---
 
-## Phase 9: Documentation Tests Review (Priority: LOW)
+## Phase 9: Documentation Tests Review (Priority: LOW) ✅ DONE
 
-### 9.1 Current State
+### 9.1 Resolution
 
-`tests/test_common_pitfalls.py` tests docstring content and formatting:
+`tests/test_common_pitfalls.py` has been **DELETED** as part of Milestone 8.
 
-- Verifies "Common Pitfalls" sections exist in `from_samples()` and `CompositeEnvironment.__init__()`
-- Checks for specific warning phrases (bin_size, threshold, units, morphological operations)
-- Validates NumPy docstring format (dashed underlines)
+**Rationale**: Docstring-based tests are better handled by:
 
-### 9.2 Design Decision
+- Documentation linters (sphinx, pydocstyle)
+- Manual code review
+- Static analysis tools
 
-These tests are **intentionally checking documentation quality** - they ensure that important user guidance isn't accidentally removed during refactoring.
+These provide better coverage without adding fragile runtime test dependencies on documentation content.
 
-**Current approach is reasonable**:
+### 9.2 Documentation Quality
 
-- Uses flexible phrase matching: `any(phrase in docstring.lower() for phrase in [...])`
-- Multiple alternative phrases accepted (e.g., "too large" OR "too big" OR "larger than")
-- Tests section structure, not exact wording
+Documentation quality is now ensured through:
 
-### 9.3 Maintenance Note
-
-When modifying `from_samples()` or `CompositeEnvironment.__init__()` docstrings:
-
-1. Run `uv run pytest tests/test_common_pitfalls.py -v` to verify documentation tests pass
-2. If legitimate docstring improvements break tests, update the phrase lists in test_common_pitfalls.py
-3. Consider: Are the checks still testing the right guarantees?
+- NumPy docstring format enforcement via ruff
+- Comprehensive tests/README.md guidelines
+- Code review process
 
 ---
 

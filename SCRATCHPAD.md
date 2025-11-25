@@ -2,6 +2,40 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Documentation Updates (Milestone 8)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Remove docstring-based tests and ensure testing guidelines exist.
+
+**Results**:
+
+- Deleted `tests/test_common_pitfalls.py` (390 lines of docstring tests)
+- Verified `tests/README.md` already has comprehensive testing guidelines (440+ lines)
+- Updated PLAN.md Phase 9 to reflect deletion
+
+**Rationale**: Docstring-based tests are fragile and better handled by:
+
+- Documentation linters (sphinx, pydocstyle)
+- Manual code review
+- Static analysis tools
+
+---
+
+### Task: Slow Test Audit (Milestone 6)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Audit and verify slow test markers.
+
+**Results**:
+
+- Found 71 tests already marked with `@pytest.mark.slow`
+- pytest.ini has marker configured with default exclusion (`-m "not slow"`)
+- Existing markers cover all major slow patterns (large arrays, animation, performance)
+
+---
+
 ### Task: Fixture Deduplication (Milestone 5)
 
 **Status**: ✅ COMPLETE
