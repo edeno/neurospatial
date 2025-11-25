@@ -2,6 +2,30 @@
 
 ## Current Work Session: 2025-11-25
 
+### Task: Migrate test_interpolate.py Global RNG (Milestone 3.2)
+
+**Status**: ✅ COMPLETE
+
+**Objective**: Migrate all global RNG seed calls to local `np.random.default_rng()` for test isolation in parallel execution.
+
+**Results**:
+
+- **Before**: 2 `np.random.seed(42)` calls + 2 `np.random.uniform()` calls
+- **After**: 0 global RNG seed calls (100% migrated)
+
+**Changes Made**:
+
+1. `test_interpolate_nearest_on_hexagonal`: `np.random.seed(42)` → `rng = np.random.default_rng(42)` and `np.random.uniform()` → `rng.uniform()`
+2. `test_linear_interpolation_of_plane`: Same migration pattern
+
+**Verification**:
+
+- All 25 tests pass ✅
+- Ruff check passes ✅
+- Mypy passes ✅
+
+---
+
 ### Task: Migrate test_validation_new.py Global RNG (Milestone 3.2)
 
 **Status**: ✅ COMPLETE

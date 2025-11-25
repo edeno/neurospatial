@@ -317,8 +317,8 @@ class TestInterpolateMultipleLayouts:
     def test_interpolate_nearest_on_hexagonal(self):
         """Nearest-neighbor should work on hexagonal layout."""
         # Create sample data for hexagonal grid
-        np.random.seed(42)
-        data_points = np.random.uniform(0, 10, size=(100, 2))
+        rng = np.random.default_rng(42)
+        data_points = rng.uniform(0, 10, size=(100, 2))
 
         env = Environment.from_samples(
             positions=data_points,
@@ -371,8 +371,8 @@ class TestInterpolateLinearAccuracy:
         field = a * env.bin_centers[:, 0] + b * env.bin_centers[:, 1] + c
 
         # Query at random points
-        np.random.seed(42)
-        query_points = np.random.uniform(0, 10, size=(50, 2))
+        rng = np.random.default_rng(42)
+        query_points = rng.uniform(0, 10, size=(50, 2))
 
         result = env.interpolate(field, query_points, mode="linear")
         expected = a * query_points[:, 0] + b * query_points[:, 1] + c
