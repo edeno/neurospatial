@@ -56,15 +56,21 @@ from neurospatial.simulation.mazes.linear_track import (
     LinearTrackDims,
     make_linear_track,
 )
+from neurospatial.simulation.mazes.t_maze import (
+    TMazeDims,
+    make_t_maze,
+)
 
 __all__ = [
     "LinearTrackDims",
     "MazeDims",
     "MazeEnvironments",
+    "TMazeDims",
     "make_buffered_line",
     "make_circular_arena",
     "make_corridor_polygon",
     "make_linear_track",
     "make_star_graph",
+    "make_t_maze",
     "union_polygons",
 ]

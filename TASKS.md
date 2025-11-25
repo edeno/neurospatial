@@ -68,16 +68,16 @@ Implement the simplest mazes first to establish patterns.
 
 **File**: `src/neurospatial/simulation/mazes/t_maze.py`
 
-- [ ] Create `TMazeDims(stem_length=100.0, arm_length=50.0, width=10.0)` frozen dataclass
-- [ ] Implement `make_t_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: union of 3 rectangles (stem + left arm + right arm)
-- [ ] Create track graph with nodes: `start`, `junction`, `left_end`, `right_end`
-- [ ] Add edges: start→junction, junction→left_end, junction→right_end
-- [ ] Add regions: `start`, `junction`, `left_end`, `right_end`
-- [ ] Set `env.units = "cm"` and center at (0, 0)
-- [ ] Add doctests
-- [ ] Add tests: `tests/simulation/mazes/test_t_maze.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_t_maze.py -v`
+- [x] Create `TMazeDims(stem_length=100.0, arm_length=50.0, width=10.0)` frozen dataclass
+- [x] Implement `make_t_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: union of 3 rectangles (stem + left arm + right arm)
+- [x] Create track graph with nodes: `start`, `junction`, `left_end`, `right_end`
+- [x] Add edges: start→junction, junction→left_end, junction→right_end
+- [x] Add regions: `start`, `junction`, `left_end`, `right_end`
+- [x] Set `env.units = "cm"` and center at (0, 0)
+- [x] Add doctests
+- [x] Add tests: `tests/simulation/mazes/test_t_maze.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_t_maze.py -v`
 
 **Success criteria**:
 

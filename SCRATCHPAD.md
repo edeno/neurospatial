@@ -1,7 +1,7 @@
 # Simulation Mazes Implementation - Scratchpad
 
 **Started**: 2025-11-25
-**Current Status**: Milestone 2.1 Complete - Linear Track done, next T-Maze
+**Current Status**: Milestone 2.2 Complete - T-Maze done, next Y-Maze
 
 ---
 
@@ -60,6 +60,39 @@
 **Type checking**: mypy passes
 
 **Code Review**: APPROVED - Excellent code quality, comprehensive test coverage, proper patterns
+
+---
+
+### 2025-11-25 - Milestone 2.2 Complete (T-Maze)
+
+**Completed**: T-Maze maze implementation
+
+**Work Done**:
+
+1. Created `tests/simulation/mazes/test_t_maze.py` with 26 tests:
+   - TMazeDims tests (frozen dataclass, defaults, custom values, inheritance)
+   - make_t_maze tests (env_2d, env_track, T-shape extent, all 4 regions)
+   - Track graph tests (3-edge topology, connectivity, positions, coverage)
+   - Docstring presence tests
+
+2. Implemented `src/neurospatial/simulation/mazes/t_maze.py`:
+   - `TMazeDims(stem_length=100.0, arm_length=50.0, width=10.0)` frozen dataclass
+   - `make_t_maze(dims, bin_size, include_track)` factory function
+   - 2D environment via `Environment.from_polygon()` using `union_polygons()`
+   - 1D track environment via `Environment.from_graph()` with 3-edge topology
+   - Regions: `start`, `junction`, `left_end`, `right_end`
+   - Maze centered at origin with stem from y=-50 to y=+50 and arms at y=+50
+
+3. Updated `__init__.py` to export `TMazeDims` and `make_t_maze`
+
+**Tests**: 26 tests pass (83 total maze tests)
+**Doctests**: 3 pass
+**Linting**: ruff check and format pass (1 import sorting fix)
+**Type checking**: mypy passes
+
+**Code Review**: APPROVED - Excellent pattern consistency with linear_track.py, comprehensive tests, proper NumPy docstrings
+
+**Next**: Milestone 2.3 - Y-Maze implementation
 
 ---
 
