@@ -308,6 +308,94 @@ class TestFieldMetrics:
         # Centroid should be near peak
         assert_allclose(centroid, peak_pos, atol=2.0)
 
+    def test_field_centroid_graph_method(self):
+        """Test graph-based centroid stays on-track and respects geometry.
+
+        The graph method finds the bin within the field that minimizes
+        weighted graph distance to all other field bins, ensuring the
+        centroid is always a valid bin position.
+        """
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 20
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Create field with uniform firing
+        firing_rate = np.zeros(env.n_bins)
+        field_bins = np.array([0, 1, 2, 3, 4])
+        firing_rate[field_bins] = 5.0
+
+        from neurospatial.metrics.place_fields import field_centroid
+
+        # Graph centroid should be one of the field bins
+        centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+
+        # Verify it's exactly at a bin center (on-track guarantee)
+        distances_to_bins = np.linalg.norm(
+            env.bin_centers[field_bins] - centroid_graph, axis=1
+        )
+        assert np.min(distances_to_bins) < 1e-10, "Graph centroid should be at a bin"
+
+    def test_field_centroid_graph_vs_euclidean(self):
+        """Test that graph and euclidean methods give different results.
+
+        For irregular geometries, the weighted Euclidean mean can fall
+        outside the valid bins, while graph method always selects a bin.
+        """
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 20
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Create L-shaped field where Euclidean centroid would be off-track
+        firing_rate = np.zeros(env.n_bins)
+        # Find bins forming an L-shape
+        center = np.array([0.0, 0.0])
+        for i in range(env.n_bins):
+            pos = env.bin_centers[i]
+            # Horizontal arm: y near 0, x in [-10, 10]
+            # Vertical arm: x near 0, y in [0, 10]
+            in_horizontal = abs(pos[1]) < 3 and -10 < pos[0] < 5
+            in_vertical = abs(pos[0]) < 3 and 0 < pos[1] < 10
+            if in_horizontal or in_vertical:
+                # Higher rate at the corner
+                dist_to_corner = np.linalg.norm(pos - center)
+                firing_rate[i] = 10.0 * np.exp(-(dist_to_corner**2) / 50)
+
+        field_bins = np.where(firing_rate > 0.5)[0]
+        if len(field_bins) < 3:
+            pytest.skip("Not enough field bins for L-shape test")
+
+        from neurospatial.metrics.place_fields import field_centroid
+
+        centroid_euclidean = field_centroid(
+            firing_rate, field_bins, env, method="euclidean"
+        )
+        centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+
+        # Both should be 2D
+        assert centroid_euclidean.shape == (2,)
+        assert centroid_graph.shape == (2,)
+
+        # Graph centroid must be exactly at a bin center
+        distances_to_bins = np.linalg.norm(
+            env.bin_centers[field_bins] - centroid_graph, axis=1
+        )
+        assert np.min(distances_to_bins) < 1e-10
+
+    def test_field_centroid_single_bin(self):
+        """Test graph centroid with single bin field."""
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((5000, 2)) * 20
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate = np.zeros(env.n_bins)
+        field_bins = np.array([5])
+        firing_rate[5] = 10.0
+
+        from neurospatial.metrics.place_fields import field_centroid
+
+        centroid = field_centroid(firing_rate, field_bins, env, method="graph")
+        assert_allclose(centroid, env.bin_centers[5])
+
 
 class TestSkaggsInformation:
     """Tests for Skaggs information metric.

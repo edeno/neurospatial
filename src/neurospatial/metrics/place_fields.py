@@ -530,6 +530,8 @@ def field_centroid(
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
     env: Environment,
+    *,
+    method: Literal["euclidean", "graph"] = "euclidean",
 ) -> NDArray[np.float64]:
     """
     Compute firing-rate-weighted centroid of place field.
@@ -542,6 +544,14 @@ def field_centroid(
         Bin indices comprising the field.
     env : EnvironmentProtocol
         Spatial environment.
+    method : {"euclidean", "graph"}, default "euclidean"
+        Method for computing centroid:
+
+        - ``"euclidean"``: Weighted mean in Euclidean space. Fast but may
+          place centroid off-track for irregular geometries.
+        - ``"graph"``: Weighted medoid using graph distances. Finds the bin
+          within the field that minimizes weighted graph distance to all
+          other field bins. Always on-track and respects maze geometry.
 
     Returns
     -------
@@ -550,7 +560,8 @@ def field_centroid(
 
     Notes
     -----
-    Centroid is computed as the firing-rate-weighted mean position:
+    For ``method="euclidean"``, centroid is computed as the firing-rate-weighted
+    mean position:
 
     .. math::
 
@@ -558,6 +569,18 @@ def field_centroid(
 
     where :math:`r_i` is firing rate and :math:`\\mathbf{p}_i` is position
     of bin :math:`i`.
+
+    For ``method="graph"``, the centroid is the bin that minimizes the
+    weighted sum of graph distances:
+
+    .. math::
+
+        c = \\arg\\min_j \\sum_i r_i \\cdot d_G(i, j)
+
+    where :math:`d_G(i, j)` is the shortest path distance in the environment
+    graph between bins :math:`i` and :math:`j`. This approach is preferred
+    for mazes and complex geometries where Euclidean distances can cross
+    walls.
 
     Examples
     --------
@@ -572,19 +595,69 @@ def field_centroid(
     >>> centroid.shape
     (2,)
 
+    Use graph-based centroid for maze environments:
+
+    >>> centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+
     """
+    import networkx as nx
+
     # Get positions and rates for field bins
     field_positions = env.bin_centers[field_bins]
     field_rates = firing_rate[field_bins]
 
-    # Compute weighted centroid
-    total_rate = np.sum(field_rates)
     centroid: NDArray[np.float64]
-    if total_rate == 0:
-        # Unweighted centroid if no firing
-        centroid = field_positions.mean(axis=0)
-    else:
-        centroid = np.sum(field_positions * field_rates[:, None], axis=0) / total_rate
+
+    if method == "euclidean":
+        # Compute weighted centroid in Euclidean space
+        total_rate = np.sum(field_rates)
+        if total_rate == 0:
+            # Unweighted centroid if no firing
+            centroid = field_positions.mean(axis=0)
+        else:
+            centroid = (
+                np.sum(field_positions * field_rates[:, None], axis=0) / total_rate
+            )
+
+    elif method == "graph":
+        # Compute weighted medoid using graph distances
+        # Find bin that minimizes sum of (rate * graph_distance) to all other bins
+
+        if len(field_bins) == 1:
+            # Single bin - return its position
+            centroid = field_positions[0]
+        else:
+            # Get graph and compute distances between field bins
+            graph = env.connectivity
+
+            # Compute weighted cost for each candidate bin
+            min_cost = np.inf
+            best_bin_idx = 0
+
+            for j, candidate_bin in enumerate(field_bins):
+                cost = 0.0
+                for i, source_bin in enumerate(field_bins):
+                    if i != j:
+                        # Get graph distance
+                        try:
+                            dist = nx.shortest_path_length(
+                                graph, source_bin, candidate_bin, weight="distance"
+                            )
+                        except nx.NetworkXNoPath:
+                            # No path - use large penalty
+                            dist = np.inf
+                        cost += field_rates[i] * dist
+
+                if cost < min_cost:
+                    min_cost = cost
+                    best_bin_idx = j
+
+            centroid = field_positions[best_bin_idx]
+
+    else:  # pragma: no cover
+        # Runtime safety check (type system enforces at compile time)
+        msg = f"Unknown method: {method}. Must be 'euclidean' or 'graph'."  # type: ignore[unreachable]
+        raise ValueError(msg)
 
     return centroid
 
