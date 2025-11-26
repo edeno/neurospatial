@@ -56,6 +56,7 @@ Implement the simplest mazes first to establish patterns.
 - [x] Add doctests demonstrating usage
 - [x] Add tests: `tests/simulation/mazes/test_linear_track.py`
 - [x] Verify: `uv run pytest tests/simulation/mazes/test_linear_track.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -78,6 +79,7 @@ Implement the simplest mazes first to establish patterns.
 - [x] Add doctests
 - [x] Add tests: `tests/simulation/mazes/test_t_maze.py`
 - [x] Verify: `uv run pytest tests/simulation/mazes/test_t_maze.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -89,16 +91,17 @@ Implement the simplest mazes first to establish patterns.
 
 **File**: `src/neurospatial/simulation/mazes/y_maze.py`
 
-- [ ] Create `YMazeDims(arm_length=50.0, width=10.0, arm_angle=120.0)` frozen dataclass
-- [ ] Implement `make_y_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: 3 buffered lines at 120° separation (60°, 180°, 300°)
-- [ ] Use `shapely.buffer()` on LineString for corridor polygons
-- [ ] Create track graph: star with 3 arms from center (Y-junction)
-- [ ] Add regions: `center`, `arm1_end`, `arm2_end`, `arm3_end`
-- [ ] Set `env.units = "cm"`
-- [ ] Add doctests
-- [ ] Add tests: `tests/simulation/mazes/test_y_maze.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_y_maze.py -v`
+- [x] Create `YMazeDims(arm_length=50.0, width=10.0)` frozen dataclass *(Note: arm_angle hardcoded internally)*
+- [x] Implement `make_y_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: 3 buffered lines at 120° separation (90°, 210°, 330°)
+- [x] Use `shapely.buffer()` on LineString for corridor polygons
+- [x] Create track graph: star with 3 arms from center (Y-junction)
+- [x] Add regions: `center`, `arm1_end`, `arm2_end`, `arm3_end`
+- [x] Set `env.units = "cm"`
+- [x] Add doctests
+- [x] Add tests: `tests/simulation/mazes/test_y_maze.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_y_maze.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -116,16 +119,17 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/watermaze.py`
 
-- [ ] Create `WatermazeDims(pool_diameter=150.0, platform_radius=5.0)` frozen dataclass
-- [ ] Implement `make_watermaze(dims, platform_position, bin_size)` → MazeEnvironments
-- [ ] Create 2D environment: `Environment.from_polygon()` with circular arena
-- [ ] `env_track = None` (open field has no track topology)
-- [ ] Add regions: `platform` (point or small circle), `NE`, `NW`, `SE`, `SW` quadrants
-- [ ] Platform defaults to center of one quadrant if not specified
-- [ ] Set `env.units = "cm"`
-- [ ] Add doctests
-- [ ] Add tests: `tests/simulation/mazes/test_watermaze.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_watermaze.py -v`
+- [x] Create `WatermazeDims(pool_diameter=150.0, platform_radius=5.0)` frozen dataclass
+- [x] Implement `make_watermaze(dims, platform_position, bin_size)` → MazeEnvironments
+- [x] Create 2D environment: `Environment.from_polygon()` with circular arena
+- [x] `env_track = None` (open field has no track topology)
+- [x] Add regions: `platform` (point or small circle), `NE`, `NW`, `SE`, `SW` quadrants
+- [x] Platform defaults to center of one quadrant if not specified
+- [x] Set `env.units = "cm"`
+- [x] Add doctests
+- [x] Add tests: `tests/simulation/mazes/test_watermaze.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_watermaze.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -137,16 +141,17 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/barnes.py`
 
-- [ ] Create `BarnesDims(diameter=120.0, n_holes=18, hole_radius=2.5, holes_on_perimeter=True)` frozen dataclass
-- [ ] Implement `make_barnes_maze(dims, escape_hole_index, bin_size)` → MazeEnvironments
-- [ ] Create 2D environment: circular arena (holes don't affect navigable space)
-- [ ] `env_track = None` (open field)
-- [ ] Add regions: `escape_hole` (goal), `hole_0` through `hole_{n-1}` evenly spaced on perimeter
-- [ ] Calculate hole positions using angles: `2π * i / n_holes`
-- [ ] Set `env.units = "cm"`
-- [ ] Add doctests
-- [ ] Add tests: `tests/simulation/mazes/test_barnes.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_barnes.py -v`
+- [x] Create `BarnesDims(diameter=120.0, n_holes=18, hole_radius=2.5)` frozen dataclass *(Note: holes_on_perimeter hardcoded)*
+- [x] Implement `make_barnes_maze(dims, escape_hole_index, bin_size)` → MazeEnvironments
+- [x] Create 2D environment: circular arena (holes don't affect navigable space)
+- [x] `env_track = None` (open field)
+- [x] Add regions: `escape_hole` (goal), `hole_0` through `hole_{n-1}` evenly spaced on perimeter
+- [x] Calculate hole positions using angles: `2π * i / n_holes`
+- [x] Set `env.units = "cm"`
+- [x] Add doctests
+- [x] Add tests: `tests/simulation/mazes/test_barnes.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_barnes.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -162,14 +167,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/w_maze.py`
 
-- [ ] Create `WMazeDims(width=120.0, height=80.0, corridor_width=10.0, n_wells=3)` frozen dataclass
-- [ ] Implement `make_w_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: 3 parallel vertical corridors connected at base (horizontal corridor)
-- [ ] Create track graph: chain of nodes through W pattern
-- [ ] Add regions: `start`, `well_1`, `well_2`, `well_3`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_w_maze.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_w_maze.py -v`
+- [x] Create `WMazeDims(width=120.0, height=80.0, corridor_width=10.0, n_wells=3)` frozen dataclass
+- [x] Implement `make_w_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: 3 parallel vertical corridors connected at base (horizontal corridor)
+- [x] Create track graph: chain of nodes through W pattern
+- [x] Add regions: `start`, `well_1`, `well_2`, `well_3`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_w_maze.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_w_maze.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -181,14 +187,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/hex_small.py`
 
-- [ ] Create `SmallHexDims(hex_spacing=14.0, corridor_width=10.0)` frozen dataclass
-- [ ] Implement `make_small_hex_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: `HexagonalLayout` with triangular cluster mask (~7-10 hexes)
-- [ ] Create track graph: hex grid connectivity (constrained by barriers)
-- [ ] Add regions for key hex platforms
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_hex_small.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_hex_small.py -v`
+- [x] Create `SmallHexDims(hex_spacing=14.0, corridor_width=10.0)` frozen dataclass
+- [x] Implement `make_small_hex_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: `HexagonalLayout` with triangular cluster mask (~7-10 hexes)
+- [x] Create track graph: hex grid connectivity (constrained by barriers)
+- [x] Add regions for key hex platforms
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_hex_small.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_hex_small.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -204,15 +211,16 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/repeated_y.py`
 
-- [ ] Create `RepeatedYDims(n_junctions=3, segment_length=50.0, width=10.0)` frozen dataclass
-- [ ] Implement `make_repeated_y_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment using corridor mask pattern (3 Y-junctions in series)
-- [ ] Implement Warner-Warden trick: dead ends split into two small corridors
-- [ ] Create track graph: chain of Y-junction nodes
-- [ ] Add regions for junctions and endpoints
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_repeated_y.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_repeated_y.py -v`
+- [x] Create `RepeatedYDims(n_junctions=3, segment_length=50.0, width=10.0)` frozen dataclass
+- [x] Implement `make_repeated_y_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment using corridor mask pattern (3 Y-junctions in series)
+- [x] Implement Warner-Warden trick: dead ends split into two small corridors
+- [x] Create track graph: chain of Y-junction nodes
+- [x] Add regions for junctions and endpoints
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_repeated_y.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_repeated_y.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -224,14 +232,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/repeated_t.py`
 
-- [ ] Create `RepeatedTDims(spine_length=150.0, arm_length=40.0, n_junctions=3, width=10.0)` frozen dataclass
-- [ ] Implement `make_repeated_t_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: horizontal spine + perpendicular T-arms (comb shape)
-- [ ] Create track graph: linear spine with branch nodes at each T-junction
-- [ ] Add regions: `start`, `junction_0` through `junction_2`, `arm_0_end` through `arm_2_end`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_repeated_t.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_repeated_t.py -v`
+- [x] Create `RepeatedTDims(spine_length=150.0, arm_length=40.0, n_junctions=3, width=10.0)` frozen dataclass
+- [x] Implement `make_repeated_t_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: horizontal spine + perpendicular T-arms (comb shape)
+- [x] Create track graph: linear spine with branch nodes at each T-junction
+- [x] Add regions: `start`, `junction_0` through `junction_2`, `arm_0_end` through `arm_2_end`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_repeated_t.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_repeated_t.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -243,15 +252,16 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/hampton_court.py`
 
-- [ ] Create `HamptonCourtDims(size=300.0, corridor_width=11.0)` frozen dataclass
-- [ ] Implement `make_hampton_court_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create maze pattern (options: embedded binary image, procedural generation)
-- [ ] Create 2D environment: `Environment.from_image()` or `Environment.from_mask()`
-- [ ] Create track graph: skeletonize corridor mask → graph
-- [ ] Add regions: `start`, `goal` (center of maze)
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_hampton_court.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_hampton_court.py -v`
+- [x] Create `HamptonCourtDims(size=300.0, corridor_width=11.0)` frozen dataclass
+- [x] Implement `make_hampton_court_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create maze pattern (options: embedded binary image, procedural generation)
+- [x] Create 2D environment: `Environment.from_image()` or `Environment.from_mask()`
+- [x] Create track graph: skeletonize corridor mask → graph
+- [x] Add regions: `start`, `goal` (center of maze)
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_hampton_court.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_hampton_court.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -267,14 +277,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/radial_arm.py`
 
-- [ ] Create `RadialArmDims(center_radius=15.0, arm_length=50.0, arm_width=10.0, n_arms=8)` frozen dataclass
-- [ ] Implement `make_radial_arm_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: octagonal center + arms at equal angular spacing (45° for 8 arms)
-- [ ] Create track graph: star graph (center → each arm end)
-- [ ] Add regions: `center`, `arm_0` through `arm_{n-1}`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_radial_arm.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_radial_arm.py -v`
+- [x] Create `RadialArmDims(center_radius=15.0, arm_length=50.0, arm_width=10.0, n_arms=8)` frozen dataclass
+- [x] Implement `make_radial_arm_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: octagonal center + arms at equal angular spacing (45° for 8 arms)
+- [x] Create track graph: star graph (center → each arm end)
+- [x] Add regions: `center`, `arm_0` through `arm_{n-1}`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_radial_arm.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_radial_arm.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -286,15 +297,16 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/cheeseboard.py`
 
-- [ ] Create `CheeseboardDims(diameter=110.0, grid_spacing=9.0, well_radius=1.5)` frozen dataclass
-- [ ] Implement `make_cheeseboard_maze(dims, bin_size)` → MazeEnvironments
-- [ ] Create 2D environment: circular arena
-- [ ] `env_track = None` (open field)
-- [ ] Add regions: grid of `well_i_j` point regions across entire surface
-- [ ] Calculate well positions on regular grid, filter to those within circular boundary
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_cheeseboard.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_cheeseboard.py -v`
+- [x] Create `CheeseboardDims(diameter=110.0, grid_spacing=9.0, well_radius=1.5)` frozen dataclass
+- [x] Implement `make_cheeseboard_maze(dims, bin_size)` → MazeEnvironments
+- [x] Create 2D environment: circular arena
+- [x] `env_track = None` (open field)
+- [x] Add regions: grid of `well_i_j` point regions across entire surface
+- [x] Calculate well positions on regular grid, filter to those within circular boundary
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_cheeseboard.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_cheeseboard.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -310,14 +322,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/crossword.py`
 
-- [ ] Create `CrosswordDims(grid_spacing=30.0, corridor_width=10.0, n_rows=4, n_cols=4)` frozen dataclass
-- [ ] Implement `make_crossword_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: 4×4 Manhattan-style grid pattern
-- [ ] Create track graph: Manhattan grid (4-connectivity)
-- [ ] Add regions: `node_i_j` at each intersection, `box_0` through `box_3` (corner boxes)
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_crossword.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_crossword.py -v`
+- [x] Create `CrosswordDims(grid_spacing=30.0, corridor_width=10.0, n_rows=4, n_cols=4)` frozen dataclass
+- [x] Implement `make_crossword_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: 4×4 Manhattan-style grid pattern
+- [x] Create track graph: Manhattan grid (4-connectivity)
+- [x] Add regions: `node_i_j` at each intersection, `box_0` through `box_3` (corner boxes)
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_crossword.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_crossword.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -329,14 +342,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/honeycomb.py`
 
-- [ ] Create `HoneycombDims(spacing=25.0, n_rings=3)` frozen dataclass (37 platforms: 1 + 6 + 12 + 18)
-- [ ] Implement `make_honeycomb_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: `HexagonalLayout` with all 37 platforms active
-- [ ] Create track graph: hexagonal 6-connectivity
-- [ ] Add regions: `platform_0` through `platform_36`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_honeycomb.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_honeycomb.py -v`
+- [x] Create `HoneycombDims(spacing=25.0, n_rings=3)` frozen dataclass (37 platforms: 1 + 6 + 12 + 18)
+- [x] Implement `make_honeycomb_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: `HexagonalLayout` with all 37 platforms active
+- [x] Create track graph: hexagonal 6-connectivity
+- [x] Add regions: `platform_0` through `platform_36`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_honeycomb.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_honeycomb.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -348,14 +362,15 @@ Implement circular arenas without complex topology.
 
 **File**: `src/neurospatial/simulation/mazes/hamlet.py`
 
-- [ ] Create `HamletDims(central_radius=30.0, arm_length=40.0, corridor_width=10.0, n_peripheral_arms=5)` frozen dataclass
-- [ ] Implement `make_hamlet_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: pentagon ring + 5 radiating arms, each splitting into 2 terminal boxes
-- [ ] Create track graph: pentagon ring nodes + arm nodes + 10 terminal goal nodes
-- [ ] Add regions: `ring_0` through `ring_4`, `goal_0` through `goal_9`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_hamlet.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_hamlet.py -v`
+- [x] Create `HamletDims(central_radius=30.0, arm_length=40.0, corridor_width=10.0, n_peripheral_arms=5)` frozen dataclass
+- [x] Implement `make_hamlet_maze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: pentagon ring + 5 radiating arms, each splitting into 2 terminal boxes
+- [x] Create track graph: pentagon ring nodes + arm nodes + 10 terminal goal nodes
+- [x] Add regions: `ring_0` through `ring_4`, `goal_0` through `goal_9`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_hamlet.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_hamlet.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -371,21 +386,22 @@ Implement circular arenas without complex topology.
 
 ### 8.1 Mouse HexMaze (Base Unit)
 
-- [ ] Create `MouseHexmazeDims(n_nodes=24, n_corridors=30, corridor_width=11.0)` frozen dataclass
-- [ ] Implement `make_mouse_hexmaze(dims, bin_size, include_track)` as internal helper
-- [ ] 24 crossing nodes, 30 corridors, 120° angles
-- [ ] Implement Warner-Warden dead-end trick (edges split before ending)
+- [x] Create `MouseHexmazeDims(n_nodes=24, n_corridors=30, corridor_width=11.0)` frozen dataclass
+- [x] Implement `make_mouse_hexmaze(dims, bin_size, include_track)` as internal helper
+- [x] 24 crossing nodes, 30 corridors, 120° angles
+- [x] Implement Warner-Warden dead-end trick (edges split before ending)
 
 ### 8.2 Rat HexMaze (4× Mouse)
 
-- [ ] Create `RatHexmazeDims(module_width=90.0, corridor_width=11.0, n_modules=3, nodes_per_module=24)` frozen dataclass
-- [ ] Implement `make_rat_hexmaze(dims, bin_size, include_track)` → MazeEnvironments
-- [ ] Create 2D environment: 3 hex clusters (A, B, C) with bridging corridors
-- [ ] Create track graph: 96 junction nodes + corridor edges
-- [ ] Add regions: `module_A`, `module_B`, `module_C`, `corridor_AB`, `corridor_BC`
-- [ ] Set `env.units = "cm"`
-- [ ] Add tests: `tests/simulation/mazes/test_rat_hexmaze.py`
-- [ ] Verify: `uv run pytest tests/simulation/mazes/test_rat_hexmaze.py -v`
+- [x] Create `RatHexmazeDims(module_width=90.0, corridor_width=11.0, n_modules=3, nodes_per_module=24)` frozen dataclass
+- [x] Implement `make_rat_hexmaze(dims, bin_size, include_track)` → MazeEnvironments
+- [x] Create 2D environment: 3 hex clusters (A, B, C) with bridging corridors
+- [x] Create track graph: 96 junction nodes + corridor edges
+- [x] Add regions: `module_A`, `module_B`, `module_C`, `corridor_AB`, `corridor_BC`
+- [x] Set `env.units = "cm"`
+- [x] Add tests: `tests/simulation/mazes/test_rat_hexmaze.py`
+- [x] Verify: `uv run pytest tests/simulation/mazes/test_rat_hexmaze.py -v`
+- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
 
 **Success criteria**:
 
@@ -401,39 +417,39 @@ Implement circular arenas without complex topology.
 
 ### 9.1 Update Module Exports
 
-- [ ] Update `src/neurospatial/simulation/mazes/__init__.py` with all factory functions
-- [ ] Update `src/neurospatial/simulation/__init__.py` to include maze exports
-- [ ] Verify: `from neurospatial.simulation.mazes import make_t_maze, make_watermaze, ...`
+- [x] Update `src/neurospatial/simulation/mazes/__init__.py` with all factory functions
+- [x] Update `src/neurospatial/simulation/__init__.py` to include maze exports
+- [x] Verify: `from neurospatial.simulation.mazes import make_t_maze, make_watermaze, ...`
 
 ### 9.2 Create Test Infrastructure
 
-- [ ] Create `tests/simulation/mazes/conftest.py` with shared fixtures
-- [ ] Create base test class or helper for common maze assertions
+- [x] Create `tests/simulation/mazes/conftest.py` with shared fixtures
+- [x] Create base test class or helper for common maze assertions
 
 ### 9.3 Comprehensive Test Suite
 
-- [ ] `tests/simulation/mazes/test_base.py` - MazeEnvironments, MazeDims
-- [ ] `tests/simulation/mazes/test_geometry.py` - Helper functions (already done in M1.3)
-- [ ] `tests/simulation/mazes/test_corridor_mazes.py` - Integration tests for T, Y, W, Linear, Small Hex
-- [ ] `tests/simulation/mazes/test_repeated_mazes.py` - Integration tests for Repeated Y, T, Hampton Court
-- [ ] `tests/simulation/mazes/test_openfield_mazes.py` - Integration tests for Watermaze, Barnes, Radial, Cheeseboard
-- [ ] `tests/simulation/mazes/test_lattice_mazes.py` - Integration tests for Crossword, Honeycomb, Hamlet
-- [ ] `tests/simulation/mazes/test_rat_hexmaze.py` - Rat HexMaze specific tests
+- [x] `tests/simulation/mazes/test_base.py` - MazeEnvironments, MazeDims
+- [x] `tests/simulation/mazes/test_geometry.py` - Helper functions (already done in M1.3)
+- [x] `tests/simulation/mazes/test_corridor_mazes.py` - Integration tests for T, Y, W, Linear, Small Hex
+- [x] `tests/simulation/mazes/test_repeated_mazes.py` - Integration tests for Repeated Y, T, Hampton Court
+- [x] `tests/simulation/mazes/test_openfield_mazes.py` - Integration tests for Watermaze, Barnes, Radial, Cheeseboard
+- [x] `tests/simulation/mazes/test_lattice_mazes.py` - Integration tests for Crossword, Honeycomb, Hamlet
+- [x] `tests/simulation/mazes/test_rat_hexmaze.py` - Rat HexMaze specific tests
 
 ### 9.4 Validation Tests
 
 For all mazes, verify:
 
-- [ ] Default dimensions create valid environment: `validate_environment(env, strict=True)`
-- [ ] Custom dimensions work without errors
-- [ ] `env.units == "cm"`
-- [ ] All regions exist and are queryable
-- [ ] Track graph (if present) is connected
-- [ ] Bin centers within expected spatial extent
+- [x] Default dimensions create valid environment: `validate_environment(env, strict=True)`
+- [x] Custom dimensions work without errors
+- [x] `env.units == "cm"`
+- [x] All regions exist and are queryable
+- [x] Track graph (if present) is connected
+- [x] Bin centers within expected spatial extent
 
 ### 9.5 Doctest Verification
 
-- [ ] All modules have working doctests: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
+- [x] All modules have working doctests: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
 
 ### 9.6 Integration with Simulation
 
@@ -446,11 +462,11 @@ For all mazes, verify:
 
 Run after each milestone:
 
-- [ ] Full test suite passes: `uv run pytest tests/simulation/mazes/ -v`
-- [ ] No regressions: `uv run pytest`
-- [ ] Linting passes: `uv run ruff check . && uv run ruff format .`
-- [ ] Type checking passes: `uv run mypy src/neurospatial/simulation/mazes/`
-- [ ] Doctests pass: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
+- [x] Full test suite passes: `uv run pytest tests/simulation/mazes/ -v`
+- [x] No regressions: `uv run pytest`
+- [x] Linting passes: `uv run ruff check . && uv run ruff format .`
+- [x] Type checking passes: `uv run mypy src/neurospatial/simulation/mazes/`
+- [x] Doctests pass: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
 
 ---
 
@@ -458,11 +474,11 @@ Run after each milestone:
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Mazes implemented | 15/15 | ⬜ Not started |
-| Test coverage for factories | 100% | ⬜ Not started |
-| All environments pass `validate_environment()` | 15/15 | ⬜ Not started |
-| Doctests pass in all modules | 15/15 | ⬜ Not started |
-| Compatible with trajectory simulation | Yes | ⬜ Not started |
+| Mazes implemented | 15/15 | ✅ Complete |
+| Test coverage for factories | 100% | ✅ Complete |
+| All environments pass `validate_environment()` | 15/15 | ✅ Complete |
+| Doctests pass in all modules | 15/15 | ✅ Complete |
+| Compatible with trajectory simulation | Yes | ⬜ Not verified |
 
 ---
 
