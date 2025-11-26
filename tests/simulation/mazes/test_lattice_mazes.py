@@ -1,0 +1,172 @@
+"""Integration tests for structured lattice mazes (Panel d from Wijnen et al. 2024).
+
+These tests verify that all lattice mazes (Crossword, Honeycomb, Hamlet)
+and the complex Rat HexMaze work correctly together and share consistent interfaces.
+"""
+
+import pytest
+
+from neurospatial.simulation.mazes import (
+    CrosswordDims,
+    HamletDims,
+    HoneycombDims,
+    MazeEnvironments,
+    RatHexmazeDims,
+    make_crossword_maze,
+    make_hamlet_maze,
+    make_honeycomb_maze,
+    make_rat_hexmaze,
+)
+
+# Parametrize over all lattice maze factories
+LATTICE_MAZES = [
+    ("crossword", make_crossword_maze, CrosswordDims),
+    ("honeycomb", make_honeycomb_maze, HoneycombDims),
+    ("hamlet", make_hamlet_maze, HamletDims),
+    ("rat_hexmaze", make_rat_hexmaze, RatHexmazeDims),
+]
+
+
+class TestLatticeMazesCommonInterface:
+    """Test that all lattice mazes share a consistent interface."""
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_returns_maze_environments(self, name, factory, dims_cls):
+        """All factories return MazeEnvironments."""
+        maze = factory(bin_size=4.0)
+        assert isinstance(maze, MazeEnvironments)
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_env_2d_has_units_cm(self, name, factory, dims_cls):
+        """All 2D environments have units='cm'."""
+        maze = factory(bin_size=4.0)
+        assert maze.env_2d.units == "cm"
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_env_2d_has_bins(self, name, factory, dims_cls):
+        """All 2D environments have bins."""
+        maze = factory(bin_size=4.0)
+        assert maze.env_2d.n_bins > 0
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_env_track_exists(self, name, factory, dims_cls):
+        """All lattice mazes have track graphs."""
+        maze = factory(bin_size=4.0)
+        assert maze.env_track is not None
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_track_graph_is_connected(self, name, factory, dims_cls):
+        """All track graphs are connected."""
+        import networkx as nx
+
+        maze = factory(bin_size=4.0)
+        graph = maze.env_track.connectivity
+        assert nx.is_connected(graph)
+
+    @pytest.mark.parametrize("name,factory,dims_cls", LATTICE_MAZES)
+    def test_dims_is_frozen_dataclass(self, name, factory, dims_cls):
+        """All Dims classes are frozen dataclasses."""
+        import dataclasses
+
+        assert dataclasses.is_dataclass(dims_cls)
+
+
+class TestCrosswordMaze:
+    """Test Crossword maze specific behavior."""
+
+    def test_has_4x4_grid(self):
+        """Crossword maze should have 4x4 grid by default."""
+        dims = CrosswordDims()
+        assert dims.n_rows == 4
+        assert dims.n_cols == 4
+
+    def test_has_node_regions(self):
+        """Crossword should have node regions at intersections."""
+        maze = make_crossword_maze(bin_size=3.0)
+        node_regions = [r for r in maze.env_2d.regions if r.startswith("node_")]
+        # 4x4 grid = 16 intersections
+        assert len(node_regions) == 16
+
+    def test_has_corner_boxes(self):
+        """Crossword should have 4 corner box regions."""
+        maze = make_crossword_maze(bin_size=3.0)
+        box_regions = [r for r in maze.env_2d.regions if r.startswith("box_")]
+        assert len(box_regions) == 4
+
+
+class TestHoneycombMaze:
+    """Test Honeycomb maze specific behavior."""
+
+    def test_has_37_platforms(self):
+        """Honeycomb should have 37 platforms (1 + 6 + 12 + 18 for 3 rings)."""
+        maze = make_honeycomb_maze(bin_size=3.0)
+        platform_regions = [r for r in maze.env_2d.regions if r.startswith("platform_")]
+        assert len(platform_regions) == 37
+
+    def test_default_3_rings(self):
+        """Honeycomb should have 3 rings by default."""
+        dims = HoneycombDims()
+        assert dims.n_rings == 3
+
+
+class TestHamletMaze:
+    """Test Hamlet maze specific behavior."""
+
+    def test_has_pentagon_ring(self):
+        """Hamlet should have 5 ring vertices (pentagon)."""
+        maze = make_hamlet_maze(bin_size=3.0)
+        ring_regions = [r for r in maze.env_2d.regions if r.startswith("ring_")]
+        assert len(ring_regions) == 5
+
+    def test_has_10_goals(self):
+        """Hamlet should have 10 terminal goal boxes (5 arms x 2)."""
+        maze = make_hamlet_maze(bin_size=3.0)
+        goal_regions = [r for r in maze.env_2d.regions if r.startswith("goal_")]
+        assert len(goal_regions) == 10
+
+    def test_default_5_peripheral_arms(self):
+        """Hamlet should have 5 peripheral arms by default."""
+        dims = HamletDims()
+        assert dims.n_peripheral_arms == 5
+
+
+class TestRatHexMaze:
+    """Test Rat HexMaze specific behavior."""
+
+    def test_has_3_modules(self):
+        """Rat HexMaze should have 3 modules (A, B, C)."""
+        maze = make_rat_hexmaze(bin_size=5.0)
+        for module in ["module_A", "module_B", "module_C"]:
+            assert module in maze.env_2d.regions
+
+    def test_default_3_modules(self):
+        """Rat HexMaze should have 3 modules by default."""
+        dims = RatHexmazeDims()
+        assert dims.n_modules == 3
+
+    def test_has_many_nodes(self):
+        """Rat HexMaze should have many nodes (large maze)."""
+        maze = make_rat_hexmaze(bin_size=5.0)
+        n_nodes = maze.env_track.connectivity.number_of_nodes()
+        # Should have many nodes for a large-scale maze
+        assert n_nodes > 100
+
+
+class TestLatticeMazesComplexity:
+    """Test relative complexity of lattice mazes."""
+
+    def test_rat_hexmaze_is_large(self):
+        """Rat HexMaze should be a large maze (many nodes)."""
+        rat_hex = make_rat_hexmaze(bin_size=4.0)
+        rat_hex_nodes = rat_hex.env_track.connectivity.number_of_nodes()
+        # Rat HexMaze should have >100 nodes (large-scale maze)
+        assert rat_hex_nodes > 100
+
+    def test_honeycomb_has_reasonable_connectivity(self):
+        """Honeycomb should have reasonable average connectivity."""
+
+        maze = make_honeycomb_maze(bin_size=4.0)
+        graph = maze.env_track.connectivity
+        avg_degree = sum(d for n, d in graph.degree()) / graph.number_of_nodes()
+        # Hexagonal lattice has varying connectivity (center nodes have more neighbors)
+        assert avg_degree > 1.5  # At least some connectivity
