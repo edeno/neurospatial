@@ -177,6 +177,68 @@ class TestSpatialAutocorrelation:
 class TestGridScore:
     """Tests for grid_score function."""
 
+    def test_grid_score_anchor_perfect_hexagonal(self):
+        """Anchor test: Synthetic perfect hexagonal pattern should score > 0.3.
+
+        Mathematical reasoning:
+        - Perfect hexagonal symmetry has correlation at 60°, 120° rotations
+        - Grid score = min(r60, r120) - max(r30, r90, r150)
+        - For perfect hex: r60 ≈ r120 ≈ 1.0, r30 ≈ r90 ≈ r150 ≈ low
+        - Expected score > 0.3 (literature threshold for grid cells)
+
+        Reference: Langston et al. (2010) Science
+        """
+        from neurospatial.metrics.grid_cells import grid_score
+
+        # Create synthetic autocorrelogram with perfect hexagonal peaks
+        size = 100
+        autocorr = np.zeros((size, size))
+        center = size // 2
+
+        # Central peak
+        y_grid, x_grid = np.ogrid[:size, :size]
+        dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
+        autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))  # Central Gaussian
+
+        # Add 6 peaks at 60° intervals (hexagonal pattern)
+        radius = 20  # Distance from center to peaks
+        for angle_deg in [0, 60, 120, 180, 240, 300]:
+            angle_rad = np.radians(angle_deg)
+            peak_y = center + int(radius * np.sin(angle_rad))
+            peak_x = center + int(radius * np.cos(angle_rad))
+            peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
+            autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
+
+        # Normalize
+        autocorr = autocorr / autocorr.max()
+
+        score = grid_score(autocorr)
+
+        # Perfect hexagonal pattern should have score > 0.3 (conservative threshold)
+        assert score > 0.3, (
+            f"Expected grid score > 0.3 for hexagonal pattern, got {score}"
+        )
+
+    def test_grid_score_anchor_isotropic_noise(self):
+        """Anchor test: Isotropic random noise should have score near 0.
+
+        Mathematical reasoning:
+        - Random noise has no systematic angular structure
+        - Correlations at all rotation angles are approximately equal
+        - Grid score = min(r60, r120) - max(r30, r90, r150) ≈ 0
+        """
+        from neurospatial.metrics.grid_cells import grid_score
+
+        # Create random autocorrelogram (seeded for reproducibility)
+        rng = np.random.default_rng(12345)
+        size = 50
+        autocorr = rng.random((size, size)) * 0.5 + 0.5
+
+        score = grid_score(autocorr)
+
+        # Random noise should have score near 0 (within ±0.3)
+        assert abs(score) < 0.3, f"Expected grid score near 0 for noise, got {score}"
+
     def test_hexagonal_pattern_high_score(self):
         """Test hexagonal grid pattern produces high grid score."""
         from neurospatial.metrics.grid_cells import grid_score
@@ -291,6 +353,59 @@ class TestGridScore:
 
 class TestPeriodicityScore:
     """Tests for periodicity_score function."""
+
+    def test_periodicity_score_anchor_perfect_sine(self):
+        """Anchor test: Perfect sinusoidal correlation should have high periodicity.
+
+        Mathematical reasoning:
+        - Sinusoidal pattern has evenly-spaced peaks
+        - Peak spacing is perfectly regular (variance = 0)
+        - Periodicity score = 1 - CV(peak_spacings) where CV = std/mean
+        - For perfect periodicity: CV ≈ 0, score ≈ 1.0
+        """
+        from neurospatial.metrics.grid_cells import periodicity_score
+
+        # Create perfect sinusoidal correlation profile
+        distances = np.linspace(0, 100, 200)
+        period = 20.0  # Peaks every 20 units
+        correlations = 0.5 * np.sin(2 * np.pi * distances / period) + 0.5
+
+        score = periodicity_score(distances, correlations, min_peaks=2)
+
+        # Perfect sine should have high periodicity score (> 0.8)
+        assert score > 0.8, f"Expected periodicity score > 0.8 for sine, got {score}"
+
+    def test_periodicity_score_anchor_jittered_peaks(self):
+        """Anchor test: Highly jittered peaks should have low periodicity.
+
+        Mathematical reasoning:
+        - Random peak spacing has high variance
+        - CV = std/mean will be high when spacing varies
+        - Periodicity score = 1 - CV will be low
+        """
+        from neurospatial.metrics.grid_cells import periodicity_score
+
+        # Create correlation with irregular peaks (jittered positions)
+        distances = np.linspace(0, 100, 200)
+        correlations = np.zeros(200)
+
+        # Add peaks at irregular intervals (10, 25, 55, 90) instead of regular
+        for peak_pos in [10, 25, 55, 90]:
+            peak_idx = np.argmin(np.abs(distances - peak_pos))
+            # Add Gaussian-shaped peak
+            peak_width = 3
+            for i in range(max(0, peak_idx - 10), min(200, peak_idx + 10)):
+                dist_from_peak = abs(i - peak_idx)
+                correlations[i] += np.exp(-(dist_from_peak**2) / (2 * peak_width**2))
+
+        correlations = correlations / correlations.max()
+
+        score = periodicity_score(distances, correlations, min_peaks=3)
+
+        # Irregular spacing should have lower periodicity score (< 0.7)
+        assert score < 0.7, (
+            f"Expected periodicity score < 0.7 for jittered, got {score}"
+        )
 
     def test_regular_peaks_high_score(self):
         """Test regular periodic peaks produce high periodicity score."""

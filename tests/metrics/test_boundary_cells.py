@@ -20,6 +20,71 @@ from neurospatial import Environment
 class TestBorderScore:
     """Test border_score function."""
 
+    def test_border_score_anchor_boundary_only_field(self) -> None:
+        """Anchor test: Field active ONLY on boundary bins should have score ≈ 1.0.
+
+        This is a hand-derived expectation: when the field is exactly the
+        boundary bins, the mean distance from field to boundary is 0,
+        and coverage is maximal, giving a score near 1.0.
+
+        Mathematical reasoning:
+        - dM (mean distance from field centroid to nearest boundary) ≈ 0
+        - cM (coverage of boundary by field) = 1.0 (full coverage)
+        - border_score = cM - dM = 1.0 - 0 = 1.0
+        """
+        from neurospatial.metrics.boundary_cells import border_score
+
+        # Create a 4x4 grid (16 bins total, 12 boundary bins)
+        x = np.linspace(0, 30, 300)
+        y = np.linspace(0, 30, 300)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create field that is exactly the boundary bins
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[env.boundary_bins] = 5.0
+
+        score = border_score(firing_rate, env)
+
+        # Boundary-only field should have score very close to 1.0
+        assert score > 0.9, f"Expected score > 0.9 for boundary-only field, got {score}"
+
+    def test_border_score_anchor_single_center_bin(self) -> None:
+        """Anchor test: Field active ONLY in center bin should have negative score.
+
+        This is a hand-derived expectation: a single central bin has
+        maximum distance from boundaries and zero boundary coverage.
+
+        Mathematical reasoning:
+        - Field centroid is far from any boundary
+        - dM (normalized mean distance) will be high
+        - cM (boundary coverage) = 0 (no boundary bins in field)
+        - border_score = cM - dM = 0 - dM < 0
+        """
+        from neurospatial.metrics.boundary_cells import border_score
+
+        # Create a 5x5 grid (25 bins) - center bin is index 12
+        x = np.linspace(0, 50, 500)
+        y = np.linspace(0, 50, 500)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Find the most central bin
+        center_point = np.array([25.0, 25.0])
+        distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
+        center_bin = np.argmin(distances)
+
+        # Create field active only in center bin
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[center_bin] = 5.0
+
+        score = border_score(firing_rate, env)
+
+        # Central-only field should have negative score (far from boundary)
+        assert score < 0.0, f"Expected score < 0 for central-only field, got {score}"
+
     def test_border_score_perfect_border_cell(
         self, dense_rectangular_grid_env: Environment
     ) -> None:

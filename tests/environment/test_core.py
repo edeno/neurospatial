@@ -205,8 +205,11 @@ class TestEnvironmentFromDataSamplesGrid:
     def test_creation_grid(self, grid_env_from_samples: Environment):
         """Test basic attributes for grid layout."""
         assert grid_env_from_samples.name == "PlusMazeGrid"
-        assert grid_env_from_samples.layout._layout_type_tag == "RegularGrid"
-        assert grid_env_from_samples._is_fitted
+        # Verify this is a grid layout via public properties/behavior
+        assert grid_env_from_samples.grid_shape is not None  # Grid layouts have shape
+        assert grid_env_from_samples.grid_edges is not None  # Grid layouts have edges
+        # Verify fitted state through public behavior (methods work without error)
+        assert grid_env_from_samples.n_bins > 0  # Fitted env has bins
         assert not grid_env_from_samples.is_1d
         assert grid_env_from_samples.n_dims == 2
 

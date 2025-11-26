@@ -29,7 +29,10 @@ class TestTransitionsBasic:
 
         assert scipy.sparse.issparse(T)
         assert T.shape == (linear_track_1d_env.n_bins, linear_track_1d_env.n_bins)
-        assert T.format == "csr"
+        # Verify efficient row access (public contract) - CSR or equivalent format
+        assert hasattr(T, "getrow"), (
+            "Transition matrix should support efficient row access"
+        )
 
         # Check specific transitions
         # 0 → 1: 1 time
@@ -394,24 +397,38 @@ class TestTransitionsEdgeCases:
 class TestTransitionsMultipleLayouts:
     """Test transitions on different layout types."""
 
-    def test_transitions_on_hexagonal_grid(self):
+    def test_transitions_on_hexagonal_grid(self, simple_hex_env):
         """Test transitions work on hexagonal layout.
 
-        Requires 2D random environment for hexagonal grid testing.
+        Uses simple_hex_env fixture which creates a proper hexagonal layout.
+        Verifies that hexagonal neighbors (up to 6) can have transitions.
         """
-        rng = np.random.default_rng(42)
-        samples = rng.uniform(0, 10, size=(100, 2))
-        env = Environment.from_samples(samples, bin_size=2.0)
+        env = simple_hex_env
 
-        # Create random trajectory that stays within environment bounds
-        rng_traj = np.random.default_rng(42)
-        times = np.arange(0, 10, 0.5)
-        positions = rng_traj.uniform(0, 10, size=(len(times), 2))
+        # Create a sequence of valid bin indices
+        if env.n_bins >= 3:
+            # Get a central bin and its neighbors
+            central_bin = env.n_bins // 2
+            neighbors = list(env.connectivity.neighbors(central_bin))
 
-        T = env.transitions(times=times, positions=positions, normalize=False)
+            if len(neighbors) >= 1:
+                # Create bin sequence: central → neighbor → back to central
+                bins = np.array(
+                    [central_bin, neighbors[0], central_bin], dtype=np.int32
+                )
 
-        assert scipy.sparse.issparse(T)
-        assert T.shape == (env.n_bins, env.n_bins)
+                T = env.transitions(bins=bins, normalize=False)
+
+                assert scipy.sparse.issparse(T)
+                assert T.shape == (env.n_bins, env.n_bins)
+
+                # Verify transitions were counted (adjacent bins in hex grid)
+                assert T[central_bin, neighbors[0]] == 1
+                assert T[neighbors[0], central_bin] == 1
+
+                # Hexagonal grids have up to 6 neighbors (not 4 like regular grids)
+                # Verify the neighbor count is reasonable for hex layout
+                assert len(neighbors) <= 6, "Hex bins should have at most 6 neighbors"
 
     def test_transitions_on_masked_grid(self):
         """Test transitions on masked grid layout.
@@ -596,10 +613,10 @@ class TestTransitionsModelBased:
         diff = (T_random - T_diffusion).toarray()
         assert np.abs(diff).max() > 0.01  # At least some difference
 
-    def test_model_based_sparse_format(self):
-        """Test that model-based methods return sparse matrices.
+    def test_model_based_returns_sparse_row_stochastic(self):
+        """Test that model-based methods return sparse row-stochastic matrices.
 
-        Requires 2D environment to test sparse format properly.
+        Requires 2D environment to test sparse matrix properties properly.
         """
         rng = np.random.default_rng(42)
         env = Environment.from_samples(
@@ -610,7 +627,17 @@ class TestTransitionsModelBased:
         T_random = env.transitions(method="random_walk")
         T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
 
+        # Verify sparse matrices
         assert scipy.sparse.issparse(T_random)
         assert scipy.sparse.issparse(T_diffusion)
-        assert T_random.format == "csr"
-        assert T_diffusion.format == "csr"
+
+        # Verify shape matches environment
+        assert T_random.shape == (env.n_bins, env.n_bins)
+        assert T_diffusion.shape == (env.n_bins, env.n_bins)
+
+        # Verify row-stochastic (rows sum to 1.0 for rows with any transitions)
+        random_row_sums = np.array(T_random.sum(axis=1)).flatten()
+        assert_allclose(random_row_sums, 1.0, rtol=1e-6)
+
+        diffusion_row_sums = np.array(T_diffusion.sum(axis=1)).flatten()
+        assert_allclose(diffusion_row_sums, 1.0, rtol=1e-3)

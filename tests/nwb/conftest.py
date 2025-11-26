@@ -21,6 +21,9 @@ from uuid import uuid4
 import numpy as np
 import pytest
 
+# Mark all tests in this directory as integration tests
+pytestmark = pytest.mark.integration
+
 
 def _get_pynwb():
     """Import pynwb or skip test if not available."""
