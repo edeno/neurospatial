@@ -14,6 +14,9 @@ import pytest
 
 from neurospatial import Environment
 
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
+
 
 class TestAnimateFieldsIntegration:
     """Test suite for Environment.animate_fields() method integration."""

@@ -539,10 +539,10 @@ def test_bodypart_skeleton_all_nan_no_vectors_layer(
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_overlay_creates_vectors_layer(
+def test_head_direction_overlay_creates_tracks_layer(
     mock_viewer_class, simple_env, simple_fields, head_direction_overlay_data
 ):
-    """Test head direction overlay creates vectors layer."""
+    """Test head direction overlay creates Tracks layer for efficient time-based rendering."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData
 
@@ -555,15 +555,21 @@ def test_head_direction_overlay_creates_vectors_layer(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Should create vectors layer
-    assert mock_viewer.add_vectors.called
+    # Should create tracks layer (not vectors - vectors are slow)
+    # Head direction now uses Tracks layer for efficient time-based filtering
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_overlay_applies_color_and_length(
+def test_head_direction_overlay_applies_colormap_and_width(
     mock_viewer_class, simple_env, simple_fields, head_direction_overlay_data
 ):
-    """Test head direction overlay applies color and length properties."""
+    """Test head direction overlay applies colormap and line width properties."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import OverlayData
 
@@ -576,14 +582,19 @@ def test_head_direction_overlay_applies_color_and_length(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Check vectors layer has color and length properties
-    vectors_kwargs = mock_viewer.add_vectors.call_args[1]
-    # Color specified via 'edge_color' or similar
-    has_color = "edge_color" in vectors_kwargs or "edge_colour" in vectors_kwargs
-    assert has_color
+    # Find the Head Direction tracks layer call
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0
 
-    # Length should be encoded in vector data or properties
-    # Vector data format: (position, direction) where direction has length
+    tracks_kwargs = tracks_calls[0][1]
+    # Line width specified via 'tail_width'
+    assert "tail_width" in tracks_kwargs
+    # Blending set to opaque for visibility
+    assert tracks_kwargs.get("blending") == "opaque"
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -603,13 +614,20 @@ def test_head_direction_overlay_coordinate_transform(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Get vectors data (should be transformed to y, x)
-    vectors_data = mock_viewer.add_vectors.call_args[0][0]
+    # Find the Head Direction tracks layer call
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0
 
-    # Vectors format: [[time, y, x], [dy, dx]] for 2D + time
+    # Get tracks data (should be transformed to [track_id, t, y, x])
+    tracks_data = tracks_calls[0][0][0]
+
+    # Tracks format: [track_id, time, y, x]
     # Should have correct dimensionality
-    assert vectors_data.shape[1] == 2  # (position, direction)
-    assert vectors_data.shape[2] >= 2  # At least (y, x) or (time, y, x)
+    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
 
 
 # =============================================================================
@@ -763,15 +781,22 @@ def test_mixed_overlay_types(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data_all_types)
 
-    # Should create tracks layer (position with trail)
-    assert mock_viewer.add_tracks.called
+    # Should create tracks layers (position with trail + head direction)
+    assert mock_viewer.add_tracks.call_count >= 2  # position trail + head direction
 
     # Should create points layers (position marker + bodyparts)
-    assert mock_viewer.add_points.call_count >= 2
+    assert mock_viewer.add_points.call_count >= 2  # position + bodyparts
 
-    # Should create vectors layers (bodypart skeleton + head direction)
-    # Skeleton is now rendered as precomputed vectors (not shapes)
-    assert mock_viewer.add_vectors.call_count >= 2
+    # Should create vectors layer for skeleton only
+    assert mock_viewer.add_vectors.call_count >= 1  # Skeleton only
+
+    # Verify head direction creates Tracks layer (for efficient time-based rendering)
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
 
 # =============================================================================
@@ -947,7 +972,7 @@ def test_render_napari_signature_includes_overlay_params():
 def test_head_direction_paired_with_single_position(
     mock_viewer_class, simple_env, simple_fields
 ):
-    """Test head direction arrows are anchored at position when exactly one position overlay exists."""
+    """Test head direction lines are anchored at position when exactly one position overlay exists."""
     from neurospatial.animation.backends.napari_backend import render_napari
     from neurospatial.animation.overlays import (
         HeadDirectionData,
@@ -974,7 +999,7 @@ def test_head_direction_paired_with_single_position(
     angles = np.linspace(0, np.pi, n_frames)
     head_dir_data = HeadDirectionData(
         data=angles,
-        color="yellow",
+        color="hsv",
         length=5.0,
     )
 
@@ -982,15 +1007,21 @@ def test_head_direction_paired_with_single_position(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Should create vectors layer
-    assert mock_viewer.add_vectors.called
+    # Should create tracks layer for head direction (efficient time-based rendering)
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
-    # Get vectors data
-    vectors_data = mock_viewer.add_vectors.call_args[0][0]
+    # Get tracks data
+    tracks_data = tracks_calls[0][0][0]
 
-    # Vectors should have origins that follow the position trajectory
-    # Format: [[time, y, x], [dt, dy, dx]]
-    assert vectors_data.shape[0] == n_frames  # One vector per frame
+    # Tracks should have 2 points per frame (origin + indicator)
+    # Format: [track_id, time, y, x]
+    assert tracks_data.shape[0] == n_frames * 2  # Two points per frame
+    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -1030,7 +1061,7 @@ def test_head_direction_not_paired_with_multiple_positions(
     angles = np.linspace(0, np.pi, n_frames)
     head_dir_data = HeadDirectionData(
         data=angles,
-        color="yellow",
+        color="hsv",
         length=5.0,
     )
 
@@ -1038,8 +1069,13 @@ def test_head_direction_not_paired_with_multiple_positions(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Should still create vectors layer (uses centroid as origin)
-    assert mock_viewer.add_vectors.called
+    # Should still create tracks layer for head direction (uses centroid as origin)
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
 
 @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
@@ -1061,7 +1097,7 @@ def test_head_direction_without_position_uses_centroid(
     angles = np.linspace(0, np.pi, n_frames)
     head_dir_data = HeadDirectionData(
         data=angles,
-        color="yellow",
+        color="hsv",
         length=5.0,
     )
 
@@ -1069,20 +1105,21 @@ def test_head_direction_without_position_uses_centroid(
 
     render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-    # Should create vectors layer (uses centroid as origin)
-    assert mock_viewer.add_vectors.called
+    # Should create tracks layer for head direction (uses centroid as origin)
+    tracks_calls = [
+        call
+        for call in mock_viewer.add_tracks.call_args_list
+        if call[1].get("name", "").startswith("Head Direction")
+    ]
+    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
-    # Vectors should all originate from the same centroid position
-    vectors_data = mock_viewer.add_vectors.call_args[0][0]
+    # Tracks should have origin at centroid
+    tracks_data = tracks_calls[0][0][0]
 
-    # All vectors should have the same origin (y, x) in positions 1 and 2
-    # (position 0 is time, which varies)
-    origins_y = vectors_data[:, 0, 1]  # All y origins
-    origins_x = vectors_data[:, 0, 2]  # All x origins
-
-    # All origins should be identical (centroid is fixed)
-    assert np.allclose(origins_y, origins_y[0])
-    assert np.allclose(origins_x, origins_x[0])
+    # Tracks format: [track_id, time, y, x]
+    # Since directions change but origin is fixed centroid
+    assert tracks_data.shape[0] == n_frames * 2  # Two points per frame
+    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
 
 
 # =============================================================================

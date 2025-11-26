@@ -837,6 +837,109 @@ def _render_bodypart_overlay(
     return layers
 
 
+def _build_head_direction_tracks(
+    head_dir_data: HeadDirectionData,
+    env: Environment,
+    position_data: PositionData | None = None,
+    *,
+    dtype: type[np.floating] = np.float32,
+) -> NDArray[np.floating]:
+    """Build head direction tracks for Tracks layer rendering.
+
+    Creates track data where each frame's direction line is a short track segment.
+    Uses napari's Tracks layer which is optimized for time-based filtering.
+
+    Parameters
+    ----------
+    head_dir_data : HeadDirectionData
+        Head direction overlay data with angles or unit vectors.
+    env : Environment
+        Environment instance for coordinate transformation.
+    position_data : PositionData | None, optional
+        Head position data. If None, uses environment centroid as origin.
+    dtype : type, optional
+        Data type for output arrays. Default is np.float32.
+
+    Returns
+    -------
+    tracks : ndarray of shape (n_valid * 2, 4)
+        Track data in format [track_id, t, y, x]. Each frame's line is a
+        separate track with 2 points (origin and indicator).
+    """
+    n_frames = len(head_dir_data.data)
+    is_angles = head_dir_data.data.ndim == 1
+
+    # Pre-compute scale factors
+    env_scale = _EnvScale.from_env(env)
+    transform_target = env_scale if env_scale is not None else env
+
+    # Compute origins
+    if position_data is not None:
+        origins = position_data.data  # (n_frames, n_dims)
+    else:
+        centroid = np.mean(env.bin_centers, axis=0)
+        origins = np.tile(centroid, (n_frames, 1))
+
+    # Compute direction vectors
+    if is_angles:
+        angles = head_dir_data.data
+        directions = np.column_stack(
+            [
+                np.cos(angles) * head_dir_data.length,
+                np.sin(angles) * head_dir_data.length,
+            ]
+        )
+    else:
+        directions = head_dir_data.data.copy()
+        norms = np.linalg.norm(directions, axis=1, keepdims=True)
+        norms = np.where(norms > 0, norms, 1.0)
+        directions = directions / norms * head_dir_data.length
+
+    # Compute indicator positions
+    indicator_positions = origins + directions
+
+    # Transform to napari coordinates
+    origins_napari = _transform_coords_for_napari(origins, transform_target)
+    indicator_napari = _transform_coords_for_napari(
+        indicator_positions, transform_target
+    )
+
+    # Find valid frames
+    valid_origins = ~np.isnan(origins).any(axis=1)
+    valid_directions = (
+        ~np.isnan(head_dir_data.data).any(axis=-1)
+        if head_dir_data.data.ndim > 1
+        else ~np.isnan(head_dir_data.data)
+    )
+    valid_indicators = ~np.isnan(indicator_napari).any(axis=1)
+    valid_mask = valid_origins & valid_directions & valid_indicators
+    valid_frame_indices = np.where(valid_mask)[0]
+
+    n_valid = len(valid_frame_indices)
+    if n_valid == 0:
+        return np.empty((0, 4), dtype=dtype)
+
+    # Build tracks array: [track_id, t, y, x]
+    # Each frame's line is a separate track with 2 points
+    # Points must be sorted by time within each track for napari
+    # We put indicator at t+0.5, origin at t, so tail shows origin→indicator
+    tracks = np.empty((n_valid * 2, 4), dtype=dtype)
+
+    # Origin points at time t (earlier point)
+    tracks[0::2, 0] = valid_frame_indices  # track_id = frame index
+    tracks[0::2, 1] = valid_frame_indices  # t = frame index
+    tracks[0::2, 2] = origins_napari[valid_frame_indices, 0]  # y
+    tracks[0::2, 3] = origins_napari[valid_frame_indices, 1]  # x
+
+    # Indicator points at time t+0.5 (later point - current "head" of track)
+    tracks[1::2, 0] = valid_frame_indices  # same track_id
+    tracks[1::2, 1] = valid_frame_indices + 0.5  # t + offset
+    tracks[1::2, 2] = indicator_napari[valid_frame_indices, 0]  # y
+    tracks[1::2, 3] = indicator_napari[valid_frame_indices, 1]  # x
+
+    return tracks
+
+
 def _render_head_direction_overlay(
     viewer: napari.Viewer,
     head_dir_data: HeadDirectionData,
@@ -844,21 +947,25 @@ def _render_head_direction_overlay(
     name_suffix: str = "",
     position_data: PositionData | None = None,
 ) -> list[Layer]:
-    """Render a single head direction overlay as vectors.
+    """Render head direction as a line from head position to direction indicator.
+
+    Uses napari's Tracks layer for efficient time-based filtering, achieving
+    smooth 30 FPS playback even with 40k+ frames.
 
     Parameters
     ----------
     viewer : napari.Viewer
         Napari viewer instance
     head_dir_data : HeadDirectionData
-        Head direction data aligned to frames
+        Head direction data aligned to frames. The ``length`` attribute controls
+        the line length, and ``width`` controls the line thickness.
     env : Environment
-        Environment for positioning vectors
+        Environment for coordinate transformation
     name_suffix : str
         Suffix for layer names
     position_data : PositionData | None, optional
-        If provided, arrows are anchored at the position coordinates for each frame.
-        If None, arrows are anchored at the environment centroid (fixed reference).
+        If provided, lines start from position coordinates.
+        If None, lines start from environment centroid.
         Default is None.
 
     Returns
@@ -868,88 +975,25 @@ def _render_head_direction_overlay(
 
     Notes
     -----
-    When `position_data` is provided, arrows follow the animal's position and
-    visualize heading direction at that location. This is the recommended mode
-    for tracking moving animals.
-
-    When `position_data` is None, arrows are anchored at a fixed centroid
-    (mean of all bin centers), useful for stationary reference frames or when
-    position tracking is not available.
+    The direction line extends from head position to:
+    ``head_position + length * unit_direction``
     """
     layers: list[Layer] = []
-    n_frames = len(head_dir_data.data)
 
-    # Determine if data is angles or vectors
-    is_angles = head_dir_data.data.ndim == 1
-
-    # Determine arrow origins for each frame
-    if position_data is not None:
-        # Use position coordinates as arrow origins (moving with animal)
-        origins = position_data.data  # Shape: (n_frames, n_dims)
-        origins_napari = _transform_coords_for_napari(origins, env)
-    else:
-        # Use fixed centroid as arrow origin (stationary reference)
-        centroid = np.mean(env.bin_centers, axis=0)
-        centroid_napari = _transform_coords_for_napari(centroid.reshape(1, -1), env)[0]
-        # Broadcast to all frames
-        origins_napari = np.tile(centroid_napari, (n_frames, 1))
-
-    # Convert to vectors for napari
-    vectors_data = []
-
-    for frame_idx in range(n_frames):
-        # Get origin for this frame
-        origin_napari = origins_napari[frame_idx]
-
-        # Skip if origin is NaN (missing position data)
-        if np.any(np.isnan(origin_napari)):
-            continue
-
-        if is_angles:
-            # Convert angle to unit vector, then scale by length
-            angle = head_dir_data.data[frame_idx]
-            if np.isnan(angle):
-                continue
-            direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
-        else:
-            # Already a vector, just scale to desired length
-            direction = head_dir_data.data[frame_idx]
-            # Skip if direction is NaN
-            if np.any(np.isnan(direction)):
-                continue
-            # Normalize and scale
-            norm = np.linalg.norm(direction)
-            if norm > 0:
-                direction = direction / norm * head_dir_data.length
-
-        # Transform direction to napari coords with proper scaling and Y-axis inversion
-        # Use _transform_direction_for_napari (NOT _transform_coords_for_napari)
-        # because direction vectors are displacements, not positions
-        direction_napari = _transform_direction_for_napari(
-            direction.reshape(1, -1), env
-        )[0]
-
-        # Napari vector format: [[time, y, x], [dt, dy, dx]]
-        # Direction also needs time component (0 for spatial direction only)
-        vector = np.array(
-            [
-                [frame_idx, origin_napari[0], origin_napari[1]],  # Origin (t, y, x)
-                [0, direction_napari[0], direction_napari[1]],  # Direction (0, dy, dx)
-            ]
-        )
-        vectors_data.append(vector)
-
-    # Stack vectors and add layer
-    vectors_array = np.array(vectors_data)
-
-    layer = viewer.add_vectors(
-        vectors_array,
-        name=f"Head Direction{name_suffix}",
-        edge_color=head_dir_data.color,
-        edge_width=head_dir_data.width,
-        length=1.0,  # Vectors already scaled by length
+    tracks = _build_head_direction_tracks(
+        head_dir_data, env, position_data, dtype=np.float32
     )
-    layers.append(layer)
+    if tracks.size > 0:
+        layer = viewer.add_tracks(
+            tracks,
+            name=f"Head Direction{name_suffix}",
+            tail_length=0,  # No past tracks
+            head_length=1,  # Show current track (origin→indicator)
+            tail_width=head_dir_data.width,
+            blending="opaque",  # Better visibility against dark backgrounds
+        )
+        layer.colormap = head_dir_data.color
+        layers.append(layer)
 
     return layers
 

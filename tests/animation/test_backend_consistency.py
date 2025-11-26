@@ -16,8 +16,8 @@ import pytest
 
 from neurospatial import Environment
 
-# Mark napari GUI tests to run in same worker (prevent Qt crashes)
-pytestmark = pytest.mark.xdist_group(name="napari_gui")
+# Mark all tests in this module as integration tests + napari GUI group
+pytestmark = [pytest.mark.integration, pytest.mark.xdist_group(name="napari_gui")]
 
 
 @pytest.fixture
