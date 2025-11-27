@@ -104,6 +104,10 @@ def setup_track_layers(viewer: napari.Viewer) -> tuple[Shapes, Points]:
         border_width_is_relative=False,
     )
 
+    # Make selection more prominent (bright yellow border, thicker)
+    nodes_layer.current_border_color = "yellow"
+    nodes_layer.current_border_width = 4
+
     return edges_layer, nodes_layer
 
 
@@ -205,35 +209,65 @@ def _sync_layers_from_state(
             face_colors[state.start_node] = start_rgba
             sizes[state.start_node] = START_NODE_SIZE
 
+        # Build node labels for hover text
+        node_labels = []
+        for i in range(n_nodes):
+            label = f"Node {i}"
+            if i < len(state.node_labels) and state.node_labels[i]:
+                label += f" ({state.node_labels[i]})"
+            if i == state.start_node:
+                label += " [START]"
+            node_labels.append(label)
+
         # Update nodes layer
         nodes_layer.data = node_data
         nodes_layer.face_color = face_colors
         nodes_layer.size = sizes
+
+        # Set features for hover info (shown in status bar)
+        nodes_layer.features = {"label": node_labels}
+
+        # Set text to show node IDs on the points
+        nodes_layer.text = {
+            "string": "{label}",
+            "size": 10,
+            "color": "white",
+            "anchor": "upper_left",
+        }
     else:
         # Clear nodes layer
         nodes_layer.data = np.empty((0, 2), dtype=np.float64)
+        nodes_layer.features = {}
+        nodes_layer.text = None
 
     # Convert edges to paths for shapes layer
     if state.edges and state.nodes:
         paths = []
-        for n1, n2 in state.edges:
+        edge_labels = []
+        for i, (n1, n2) in enumerate(state.edges):
             if n1 < len(state.nodes) and n2 < len(state.nodes):
                 x1, y1 = state.nodes[n1]
                 x2, y2 = state.nodes[n2]
                 # Convert to napari (row, col) = (y, x)
                 path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
                 paths.append(path)
+                edge_labels.append(f"Edge {i}: {n1} → {n2}")
 
         if paths:
             # Clear and re-add all paths
             edges_layer.data = []
             for path in paths:
                 edges_layer.add_paths([path])
+
+            # Set features for hover info (shown in status bar)
+            edges_layer.features = {"label": edge_labels}
         else:
             edges_layer.data = []
+            edges_layer.features = {}
     else:
         # Clear edges layer
         edges_layer.data = []
+        edges_layer.features = {}
 
 
 # =============================================================================
@@ -663,12 +697,17 @@ class TrackGraphWidget:
         layout.setSpacing(4)  # Tighter spacing
         self._widget.setLayout(layout)
 
-        # Help text - concise
-        help_text = QLabel(
-            "<b>2</b>=Add  <b>E</b>=Edge  <b>3</b>=Select/Delete  <b>Shift+S</b>=Start"
+        # Workflow hint - step by step guidance
+        workflow_label = QLabel(
+            "<b>1.</b> Click to add nodes at track waypoints<br>"
+            "<b>2.</b> Press <b>E</b> and click nodes to connect them<br>"
+            "<b>3.</b> Select a node and click <b>Set as Start</b>"
         )
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
+        workflow_label.setStyleSheet(
+            "color: #333; background-color: #f8f8f8; "
+            "padding: 6px; border-radius: 3px; font-size: 12px;"
+        )
+        layout.addWidget(workflow_label)
 
         # Mode selector (inline, no group box)
         mode_layout = QHBoxLayout()
@@ -677,9 +716,23 @@ class TrackGraphWidget:
         self._mode_combo.addItems(["add_node", "add_edge", "delete"])
         self._mode_combo.setCurrentText(state.mode)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        self._mode_combo.setToolTip(
+            "add_node: Click to place nodes\n"
+            "add_edge: Click two nodes to connect\n"
+            "delete: Select and delete nodes/edges"
+        )
         mode_layout.addWidget(self._mode_combo)
         mode_layout.addStretch()
         layout.addLayout(mode_layout)
+
+        # Contextual help - changes based on current mode
+        self._contextual_help = QLabel("Click on the image to place nodes.")
+        self._contextual_help.setWordWrap(True)
+        self._contextual_help.setStyleSheet(
+            "background-color: #e8f4fd; color: #1a5490; padding: 8px; "
+            "border-radius: 4px; font-size: 12px; border: 1px solid #b8d4e8;"
+        )
+        layout.addWidget(self._contextual_help)
 
         # Hidden status label (kept for API compatibility but not shown)
         self._status_label = QLabel(f"Mode: {state.mode}")
@@ -701,6 +754,9 @@ class TrackGraphWidget:
         label_layout.addWidget(self._label_input)
 
         self._apply_label_btn = QPushButton("Apply Label")
+        self._apply_label_btn.setToolTip(
+            "Name the selected node (e.g., 'start', 'goal')"
+        )
         self._apply_label_btn.clicked.connect(self._on_apply_label)
         label_layout.addWidget(self._apply_label_btn)
         node_layout.addLayout(label_layout)
@@ -709,10 +765,14 @@ class TrackGraphWidget:
         node_btn_layout = QHBoxLayout()
 
         self._set_start_btn = QPushButton("Set as Start")
+        self._set_start_btn.setToolTip(
+            "Mark this node as the start for linearization (Shift+S)"
+        )
         self._set_start_btn.clicked.connect(self._on_set_start)
         node_btn_layout.addWidget(self._set_start_btn)
 
         self._delete_node_btn = QPushButton("Delete Node")
+        self._delete_node_btn.setToolTip("Remove the selected node and its edges")
         self._delete_node_btn.clicked.connect(self._on_delete_node)
         node_btn_layout.addWidget(self._delete_node_btn)
 
@@ -729,6 +789,7 @@ class TrackGraphWidget:
         edge_layout.addWidget(self._edge_combo)
 
         self._delete_edge_btn = QPushButton("Delete Edge")
+        self._delete_edge_btn.setToolTip("Remove the selected edge connection")
         self._delete_edge_btn.clicked.connect(self._on_delete_edge)
         edge_layout.addWidget(self._delete_edge_btn)
 
@@ -788,6 +849,7 @@ class TrackGraphWidget:
 
         # Preview button
         self._preview_btn = QPushButton("Preview 1D")
+        self._preview_btn.setToolTip("Show how the track will be linearized")
         self._preview_btn.clicked.connect(self._on_preview)
         layout.addWidget(self._preview_btn)
 
@@ -797,6 +859,7 @@ class TrackGraphWidget:
 
         # Save and Close button - prominent
         self._save_btn = QPushButton("✓ Save and Close")
+        self._save_btn.setToolTip("Save track graph and close the viewer")
         self._save_btn.setStyleSheet("font-weight: bold; padding: 8px;")
         self._save_btn.clicked.connect(self._on_save)
         layout.addWidget(self._save_btn)
@@ -1058,6 +1121,14 @@ class TrackGraphWidget:
         self._mode_combo.blockSignals(True)
         self._mode_combo.setCurrentText(self._state.mode)
         self._mode_combo.blockSignals(False)
+
+        # Update contextual help based on mode
+        help_texts = {
+            "add_node": "👆 Click on the image to place nodes. Press <b>E</b> when done to connect them.",
+            "add_edge": "🔗 Click a node to start an edge, then click another node to connect them.",
+            "delete": "🗑️ Click a node or edge to select it, then press <b>Delete</b> key to remove.",
+        }
+        self._contextual_help.setText(help_texts.get(self._state.mode, ""))
 
         # Update status
         self._update_status()
