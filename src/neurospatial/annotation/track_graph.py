@@ -265,6 +265,23 @@ def annotate_track_graph(
     # Connect to layer data change events
     nodes_layer.events.data.connect(_sync_layer_to_state)
 
+    # Sync napari layer mode changes back to state
+    def _sync_mode_to_state(event=None):
+        """Sync napari layer mode changes to TrackBuilderState."""
+        layer_mode = nodes_layer.mode
+        # Map napari modes to our state modes
+        mode_map = {
+            "add": "add_node",
+            "select": "delete",  # Select mode is used for delete
+            "pan_zoom": state.mode,  # Keep current mode when pan/zoom
+        }
+        new_mode = mode_map.get(layer_mode, state.mode)
+        if new_mode != state.mode:
+            state.mode = new_mode
+            widget.sync_from_state()
+
+    nodes_layer.events.mode.connect(_sync_mode_to_state)
+
     # 9. Setup keyboard shortcuts (only for things napari doesn't provide)
     # Work WITH napari's defaults:
     #   - 2 = Add mode (napari default for adding points)

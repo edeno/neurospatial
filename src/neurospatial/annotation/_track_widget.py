@@ -638,7 +638,6 @@ class TrackGraphWidget:
         nodes_layer: Points,
         state: TrackBuilderState,
     ) -> None:
-        from qtpy.QtCore import Qt
         from qtpy.QtWidgets import (
             QComboBox,
             QDoubleSpinBox,
@@ -648,7 +647,6 @@ class TrackGraphWidget:
             QLineEdit,
             QListWidget,
             QPushButton,
-            QScrollArea,
             QVBoxLayout,
             QWidget,
         )
@@ -659,49 +657,33 @@ class TrackGraphWidget:
         self._state = state
         self._saved = False
 
-        # Create scroll area as main widget
-        self._widget = QScrollArea()
-        self._widget.setWidgetResizable(True)
-        self._widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        # Create inner widget with content
-        inner_widget = QWidget()
+        # Create main widget
+        self._widget = QWidget()
         layout = QVBoxLayout()
-        inner_widget.setLayout(layout)
-        self._widget.setWidget(inner_widget)
+        layout.setSpacing(4)  # Tighter spacing
+        self._widget.setLayout(layout)
 
-        # Title
-        title_label = QLabel("<b>Track Graph Builder</b>")
-        layout.addWidget(title_label)
-
-        # Help text
+        # Help text - concise
         help_text = QLabel(
-            "1. Press 2 → Click to add nodes\n"
-            "2. Press E → Click two nodes to connect\n"
-            "3. Press 3 → Select node, then Delete\n"
-            "4. Select node → Shift+S to set as start\n"
-            "5. Click 'Save and Close' when done\n\n"
-            "Shortcuts: 2 (add) | 3 (select) | E (edge) | Ctrl+Z (undo)"
+            "<b>2</b>=Add  <b>E</b>=Edge  <b>3</b>=Select/Delete  <b>Shift+S</b>=Start"
         )
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
 
-        # Mode selector group
-        mode_group = QGroupBox("Mode")
+        # Mode selector (inline, no group box)
         mode_layout = QHBoxLayout()
-        mode_group.setLayout(mode_layout)
-
+        mode_layout.addWidget(QLabel("Mode:"))
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(["add_node", "add_edge", "delete"])
         self._mode_combo.setCurrentText(state.mode)
         self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
         mode_layout.addWidget(self._mode_combo)
+        mode_layout.addStretch()
+        layout.addLayout(mode_layout)
 
-        layout.addWidget(mode_group)
-
-        # Status label
+        # Hidden status label (kept for API compatibility but not shown)
         self._status_label = QLabel(f"Mode: {state.mode}")
-        layout.addWidget(self._status_label)
+        self._status_label.hide()
 
         # Node list group
         node_group = QGroupBox("Nodes")
@@ -709,6 +691,7 @@ class TrackGraphWidget:
         node_group.setLayout(node_layout)
 
         self._node_combo = QComboBox()
+        self._node_combo.currentIndexChanged.connect(self._on_node_selected)
         node_layout.addWidget(self._node_combo)
 
         # Node label input
@@ -742,6 +725,7 @@ class TrackGraphWidget:
         edge_group.setLayout(edge_layout)
 
         self._edge_combo = QComboBox()
+        self._edge_combo.currentIndexChanged.connect(self._on_edge_selected)
         edge_layout.addWidget(self._edge_combo)
 
         self._delete_edge_btn = QPushButton("Delete Edge")
@@ -750,46 +734,51 @@ class TrackGraphWidget:
 
         layout.addWidget(edge_group)
 
-        # Edge Order group
-        edge_order_group = QGroupBox("Edge Order")
+        # Edge Order group (collapsible - advanced feature)
+        edge_order_group = QGroupBox("Edge Order (Advanced)")
+        edge_order_group.setCheckable(True)
+        edge_order_group.setChecked(False)  # Collapsed by default
         edge_order_layout = QVBoxLayout()
         edge_order_group.setLayout(edge_order_layout)
 
         # Edge order list widget
         self._edge_order_list = QListWidget()
+        self._edge_order_list.setMaximumHeight(80)  # Compact
         edge_order_layout.addWidget(self._edge_order_list)
 
         # Move buttons
         move_btn_layout = QHBoxLayout()
 
-        self._move_up_btn = QPushButton("▲ Up")
+        self._move_up_btn = QPushButton("▲")
+        self._move_up_btn.setMaximumWidth(40)
         self._move_up_btn.clicked.connect(self._on_move_up)
         move_btn_layout.addWidget(self._move_up_btn)
 
-        self._move_down_btn = QPushButton("▼ Down")
+        self._move_down_btn = QPushButton("▼")
+        self._move_down_btn.setMaximumWidth(40)
         self._move_down_btn.clicked.connect(self._on_move_down)
         move_btn_layout.addWidget(self._move_down_btn)
 
-        edge_order_layout.addLayout(move_btn_layout)
-
-        # Reset to Auto button
-        self._reset_to_auto_btn = QPushButton("Reset to Auto")
+        self._reset_to_auto_btn = QPushButton("Auto")
         self._reset_to_auto_btn.clicked.connect(self._on_reset_to_auto)
-        edge_order_layout.addWidget(self._reset_to_auto_btn)
+        move_btn_layout.addWidget(self._reset_to_auto_btn)
+
+        move_btn_layout.addStretch()
+        edge_order_layout.addLayout(move_btn_layout)
 
         # Edge spacing input
         spacing_layout = QHBoxLayout()
-        spacing_label = QLabel("Edge Spacing:")
-        spacing_layout.addWidget(spacing_label)
+        spacing_layout.addWidget(QLabel("Spacing:"))
 
         self._edge_spacing_spin = QDoubleSpinBox()
         self._edge_spacing_spin.setRange(0.0, 1000.0)
-        self._edge_spacing_spin.setDecimals(2)
-        self._edge_spacing_spin.setSingleStep(0.1)
+        self._edge_spacing_spin.setDecimals(1)
+        self._edge_spacing_spin.setSingleStep(1.0)
         self._edge_spacing_spin.setValue(0.0)
         spacing_layout.addWidget(self._edge_spacing_spin)
 
-        self._apply_spacing_btn = QPushButton("Apply")
+        self._apply_spacing_btn = QPushButton("Set")
+        self._apply_spacing_btn.setMaximumWidth(40)
         self._apply_spacing_btn.clicked.connect(self._on_apply_spacing)
         spacing_layout.addWidget(self._apply_spacing_btn)
 
@@ -797,22 +786,20 @@ class TrackGraphWidget:
 
         layout.addWidget(edge_order_group)
 
-        # Preview Linearization button
-        self._preview_btn = QPushButton("Preview Linearization")
+        # Preview button
+        self._preview_btn = QPushButton("Preview 1D")
         self._preview_btn.clicked.connect(self._on_preview)
         layout.addWidget(self._preview_btn)
 
-        # Validation status
+        # Validation status (compact)
         self._validation_label = QLabel("")
         layout.addWidget(self._validation_label)
 
-        # Save and Close button
-        self._save_btn = QPushButton("Save and Close")
+        # Save and Close button - prominent
+        self._save_btn = QPushButton("✓ Save and Close")
+        self._save_btn.setStyleSheet("font-weight: bold; padding: 8px;")
         self._save_btn.clicked.connect(self._on_save)
         layout.addWidget(self._save_btn)
-
-        # Add stretch to push everything up
-        layout.addStretch()
 
         # Initial sync
         self.sync_from_state()
@@ -926,6 +913,22 @@ class TrackGraphWidget:
         self._state.mode = mode  # type: ignore[assignment]  # QComboBox returns str
         self._update_status()
         _sync_layers_from_state(self._state, self._nodes_layer, self._edges_layer)
+
+    def _on_node_selected(self, idx: int) -> None:
+        """Handle node selection in dropdown - highlight in viewer."""
+        if idx >= 0 and idx < len(self._state.nodes):
+            # Select the node in napari's Points layer
+            self._nodes_layer.selected_data = {idx}
+            # Also switch to select mode so user can see selection clearly
+            self._nodes_layer.mode = "select"
+
+    def _on_edge_selected(self, idx: int) -> None:
+        """Handle edge selection in dropdown - highlight in viewer."""
+        if idx >= 0 and idx < len(self._state.edges):
+            # Select the edge in napari's Shapes layer
+            self._edges_layer.selected_data = {idx}
+            # Also switch to select mode so user can see selection clearly
+            self._edges_layer.mode = "select"
 
     def _on_set_start(self) -> None:
         """Handle Set as Start button click."""
@@ -1059,7 +1062,8 @@ class TrackGraphWidget:
         # Update status
         self._update_status()
 
-        # Update node list
+        # Update node list (block signals to prevent mode changes)
+        self._node_combo.blockSignals(True)
         self._node_combo.clear()
         for i, _node in enumerate(self._state.nodes):
             label = ""
@@ -1067,11 +1071,14 @@ class TrackGraphWidget:
                 label = f" ({self._state.node_labels[i]})"
             start_marker = " [START]" if i == self._state.start_node else ""
             self._node_combo.addItem(f"Node {i}{label}{start_marker}")
+        self._node_combo.blockSignals(False)
 
-        # Update edge list
+        # Update edge list (block signals to prevent mode changes)
+        self._edge_combo.blockSignals(True)
         self._edge_combo.clear()
         for i, edge in enumerate(self._state.edges):
             self._edge_combo.addItem(f"Edge {i}: {edge[0]} → {edge[1]}")
+        self._edge_combo.blockSignals(False)
 
         # Update edge order list
         self._edge_order_list.clear()
