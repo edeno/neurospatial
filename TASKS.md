@@ -378,7 +378,7 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Create `TrackGraphResult` NamedTuple with fields:
+- [x] Create `TrackGraphResult` NamedTuple with fields:
   - `track_graph: nx.Graph | None`
   - `node_positions: list[tuple[float, float]]`
   - `edges: list[tuple[int, int]]`
@@ -388,7 +388,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `start_node: int | None`
   - `pixel_positions: list[tuple[float, float]]`
 
-- [ ] Implement `to_environment(bin_size, edge_spacing=None, name="") -> Environment`:
+- [x] Implement `to_environment(bin_size, edge_spacing=None, name="") -> Environment`:
   - Raise `ValueError` if `track_graph` is None
   - Use `self.edge_spacing` if `edge_spacing` not provided
   - Call `Environment.from_graph()` with all parameters
@@ -398,6 +398,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - All fields correctly typed
 - `to_environment()` produces valid Environment
 - Method handles edge_spacing override correctly
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Simple (~80 lines)
 
