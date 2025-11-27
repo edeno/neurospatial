@@ -505,27 +505,27 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Test input validation:
+- [x] Test input validation:
   - `test_requires_video_or_image`
   - `test_frame_index_out_of_range_raises`
 
-- [ ] Test with mock viewer (skip napari.run):
+- [x] Test with mock viewer (skip napari.run):
   - `test_annotate_with_video_path`
   - `test_annotate_with_image_array`
   - `test_initial_data_populates_state`
 
-- [ ] Test result construction:
+- [x] Test result construction:
   - `test_result_has_all_fields`
   - `test_result_to_environment_success`
   - `test_result_to_environment_no_graph_raises`
   - `test_result_edge_spacing_override`
 
-- [ ] Test calibration:
+- [x] Test calibration:
   - `test_coordinates_in_pixels_without_calibration`
   - `test_coordinates_in_cm_with_calibration`
   - `test_pixel_positions_preserved`
 
-- [ ] Test integration with Environment.from_graph:
+- [x] Test integration with Environment.from_graph:
   - `test_full_workflow_creates_valid_environment`
   - `test_environment_has_correct_bin_count`
 
@@ -534,6 +534,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - All tests pass
 - Full workflow from annotation to Environment works
 - Calibration transforms coordinates correctly
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~300 lines of tests)
 

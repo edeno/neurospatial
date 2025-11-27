@@ -433,6 +433,69 @@ class TestAnnotateTrackGraphResult:
         assert hasattr(result, "pixel_positions")
 
 
+class TestAnnotateTrackGraphVideoPath:
+    """Tests for annotate_track_graph with video_path."""
+
+    def test_frame_index_out_of_range_raises(self, monkeypatch, tmp_path) -> None:
+        """annotate_track_graph should raise IndexError for out-of-range frame_index."""
+
+        # Create a mock video reader that reports 10 frames
+        class MockVideoReader:
+            def __init__(self, path):
+                self.n_frames = 10
+
+            def __getitem__(self, idx):
+                if idx >= self.n_frames:
+                    raise IndexError("Frame index out of range")
+                return np.zeros((100, 100, 3), dtype=np.uint8)
+
+        # Create a fake video file
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        # Patch VideoReader at the source module
+        monkeypatch.setattr(
+            "neurospatial.animation._video_io.VideoReader", MockVideoReader
+        )
+
+        from neurospatial.annotation.track_graph import annotate_track_graph
+
+        with pytest.raises(IndexError, match="out of range"):
+            annotate_track_graph(video_path=str(video_file), frame_index=999)
+
+    def test_annotate_with_video_path(self, monkeypatch, tmp_path) -> None:
+        """annotate_track_graph should work with video_path."""
+
+        # Create a mock video reader
+        class MockVideoReader:
+            def __init__(self, path):
+                self.n_frames = 100
+
+            def __getitem__(self, idx):
+                return np.zeros((100, 100, 3), dtype=np.uint8)
+
+        # Create a fake video file
+        video_file = tmp_path / "test.mp4"
+        video_file.touch()
+
+        # Patch VideoReader at the source module
+        monkeypatch.setattr(
+            "neurospatial.animation._video_io.VideoReader", MockVideoReader
+        )
+
+        # Setup mocks for napari
+        _setup_mocks(monkeypatch)
+
+        from neurospatial.annotation.track_graph import (
+            TrackGraphResult,
+            annotate_track_graph,
+        )
+
+        result = annotate_track_graph(video_path=str(video_file), frame_index=5)
+
+        assert isinstance(result, TrackGraphResult)
+
+
 class TestAnnotateTrackGraphCalibration:
     """Tests for annotate_track_graph with calibration."""
 
@@ -527,6 +590,176 @@ class TestAnnotateTrackGraphCalibration:
         # pixel_positions should have original pixel values
         assert result.pixel_positions[0] == (100.0, 200.0)
         assert result.pixel_positions[1] == (300.0, 400.0)
+
+    def test_coordinates_in_cm_with_calibration(self, monkeypatch) -> None:
+        """With calibration, node_positions should be transformed to cm."""
+        # Custom setup to add nodes in the widget callback
+        mock_napari = _make_mock_napari_module()
+
+        import sys
+
+        sys.modules["napari"] = mock_napari
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
+        )
+
+        def mock_setup_track_layers(viewer):
+            edges_layer = _MockShapesLayer("Track Edges")
+            nodes_layer = _MockPointsLayer("Track Nodes")
+            mock_napari._viewer.shapes.append(edges_layer)
+            mock_napari._viewer.points.append(nodes_layer)
+            return edges_layer, nodes_layer
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.setup_track_layers",
+            mock_setup_track_layers,
+        )
+
+        def mock_create_widget(viewer, edges, nodes, state):
+            # Add nodes at pixel positions (100, 200) and (300, 200)
+            state.add_node(100.0, 200.0)
+            state.add_node(300.0, 200.0)
+            return _MockWidget()
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.create_track_widget",
+            mock_create_widget,
+        )
+
+        from neurospatial.annotation.track_graph import annotate_track_graph
+        from neurospatial.transforms import VideoCalibration, scale_2d
+
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Create calibration: scale by 0.5 (so 100px -> 50cm)
+        transform = scale_2d(0.5, 0.5)
+        calibration = VideoCalibration(transform, frame_size_px=(640, 480))
+
+        result = annotate_track_graph(image=image, calibration=calibration)
+
+        # node_positions should be transformed (scaled by 0.5)
+        # Note: VideoCalibration.transform_px_to_cm also flips Y
+        assert len(result.node_positions) == 2
+        # X coordinates should be scaled: 100 * 0.5 = 50, 300 * 0.5 = 150
+        assert abs(result.node_positions[0][0] - 50.0) < 0.1
+        assert abs(result.node_positions[1][0] - 150.0) < 0.1
+
+
+# -----------------------------------------------------------------------------
+# Task 3.4: End-to-End Integration Tests
+# -----------------------------------------------------------------------------
+
+
+class TestFullWorkflowIntegration:
+    """End-to-end tests for track graph annotation workflow."""
+
+    def test_full_workflow_creates_valid_environment(self, monkeypatch) -> None:
+        """Full workflow from annotation to Environment should work."""
+        pytest.importorskip("track_linearization")
+
+        # Custom setup to add nodes and edges
+        mock_napari = _make_mock_napari_module()
+
+        import sys
+
+        sys.modules["napari"] = mock_napari
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
+        )
+
+        def mock_setup_track_layers(viewer):
+            edges_layer = _MockShapesLayer("Track Edges")
+            nodes_layer = _MockPointsLayer("Track Nodes")
+            mock_napari._viewer.shapes.append(edges_layer)
+            mock_napari._viewer.points.append(nodes_layer)
+            return edges_layer, nodes_layer
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.setup_track_layers",
+            mock_setup_track_layers,
+        )
+
+        def mock_create_widget(viewer, edges, nodes, state):
+            # Create a simple linear track
+            state.add_node(0.0, 0.0, label="start")
+            state.add_node(10.0, 0.0)
+            state.add_node(20.0, 0.0, label="end")
+            state.add_edge(0, 1)
+            state.add_edge(1, 2)
+            state.set_start_node(0)
+            return _MockWidget()
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.create_track_widget",
+            mock_create_widget,
+        )
+
+        from neurospatial.annotation.track_graph import annotate_track_graph
+
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        result = annotate_track_graph(image=image)
+
+        # Should be able to create environment from result
+        assert result.track_graph is not None
+        env = result.to_environment(bin_size=2.0, name="test_track")
+
+        # Environment should be valid
+        assert env is not None
+        assert env.name == "test_track"
+        assert env.n_bins > 0
+        assert env.is_1d  # Track environments are 1D
+
+    def test_environment_has_correct_bin_count(self, monkeypatch) -> None:
+        """Environment from annotation should have expected bin count."""
+        pytest.importorskip("track_linearization")
+
+        # Custom setup to add nodes and edges
+        mock_napari = _make_mock_napari_module()
+
+        import sys
+
+        sys.modules["napari"] = mock_napari
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
+        )
+
+        def mock_setup_track_layers(viewer):
+            edges_layer = _MockShapesLayer("Track Edges")
+            nodes_layer = _MockPointsLayer("Track Nodes")
+            mock_napari._viewer.shapes.append(edges_layer)
+            mock_napari._viewer.points.append(nodes_layer)
+            return edges_layer, nodes_layer
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.setup_track_layers",
+            mock_setup_track_layers,
+        )
+
+        def mock_create_widget(viewer, edges, nodes, state):
+            # Create a track with known length: 0 -> 20 (20 units)
+            state.add_node(0.0, 0.0)
+            state.add_node(20.0, 0.0)
+            state.add_edge(0, 1)
+            return _MockWidget()
+
+        monkeypatch.setattr(
+            "neurospatial.annotation.track_graph.create_track_widget",
+            mock_create_widget,
+        )
+
+        from neurospatial.annotation.track_graph import annotate_track_graph
+
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        result = annotate_track_graph(image=image)
+
+        # Create environment with bin_size=5
+        # Track length is 20 units, so ~4-5 bins expected
+        env = result.to_environment(bin_size=5.0)
+
+        # Bin count should be approximately track_length / bin_size
+        # Allow some tolerance for edge effects
+        assert env.n_bins >= 3
+        assert env.n_bins <= 6
 
 
 # -----------------------------------------------------------------------------

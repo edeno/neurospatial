@@ -1,11 +1,50 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 3 IN PROGRESS - Task 3.3 Complete
+**Current Status**: Milestone 3 COMPLETE - All Tasks Done
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 3.4 Complete (Write End-to-End Tests)
+
+**Completed**: Task 3.4 - Write End-to-End Tests
+
+**Work Done**:
+
+1. Added 5 new tests to `tests/annotation/test_track_graph.py`:
+   - `TestAnnotateTrackGraphVideoPath` (2 tests) - video path with mocked VideoReader
+   - `TestAnnotateTrackGraphCalibration.test_coordinates_in_cm_with_calibration` - verify transform
+   - `TestFullWorkflowIntegration` (2 tests) - full annotation to Environment workflow
+
+2. Tests cover:
+   - Video path input with frame_index validation
+   - Calibration coordinate transformation verification
+   - Full workflow: annotate_track_graph → TrackGraphResult → to_environment → valid 1D Environment
+   - Bin count verification for expected track length
+
+**TDD Process**:
+
+- Most tests from Task 3.4 spec were already implemented in Task 3.2
+- Added 5 missing tests to complete the spec
+- Fixed VideoReader mock path (patch at source module, not import location)
+- All 32 tests pass
+
+**Tests**: 32 tests pass (5 new for end-to-end)
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Milestone 3 Summary**:
+
+- Task 3.1: Implement TrackGraphResult ✓
+- Task 3.2: Implement annotate_track_graph Entry Point ✓
+- Task 3.3: Add Module Exports ✓
+- Task 3.4: Write End-to-End Tests ✓
+
+**Next**: Milestone 4 - Polish (Task 4.1: Edge Order Editing UI - optional enhancement)
+
+---
 
 ### 2025-11-27 - Task 3.3 Complete (Add Module Exports)
 
