@@ -1449,6 +1449,7 @@ class TestSaveClose:
         state.add_node(100.0, 200.0)
         state.add_node(300.0, 400.0)
         state.add_edge(0, 1)
+        state.set_start_node(0)  # Set start node to avoid warning dialog
 
         widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
 
@@ -1458,7 +1459,7 @@ class TestSaveClose:
         assert result is True  # Save should succeed
         viewer.close()
 
-    def test_save_invalid_state_returns_false(self):
+    def test_save_invalid_state_returns_false(self, monkeypatch):
         """Saving with invalid state returns False."""
         napari = pytest.importorskip("napari")
         pytest.importorskip("qtpy")
@@ -1476,13 +1477,18 @@ class TestSaveClose:
 
         widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
 
+        # Mock QMessageBox.warning to prevent blocking dialog
+        from qtpy import QtWidgets
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *args: None)
+
         # Try to save
         result = widget.try_save()
 
         assert result is False  # Save should fail
         viewer.close()
 
-    def test_save_shows_warnings_but_allows(self):
+    def test_save_shows_warnings_but_allows(self, monkeypatch):
         """Saving with warnings (no start node) still succeeds."""
         napari = pytest.importorskip("napari")
         pytest.importorskip("qtpy")
@@ -1509,7 +1515,292 @@ class TestSaveClose:
         assert is_valid, "State should be valid despite warnings"
         assert len(warnings) > 0, "Should have warning about missing start node"
 
+        # Mock QMessageBox.information to prevent blocking dialog
+        from qtpy import QtWidgets
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args: None)
+
         # Try to save - should succeed despite warnings
         result = widget.try_save()
         assert result is True, "Save should succeed with warnings"
+        viewer.close()
+
+
+# =============================================================================
+# Task 4.2 Tests: 1D Preview
+# =============================================================================
+
+
+@pytest.mark.gui
+class TestPreviewLinearizationButton:
+    """Tests for the Preview Linearization button."""
+
+    def test_preview_button_exists(self):
+        """Widget has a 'Preview Linearization' button."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check for preview button accessor
+        assert hasattr(widget, "preview_button"), "Widget should have preview_button"
+        viewer.close()
+
+    def test_preview_button_has_click_method(self):
+        """Preview button accessor has click() method."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Verify click method exists
+        assert hasattr(widget.preview_button, "click")
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestPreview1DFunctionality:
+    """Tests for the 1D preview functionality."""
+
+    def test_show_1d_preview_function_exists(self):
+        """_show_1d_preview function exists."""
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        assert callable(_show_1d_preview)
+
+    def test_show_1d_preview_with_valid_state(self):
+        """_show_1d_preview creates matplotlib figure with valid state."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        # Create state with a valid track graph
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_node(100.0, 100.0)
+        state.add_edge(0, 1)
+        state.add_edge(1, 2)
+
+        # Close all existing figures first
+        plt.close("all")
+        initial_figs = plt.get_fignums()
+
+        # Show preview (non-blocking)
+        _show_1d_preview(state, show=False)
+
+        # Verify figure was created
+        new_figs = plt.get_fignums()
+        assert len(new_figs) > len(initial_figs), "Should create a new figure"
+
+        # Clean up
+        plt.close("all")
+
+    def test_show_1d_preview_with_custom_edge_order(self):
+        """_show_1d_preview uses edge_order_override from state."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        # Create state with track graph and custom edge order
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_node(100.0, 100.0)
+        state.add_edge(0, 1)
+        state.add_edge(1, 2)
+
+        # Set custom edge order (reversed)
+        state.set_edge_order([(1, 2), (0, 1)])
+
+        plt.close("all")
+
+        # Show preview with custom order
+        _show_1d_preview(state, show=False)
+
+        # Verify figure was created
+        assert len(plt.get_fignums()) > 0
+
+        plt.close("all")
+
+    def test_show_1d_preview_returns_axes(self):
+        """_show_1d_preview returns matplotlib Axes object."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_edge(0, 1)
+
+        result = _show_1d_preview(state, show=False)
+
+        assert isinstance(result, plt.Axes)
+        plt.close("all")
+
+    def test_show_1d_preview_with_empty_state_returns_none(self):
+        """_show_1d_preview returns None for invalid/empty state."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        state = TrackBuilderState()  # Empty state
+
+        result = _show_1d_preview(state, show=False)
+
+        assert result is None
+        plt.close("all")
+
+    def test_show_1d_preview_with_single_node_returns_none(self):
+        """_show_1d_preview returns None with only one node (no edges)."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)  # Only one node, no edges
+
+        result = _show_1d_preview(state, show=False)
+
+        assert result is None
+        plt.close("all")
+
+    def test_show_1d_preview_uses_edge_spacing_override(self):
+        """_show_1d_preview uses edge_spacing_override from state."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _show_1d_preview
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_node(100.0, 100.0)
+        state.add_edge(0, 1)
+        state.add_edge(1, 2)
+
+        # Set custom spacing
+        state.set_edge_spacing([10.0])
+
+        plt.close("all")
+
+        # Show preview - should use custom spacing
+        ax = _show_1d_preview(state, show=False)
+
+        assert ax is not None
+        plt.close("all")
+
+
+@pytest.mark.gui
+class TestPreviewButtonClickBehavior:
+    """Tests for preview button click behavior with widget."""
+
+    def test_preview_button_click_creates_figure(self):
+        """Clicking Preview button creates matplotlib figure."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        # Add valid track
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_edge(0, 1)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+        widget.sync_from_state()
+
+        plt.close("all")
+        initial_figs = len(plt.get_fignums())
+
+        # Click preview button
+        widget.preview_button.click()
+
+        # Verify figure was created
+        assert len(plt.get_fignums()) > initial_figs
+
+        plt.close("all")
+        viewer.close()
+
+    def test_preview_button_disabled_with_invalid_state(self):
+        """Preview button is disabled when state is invalid for preview."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()  # Empty state - invalid for preview
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Preview button should be disabled with empty state
+        assert not widget.preview_button.is_enabled()
+
+        viewer.close()
+
+    def test_preview_button_enabled_with_valid_state(self):
+        """Preview button is enabled when state has valid track graph."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(100.0, 0.0)
+        state.add_edge(0, 1)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+        widget.sync_from_state()
+
+        # Preview button should be enabled with valid state
+        assert widget.preview_button.is_enabled()
+
         viewer.close()

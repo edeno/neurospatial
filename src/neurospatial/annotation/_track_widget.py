@@ -384,6 +384,106 @@ def _cancel_edge_creation(state: TrackBuilderState) -> None:
 
 
 # =============================================================================
+# 1D Preview
+# =============================================================================
+
+
+def _show_1d_preview(
+    state: TrackBuilderState,
+    show: bool = True,
+) -> Any | None:
+    """Show a 1D linearized preview of the track graph.
+
+    Creates a matplotlib figure showing how the track will appear after
+    linearization, using the current edge order and spacing settings.
+
+    Parameters
+    ----------
+    state : TrackBuilderState
+        The current state containing nodes, edges, and linearization settings.
+    show : bool, optional
+        If True, calls plt.show() to display immediately. Default is True.
+
+    Returns
+    -------
+    matplotlib.axes.Axes or None
+        The axes object containing the plot, or None if the state is invalid
+        (needs at least 2 nodes and 1 edge).
+
+    Notes
+    -----
+    Uses `track_linearization.plot_graph_as_1D()` for visualization.
+    Respects `edge_order_override` and `edge_spacing_override` if set.
+    """
+    import matplotlib.pyplot as plt
+
+    # Validate state has enough data for a preview
+    if len(state.nodes) < 2 or len(state.edges) < 1:
+        return None
+
+    # Build track graph from current state
+    track_graph = state.to_track_graph()
+
+    # Get edge order (use override if set, otherwise compute)
+    if state.edge_order_override is not None:
+        edge_order = list(state.edge_order_override)
+    else:
+        edge_order = state.compute_edge_order()
+
+    # Get edge spacing (use override if set, otherwise compute)
+    if state.edge_spacing_override is not None:
+        edge_spacing: list[float] | np.ndarray = list(state.edge_spacing_override)
+    else:
+        edge_spacing = state.compute_edge_spacing()
+
+    # Import and use track_linearization plotting
+    try:
+        from track_linearization import plot_graph_as_1D
+    except ImportError:
+        # Fallback if track_linearization not available
+        _fig, ax = plt.subplots(figsize=(10, 2))
+        ax.text(
+            0.5,
+            0.5,
+            "track_linearization not installed",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        if show:
+            plt.show()
+        return ax
+
+    # Create the 1D preview plot
+    ax = plot_graph_as_1D(
+        track_graph,
+        edge_order=edge_order,
+        edge_spacing=edge_spacing,
+        draw_edge_labels=True,
+        figsize=(10, 2),
+        show=show,
+    )
+
+    return ax
+
+
+def _can_preview(state: TrackBuilderState) -> bool:
+    """Check if state has enough data to show a preview.
+
+    Parameters
+    ----------
+    state : TrackBuilderState
+        The current state to check.
+
+    Returns
+    -------
+    bool
+        True if state has at least 2 nodes and 1 edge.
+    """
+    return len(state.nodes) >= 2 and len(state.edges) >= 1
+
+
+# =============================================================================
 # Keyboard Shortcuts
 # =============================================================================
 
@@ -689,6 +789,11 @@ class TrackGraphWidget:
 
         layout.addWidget(edge_order_group)
 
+        # Preview Linearization button
+        self._preview_btn = QPushButton("Preview Linearization")
+        self._preview_btn.clicked.connect(self._on_preview)
+        layout.addWidget(self._preview_btn)
+
         # Validation status
         self._validation_label = QLabel("")
         layout.addWidget(self._validation_label)
@@ -782,6 +887,11 @@ class TrackGraphWidget:
     def apply_edge_spacing_button(self) -> _Button:
         """Apply edge spacing button accessor for tests."""
         return _Button(self._apply_spacing_btn)
+
+    @property
+    def preview_button(self) -> _PreviewButton:
+        """Preview Linearization button accessor for tests."""
+        return _PreviewButton(self._preview_btn, self._state)
 
     # -------------------------------------------------------------------------
     # QWidget compatibility
@@ -917,6 +1027,15 @@ class TrackGraphWidget:
 
         self._state.set_edge_spacing(spacing)
         self.sync_from_state()
+
+    def _on_preview(self) -> None:
+        """Handle Preview Linearization button click."""
+        import matplotlib.pyplot as plt
+
+        ax = _show_1d_preview(self._state, show=False)
+        if ax is not None:
+            # Use non-blocking show to avoid freezing the napari viewer
+            plt.show(block=False)
 
     # -------------------------------------------------------------------------
     # Public methods
@@ -1155,3 +1274,23 @@ class _EdgeSpacingInput:
         """Set spacing value for a specific gap between edges."""
         # Set the spin box value
         self._spin.setValue(value)
+
+
+class _PreviewButton:
+    """Accessor for preview button in tests."""
+
+    def __init__(self, btn, state: TrackBuilderState) -> None:
+        self._btn = btn
+        self._state = state
+
+    def click(self) -> None:
+        """Click the preview button."""
+        self._btn.click()
+
+    def is_enabled(self) -> bool:
+        """Check if the button is enabled.
+
+        The preview button is enabled when the state has at least
+        2 nodes and 1 edge (enough for a valid preview).
+        """
+        return _can_preview(self._state)

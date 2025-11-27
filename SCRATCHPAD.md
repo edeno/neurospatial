@@ -1,11 +1,70 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Task 4.1 COMPLETE - Edge Order Editing UI
+**Current Status**: Task 4.2 COMPLETE - 1D Preview
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 4.2 Complete (1D Preview)
+
+**Completed**: Task 4.2 - Add 1D Preview (Optional Enhancement)
+
+**Work Done**:
+
+1. Added `_show_1d_preview()` function to `_track_widget.py`:
+   - Uses `track_linearization.plot_graph_as_1D()` for visualization
+   - Respects `edge_order_override` and `edge_spacing_override` if set
+   - Returns matplotlib Axes or None for invalid state
+   - Includes fallback message if track_linearization not installed
+
+2. Added `_can_preview()` helper to check state validity
+
+3. Added "Preview Linearization" button to widget:
+   - Placed after Edge Order section, before validation status
+   - Uses non-blocking `plt.show(block=False)` to avoid freezing napari
+
+4. Added `preview_button` property and `_PreviewButton` accessor class:
+   - `click()` method to trigger preview
+   - `is_enabled()` method to check if state is valid for preview
+
+5. Created 12 new tests in `tests/annotation/test_track_widget.py`:
+   - `TestPreviewLinearizationButton` (2 tests) - button exists, has click method
+   - `TestPreview1DFunctionality` (7 tests) - function tests with various states
+   - `TestPreviewButtonClickBehavior` (3 tests) - click creates figure, enabled state
+
+6. Fixed pre-existing bug in SaveClose tests:
+   - Tests showed QMessageBox dialogs that blocked indefinitely
+   - Fixed `test_save_valid_state_sets_result`: Set start_node to avoid warning
+   - Fixed `test_save_invalid_state_returns_false`: Mock QMessageBox.warning
+   - Fixed `test_save_shows_warnings_but_allows`: Mock QMessageBox.information
+
+**TDD Process**:
+
+- Wrote 12 tests first → all failed (functions not implemented)
+- Implemented `_show_1d_preview()`, `_can_preview()`, preview button
+- Fixed ruff issue (unused `fig` variable)
+- Fixed mypy issue (edge_spacing type annotation)
+- Used systematic-debugging skill to find SaveClose hang issue
+- Root cause: QMessageBox blocking dialogs in headless tests
+- Fixed by mocking QMessageBox or setting start_node
+- All 81 track widget tests pass
+
+**Tests**: 81 tests pass (69 original + 12 new)
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Key Implementation Details**:
+
+- Preview uses `plot_graph_as_1D()` which shows edges laid out linearly
+- Edge labels shown on preview figure for easy identification
+- Non-blocking `plt.show(block=False)` prevents napari freeze
+- Preview updates when user clicks button (uses current edge_order/spacing)
+
+**Next**: Task 4.3 (Update CLAUDE.md Documentation)
+
+---
 
 ### 2025-11-27 - Task 4.1 Complete (Edge Order Editing UI)
 

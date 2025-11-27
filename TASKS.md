@@ -593,17 +593,20 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Add "Preview Linearization" button
-- [ ] Open matplotlib figure showing linearized track layout:
-  - Use `track_linearization.plot_track_graph()` or equivalent
+- [x] Add "Preview Linearization" button
+- [x] Open matplotlib figure showing linearized track layout:
+  - Use `track_linearization.plot_graph_as_1D()`
   - Show edge order visually
-  - Update when edge_order changes
+  - Uses current edge_order and edge_spacing settings
 
 **Success Criteria**:
 
-- Preview shows linearized track structure
-- Updates when edge order changes
-- Helps user verify correct ordering
+- Preview shows linearized track structure ✓
+- Uses edge_order_override and edge_spacing_override if set ✓
+- 12 new tests pass ✓
+- Helps user verify correct ordering ✓
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~100 lines)
 
