@@ -37,68 +37,68 @@ class TestAnnotationModeState:
 
     def test_initial_state(self):
         """Create state with initial role."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
-        assert state.role == "environment"
+        assert state.region_type == "environment"
         assert state.environment_count == 0
         assert state.hole_count == 0
         assert state.region_count == 0
 
-    def test_cycle_role_environment_to_hole(self):
+    def test_cycle_region_type_environment_to_hole(self):
         """Cycle from environment to hole."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
-        state.cycle_role()
+        state.cycle_region_type()
 
-        assert state.role == "hole"
+        assert state.region_type == "hole"
 
-    def test_cycle_role_hole_to_region(self):
+    def test_cycle_region_type_hole_to_region(self):
         """Cycle from hole to region."""
-        state = AnnotationModeState(role="hole")
+        state = AnnotationModeState(region_type="hole")
 
-        state.cycle_role()
+        state.cycle_region_type()
 
-        assert state.role == "region"
+        assert state.region_type == "region"
 
-    def test_cycle_role_region_to_environment(self):
+    def test_cycle_region_type_region_to_environment(self):
         """Cycle from region back to environment."""
-        state = AnnotationModeState(role="region")
+        state = AnnotationModeState(region_type="region")
 
-        state.cycle_role()
+        state.cycle_region_type()
 
-        assert state.role == "environment"
+        assert state.region_type == "environment"
 
     def test_full_cycle(self):
         """Complete cycle returns to original role."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
-        state.cycle_role()  # hole
-        state.cycle_role()  # region
-        state.cycle_role()  # environment
+        state.cycle_region_type()  # hole
+        state.cycle_region_type()  # region
+        state.cycle_region_type()  # environment
 
-        assert state.role == "environment"
+        assert state.region_type == "environment"
 
     def test_default_name_for_environment(self):
         """Default name for environment is 'arena'."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         assert state.default_name() == "arena"
 
     def test_default_name_for_hole(self):
         """Default name for hole is empty (auto-named on creation)."""
-        state = AnnotationModeState(role="hole")
+        state = AnnotationModeState(region_type="hole")
 
         assert state.default_name() == ""
 
     def test_default_name_for_region(self):
         """Default name for region is empty (user provides name)."""
-        state = AnnotationModeState(role="region")
+        state = AnnotationModeState(region_type="region")
 
         assert state.default_name() == ""
 
     def test_generate_auto_name_environment(self):
         """Auto-generate name for environment."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         name = state.generate_auto_name([])
 
@@ -106,7 +106,7 @@ class TestAnnotationModeState:
 
     def test_generate_auto_name_hole(self):
         """Auto-generate incremented name for hole."""
-        state = AnnotationModeState(role="hole", hole_count=0)
+        state = AnnotationModeState(region_type="hole", hole_count=0)
 
         name = state.generate_auto_name([])
 
@@ -114,7 +114,7 @@ class TestAnnotationModeState:
 
     def test_generate_auto_name_hole_increments(self):
         """Auto-generate incremented name based on count."""
-        state = AnnotationModeState(role="hole", hole_count=2)
+        state = AnnotationModeState(region_type="hole", hole_count=2)
 
         name = state.generate_auto_name([])
 
@@ -122,7 +122,7 @@ class TestAnnotationModeState:
 
     def test_generate_auto_name_region(self):
         """Auto-generate incremented name for region."""
-        state = AnnotationModeState(role="region", region_count=0)
+        state = AnnotationModeState(region_type="region", region_count=0)
 
         name = state.generate_auto_name([])
 
@@ -130,7 +130,7 @@ class TestAnnotationModeState:
 
     def test_generate_auto_name_avoids_duplicates(self):
         """Auto-generated name avoids existing names."""
-        state = AnnotationModeState(role="region", region_count=0)
+        state = AnnotationModeState(region_type="region", region_count=0)
 
         name = state.generate_auto_name(["region_1"])
 
@@ -138,7 +138,7 @@ class TestAnnotationModeState:
 
     def test_record_shape_added_environment(self):
         """Recording environment shape increments environment_count."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         state.record_shape_added("environment")
 
@@ -148,7 +148,7 @@ class TestAnnotationModeState:
 
     def test_record_shape_added_hole(self):
         """Recording hole shape increments hole_count."""
-        state = AnnotationModeState(role="hole")
+        state = AnnotationModeState(region_type="hole")
 
         state.record_shape_added("hole")
 
@@ -156,17 +156,17 @@ class TestAnnotationModeState:
 
     def test_record_shape_added_region(self):
         """Recording region shape increments region_count."""
-        state = AnnotationModeState(role="region")
+        state = AnnotationModeState(region_type="region")
 
         state.record_shape_added("region")
 
         assert state.region_count == 1
 
-    def test_sync_counts_from_roles(self):
+    def test_sync_counts_from_region_types(self):
         """Sync counts from list of roles."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
-        state.sync_counts_from_roles(["environment", "hole", "hole", "region"])
+        state.sync_counts_from_region_types(["environment", "hole", "hole", "region"])
 
         assert state.environment_count == 1
         assert state.hole_count == 2
@@ -175,13 +175,13 @@ class TestAnnotationModeState:
     def test_sync_counts_from_empty_roles(self):
         """Sync from empty list resets counts."""
         state = AnnotationModeState(
-            role="environment",
+            region_type="environment",
             environment_count=5,
             hole_count=3,
             region_count=2,
         )
 
-        state.sync_counts_from_roles([])
+        state.sync_counts_from_region_types([])
 
         assert state.environment_count == 0
         assert state.hole_count == 0
@@ -190,7 +190,7 @@ class TestAnnotationModeState:
     def test_status_text(self):
         """Generate status text from counts."""
         state = AnnotationModeState(
-            role="environment",
+            region_type="environment",
             environment_count=1,
             hole_count=2,
             region_count=3,
@@ -202,7 +202,7 @@ class TestAnnotationModeState:
 
     def test_status_text_zeros(self):
         """Status text with all zeros."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         text = state.status_text()
 
@@ -210,13 +210,13 @@ class TestAnnotationModeState:
 
     def test_has_environment_false(self):
         """has_environment False when no environment drawn."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         assert state.has_environment is False
 
     def test_has_environment_true(self):
         """has_environment True after environment drawn."""
-        state = AnnotationModeState(role="environment", environment_count=1)
+        state = AnnotationModeState(region_type="environment", environment_count=1)
 
         assert state.has_environment is True
 
@@ -226,16 +226,16 @@ class TestAnnotationModeStateIntegration:
 
     def test_typical_workflow(self):
         """Simulate typical annotation workflow."""
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         # Draw environment
-        assert state.role == "environment"
+        assert state.region_type == "environment"
         state.record_shape_added("environment")
         assert state.has_environment
 
         # Switch to hole mode
-        state.cycle_role()
-        assert state.role == "hole"
+        state.cycle_region_type()
+        assert state.region_type == "hole"
 
         # Draw two holes
         state.record_shape_added("hole")
@@ -243,8 +243,8 @@ class TestAnnotationModeStateIntegration:
         assert state.hole_count == 2
 
         # Switch to region mode
-        state.cycle_role()
-        assert state.role == "region"
+        state.cycle_region_type()
+        assert state.region_type == "region"
 
         # Draw regions
         state.record_shape_added("region")
@@ -259,7 +259,7 @@ class TestAnnotationModeStateIntegration:
 
     def test_region_only_workflow(self):
         """Simulate region-only annotation (no environment)."""
-        state = AnnotationModeState(role="region")
+        state = AnnotationModeState(region_type="region")
 
         # Draw multiple regions
         existing = []

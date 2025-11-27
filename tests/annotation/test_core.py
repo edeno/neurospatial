@@ -4,13 +4,105 @@ import numpy as np
 import pytest
 import shapely.geometry as shp
 
+from neurospatial.annotation import AnnotationConfig
 from neurospatial.annotation.core import (
     AnnotationResult,
     _add_initial_regions,
+    _process_annotation_results,
+    _resolve_config_params,
     annotate_video,
 )
 from neurospatial.regions import Region, Regions
 from neurospatial.transforms import Affine2D, VideoCalibration
+
+
+class TestAnnotationConfig:
+    """Tests for AnnotationConfig dataclass."""
+
+    def test_default_values(self):
+        """Default config has sensible defaults."""
+        config = AnnotationConfig()
+        assert config.frame_index == 0
+        assert config.simplify_tolerance is None
+        assert config.multiple_boundaries == "last"
+        assert config.show_positions is False
+
+    def test_custom_values(self):
+        """Can create config with custom values."""
+        config = AnnotationConfig(
+            frame_index=100,
+            simplify_tolerance=1.5,
+            multiple_boundaries="first",
+            show_positions=True,
+        )
+        assert config.frame_index == 100
+        assert config.simplify_tolerance == 1.5
+        assert config.multiple_boundaries == "first"
+        assert config.show_positions is True
+
+    def test_frozen(self):
+        """Config is immutable."""
+        config = AnnotationConfig()
+        with pytest.raises(AttributeError):
+            config.frame_index = 10  # type: ignore[misc]
+
+
+class TestResolveConfigParams:
+    """Tests for _resolve_config_params helper."""
+
+    def test_defaults_when_no_config(self):
+        """Use AnnotationConfig defaults when config is None."""
+        resolved = _resolve_config_params(None, None, None, None, None)
+        assert resolved.frame_index == 0
+        assert resolved.simplify_tolerance is None
+        assert resolved.multiple_boundaries == "last"
+        assert resolved.show_positions is False
+
+    def test_uses_config_values(self):
+        """Use config values when provided."""
+        config = AnnotationConfig(frame_index=50, simplify_tolerance=2.0)
+        resolved = _resolve_config_params(config, None, None, None, None)
+        assert resolved.frame_index == 50
+        assert resolved.simplify_tolerance == 2.0
+
+    def test_individual_params_override_config(self):
+        """Individual params take precedence over config."""
+        config = AnnotationConfig(
+            frame_index=50,
+            simplify_tolerance=2.0,
+            multiple_boundaries="first",
+            show_positions=True,
+        )
+        resolved = _resolve_config_params(
+            config,
+            frame_index=100,
+            simplify_tolerance=1.0,
+            multiple_boundaries="error",
+            show_positions=False,
+        )
+        # All overridden by individual params
+        assert resolved.frame_index == 100
+        assert resolved.simplify_tolerance == 1.0
+        assert resolved.multiple_boundaries == "error"
+        assert resolved.show_positions is False
+
+    def test_partial_override(self):
+        """Some params from config, some overridden."""
+        config = AnnotationConfig(
+            frame_index=50,
+            simplify_tolerance=2.0,
+        )
+        resolved = _resolve_config_params(
+            config,
+            frame_index=None,  # Use config
+            simplify_tolerance=1.0,  # Override
+            multiple_boundaries=None,  # Use default
+            show_positions=None,  # Use default
+        )
+        assert resolved.frame_index == 50  # From config
+        assert resolved.simplify_tolerance == 1.0  # Overridden
+        assert resolved.multiple_boundaries == "last"  # Default
+        assert resolved.show_positions is False  # Default
 
 
 class TestAnnotateVideoValidation:
@@ -77,6 +169,46 @@ class TestAnnotationResult:
 
         assert env is None
         assert regs is regions
+
+
+@pytest.mark.gui
+class TestProcessAnnotationResults:
+    """Tests for _process_annotation_results helper."""
+
+    def test_warns_mode_mismatch_regions_with_boundary(self):
+        """Warn when boundary is drawn but mode='regions'."""
+        napari = pytest.importorskip("napari")
+        import pandas as pd
+
+        # Create shapes layer with an environment boundary shape
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            # Add a polygon shape (environment boundary)
+            boundary = np.array([[0, 0], [0, 100], [100, 100], [100, 0]])
+            shapes.add(boundary, shape_type="polygon")
+
+            # Set features with 'environment' role
+            shapes.features = pd.DataFrame({"role": ["environment"], "name": ["arena"]})
+
+            # Process with mode='regions' - should warn
+            with pytest.warns(
+                UserWarning,
+                match="environment boundary was drawn but mode='regions'",
+            ):
+                result = _process_annotation_results(
+                    shapes,
+                    mode="regions",
+                    bin_size=None,
+                    calibration=None,
+                    simplify_tolerance=None,
+                    multiple_boundaries="last",
+                )
+
+            # Environment should be None because mode='regions'
+            assert result.environment is None
+        finally:
+            viewer.close()
 
 
 @pytest.mark.gui  # Skip in headless CI with: pytest -m "not gui"
@@ -600,3 +732,158 @@ class TestInitialBoundaryConflictResolution:
             filtered = _filter_environment_regions(regions)
 
         assert "goal" in filtered
+
+
+# =============================================================================
+# Tests for decomposed helper functions
+# =============================================================================
+
+
+class TestValidateAnnotateParams:
+    """Tests for _validate_annotate_params helper."""
+
+    def test_raises_for_environment_mode_without_bin_size(self):
+        """Raises ValueError when mode='environment' and bin_size is None."""
+        from neurospatial.annotation.core import _validate_annotate_params
+
+        with pytest.raises(
+            ValueError, match="bin_size is required when mode='environment'"
+        ):
+            _validate_annotate_params(mode="environment", bin_size=None)
+
+    def test_raises_for_both_mode_without_bin_size(self):
+        """Raises ValueError when mode='both' and bin_size is None."""
+        from neurospatial.annotation.core import _validate_annotate_params
+
+        with pytest.raises(ValueError, match="bin_size is required when mode='both'"):
+            _validate_annotate_params(mode="both", bin_size=None)
+
+    def test_passes_for_regions_mode_without_bin_size(self):
+        """No error when mode='regions' and bin_size is None."""
+        from neurospatial.annotation.core import _validate_annotate_params
+
+        # Should not raise
+        _validate_annotate_params(mode="regions", bin_size=None)
+
+    def test_passes_when_bin_size_provided(self):
+        """No error when bin_size is provided."""
+        from neurospatial.annotation.core import _validate_annotate_params
+
+        # Should not raise for any mode when bin_size provided
+        _validate_annotate_params(mode="environment", bin_size=5.0)
+        _validate_annotate_params(mode="both", bin_size=5.0)
+        _validate_annotate_params(mode="regions", bin_size=5.0)
+
+
+class TestLoadVideoFrame:
+    """Tests for _load_video_frame helper."""
+
+    def test_raises_for_missing_file(self, tmp_path):
+        """Raises FileNotFoundError for missing video file."""
+        from pathlib import Path
+
+        from neurospatial.annotation.core import _load_video_frame
+
+        missing_file = Path(tmp_path / "nonexistent.mp4")
+
+        with pytest.raises(FileNotFoundError, match="Video file not found"):
+            _load_video_frame(missing_file, frame_index=0)
+
+    def test_raises_for_invalid_frame_index(self, tmp_path):
+        """Raises IndexError with helpful message for invalid frame index."""
+        # Need a valid video file to test frame index error
+        pytest.importorskip("cv2")
+        from pathlib import Path
+
+        from neurospatial.annotation.core import _load_video_frame
+
+        # Create an empty file (will fail to open as video)
+        video_file = Path(tmp_path / "test.mp4")
+        video_file.touch()
+
+        # Empty file should raise ValueError about "Could not open video file"
+        with pytest.raises(ValueError, match="Could not open video file"):
+            _load_video_frame(video_file, frame_index=0)
+
+
+class TestProcessInitialBoundary:
+    """Tests for _process_initial_boundary helper."""
+
+    def test_returns_none_for_none_input(self):
+        """Returns (None, None) when initial_boundary is None."""
+        from neurospatial.annotation.core import _process_initial_boundary
+
+        boundary, positions = _process_initial_boundary(
+            initial_boundary=None,
+            boundary_config=None,
+            show_positions=False,
+        )
+
+        assert boundary is None
+        assert positions is None
+
+    def test_returns_polygon_directly(self):
+        """Returns Polygon unchanged when initial_boundary is Polygon."""
+        from neurospatial.annotation.core import _process_initial_boundary
+
+        input_polygon = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+
+        boundary, positions = _process_initial_boundary(
+            initial_boundary=input_polygon,
+            boundary_config=None,
+            show_positions=False,
+        )
+
+        assert boundary is input_polygon
+        assert positions is None
+
+    def test_returns_polygon_without_positions_when_not_showing(self):
+        """When show_positions=False, positions_for_display is None."""
+        from neurospatial.annotation.core import _process_initial_boundary
+
+        input_polygon = shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+
+        boundary, positions = _process_initial_boundary(
+            initial_boundary=input_polygon,
+            boundary_config=None,
+            show_positions=True,  # True but input is Polygon, not array
+        )
+
+        # For Polygon input, positions are never returned
+        assert boundary is input_polygon
+        assert positions is None
+
+    def test_infers_boundary_from_ndarray(self):
+        """Infers boundary polygon from position NDArray."""
+        from neurospatial.annotation.core import _process_initial_boundary
+
+        # Create random positions in a rectangle
+        rng = np.random.default_rng(42)
+        positions_array = rng.uniform(low=[0, 0], high=[100, 80], size=(200, 2))
+
+        boundary, positions = _process_initial_boundary(
+            initial_boundary=positions_array,
+            boundary_config=None,
+            show_positions=False,
+        )
+
+        # Should return a valid polygon
+        assert boundary is not None
+        assert hasattr(boundary, "exterior")  # It's a Shapely Polygon
+        assert positions is None
+
+    def test_returns_positions_for_display_when_requested(self):
+        """Returns positions array when show_positions=True and input is NDArray."""
+        from neurospatial.annotation.core import _process_initial_boundary
+
+        rng = np.random.default_rng(42)
+        positions_array = rng.uniform(low=[0, 0], high=[100, 80], size=(200, 2))
+
+        boundary, positions = _process_initial_boundary(
+            initial_boundary=positions_array,
+            boundary_config=None,
+            show_positions=True,
+        )
+
+        assert boundary is not None
+        assert positions is positions_array  # Same array reference

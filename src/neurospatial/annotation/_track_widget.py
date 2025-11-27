@@ -1303,7 +1303,9 @@ class _Button:
         self._btn = btn
 
     def click(self) -> None:
-        self._btn.click()
+        # Emit clicked signal directly instead of calling .click()
+        # This works even when the widget isn't shown (e.g., show=False in tests)
+        self._btn.clicked.emit()
 
 
 class _LineEdit:

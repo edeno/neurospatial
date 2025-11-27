@@ -30,7 +30,7 @@ class TestShapesLayerControllerApplyMode:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="hole")
+        state = AnnotationModeState(region_type="hole")
 
         controller = ShapesLayerController(shapes, state)
         controller.apply_mode()
@@ -49,7 +49,7 @@ class TestShapesLayerControllerApplyMode:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="hole")
+        state = AnnotationModeState(region_type="hole")
 
         controller = ShapesLayerController(shapes, state)
         controller.apply_mode()
@@ -68,7 +68,7 @@ class TestShapesLayerControllerApplyMode:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
         controller.apply_mode()
@@ -97,7 +97,7 @@ class TestShapesLayerControllerDeleteShapes:
             features=rebuild_features(["environment", "hole"], ["arena", "hole_1"]),
         )
         state = AnnotationModeState(
-            role="environment", environment_count=1, hole_count=1
+            region_type="environment", environment_count=1, hole_count=1
         )
 
         controller = ShapesLayerController(shapes, state)
@@ -132,7 +132,7 @@ class TestShapesLayerControllerDeleteShapes:
             ),
         )
         state = AnnotationModeState(
-            role="environment", environment_count=1, hole_count=1, region_count=1
+            region_type="environment", environment_count=1, hole_count=1, region_count=1
         )
 
         controller = ShapesLayerController(shapes, state)
@@ -158,7 +158,7 @@ class TestShapesLayerControllerDeleteShapes:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["environment"], ["arena"]),
         )
-        state = AnnotationModeState(role="environment", environment_count=1)
+        state = AnnotationModeState(region_type="environment", environment_count=1)
 
         controller = ShapesLayerController(shapes, state)
         deleted = controller.delete_shapes_by_indices({0})
@@ -179,7 +179,7 @@ class TestShapesLayerControllerDeleteShapes:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["environment"], ["arena"]),
         )
-        state = AnnotationModeState(role="environment", environment_count=1)
+        state = AnnotationModeState(region_type="environment", environment_count=1)
 
         controller = ShapesLayerController(shapes, state)
         deleted = controller.delete_shapes_by_indices(set())
@@ -204,7 +204,7 @@ class TestShapesLayerControllerRenameShape:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["region_1"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
         assigned_name, was_modified = controller.rename_shape(0, "goal")
@@ -228,7 +228,7 @@ class TestShapesLayerControllerRenameShape:
             ],
             features=rebuild_features(["region", "region"], ["goal", "start"]),
         )
-        state = AnnotationModeState(role="region", region_count=2)
+        state = AnnotationModeState(region_type="region", region_count=2)
 
         controller = ShapesLayerController(shapes, state)
         # Try to rename "start" to "goal" - should become "goal_2"
@@ -250,7 +250,7 @@ class TestShapesLayerControllerRenameShape:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["goal"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
         # Rename "goal" to "goal" - should keep as "goal"
@@ -271,7 +271,7 @@ class TestShapesLayerControllerRenameShape:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["goal"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
         # Rename to empty string - assigns empty name
@@ -301,7 +301,7 @@ class TestShapesLayerControllerGetters:
             ],
             features=rebuild_features(["environment", "hole"], ["arena", "hole_1"]),
         )
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
         names = controller.get_existing_names()
@@ -316,7 +316,7 @@ class TestShapesLayerControllerGetters:
 
         viewer = napari.Viewer(show=False)
         shapes = viewer.add_shapes(name="Test", features=rebuild_features([], []))
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
         names = controller.get_existing_names()
@@ -324,8 +324,8 @@ class TestShapesLayerControllerGetters:
         assert names == []
         viewer.close()
 
-    def test_get_existing_roles(self):
-        """get_existing_roles returns list of shape roles."""
+    def test_get_existing_region_types(self):
+        """get_existing_region_types returns list of shape region types."""
         napari = pytest.importorskip("napari")
         from neurospatial.annotation._controller import ShapesLayerController
 
@@ -338,12 +338,12 @@ class TestShapesLayerControllerGetters:
             ],
             features=rebuild_features(["environment", "hole"], ["arena", "hole_1"]),
         )
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
-        roles = controller.get_existing_roles()
+        region_types = controller.get_existing_region_types()
 
-        assert roles == ["environment", "hole"]
+        assert region_types == ["environment", "hole"]
         viewer.close()
 
     def test_shape_count(self):
@@ -360,7 +360,7 @@ class TestShapesLayerControllerGetters:
             ],
             features=rebuild_features(["environment", "hole"], ["arena", "hole_1"]),
         )
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
 
@@ -392,7 +392,7 @@ class TestShapesLayerControllerSyncState:
         )
         # State has wrong counts initially
         state = AnnotationModeState(
-            role="environment", environment_count=0, hole_count=0
+            region_type="environment", environment_count=0, hole_count=0
         )
 
         controller = ShapesLayerController(shapes, state)
@@ -418,7 +418,7 @@ class TestShapesLayerControllerUpdateFeatures:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="region", region_count=0)
+        state = AnnotationModeState(region_type="region", region_count=0)
 
         controller = ShapesLayerController(shapes, state)
         # Set up feature_defaults (like widget does)
@@ -448,7 +448,7 @@ class TestShapesLayerControllerUpdateFeatures:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="region", region_count=0)
+        state = AnnotationModeState(region_type="region", region_count=0)
 
         controller = ShapesLayerController(shapes, state)
         controller.apply_mode()
@@ -472,7 +472,7 @@ class TestShapesLayerControllerUpdateFeatures:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["goal"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
         controller.apply_mode()
@@ -495,7 +495,7 @@ class TestShapesLayerControllerUpdateFeatures:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["goal"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
 
@@ -523,7 +523,7 @@ class TestShapesLayerControllerEnvironmentCheck:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["environment"], ["arena"]),
         )
-        state = AnnotationModeState(role="environment", environment_count=1)
+        state = AnnotationModeState(region_type="environment", environment_count=1)
 
         controller = ShapesLayerController(shapes, state)
 
@@ -541,7 +541,7 @@ class TestShapesLayerControllerEnvironmentCheck:
             data=[np.array([[0, 0], [10, 0], [10, 10], [0, 10]])],
             features=rebuild_features(["region"], ["goal"]),
         )
-        state = AnnotationModeState(role="region", region_count=1)
+        state = AnnotationModeState(region_type="region", region_count=1)
 
         controller = ShapesLayerController(shapes, state)
 
@@ -558,7 +558,7 @@ class TestShapesLayerControllerEnvironmentCheck:
             name="Test",
             features=rebuild_features([], []),
         )
-        state = AnnotationModeState(role="environment")
+        state = AnnotationModeState(region_type="environment")
 
         controller = ShapesLayerController(shapes, state)
 

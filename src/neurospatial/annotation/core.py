@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from neurospatial.annotation._types import MultipleBoundaryStrategy, Role
+from neurospatial.annotation._types import (
+    AnnotationConfig,
+    MultipleBoundaryStrategy,
+    RegionType,
+)
+
+# Module logger for debug output
+# Enable with: logging.getLogger("neurospatial.annotation.core").setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import napari
@@ -39,16 +49,18 @@ class AnnotationResult(NamedTuple):
 def annotate_video(
     video_path: str | Path,
     *,
-    frame_index: int = 0,
+    config: AnnotationConfig | None = None,
     initial_regions: Regions | None = None,
     calibration: VideoCalibration | None = None,
     mode: Literal["environment", "regions", "both"] = "both",
     bin_size: float | None = None,
-    simplify_tolerance: float | None = None,
-    multiple_boundaries: MultipleBoundaryStrategy = "last",
     initial_boundary: Polygon | NDArray[np.float64] | None = None,
     boundary_config: BoundaryConfig | None = None,
-    show_positions: bool = False,
+    # Individual params (can be overridden by config)
+    frame_index: int | None = None,
+    simplify_tolerance: float | None = None,
+    multiple_boundaries: MultipleBoundaryStrategy | None = None,
+    show_positions: bool | None = None,
 ) -> AnnotationResult:
     """
     Launch interactive napari annotation on a video frame.
@@ -62,8 +74,10 @@ def annotate_video(
     ----------
     video_path : str or Path
         Path to video file (any format supported by OpenCV).
-    frame_index : int, default=0
-        Which frame to display for annotation.
+    config : AnnotationConfig, optional
+        Configuration for annotation UI settings. Groups frame_index,
+        simplify_tolerance, multiple_boundaries, and show_positions.
+        Individual parameters override config values if both provided.
     initial_regions : Regions, optional
         Pre-existing regions to display for editing.
     calibration : VideoCalibration, optional
@@ -77,17 +91,6 @@ def annotate_video(
     bin_size : float, optional
         Bin size for environment discretization. Required if mode is
         "environment" or "both".
-    simplify_tolerance : float, optional
-        If provided, simplifies hand-drawn polygons using Douglas-Peucker
-        algorithm. Removes jagged edges from freehand drawing. Tolerance
-        is in output units (cm if calibration provided, else pixels).
-        Recommended: 1.0-2.0 for typical use cases.
-    multiple_boundaries : {"last", "first", "error"}, default="last"
-        How to handle multiple environment boundaries:
-
-        - "last": Use the last drawn boundary (default). A warning is emitted.
-        - "first": Use the first drawn boundary. A warning is emitted.
-        - "error": Raise ValueError if multiple boundaries are drawn.
     initial_boundary : Polygon or NDArray, optional
         Pre-drawn boundary for editing. Can be:
 
@@ -98,9 +101,32 @@ def annotate_video(
     boundary_config : BoundaryConfig, optional
         Configuration for boundary inference when initial_boundary is an array.
         If None, uses BoundaryConfig defaults (convex_hull, 2% buffer, 1% simplify).
-    show_positions : bool, default=False
+    frame_index : int, optional
+        Which frame to display for annotation. Overrides config.frame_index.
+        Default is 0 (first frame).
+    simplify_tolerance : float, optional
+        Tolerance for polygon simplification using Douglas-Peucker algorithm.
+        Removes vertices that deviate less than this distance from the simplified line.
+        Overrides config.simplify_tolerance.
+
+        Units depend on calibration:
+        - With calibration: environment units (typically cm)
+        - Without calibration: pixels
+
+        Recommended values:
+        - For cm: 1.0-2.0 (removes hand-drawn jitter)
+        - For pixels: 2.0-5.0
+    multiple_boundaries : {"last", "first", "error"}, optional
+        How to handle multiple environment boundaries.
+        Overrides config.multiple_boundaries. Default is "last".
+
+        - "last": Use the last drawn boundary (default). A warning is emitted.
+        - "first": Use the first drawn boundary. A warning is emitted.
+        - "error": Raise ValueError if multiple boundaries are drawn.
+    show_positions : bool, optional
         If True and initial_boundary is an array, show positions as a
         Points layer for reference while editing.
+        Overrides config.show_positions. Default is False.
 
     Returns
     -------
@@ -158,13 +184,23 @@ def annotate_video(
     --------
     regions_from_labelme : Import from LabelMe JSON
     regions_from_cvat : Import from CVAT XML
+    AnnotationConfig : Configuration dataclass for annotation settings.
     """
+    # Resolve config with individual parameter overrides
+    resolved = _resolve_config_params(
+        config, frame_index, simplify_tolerance, multiple_boundaries, show_positions
+    )
+    logger.debug(
+        "Resolved config: frame_index=%d, simplify_tolerance=%s, "
+        "multiple_boundaries=%s, show_positions=%s",
+        resolved.frame_index,
+        resolved.simplify_tolerance,
+        resolved.multiple_boundaries,
+        resolved.show_positions,
+    )
+
     # Validate parameters early (before expensive imports)
-    if mode in ("environment", "both") and bin_size is None:
-        raise ValueError(
-            f"bin_size is required when mode={mode!r}. "
-            "Provide bin_size for environment discretization."
-        )
+    _validate_annotate_params(mode, bin_size)
 
     try:
         import napari
@@ -174,166 +210,44 @@ def annotate_video(
             "Install with: pip install napari[all]"
         ) from e
 
-    from neurospatial.animation._video_io import VideoReader
-    from neurospatial.annotation._napari_widget import (
-        create_annotation_widget,
-        get_annotation_data,
-        setup_shapes_layer_for_annotation,
-    )
-    from neurospatial.annotation.converters import (
-        env_from_boundary_region,
-        shapes_to_regions,
-    )
-    from neurospatial.regions import Regions
-
-    # Validate video path
+    # Convert to Path and load video frame
     video_path = Path(video_path)
-    if not video_path.exists():
-        raise FileNotFoundError(f"Video file not found: {video_path}")
+    logger.debug("Loading video frame %d from %s", resolved.frame_index, video_path)
+    frame = _load_video_frame(video_path, resolved.frame_index)
+    logger.debug("Loaded frame with shape %s", frame.shape)
 
-    # Load video frame
-    reader = VideoReader(str(video_path))
-    try:
-        frame = reader[frame_index]  # (H, W, 3) RGB uint8
-    except (IndexError, KeyError) as e:
-        raise IndexError(
-            f"Frame index {frame_index} is out of range for video '{video_path.name}'. "
-            f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
-        ) from e
+    # Process initial boundary (from polygon or positions)
+    boundary_polygon, positions_for_display = _process_initial_boundary(
+        initial_boundary, boundary_config, resolved.show_positions
+    )
 
-    # Process initial boundary
-    boundary_polygon = None
-    positions_for_display = None
-
-    if initial_boundary is not None:
-        if isinstance(initial_boundary, np.ndarray):
-            # Infer boundary from positions
-            from neurospatial.annotation._boundary_inference import (
-                boundary_from_positions,
-            )
-
-            boundary_polygon = boundary_from_positions(
-                initial_boundary,
-                config=boundary_config,
-            )
-            if show_positions:
-                positions_for_display = initial_boundary
-        else:
-            # Assume Shapely Polygon
-            boundary_polygon = initial_boundary
-
-    # Handle conflict: initial_boundary vs environment region in initial_regions
-    # initial_boundary takes precedence - warn if both provided
+    # Handle conflict: initial_boundary takes precedence over env regions in initial_regions
     if boundary_polygon is not None and initial_regions is not None:
         initial_regions = _filter_environment_regions(initial_regions)
 
-    # Create viewer with reasonable default size for annotation work
-    viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
-    viewer.window.resize(1400, 900)  # Larger window for comfortable annotation
-    viewer.add_image(frame, name="video_frame", rgb=True)
-
-    # Determine initial annotation mode based on user's intent
-    # "regions" mode → start in region mode (user doesn't want environment boundary)
-    # "environment" or "both" → start in environment mode
-    initial_annotation_mode: Role = "region" if mode == "regions" else "environment"
-
-    # Add positions layer FIRST so it appears below the shapes layer
-    # (napari layers are ordered bottom-to-top by insertion order)
-    if positions_for_display is not None:
-        _add_positions_layer(viewer, positions_for_display, calibration)
-
-    # Add shapes layer with annotation-optimized settings
-    # (features-based coloring, text labels, keyboard shortcuts)
-    shapes = setup_shapes_layer_for_annotation(
-        viewer, initial_mode=initial_annotation_mode
+    # Setup napari viewer with all layers and widgets
+    _viewer, shapes = _setup_annotation_viewer(
+        video_path,
+        frame,
+        mode,
+        boundary_polygon,
+        positions_for_display,
+        initial_regions,
+        calibration,
     )
-
-    # IMPORTANT: Order matters for feature preservation
-    # 1. First add initial_regions (if any) - these are non-environment regions
-    if initial_regions is not None:
-        _add_initial_regions(shapes, initial_regions, calibration)
-
-    # 2. Then add initial_boundary - this prepends to front and reorders
-    if boundary_polygon is not None:
-        from neurospatial.annotation._napari_widget import (
-            add_initial_boundary_to_shapes,
-        )
-
-        add_initial_boundary_to_shapes(
-            shapes,
-            boundary_polygon,
-            calibration=calibration,
-        )
-
-        # Start in vertex editing mode so users can immediately adjust boundary
-        shapes.mode = "direct"
-
-    # Add annotation control widget (magicgui-based)
-    widget = create_annotation_widget(
-        viewer, "Annotations", initial_mode=initial_annotation_mode
-    )
-    viewer.window.add_dock_widget(
-        widget,
-        name="Annotation Controls",
-        area="right",
-    )
-
-    # Set initial status bar with shortcut reminder
-    viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
 
     # Run napari (blocking until viewer closes)
     napari.run()
 
-    # Get annotation data from shapes layer
-    shapes_data, names, roles = get_annotation_data(shapes)
-
-    # Handle empty annotations
-    if not shapes_data:
-        import warnings
-
-        warnings.warn(
-            "No annotations were drawn. Returning empty result.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return AnnotationResult(environment=None, regions=Regions([]))
-
-    # Convert shapes to regions
-    regions, env_boundary, holes = shapes_to_regions(
-        shapes_data,
-        names,
-        roles,
+    # Convert annotations to result
+    return _process_annotation_results(
+        shapes,
+        mode,
+        bin_size,
         calibration,
-        simplify_tolerance,
-        multiple_boundaries=multiple_boundaries,
+        resolved.simplify_tolerance,
+        resolved.multiple_boundaries,
     )
-
-    # Warn if holes exist but no environment boundary
-    if holes and env_boundary is None:
-        import warnings
-
-        warnings.warn(
-            f"{len(holes)} hole(s) were drawn but no environment boundary exists. "
-            "Holes are only meaningful when an environment boundary is defined.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    # Build environment if requested and boundary exists
-    environment = None
-    if mode in ("environment", "both") and env_boundary is not None:
-        # bin_size was validated at function start for these modes
-        assert bin_size is not None
-        environment = env_from_boundary_region(env_boundary, bin_size, holes=holes)
-        # Attach regions to environment
-        for name, region in regions.items():
-            environment.regions.add(
-                name,
-                polygon=region.data,
-                metadata=dict(region.metadata),
-            )
-
-    return AnnotationResult(environment=environment, regions=regions)
 
 
 def _add_initial_regions(
@@ -488,8 +402,6 @@ def _filter_environment_regions(regions: Regions) -> Regions:
     ]
 
     if env_regions:
-        import warnings
-
         warnings.warn(
             f"Both initial_boundary and environment regions in initial_regions "
             f"({env_regions}) provided. Using initial_boundary; ignoring "
@@ -503,3 +415,367 @@ def _filter_environment_regions(regions: Regions) -> Regions:
         )
 
     return regions
+
+
+# ---------------------------------------------------------------------------
+# Helper functions for annotate_video() decomposition
+# ---------------------------------------------------------------------------
+
+
+def _resolve_config_params(
+    config: AnnotationConfig | None,
+    frame_index: int | None,
+    simplify_tolerance: float | None,
+    multiple_boundaries: MultipleBoundaryStrategy | None,
+    show_positions: bool | None,
+) -> AnnotationConfig:
+    """
+    Merge config with individual parameter overrides.
+
+    Individual parameters take precedence over config values. If no config
+    is provided, uses AnnotationConfig defaults.
+
+    Parameters
+    ----------
+    config : AnnotationConfig or None
+        Base configuration object.
+    frame_index, simplify_tolerance, multiple_boundaries, show_positions
+        Individual parameter overrides (None means use config value).
+
+    Returns
+    -------
+    AnnotationConfig
+        Resolved configuration with all values set.
+    """
+    # Start with defaults or provided config
+    base = config if config is not None else AnnotationConfig()
+
+    # Override with individual params if provided
+    return AnnotationConfig(
+        frame_index=frame_index if frame_index is not None else base.frame_index,
+        simplify_tolerance=(
+            simplify_tolerance
+            if simplify_tolerance is not None
+            else base.simplify_tolerance
+        ),
+        multiple_boundaries=(
+            multiple_boundaries
+            if multiple_boundaries is not None
+            else base.multiple_boundaries
+        ),
+        show_positions=(
+            show_positions if show_positions is not None else base.show_positions
+        ),
+    )
+
+
+def _validate_annotate_params(
+    mode: Literal["environment", "regions", "both"],
+    bin_size: float | None,
+) -> None:
+    """
+    Validate annotation parameters before expensive imports.
+
+    Parameters
+    ----------
+    mode : {"environment", "regions", "both"}
+        Annotation mode.
+    bin_size : float or None
+        Bin size for environment discretization.
+
+    Raises
+    ------
+    ValueError
+        If bin_size is required but not provided.
+    """
+    if mode in ("environment", "both") and bin_size is None:
+        raise ValueError(
+            f"bin_size is required when mode={mode!r}. "
+            "Provide bin_size for environment discretization."
+        )
+
+
+def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
+    """
+    Load a single frame from a video file.
+
+    Parameters
+    ----------
+    video_path : Path
+        Path to video file.
+    frame_index : int
+        Frame index to load.
+
+    Returns
+    -------
+    NDArray[np.uint8]
+        RGB frame array with shape (H, W, 3).
+
+    Raises
+    ------
+    FileNotFoundError
+        If video file does not exist.
+    IndexError
+        If frame_index is out of range.
+    """
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+    from neurospatial.animation._video_io import VideoReader
+
+    reader = VideoReader(str(video_path))
+    try:
+        return reader[frame_index]
+    except (IndexError, KeyError) as e:
+        raise IndexError(
+            f"frame_index={frame_index} is out of range. "
+            f"Video '{video_path.name}' contains {reader.n_frames} frames "
+            f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
+            f"frame_index specifies which video frame to use for annotation "
+            "(0 = first frame)."
+        ) from e
+
+
+def _process_initial_boundary(
+    initial_boundary: Polygon | NDArray[np.float64] | None,
+    boundary_config: BoundaryConfig | None,
+    show_positions: bool,
+) -> tuple[Polygon | None, NDArray[np.float64] | None]:
+    """
+    Process initial boundary into polygon and optional positions for display.
+
+    Parameters
+    ----------
+    initial_boundary : Polygon, NDArray, or None
+        Pre-drawn boundary or position data to infer boundary from.
+    boundary_config : BoundaryConfig or None
+        Configuration for boundary inference when initial_boundary is an array.
+    show_positions : bool
+        If True and initial_boundary is an array, return positions for display.
+
+    Returns
+    -------
+    boundary_polygon : Polygon or None
+        The boundary polygon (either provided directly or inferred).
+    positions_for_display : NDArray or None
+        Position data for display layer (only if show_positions=True and
+        initial_boundary was an array).
+    """
+    if initial_boundary is None:
+        return None, None
+
+    if isinstance(initial_boundary, np.ndarray):
+        from neurospatial.annotation._boundary_inference import boundary_from_positions
+
+        boundary_polygon = boundary_from_positions(
+            initial_boundary,
+            config=boundary_config,
+        )
+        positions_for_display = initial_boundary if show_positions else None
+        return boundary_polygon, positions_for_display
+    else:
+        # Assume Shapely Polygon
+        return initial_boundary, None
+
+
+def _setup_annotation_viewer(
+    video_path: Path,
+    frame: NDArray[np.uint8],
+    mode: Literal["environment", "regions", "both"],
+    boundary_polygon: Polygon | None,
+    positions_for_display: NDArray[np.float64] | None,
+    initial_regions: Regions | None,
+    calibration: VideoCalibration | None,
+) -> tuple[napari.Viewer, napari.layers.Shapes]:
+    """
+    Create and configure napari viewer for annotation.
+
+    Parameters
+    ----------
+    video_path : Path
+        Path to video file (for window title).
+    frame : NDArray[np.uint8]
+        Video frame to display.
+    mode : {"environment", "regions", "both"}
+        Annotation mode.
+    boundary_polygon : Polygon or None
+        Initial boundary polygon to display.
+    positions_for_display : NDArray or None
+        Position data for reference Points layer.
+    initial_regions : Regions or None
+        Pre-existing regions to display.
+    calibration : VideoCalibration or None
+        Coordinate transform for conversions.
+
+    Returns
+    -------
+    viewer : napari.Viewer
+        Configured napari viewer.
+    shapes : napari.layers.Shapes
+        Shapes layer for annotations.
+    """
+    import napari
+
+    from neurospatial.annotation._napari_widget import (
+        add_initial_boundary_to_shapes,
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
+
+    # Create viewer with reasonable default size
+    viewer = napari.Viewer(title=f"Annotate: {video_path.name}")
+    viewer.window.resize(1400, 900)
+    viewer.add_image(frame, name="video_frame", rgb=True)
+
+    # Determine initial mode based on user intent
+    initial_annotation_mode: RegionType = (
+        "region" if mode == "regions" else "environment"
+    )
+
+    # Add positions layer FIRST so it appears below shapes
+    if positions_for_display is not None:
+        _add_positions_layer(viewer, positions_for_display, calibration)
+
+    # Add shapes layer with annotation settings
+    shapes = setup_shapes_layer_for_annotation(
+        viewer, initial_mode=initial_annotation_mode
+    )
+
+    # Add initial regions (order matters for feature preservation)
+    if initial_regions is not None:
+        _add_initial_regions(shapes, initial_regions, calibration)
+
+    # Add initial boundary (prepends to front and reorders)
+    if boundary_polygon is not None:
+        add_initial_boundary_to_shapes(
+            shapes,
+            boundary_polygon,
+            calibration=calibration,
+        )
+        # Start in vertex editing mode for immediate adjustment
+        shapes.mode = "direct"
+
+    # Add annotation control widget
+    widget = create_annotation_widget(
+        viewer, "Annotations", initial_mode=initial_annotation_mode
+    )
+    viewer.window.add_dock_widget(
+        widget,
+        name="Annotation Controls",
+        area="right",
+    )
+
+    # Set initial status bar
+    viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
+
+    return viewer, shapes
+
+
+def _process_annotation_results(
+    shapes: napari.layers.Shapes,
+    mode: Literal["environment", "regions", "both"],
+    bin_size: float | None,
+    calibration: VideoCalibration | None,
+    simplify_tolerance: float | None,
+    multiple_boundaries: MultipleBoundaryStrategy,
+) -> AnnotationResult:
+    """
+    Convert napari shapes to AnnotationResult.
+
+    Parameters
+    ----------
+    shapes : napari.layers.Shapes
+        Shapes layer containing annotations.
+    mode : {"environment", "regions", "both"}
+        Annotation mode.
+    bin_size : float or None
+        Bin size for environment discretization.
+    calibration : VideoCalibration or None
+        Coordinate transform.
+    simplify_tolerance : float or None
+        Polygon simplification tolerance.
+    multiple_boundaries : MultipleBoundaryStrategy
+        How to handle multiple environment boundaries.
+
+    Returns
+    -------
+    AnnotationResult
+        Result containing environment and regions.
+    """
+    from neurospatial.annotation._napari_widget import get_annotation_data
+    from neurospatial.annotation.converters import (
+        env_from_boundary_region,
+        shapes_to_regions,
+    )
+    from neurospatial.regions import Regions
+
+    # Get annotation data from shapes layer
+    shapes_data, names, roles = get_annotation_data(shapes)
+    logger.debug(
+        "Processing %d shapes: names=%s, roles=%s", len(shapes_data), names, roles
+    )
+
+    # Handle empty annotations
+    if not shapes_data:
+        logger.debug("No annotations drawn, returning empty result")
+        warnings.warn(
+            "No annotations were drawn. Returning empty result.",
+            UserWarning,
+            stacklevel=3,  # Points to annotate_video() caller
+        )
+        return AnnotationResult(environment=None, regions=Regions([]))
+
+    # Convert shapes to regions
+    regions, env_boundary, holes = shapes_to_regions(
+        shapes_data,
+        names,
+        roles,
+        calibration,
+        simplify_tolerance,
+        multiple_boundaries=multiple_boundaries,
+    )
+
+    # Warn about mode mismatch: environment boundary drawn but mode="regions"
+    if mode == "regions" and env_boundary is not None:
+        warnings.warn(
+            "An environment boundary was drawn but mode='regions' was specified. "
+            "The boundary will be ignored. Use mode='both' or mode='environment' "
+            "to include the boundary in the result.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    # Warn if holes exist but no environment boundary
+    if holes and env_boundary is None:
+        warnings.warn(
+            f"{len(holes)} hole(s) were drawn but no environment boundary exists. "
+            "Holes are only meaningful when an environment boundary is defined.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    # Build environment if requested and boundary exists
+    environment = None
+    if mode in ("environment", "both") and env_boundary is not None:
+        assert bin_size is not None  # Validated earlier
+        logger.debug("Building environment with bin_size=%s", bin_size)
+        environment = env_from_boundary_region(env_boundary, bin_size, holes=holes)
+        logger.debug(
+            "Created environment with %d bins, attaching %d regions",
+            environment.n_bins,
+            len(regions),
+        )
+        # Attach regions to environment
+        for name, region in regions.items():
+            environment.regions.add(
+                name,
+                polygon=region.data,
+                metadata=dict(region.metadata),
+            )
+
+    logger.debug(
+        "Annotation complete: environment=%s, regions=%d",
+        "created" if environment else "None",
+        len(regions),
+    )
+    return AnnotationResult(environment=environment, regions=regions)

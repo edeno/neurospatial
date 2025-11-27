@@ -17,12 +17,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple, cast
 
 from neurospatial.annotation._helpers import (
-    ROLE_COLORS,
+    REGION_TYPE_COLORS,
     rebuild_features,
     sync_face_colors_from_features,
 )
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
-from neurospatial.annotation._types import Role
+from neurospatial.annotation._types import RegionType
 
 if TYPE_CHECKING:
     import napari
@@ -95,14 +95,14 @@ class ShapesLayerController:
         Apply current state mode to layer defaults.
 
         Updates:
-        - feature_defaults["role"] to current role
-        - feature_defaults["name"] to default name for role
-        - current_face_color to role color
+        - feature_defaults["role"] to current region type
+        - feature_defaults["name"] to default name for region type
+        - current_face_color to region type color
         """
-        role = self.state.role
-        self.shapes.feature_defaults["role"] = role
+        region_type = self.state.region_type
+        self.shapes.feature_defaults["role"] = region_type
         self.shapes.feature_defaults["name"] = self.state.default_name()
-        self.shapes.current_face_color = ROLE_COLORS.get(role, "yellow")
+        self.shapes.current_face_color = REGION_TYPE_COLORS.get(region_type, "yellow")
 
     def get_existing_names(self) -> list[str]:
         """
@@ -120,22 +120,22 @@ class ShapesLayerController:
             return []
         return [str(n) for n in features.get("name", [])]
 
-    def get_existing_roles(self) -> list[Role]:
+    def get_existing_region_types(self) -> list[RegionType]:
         """
-        Get list of existing shape roles.
+        Get list of existing shape region types.
 
         Returns
         -------
-        list of Role
-            Roles of all shapes in the layer.
+        list of RegionType
+            Region types of all shapes in the layer.
         """
         if self.shapes is None or len(self.shapes.data) == 0:
             return []
         features = self.shapes.features
         if features is None or len(features) == 0:
             return []
-        # Cast to Role (validated by napari widget constraints)
-        return [cast("Role", str(r)) for r in features.get("role", [])]
+        # Cast to RegionType (validated by napari widget constraints)
+        return [cast("RegionType", str(r)) for r in features.get("role", [])]
 
     def shape_count(self) -> int:
         """Get current number of shapes in the layer."""
@@ -149,10 +149,10 @@ class ShapesLayerController:
         Returns
         -------
         bool
-            True if at least one shape has role "environment".
+            True if at least one shape has region_type "environment".
         """
-        roles = self.get_existing_roles()
-        return any(r == "environment" for r in roles)
+        region_types = self.get_existing_region_types()
+        return any(r == "environment" for r in region_types)
 
     def sync_state_from_layer(self) -> None:
         """
@@ -160,8 +160,8 @@ class ShapesLayerController:
 
         Call this after external changes to the layer (e.g., deletion).
         """
-        roles = self.get_existing_roles()
-        self.state.sync_counts_from_roles(roles)
+        region_types = self.get_existing_region_types()
+        self.state.sync_counts_from_region_types(region_types)
 
     def update_features_for_new_shapes(
         self,
@@ -196,11 +196,13 @@ class ShapesLayerController:
 
         # Keep existing features (for shapes that existed before)
         # Only read up to prev_count to avoid auto-populated placeholder values
-        roles: list[Role] = []
+        region_types: list[RegionType] = []
         names: list[str] = []
         if features_len > 0:
             for i in range(min(prev_count, features_len)):
-                roles.append(cast("Role", str(self.shapes.features["role"].iloc[i])))
+                region_types.append(
+                    cast("RegionType", str(self.shapes.features["role"].iloc[i]))
+                )
                 names.append(str(self.shapes.features["name"].iloc[i]))
 
         # Track if name was modified
@@ -209,7 +211,7 @@ class ShapesLayerController:
 
         # Add entries for new shapes (from prev_count to current_count)
         for _ in range(delta):
-            roles.append(self.state.role)
+            region_types.append(self.state.region_type)
 
             # Determine name
             if name_override and name_override.strip():
@@ -226,17 +228,17 @@ class ShapesLayerController:
             assigned_name = unique_name
 
             # Update state counts
-            self.state.record_shape_added(self.state.role)
+            self.state.record_shape_added(self.state.region_type)
 
         # Apply updated features
-        self.shapes.features = rebuild_features(roles, names)
+        self.shapes.features = rebuild_features(region_types, names)
         sync_face_colors_from_features(self.shapes)
 
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
 
-        # Get the role of the last shape added
-        last_role = str(self.state.role)
+        # Get the region_type of the last shape added
+        last_role = str(self.state.region_type)
 
         return UpdateFeaturesResult(assigned_name, name_was_modified, last_role)
 
@@ -273,8 +275,8 @@ class ShapesLayerController:
             else:
                 # Keep only non-deleted shapes and features
                 new_data = [self.shapes.data[i] for i in indices_to_keep]
-                new_roles: list[Role] = [
-                    cast("Role", str(self.shapes.features["role"].iloc[i]))
+                new_region_types: list[RegionType] = [
+                    cast("RegionType", str(self.shapes.features["role"].iloc[i]))
                     for i in indices_to_keep
                 ]
                 new_names = [
@@ -282,7 +284,7 @@ class ShapesLayerController:
                 ]
 
                 self.shapes.data = new_data
-                self.shapes.features = rebuild_features(new_roles, new_names)
+                self.shapes.features = rebuild_features(new_region_types, new_names)
                 sync_face_colors_from_features(self.shapes)
 
         self.shapes.selected_data = set()

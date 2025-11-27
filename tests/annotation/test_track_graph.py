@@ -506,7 +506,7 @@ class TestAnnotateTrackGraphCalibration:
 
         import sys
 
-        sys.modules["napari"] = mock_napari
+        monkeypatch.setitem(sys.modules, "napari", mock_napari)
         monkeypatch.setattr(
             "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
         )
@@ -549,7 +549,7 @@ class TestAnnotateTrackGraphCalibration:
 
         import sys
 
-        sys.modules["napari"] = mock_napari
+        monkeypatch.setitem(sys.modules, "napari", mock_napari)
         monkeypatch.setattr(
             "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
         )
@@ -598,7 +598,7 @@ class TestAnnotateTrackGraphCalibration:
 
         import sys
 
-        sys.modules["napari"] = mock_napari
+        monkeypatch.setitem(sys.modules, "napari", mock_napari)
         monkeypatch.setattr(
             "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
         )
@@ -662,7 +662,7 @@ class TestFullWorkflowIntegration:
 
         import sys
 
-        sys.modules["napari"] = mock_napari
+        monkeypatch.setitem(sys.modules, "napari", mock_napari)
         monkeypatch.setattr(
             "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
         )
@@ -718,7 +718,7 @@ class TestFullWorkflowIntegration:
 
         import sys
 
-        sys.modules["napari"] = mock_napari
+        monkeypatch.setitem(sys.modules, "napari", mock_napari)
         monkeypatch.setattr(
             "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
         )
@@ -779,10 +779,13 @@ def _setup_mocks(monkeypatch, captured_state=None):
     """
     mock_napari = _make_mock_napari_module()
 
-    # Patch napari import inside the function
+    # Patch napari import in sys.modules and the module reference
     import sys
 
-    sys.modules["napari"] = mock_napari
+    # Use monkeypatch.setitem to patch sys.modules (ensures cleanup after test)
+    monkeypatch.setitem(sys.modules, "napari", mock_napari)
+
+    # Also patch the module reference in the track_graph module
     monkeypatch.setattr(
         "neurospatial.annotation.track_graph.napari", mock_napari, raising=False
     )
@@ -831,6 +834,16 @@ class _MockViewer:
         self.points = []
         self.dock_widgets_added = 0
         self._window = _MockWindow(self)
+        self._key_bindings = {}
+
+    def bind_key(self, key):
+        """Mock key binding decorator."""
+
+        def decorator(func):
+            self._key_bindings[key] = func
+            return func
+
+        return decorator
 
     @property
     def window(self):
@@ -867,12 +880,55 @@ class _MockWindow:
         pass
 
 
+class _MockEvent:
+    """Mock napari event emitter."""
+
+    def __init__(self):
+        self._callbacks = []
+
+    def connect(self, callback):
+        """Register a callback for this event."""
+        self._callbacks.append(callback)
+
+
+class _MockEvents:
+    """Mock napari events container."""
+
+    def __init__(self):
+        self.data = _MockEvent()
+        self.mode = _MockEvent()
+
+
+class _MockCallbackList:
+    """Mock callback list that supports decorator pattern."""
+
+    def __init__(self):
+        self._callbacks = []
+
+    def append(self, func):
+        """Support both append(func) and @append decorator pattern."""
+        self._callbacks.append(func)
+        return func
+
+
 class _MockLayer:
     """Mock napari layer."""
 
     def __init__(self, name):
         self.name = name
         self.data = []
+        self.events = _MockEvents()
+        self.mouse_drag_callbacks = _MockCallbackList()
+        self._key_bindings = {}
+
+    def bind_key(self, key, overwrite=False):
+        """Mock key binding decorator."""
+
+        def decorator(func):
+            self._key_bindings[key] = func
+            return func
+
+        return decorator
 
 
 class _MockShapesLayer(_MockLayer):
@@ -909,6 +965,11 @@ class _MockPointsLayer(_MockLayer):
     def mode(self, value):
         pass
 
+    @property
+    def selected_data(self):
+        """Return empty set of selected point indices."""
+        return set()
+
 
 class _MockNapari:
     """Mock napari module."""
@@ -916,7 +977,8 @@ class _MockNapari:
     def __init__(self, viewer):
         self._viewer = viewer
 
-    def Viewer(self, title=""):
+    def Viewer(self, title="", **kwargs):
+        """Mock napari Viewer, accepting show kwarg and other kwargs."""
         self._viewer.title = title
         return self._viewer
 
@@ -934,3 +996,7 @@ class _MockWidget:
     @property
     def native(self):
         return self
+
+    def sync_from_state(self):
+        """Mock sync_from_state method - no-op for testing."""
+        pass

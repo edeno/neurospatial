@@ -8,7 +8,7 @@ import numpy as np
 import shapely.geometry as shp
 from shapely import Polygon
 
-from neurospatial.annotation._types import MultipleBoundaryStrategy, Role
+from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 def shapes_to_regions(
     shapes_data: list[NDArray[np.float64]],
     names: list[str],
-    roles: list[Role],
+    region_types: list[RegionType],
     calibration: VideoCalibration | None = None,
     simplify_tolerance: float | None = None,
     *,
@@ -39,8 +39,8 @@ def shapes_to_regions(
         shape (n_vertices, 2) in napari (row, col) order.
     names : list of str
         Name for each shape.
-    roles : list of Role
-        Role for each shape: "environment", "hole", or "region".
+    region_types : list of RegionType
+        Type for each shape: "environment", "hole", or "region".
     calibration : VideoCalibration, optional
         If provided, transforms pixel coordinates to world coordinates (cm)
         using ``calibration.transform_px_to_cm``.
@@ -92,7 +92,9 @@ def shapes_to_regions(
     holes_list: list[Region] = []
     env_boundaries: list[Region] = []
 
-    for poly_rc, name, role in zip(shapes_data, names, roles, strict=True):
+    for poly_rc, name, region_type in zip(
+        shapes_data, names, region_types, strict=True
+    ):
         # Convert napari (row, col) to video (x, y) pixels
         pts_px = poly_rc[:, ::-1].astype(np.float64)
 
@@ -126,7 +128,7 @@ def shapes_to_regions(
         metadata = {
             "source": "napari_annotation",
             "coord_system": coord_system,
-            "role": role,
+            "role": region_type,  # Keep 'role' key for backward compat in metadata
         }
 
         region = Region(
@@ -136,9 +138,9 @@ def shapes_to_regions(
             metadata=metadata,
         )
 
-        if role == "environment":
+        if region_type == "environment":
             env_boundaries.append(region)
-        elif role == "hole":
+        elif region_type == "hole":
             holes_list.append(region)
         else:
             regions_list.append(region)

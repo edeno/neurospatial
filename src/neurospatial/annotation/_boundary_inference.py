@@ -7,10 +7,18 @@ rather than drawing from scratch.
 
 from __future__ import annotations
 
+import logging
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+
+# Module logger for debug output
+logger = logging.getLogger(__name__)
+
+# Threshold for showing progress message (number of position samples)
+LARGE_DATASET_THRESHOLD = 10_000
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -262,7 +270,23 @@ def _alpha_shape_boundary(
 
     from shapely.geometry import MultiPolygon
 
+    # Progress feedback for large datasets
+    n_points = len(positions)
+    if n_points >= LARGE_DATASET_THRESHOLD:
+        logger.info(
+            "Computing alpha shape for %d points (this may take a moment)...", n_points
+        )
+        # Also print to stdout for users who don't have logging configured
+        print(
+            f"Computing alpha shape boundary for {n_points:,} positions...",
+            file=sys.stderr,
+            flush=True,
+        )
+
     result = alphashape.alphashape(positions, alpha)
+
+    if n_points >= LARGE_DATASET_THRESHOLD:
+        logger.info("Alpha shape computation complete")
 
     # Handle MultiPolygon: take largest, warn user
     if isinstance(result, MultiPolygon):
