@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-24 (v0.8.0 - Behavioral metrics and goal-directed analysis)
+**Last Updated**: 2025-11-27 (v0.9.0 - Track graph annotation for 1D environments)
 
 ## Table of Contents
 
@@ -432,6 +432,87 @@ result = annotate_video("experiment.mp4", bin_size=2.0, initial_boundary=boundar
 | `3` | Move shape mode |
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
+
+**Track Graph Annotation (v0.9.0+)**:
+
+```python
+# Annotate track graphs interactively for 1D linearized environments
+from neurospatial.annotation import annotate_track_graph, TrackGraphResult
+
+# From video file - opens napari for interactive annotation
+result = annotate_track_graph("maze.mp4")
+
+# From static image
+import matplotlib.pyplot as plt
+img = plt.imread("track_photo.png")
+result = annotate_track_graph(image=img)
+
+# With calibration (convert pixels to cm)
+from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+transform = calibrate_from_scale_bar((0, 0), (200, 0), 100.0, (640, 480))
+calib = VideoCalibration(transform, (640, 480))
+result = annotate_track_graph("maze.mp4", calibration=calib)
+
+# Result contains everything needed for Environment.from_graph()
+print(result.track_graph)      # NetworkX Graph with 'pos', 'distance', 'edge_id'
+print(result.node_positions)   # List of (x, y) tuples (cm if calibrated)
+print(result.edges)            # Edge list as (node_i, node_j) tuples
+print(result.edge_order)       # Ordered edges for linearization
+print(result.edge_spacing)     # Spacing between edges
+print(result.pixel_positions)  # Original pixel coordinates (preserved)
+
+# Create 1D linearized environment from result
+env = result.to_environment(bin_size=2.0)
+print(env.is_1d)  # True - ready for linearization
+
+# Override edge spacing if needed
+env = result.to_environment(bin_size=2.0, edge_spacing=[0.0, 5.0, 0.0])
+
+# With initial data (for editing existing track graphs)
+result = annotate_track_graph(
+    "maze.mp4",
+    initial_nodes=np.array([[100, 200], [300, 200], [300, 400]]),
+    initial_edges=[(0, 1), (1, 2)],
+    initial_node_labels=["start", "junction", "goal"],
+)
+
+# Workflow: annotate → create environment → analyze
+result = annotate_track_graph("linear_track.mp4", calibration=calib)
+env = result.to_environment(bin_size=2.0, name="linear_track")
+env.units = "cm"
+
+# Add regions from node labels
+for i, label in enumerate(result.node_labels):
+    if label:  # Non-empty label
+        env.regions.add(label, point=result.node_positions[i])
+```
+
+**Track Graph Builder Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `E` | Switch to Add Edge mode (click two nodes to connect them) |
+| `Shift+S` | Set selected node as start node (select node first with napari's `3` key) |
+| `Ctrl+Z` | Undo last action |
+| `Ctrl+Shift+Z` | Redo |
+| `Escape` | Cancel edge creation in progress |
+
+**Note**: Use napari's native layer shortcuts for node manipulation:
+
+- Press `2` for Add mode (click to add nodes)
+- Press `3` for Select mode (click to select nodes for deletion or start node)
+- Use the widget buttons for Delete Node/Delete Edge operations
+
+**Track Graph Builder UI Components:**
+
+- **Mode Selector**: Radio buttons for Add Node / Add Edge / Delete modes
+- **Node List**: Shows all nodes with labels and start marker (★)
+- **Edge List**: Shows all edges as (node_i, node_j)
+- **Edge Order**: Reorderable list with Move Up/Down/Reset buttons
+- **Edge Spacing**: Input field to set gap between edges
+- **Preview Button**: Shows 1D linearization preview (matplotlib)
+- **Validation Status**: Green (valid), Orange (warnings), Red (errors)
+- **Save Button**: Validates and closes the viewer
 
 **NWB Integration (v0.7.0+)**:
 
@@ -1935,4 +2016,90 @@ write_environment(nwbfile, env)  # RuntimeError!
 # Right - use factory methods
 env = Environment.from_samples(positions, bin_size=2.0)
 write_environment(nwbfile, env)  # Works
+```
+
+### "No start node set" warning in track graph annotation (v0.9.0+)
+
+**Cause**: Saving a track graph without explicitly setting a start node.
+
+**Solution**: This is a warning, not an error. The annotation will proceed with Node 0 as the default start. To set a specific start node:
+
+```python
+# In the napari widget:
+# 1. Select a node in the Node List
+# 2. Press Shift+S to set it as start
+# 3. The start node is marked with ★ in the list
+
+# Or set programmatically if loading initial data:
+# The first node in initial_nodes becomes the start by default
+```
+
+**Note**: The start node affects edge order when using `infer_edge_layout()` - DFS traversal starts from this node.
+
+### Track graph edge order seems wrong (v0.9.0+)
+
+**Cause**: Automatic edge ordering via DFS may not match expected linearization.
+
+**Solution**: The edge order is inferred by depth-first search from the start node. You can:
+
+1. **Set a different start node**: DFS traversal order depends on which node you start from
+2. **Manually reorder edges**: Use the Edge Order list in the widget with Move Up/Down buttons
+3. **Reset to auto**: Click "Reset to Auto" to re-run `infer_edge_layout()`
+4. **Preview first**: Click "Preview Linearization" to see the 1D layout before saving
+
+```python
+# After annotation, you can also override edge order:
+env = result.to_environment(
+    bin_size=2.0,
+    edge_spacing=[0.0, 10.0, 0.0],  # Custom spacing
+)
+```
+
+### `ValueError: Cannot create Environment: no track graph` (v0.9.0+)
+
+**Cause**: Calling `result.to_environment()` when the track graph is empty or invalid.
+
+**Solution**: The annotation requires at least 2 nodes and 1 edge to create a valid track graph:
+
+```python
+from neurospatial.annotation import annotate_track_graph
+
+result = annotate_track_graph("maze.mp4")
+
+# Check if track graph exists before creating Environment
+if result.track_graph is not None:
+    env = result.to_environment(bin_size=2.0)
+else:
+    print("No valid track graph created")
+    print(f"Nodes: {len(result.node_positions)}")
+    print(f"Edges: {len(result.edges)}")
+```
+
+### Track graph coordinates don't match video (v0.9.0+)
+
+**Cause**: Calibration not applied or incorrect calibration parameters.
+
+**Solution**: Check calibration settings:
+
+```python
+# Without calibration: coordinates are in pixels (video pixel coordinates)
+result = annotate_track_graph("maze.mp4")
+print(result.node_positions)  # Pixel values, e.g., [(100.0, 200.0), ...]
+print(result.pixel_positions)  # Same as node_positions when no calibration
+
+# With calibration: coordinates are transformed to cm
+from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+
+# Create calibration from a known scale bar in the video
+transform = calibrate_from_scale_bar(
+    point1=(100, 300),    # First scale bar endpoint (pixels)
+    point2=(300, 300),    # Second scale bar endpoint (pixels)
+    length_cm=50.0,       # Known distance between points (cm)
+    frame_size_px=(640, 480),
+)
+calib = VideoCalibration(transform, (640, 480))
+
+result = annotate_track_graph("maze.mp4", calibration=calib)
+print(result.node_positions)   # Transformed to cm
+print(result.pixel_positions)  # Original pixel positions preserved
 ```

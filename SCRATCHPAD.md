@@ -1,11 +1,53 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Task 4.2 COMPLETE - 1D Preview
+**Current Status**: Task 4.3 COMPLETE - CLAUDE.md Documentation
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 4.3 Complete (CLAUDE.md Documentation)
+
+**Completed**: Task 4.3 - Update CLAUDE.md Documentation
+
+**Work Done**:
+
+1. Added **Track Graph Annotation (v0.9.0+)** section to CLAUDE.md Quick Reference:
+   - Code examples for `annotate_track_graph()` function
+   - Examples with video file, static image, and calibration
+   - TrackGraphResult fields and `to_environment()` method
+   - Initial data loading for editing existing track graphs
+   - Full workflow example: annotate → create environment → add regions
+
+2. Added **Track Graph Builder Keyboard Shortcuts** table:
+   - E (Switch to Add Edge mode)
+   - Shift+S (Set start node - requires selecting node first with napari's `3` key)
+   - Ctrl+Z/Ctrl+Shift+Z (Undo/Redo)
+   - Escape (Cancel edge creation)
+   - Note: Uses napari native layer shortcuts (`2` for add, `3` for select)
+
+3. Added **Track Graph Builder UI Components** list:
+   - Mode Selector, Node/Edge Lists, Edge Order, Edge Spacing
+   - Preview Button, Validation Status, Save Button
+
+4. Added **Troubleshooting** items for track graph annotation:
+   - "No start node set" warning
+   - Edge order issues and solutions
+   - `ValueError: Cannot create Environment: no track graph`
+   - Coordinate mismatch with calibration
+
+5. Updated **Last Updated** line: v0.9.0 - Track graph annotation
+
+**Verified**: Keyboard shortcuts match actual implementation in `track_graph.py`
+
+- Removed `A`, `X`, `Ctrl+Enter`, and `Delete` from docs (not implemented)
+- Added note about napari native layer shortcuts (`2` for add, `3` for select)
+- Kept only actually bound shortcuts: E, Shift+S, Ctrl+Z, Ctrl+Shift+Z, Escape
+
+**Next**: Task 4.4 (Add Docstrings and Examples)
+
+---
 
 ### 2025-11-27 - Task 4.2 Complete (1D Preview)
 

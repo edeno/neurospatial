@@ -620,7 +620,7 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Add to Quick Reference:
+- [x] Add to Quick Reference:
 
   ```python
   # Annotate track graph interactively (v0.X.0+)
@@ -630,21 +630,21 @@ Implementation tasks for adding interactive track graph building functionality t
   env = result.to_environment(bin_size=2.0)
   ```
 
-- [ ] Add to Common Patterns section:
+- [x] Add to Common Patterns section:
   - Track graph annotation workflow
   - Using with Environment.from_graph()
   - Calibration for pixel-to-cm conversion
 
-- [ ] Add keyboard shortcuts table:
+- [x] Add keyboard shortcuts table:
 
   | Key | Action |
   |-----|--------|
-  | `A` | Add node mode |
   | `E` | Add edge mode |
-  | `X` | Delete mode |
-  | ... | ... |
+  | `Shift+S` | Set start node |
+  | `Ctrl+Z` | Undo |
+  | `Escape` | Cancel edge |
 
-- [ ] Add troubleshooting section:
+- [x] Add troubleshooting section:
   - "No start node set" warning
   - Edge order issues
   - Calibration coordinate conventions
@@ -654,6 +654,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - CLAUDE.md includes complete annotate_track_graph documentation
 - Examples are correct and tested
 - Keyboard shortcuts documented
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~100 lines of docs)
 
