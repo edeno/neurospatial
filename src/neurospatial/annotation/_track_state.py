@@ -528,6 +528,9 @@ class TrackBuilderState:
         except ImportError:
             # Fallback: return edges in creation order
             return list(self.edges)
+        except (IndexError, ValueError):
+            # Fallback when graph is disconnected or start_node is isolated
+            return list(self.edges)
 
     def compute_edge_spacing(self) -> NDArray[np.float64]:
         """Compute edge spacing using infer_edge_layout.
@@ -559,4 +562,7 @@ class TrackBuilderState:
             return np.asarray(edge_spacing, dtype=np.float64)
         except ImportError:
             # Fallback: zero spacing
+            return np.zeros(max(0, len(self.edges) - 1), dtype=np.float64)
+        except (IndexError, ValueError):
+            # Fallback when graph is disconnected or start_node is isolated
             return np.zeros(max(0, len(self.edges) - 1), dtype=np.float64)

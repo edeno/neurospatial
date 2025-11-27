@@ -33,6 +33,10 @@ from neurospatial.annotation._track_helpers import (
 )
 from neurospatial.annotation._track_state import TrackBuilderState
 from neurospatial.annotation._track_widget import (
+    _clear_edge_preview,
+    _handle_click,
+    _handle_key,
+    _sync_layers_from_state,
     create_track_widget,
     setup_track_layers,
 )
@@ -131,9 +135,15 @@ def annotate_track_graph(
 
     Keyboard Shortcuts
     ^^^^^^^^^^^^^^^^^^
-    - A: Switch to add_node mode
-    - E: Switch to add_edge mode
-    - X: Switch to delete mode
+    Uses napari's default Points layer keybindings plus custom additions:
+
+    **napari defaults:**
+    - 2: Add mode (click to add nodes)
+    - 3: Select mode (click to select, Delete to remove)
+    - 4: Pan/Zoom mode
+
+    **Custom additions:**
+    - E: Edge mode (click two nodes to connect)
     - Shift+S: Set selected node as start
     - Ctrl+Z: Undo
     - Ctrl+Shift+Z: Redo
@@ -201,14 +211,153 @@ def annotate_track_graph(
     edges_layer, nodes_layer = setup_track_layers(viewer)
 
     # 7. Add control widget
+    # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
     widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
-    viewer.window.add_dock_widget(widget, name="Track Graph Builder", area="right")
+    viewer.window.add_dock_widget(
+        widget._widget, name="Track Graph Builder", area="right"
+    )
 
-    # 8. Set initial status bar with shortcut reminder
-    viewer.status = "Track Graph Mode: A (add) | E (edge) | X (delete) | Ctrl+Z (undo)"
+    # 8. Sync napari layer changes back to state
+    # When using napari's default "2" add mode, points are added directly to layer.data
+    # We need to sync these back to our state so they persist.
 
-    # 9. Run napari (blocking until viewer closes)
+    def _sync_layer_to_state(event=None):
+        """Sync napari layer data back to TrackBuilderState."""
+        # Get current layer data
+        layer_data = nodes_layer.data
+
+        # Convert napari (row, col) back to state (x, y)
+        # napari stores as (y, x), we need (x, y)
+        new_nodes = [(float(col), float(row)) for row, col in layer_data]
+        n_layer = len(new_nodes)
+        n_state = len(state.nodes)
+
+        if n_layer > n_state:
+            # New nodes added - add them to state
+            for i in range(n_state, n_layer):
+                x, y = new_nodes[i]
+                state.add_node(x, y)
+            widget.sync_from_state()
+        elif n_layer < n_state:
+            # Nodes deleted - rebuild state from layer
+            # Clear state and re-add all nodes from layer
+            state.nodes.clear()
+            state.node_labels.clear()
+            state.edges.clear()  # Edges reference deleted nodes
+            state.start_node = None
+            state.edge_start_node = None
+            for x, y in new_nodes:
+                state.add_node(x, y)
+            widget.sync_from_state()
+        elif n_layer == n_state and n_layer > 0:
+            # Same count - check if positions changed (node moved)
+            positions_changed = False
+            for i, (x, y) in enumerate(new_nodes):
+                old_x, old_y = state.nodes[i]
+                if abs(x - old_x) > 0.01 or abs(y - old_y) > 0.01:
+                    state.nodes[i] = (x, y)
+                    positions_changed = True
+            if positions_changed:
+                # Don't call widget.sync_from_state() to avoid feedback loop
+                # Just update edges layer to reflect new positions
+                _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+    # Connect to layer data change events
+    nodes_layer.events.data.connect(_sync_layer_to_state)
+
+    # 9. Setup keyboard shortcuts (only for things napari doesn't provide)
+    # Work WITH napari's defaults:
+    #   - 2 = Add mode (napari default for adding points)
+    #   - 3 = Select mode (napari default for selecting/deleting)
+    #   - 4 = Pan/Zoom mode (napari default)
+    # Only add custom keybindings for functionality napari doesn't provide:
+    #   - E = Edge mode (click two nodes to connect)
+    #   - Ctrl+Z / Ctrl+Shift+Z = Undo/Redo
+    #   - Shift+S = Set start node
+    #   - Escape = Cancel edge creation
+
+    # Mouse click handler for edge mode
+    @nodes_layer.mouse_drag_callbacks.append
+    def on_click(layer, event):
+        """Handle mouse clicks for edge creation mode."""
+        # Only handle single clicks (not drags) in add_edge mode
+        if state.mode != "add_edge":
+            return
+        # Only respond to click (not drag)
+        if event.type != "mouse_press":
+            return
+
+        # Get click position in data coordinates
+        position = event.position
+        _handle_click(state, nodes_layer, edges_layer, position)
+        widget.sync_from_state()
+
+        # Update status based on edge creation progress
+        if state.edge_start_node is not None:
+            viewer.status = f"Edge start: Node {state.edge_start_node} - click another node to connect"
+        else:
+            viewer.status = "Mode: Edge - click two nodes to connect (Escape to cancel)"
+
+    @nodes_layer.bind_key("e", overwrite=True)
+    def set_add_edge_mode(layer):
+        """Switch to edge mode - click two nodes to connect them."""
+        _handle_key(state, "E")
+        # Switch napari layer to pan_zoom mode so clicking doesn't add points
+        nodes_layer.mode = "pan_zoom"
+        widget.sync_from_state()
+        viewer.status = "Mode: Edge - click a node to start, then another to connect"
+
+    @viewer.bind_key("Control-z")
+    def undo_action(viewer):
+        """Undo last action."""
+        result = _handle_key(state, "Z", modifiers=["Control"])
+        if result == "undo":
+            _sync_layers_from_state(state, nodes_layer, edges_layer)
+            widget.sync_from_state()
+            viewer.status = "Undo"
+
+    @viewer.bind_key("Control-Shift-z")
+    def redo_action(viewer):
+        """Redo last undone action."""
+        result = _handle_key(state, "Z", modifiers=["Control", "Shift"])
+        if result == "redo":
+            _sync_layers_from_state(state, nodes_layer, edges_layer)
+            widget.sync_from_state()
+            viewer.status = "Redo"
+
+    @viewer.bind_key("Shift-s")
+    def set_start_node(viewer):
+        """Set selected node as start."""
+        # Get selected node from layer
+        if len(nodes_layer.selected_data) == 1:
+            selected_idx = next(iter(nodes_layer.selected_data))
+            result = _handle_key(
+                state, "S", modifiers=["Shift"], selected_node=selected_idx
+            )
+            if result == "set_start":
+                _sync_layers_from_state(state, nodes_layer, edges_layer)
+                widget.sync_from_state()
+                viewer.status = f"Node {selected_idx} set as start"
+        else:
+            viewer.status = "Select exactly one node first (press 3), then Shift+S"
+
+    @viewer.bind_key("Escape")
+    def cancel_edge(viewer):
+        """Cancel edge creation in progress."""
+        result = _handle_key(state, "Escape")
+        if result == "cancel":
+            _clear_edge_preview(edges_layer)
+            _sync_layers_from_state(state, nodes_layer, edges_layer)
+            viewer.status = "Edge creation cancelled"
+
+    # 10. Start in add mode (need to add nodes before connecting them)
+    state.mode = "add_node"
+    nodes_layer.mode = "add"
+    widget.sync_from_state()
+    viewer.status = "Mode: Add - click to place nodes (press E to connect them)"
+
+    # 11. Run napari (blocking until viewer closes)
     napari.run()
 
-    # 10. Extract and transform results
+    # 12. Extract and transform results
     return build_track_graph_result(state, calibration)

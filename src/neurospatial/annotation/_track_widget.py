@@ -638,6 +638,7 @@ class TrackGraphWidget:
         nodes_layer: Points,
         state: TrackBuilderState,
     ) -> None:
+        from qtpy.QtCore import Qt
         from qtpy.QtWidgets import (
             QComboBox,
             QDoubleSpinBox,
@@ -647,6 +648,7 @@ class TrackGraphWidget:
             QLineEdit,
             QListWidget,
             QPushButton,
+            QScrollArea,
             QVBoxLayout,
             QWidget,
         )
@@ -657,10 +659,16 @@ class TrackGraphWidget:
         self._state = state
         self._saved = False
 
-        # Create main widget
-        self._widget = QWidget()
+        # Create scroll area as main widget
+        self._widget = QScrollArea()
+        self._widget.setWidgetResizable(True)
+        self._widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # Create inner widget with content
+        inner_widget = QWidget()
         layout = QVBoxLayout()
-        self._widget.setLayout(layout)
+        inner_widget.setLayout(layout)
+        self._widget.setWidget(inner_widget)
 
         # Title
         title_label = QLabel("<b>Track Graph Builder</b>")
@@ -668,12 +676,12 @@ class TrackGraphWidget:
 
         # Help text
         help_text = QLabel(
-            "1. Press A → Click to add nodes\n"
+            "1. Press 2 → Click to add nodes\n"
             "2. Press E → Click two nodes to connect\n"
-            "3. Press X → Click node/edge to delete\n"
+            "3. Press 3 → Select node, then Delete\n"
             "4. Select node → Shift+S to set as start\n"
-            "5. Ctrl+Enter to save\n\n"
-            "Shortcuts: A (add) | E (edge) | X (delete) | Ctrl+Z (undo)"
+            "5. Click 'Save and Close' when done\n\n"
+            "Shortcuts: 2 (add) | 3 (select) | E (edge) | Ctrl+Z (undo)"
         )
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
