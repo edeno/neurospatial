@@ -88,6 +88,10 @@ from neurospatial.simulation.mazes.linear_track import (
     LinearTrackDims,
     make_linear_track,
 )
+from neurospatial.simulation.mazes.plus_maze import (
+    PlusMazeDims,
+    make_plus_maze,
+)
 from neurospatial.simulation.mazes.radial_arm import (
     RadialArmDims,
     make_radial_arm_maze,
@@ -107,6 +111,10 @@ from neurospatial.simulation.mazes.repeated_t import (
 from neurospatial.simulation.mazes.repeated_y import (
     RepeatedYDims,
     make_repeated_y_maze,
+)
+from neurospatial.simulation.mazes.square_maze import (
+    SquareMazeDims,
+    make_square_maze,
 )
 from neurospatial.simulation.mazes.sungod import (
     SungodDims,
@@ -144,6 +152,8 @@ __all__ = [
     # Base classes
     "MazeDims",
     "MazeEnvironments",
+    # Plus Maze (Cruciate)
+    "PlusMazeDims",
     "RadialArmDims",
     # Complex
     "RatHexmazeDims",
@@ -151,10 +161,11 @@ __all__ = [
     # Repeated Alleyway Mazes
     "RepeatedYDims",
     "SmallHexDims",
+    # Open-Field Mazes
+    "SquareMazeDims",
     "SungodDims",
     "TMazeDims",
     "WMazeDims",
-    # Open-Field Mazes
     "WatermazeDims",
     "YMazeDims",
     "make_barnes_maze",
@@ -168,11 +179,13 @@ __all__ = [
     "make_hampton_court_maze",
     "make_honeycomb_maze",
     "make_linear_track",
+    "make_plus_maze",
     "make_radial_arm_maze",
     "make_rat_hexmaze",
     "make_repeated_t_maze",
     "make_repeated_y_maze",
     "make_small_hex_maze",
+    "make_square_maze",
     "make_star_graph",
     "make_sungod_maze",
     "make_t_maze",
