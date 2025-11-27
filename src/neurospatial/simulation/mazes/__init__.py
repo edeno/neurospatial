@@ -151,6 +151,7 @@ __all__ = [
     # Repeated Alleyway Mazes
     "RepeatedYDims",
     "SmallHexDims",
+    "SungodDims",
     "TMazeDims",
     "WMazeDims",
     # Open-Field Mazes
@@ -173,6 +174,7 @@ __all__ = [
     "make_repeated_y_maze",
     "make_small_hex_maze",
     "make_star_graph",
+    "make_sungod_maze",
     "make_t_maze",
     "make_w_maze",
     "make_watermaze",
