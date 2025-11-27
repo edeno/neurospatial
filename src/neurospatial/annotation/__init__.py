@@ -10,6 +10,10 @@ from neurospatial.annotation.io import (
     regions_from_cvat,
     regions_from_labelme,
 )
+from neurospatial.annotation.track_graph import (
+    TrackGraphResult,
+    annotate_track_graph,
+)
 from neurospatial.annotation.validation import validate_annotations
 
 __all__ = [
@@ -17,6 +21,8 @@ __all__ = [
     "BoundaryConfig",
     "MultipleBoundaryStrategy",
     "Role",
+    "TrackGraphResult",
+    "annotate_track_graph",
     "annotate_video",
     "boundary_from_positions",
     "regions_from_cvat",

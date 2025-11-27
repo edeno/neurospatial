@@ -475,7 +475,7 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Add exports:
+- [x] Add exports:
 
   ```python
   from neurospatial.annotation.track_graph import (
@@ -484,12 +484,14 @@ Implementation tasks for adding interactive track graph building functionality t
   )
   ```
 
-- [ ] Update `__all__` list to include new exports
+- [x] Update `__all__` list to include new exports
 
 **Success Criteria**:
 
 - `from neurospatial.annotation import annotate_track_graph` works
 - `from neurospatial.annotation import TrackGraphResult` works
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Simple (< 10 lines)
 

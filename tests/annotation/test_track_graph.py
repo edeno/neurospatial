@@ -4,13 +4,59 @@ This module tests the public API entry point for track graph annotation,
 including TrackGraphResult and annotate_track_graph().
 
 Task 3.1: Tests for TrackGraphResult import and to_environment method
-Task 3.4: Tests for annotate_track_graph entry point (to be added)
+Task 3.2: Tests for annotate_track_graph entry point
+Task 3.3: Tests for module exports from annotation package
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+
+# -----------------------------------------------------------------------------
+# Task 3.3: Tests for module exports from neurospatial.annotation
+# -----------------------------------------------------------------------------
+
+
+class TestModuleExports:
+    """Tests for public exports from neurospatial.annotation package."""
+
+    def test_annotate_track_graph_import_from_annotation(self) -> None:
+        """annotate_track_graph should be importable from neurospatial.annotation."""
+        from neurospatial.annotation import annotate_track_graph
+
+        assert annotate_track_graph is not None
+        assert callable(annotate_track_graph)
+
+    def test_track_graph_result_import_from_annotation(self) -> None:
+        """TrackGraphResult should be importable from neurospatial.annotation."""
+        from neurospatial.annotation import TrackGraphResult
+
+        assert TrackGraphResult is not None
+
+    def test_annotate_track_graph_is_same_as_track_graph_module(self) -> None:
+        """annotate_track_graph from annotation should be same as track_graph module."""
+        from neurospatial.annotation import annotate_track_graph as func1
+        from neurospatial.annotation.track_graph import annotate_track_graph as func2
+
+        # Should be the exact same function (re-export)
+        assert func1 is func2
+
+    def test_track_graph_result_is_same_as_track_graph_module(self) -> None:
+        """TrackGraphResult from annotation should be same as track_graph module."""
+        from neurospatial.annotation import TrackGraphResult as Result1
+        from neurospatial.annotation.track_graph import TrackGraphResult as Result2
+
+        # Should be the exact same class (re-export)
+        assert Result1 is Result2
+
+    def test_exports_in_all_list(self) -> None:
+        """New exports should be included in __all__."""
+        import neurospatial.annotation as annotation_module
+
+        assert "annotate_track_graph" in annotation_module.__all__
+        assert "TrackGraphResult" in annotation_module.__all__
+
 
 # -----------------------------------------------------------------------------
 # Task 3.1: Tests for TrackGraphResult import from track_graph.py

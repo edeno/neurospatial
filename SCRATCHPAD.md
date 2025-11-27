@@ -1,11 +1,40 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 3 IN PROGRESS - Task 3.2 Complete
+**Current Status**: Milestone 3 IN PROGRESS - Task 3.3 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 3.3 Complete (Add Module Exports)
+
+**Completed**: Task 3.3 - Add Module Exports
+
+**Work Done**:
+
+1. Added 5 tests to `tests/annotation/test_track_graph.py`:
+   - `TestModuleExports` class with tests for import from `neurospatial.annotation`
+   - Verifies `annotate_track_graph` and `TrackGraphResult` are exportable
+   - Verifies exports are same objects as `track_graph` module (re-exports)
+   - Verifies `__all__` list includes new exports
+
+2. Updated `src/neurospatial/annotation/__init__.py`:
+   - Added import from `track_graph` module
+   - Added `TrackGraphResult` and `annotate_track_graph` to `__all__`
+
+**TDD Process**:
+
+- Wrote 5 tests first → all failed (ImportError)
+- Added exports to `__init__.py` → all 27 tests pass
+
+**Tests**: 27 tests pass (5 new for exports)
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Next**: Task 3.4 - Write End-to-End Tests
+
+---
 
 ### 2025-11-27 - Task 3.2 Complete (Implement annotate_track_graph Entry Point)
 
