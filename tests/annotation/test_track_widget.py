@@ -1481,3 +1481,35 @@ class TestSaveClose:
 
         assert result is False  # Save should fail
         viewer.close()
+
+    def test_save_shows_warnings_but_allows(self):
+        """Saving with warnings (no start node) still succeeds."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        # Valid state but no explicit start_node set (will default to 0 with warning)
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+        # Explicitly NOT setting start_node to trigger warning
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Verify warnings exist but save still succeeds
+        is_valid, _errors, warnings = widget.get_validation_status()
+        assert is_valid, "State should be valid despite warnings"
+        assert len(warnings) > 0, "Should have warning about missing start node"
+
+        # Try to save - should succeed despite warnings
+        result = widget.try_save()
+        assert result is True, "Save should succeed with warnings"
+        viewer.close()

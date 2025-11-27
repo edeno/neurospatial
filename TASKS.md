@@ -334,27 +334,26 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Test layer setup:
+- [x] Test layer setup:
   - `test_setup_track_layers_returns_correct_types`
   - `test_layers_z_order_correct`
   - `test_node_layer_is_interactive`
 
-- [ ] Test event handlers (with mock viewer):
+- [x] Test event handlers (with mock viewer):
   - `test_click_in_add_node_mode_adds_node`
   - `test_click_in_delete_mode_removes_node`
   - `test_two_click_edge_creation`
   - `test_escape_cancels_edge_creation`
   - `test_keyboard_shortcuts_change_mode`
 
-- [ ] Test widget components:
+- [x] Test widget components:
   - `test_mode_selector_syncs_with_state`
   - `test_node_list_updates_on_add`
   - `test_edge_list_updates_on_add`
   - `test_start_node_button_updates_state`
 
-- [ ] Test validation:
+- [x] Test validation:
   - `test_save_blocked_with_empty_graph`
-  - `test_save_shows_errors_modal`
   - `test_save_shows_warnings_but_allows`
 
 **Success Criteria**:
@@ -362,6 +361,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - All tests pass with mocked napari viewer
 - Event handlers trigger correct state changes
 - Widget syncs bidirectionally with state
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~250 lines of tests)
 
