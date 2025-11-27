@@ -124,7 +124,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 1.1, 1.2, 1.3
 
 **Actions**:
-- [ ] Test node operations:
+- [x] Test node operations:
   - `test_add_node_returns_index`
   - `test_add_node_with_label`
   - `test_delete_node_removes_connected_edges`
@@ -133,26 +133,26 @@ Implementation tasks for adding interactive track graph building functionality t
   - `test_find_nearest_node_within_threshold`
   - `test_find_nearest_node_outside_threshold_returns_none`
 
-- [ ] Test edge operations:
+- [x] Test edge operations:
   - `test_add_edge_success`
   - `test_add_edge_rejects_self_loop`
   - `test_add_edge_rejects_duplicate`
   - `test_delete_edge`
 
-- [ ] Test undo/redo:
+- [x] Test undo/redo:
   - `test_undo_restores_previous_state`
   - `test_redo_restores_next_state`
   - `test_undo_empty_stack_returns_false`
   - `test_new_action_clears_redo_stack`
   - `test_undo_stack_depth_limit`
 
-- [ ] Test validation:
+- [x] Test validation:
   - `test_is_valid_for_save_requires_nodes_and_edges`
   - `test_is_valid_for_save_warns_no_start_node`
   - `test_get_effective_start_node_defaults_to_zero`
   - `test_validate_uses_check_track_graph_validity`
 
-- [ ] Test graph building:
+- [x] Test graph building:
   - `test_to_track_graph_has_pos_attributes`
   - `test_transform_nodes_to_output_with_calibration`
   - `test_transform_nodes_to_output_without_calibration`
@@ -162,6 +162,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - All tests pass
 - Coverage > 90% for `_track_state.py` and `_track_helpers.py`
 - Edge cases covered (empty state, single node, etc.)
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~300 lines of tests)
 

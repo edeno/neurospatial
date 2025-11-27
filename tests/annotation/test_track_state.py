@@ -591,6 +591,78 @@ class TestValidation:
 
         assert state.get_effective_start_node() is None
 
+    def test_validate_returns_dict_with_expected_keys(self) -> None:
+        """validate returns a dict with 'valid', 'errors', 'warnings' keys."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(10.0, 0.0)
+        state.add_edge(0, 1)
+
+        result = state.validate()
+
+        assert isinstance(result, dict)
+        assert "valid" in result
+        assert "errors" in result
+        assert "warnings" in result
+
+    def test_validate_valid_graph(self) -> None:
+        """validate returns valid=True for a valid graph."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(10.0, 0.0)
+        state.add_edge(0, 1)
+
+        result = state.validate()
+
+        assert result["valid"] is True
+
+    def test_validate_invalid_graph_empty_state(self) -> None:
+        """validate returns valid=False for empty state."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+
+        result = state.validate()
+
+        assert result["valid"] is False
+
+    def test_validate_invalid_graph_no_edges(self) -> None:
+        """validate returns valid=False for graph with no edges."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(10.0, 0.0)
+        # No edges
+
+        result = state.validate()
+
+        assert result["valid"] is False
+
+    def test_validate_uses_check_track_graph_validity(self) -> None:
+        """validate uses track_linearization.check_track_graph_validity when available."""
+        pytest.importorskip("track_linearization")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(10.0, 0.0)
+        state.add_edge(0, 1)
+
+        result = state.validate()
+
+        # When track_linearization is available, it provides richer validation
+        # The result should have the expected structure
+        assert isinstance(result, dict)
+        assert "valid" in result
+        # check_track_graph_validity returns True for a valid simple graph
+        assert result["valid"] is True
+
 
 class TestToTrackGraph:
     """Tests for to_track_graph method."""

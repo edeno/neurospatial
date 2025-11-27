@@ -320,22 +320,30 @@ class TrackBuilderState:
         """Build NetworkX graph from current state.
 
         Creates a graph with node 'pos' attributes set to node coordinates.
+        Edges have 'distance' and 'edge_id' attributes for compatibility with
+        track_linearization validation.
         For internal validation only; final output uses transformed coordinates.
 
         Returns
         -------
         nx.Graph
-            Graph with nodes having 'pos' attribute.
+            Graph with nodes having 'pos' attribute and edges having
+            'distance' and 'edge_id' attributes.
         """
+        import math
+
         graph = nx.Graph()
 
         # Add nodes with positions
         for i, (x, y) in enumerate(self.nodes):
             graph.add_node(i, pos=(x, y))
 
-        # Add edges
-        for n1, n2 in self.edges:
-            graph.add_edge(n1, n2)
+        # Add edges with distance and edge_id attributes
+        for edge_id, (n1, n2) in enumerate(self.edges):
+            x1, y1 = self.nodes[n1]
+            x2, y2 = self.nodes[n2]
+            distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            graph.add_edge(n1, n2, distance=distance, edge_id=edge_id)
 
         return graph
 

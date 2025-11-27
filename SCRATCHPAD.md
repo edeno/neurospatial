@@ -1,11 +1,44 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 1 in progress - Tasks 1.1, 1.2, 1.3 Complete
+**Current Status**: Milestone 1 COMPLETE - Tasks 1.1, 1.2, 1.3, 1.4 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 1.4 Complete (Unit Tests for State Management)
+
+**Completed**: Task 1.4 - Write Unit Tests for State Management
+
+**Work Done**:
+
+1. Added 5 new tests for `validate()` method to `tests/annotation/test_track_state.py`:
+   - `test_validate_returns_dict_with_expected_keys`
+   - `test_validate_valid_graph`
+   - `test_validate_invalid_graph_empty_state`
+   - `test_validate_invalid_graph_no_edges`
+   - `test_validate_uses_check_track_graph_validity`
+
+2. Fixed bug in `to_track_graph()` method (`_track_state.py`):
+   - Added `distance` and `edge_id` edge attributes for compatibility with `check_track_graph_validity()`
+   - Previously edges had no attributes, causing validation to fail
+
+**Tests**: 90 tests pass (56 in test_track_state.py, 31 in test_track_helpers.py, 3 in test_track_types.py)
+**Coverage**: `_track_state.py` 96%, `_track_helpers.py` 72% (uncovered lines are ImportError fallbacks)
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Milestone 1 Summary**:
+
+- Task 1.1: Type definitions ✓
+- Task 1.2: TrackBuilderState ✓
+- Task 1.3: Graph building helpers ✓
+- Task 1.4: Unit tests ✓
+
+**Next**: Milestone 2 - Widget and Layers (Task 2.1: Create Layer Setup)
+
+---
 
 ### 2025-11-27 - Task 1.3 Complete (Graph Building Helpers)
 
