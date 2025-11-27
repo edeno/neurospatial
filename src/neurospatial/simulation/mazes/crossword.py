@@ -8,8 +8,8 @@ for allocentric (map-based) navigation and route planning.
 Reference: McNamara et al. (2014)
 
 The maze consists of horizontal and vertical corridors that intersect at
-specific points. Six boxes/rooms serve as start/goal locations: four at the
-corners and two at intermediate positions.
+specific points. Four square boxes at the corners serve as start/goal locations,
+extending outward from the main corridor structure.
 
 Examples
 --------
@@ -20,9 +20,9 @@ Examples
 >>> maze = make_crossword_maze()
 >>> maze.env_2d.units
 'cm'
->>> "box_0" in maze.env_2d.regions
+>>> "box_top_left" in maze.env_2d.regions
 True
->>> "node_1_1" in maze.env_2d.regions
+>>> "box_bottom_right" in maze.env_2d.regions
 True
 """
 
@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import networkx as nx
+from shapely.geometry import box as shapely_box
 
 from neurospatial import Environment
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
@@ -45,18 +46,17 @@ class CrosswordDims(MazeDims):
     """Dimension specifications for Crossword Maze.
 
     The Crossword Maze consists of an incomplete grid pattern with horizontal
-    and vertical corridors connecting specific intersections.
+    and vertical corridors connecting specific intersections, plus four square
+    box rooms at the corners.
 
     Attributes
     ----------
     grid_spacing : float
-        Distance between adjacent grid nodes in cm. Default is 30.0.
+        Distance between adjacent grid intersections in cm. Default is 30.0.
     corridor_width : float
         Width of all corridors in cm. Default is 10.0.
-    n_rows : int
-        Number of rows in the base grid. Default is 4.
-    n_cols : int
-        Number of columns in the base grid. Default is 4.
+    box_size : float
+        Size (width and height) of corner box rooms in cm. Default is 15.0.
 
     Examples
     --------
@@ -65,22 +65,17 @@ class CrosswordDims(MazeDims):
     30.0
     >>> dims.corridor_width
     10.0
-    >>> dims.n_rows
-    4
-    >>> dims.n_cols
-    4
+    >>> dims.box_size
+    15.0
 
-    >>> custom = CrosswordDims(
-    ...     grid_spacing=40.0, corridor_width=12.0, n_rows=5, n_cols=5
-    ... )
+    >>> custom = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, box_size=20.0)
     >>> custom.grid_spacing
     40.0
     """
 
     grid_spacing: float = 30.0
     corridor_width: float = 10.0
-    n_rows: int = 4
-    n_cols: int = 4
+    box_size: float = 15.0
 
 
 def make_crossword_maze(
@@ -91,14 +86,14 @@ def make_crossword_maze(
     """Create a Crossword Maze environment.
 
     Creates an incomplete grid maze with horizontal and vertical corridors
-    connecting specific intersections. Unlike a complete Manhattan grid,
-    this creates a sparse lattice pattern with 6 boxes as endpoints.
+    connecting specific intersections. Four square box rooms at the corners
+    serve as start/goal locations, extending outward from the corridor grid.
 
     Parameters
     ----------
     dims : CrosswordDims, optional
         Maze dimensions. If None, uses default dimensions
-        (30 cm grid spacing, 10 cm corridor width, 4×4 base grid).
+        (30 cm grid spacing, 10 cm corridor width, 15 cm box size).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -114,18 +109,19 @@ def make_crossword_maze(
 
     Notes
     -----
-    The maze creates an incomplete grid pattern:
-    - Not all intersections are connected
-    - 6 boxes serve as start/goal locations (4 corners + 2 intermediate)
-    - Creates interesting route-planning challenges
+    The maze creates an incomplete grid pattern resembling a crossword puzzle:
+    - Horizontal and vertical corridors intersect at specific points
+    - 4 square box rooms at corners extend outward from the grid
+    - Not all grid intersections are connected
 
     Regions:
-    - box_0 to box_5: Six goal/start locations around the perimeter
-    - node_i_j: Grid nodes at specific intersections (not all are present)
+    - box_top_left, box_top_right, box_bottom_left, box_bottom_right:
+      Square polygon regions at corners
+    - junction_X_Y: Point regions at corridor intersections
 
     Track Graph Topology:
-    - Sparse Manhattan-style grid
-    - Selected nodes connected by horizontal and vertical corridors
+    - Sparse crossword-style grid with selective connectivity
+    - Corner boxes connected via corridor network
 
     Examples
     --------
@@ -139,9 +135,9 @@ def make_crossword_maze(
 
     Create with custom dimensions:
 
-    >>> dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0)
+    >>> dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, box_size=20.0)
     >>> maze = make_crossword_maze(dims=dims, bin_size=3.0)
-    >>> "box_0" in maze.env_2d.regions
+    >>> "box_top_left" in maze.env_2d.regions
     True
 
     Skip track graph creation:
@@ -157,119 +153,126 @@ def make_crossword_maze(
     if dims is None:
         dims = CrosswordDims()
 
-    max_y = (dims.n_rows - 1) * dims.grid_spacing
-    max_x = (dims.n_cols - 1) * dims.grid_spacing
+    # Grid layout: 3x3 internal intersections
+    # Boxes at the 4 outer corners extending beyond the grid
+    s = dims.grid_spacing  # shorthand
+    w = dims.corridor_width
+    b = dims.box_size
 
-    # Create an incomplete grid pattern (sparse connectivity)
-    # Based on the sketch: horizontal and vertical corridors that don't
-    # form a complete grid
+    # Define the crossword corridor structure - a sparse grid with selective connectivity
+    # The pattern creates distinct corridor segments between junction points
+    #
+    # Layout (viewed from above, boxes extend outward at corners):
+    #
+    #   [TL]─j_2_0─j_2_1─j_2_2─j_2_3─[TR]
+    #         │     │     │     │
+    #         │   j_1_1─j_1_2   │
+    #         │     │     │     │
+    #   [BL]─j_0_0─j_0_1─j_0_2─j_0_3─[BR]
+    #
+    # Note: Left edge (j_0_0-j_2_0) and right edge (j_0_3-j_2_3) are direct
+    # connections without middle junctions. Interior columns have 3 junctions each.
 
     corridors = []
 
-    # Horizontal corridors (not all rows are complete)
-    # Row 0 (bottom): full
+    # === HORIZONTAL CORRIDORS (as individual segments) ===
+    # Top row segments (at y = 2*s)
     corridors.append(
-        make_corridor_polygon((0.0, 0.0), (max_x, 0.0), dims.corridor_width)
-    )
-    # Row 1: partial (left and right sections with gap)
+        make_corridor_polygon((0.0, 2 * s), (s, 2 * s), w)
+    )  # j_2_0 to j_2_1
     corridors.append(
-        make_corridor_polygon(
-            (0.0, dims.grid_spacing),
-            (dims.grid_spacing * 1.5, dims.grid_spacing),
-            dims.corridor_width,
-        )
-    )
+        make_corridor_polygon((s, 2 * s), (2 * s, 2 * s), w)
+    )  # j_2_1 to j_2_2
     corridors.append(
-        make_corridor_polygon(
-            (dims.grid_spacing * 2.5, dims.grid_spacing),
-            (max_x, dims.grid_spacing),
-            dims.corridor_width,
-        )
-    )
-    # Row 2: full
-    corridors.append(
-        make_corridor_polygon(
-            (0.0, dims.grid_spacing * 2),
-            (max_x, dims.grid_spacing * 2),
-            dims.corridor_width,
-        )
-    )
-    # Row 3 (top): full
-    corridors.append(
-        make_corridor_polygon((0.0, max_y), (max_x, max_y), dims.corridor_width)
-    )
+        make_corridor_polygon((2 * s, 2 * s), (3 * s, 2 * s), w)
+    )  # j_2_2 to j_2_3
 
-    # Vertical corridors (not all columns are complete)
-    # Column 0 (left): full
-    corridors.append(
-        make_corridor_polygon((0.0, 0.0), (0.0, max_y), dims.corridor_width)
-    )
-    # Column 1: partial (bottom section)
-    corridors.append(
-        make_corridor_polygon(
-            (dims.grid_spacing, 0.0),
-            (dims.grid_spacing, dims.grid_spacing * 2),
-            dims.corridor_width,
-        )
-    )
-    # Column 2: partial (top section)
-    corridors.append(
-        make_corridor_polygon(
-            (dims.grid_spacing * 2, dims.grid_spacing),
-            (dims.grid_spacing * 2, max_y),
-            dims.corridor_width,
-        )
-    )
-    # Column 3 (right): full
-    corridors.append(
-        make_corridor_polygon((max_x, 0.0), (max_x, max_y), dims.corridor_width)
-    )
+    # Middle row segment (at y = s) - only connects interior columns
+    corridors.append(make_corridor_polygon((s, s), (2 * s, s), w))  # j_1_1 to j_1_2
 
-    # Union all corridors into single polygon
-    grid_polygon = union_polygons(corridors)
+    # Bottom row segments (at y = 0)
+    corridors.append(make_corridor_polygon((0.0, 0.0), (s, 0.0), w))  # j_0_0 to j_0_1
+    corridors.append(make_corridor_polygon((s, 0.0), (2 * s, 0.0), w))  # j_0_1 to j_0_2
+    corridors.append(
+        make_corridor_polygon((2 * s, 0.0), (3 * s, 0.0), w)
+    )  # j_0_2 to j_0_3
+
+    # === VERTICAL CORRIDORS ===
+    # Left edge: direct connection from bottom to top (no middle junction)
+    corridors.append(
+        make_corridor_polygon((0.0, 0.0), (0.0, 2 * s), w)
+    )  # j_0_0 to j_2_0
+
+    # Interior column 1 (at x = s) - connects through middle junction
+    corridors.append(make_corridor_polygon((s, 0.0), (s, s), w))  # j_0_1 to j_1_1
+    corridors.append(make_corridor_polygon((s, s), (s, 2 * s), w))  # j_1_1 to j_2_1
+
+    # Interior column 2 (at x = 2*s) - connects through middle junction
+    corridors.append(
+        make_corridor_polygon((2 * s, 0.0), (2 * s, s), w)
+    )  # j_0_2 to j_1_2
+    corridors.append(
+        make_corridor_polygon((2 * s, s), (2 * s, 2 * s), w)
+    )  # j_1_2 to j_2_2
+
+    # Right edge: direct connection from bottom to top (no middle junction)
+    corridors.append(
+        make_corridor_polygon((3 * s, 0.0), (3 * s, 2 * s), w)
+    )  # j_0_3 to j_2_3
+
+    # === CORNER BOX ROOMS ===
+    # Boxes extend outward from the grid corners
+    half_w = w / 2
+
+    # Top-left box: extends up and left from (0, 2*s)
+    box_tl = shapely_box(-b, 2 * s - half_w, half_w, 2 * s + b)
+    corridors.append(box_tl)
+
+    # Top-right box: extends up and right from (3*s, 2*s)
+    box_tr = shapely_box(3 * s - half_w, 2 * s - half_w, 3 * s + b, 2 * s + b)
+    corridors.append(box_tr)
+
+    # Bottom-left box: extends down and left from (0, 0)
+    box_bl = shapely_box(-b, -b, half_w, half_w)
+    corridors.append(box_bl)
+
+    # Bottom-right box: extends down and right from (3*s, 0)
+    box_br = shapely_box(3 * s - half_w, -b, 3 * s + b, half_w)
+    corridors.append(box_br)
+
+    # Union all corridors and boxes into single polygon
+    maze_polygon = union_polygons(corridors)
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
-        polygon=grid_polygon,
+        polygon=maze_polygon,
         bin_size=bin_size,
         name="crossword_maze",
         connect_diagonal_neighbors=False,  # Manhattan grid only
     )
     env_2d.units = "cm"
 
-    # Add 6 box regions at strategic locations
-    # 4 corners + 2 intermediate positions
-    env_2d.regions.add("box_0", point=(0.0, max_y))  # Top-left
-    env_2d.regions.add("box_1", point=(max_x, max_y))  # Top-right
-    env_2d.regions.add("box_2", point=(max_x, 0.0))  # Bottom-right
-    env_2d.regions.add("box_3", point=(0.0, 0.0))  # Bottom-left
-    env_2d.regions.add("box_4", point=(0.0, dims.grid_spacing))  # Left middle-bottom
-    env_2d.regions.add(
-        "box_5", point=(max_x, dims.grid_spacing * 2)
-    )  # Right middle-top
+    # Add box regions as polygons (the actual square rooms)
+    env_2d.regions.add("box_top_left", polygon=box_tl)
+    env_2d.regions.add("box_top_right", polygon=box_tr)
+    env_2d.regions.add("box_bottom_left", polygon=box_bl)
+    env_2d.regions.add("box_bottom_right", polygon=box_br)
 
-    # Add node regions at key intersections
-    key_nodes = [
-        (0, 0),
-        (0, 1),
-        (0, 2),
-        (0, 3),  # Left column
-        (1, 0),
-        (1, 1),
-        (1, 2),  # Second column (partial)
-        (2, 1),
-        (2, 2),
-        (2, 3),  # Third column (partial)
-        (3, 0),
-        (3, 1),
-        (3, 2),
-        (3, 3),  # Right column
+    # Add junction regions at key intersections
+    junctions = [
+        ("junction_0_0", (0.0, 0.0)),
+        ("junction_0_1", (s, 0.0)),
+        ("junction_0_2", (2 * s, 0.0)),
+        ("junction_0_3", (3 * s, 0.0)),
+        ("junction_1_1", (s, s)),
+        ("junction_1_2", (2 * s, s)),
+        ("junction_2_0", (0.0, 2 * s)),
+        ("junction_2_1", (s, 2 * s)),
+        ("junction_2_2", (2 * s, 2 * s)),
+        ("junction_2_3", (3 * s, 2 * s)),
     ]
-    for row, col in key_nodes:
-        x = col * dims.grid_spacing
-        y = row * dims.grid_spacing
-        region_name = f"node_{row}_{col}"
-        env_2d.regions.add(region_name, point=(x, y))
+    for name, pos in junctions:
+        env_2d.regions.add(name, point=pos)
 
     # Create track graph if requested
     env_track = None
@@ -285,8 +288,9 @@ def _create_crossword_track_graph(
 ) -> Environment:
     """Create the 1D linearized track graph for Crossword Maze.
 
-    The track graph represents the sparse grid topology where only selected
-    nodes are connected based on the incomplete corridor layout.
+    The track graph represents the sparse crossword topology matching the
+    2D corridor layout. The graph includes 4 corner boxes plus internal
+    corridor intersections.
 
     Parameters
     ----------
@@ -302,73 +306,81 @@ def _create_crossword_track_graph(
     """
     graph = nx.Graph()
 
-    # Define nodes that exist in the sparse grid
-    # (row, col) format matching the 2D layout
-    key_nodes = [
-        (0, 0),
-        (0, 1),
-        (0, 2),
-        (0, 3),  # Bottom row (full)
-        (1, 0),
-        (1, 1),  # Row 1 left section
-        (1, 3),  # Row 1 right section
-        (2, 0),
-        (2, 1),
-        (2, 2),
-        (2, 3),  # Row 2 (full)
-        (3, 0),
-        (3, 1),
-        (3, 2),
-        (3, 3),  # Top row (full)
-    ]
+    s = dims.grid_spacing
+    b = dims.box_size
 
-    # Add nodes with positions
-    for row, col in key_nodes:
-        node_id = f"node_{row}_{col}"
-        x = col * dims.grid_spacing
-        y = row * dims.grid_spacing
-        graph.add_node(node_id, pos=(x, y))
+    # Define nodes matching the 2D layout:
+    # - 4 corner box centers
+    # - Junction points at corridor intersections
+    #
+    # Layout:
+    #   box_tl ─── j_2_0 ─── j_2_1 ─── j_2_2 ─── j_2_3 ─── box_tr
+    #              │         │         │         │
+    #              │       j_1_1 ─── j_1_2       │
+    #              │         │         │         │
+    #   box_bl ─── j_0_0 ─── j_0_1 ─── j_0_2 ─── j_0_3 ─── box_br
 
-    # Define edges based on the sparse corridor layout
+    nodes = {
+        # Corner box centers (extending outward)
+        "box_tl": (-b / 2, 2 * s + b / 2),
+        "box_tr": (3 * s + b / 2, 2 * s + b / 2),
+        "box_bl": (-b / 2, -b / 2),
+        "box_br": (3 * s + b / 2, -b / 2),
+        # Bottom row junctions (y=0)
+        "j_0_0": (0.0, 0.0),
+        "j_0_1": (s, 0.0),
+        "j_0_2": (2 * s, 0.0),
+        "j_0_3": (3 * s, 0.0),
+        # Middle row junctions (y=s) - only center ones
+        "j_1_1": (s, s),
+        "j_1_2": (2 * s, s),
+        # Top row junctions (y=2*s)
+        "j_2_0": (0.0, 2 * s),
+        "j_2_1": (s, 2 * s),
+        "j_2_2": (2 * s, 2 * s),
+        "j_2_3": (3 * s, 2 * s),
+    }
+
+    for node_id, pos in nodes.items():
+        graph.add_node(node_id, pos=pos)
+
+    # Define edges based on the crossword corridor layout
     edges = [
-        # Bottom row (horizontal)
-        ("node_0_0", "node_0_1"),
-        ("node_0_1", "node_0_2"),
-        ("node_0_2", "node_0_3"),
-        # Row 1 partial horizontal
-        ("node_1_0", "node_1_1"),
-        # Row 2 (horizontal)
-        ("node_2_0", "node_2_1"),
-        ("node_2_1", "node_2_2"),
-        ("node_2_2", "node_2_3"),
-        # Top row (horizontal)
-        ("node_3_0", "node_3_1"),
-        ("node_3_1", "node_3_2"),
-        ("node_3_2", "node_3_3"),
-        # Left column (vertical, full)
-        ("node_0_0", "node_1_0"),
-        ("node_1_0", "node_2_0"),
-        ("node_2_0", "node_3_0"),
-        # Column 1 (partial)
-        ("node_0_1", "node_1_1"),
-        ("node_1_1", "node_2_1"),
-        ("node_2_1", "node_3_1"),
-        # Column 2 (partial - top section)
-        ("node_2_2", "node_3_2"),
-        # Right column (vertical, full)
-        ("node_0_3", "node_1_3"),
-        ("node_1_3", "node_2_3"),
-        ("node_2_3", "node_3_3"),
+        # Corner boxes to adjacent junctions
+        ("box_tl", "j_2_0"),
+        ("box_tr", "j_2_3"),
+        ("box_bl", "j_0_0"),
+        ("box_br", "j_0_3"),
+        # Top row horizontal (y=2*s)
+        ("j_2_0", "j_2_1"),
+        ("j_2_1", "j_2_2"),
+        ("j_2_2", "j_2_3"),
+        # Middle row horizontal (y=s) - partial
+        ("j_1_1", "j_1_2"),
+        # Bottom row horizontal (y=0)
+        ("j_0_0", "j_0_1"),
+        ("j_0_1", "j_0_2"),
+        ("j_0_2", "j_0_3"),
+        # Left column vertical (x=0)
+        ("j_0_0", "j_2_0"),
+        # Second column vertical (x=s)
+        ("j_0_1", "j_1_1"),
+        ("j_1_1", "j_2_1"),
+        # Third column vertical (x=2*s)
+        ("j_0_2", "j_1_2"),
+        ("j_1_2", "j_2_2"),
+        # Right column vertical (x=3*s)
+        ("j_0_3", "j_2_3"),
     ]
 
     for u, v in edges:
-        # Calculate distance from positions
+        # Calculate Euclidean distance from positions
         pos_u = graph.nodes[u]["pos"]
         pos_v = graph.nodes[v]["pos"]
-        distance = abs(pos_u[0] - pos_v[0]) + abs(pos_u[1] - pos_v[1])
+        distance = ((pos_u[0] - pos_v[0]) ** 2 + (pos_u[1] - pos_v[1]) ** 2) ** 0.5
         graph.add_edge(u, v, distance=distance)
 
-    # Edge order for linearization
+    # Edge order for linearization (defines how track is laid out)
     edge_order = edges.copy()
 
     # Create the 1D environment
