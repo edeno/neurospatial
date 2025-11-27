@@ -74,24 +74,36 @@ class TestLatticeMazesCommonInterface:
 class TestCrosswordMaze:
     """Test Crossword maze specific behavior."""
 
-    def test_has_4x4_grid(self):
-        """Crossword maze should have 4x4 grid by default."""
+    def test_has_default_dims(self):
+        """Crossword maze should have default dimensions."""
         dims = CrosswordDims()
-        assert dims.n_rows == 4
-        assert dims.n_cols == 4
+        assert dims.grid_spacing == 30.0
+        assert dims.corridor_width == 10.0
+        assert dims.box_size == 15.0
 
-    def test_has_node_regions(self):
-        """Crossword should have node regions at intersections (sparse grid)."""
+    def test_has_junction_regions(self):
+        """Crossword should have junction regions at intersections (sparse grid)."""
         maze = make_crossword_maze(bin_size=3.0)
-        node_regions = [r for r in maze.env_2d.regions if r.startswith("node_")]
-        # Sparse/incomplete grid: 14 intersections (2 missing from complete 4x4)
-        assert len(node_regions) == 14
+        junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
+        # Sparse crossword pattern: 10 intersections
+        assert len(junction_regions) == 10
 
-    def test_has_box_regions(self):
-        """Crossword should have 6 box regions (sparse layout)."""
+    def test_has_four_box_regions(self):
+        """Crossword should have 4 corner box regions (polygons)."""
         maze = make_crossword_maze(bin_size=3.0)
         box_regions = [r for r in maze.env_2d.regions if r.startswith("box_")]
-        assert len(box_regions) == 6
+        assert len(box_regions) == 4
+
+    def test_box_regions_are_polygons(self):
+        """All box regions should be polygon type."""
+        maze = make_crossword_maze(bin_size=3.0)
+        for name in [
+            "box_top_left",
+            "box_top_right",
+            "box_bottom_left",
+            "box_bottom_right",
+        ]:
+            assert maze.env_2d.regions[name].kind == "polygon"
 
 
 class TestHoneycombMaze:

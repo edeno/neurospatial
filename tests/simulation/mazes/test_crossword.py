@@ -27,8 +27,7 @@ class TestCrosswordDims:
         dims = CrosswordDims()
         assert dims.grid_spacing == 30.0
         assert dims.corridor_width == 10.0
-        assert dims.n_rows == 4
-        assert dims.n_cols == 4
+        assert dims.box_size == 15.0
 
     def test_is_frozen(self):
         """CrosswordDims should be frozen (immutable)."""
@@ -42,11 +41,10 @@ class TestCrosswordDims:
         """CrosswordDims should accept custom values."""
         from neurospatial.simulation.mazes.crossword import CrosswordDims
 
-        dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, n_rows=5, n_cols=5)
+        dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, box_size=20.0)
         assert dims.grid_spacing == 40.0
         assert dims.corridor_width == 12.0
-        assert dims.n_rows == 5
-        assert dims.n_cols == 5
+        assert dims.box_size == 20.0
 
 
 class TestMakeCrosswordMaze:
@@ -77,13 +75,13 @@ class TestMakeCrosswordMaze:
         assert maze.env_2d.units == "cm"
 
     def test_env_2d_has_grid_extent(self):
-        """env_2d should have a 4×4 grid spatial extent."""
+        """env_2d should cover the grid plus corner boxes."""
         from neurospatial.simulation.mazes.crossword import (
             CrosswordDims,
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=30.0, corridor_width=10.0, n_rows=4, n_cols=4)
+        dims = CrosswordDims(grid_spacing=30.0, corridor_width=10.0, box_size=15.0)
         maze = make_crossword_maze(dims=dims)
 
         # Get spatial extent from bin_centers
@@ -91,137 +89,141 @@ class TestMakeCrosswordMaze:
         x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
         y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
 
-        # X extent should cover 4 columns (0 to 3*spacing)
+        # X extent: from -box_size to 3*spacing + box_size (boxes extend outward)
+        # Grid spans 0 to 3*spacing = 90 cm, boxes add ~15 cm on each side
         x_extent = x_max - x_min
-        expected_x_extent = 3 * dims.grid_spacing  # 0 to 90 cm
+        expected_x_extent = 3 * dims.grid_spacing + dims.box_size  # ~105 cm
         assert x_extent > expected_x_extent * 0.8  # At least 80% of expected
 
-        # Y extent should cover 4 rows (0 to 3*spacing)
+        # Y extent: from -box_size to 2*spacing + box_size
         y_extent = y_max - y_min
-        expected_y_extent = 3 * dims.grid_spacing  # 0 to 90 cm
+        expected_y_extent = 2 * dims.grid_spacing + dims.box_size  # ~75 cm
         assert y_extent > expected_y_extent * 0.8  # At least 80% of expected
 
-    def test_env_2d_has_corner_boxes(self):
-        """env_2d should have 4 corner box regions (box_0 through box_3)."""
+    def test_env_2d_has_four_corner_boxes(self):
+        """env_2d should have 4 corner box regions as polygons."""
         from neurospatial.simulation.mazes.crossword import make_crossword_maze
 
         maze = make_crossword_maze()
-        assert "box_0" in maze.env_2d.regions  # Top-left
-        assert "box_1" in maze.env_2d.regions  # Top-right
-        assert "box_2" in maze.env_2d.regions  # Bottom-right
-        assert "box_3" in maze.env_2d.regions  # Bottom-left
+        assert "box_top_left" in maze.env_2d.regions
+        assert "box_top_right" in maze.env_2d.regions
+        assert "box_bottom_left" in maze.env_2d.regions
+        assert "box_bottom_right" in maze.env_2d.regions
 
-    def test_env_2d_has_node_regions(self):
-        """env_2d should have node_i_j regions at intersections."""
+    def test_corner_boxes_are_polygons(self):
+        """Corner box regions should be polygon type (not points)."""
         from neurospatial.simulation.mazes.crossword import make_crossword_maze
 
         maze = make_crossword_maze()
-        # Check a few node regions exist
-        assert "node_0_0" in maze.env_2d.regions  # Bottom-left corner
-        assert "node_1_1" in maze.env_2d.regions  # Interior node
-        assert "node_3_3" in maze.env_2d.regions  # Top-right corner
+        for name in [
+            "box_top_left",
+            "box_top_right",
+            "box_bottom_left",
+            "box_bottom_right",
+        ]:
+            region = maze.env_2d.regions[name]
+            assert region.kind == "polygon", f"{name} should be a polygon region"
 
-    def test_sparse_node_regions_present(self):
-        """Sparse grid nodes should have regions (not all 16 nodes present)."""
+    def test_env_2d_has_junction_regions(self):
+        """env_2d should have junction_X_Y regions at intersections."""
         from neurospatial.simulation.mazes.crossword import make_crossword_maze
 
         maze = make_crossword_maze()
-        # Crossword maze is a sparse/incomplete grid - not all nodes present
-        # The actual nodes present in the sparse grid:
-        expected_nodes = [
-            (0, 0),
-            (0, 1),
-            (0, 2),
-            (0, 3),  # Bottom row (full)
-            (1, 0),
-            (1, 1),
-            (1, 2),  # Row 1 (partial - missing 1,3)
-            (2, 1),
-            (2, 2),
-            (2, 3),  # Row 2 (partial - missing 2,0)
-            (3, 0),
-            (3, 1),
-            (3, 2),
-            (3, 3),  # Top row (full)
+        # Check junction regions at key intersections
+        expected_junctions = [
+            "junction_0_0",
+            "junction_0_1",
+            "junction_0_2",
+            "junction_0_3",
+            "junction_1_1",
+            "junction_1_2",
+            "junction_2_0",
+            "junction_2_1",
+            "junction_2_2",
+            "junction_2_3",
         ]
-        for row, col in expected_nodes:
-            region_name = f"node_{row}_{col}"
-            assert region_name in maze.env_2d.regions
+        for junction in expected_junctions:
+            assert junction in maze.env_2d.regions, f"{junction} should exist"
 
-    def test_missing_nodes_in_sparse_grid(self):
-        """Some nodes should be missing in the incomplete grid."""
+    def test_junction_regions_are_points(self):
+        """Junction regions should be point type."""
         from neurospatial.simulation.mazes.crossword import make_crossword_maze
 
         maze = make_crossword_maze()
-        # These nodes should NOT be present in the sparse grid
-        # (based on incomplete corridor structure)
-        assert "node_1_3" not in maze.env_2d.regions  # Row 1 right gap
-        assert "node_2_0" not in maze.env_2d.regions  # Row 2 left gap
+        for name, region in maze.env_2d.regions.items():
+            if name.startswith("junction_"):
+                assert region.kind == "point", f"{name} should be a point region"
 
     def test_corner_box_positions_correct(self):
-        """Corner boxes should be at expected positions."""
+        """Corner boxes should extend outward from grid corners."""
         from neurospatial.simulation.mazes.crossword import (
             CrosswordDims,
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=30.0, n_rows=4, n_cols=4)
+        dims = CrosswordDims(grid_spacing=30.0, box_size=15.0)
         maze = make_crossword_maze(dims=dims)
 
-        # Get corner box regions (all should be point regions)
-        box_0 = maze.env_2d.regions["box_0"]
-        box_1 = maze.env_2d.regions["box_1"]
-        box_2 = maze.env_2d.regions["box_2"]
-        box_3 = maze.env_2d.regions["box_3"]
+        # Get corner box regions (all should be polygon regions)
+        box_tl = maze.env_2d.regions["box_top_left"]
+        box_tr = maze.env_2d.regions["box_top_right"]
+        box_bl = maze.env_2d.regions["box_bottom_left"]
+        box_br = maze.env_2d.regions["box_bottom_right"]
 
-        assert box_0.kind == "point"
-        assert box_1.kind == "point"
-        assert box_2.kind == "point"
-        assert box_3.kind == "point"
+        # All boxes should be polygons
+        assert box_tl.kind == "polygon"
+        assert box_tr.kind == "polygon"
+        assert box_bl.kind == "polygon"
+        assert box_br.kind == "polygon"
 
-        # box_0: top-left (0, 3*spacing)
-        assert np.isclose(box_0.data[0], 0.0, atol=1.0)
-        assert np.isclose(box_0.data[1], 3 * dims.grid_spacing, atol=1.0)
+        # Check centroids are in expected positions (approximately)
+        # Top-left extends left and up from (0, 2*s)
+        tl_centroid = box_tl.data.centroid
+        assert tl_centroid.x < 0  # Extends left
+        assert tl_centroid.y > 2 * dims.grid_spacing  # Extends up
 
-        # box_1: top-right (3*spacing, 3*spacing)
-        assert np.isclose(box_1.data[0], 3 * dims.grid_spacing, atol=1.0)
-        assert np.isclose(box_1.data[1], 3 * dims.grid_spacing, atol=1.0)
+        # Top-right extends right and up from (3*s, 2*s)
+        tr_centroid = box_tr.data.centroid
+        assert tr_centroid.x > 3 * dims.grid_spacing  # Extends right
+        assert tr_centroid.y > 2 * dims.grid_spacing  # Extends up
 
-        # box_2: bottom-right (3*spacing, 0)
-        assert np.isclose(box_2.data[0], 3 * dims.grid_spacing, atol=1.0)
-        assert np.isclose(box_2.data[1], 0.0, atol=1.0)
+        # Bottom-left extends left and down from (0, 0)
+        bl_centroid = box_bl.data.centroid
+        assert bl_centroid.x < 0  # Extends left
+        assert bl_centroid.y < 0  # Extends down
 
-        # box_3: bottom-left (0, 0)
-        assert np.isclose(box_3.data[0], 0.0, atol=1.0)
-        assert np.isclose(box_3.data[1], 0.0, atol=1.0)
+        # Bottom-right extends right and down from (3*s, 0)
+        br_centroid = box_br.data.centroid
+        assert br_centroid.x > 3 * dims.grid_spacing  # Extends right
+        assert br_centroid.y < 0  # Extends down
 
-    def test_node_positions_correct(self):
-        """Node regions should be at expected grid positions."""
+    def test_junction_positions_correct(self):
+        """Junction regions should be at expected grid positions."""
         from neurospatial.simulation.mazes.crossword import (
             CrosswordDims,
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=30.0, n_rows=4, n_cols=4)
+        dims = CrosswordDims(grid_spacing=30.0)
         maze = make_crossword_maze(dims=dims)
 
-        # Check node_0_0 (bottom-left)
-        node_0_0 = maze.env_2d.regions["node_0_0"]
-        assert node_0_0.kind == "point"
-        assert np.isclose(node_0_0.data[0], 0.0, atol=1.0)
-        assert np.isclose(node_0_0.data[1], 0.0, atol=1.0)
+        # Check junction_0_0 (bottom-left grid corner)
+        j_0_0 = maze.env_2d.regions["junction_0_0"]
+        assert j_0_0.kind == "point"
+        assert np.isclose(j_0_0.data[0], 0.0, atol=1.0)
+        assert np.isclose(j_0_0.data[1], 0.0, atol=1.0)
 
-        # Check node_2_1 (row=2, col=1)
-        node_2_1 = maze.env_2d.regions["node_2_1"]
-        assert node_2_1.kind == "point"
-        assert np.isclose(node_2_1.data[0], 1 * dims.grid_spacing, atol=1.0)
-        assert np.isclose(node_2_1.data[1], 2 * dims.grid_spacing, atol=1.0)
+        # Check junction_1_1 (middle)
+        j_1_1 = maze.env_2d.regions["junction_1_1"]
+        assert j_1_1.kind == "point"
+        assert np.isclose(j_1_1.data[0], dims.grid_spacing, atol=1.0)
+        assert np.isclose(j_1_1.data[1], dims.grid_spacing, atol=1.0)
 
-        # Check node_3_3 (top-right corner)
-        node_3_3 = maze.env_2d.regions["node_3_3"]
-        assert node_3_3.kind == "point"
-        assert np.isclose(node_3_3.data[0], 3 * dims.grid_spacing, atol=1.0)
-        assert np.isclose(node_3_3.data[1], 3 * dims.grid_spacing, atol=1.0)
+        # Check junction_2_3 (top-right grid corner)
+        j_2_3 = maze.env_2d.regions["junction_2_3"]
+        assert j_2_3.kind == "point"
+        assert np.isclose(j_2_3.data[0], 3 * dims.grid_spacing, atol=1.0)
+        assert np.isclose(j_2_3.data[1], 2 * dims.grid_spacing, atol=1.0)
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
@@ -287,7 +289,7 @@ class TestMakeCrosswordMaze:
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=50.0, corridor_width=15.0, n_rows=5, n_cols=5)
+        dims = CrosswordDims(grid_spacing=50.0, corridor_width=15.0, box_size=20.0)
         maze = make_crossword_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range
@@ -295,9 +297,10 @@ class TestMakeCrosswordMaze:
         x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
         y_extent = bin_centers[:, 1].max() - bin_centers[:, 1].min()
 
-        # Both should be roughly (n-1)*grid_spacing = 4*50 = 200 cm
-        assert x_extent > 180  # Larger than default
-        assert y_extent > 180  # Larger than default
+        # X should span: -box_size to 3*spacing + box_size = -20 to 170 = 190 cm
+        # Y should span: -box_size to 2*spacing + box_size = -20 to 120 = 140 cm
+        assert x_extent > 150  # Larger than default
+        assert y_extent > 100  # Larger than default
 
     def test_none_dims_uses_defaults(self):
         """dims=None should use default dimensions."""
@@ -351,14 +354,14 @@ class TestCrosswordTrackGraph:
         for node in maze.env_track.connectivity.nodes():
             assert "pos" in maze.env_track.connectivity.nodes[node]
 
-    def test_track_covers_full_maze(self):
-        """Track should cover the full 4×4 grid extent."""
+    def test_track_covers_grid_and_boxes(self):
+        """Track should cover the grid extent plus corner boxes."""
         from neurospatial.simulation.mazes.crossword import (
             CrosswordDims,
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=30.0, n_rows=4, n_cols=4)
+        dims = CrosswordDims(grid_spacing=30.0, box_size=15.0)
         maze = make_crossword_maze(dims=dims, include_track=True)
         assert maze.env_track is not None
 
@@ -366,15 +369,15 @@ class TestCrosswordTrackGraph:
         graph = maze.env_track.connectivity
         positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
 
-        # X extent should cover the full grid (0 to 3*spacing)
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        expected_x = 3 * dims.grid_spacing  # 0 to 90 cm
-        assert x_extent >= expected_x * 0.95  # At least 95%
+        # X extent should include boxes: from -box/2 to 3*spacing + box/2
+        x_min, x_max = positions[:, 0].min(), positions[:, 0].max()
+        assert x_min < 0  # Extends left from grid
+        assert x_max > 3 * dims.grid_spacing  # Extends right from grid
 
-        # Y extent should cover the full grid (0 to 3*spacing)
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-        expected_y = 3 * dims.grid_spacing  # 0 to 90 cm
-        assert y_extent >= expected_y * 0.95  # At least 95%
+        # Y extent should include boxes: from -box/2 to 2*spacing + box/2
+        y_min, y_max = positions[:, 1].min(), positions[:, 1].max()
+        assert y_min < 0  # Extends down from grid
+        assert y_max > 2 * dims.grid_spacing  # Extends up from grid
 
     def test_track_has_many_bins(self):
         """Track graph should have many bins (discretized from graph edges)."""
@@ -383,14 +386,12 @@ class TestCrosswordTrackGraph:
             make_crossword_maze,
         )
 
-        dims = CrosswordDims(grid_spacing=30.0, n_rows=4, n_cols=4)
+        dims = CrosswordDims(grid_spacing=30.0, box_size=15.0)
         maze = make_crossword_maze(dims=dims, include_track=True, bin_size=2.0)
         assert maze.env_track is not None
 
-        # The track is discretized into bins (many more than the 16 original nodes)
-        # With grid_spacing=30.0 and bin_size=2.0, we expect roughly:
-        # Total edge length = 12 horizontal edges × 30 + 12 vertical edges × 30 = 720 cm
-        # 720 cm / 2 cm per bin ≈ 360 bins
+        # The track is discretized into bins
+        # Should have at least 100 bins
         assert maze.env_track.n_bins > 100  # Many bins from discretization
 
     def test_track_edge_connectivity_preserved(self):
