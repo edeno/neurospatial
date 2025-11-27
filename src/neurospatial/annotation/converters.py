@@ -29,8 +29,7 @@ def shapes_to_regions(
     validate: bool = True,
     min_area: float = 1e-6,
 ) -> tuple[Regions, Region | None, list[Region]]:
-    """
-    Convert napari polygon shapes to Regions.
+    """Convert napari polygon shapes to Regions.
 
     Parameters
     ----------
@@ -83,6 +82,7 @@ def shapes_to_regions(
 
     Holes are only meaningful when an environment boundary exists. They are
     used to create excluded areas within the environment.
+
     """
     import warnings
 
@@ -93,7 +93,10 @@ def shapes_to_regions(
     env_boundaries: list[Region] = []
 
     for poly_rc, name, region_type in zip(
-        shapes_data, names, region_types, strict=True
+        shapes_data,
+        names,
+        region_types,
+        strict=True,
     ):
         # Convert napari (row, col) to video (x, y) pixels
         pts_px = poly_rc[:, ::-1].astype(np.float64)
@@ -153,9 +156,9 @@ def shapes_to_regions(
             raise ValueError(
                 f"Multiple environment boundaries ({len(env_boundaries)}) were drawn: "
                 f"{names_list}. Set multiple_boundaries='last' or 'first' to select one, "
-                "or draw only one environment boundary."
+                "or draw only one environment boundary.",
             )
-        elif multiple_boundaries == "first":
+        if multiple_boundaries == "first":
             env_boundary = env_boundaries[0]
             warnings.warn(
                 f"Multiple environment boundaries ({len(env_boundaries)}) were drawn. "
@@ -202,8 +205,7 @@ def subtract_holes_from_boundary(
     boundary: Region,
     holes: list[Region],
 ) -> Region:
-    """
-    Subtract hole polygons from an environment boundary.
+    """Subtract hole polygons from an environment boundary.
 
     Uses Shapely's difference operation to create a boundary with holes.
     This is used to create environments with excluded interior areas.
@@ -225,6 +227,7 @@ def subtract_holes_from_boundary(
     Holes that don't intersect the boundary have no effect.
     The resulting polygon may have interior rings (holes) that
     Environment.from_polygon handles correctly.
+
     """
     from neurospatial.regions import Region
 
@@ -261,8 +264,7 @@ def env_from_boundary_region(
     holes: list[Region] | None = None,
     **from_polygon_kwargs,
 ) -> Environment:
-    """
-    Create Environment from an annotated boundary polygon.
+    """Create Environment from an annotated boundary polygon.
 
     Parameters
     ----------
@@ -290,6 +292,7 @@ def env_from_boundary_region(
     --------
     Environment.from_polygon : Factory method used internally.
     subtract_holes_from_boundary : Used to subtract holes from boundary.
+
     """
     from neurospatial import Environment
 

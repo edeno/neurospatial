@@ -37,8 +37,7 @@ def validate_polygon_geometry(
     warn_self_intersecting: bool = True,
     warn_small_area: bool = True,
 ) -> list[str]:
-    """
-    Validate polygon geometry and emit warnings for issues.
+    """Validate polygon geometry and emit warnings for issues.
 
     Parameters
     ----------
@@ -79,6 +78,7 @@ def validate_polygon_geometry(
     >>> issues = validate_polygon_geometry(bowtie, "bowtie")
     >>> "self-intersect" in issues[0].lower()
     True
+
     """
     issues = []
 
@@ -98,7 +98,7 @@ def validate_polygon_geometry(
     area = polygon.area
     if warn_small_area and area < min_area:
         issues.append(
-            f"Polygon '{name}' has very small area ({area:.2e} < {min_area:.2e})"
+            f"Polygon '{name}' has very small area ({area:.2e} < {min_area:.2e})",
         )
         warnings.warn(
             f"Polygon '{name}' has very small area ({area:.2e}). "
@@ -127,8 +127,7 @@ def validate_region_within_boundary(
     warn_outside: bool = True,
     tolerance: float = 0.01,
 ) -> list[str]:
-    """
-    Check if a region extends outside the environment boundary.
+    """Check if a region extends outside the environment boundary.
 
     Parameters
     ----------
@@ -151,6 +150,7 @@ def validate_region_within_boundary(
     -----
     Regions that extend slightly outside the boundary (< tolerance fraction)
     are acceptable due to drawing imprecision. Larger extensions trigger warnings.
+
     """
     issues: list[str] = []
 
@@ -174,7 +174,7 @@ def validate_region_within_boundary(
             if fraction_outside > tolerance:
                 issues.append(
                     f"Region '{region.name}' extends {fraction_outside:.1%} "
-                    f"outside the environment boundary"
+                    f"outside the environment boundary",
                 )
                 if warn_outside:
                     warnings.warn(
@@ -194,8 +194,7 @@ def validate_region_overlap(
     overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
     warn_overlap: bool = True,
 ) -> list[str]:
-    """
-    Check for heavy overlap between regions.
+    """Check for heavy overlap between regions.
 
     Parameters
     ----------
@@ -220,6 +219,7 @@ def validate_region_overlap(
 
     The overlap is checked bidirectionally: if A overlaps 60% of B's area
     OR B overlaps 60% of A's area, a warning is issued.
+
     """
     issues: list[str] = []
 
@@ -262,7 +262,7 @@ def validate_region_overlap(
             if max_overlap > overlap_threshold:
                 issues.append(
                     f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
-                    f"({max_overlap:.1%} of smaller region)"
+                    f"({max_overlap:.1%} of smaller region)",
                 )
                 if warn_overlap:
                     warnings.warn(
@@ -282,8 +282,7 @@ def validate_environment_boundary(
     min_area: float = DEFAULT_MIN_AREA_THRESHOLD,
     warn_issues: bool = True,
 ) -> list[str]:
-    """
-    Validate environment boundary polygon for common issues.
+    """Validate environment boundary polygon for common issues.
 
     Parameters
     ----------
@@ -303,6 +302,7 @@ def validate_environment_boundary(
     -----
     This is a convenience function that combines polygon geometry validation
     with environment-specific checks.
+
     """
     issues: list[str] = []
 
@@ -333,8 +333,7 @@ def validate_annotations(
     containment_tolerance: float = 0.01,
     warn_issues: bool = True,
 ) -> list[str]:
-    """
-    Comprehensive validation of annotated regions and boundary.
+    """Comprehensive validation of annotated regions and boundary.
 
     This is the main validation entry point that checks all annotation
     quality issues:
@@ -382,6 +381,7 @@ def validate_annotations(
     >>> issues = validate_annotations(regions, boundary)
     >>> len(issues)  # No issues with valid regions
     0
+
     """
     all_issues = []
 

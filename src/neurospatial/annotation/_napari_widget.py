@@ -35,8 +35,7 @@ def create_annotation_widget(
     shapes_layer_name: str = "Annotations",
     initial_mode: RegionType = "environment",
 ) -> Container:
-    """
-    Create annotation control widget using magicgui.
+    """Create annotation control widget using magicgui.
 
     Parameters
     ----------
@@ -53,6 +52,7 @@ def create_annotation_widget(
     -------
     Container
         Magicgui container widget with annotation controls.
+
     """
 
     # Get shapes layer
@@ -83,7 +83,7 @@ def create_annotation_widget(
             "• 4 = edit vertices\n"
             "• Delete = remove shape\n\n"
             "Note: Holes are subtracted from the environment boundary.\n"
-        )
+        ),
     )
 
     # Determine initial state based on mode
@@ -179,7 +179,7 @@ def create_annotation_widget(
         text_color = "white" if region_type == "hole" else "black"
         mode_indicator.native.setStyleSheet(
             f"background-color: {color}; color: {text_color}; "
-            f"padding: 5px; font-weight: bold; border-radius: 3px;"
+            f"padding: 5px; font-weight: bold; border-radius: 3px;",
         )
 
     def update_annotation_status() -> None:
@@ -302,7 +302,8 @@ def create_annotation_widget(
         for idx in shapes.selected_data:
             if 0 <= idx < len(shapes.features):
                 assigned_name, was_modified = controller.rename_shape(
-                    idx, requested_name
+                    idx,
+                    requested_name,
                 )
                 applied_name = assigned_name
                 if was_modified:
@@ -422,8 +423,7 @@ def create_annotation_widget(
     _pending_update = [False]  # Flag to prevent duplicate scheduled updates
 
     def _process_data_change() -> None:
-        """
-        Handle shape additions: update list, auto-switch mode, update status.
+        """Handle shape additions: update list, auto-switch mode, update status.
 
         This is called via QTimer.singleShot(0, ...) to accumulate rapid events
         and process once, reducing UI latency.
@@ -539,7 +539,8 @@ def create_annotation_widget(
             # Get name from input (controller handles auto-naming if empty)
             name_override = name_input.value.strip() or None
             result = controller.update_features_for_new_shapes(
-                _prev_shape_count[0], name_override=name_override
+                _prev_shape_count[0],
+                name_override=name_override,
             )
 
             # Widget handles UI updates
@@ -581,8 +582,7 @@ def create_annotation_widget(
         _prev_shape_count[0] = current_count
 
     def on_data_changed(event: Any) -> None:
-        """
-        Throttle data change events using QTimer.singleShot.
+        """Throttle data change events using QTimer.singleShot.
 
         Napari's Shapes.events.data may fire several times for a single shape
         addition. This wrapper schedules the actual processing to run once
@@ -640,8 +640,7 @@ def setup_shapes_layer_for_annotation(
     viewer: napari.Viewer,
     initial_mode: RegionType = "environment",
 ) -> napari.layers.Shapes:
-    """
-    Create and configure a Shapes layer optimized for annotation.
+    """Create and configure a Shapes layer optimized for annotation.
 
     Uses napari best practices:
     - Features-based coloring for role distinction
@@ -659,6 +658,7 @@ def setup_shapes_layer_for_annotation(
     -------
     napari.layers.Shapes
         Configured shapes layer ready for annotation.
+
     """
     import pandas as pd
 
@@ -667,7 +667,7 @@ def setup_shapes_layer_for_annotation(
         {
             "role": pd.Categorical([], categories=REGION_TYPE_CATEGORIES),
             "name": pd.Series([], dtype=str),
-        }
+        },
     )
 
     shapes = viewer.add_shapes(
@@ -707,8 +707,7 @@ def setup_shapes_layer_for_annotation(
 def get_annotation_data(
     shapes_layer: napari.layers.Shapes | None,
 ) -> tuple[list[NDArray[np.float64]], list[str], list[RegionType]]:
-    """
-    Extract annotation data from shapes layer.
+    """Extract annotation data from shapes layer.
 
     Parameters
     ----------
@@ -723,6 +722,7 @@ def get_annotation_data(
         Name for each shape.
     region_types : list of RegionType
         Region type for each shape ("environment", "hole", or "region").
+
     """
     if shapes_layer is None or len(shapes_layer.data) == 0:
         return [], [], []
@@ -765,8 +765,7 @@ def add_initial_boundary_to_shapes(
     boundary: Any,
     calibration: Any = None,
 ) -> None:
-    """
-    Add pre-drawn boundary polygon to shapes layer for editing.
+    """Add pre-drawn boundary polygon to shapes layer for editing.
 
     Parameters
     ----------
@@ -784,6 +783,7 @@ def add_initial_boundary_to_shapes(
     -----
     Mirrors the pattern in _add_initial_regions() for consistency.
     Preserves existing shapes/features and prepends the boundary to front.
+
     """
     from shapely import get_coordinates
 

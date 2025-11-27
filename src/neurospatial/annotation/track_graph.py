@@ -17,6 +17,7 @@ Examples
 >>> from neurospatial.transforms import VideoCalibration
 >>> result = annotate_track_graph("maze.mp4", calibration=calib)  # doctest: +SKIP
 >>> # node_positions now in cm
+
 """
 
 from __future__ import annotations
@@ -153,12 +154,13 @@ def annotate_track_graph(
     --------
     TrackGraphResult : Result container with to_environment() method
     Environment.from_graph : Create Environment from track graph
+
     """
     # 1. Validate inputs
     if video_path is None and image is None:
         raise ValueError(
             "Either video_path or image must be provided. "
-            "Provide a video path to extract a frame, or pass an image array directly."
+            "Provide a video path to extract a frame, or pass an image array directly.",
         )
 
     # 2. Import napari (lazy to allow module to work without it)
@@ -167,7 +169,7 @@ def annotate_track_graph(
     except ImportError as e:
         raise ImportError(
             "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]"
+            "Install with: pip install napari[all]",
         ) from e
 
     # 3. Load background image
@@ -182,7 +184,7 @@ def annotate_track_graph(
         if frame_index >= reader.n_frames:
             raise IndexError(
                 f"Frame index {frame_index} is out of range for video '{video_path.name}'. "
-                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1})."
+                f"Video has {reader.n_frames} frames (indices 0-{reader.n_frames - 1}).",
             )
         frame = reader[frame_index]  # (H, W, 3) RGB uint8
     else:
@@ -214,7 +216,9 @@ def annotate_track_graph(
     # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
     widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
     viewer.window.add_dock_widget(
-        widget._widget, name="Track Graph Builder", area="right"
+        widget._widget,
+        name="Track Graph Builder",
+        area="right",
     )
 
     # 8. Sync napari layer changes back to state
@@ -349,7 +353,10 @@ def annotate_track_graph(
         if len(nodes_layer.selected_data) == 1:
             selected_idx = next(iter(nodes_layer.selected_data))
             result = _handle_key(
-                state, "S", modifiers=["Shift"], selected_node=selected_idx
+                state,
+                "S",
+                modifiers=["Shift"],
+                selected_node=selected_idx,
             )
             if result == "set_start":
                 _sync_layers_from_state(state, nodes_layer, edges_layer)

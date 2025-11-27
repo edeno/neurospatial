@@ -20,8 +20,7 @@ MultipleBoundaryStrategy = Literal["last", "first", "error"]
 
 @dataclass(frozen=True)
 class AnnotationConfig:
-    """
-    Configuration for annotation UI settings.
+    """Configuration for annotation UI settings.
 
     Groups UI-related parameters for `annotate_video()` to reduce function
     signature complexity. All fields have sensible defaults, so the simplest
@@ -69,6 +68,7 @@ class AnnotationConfig:
     --------
     annotate_video : Main annotation function that accepts this config.
     BoundaryConfig : Configuration for boundary inference from positions.
+
     """
 
     frame_index: int = 0

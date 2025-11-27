@@ -9,6 +9,7 @@ Notes
 This module requires napari to be installed. All napari-dependent code
 is imported lazily to allow the rest of the annotation module to work
 without napari.
+
 """
 
 from __future__ import annotations
@@ -82,6 +83,7 @@ def setup_track_layers(viewer: napari.Viewer) -> tuple[Shapes, Points]:
     >>> edges, nodes = setup_track_layers(viewer)  # doctest: +SKIP
     >>> nodes.add([[100, 100], [200, 150]])  # Add waypoints  # doctest: +SKIP
     >>> edges.add_paths([[[100, 100], [200, 150]]])  # Connect them  # doctest: +SKIP
+
     """
     # Edges layer (middle - below nodes for clickability)
     # Uses Shapes with path type for line segments between nodes
@@ -144,6 +146,7 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
     -------
     np.ndarray
         RGBA array with values in [0, 1], shape (4,).
+
     """
     hex_color = hex_color.lstrip("#")
     if len(hex_color) == 6:
@@ -189,6 +192,7 @@ def _sync_layers_from_state(
     -----
     Coordinates are converted from state (x, y) format to napari (row, col)
     format by swapping axes: napari uses (y, x) ordering.
+
     """
     # Convert state nodes (x, y) to napari (row, col) = (y, x)
     if state.nodes:
@@ -300,6 +304,7 @@ def _handle_click(
         Click position as (row, col) in napari coordinates.
     threshold : float, optional
         Distance threshold for node detection (default: CLICK_THRESHOLD).
+
     """
     # Convert napari (row, col) to state (x, y)
     row, col = position
@@ -360,6 +365,7 @@ def _show_edge_preview(
         The Shapes layer to add preview to.
     cursor_position : tuple[float, float]
         Current cursor position as (row, col) in napari coordinates.
+
     """
     global _PREVIEW_INDEX
 
@@ -392,6 +398,7 @@ def _clear_edge_preview(edges_layer: Shapes) -> None:
     ----------
     edges_layer : napari.layers.Shapes
         The Shapes layer containing the preview.
+
     """
     global _PREVIEW_INDEX
 
@@ -413,6 +420,7 @@ def _cancel_edge_creation(state: TrackBuilderState) -> None:
     ----------
     state : TrackBuilderState
         The current state to modify.
+
     """
     state.edge_start_node = None
 
@@ -448,6 +456,7 @@ def _show_1d_preview(
     -----
     Uses `track_linearization.plot_graph_as_1D()` for visualization.
     Respects `edge_order_override` and `edge_spacing_override` if set.
+
     """
     import matplotlib.pyplot as plt
 
@@ -513,6 +522,7 @@ def _can_preview(state: TrackBuilderState) -> bool:
     -------
     bool
         True if state has at least 2 nodes and 1 edge.
+
     """
     return len(state.nodes) >= 2 and len(state.edges) >= 1
 
@@ -545,6 +555,7 @@ def _handle_key(
     -------
     str or None
         Action taken: "undo", "redo", "cancel", "set_start", or None.
+
     """
     if modifiers is None:
         modifiers = []
@@ -571,9 +582,8 @@ def _handle_key(
         if has_shift:
             state.redo()
             return "redo"
-        else:
-            state.undo()
-            return "undo"
+        state.undo()
+        return "undo"
 
     # Cancel (Escape)
     if key == "Escape":
@@ -643,6 +653,7 @@ def create_track_widget(
     >>> state = TrackBuilderState()  # doctest: +SKIP
     >>> widget = create_track_widget(viewer, edges, nodes, state)  # doctest: +SKIP
     >>> viewer.window.add_dock_widget(widget)  # doctest: +SKIP
+
     """
     return TrackGraphWidget(viewer, edges_layer, nodes_layer, state)
 
@@ -663,6 +674,7 @@ class TrackGraphWidget:
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object.
+
     """
 
     def __init__(
@@ -701,11 +713,11 @@ class TrackGraphWidget:
         workflow_label = QLabel(
             "<b>1.</b> Click to add nodes at track waypoints<br>"
             "<b>2.</b> Press <b>E</b> and click nodes to connect them<br>"
-            "<b>3.</b> Select a node and click <b>Set as Start</b>"
+            "<b>3.</b> Select a node and click <b>Set as Start</b>",
         )
         workflow_label.setStyleSheet(
             "color: #333; background-color: #f8f8f8; "
-            "padding: 6px; border-radius: 3px; font-size: 12px;"
+            "padding: 6px; border-radius: 3px; font-size: 12px;",
         )
         layout.addWidget(workflow_label)
 
@@ -719,7 +731,7 @@ class TrackGraphWidget:
         self._mode_combo.setToolTip(
             "add_node: Click to place nodes\n"
             "add_edge: Click two nodes to connect\n"
-            "delete: Select and delete nodes/edges"
+            "delete: Select and delete nodes/edges",
         )
         mode_layout.addWidget(self._mode_combo)
         mode_layout.addStretch()
@@ -730,7 +742,7 @@ class TrackGraphWidget:
         self._contextual_help.setWordWrap(True)
         self._contextual_help.setStyleSheet(
             "background-color: #e8f4fd; color: #1a5490; padding: 8px; "
-            "border-radius: 4px; font-size: 12px; border: 1px solid #b8d4e8;"
+            "border-radius: 4px; font-size: 12px; border: 1px solid #b8d4e8;",
         )
         layout.addWidget(self._contextual_help)
 
@@ -755,7 +767,7 @@ class TrackGraphWidget:
 
         self._apply_label_btn = QPushButton("Apply Label")
         self._apply_label_btn.setToolTip(
-            "Name the selected node (e.g., 'start', 'goal')"
+            "Name the selected node (e.g., 'start', 'goal')",
         )
         self._apply_label_btn.clicked.connect(self._on_apply_label)
         label_layout.addWidget(self._apply_label_btn)
@@ -766,7 +778,7 @@ class TrackGraphWidget:
 
         self._set_start_btn = QPushButton("Set as Start")
         self._set_start_btn.setToolTip(
-            "Mark this node as the start for linearization (Shift+S)"
+            "Mark this node as the start for linearization (Shift+S)",
         )
         self._set_start_btn.clicked.connect(self._on_set_start)
         node_btn_layout.addWidget(self._set_start_btn)
@@ -1188,6 +1200,7 @@ class TrackGraphWidget:
             List of error messages (blocking).
         warnings : list[str]
             List of warning messages (non-blocking).
+
         """
         return self._state.is_valid_for_save()
 
@@ -1198,6 +1211,7 @@ class TrackGraphWidget:
         -------
         bool
             True if save succeeded, False if validation failed.
+
         """
         from qtpy.QtWidgets import QMessageBox
 

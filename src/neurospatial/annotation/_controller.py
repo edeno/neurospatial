@@ -39,6 +39,7 @@ class UpdateFeaturesResult(NamedTuple):
         True if name was changed due to duplicate.
     last_role : str
         The role of the last new shape (or "" if no shapes added).
+
     """
 
     assigned_name: str
@@ -55,6 +56,7 @@ class RenameResult(NamedTuple):
         The name that was actually assigned (may differ if duplicate).
     name_was_modified : bool
         True if name was changed due to duplicate.
+
     """
 
     assigned_name: str
@@ -62,8 +64,7 @@ class RenameResult(NamedTuple):
 
 
 class ShapesLayerController:
-    """
-    Adapter applying annotation state to napari shapes layer.
+    """Adapter applying annotation state to napari shapes layer.
 
     Isolates all napari Shapes layer interactions to this class,
     making the widget logic cleaner and state changes explicit.
@@ -80,6 +81,7 @@ class ShapesLayerController:
     >>> controller = ShapesLayerController(shapes_layer, state)
     >>> controller.apply_mode()  # Sync layer defaults with current state
     >>> names = controller.get_existing_names()
+
     """
 
     def __init__(
@@ -91,8 +93,7 @@ class ShapesLayerController:
         self.state = state
 
     def apply_mode(self) -> None:
-        """
-        Apply current state mode to layer defaults.
+        """Apply current state mode to layer defaults.
 
         Updates:
         - feature_defaults["role"] to current region type
@@ -105,13 +106,13 @@ class ShapesLayerController:
         self.shapes.current_face_color = REGION_TYPE_COLORS.get(region_type, "yellow")
 
     def get_existing_names(self) -> list[str]:
-        """
-        Get list of existing shape names.
+        """Get list of existing shape names.
 
         Returns
         -------
         list of str
             Names of all shapes in the layer.
+
         """
         if self.shapes is None or len(self.shapes.data) == 0:
             return []
@@ -121,13 +122,13 @@ class ShapesLayerController:
         return [str(n) for n in features.get("name", [])]
 
     def get_existing_region_types(self) -> list[RegionType]:
-        """
-        Get list of existing shape region types.
+        """Get list of existing shape region types.
 
         Returns
         -------
         list of RegionType
             Region types of all shapes in the layer.
+
         """
         if self.shapes is None or len(self.shapes.data) == 0:
             return []
@@ -150,13 +151,13 @@ class ShapesLayerController:
         -------
         bool
             True if at least one shape has region_type "environment".
+
         """
         region_types = self.get_existing_region_types()
         return any(r == "environment" for r in region_types)
 
     def sync_state_from_layer(self) -> None:
-        """
-        Sync state counts from current layer data.
+        """Sync state counts from current layer data.
 
         Call this after external changes to the layer (e.g., deletion).
         """
@@ -168,8 +169,7 @@ class ShapesLayerController:
         prev_count: int,
         name_override: str | None = None,
     ) -> UpdateFeaturesResult:
-        """
-        Update features for newly added shapes.
+        """Update features for newly added shapes.
 
         Parameters
         ----------
@@ -182,6 +182,7 @@ class ShapesLayerController:
         -------
         UpdateFeaturesResult
             Named tuple with assigned_name, name_was_modified, and last_role.
+
         """
         current_count = self.shape_count()
         delta = current_count - prev_count
@@ -201,7 +202,7 @@ class ShapesLayerController:
         if features_len > 0:
             for i in range(min(prev_count, features_len)):
                 region_types.append(
-                    cast("RegionType", str(self.shapes.features["role"].iloc[i]))
+                    cast("RegionType", str(self.shapes.features["role"].iloc[i])),
                 )
                 names.append(str(self.shapes.features["name"].iloc[i]))
 
@@ -243,8 +244,7 @@ class ShapesLayerController:
         return UpdateFeaturesResult(assigned_name, name_was_modified, last_role)
 
     def delete_shapes_by_indices(self, indices_to_delete: set[int]) -> int:
-        """
-        Delete shapes at specified indices.
+        """Delete shapes at specified indices.
 
         Parameters
         ----------
@@ -255,6 +255,7 @@ class ShapesLayerController:
         -------
         int
             Number of shapes deleted.
+
         """
         if not indices_to_delete:
             return 0
@@ -297,8 +298,7 @@ class ShapesLayerController:
         return delete_count
 
     def rename_shape(self, idx: int, new_name: str) -> RenameResult:
-        """
-        Rename a shape, ensuring uniqueness.
+        """Rename a shape, ensuring uniqueness.
 
         Parameters
         ----------
@@ -311,6 +311,7 @@ class ShapesLayerController:
         -------
         RenameResult
             Named tuple with assigned_name and name_was_modified.
+
         """
         features_df = self.shapes.features.copy()
 

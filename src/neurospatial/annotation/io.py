@@ -17,8 +17,7 @@ def regions_from_labelme(
     label_key: str = "label",
     points_key: str = "points",
 ) -> Regions:
-    """
-    Load regions from LabelMe JSON with optional calibration.
+    """Load regions from LabelMe JSON with optional calibration.
 
     Parameters
     ----------
@@ -50,6 +49,7 @@ def regions_from_labelme(
     >>> transform = calibrate_from_scale_bar((0, 0), (100, 0), 50.0, (640, 480))
     >>> calib = VideoCalibration(transform, (640, 480))
     >>> regions = regions_from_labelme("annotations.json", calibration=calib)
+
     """
     from neurospatial.regions.io import load_labelme_json
 
@@ -66,8 +66,7 @@ def regions_from_cvat(
     xml_path: str | Path,
     calibration: VideoCalibration | None = None,
 ) -> Regions:
-    """
-    Load regions from CVAT XML with optional calibration.
+    """Load regions from CVAT XML with optional calibration.
 
     Parameters
     ----------
@@ -89,6 +88,7 @@ def regions_from_cvat(
     --------
     >>> from neurospatial.annotation import regions_from_cvat
     >>> regions = regions_from_cvat("cvat_export.xml")
+
     """
     from neurospatial.regions.io import load_cvat_xml
 

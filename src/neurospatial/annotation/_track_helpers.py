@@ -200,7 +200,7 @@ class TrackGraphResult(NamedTuple):
         if self.track_graph is None:
             raise ValueError(
                 "Cannot create Environment: no track graph. "
-                "Ensure at least 2 nodes and 1 edge were created."
+                "Ensure at least 2 nodes and 1 edge were created.",
             )
 
         # Use provided edge_spacing or fall back to inferred spacing

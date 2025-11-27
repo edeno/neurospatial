@@ -27,8 +27,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class BoundaryConfig:
-    """
-    Configuration for boundary inference from positions.
+    """Configuration for boundary inference from positions.
 
     Parameters
     ----------
@@ -63,6 +62,7 @@ class BoundaryConfig:
     >>> default_config = BoundaryConfig()
     >>> default_config.method
     'alpha_shape'
+
     """
 
     method: Literal["alpha_shape", "convex_hull"] = "alpha_shape"
@@ -80,8 +80,7 @@ def boundary_from_positions(
     simplify_fraction: float | None = None,
     **method_kwargs,
 ) -> Polygon:
-    """
-    Infer environment boundary from position data.
+    """Infer environment boundary from position data.
 
     Parameters
     ----------
@@ -120,6 +119,7 @@ def boundary_from_positions(
     >>> # With custom config
     >>> config = BoundaryConfig(method="convex_hull", buffer_fraction=0.05)
     >>> boundary = boundary_from_positions(positions, config=config)
+
     """
     # Validate and cast input
     positions = np.asarray(positions, dtype=np.float64)
@@ -144,14 +144,14 @@ def boundary_from_positions(
     if len(positions) < 3:
         raise ValueError(
             f"positions must have at least 3 valid points, got {len(positions)} "
-            f"(after filtering {n_invalid} NaN/Inf values)"
+            f"(after filtering {n_invalid} NaN/Inf values)",
         )
 
     # Check for degenerate cases (all points identical or collinear)
     unique_points = np.unique(positions, axis=0)
     if len(unique_points) < 3:
         raise ValueError(
-            f"positions must have at least 3 unique points, got {len(unique_points)}"
+            f"positions must have at least 3 unique points, got {len(unique_points)}",
         )
 
     # Build effective config
@@ -219,6 +219,7 @@ def _convex_hull_boundary(positions: NDArray[np.float64]) -> Polygon:
     ------
     ValueError
         If points are collinear or degenerate.
+
     """
     from scipy.spatial import ConvexHull, QhullError
     from shapely.geometry import Polygon
@@ -228,7 +229,7 @@ def _convex_hull_boundary(positions: NDArray[np.float64]) -> Polygon:
     except QhullError as e:
         raise ValueError(
             "Cannot compute convex hull: points may be collinear or degenerate. "
-            f"Original error: {e}"
+            f"Original error: {e}",
         ) from e
 
     vertices = positions[hull.vertices]
@@ -257,6 +258,7 @@ def _alpha_shape_boundary(
     ------
     ImportError
         If alphashape package not installed.
+
     """
     import warnings
 
@@ -265,7 +267,7 @@ def _alpha_shape_boundary(
     except ImportError:
         raise ImportError(
             "alphashape package required for alpha_shape method. "
-            "Install with: pip install alphashape"
+            "Install with: pip install alphashape",
         ) from None
 
     from shapely.geometry import MultiPolygon
@@ -274,7 +276,8 @@ def _alpha_shape_boundary(
     n_points = len(positions)
     if n_points >= LARGE_DATASET_THRESHOLD:
         logger.info(
-            "Computing alpha shape for %d points (this may take a moment)...", n_points
+            "Computing alpha shape for %d points (this may take a moment)...",
+            n_points,
         )
         # Also print to stdout for users who don't have logging configured
         print(

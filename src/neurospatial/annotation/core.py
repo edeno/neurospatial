@@ -31,8 +31,7 @@ if TYPE_CHECKING:
 
 
 class AnnotationResult(NamedTuple):
-    """
-    Result from an annotation session.
+    """Result from an annotation session.
 
     Attributes
     ----------
@@ -40,6 +39,7 @@ class AnnotationResult(NamedTuple):
         Discretized environment if boundary was annotated, else None.
     regions : Regions
         All annotated regions (excluding environment boundary).
+
     """
 
     environment: Environment | None
@@ -62,8 +62,7 @@ def annotate_video(
     multiple_boundaries: MultipleBoundaryStrategy | None = None,
     show_positions: bool | None = None,
 ) -> AnnotationResult:
-    """
-    Launch interactive napari annotation on a video frame.
+    """Launch interactive napari annotation on a video frame.
 
     Opens a napari viewer with the specified video frame. Users can draw
     polygons to define an environment boundary and/or named regions.
@@ -185,10 +184,15 @@ def annotate_video(
     regions_from_labelme : Import from LabelMe JSON
     regions_from_cvat : Import from CVAT XML
     AnnotationConfig : Configuration dataclass for annotation settings.
+
     """
     # Resolve config with individual parameter overrides
     resolved = _resolve_config_params(
-        config, frame_index, simplify_tolerance, multiple_boundaries, show_positions
+        config,
+        frame_index,
+        simplify_tolerance,
+        multiple_boundaries,
+        show_positions,
     )
     logger.debug(
         "Resolved config: frame_index=%d, simplify_tolerance=%s, "
@@ -207,7 +211,7 @@ def annotate_video(
     except ImportError as e:
         raise ImportError(
             "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]"
+            "Install with: pip install napari[all]",
         ) from e
 
     # Convert to Path and load video frame
@@ -218,7 +222,9 @@ def annotate_video(
 
     # Process initial boundary (from polygon or positions)
     boundary_polygon, positions_for_display = _process_initial_boundary(
-        initial_boundary, boundary_config, resolved.show_positions
+        initial_boundary,
+        boundary_config,
+        resolved.show_positions,
     )
 
     # Handle conflict: initial_boundary takes precedence over env regions in initial_regions
@@ -255,8 +261,7 @@ def _add_initial_regions(
     regions: Regions,
     calibration: VideoCalibration | None,
 ) -> None:
-    """
-    Add existing regions to shapes layer for editing.
+    """Add existing regions to shapes layer for editing.
 
     Transforms region polygon coordinates back to napari pixel space and adds
     them to the shapes layer with appropriate features (name, role) for editing.
@@ -277,6 +282,7 @@ def _add_initial_regions(
     -----
     This function modifies the shapes_layer in place. Non-polygon regions
     (points) are silently skipped as they cannot be represented as shapes.
+
     """
     from shapely import get_coordinates
 
@@ -325,8 +331,7 @@ def _add_positions_layer(
     positions: NDArray[np.float64],
     calibration: VideoCalibration | None,
 ) -> None:
-    """
-    Add positions as semi-transparent Points layer for reference.
+    """Add positions as semi-transparent Points layer for reference.
 
     Parameters
     ----------
@@ -344,6 +349,7 @@ def _add_positions_layer(
     Notes
     -----
     Mirrors the pattern in add_initial_boundary_to_shapes for consistency.
+
     """
     # Filter out NaN/Inf values (common in tracking data for lost frames)
     valid_mask = np.all(np.isfinite(positions), axis=1)
@@ -378,8 +384,7 @@ def _add_positions_layer(
 
 
 def _filter_environment_regions(regions: Regions) -> Regions:
-    """
-    Filter out environment regions and warn if any were found.
+    """Filter out environment regions and warn if any were found.
 
     This function is called when both initial_boundary and initial_regions
     are provided. The initial_boundary takes precedence, so environment
@@ -394,6 +399,7 @@ def _filter_environment_regions(regions: Regions) -> Regions:
     -------
     Regions
         New Regions collection without environment regions.
+
     """
     from neurospatial.regions import Regions
 
@@ -429,8 +435,7 @@ def _resolve_config_params(
     multiple_boundaries: MultipleBoundaryStrategy | None,
     show_positions: bool | None,
 ) -> AnnotationConfig:
-    """
-    Merge config with individual parameter overrides.
+    """Merge config with individual parameter overrides.
 
     Individual parameters take precedence over config values. If no config
     is provided, uses AnnotationConfig defaults.
@@ -446,6 +451,7 @@ def _resolve_config_params(
     -------
     AnnotationConfig
         Resolved configuration with all values set.
+
     """
     # Start with defaults or provided config
     base = config if config is not None else AnnotationConfig()
@@ -473,8 +479,7 @@ def _validate_annotate_params(
     mode: Literal["environment", "regions", "both"],
     bin_size: float | None,
 ) -> None:
-    """
-    Validate annotation parameters before expensive imports.
+    """Validate annotation parameters before expensive imports.
 
     Parameters
     ----------
@@ -487,17 +492,17 @@ def _validate_annotate_params(
     ------
     ValueError
         If bin_size is required but not provided.
+
     """
     if mode in ("environment", "both") and bin_size is None:
         raise ValueError(
             f"bin_size is required when mode={mode!r}. "
-            "Provide bin_size for environment discretization."
+            "Provide bin_size for environment discretization.",
         )
 
 
 def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
-    """
-    Load a single frame from a video file.
+    """Load a single frame from a video file.
 
     Parameters
     ----------
@@ -517,6 +522,7 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
         If video file does not exist.
     IndexError
         If frame_index is out of range.
+
     """
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -532,7 +538,7 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
             f"Video '{video_path.name}' contains {reader.n_frames} frames "
             f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
             f"frame_index specifies which video frame to use for annotation "
-            "(0 = first frame)."
+            "(0 = first frame).",
         ) from e
 
 
@@ -541,8 +547,7 @@ def _process_initial_boundary(
     boundary_config: BoundaryConfig | None,
     show_positions: bool,
 ) -> tuple[Polygon | None, NDArray[np.float64] | None]:
-    """
-    Process initial boundary into polygon and optional positions for display.
+    """Process initial boundary into polygon and optional positions for display.
 
     Parameters
     ----------
@@ -560,6 +565,7 @@ def _process_initial_boundary(
     positions_for_display : NDArray or None
         Position data for display layer (only if show_positions=True and
         initial_boundary was an array).
+
     """
     if initial_boundary is None:
         return None, None
@@ -573,9 +579,8 @@ def _process_initial_boundary(
         )
         positions_for_display = initial_boundary if show_positions else None
         return boundary_polygon, positions_for_display
-    else:
-        # Assume Shapely Polygon
-        return initial_boundary, None
+    # Assume Shapely Polygon
+    return initial_boundary, None
 
 
 def _setup_annotation_viewer(
@@ -587,8 +592,7 @@ def _setup_annotation_viewer(
     initial_regions: Regions | None,
     calibration: VideoCalibration | None,
 ) -> tuple[napari.Viewer, napari.layers.Shapes]:
-    """
-    Create and configure napari viewer for annotation.
+    """Create and configure napari viewer for annotation.
 
     Parameters
     ----------
@@ -613,6 +617,7 @@ def _setup_annotation_viewer(
         Configured napari viewer.
     shapes : napari.layers.Shapes
         Shapes layer for annotations.
+
     """
     import napari
 
@@ -638,7 +643,8 @@ def _setup_annotation_viewer(
 
     # Add shapes layer with annotation settings
     shapes = setup_shapes_layer_for_annotation(
-        viewer, initial_mode=initial_annotation_mode
+        viewer,
+        initial_mode=initial_annotation_mode,
     )
 
     # Add initial regions (order matters for feature preservation)
@@ -657,7 +663,9 @@ def _setup_annotation_viewer(
 
     # Add annotation control widget
     widget = create_annotation_widget(
-        viewer, "Annotations", initial_mode=initial_annotation_mode
+        viewer,
+        "Annotations",
+        initial_mode=initial_annotation_mode,
     )
     viewer.window.add_dock_widget(
         widget,
@@ -679,8 +687,7 @@ def _process_annotation_results(
     simplify_tolerance: float | None,
     multiple_boundaries: MultipleBoundaryStrategy,
 ) -> AnnotationResult:
-    """
-    Convert napari shapes to AnnotationResult.
+    """Convert napari shapes to AnnotationResult.
 
     Parameters
     ----------
@@ -701,6 +708,7 @@ def _process_annotation_results(
     -------
     AnnotationResult
         Result containing environment and regions.
+
     """
     from neurospatial.annotation._napari_widget import get_annotation_data
     from neurospatial.annotation.converters import (
@@ -712,7 +720,10 @@ def _process_annotation_results(
     # Get annotation data from shapes layer
     shapes_data, names, roles = get_annotation_data(shapes)
     logger.debug(
-        "Processing %d shapes: names=%s, roles=%s", len(shapes_data), names, roles
+        "Processing %d shapes: names=%s, roles=%s",
+        len(shapes_data),
+        names,
+        roles,
     )
 
     # Handle empty annotations

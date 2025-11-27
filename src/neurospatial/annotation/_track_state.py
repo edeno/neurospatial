@@ -55,6 +55,7 @@ class TrackBuilderState:
     >>> is_valid, errors, warnings = state.is_valid_for_save()
     >>> is_valid
     True
+
     """
 
     mode: TrackGraphMode = "add_node"
@@ -86,6 +87,7 @@ class TrackBuilderState:
             Snapshot containing nodes, edges, node_labels, start_node,
             and edge order/spacing overrides.
             Uses explicit deep copies to ensure independence from live state.
+
         """
         return {
             "nodes": [tuple(n) for n in self.nodes],
@@ -111,6 +113,7 @@ class TrackBuilderState:
         ----------
         snapshot : dict
             Snapshot created by _snapshot().
+
         """
         self.nodes = [tuple(n) for n in snapshot["nodes"]]
         self.edges = [tuple(e) for e in snapshot["edges"]]
@@ -147,6 +150,7 @@ class TrackBuilderState:
         -------
         bool
             True if undo was possible, False if undo stack was empty.
+
         """
         if not self.undo_stack:
             return False
@@ -161,6 +165,7 @@ class TrackBuilderState:
         -------
         bool
             True if redo was possible, False if redo stack was empty.
+
         """
         if not self.redo_stack:
             return False
@@ -184,6 +189,7 @@ class TrackBuilderState:
         -------
         int
             Index of the newly added node.
+
         """
         self._save_for_undo()
         self.nodes.append((x, y))
@@ -205,6 +211,7 @@ class TrackBuilderState:
         ------
         IndexError
             If idx is out of range.
+
         """
         if idx < 0 or idx >= len(self.nodes):
             raise IndexError(f"Node index {idx} out of range")
@@ -249,6 +256,7 @@ class TrackBuilderState:
         ------
         IndexError
             If idx is out of range.
+
         """
         if idx < 0 or idx >= len(self.nodes):
             raise IndexError(f"Node index {idx} out of range")
@@ -272,6 +280,7 @@ class TrackBuilderState:
         -------
         int or None
             Index of nearest node within threshold, or None if no node found.
+
         """
         if not self.nodes:
             return None
@@ -304,6 +313,7 @@ class TrackBuilderState:
         -------
         bool
             True if edge was added successfully, False otherwise.
+
         """
         # Validate node indices
         if node1 < 0 or node1 >= len(self.nodes):
@@ -337,6 +347,7 @@ class TrackBuilderState:
         ------
         IndexError
             If edge_idx is out of range.
+
         """
         if edge_idx < 0 or edge_idx >= len(self.edges):
             raise IndexError(f"Edge index {edge_idx} out of range")
@@ -357,6 +368,7 @@ class TrackBuilderState:
         nx.Graph
             Graph with nodes having 'pos' attribute and edges having
             'distance' and 'edge_id' attributes.
+
         """
         import math
 
@@ -391,6 +403,7 @@ class TrackBuilderState:
         -----
         Full validation requires the track_linearization package. Without it,
         only basic structural checks are performed (node/edge count).
+
         """
         try:
             from track_linearization import check_track_graph_validity
@@ -415,6 +428,7 @@ class TrackBuilderState:
             - is_valid: True if state can be saved
             - errors: List of blocking error messages
             - warnings: List of non-blocking warning messages
+
         """
         errors: list[str] = []
         warnings: list[str] = []
@@ -439,6 +453,7 @@ class TrackBuilderState:
         -------
         int or None
             start_node if set, else 0 if nodes exist, else None.
+
         """
         if self.start_node is not None:
             return self.start_node
@@ -460,6 +475,7 @@ class TrackBuilderState:
         ----------
         edge_order : list of tuple
             Ordered list of edges as (node1_idx, node2_idx) tuples.
+
         """
         self._save_for_undo()
         self.edge_order_override = [(e[0], e[1]) for e in edge_order]
@@ -484,6 +500,7 @@ class TrackBuilderState:
         edge_spacing : list of float
             Spacing values between consecutive edges.
             Should have length = n_edges - 1.
+
         """
         self._save_for_undo()
         self.edge_spacing_override = list(edge_spacing)
@@ -513,6 +530,7 @@ class TrackBuilderState:
         -----
         This method does NOT modify edge_order_override. Use set_edge_order()
         to set a manual override based on this computed order.
+
         """
         if len(self.nodes) < 2 or len(self.edges) < 1:
             return []
@@ -522,7 +540,8 @@ class TrackBuilderState:
 
             graph = self.to_track_graph()
             edge_order, _spacing = infer_edge_layout(
-                graph, start_node=self.get_effective_start_node()
+                graph,
+                start_node=self.get_effective_start_node(),
             )
             return list(edge_order)
         except ImportError:
@@ -548,6 +567,7 @@ class TrackBuilderState:
         -----
         This method does NOT modify edge_spacing_override. Use set_edge_spacing()
         to set a manual override based on this computed spacing.
+
         """
         if len(self.nodes) < 2 or len(self.edges) < 1:
             return np.array([], dtype=np.float64)
@@ -557,7 +577,8 @@ class TrackBuilderState:
 
             graph = self.to_track_graph()
             _edge_order, edge_spacing = infer_edge_layout(
-                graph, start_node=self.get_effective_start_node()
+                graph,
+                start_node=self.get_effective_start_node(),
             )
             return np.asarray(edge_spacing, dtype=np.float64)
         except ImportError:

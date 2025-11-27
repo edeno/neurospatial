@@ -35,8 +35,7 @@ REGION_TYPE_COLOR_CYCLE = [REGION_TYPE_COLORS[cat] for cat in REGION_TYPE_CATEGO
 
 
 def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.DataFrame:
-    """
-    Create a fresh features DataFrame with proper categorical types.
+    """Create a fresh features DataFrame with proper categorical types.
 
     Centralizes feature DataFrame construction to ensure consistency
     across all shape update operations.
@@ -52,6 +51,7 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
     -------
     pd.DataFrame
         DataFrame with categorical 'region_type' (stored as 'role') and string 'name' columns.
+
     """
     import pandas as pd
 
@@ -59,13 +59,12 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
         {
             "role": pd.Categorical(region_types, categories=REGION_TYPE_CATEGORIES),
             "name": pd.Series(names, dtype=str),
-        }
+        },
     )
 
 
 def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
-    """
-    Update face colors to match feature roles.
+    """Update face colors to match feature roles.
 
     Napari's face_color_cycle doesn't always work reliably when features
     are updated programmatically. This function explicitly syncs colors.
@@ -74,6 +73,7 @@ def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
     ----------
     shapes_layer : napari.layers.Shapes
         Shapes layer to update.
+
     """
     if shapes_layer is None or len(shapes_layer.data) == 0:
         return
