@@ -77,27 +77,64 @@ class TestRepeatedMazesCommonInterface:
 class TestRepeatedMazesSpecificBehavior:
     """Test maze-specific behavior for repeated mazes."""
 
-    def test_repeated_y_has_3_junctions(self):
-        """Repeated Y-maze should have 3 junctions by default."""
+    def test_repeated_y_has_4_junctions(self):
+        """Repeated Y-maze should have 4 junctions by default."""
         dims = RepeatedYDims()
-        assert dims.n_junctions == 3
+        assert dims.n_junctions == 4
 
-    def test_repeated_t_has_3_junctions(self):
-        """Repeated T-maze should have 3 junctions by default."""
+    def test_repeated_t_has_default_dimensions(self):
+        """Repeated T-maze should have default dimensions."""
         dims = RepeatedTDims()
-        assert dims.n_junctions == 3
+        assert dims.n_t_junctions == 3
+        assert dims.t_spacing == 40.0
+        assert dims.stem_length == 30.0
+        assert dims.arm_length == 15.0
 
     def test_repeated_t_has_junction_regions(self):
-        """Repeated T-maze should have junction regions."""
+        """Repeated T-maze should have junction regions for each T."""
         maze = make_repeated_t_maze(bin_size=3.0)
-        junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
+        junction_regions = [r for r in maze.env_2d.regions if r.endswith("_junction")]
+        # Default: 3 T-junctions
         assert len(junction_regions) == 3
 
-    def test_repeated_t_has_arm_end_regions(self):
-        """Repeated T-maze should have arm end regions."""
+    def test_repeated_t_has_t_arm_regions(self):
+        """Repeated T-maze should have arm regions for each T."""
         maze = make_repeated_t_maze(bin_size=3.0)
-        arm_regions = [r for r in maze.env_2d.regions if r.endswith("_end")]
-        assert len(arm_regions) == 3
+        # Each T has left_arm and right_arm (3 T's * 2 = 6 arm regions)
+        left_arm_regions = [r for r in maze.env_2d.regions if r.endswith("_left_arm")]
+        right_arm_regions = [r for r in maze.env_2d.regions if r.endswith("_right_arm")]
+        assert len(left_arm_regions) == 3
+        assert len(right_arm_regions) == 3
+
+    def test_repeated_t_has_zigzag_connections(self):
+        """Repeated T-maze should have zigzag connections between T-junctions.
+
+        This test verifies the alternating T pattern by checking that T-junctions
+        alternate between top and bottom levels.
+        """
+        import networkx as nx
+
+        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
+
+        dims = RepeatedTDims(n_t_junctions=3)
+        maze = make_repeated_t_maze(dims=dims, bin_size=3.0)
+
+        # Verify T-junction regions exist
+        assert "t_1_junction" in maze.env_2d.regions
+        assert "t_2_junction" in maze.env_2d.regions
+        assert "t_3_junction" in maze.env_2d.regions
+
+        # T1 (upright) junction should be higher than T2 (inverted) junction
+        t1_y = maze.env_2d.regions["t_1_junction"].data[1]
+        t2_y = maze.env_2d.regions["t_2_junction"].data[1]
+        t3_y = maze.env_2d.regions["t_3_junction"].data[1]
+
+        assert t1_y > t2_y  # T1 at top, T2 at bottom
+        assert t3_y > t2_y  # T3 at top, T2 at bottom
+        assert t1_y == t3_y  # T1 and T3 at same height (both upright)
+
+        # The track graph should be connected
+        assert nx.is_connected(maze.env_track.connectivity)
 
     def test_hampton_court_has_goal(self):
         """Hampton Court maze should have a goal region."""

@@ -12,8 +12,6 @@
             "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._render_chunk",
             "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._get_chunk",
             "neurospatial.animation.rendering.field_to_rgb_for_napari",
-            "neurospatial.animation.backends.napari_backend.update_skeleton_on_frame_change",
-            "neurospatial.animation.backends.napari_backend.update_frame_info",
             "neurospatial.animation.backends.napari_backend._build_skeleton_vectors",
             "neurospatial.animation.backends.napari_backend._render_bodypart_overlay",
             "neurospatial.animation.backends.napari_backend._render_head_direction_overlay",

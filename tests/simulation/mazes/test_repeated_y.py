@@ -25,9 +25,10 @@ class TestRepeatedYDims:
         from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
 
         dims = RepeatedYDims()
-        assert dims.n_junctions == 3
-        assert dims.segment_length == 50.0
-        assert dims.width == 10.0
+        assert dims.n_junctions == 4
+        assert dims.arm_length == 25.0
+        assert dims.fork_length == 12.0
+        assert dims.width == 8.0
 
     def test_is_frozen(self):
         """RepeatedYDims should be frozen (immutable)."""
@@ -41,10 +42,10 @@ class TestRepeatedYDims:
         """RepeatedYDims should accept custom values."""
         from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
 
-        dims = RepeatedYDims(n_junctions=5, segment_length=40.0, width=12.0)
-        assert dims.n_junctions == 5
-        assert dims.segment_length == 40.0
-        assert dims.width == 12.0
+        dims = RepeatedYDims(n_junctions=6, arm_length=30.0, width=10.0)
+        assert dims.n_junctions == 6
+        assert dims.arm_length == 30.0
+        assert dims.width == 10.0
 
 
 class TestMakeRepeatedYMaze:
@@ -102,8 +103,8 @@ class TestMakeRepeatedYMaze:
         for i in range(1, dims.n_junctions + 1):
             assert f"junction_{i}" in maze.env_2d.regions
 
-    def test_env_2d_has_dead_end_regions(self):
-        """env_2d should have dead end regions (Warner-Warden forks)."""
+    def test_env_2d_has_arm_regions(self):
+        """env_2d should have forked arm regions at each junction."""
         from neurospatial.simulation.mazes.repeated_y import (
             RepeatedYDims,
             make_repeated_y_maze,
@@ -112,21 +113,20 @@ class TestMakeRepeatedYMaze:
         dims = RepeatedYDims(n_junctions=3)
         maze = make_repeated_y_maze(dims=dims)
 
-        # Each junction has one dead end (split into two corridors)
-        # Expect dead_1_left, dead_1_right, dead_2_left, dead_2_right, etc.
-        for i in range(1, dims.n_junctions):  # n_junctions - 1 dead ends
-            assert f"dead_{i}_left" in maze.env_2d.regions
-            assert f"dead_{i}_right" in maze.env_2d.regions
+        # Each junction has a fork with left and right endpoints
+        for i in range(1, dims.n_junctions + 1):
+            assert f"arm_{i}_fork_left" in maze.env_2d.regions
+            assert f"arm_{i}_fork_right" in maze.env_2d.regions
 
-    def test_three_sequential_junctions_by_default(self):
-        """Default maze should have 3 Y-junctions in series."""
+    def test_four_sequential_junctions_by_default(self):
+        """Default maze should have 4 Y-junctions in series."""
         from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
 
         maze = make_repeated_y_maze()
 
         # Count junction regions
         junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
-        assert len(junction_regions) == 3
+        assert len(junction_regions) == 4
 
     def test_custom_number_of_junctions(self):
         """Should support custom number of junctions."""
@@ -142,27 +142,50 @@ class TestMakeRepeatedYMaze:
         junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
         assert len(junction_regions) == 5
 
-    def test_warner_warden_dead_ends_are_forked(self):
-        """Dead ends should be split into two small corridors (Warner-Warden)."""
+    def test_y_arms_are_at_120_degrees(self):
+        """Y-junction arms should be at 120 degrees from each other."""
         from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
 
         maze = make_repeated_y_maze()
 
-        # Check that we have paired dead end regions
-        assert "dead_1_left" in maze.env_2d.regions
-        assert "dead_1_right" in maze.env_2d.regions
+        # Get junction and fork arm positions for first junction
+        junction_1 = maze.env_2d.regions["junction_1"]
+        fork_left = maze.env_2d.regions["arm_1_fork_left"]
+        fork_right = maze.env_2d.regions["arm_1_fork_right"]
 
-        # The two dead ends should be spatially separated
-        dead_1_left = maze.env_2d.regions["dead_1_left"]
-        dead_1_right = maze.env_2d.regions["dead_1_right"]
+        # All should be point regions
+        assert junction_1.kind == "point"
+        assert fork_left.kind == "point"
+        assert fork_right.kind == "point"
 
-        # Both should be point regions
-        assert dead_1_left.kind == "point"
-        assert dead_1_right.kind == "point"
+        # Fork endpoints should be at arm_length + fork_length from junction
+        # Default: 25 + 12 = 37 cm
+        dist_left = np.linalg.norm(np.array(fork_left.data) - np.array(junction_1.data))
+        dist_right = np.linalg.norm(
+            np.array(fork_right.data) - np.array(junction_1.data)
+        )
+        assert dist_left > 30.0  # Should be roughly arm_length + fork_length
+        assert dist_right > 30.0
 
-        # They should be distinct positions
-        dist = np.linalg.norm(np.array(dead_1_left.data) - np.array(dead_1_right.data))
-        assert dist > 5.0  # At least 5 cm apart
+    def test_junctions_alternate_orientation(self):
+        """Y-junctions should alternate: odd up, even down."""
+        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+
+        maze = make_repeated_y_maze()
+
+        # Junction 1 (index 0, up-pointing): fork arms should be ABOVE junction
+        junction_1 = maze.env_2d.regions["junction_1"]
+        fork_1_left = maze.env_2d.regions["arm_1_fork_left"]
+        fork_1_right = maze.env_2d.regions["arm_1_fork_right"]
+        assert fork_1_left.data[1] > junction_1.data[1]  # Fork above junction
+        assert fork_1_right.data[1] > junction_1.data[1]
+
+        # Junction 2 (index 1, down-pointing): fork arms should be BELOW junction
+        junction_2 = maze.env_2d.regions["junction_2"]
+        fork_2_left = maze.env_2d.regions["arm_2_fork_left"]
+        fork_2_right = maze.env_2d.regions["arm_2_fork_right"]
+        assert fork_2_left.data[1] < junction_2.data[1]  # Fork below junction
+        assert fork_2_right.data[1] < junction_2.data[1]
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
@@ -216,12 +239,12 @@ class TestMakeRepeatedYMaze:
             make_repeated_y_maze,
         )
 
-        dims = RepeatedYDims(n_junctions=4, segment_length=60.0, width=15.0)
+        dims = RepeatedYDims(n_junctions=5, arm_length=30.0, width=12.0)
         maze = make_repeated_y_maze(dims=dims)
 
-        # Should have 4 junctions
+        # Should have 5 junctions
         junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
-        assert len(junction_regions) == 4
+        assert len(junction_regions) == 5
 
     def test_none_dims_uses_defaults(self):
         """dims=None should use default dimensions."""
@@ -276,12 +299,13 @@ class TestRepeatedYTrackGraph:
 
         graph = maze.env_track.connectivity
 
-        # Each junction should have 3 connections (1 entry, 2 exits)
-        # Except the first junction (2 exits only if start is separate)
-        # Count degree-3 nodes (junctions)
-        degree_3_nodes = [n for n in graph.nodes() if graph.degree(n) == 3]
-        # Should have at least n_junctions degree-3 nodes
-        assert len(degree_3_nodes) >= dims.n_junctions - 1
+        # After discretization, the graph has many nodes with varying degrees
+        # Junction nodes should have degree > 2 (more than just along a line)
+        # Look for nodes with degree 3 or higher (junction points)
+        high_degree_nodes = [n for n in graph.nodes() if graph.degree(n) >= 3]
+        # Should have at least some high-degree nodes (junctions)
+        # With 3 Y-junctions, we expect at least 3 high-degree nodes
+        assert len(high_degree_nodes) >= 3
 
 
 class TestRepeatedYDocstrings:

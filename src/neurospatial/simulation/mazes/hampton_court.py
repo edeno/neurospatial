@@ -1,14 +1,14 @@
 """Hampton Court Maze environment for spatial navigation research.
 
-The Hampton Court Maze is a complex labyrinth with multiple dead ends and winding
-passages. It was inspired by the famous hedge maze at Hampton Court Palace in England
-and is one of the first mazes used in rodent research (Small, 1901).
+The Hampton Court Maze is a complex labyrinth inspired by the famous hedge maze at
+Hampton Court Palace in England. It is one of the first maze designs used in rodent
+research (Small, 1901).
 
-This implementation creates a simplified procedural version of the maze with:
-- Grid-based labyrinth layout
-- Single solution path from start to goal
-- Multiple dead ends to increase complexity
-- Start at edge, goal at center
+This implementation creates a labyrinth structure with:
+- A central rectangular goal area
+- Multiple concentric corridor rings wrapping around the center
+- Dead-end branches that increase navigational complexity
+- Entry from the outside, goal in the center
 
 Reference: Small (1901) - Early maze research with rodents
 
@@ -46,9 +46,8 @@ from neurospatial.simulation.mazes._geometry import (
 class HamptonCourtDims(MazeDims):
     """Dimension specifications for Hampton Court Maze.
 
-    The Hampton Court Maze is a complex labyrinth with winding corridors
-    and multiple dead ends. This simplified version is based on a grid
-    layout with procedurally defined corridors.
+    The Hampton Court Maze is a complex labyrinth with a central goal area
+    surrounded by concentric corridor rings with multiple dead ends.
 
     Attributes
     ----------
@@ -56,6 +55,10 @@ class HamptonCourtDims(MazeDims):
         Overall size of the maze (width and height) in cm. Default is 300.0.
     corridor_width : float
         Width of corridors in cm. Default is 11.0.
+    n_rings : int
+        Number of concentric corridor rings around the center. Default is 3.
+    center_size : float
+        Size of the central goal area in cm. Default is 60.0.
 
     Examples
     --------
@@ -64,6 +67,10 @@ class HamptonCourtDims(MazeDims):
     300.0
     >>> dims.corridor_width
     11.0
+    >>> dims.n_rings
+    3
+    >>> dims.center_size
+    60.0
 
     >>> custom = HamptonCourtDims(size=400.0, corridor_width=15.0)
     >>> custom.size
@@ -72,6 +79,8 @@ class HamptonCourtDims(MazeDims):
 
     size: float = 300.0
     corridor_width: float = 11.0
+    n_rings: int = 3
+    center_size: float = 60.0
 
 
 def make_hampton_court_maze(
@@ -81,15 +90,15 @@ def make_hampton_court_maze(
 ) -> MazeEnvironments:
     """Create a Hampton Court Maze environment.
 
-    Creates a complex labyrinth maze with winding passages and multiple dead ends.
-    The maze is inspired by the Hampton Court Palace hedge maze and represents
-    one of the first maze designs used in rodent research.
+    Creates a complex labyrinth maze with concentric corridor rings around a
+    central goal area. The maze is inspired by the Hampton Court Palace hedge
+    maze and represents one of the first maze designs used in rodent research.
 
     Parameters
     ----------
     dims : HamptonCourtDims, optional
         Maze dimensions. If None, uses default dimensions
-        (300 cm size, 11 cm corridor width).
+        (300 cm size, 11 cm corridor width, 3 rings, 60 cm center).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -105,19 +114,19 @@ def make_hampton_court_maze(
 
     Notes
     -----
-    The maze is centered at the origin with a simplified grid-based layout:
-    - Overall size: ~300 × 300 cm (default)
-    - Corridors arranged in a winding pattern from edge to center
-    - Multiple dead ends to increase complexity
-    - Start region at edge (bottom-left)
-    - Goal region at center
+    The maze is centered at the origin with a labyrinth structure:
+    - Central rectangular goal area at the center
+    - Multiple concentric corridor rings wrapping around the center
+    - Connections between rings create a winding path
+    - Dead-end branches increase navigational complexity
+    - Entry from the bottom edge
 
     Regions:
-    - start: Point at maze entrance (edge)
+    - start: Point at maze entrance (bottom edge)
     - goal: Point at maze center
 
     Track Graph Topology:
-    - Main path from start to goal with branches
+    - Main path spiraling from start to goal
     - Dead-end branches off the main path
     - Fully connected graph with single component
 
@@ -151,97 +160,63 @@ def make_hampton_court_maze(
     if dims is None:
         dims = HamptonCourtDims()
 
-    # Create a simplified labyrinth based on a 5x5 grid
-    # This captures the essence of Hampton Court (winding paths, dead ends, central goal)
-    cell_size = dims.size / 5.0
-
-    # Maze centered at origin
     half_size = dims.size / 2.0
+    half_center = dims.center_size / 2.0
 
-    # Define corridors as list of (start, end) tuples
-    # Creates a winding path from bottom-left to center with dead ends
+    # Calculate ring spacing
+    ring_spacing = (half_size - half_center) / (dims.n_rings + 1)
+
     corridors = []
 
-    # Main path: bottom-left -> center (winding route)
-    # Start at bottom-left corner
-    start_pos = (-half_size + cell_size * 0.5, -half_size + cell_size * 0.5)
+    # Define ring radii (from center outward)
+    ring_radii = [half_center + (i + 1) * ring_spacing for i in range(dims.n_rings)]
+    inner_r = ring_radii[0]
+    mid_r = ring_radii[1] if len(ring_radii) > 1 else inner_r
+    outer_r = ring_radii[-1]
 
-    # Segment 1: Move right from start
-    corridors.append(
-        (start_pos, (-half_size + cell_size * 1.5, -half_size + cell_size * 0.5))
-    )
+    # Create a proper labyrinth structure with connected rings
+    # The design creates winding paths from entry to center with dead ends
 
-    # Segment 2: Move up
-    corridors.append(
-        (
-            (-half_size + cell_size * 1.5, -half_size + cell_size * 0.5),
-            (-half_size + cell_size * 1.5, -half_size + cell_size * 2.5),
-        )
-    )
+    # Entry corridor from outside leading into outer ring (this ensures connectivity)
+    corridors.append(((0.0, -outer_r * 1.2), (0.0, -outer_r)))
 
-    # Segment 3: Move right
-    corridors.append(
-        (
-            (-half_size + cell_size * 1.5, -half_size + cell_size * 2.5),
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 2.5),
-        )
-    )
+    # === OUTERMOST RING (ring 2) ===
+    # Complete rectangular ring (all sides)
+    corridors.append(((-outer_r, -outer_r), (outer_r, -outer_r)))  # Bottom
+    corridors.append(((outer_r, -outer_r), (outer_r, outer_r)))  # Right
+    corridors.append(((-outer_r, outer_r), (outer_r, outer_r)))  # Top
+    corridors.append(((-outer_r, -outer_r), (-outer_r, outer_r)))  # Left
 
-    # Segment 4: Move up
-    corridors.append(
-        (
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 2.5),
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 4.5),
-        )
-    )
+    # Connector from outer ring corner to middle ring (left side, toward bottom)
+    corridors.append(((-outer_r, -outer_r * 0.5), (-mid_r, -outer_r * 0.5)))
 
-    # Segment 5: Move left to center
-    corridors.append(
-        (
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 4.5),
-            (-half_size + cell_size * 2.5, -half_size + cell_size * 4.5),
-        )
-    )
+    # === MIDDLE RING (ring 1) ===
+    # Complete rectangular ring (all sides)
+    corridors.append(((-mid_r, -mid_r), (mid_r, -mid_r)))  # Bottom
+    corridors.append(((mid_r, -mid_r), (mid_r, mid_r)))  # Right
+    corridors.append(((-mid_r, mid_r), (mid_r, mid_r)))  # Top
+    corridors.append(((-mid_r, -mid_r), (-mid_r, mid_r)))  # Left
 
-    # Segment 6: Move down to center
-    corridors.append(
-        (
-            (-half_size + cell_size * 2.5, -half_size + cell_size * 4.5),
-            (-half_size + cell_size * 2.5, -half_size + cell_size * 2.5),
-        )
-    )
+    # Connector from middle ring to inner ring (right side, toward top)
+    corridors.append(((mid_r, mid_r * 0.5), (inner_r, mid_r * 0.5)))
 
-    # Dead end 1: Right branch from first vertical segment
-    corridors.append(
-        (
-            (-half_size + cell_size * 1.5, -half_size + cell_size * 1.5),
-            (-half_size + cell_size * 0.5, -half_size + cell_size * 1.5),
-        )
-    )
+    # === INNERMOST RING (ring 0) ===
+    # Complete rectangular ring (all sides)
+    corridors.append(((-inner_r, -inner_r), (inner_r, -inner_r)))  # Bottom
+    corridors.append(((inner_r, -inner_r), (inner_r, inner_r)))  # Right
+    corridors.append(((-inner_r, inner_r), (inner_r, inner_r)))  # Top
+    corridors.append(((-inner_r, -inner_r), (-inner_r, inner_r)))  # Left
 
-    # Dead end 2: Up branch from second horizontal segment
-    corridors.append(
-        (
-            (-half_size + cell_size * 2.5, -half_size + cell_size * 2.5),
-            (-half_size + cell_size * 2.5, -half_size + cell_size * 1.5),
-        )
-    )
+    # Connector from inner ring to center goal (top side)
+    corridors.append(((0.0, inner_r), (0.0, half_center * 0.3)))
 
-    # Dead end 3: Left branch from second vertical segment
-    corridors.append(
-        (
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 3.5),
-            (-half_size + cell_size * 4.5, -half_size + cell_size * 3.5),
-        )
-    )
-
-    # Dead end 4: Right extension from top
-    corridors.append(
-        (
-            (-half_size + cell_size * 3.5, -half_size + cell_size * 4.5),
-            (-half_size + cell_size * 4.5, -half_size + cell_size * 4.5),
-        )
-    )
+    # === DEAD ENDS ===
+    # Dead end 1: from outer ring right side going further right
+    corridors.append(((outer_r, outer_r * 0.3), (outer_r * 1.2, outer_r * 0.3)))
+    # Dead end 2: from middle ring bottom going down
+    corridors.append(((mid_r * 0.4, -mid_r), (mid_r * 0.4, -mid_r * 1.3)))
+    # Dead end 3: from inner ring left side going left
+    corridors.append(((-inner_r, -inner_r * 0.3), (-inner_r * 1.4, -inner_r * 0.3)))
 
     # Create polygon for each corridor and union them
     corridor_polygons = [
@@ -260,7 +235,8 @@ def make_hampton_court_maze(
     env_2d.units = "cm"
 
     # Add regions
-    # Start at the entrance (bottom-left)
+    # Start at the entry (outside the maze)
+    start_pos = (0.0, -outer_r * 1.2)
     env_2d.regions.add("start", point=start_pos)
 
     # Goal at the center
@@ -283,7 +259,7 @@ def _create_hampton_court_track_graph(
 
     The track graph represents the labyrinth topology with nodes at
     junctions and edges along corridors. The graph includes the main
-    path from start to goal plus dead-end branches.
+    path spiraling from start to goal plus dead-end branches.
 
     Parameters
     ----------
@@ -297,29 +273,41 @@ def _create_hampton_court_track_graph(
     Environment
         1D linearized environment representing the Hampton Court track.
     """
-    cell_size = dims.size / 5.0
     half_size = dims.size / 2.0
+    half_center = dims.center_size / 2.0
+    ring_spacing = (half_size - half_center) / (dims.n_rings + 1)
+    ring_radii = [half_center + (i + 1) * ring_spacing for i in range(dims.n_rings)]
 
-    # Create track graph with nodes at key junctions
     graph = nx.Graph()
 
-    # Define key positions (matching the corridor layout)
+    outer_r = ring_radii[-1]
+    inner_r = ring_radii[0]
+    mid_r = ring_radii[-2] if len(ring_radii) > 1 else inner_r
+
+    # Define key positions matching the corridor layout
     positions = {
-        "start": (-half_size + cell_size * 0.5, -half_size + cell_size * 0.5),
-        "j1": (-half_size + cell_size * 1.5, -half_size + cell_size * 0.5),
-        "j2": (-half_size + cell_size * 1.5, -half_size + cell_size * 1.5),
-        "j3": (-half_size + cell_size * 1.5, -half_size + cell_size * 2.5),
-        "j4": (-half_size + cell_size * 2.5, -half_size + cell_size * 2.5),
-        "j5": (-half_size + cell_size * 3.5, -half_size + cell_size * 2.5),
-        "j6": (-half_size + cell_size * 3.5, -half_size + cell_size * 3.5),
-        "j7": (-half_size + cell_size * 3.5, -half_size + cell_size * 4.5),
-        "j8": (-half_size + cell_size * 2.5, -half_size + cell_size * 4.5),
+        "start": (0.0, -outer_r),
+        # Outer ring junctions
+        "outer_bl": (-outer_r, -outer_r),
+        "outer_br": (outer_r, -outer_r),
+        "outer_tr": (outer_r, outer_r),
+        "outer_tl": (-outer_r, outer_r),
+        # Middle ring junctions
+        "mid_bl": (-mid_r, -mid_r),
+        "mid_br": (mid_r, -mid_r),
+        "mid_tr": (mid_r, mid_r),
+        "mid_tl": (-mid_r, mid_r),
+        # Inner ring junctions
+        "inner_bl": (-inner_r, -inner_r),
+        "inner_br": (inner_r, -inner_r),
+        "inner_tr": (inner_r, inner_r),
+        "inner_tl": (-inner_r, inner_r),
+        # Goal at center
         "goal": (0.0, 0.0),
         # Dead ends
-        "dead_end_1": (-half_size + cell_size * 0.5, -half_size + cell_size * 1.5),
-        "dead_end_2": (-half_size + cell_size * 2.5, -half_size + cell_size * 1.5),
-        "dead_end_3": (-half_size + cell_size * 4.5, -half_size + cell_size * 3.5),
-        "dead_end_4": (-half_size + cell_size * 4.5, -half_size + cell_size * 4.5),
+        "dead_1": (outer_r * 1.2, outer_r * 0.5),
+        "dead_2": (-mid_r * 1.3, -mid_r * 0.3),
+        "dead_3": (inner_r * 0.7, -inner_r * 1.3),
     }
 
     # Add nodes with positions
@@ -328,22 +316,31 @@ def _create_hampton_court_track_graph(
 
     # Add edges along corridors with distances
     edges = [
-        # Main path
-        ("start", "j1"),
-        ("j1", "j2"),
-        ("j2", "j3"),
-        ("j3", "j4"),
-        ("j4", "j5"),
-        ("j5", "j6"),
-        ("j6", "j7"),
-        ("j7", "j8"),
-        ("j8", "j4"),
-        ("j4", "goal"),
+        # Start to outer ring
+        ("start", "outer_bl"),
+        ("start", "outer_br"),
+        # Outer ring
+        ("outer_bl", "outer_tl"),
+        ("outer_tl", "outer_tr"),
+        ("outer_tr", "outer_br"),
+        # Outer to middle connector
+        ("outer_bl", "mid_bl"),
+        # Middle ring
+        ("mid_bl", "mid_br"),
+        ("mid_br", "mid_tr"),
+        ("mid_tr", "mid_tl"),
+        # Middle to inner connector
+        ("mid_tr", "inner_tr"),
+        # Inner ring
+        ("inner_bl", "inner_br"),
+        ("inner_br", "inner_tr"),
+        ("inner_tr", "inner_tl"),
+        # Inner to goal
+        ("inner_tl", "goal"),
         # Dead ends
-        ("j2", "dead_end_1"),
-        ("j4", "dead_end_2"),
-        ("j6", "dead_end_3"),
-        ("j7", "dead_end_4"),
+        ("outer_tr", "dead_1"),
+        ("mid_bl", "dead_2"),
+        ("inner_br", "dead_3"),
     ]
 
     for node1, node2 in edges:
@@ -354,21 +351,24 @@ def _create_hampton_court_track_graph(
 
     # Edge order for linearization (main path first, then branches)
     edge_order = [
-        ("start", "j1"),
-        ("j1", "j2"),
-        ("j2", "j3"),
-        ("j3", "j4"),
-        ("j4", "j5"),
-        ("j5", "j6"),
-        ("j6", "j7"),
-        ("j7", "j8"),
-        ("j8", "j4"),
-        ("j4", "goal"),
+        ("start", "outer_bl"),
+        ("outer_bl", "outer_tl"),
+        ("outer_tl", "outer_tr"),
+        ("outer_tr", "outer_br"),
+        ("outer_br", "start"),
+        ("outer_bl", "mid_bl"),
+        ("mid_bl", "mid_br"),
+        ("mid_br", "mid_tr"),
+        ("mid_tr", "mid_tl"),
+        ("mid_tr", "inner_tr"),
+        ("inner_tr", "inner_br"),
+        ("inner_br", "inner_bl"),
+        ("inner_tr", "inner_tl"),
+        ("inner_tl", "goal"),
         # Dead-end branches
-        ("j2", "dead_end_1"),
-        ("j4", "dead_end_2"),
-        ("j6", "dead_end_3"),
-        ("j7", "dead_end_4"),
+        ("outer_tr", "dead_1"),
+        ("mid_bl", "dead_2"),
+        ("inner_br", "dead_3"),
     ]
 
     # Create the 1D environment

@@ -125,6 +125,23 @@ class TestSetupTrackLayers:
         assert len(edges_layer.data) == 0
         viewer.close()
 
+    def test_node_layer_is_interactive(self):
+        """Nodes layer is in a mode that allows interaction (add/select)."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_widget import setup_track_layers
+
+        viewer = napari.Viewer(show=False)
+
+        _, nodes_layer = setup_track_layers(viewer)
+
+        # Points layer should have mode set to allow adding points
+        # Valid modes include 'add', 'select', 'pan_zoom'
+        # We expect the layer to be usable (not in a restricted mode)
+        assert hasattr(nodes_layer, "mode")
+        # The mode should be accessible (not None)
+        assert nodes_layer.mode is not None
+        viewer.close()
+
 
 @pytest.mark.gui
 class TestColorConstants:

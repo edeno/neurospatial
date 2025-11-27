@@ -81,17 +81,17 @@ class TestCrosswordMaze:
         assert dims.n_cols == 4
 
     def test_has_node_regions(self):
-        """Crossword should have node regions at intersections."""
+        """Crossword should have node regions at intersections (sparse grid)."""
         maze = make_crossword_maze(bin_size=3.0)
         node_regions = [r for r in maze.env_2d.regions if r.startswith("node_")]
-        # 4x4 grid = 16 intersections
-        assert len(node_regions) == 16
+        # Sparse/incomplete grid: 14 intersections (2 missing from complete 4x4)
+        assert len(node_regions) == 14
 
-    def test_has_corner_boxes(self):
-        """Crossword should have 4 corner box regions."""
+    def test_has_box_regions(self):
+        """Crossword should have 6 box regions (sparse layout)."""
         maze = make_crossword_maze(bin_size=3.0)
         box_regions = [r for r in maze.env_2d.regions if r.startswith("box_")]
-        assert len(box_regions) == 4
+        assert len(box_regions) == 6
 
 
 class TestHoneycombMaze:
@@ -112,22 +112,22 @@ class TestHoneycombMaze:
 class TestHamletMaze:
     """Test Hamlet maze specific behavior."""
 
-    def test_has_pentagon_ring(self):
-        """Hamlet should have 5 ring vertices (pentagon)."""
+    def test_has_inner_regions(self):
+        """Hamlet should have 5 inner vertices (pentagon at inner_radius)."""
         maze = make_hamlet_maze(bin_size=3.0)
-        ring_regions = [r for r in maze.env_2d.regions if r.startswith("ring_")]
-        assert len(ring_regions) == 5
+        inner_regions = [r for r in maze.env_2d.regions if r.startswith("inner_")]
+        assert len(inner_regions) == 5
 
-    def test_has_10_goals(self):
-        """Hamlet should have 10 terminal goal boxes (5 arms x 2)."""
+    def test_has_outer_regions(self):
+        """Hamlet should have 5 outer vertices (at outer_radius)."""
         maze = make_hamlet_maze(bin_size=3.0)
-        goal_regions = [r for r in maze.env_2d.regions if r.startswith("goal_")]
-        assert len(goal_regions) == 10
+        outer_regions = [r for r in maze.env_2d.regions if r.startswith("outer_")]
+        assert len(outer_regions) == 5
 
-    def test_default_5_peripheral_arms(self):
-        """Hamlet should have 5 peripheral arms by default."""
+    def test_default_5_arms(self):
+        """Hamlet should have 5 arms by default."""
         dims = HamletDims()
-        assert dims.n_peripheral_arms == 5
+        assert dims.n_arms == 5
 
 
 class TestRatHexMaze:

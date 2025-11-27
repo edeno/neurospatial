@@ -121,16 +121,42 @@ class TestMakeCrosswordMaze:
         assert "node_1_1" in maze.env_2d.regions  # Interior node
         assert "node_3_3" in maze.env_2d.regions  # Top-right corner
 
-    def test_all_node_regions_present(self):
-        """All 16 nodes should have regions (4×4 grid)."""
+    def test_sparse_node_regions_present(self):
+        """Sparse grid nodes should have regions (not all 16 nodes present)."""
         from neurospatial.simulation.mazes.crossword import make_crossword_maze
 
         maze = make_crossword_maze()
-        # 4 rows × 4 columns = 16 nodes
-        for row in range(4):
-            for col in range(4):
-                region_name = f"node_{row}_{col}"
-                assert region_name in maze.env_2d.regions
+        # Crossword maze is a sparse/incomplete grid - not all nodes present
+        # The actual nodes present in the sparse grid:
+        expected_nodes = [
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),  # Bottom row (full)
+            (1, 0),
+            (1, 1),
+            (1, 2),  # Row 1 (partial - missing 1,3)
+            (2, 1),
+            (2, 2),
+            (2, 3),  # Row 2 (partial - missing 2,0)
+            (3, 0),
+            (3, 1),
+            (3, 2),
+            (3, 3),  # Top row (full)
+        ]
+        for row, col in expected_nodes:
+            region_name = f"node_{row}_{col}"
+            assert region_name in maze.env_2d.regions
+
+    def test_missing_nodes_in_sparse_grid(self):
+        """Some nodes should be missing in the incomplete grid."""
+        from neurospatial.simulation.mazes.crossword import make_crossword_maze
+
+        maze = make_crossword_maze()
+        # These nodes should NOT be present in the sparse grid
+        # (based on incomplete corridor structure)
+        assert "node_1_3" not in maze.env_2d.regions  # Row 1 right gap
+        assert "node_2_0" not in maze.env_2d.regions  # Row 2 left gap
 
     def test_corner_box_positions_correct(self):
         """Corner boxes should be at expected positions."""

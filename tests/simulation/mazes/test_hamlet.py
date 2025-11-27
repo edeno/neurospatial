@@ -25,10 +25,10 @@ class TestHamletDims:
         from neurospatial.simulation.mazes.hamlet import HamletDims
 
         dims = HamletDims()
-        assert dims.central_radius == 30.0
-        assert dims.arm_length == 40.0
+        assert dims.inner_radius == 40.0
+        assert dims.outer_radius == 80.0
         assert dims.corridor_width == 10.0
-        assert dims.n_peripheral_arms == 5
+        assert dims.n_arms == 5
 
     def test_is_frozen(self):
         """HamletDims should be frozen (immutable)."""
@@ -36,22 +36,22 @@ class TestHamletDims:
 
         dims = HamletDims()
         with pytest.raises(FrozenInstanceError):
-            dims.central_radius = 50.0  # type: ignore[misc]
+            dims.inner_radius = 50.0  # type: ignore[misc]
 
     def test_custom_values(self):
         """HamletDims should accept custom values."""
         from neurospatial.simulation.mazes.hamlet import HamletDims
 
         dims = HamletDims(
-            central_radius=40.0,
-            arm_length=60.0,
+            inner_radius=50.0,
+            outer_radius=100.0,
             corridor_width=15.0,
-            n_peripheral_arms=6,
+            n_arms=6,
         )
-        assert dims.central_radius == 40.0
-        assert dims.arm_length == 60.0
+        assert dims.inner_radius == 50.0
+        assert dims.outer_radius == 100.0
         assert dims.corridor_width == 15.0
-        assert dims.n_peripheral_arms == 6
+        assert dims.n_arms == 6
 
 
 class TestMakeHamletMaze:
@@ -81,11 +81,11 @@ class TestMakeHamletMaze:
         maze = make_hamlet_maze()
         assert maze.env_2d.units == "cm"
 
-    def test_env_2d_has_pentagonal_ring_extent(self):
-        """env_2d should have a pentagonal ring with radiating arms."""
+    def test_env_2d_has_correct_extent(self):
+        """env_2d should cover center-inner-outer structure."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
-        dims = HamletDims(central_radius=30.0, arm_length=40.0, corridor_width=10.0)
+        dims = HamletDims(inner_radius=40.0, outer_radius=80.0, corridor_width=10.0)
         maze = make_hamlet_maze(dims=dims)
 
         # Get spatial extent from bin_centers
@@ -93,9 +93,8 @@ class TestMakeHamletMaze:
         x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
         y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
 
-        # Total extent should cover central radius + arm length + fork
-        # Approximate total radius = central_radius + arm_length + corridor_width*2
-        total_radius = dims.central_radius + dims.arm_length + dims.corridor_width * 2
+        # Total extent should cover outer_radius + corridor_width buffer
+        total_radius = dims.outer_radius + dims.corridor_width
         x_extent = x_max - x_min
         y_extent = y_max - y_min
 
@@ -104,69 +103,82 @@ class TestMakeHamletMaze:
         assert x_extent > expected_extent * 0.6  # At least 60% (conservative)
         assert y_extent > expected_extent * 0.6  # At least 60% (conservative)
 
-    def test_env_2d_has_ring_regions(self):
-        """env_2d should have 5 ring regions (pentagon vertices)."""
+    def test_env_2d_has_center_region(self):
+        """env_2d should have center region."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze()
-        # Should have ring_0 through ring_4 (5 regions)
+        assert "center" in maze.env_2d.regions
+
+    def test_env_2d_has_inner_regions(self):
+        """env_2d should have 5 inner regions (pentagon vertices)."""
+        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
+
+        maze = make_hamlet_maze()
+        # Should have inner_0 through inner_4 (5 regions)
         for i in range(5):
-            assert f"ring_{i}" in maze.env_2d.regions
+            assert f"inner_{i}" in maze.env_2d.regions
 
-    def test_env_2d_has_goal_regions(self):
-        """env_2d should have 10 goal regions (2 per arm)."""
+    def test_env_2d_has_outer_regions(self):
+        """env_2d should have 5 outer regions."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze()
-        # Should have goal_0 through goal_9 (10 regions)
-        for i in range(10):
-            assert f"goal_{i}" in maze.env_2d.regions
+        # Should have outer_0 through outer_4 (5 regions)
+        for i in range(5):
+            assert f"outer_{i}" in maze.env_2d.regions
 
-    def test_ring_regions_are_point_type(self):
-        """All ring regions should be point type."""
+    def test_center_region_is_point_type(self):
+        """Center region should be point type."""
+        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
+
+        maze = make_hamlet_maze()
+        region = maze.env_2d.regions["center"]
+        assert region.kind == "point"
+
+    def test_inner_regions_are_point_type(self):
+        """All inner regions should be point type."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze()
         for i in range(5):
-            region = maze.env_2d.regions[f"ring_{i}"]
+            region = maze.env_2d.regions[f"inner_{i}"]
             assert region.kind == "point"
 
-    def test_goal_regions_are_point_type(self):
-        """All goal regions should be point type."""
+    def test_outer_regions_are_point_type(self):
+        """All outer regions should be point type."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze()
-        for i in range(10):
-            region = maze.env_2d.regions[f"goal_{i}"]
+        for i in range(5):
+            region = maze.env_2d.regions[f"outer_{i}"]
             assert region.kind == "point"
 
-    def test_ring_positions_form_pentagon(self):
-        """Ring regions should be positioned at pentagon vertices."""
+    def test_inner_positions_form_pentagon(self):
+        """Inner regions should be positioned at pentagon vertices."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
-        dims = HamletDims(central_radius=30.0)
+        dims = HamletDims(inner_radius=40.0)
         maze = make_hamlet_maze(dims=dims)
 
-        # Ring positions should be approximately at distance central_radius from origin
+        # Inner positions should be approximately at distance inner_radius from origin
         for i in range(5):
-            ring_pos = maze.env_2d.regions[f"ring_{i}"].data
-            distance_from_origin = np.linalg.norm(ring_pos)
-            assert np.isclose(distance_from_origin, dims.central_radius, atol=2.0)
+            inner_pos = maze.env_2d.regions[f"inner_{i}"].data
+            distance_from_origin = np.linalg.norm(inner_pos)
+            assert np.isclose(distance_from_origin, dims.inner_radius, atol=2.0)
 
-    def test_goal_positions_are_at_arm_ends(self):
-        """Goal regions should be at the ends of forked arms."""
+    def test_outer_positions_are_at_outer_radius(self):
+        """Outer regions should be at the outer radius."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
-        dims = HamletDims(central_radius=30.0, arm_length=40.0, corridor_width=10.0)
+        dims = HamletDims(inner_radius=40.0, outer_radius=80.0)
         maze = make_hamlet_maze(dims=dims)
 
-        # Goals should be further from origin than ring vertices
-        min_distance = dims.central_radius + dims.arm_length
-
-        for i in range(10):
-            goal_pos = maze.env_2d.regions[f"goal_{i}"].data
-            distance_from_origin = np.linalg.norm(goal_pos)
-            assert distance_from_origin > min_distance
+        # Outer positions should be at outer_radius from origin
+        for i in range(5):
+            outer_pos = maze.env_2d.regions[f"outer_{i}"].data
+            distance_from_origin = np.linalg.norm(outer_pos)
+            assert np.isclose(distance_from_origin, dims.outer_radius, atol=2.0)
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
@@ -226,7 +238,7 @@ class TestMakeHamletMaze:
         """Custom dimensions should be respected."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
-        dims = HamletDims(central_radius=40.0, arm_length=60.0, corridor_width=15.0)
+        dims = HamletDims(inner_radius=50.0, outer_radius=100.0, corridor_width=15.0)
         maze = make_hamlet_maze(dims=dims)
 
         # Check that bin_centers span approximately the expected range
@@ -256,8 +268,8 @@ class TestMakeHamletMaze:
 class TestHamletTrackGraph:
     """Tests for the track graph structure of Hamlet Maze."""
 
-    def test_track_has_pentagon_ring(self):
-        """Track graph should have pentagon ring connectivity."""
+    def test_track_has_center_inner_outer_structure(self):
+        """Track graph should have center-inner-outer connectivity."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze(include_track=True)
@@ -284,7 +296,7 @@ class TestHamletTrackGraph:
         """Track should cover the full Hamlet maze extent."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
-        dims = HamletDims(central_radius=30.0, arm_length=40.0)
+        dims = HamletDims(inner_radius=40.0, outer_radius=80.0)
         maze = make_hamlet_maze(dims=dims, include_track=True)
         assert maze.env_track is not None
 
@@ -292,37 +304,45 @@ class TestHamletTrackGraph:
         graph = maze.env_track.connectivity
         positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
 
-        # Extent should cover central ring + arms
+        # Extent should cover outer_radius
         extent = positions.max(axis=0) - positions.min(axis=0)
-        expected_extent = 2 * (dims.central_radius + dims.arm_length)
+        expected_extent = 2 * dims.outer_radius
 
         # Both x and y should cover most of the expected extent
         assert extent[0] > expected_extent * 0.6  # At least 60%
         assert extent[1] > expected_extent * 0.6  # At least 60%
 
-    def test_track_has_ring_nodes(self):
-        """Track graph should have nodes for pentagon ring."""
+    def test_track_has_center_node(self):
+        """Track graph should have nodes at center position."""
+        import numpy as np
+
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze(include_track=True)
         assert maze.env_track is not None
 
         graph = maze.env_track.connectivity
-        # Should have ring nodes (at least 5 for pentagon vertices)
-        # Implementation may add more nodes for connectivity
-        assert graph.number_of_nodes() >= 5
+        # After discretization, nodes have integer IDs but positions
+        # Check that there's a node near the center (0, 0)
+        center_pos = np.array([0.0, 0.0])
+        min_dist = float("inf")
+        for node in graph.nodes():
+            pos = np.array(graph.nodes[node]["pos"])
+            dist = np.linalg.norm(pos - center_pos)
+            min_dist = min(min_dist, dist)
+        # Should have a node within reasonable distance of center
+        assert min_dist < 10.0  # Within 10 cm of center
 
-    def test_track_has_goal_nodes(self):
-        """Track graph should have nodes for goal positions."""
+    def test_track_has_inner_and_outer_nodes(self):
+        """Track graph should have inner and outer nodes."""
         from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
         maze = make_hamlet_maze(include_track=True)
         assert maze.env_track is not None
 
         graph = maze.env_track.connectivity
-        # Should have nodes for 10 goals + 5 ring vertices + connections
-        # At minimum: 5 ring + 10 goals = 15 nodes
-        assert graph.number_of_nodes() >= 15
+        # Should have inner and outer nodes (5 each = 10 + center = 11)
+        assert graph.number_of_nodes() >= 11
 
 
 class TestHamletDocstrings:
