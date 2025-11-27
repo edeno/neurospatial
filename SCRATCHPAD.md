@@ -1,11 +1,66 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 3 IN PROGRESS - Task 3.1 Complete
+**Current Status**: Milestone 3 IN PROGRESS - Task 3.2 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 3.2 Complete (Implement annotate_track_graph Entry Point)
+
+**Completed**: Task 3.2 - Implement annotate_track_graph Entry Point
+
+**Work Done**:
+
+1. Added 14 new tests to `tests/annotation/test_track_graph.py`:
+   - `TestAnnotateTrackGraphInputValidation` (2 tests) - require video_path or image
+   - `TestAnnotateTrackGraphWithMockViewer` (4 tests) - napari viewer creation, layer setup, widget docking
+   - `TestAnnotateTrackGraphInitialData` (3 tests) - initial_nodes, initial_edges, initial_node_labels
+   - `TestAnnotateTrackGraphResult` (2 tests) - returns TrackGraphResult, pixel_positions preserved
+   - `TestAnnotateTrackGraphCalibration` (3 tests) - coordinate transform, pixel_positions unchanged
+
+2. Extended `src/neurospatial/annotation/track_graph.py` (~165 lines total):
+   - `annotate_track_graph()` function with full signature:
+     - `video_path`, `image`, `frame_index`, `calibration`
+     - `initial_nodes`, `initial_edges`, `initial_node_labels`
+   - Input validation (require video_path or image)
+   - Lazy napari import with helpful error message
+   - VideoReader integration for video files
+   - TrackBuilderState initialization with initial data
+   - Layer and widget setup via existing helpers
+   - Blocking `napari.run()` call
+   - Result construction via `build_track_graph_result()`
+
+**TDD Process**:
+
+- Wrote 14 tests first → ImportError (function didn't exist)
+- Implemented function → tests failing (napari mocking issues)
+- Fixed: Created `_setup_mocks()` helper for comprehensive napari mocking
+- Fixed: `Affine2D.scale` → `scale_2d()` function
+- Fixed: Added assert for mypy type narrowing on image parameter
+- All 22 tests pass (8 from Task 3.1 + 14 from Task 3.2)
+
+**Code Review**: Approved with minor fixes:
+
+- Fixed error message format for consistency (sentence case, no trailing period)
+- Added assertion to help mypy understand validation logic
+
+**Tests**: 22 tests pass
+**Linting**: ruff check passes (auto-fixed import sorting)
+**Type checking**: mypy passes
+
+**Key Implementation Details**:
+
+- Follows `annotate_video()` pattern from `annotation/core.py`
+- Lazy napari import allows module to work without napari installed
+- Initial data (nodes, edges, labels) loaded into state before viewer opens
+- Blocking call - function returns only after viewer closes
+- Uses `build_track_graph_result()` from `_track_helpers.py` for result construction
+
+**Next**: Task 3.3 - Add Module Exports
+
+---
 
 ### 2025-11-27 - Task 3.1 Complete (Implement TrackGraphResult)
 

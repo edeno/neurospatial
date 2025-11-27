@@ -413,7 +413,7 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Implement `annotate_track_graph()` with signature:
+- [x] Implement `annotate_track_graph()` with signature:
 
   ```python
   def annotate_track_graph(
@@ -428,28 +428,28 @@ Implementation tasks for adding interactive track graph building functionality t
   ) -> TrackGraphResult:
   ```
 
-- [ ] Implement input validation:
+- [x] Implement input validation:
   - Require either `video_path` or `image`
   - Validate `frame_index` in range for video
 
-- [ ] Load background image:
+- [x] Load background image:
   - Use `VideoReader` for video files (same as `annotate_video`)
   - Use provided image array directly
 
-- [ ] Create napari viewer:
+- [x] Create napari viewer:
   - Add video frame as bottom Image layer (RGB)
   - Title: "Track Graph Builder"
 
-- [ ] Initialize state:
+- [x] Initialize state:
   - Create `TrackBuilderState`
   - Populate with `initial_nodes`, `initial_edges`, `initial_node_labels`
 
-- [ ] Set up layers and widget:
+- [x] Set up layers and widget:
   - Call `setup_track_layers(viewer)`
   - Call `create_track_widget(viewer, edges_layer, nodes_layer, state)`
   - Dock widget
 
-- [ ] Run napari and return result:
+- [x] Run napari and return result:
   - `napari.run()` (blocking)
   - Call `build_track_graph_result(state, calibration)`
   - Return `TrackGraphResult`
@@ -460,6 +460,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - Initial data populates correctly
 - Returns valid `TrackGraphResult` on close
 - Handles both video and image inputs
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~150 lines)
 
