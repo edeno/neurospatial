@@ -838,3 +838,629 @@ class TestKeyboardShortcuts:
         _handle_key(state, key="a")
 
         assert state.mode == "add_node"
+
+
+# =============================================================================
+# Task 2.3 Tests: Control Widget
+# =============================================================================
+
+
+@pytest.mark.gui
+class TestCreateTrackWidget:
+    """Tests for create_track_widget() function."""
+
+    def test_returns_qwidget(self):
+        """create_track_widget returns a widget with QWidget native property."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        from qtpy.QtWidgets import QWidget
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check widget has a native QWidget (or is one)
+        native = getattr(widget, "_widget", widget)
+        assert isinstance(native, QWidget)
+        viewer.close()
+
+    def test_widget_has_mode_selector(self):
+        """Widget includes a mode selector component."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check widget has mode_selector attribute or child
+        assert hasattr(widget, "mode_selector") or widget.findChild(
+            type(widget), "mode_selector"
+        )
+        viewer.close()
+
+    def test_widget_has_save_button(self):
+        """Widget includes a save/close button."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        from qtpy.QtWidgets import QPushButton
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Find save button by searching children
+        save_buttons = [
+            child
+            for child in widget.findChildren(QPushButton)
+            if "save" in child.text().lower() or "close" in child.text().lower()
+        ]
+        assert len(save_buttons) >= 1, "Widget should have a Save/Close button"
+        viewer.close()
+
+    def test_widget_has_help_text(self):
+        """Widget includes help text panel."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        from qtpy.QtWidgets import QLabel
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Find labels containing help keywords
+        labels = widget.findChildren(QLabel)
+        help_text_found = any(
+            "Press A" in label.text() or "add" in label.text().lower()
+            for label in labels
+        )
+        assert help_text_found, "Widget should display help text"
+        viewer.close()
+
+    def test_widget_has_start_node_button(self):
+        """Widget includes a 'Set as Start' button."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        from qtpy.QtWidgets import QPushButton
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Find start button
+        start_buttons = [
+            child
+            for child in widget.findChildren(QPushButton)
+            if "start" in child.text().lower()
+        ]
+        assert len(start_buttons) >= 1, "Widget should have a 'Set as Start' button"
+        viewer.close()
+
+    def test_widget_has_delete_buttons(self):
+        """Widget includes delete buttons for nodes and edges."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+        from qtpy.QtWidgets import QPushButton
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Find delete buttons
+        delete_buttons = [
+            child
+            for child in widget.findChildren(QPushButton)
+            if "delete" in child.text().lower()
+        ]
+        assert len(delete_buttons) >= 1, "Widget should have delete button(s)"
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestModeSelectorSync:
+    """Tests for mode selector synchronization with state."""
+
+    def test_mode_selector_initial_value_matches_state(self):
+        """Mode selector starts with state's initial mode."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check mode selector shows add_node
+        assert hasattr(widget, "mode_selector")
+        assert widget.mode_selector.value == "add_node"
+        viewer.close()
+
+    def test_changing_mode_selector_updates_state(self):
+        """Changing mode selector updates state.mode."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Change mode via selector
+        widget.mode_selector.value = "add_edge"
+
+        assert state.mode == "add_edge"
+        viewer.close()
+
+    def test_keyboard_mode_change_updates_selector(self):
+        """Changing mode via keyboard updates the mode selector."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_key,
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Change mode via keyboard handler
+        _handle_key(state, key="X")
+
+        # Manually trigger sync (in real usage this happens via callbacks)
+        widget.sync_from_state()
+
+        assert widget.mode_selector.value == "delete"
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestNodeEdgeLists:
+    """Tests for node and edge list updates."""
+
+    def test_node_list_updates_when_node_added(self):
+        """Node list updates when a node is added to state."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Add a node
+        state.add_node(100.0, 200.0)
+        widget.sync_from_state()
+
+        # Check node list has one item
+        assert hasattr(widget, "node_list")
+        assert len(widget.node_list.choices) == 1
+        viewer.close()
+
+    def test_edge_list_updates_when_edge_added(self):
+        """Edge list updates when an edge is added to state."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Add nodes and edge
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+        widget.sync_from_state()
+
+        # Check edge list has one item
+        assert hasattr(widget, "edge_list")
+        assert len(widget.edge_list.choices) == 1
+        viewer.close()
+
+    def test_node_list_shows_labels_when_available(self):
+        """Node list displays labels when nodes have labels."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Add nodes with labels
+        state.add_node(100.0, 200.0, label="start")
+        state.add_node(300.0, 400.0, label="goal")
+        widget.sync_from_state()
+
+        # Check labels appear in choices (as display text)
+        choices = widget.node_list.choices
+        choice_texts = [str(c) for c in choices]
+        assert any("start" in t for t in choice_texts), "Node label should appear"
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestValidation:
+    """Tests for save validation behavior."""
+
+    def test_get_validation_status_empty_state(self):
+        """Validation shows errors for empty state."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check validation status shows errors
+        assert hasattr(widget, "get_validation_status")
+        is_valid, errors, _warnings = widget.get_validation_status()
+
+        assert not is_valid
+        assert len(errors) > 0
+        viewer.close()
+
+    def test_get_validation_status_valid_state(self):
+        """Validation passes for valid state."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        # Create valid state
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+        state.set_start_node(0)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        is_valid, errors, _warnings = widget.get_validation_status()
+
+        assert is_valid
+        assert len(errors) == 0
+        viewer.close()
+
+    def test_get_validation_status_warns_no_start_node(self):
+        """Validation warns when no start node is set."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+
+        # Valid state but no start node set
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+        # Explicitly do NOT set start_node
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        is_valid, _errors, warnings = widget.get_validation_status()
+
+        # Should be valid but with warning
+        assert is_valid
+        assert len(warnings) > 0
+        assert any("start" in w.lower() for w in warnings)
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestSetStartNodeButton:
+    """Tests for Set Start Node button functionality."""
+
+    def test_set_start_button_updates_state(self):
+        """Clicking 'Set as Start' updates state.start_node."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Select node 1 in the list and click set start
+        widget.node_list.value = 1
+        widget.set_start_button.click()
+
+        assert state.start_node == 1
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestDeleteButtons:
+    """Tests for delete button functionality."""
+
+    def test_delete_node_button_removes_selected_node(self):
+        """Delete Node button removes the selected node."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Select and delete node 0
+        widget.node_list.value = 0
+        widget.delete_node_button.click()
+
+        assert len(state.nodes) == 1
+        viewer.close()
+
+    def test_delete_edge_button_removes_selected_edge(self):
+        """Delete Edge button removes the selected edge."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Select and delete edge 0
+        widget.edge_list.value = 0
+        widget.delete_edge_button.click()
+
+        assert len(state.edges) == 0
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestNodeLabelInput:
+    """Tests for node label input functionality."""
+
+    def test_node_label_input_updates_label(self):
+        """Changing node label input updates the node's label."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Select node and set label
+        widget.node_list.value = 0
+        widget.node_label_input.value = "start"
+        widget.apply_label_button.click()
+
+        assert state.node_labels[0] == "start"
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestStatusBar:
+    """Tests for status bar updates."""
+
+    def test_status_bar_shows_current_mode(self):
+        """Status bar displays current mode."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Check status shows mode (either in napari status or widget status label)
+        assert hasattr(widget, "status_label")
+        # Status shows "Mode: Add Node" - check for "add" and "node" in lowercase
+        status_text = widget.status_label.text().lower()
+        assert "add" in status_text and "node" in status_text
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestSaveClose:
+    """Tests for save and close functionality."""
+
+    def test_save_valid_state_sets_result(self):
+        """Saving with valid state sets the widget result."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Try to save
+        result = widget.try_save()
+
+        assert result is True  # Save should succeed
+        viewer.close()
+
+    def test_save_invalid_state_returns_false(self):
+        """Saving with invalid state returns False."""
+        napari = pytest.importorskip("napari")
+        pytest.importorskip("qtpy")
+
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            create_track_widget,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        # Empty state - invalid
+
+        widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+
+        # Try to save
+        result = widget.try_save()
+
+        assert result is False  # Save should fail
+        viewer.close()

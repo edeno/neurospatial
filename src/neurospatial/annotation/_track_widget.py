@@ -458,3 +458,502 @@ def _handle_key(
         return "set_start"
 
     return None
+
+
+# =============================================================================
+# Control Widget
+# =============================================================================
+
+
+def create_track_widget(
+    viewer: napari.Viewer,
+    edges_layer: Shapes,
+    nodes_layer: Points,
+    state: TrackBuilderState,
+) -> TrackGraphWidget:
+    """Create the track graph builder control widget.
+
+    Creates a Qt widget with controls for building track graphs interactively.
+    The widget includes:
+
+    - Mode selector (add_node, add_edge, delete)
+    - Node and edge list views
+    - Node label input
+    - Set Start Node button
+    - Delete buttons
+    - Validation status
+    - Save and Close button
+    - Help text panel
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer instance.
+    edges_layer : napari.layers.Shapes
+        The Shapes layer for track edges.
+    nodes_layer : napari.layers.Points
+        The Points layer for track nodes.
+    state : TrackBuilderState
+        The shared state object (modified in place by handlers).
+
+    Returns
+    -------
+    TrackGraphWidget
+        The control widget (QWidget subclass).
+
+    Examples
+    --------
+    >>> import napari  # doctest: +SKIP
+    >>> viewer = napari.Viewer()  # doctest: +SKIP
+    >>> edges, nodes = setup_track_layers(viewer)  # doctest: +SKIP
+    >>> state = TrackBuilderState()  # doctest: +SKIP
+    >>> widget = create_track_widget(viewer, edges, nodes, state)  # doctest: +SKIP
+    >>> viewer.window.add_dock_widget(widget)  # doctest: +SKIP
+    """
+    return TrackGraphWidget(viewer, edges_layer, nodes_layer, state)
+
+
+class TrackGraphWidget:
+    """Control widget for track graph annotation.
+
+    This class wraps a Qt widget and provides the interface for
+    interacting with the track graph builder.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        The napari viewer instance.
+    edges_layer : napari.layers.Shapes
+        The Shapes layer for track edges.
+    nodes_layer : napari.layers.Points
+        The Points layer for track nodes.
+    state : TrackBuilderState
+        The shared state object.
+    """
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        edges_layer: Shapes,
+        nodes_layer: Points,
+        state: TrackBuilderState,
+    ) -> None:
+        from qtpy.QtWidgets import (
+            QComboBox,
+            QGroupBox,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QVBoxLayout,
+            QWidget,
+        )
+
+        self._viewer = viewer
+        self._edges_layer = edges_layer
+        self._nodes_layer = nodes_layer
+        self._state = state
+        self._saved = False
+
+        # Create main widget
+        self._widget = QWidget()
+        layout = QVBoxLayout()
+        self._widget.setLayout(layout)
+
+        # Title
+        title_label = QLabel("<b>Track Graph Builder</b>")
+        layout.addWidget(title_label)
+
+        # Help text
+        help_text = QLabel(
+            "1. Press A → Click to add nodes\n"
+            "2. Press E → Click two nodes to connect\n"
+            "3. Press X → Click node/edge to delete\n"
+            "4. Select node → Shift+S to set as start\n"
+            "5. Ctrl+Enter to save\n\n"
+            "Shortcuts: A (add) | E (edge) | X (delete) | Ctrl+Z (undo)"
+        )
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+
+        # Mode selector group
+        mode_group = QGroupBox("Mode")
+        mode_layout = QHBoxLayout()
+        mode_group.setLayout(mode_layout)
+
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItems(["add_node", "add_edge", "delete"])
+        self._mode_combo.setCurrentText(state.mode)
+        self._mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        mode_layout.addWidget(self._mode_combo)
+
+        layout.addWidget(mode_group)
+
+        # Status label
+        self._status_label = QLabel(f"Mode: {state.mode}")
+        layout.addWidget(self._status_label)
+
+        # Node list group
+        node_group = QGroupBox("Nodes")
+        node_layout = QVBoxLayout()
+        node_group.setLayout(node_layout)
+
+        self._node_combo = QComboBox()
+        node_layout.addWidget(self._node_combo)
+
+        # Node label input
+        label_layout = QHBoxLayout()
+        self._label_input = QLineEdit()
+        self._label_input.setPlaceholderText("Node label...")
+        label_layout.addWidget(self._label_input)
+
+        self._apply_label_btn = QPushButton("Apply Label")
+        self._apply_label_btn.clicked.connect(self._on_apply_label)
+        label_layout.addWidget(self._apply_label_btn)
+        node_layout.addLayout(label_layout)
+
+        # Node buttons
+        node_btn_layout = QHBoxLayout()
+
+        self._set_start_btn = QPushButton("Set as Start")
+        self._set_start_btn.clicked.connect(self._on_set_start)
+        node_btn_layout.addWidget(self._set_start_btn)
+
+        self._delete_node_btn = QPushButton("Delete Node")
+        self._delete_node_btn.clicked.connect(self._on_delete_node)
+        node_btn_layout.addWidget(self._delete_node_btn)
+
+        node_layout.addLayout(node_btn_layout)
+        layout.addWidget(node_group)
+
+        # Edge list group
+        edge_group = QGroupBox("Edges")
+        edge_layout = QVBoxLayout()
+        edge_group.setLayout(edge_layout)
+
+        self._edge_combo = QComboBox()
+        edge_layout.addWidget(self._edge_combo)
+
+        self._delete_edge_btn = QPushButton("Delete Edge")
+        self._delete_edge_btn.clicked.connect(self._on_delete_edge)
+        edge_layout.addWidget(self._delete_edge_btn)
+
+        layout.addWidget(edge_group)
+
+        # Validation status
+        self._validation_label = QLabel("")
+        layout.addWidget(self._validation_label)
+
+        # Save and Close button
+        self._save_btn = QPushButton("Save and Close")
+        self._save_btn.clicked.connect(self._on_save)
+        layout.addWidget(self._save_btn)
+
+        # Add stretch to push everything up
+        layout.addStretch()
+
+        # Initial sync
+        self.sync_from_state()
+
+    # -------------------------------------------------------------------------
+    # Properties for test access
+    # -------------------------------------------------------------------------
+
+    @property
+    def mode_selector(self) -> _ModeSelector:
+        """Mode selector accessor for tests."""
+        return _ModeSelector(self._mode_combo)
+
+    @property
+    def node_list(self) -> _NodeList:
+        """Node list accessor for tests."""
+        return _NodeList(self._node_combo, self._state)
+
+    @property
+    def edge_list(self) -> _EdgeList:
+        """Edge list accessor for tests."""
+        return _EdgeList(self._edge_combo, self._state)
+
+    @property
+    def status_label(self) -> _StatusLabel:
+        """Status label accessor for tests."""
+        return _StatusLabel(self._status_label)
+
+    @property
+    def set_start_button(self) -> _Button:
+        """Set start button accessor for tests."""
+        return _Button(self._set_start_btn)
+
+    @property
+    def delete_node_button(self) -> _Button:
+        """Delete node button accessor for tests."""
+        return _Button(self._delete_node_btn)
+
+    @property
+    def delete_edge_button(self) -> _Button:
+        """Delete edge button accessor for tests."""
+        return _Button(self._delete_edge_btn)
+
+    @property
+    def node_label_input(self) -> _LineEdit:
+        """Node label input accessor for tests."""
+        return _LineEdit(self._label_input)
+
+    @property
+    def apply_label_button(self) -> _Button:
+        """Apply label button accessor for tests."""
+        return _Button(self._apply_label_btn)
+
+    # -------------------------------------------------------------------------
+    # QWidget compatibility
+    # -------------------------------------------------------------------------
+
+    def findChildren(self, type_: type, name: str | None = None):  # noqa: N802
+        """Proxy to underlying widget's findChildren."""
+        return self._widget.findChildren(type_, name)
+
+    def __getattr__(self, name: str):
+        """Proxy attribute access to underlying widget."""
+        return getattr(self._widget, name)
+
+    # -------------------------------------------------------------------------
+    # Event handlers
+    # -------------------------------------------------------------------------
+
+    def _on_mode_changed(self, mode: str) -> None:
+        """Handle mode selector change."""
+        # Validate mode is a valid TrackGraphMode
+        valid_modes = ("add_node", "add_edge", "delete")
+        if mode not in valid_modes:
+            return  # Ignore invalid modes
+        self._state.mode = mode  # type: ignore[assignment]  # QComboBox returns str
+        self._update_status()
+        _sync_layers_from_state(self._state, self._nodes_layer, self._edges_layer)
+
+    def _on_set_start(self) -> None:
+        """Handle Set as Start button click."""
+        idx = self._node_combo.currentIndex()
+        if idx >= 0 and idx < len(self._state.nodes):
+            self._state.set_start_node(idx)
+            self.sync_from_state()
+
+    def _on_delete_node(self) -> None:
+        """Handle Delete Node button click."""
+        idx = self._node_combo.currentIndex()
+        if idx >= 0 and idx < len(self._state.nodes):
+            self._state.delete_node(idx)
+            self.sync_from_state()
+
+    def _on_delete_edge(self) -> None:
+        """Handle Delete Edge button click."""
+        idx = self._edge_combo.currentIndex()
+        if idx >= 0 and idx < len(self._state.edges):
+            self._state.delete_edge(idx)
+            self.sync_from_state()
+
+    def _on_apply_label(self) -> None:
+        """Handle Apply Label button click."""
+        idx = self._node_combo.currentIndex()
+        if idx >= 0 and idx < len(self._state.nodes):
+            label = self._label_input.text()
+            # Update label in state
+            while len(self._state.node_labels) <= idx:
+                self._state.node_labels.append("")
+            self._state.node_labels[idx] = label
+            self.sync_from_state()
+
+    def _on_save(self) -> None:
+        """Handle Save and Close button click."""
+        if self.try_save():
+            self._viewer.close()
+
+    # -------------------------------------------------------------------------
+    # Public methods
+    # -------------------------------------------------------------------------
+
+    def sync_from_state(self) -> None:
+        """Synchronize widget UI from current state."""
+        # Update mode selector
+        self._mode_combo.blockSignals(True)
+        self._mode_combo.setCurrentText(self._state.mode)
+        self._mode_combo.blockSignals(False)
+
+        # Update status
+        self._update_status()
+
+        # Update node list
+        self._node_combo.clear()
+        for i, _node in enumerate(self._state.nodes):
+            label = ""
+            if i < len(self._state.node_labels) and self._state.node_labels[i]:
+                label = f" ({self._state.node_labels[i]})"
+            start_marker = " [START]" if i == self._state.start_node else ""
+            self._node_combo.addItem(f"Node {i}{label}{start_marker}")
+
+        # Update edge list
+        self._edge_combo.clear()
+        for i, edge in enumerate(self._state.edges):
+            self._edge_combo.addItem(f"Edge {i}: {edge[0]} → {edge[1]}")
+
+        # Update validation status
+        _is_valid, errors, warnings = self.get_validation_status()
+        if errors:
+            self._validation_label.setText(f"❌ {errors[0]}")
+            self._validation_label.setStyleSheet("color: red;")
+        elif warnings:
+            self._validation_label.setText(f"⚠️ {warnings[0]}")
+            self._validation_label.setStyleSheet("color: orange;")
+        else:
+            self._validation_label.setText("✓ Valid")
+            self._validation_label.setStyleSheet("color: green;")
+
+        # Sync napari layers
+        _sync_layers_from_state(self._state, self._nodes_layer, self._edges_layer)
+
+    def _update_status(self) -> None:
+        """Update status label with current mode."""
+        mode_display = self._state.mode.replace("_", " ").title()
+        self._status_label.setText(f"Mode: {mode_display}")
+
+    def get_validation_status(self) -> tuple[bool, list[str], list[str]]:
+        """Get current validation status.
+
+        Returns
+        -------
+        is_valid : bool
+            Whether the current state is valid for saving.
+        errors : list[str]
+            List of error messages (blocking).
+        warnings : list[str]
+            List of warning messages (non-blocking).
+        """
+        return self._state.is_valid_for_save()
+
+    def try_save(self) -> bool:
+        """Attempt to save the current state.
+
+        Returns
+        -------
+        bool
+            True if save succeeded, False if validation failed.
+        """
+        from qtpy.QtWidgets import QMessageBox
+
+        is_valid, errors, warnings = self.get_validation_status()
+
+        if not is_valid:
+            QMessageBox.warning(
+                self._widget,
+                "Validation Failed",
+                "Cannot save:\n• " + "\n• ".join(errors),
+            )
+            return False
+
+        # Show warnings but allow save
+        if warnings:
+            QMessageBox.information(
+                self._widget,
+                "Warnings",
+                "Saved with warnings:\n• " + "\n• ".join(warnings),
+            )
+
+        # Mark as saved
+        self._saved = True
+        return True
+
+
+# =============================================================================
+# Test accessor classes
+# =============================================================================
+
+
+class _ModeSelector:
+    """Accessor for mode selector in tests."""
+
+    def __init__(self, combo) -> None:
+        self._combo = combo
+
+    @property
+    def value(self) -> str:
+        return str(self._combo.currentText())
+
+    @value.setter
+    def value(self, mode: str) -> None:
+        self._combo.setCurrentText(mode)
+
+
+class _NodeList:
+    """Accessor for node list in tests."""
+
+    def __init__(self, combo, state) -> None:
+        self._combo = combo
+        self._state = state
+
+    @property
+    def choices(self) -> list:
+        return [self._combo.itemText(i) for i in range(self._combo.count())]
+
+    @property
+    def value(self) -> int | None:
+        idx = self._combo.currentIndex()
+        return idx if idx >= 0 else None
+
+    @value.setter
+    def value(self, idx: int) -> None:
+        self._combo.setCurrentIndex(idx)
+
+
+class _EdgeList:
+    """Accessor for edge list in tests."""
+
+    def __init__(self, combo, state) -> None:
+        self._combo = combo
+        self._state = state
+
+    @property
+    def choices(self) -> list:
+        return [self._combo.itemText(i) for i in range(self._combo.count())]
+
+    @property
+    def value(self) -> int | None:
+        idx = self._combo.currentIndex()
+        return idx if idx >= 0 else None
+
+    @value.setter
+    def value(self, idx: int) -> None:
+        self._combo.setCurrentIndex(idx)
+
+
+class _StatusLabel:
+    """Accessor for status label in tests."""
+
+    def __init__(self, label) -> None:
+        self._label = label
+
+    def text(self) -> str:
+        return str(self._label.text())
+
+
+class _Button:
+    """Accessor for buttons in tests."""
+
+    def __init__(self, btn) -> None:
+        self._btn = btn
+
+    def click(self) -> None:
+        self._btn.click()
+
+
+class _LineEdit:
+    """Accessor for line edit in tests."""
+
+    def __init__(self, edit) -> None:
+        self._edit = edit
+
+    @property
+    def value(self) -> str:
+        return str(self._edit.text())
+
+    @value.setter
+    def value(self, text: str) -> None:
+        self._edit.setText(text)

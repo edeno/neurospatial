@@ -275,10 +275,10 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Implement `create_track_widget(viewer, edges_layer, nodes_layer, state) -> QWidget`:
+- [x] Implement `create_track_widget(viewer, edges_layer, nodes_layer, state) -> QWidget`:
   - Use magicgui for widget construction
 
-- [ ] Add UI components:
+- [x] Add UI components:
   - Mode selector (RadioButtons: add_node/add_edge/delete)
   - Node list (Select widget with labels)
   - Edge list (Select widget)
@@ -288,7 +288,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Delete buttons (Delete Node / Delete Edge)
   - Save and Close button
 
-- [ ] Add help text panel:
+- [x] Add help text panel:
 
   ```
   Track Graph Builder
@@ -302,11 +302,11 @@ Implementation tasks for adding interactive track graph building functionality t
   Shortcuts: A (add) | E (edge) | X (delete) | Ctrl+Z (undo)
   ```
 
-- [ ] Implement visual mode indicator:
+- [x] Implement visual mode indicator:
   - Update status bar: `"Track Graph Mode: ADD_NODE"`
   - Show current mode in bold in widget header
 
-- [ ] Implement save validation dialog:
+- [x] Implement save validation dialog:
   - Block if < 2 nodes or < 1 edge
   - Show errors in modal dialog
   - Show warnings but allow save
@@ -319,6 +319,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - Node/edge lists update in real-time
 - Save validates before closing
 - Help text visible
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: High (~350 lines)
 

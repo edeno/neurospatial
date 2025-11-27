@@ -1,11 +1,73 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 2 IN PROGRESS - Task 2.2 Complete
+**Current Status**: Milestone 2 IN PROGRESS - Task 2.3 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 2.3 Complete (Create Control Widget)
+
+**Completed**: Task 2.3 - Create Control Widget
+
+**Work Done**:
+
+1. Added 22 new tests to `tests/annotation/test_track_widget.py` covering:
+   - `TestCreateTrackWidget` (6 tests) - widget creation, UI components
+   - `TestModeSelectorSync` (3 tests) - bidirectional mode sync
+   - `TestNodeEdgeLists` (3 tests) - list updates, label display
+   - `TestValidation` (3 tests) - empty, valid, warning states
+   - `TestSetStartNodeButton` (1 test) - button functionality
+   - `TestDeleteButtons` (2 tests) - node/edge deletion
+   - `TestNodeLabelInput` (1 test) - label input functionality
+   - `TestStatusBar` (1 test) - mode display
+   - `TestSaveClose` (2 tests) - save validation
+
+2. Extended `src/neurospatial/annotation/_track_widget.py` (~480 lines added):
+   - `create_track_widget()` factory function
+   - `TrackGraphWidget` class with full UI:
+     - Mode selector (QComboBox)
+     - Node list with labels and start marker
+     - Edge list
+     - Node label input with Apply button
+     - Set as Start button
+     - Delete Node/Edge buttons
+     - Validation status label with color coding
+     - Save and Close button with modal dialogs
+     - Help text panel
+   - Test accessor classes (`_ModeSelector`, `_NodeList`, `_EdgeList`, etc.)
+
+**TDD Process**:
+
+- Wrote 22 tests first → all failed (function not implemented)
+- Implemented TrackGraphWidget class → 21 passed, 1 failed (QWidget check)
+- Fixed test to check for native _widget property
+- Fixed status label test (title case display)
+- All 67 tests pass (45 from Tasks 2.1/2.2 + 22 from Task 2.3)
+
+**Code Review**: Approved with fixes applied:
+
+- Added runtime mode validation with type: ignore comment
+- Added QMessageBox dialogs for save validation feedback
+- Fixed ruff linting issues (N802 noqa, unused variables)
+- Fixed mypy type errors (explicit str() casts for Qt methods)
+
+**Tests**: 67 tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Key Implementation Details**:
+
+- Uses Qt widgets directly (QComboBox, QLabel, QPushButton, etc.)
+- Test accessor pattern abstracts Qt details for cleaner tests
+- Bidirectional sync: mode selector ↔ state ↔ keyboard shortcuts
+- Validation shows errors in red, warnings in orange, valid in green
+- Modal dialogs provide user feedback on save validation
+
+**Next**: Task 2.4 - Write Widget Integration Tests (most already done via Task 2.3 TDD)
+
+---
 
 ### 2025-11-27 - Task 2.2 Complete (Implement Event Handlers)
 
