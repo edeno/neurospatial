@@ -2,6 +2,15 @@
 
 This module provides utility functions for building track graphs from
 annotation state, including coordinate transformation and result construction.
+
+The main public API is `TrackGraphResult`, which contains the complete output
+from a track graph annotation session and provides a `to_environment()` method
+for creating 1D linearized Environment objects.
+
+See Also
+--------
+annotate_track_graph : Main entry point for interactive annotation
+TrackBuilderState : State management for annotation session
 """
 
 from __future__ import annotations
@@ -45,6 +54,10 @@ def transform_nodes_to_output(
     >>> nodes = [(100.0, 200.0), (300.0, 400.0)]
     >>> transform_nodes_to_output(nodes, calibration=None)
     [(100.0, 200.0), (300.0, 400.0)]
+
+    See Also
+    --------
+    VideoCalibration : Calibration object for pixel-to-cm transforms
 
     """
     if not nodes_px:
@@ -93,6 +106,11 @@ def build_track_graph_from_positions(
     3
     >>> graph.number_of_edges()
     2
+
+    See Also
+    --------
+    TrackBuilderState.to_track_graph : Build graph from state (pixel coords)
+    track_linearization.make_track_graph : Underlying graph builder
 
     """
     try:
@@ -147,9 +165,20 @@ class TrackGraphResult(NamedTuple):
 
     Examples
     --------
+    >>> from neurospatial.annotation._track_state import TrackBuilderState
+    >>> state = TrackBuilderState()
+    >>> _ = state.add_node(0.0, 0.0, label="start")
+    >>> _ = state.add_node(100.0, 0.0, label="end")
+    >>> _ = state.add_edge(0, 1)
     >>> result = build_track_graph_result(state, calibration=None)
-    >>> if result.track_graph is not None:
-    ...     env = result.to_environment(bin_size=2.0)
+    >>> result.track_graph is not None
+    True
+    >>> env = result.to_environment(bin_size=2.0)  # doctest: +SKIP
+
+    See Also
+    --------
+    build_track_graph_result : Build TrackGraphResult from annotation state
+    Environment.from_graph : Create Environment from track graph
 
     """
 
@@ -191,8 +220,21 @@ class TrackGraphResult(NamedTuple):
 
         Examples
         --------
-        >>> env = result.to_environment(bin_size=2.0)
-        >>> env = result.to_environment(bin_size=2.0, name="linear_track")
+        >>> from neurospatial.annotation._track_state import TrackBuilderState
+        >>> from neurospatial.annotation._track_helpers import build_track_graph_result
+        >>> state = TrackBuilderState()
+        >>> _ = state.add_node(0.0, 0.0)
+        >>> _ = state.add_node(100.0, 0.0)
+        >>> _ = state.add_edge(0, 1)
+        >>> result = build_track_graph_result(state, calibration=None)
+        >>> env = result.to_environment(bin_size=10.0)  # doctest: +SKIP
+        >>> env = result.to_environment(
+        ...     bin_size=10.0, name="linear_track"
+        ... )  # doctest: +SKIP
+
+        See Also
+        --------
+        Environment.from_graph : Create Environment from track graph
 
         """
         from neurospatial.environment import Environment
@@ -265,6 +307,12 @@ def build_track_graph_result(
     >>> result = build_track_graph_result(state, calibration=None)
     >>> result.node_positions
     [(0.0, 0.0), (100.0, 0.0)]
+
+    See Also
+    --------
+    TrackGraphResult : Result container returned by this function
+    annotate_track_graph : Entry point that calls this function
+    transform_nodes_to_output : Coordinate transformation helper
 
     """
     # Store original pixel positions

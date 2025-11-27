@@ -56,6 +56,12 @@ class TrackBuilderState:
     >>> is_valid
     True
 
+    See Also
+    --------
+    annotate_track_graph : Interactive track graph annotation entry point
+    TrackGraphResult : Result container returned by annotation
+    build_track_graph_result : Build result from TrackBuilderState
+
     """
 
     mode: TrackGraphMode = "add_node"

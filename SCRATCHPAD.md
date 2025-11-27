@@ -1,11 +1,48 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Task 4.3 COMPLETE - CLAUDE.md Documentation
+**Current Status**: Task 4.4 COMPLETE - Add Docstrings and Examples
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 4.4 Complete (Add Docstrings and Examples)
+
+**Completed**: Task 4.4 - Add Docstrings and Examples
+
+**Work Done**:
+
+1. Fixed failing doctests in `_track_helpers.py`:
+   - `TrackGraphResult` class docstring: Added complete example setup
+   - `TrackGraphResult.to_environment()`: Added example setup with `# doctest: +SKIP`
+
+2. Added `See Also` sections to key components:
+   - `TrackBuilderState` class: References `annotate_track_graph`, `TrackGraphResult`, `build_track_graph_result`
+   - `transform_nodes_to_output()`: References `VideoCalibration`
+   - `build_track_graph_from_positions()`: References `TrackBuilderState.to_track_graph`, `track_linearization.make_track_graph`
+   - `TrackGraphResult`: References `build_track_graph_result`, `Environment.from_graph`
+   - `TrackGraphResult.to_environment()`: References `Environment.from_graph`
+   - `build_track_graph_result()`: References `TrackGraphResult`, `annotate_track_graph`, `transform_nodes_to_output`
+
+3. Enhanced module docstring in `_track_helpers.py`:
+   - Added description of main public API
+   - Added `See Also` references to related modules
+
+**TDD Process**:
+
+- Ran doctests first → 2 failures (undefined variables in examples)
+- Fixed examples → all 8 doctests pass
+- Added See Also sections throughout
+- Verified with ruff, mypy, and full test suite
+
+**Tests**: 8 doctests pass, 416 annotation tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes (no issues)
+
+**Next**: Task 4.5 (Final Review and Testing)
+
+---
 
 ### 2025-11-27 - Task 4.3 Complete (CLAUDE.md Documentation)
 

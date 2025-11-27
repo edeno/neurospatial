@@ -669,25 +669,27 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Add NumPy-style docstrings to all public functions:
+- [x] Add NumPy-style docstrings to all public functions:
   - `annotate_track_graph()`
   - `TrackGraphResult`
   - `TrackBuilderState`
 
-- [ ] Add doctests:
+- [x] Add doctests:
 
   ```python
   >>> result = annotate_track_graph(image=frame)  # doctest: +SKIP
   >>> env = result.to_environment(bin_size=2.0)  # doctest: +SKIP
   ```
 
-- [ ] Run `uv run pytest --doctest-modules src/neurospatial/annotation/track_graph.py`
+- [x] Run `uv run pytest --doctest-modules src/neurospatial/annotation/track_graph.py`
 
 **Success Criteria**:
 
 - All public APIs have complete docstrings
 - Docstrings follow NumPy format
 - Examples are accurate
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~200 lines of docs)
 
