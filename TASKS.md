@@ -1,552 +1,680 @@
-# Simulation Mazes Implementation Tasks
+# TASKS.md - Track Graph Annotation Implementation
 
-> **Reference**: See [PLAN_MAZE.md](PLAN_MAZE.md) for detailed context, dimensions, and API specifications.
->
-> **Goal**: Implement 15 standardized maze environments for spatial navigation research based on Wijnen et al. 2024.
+## Overview
 
----
+Implementation tasks for adding interactive track graph building functionality to the annotation module. Output integrates with `Environment.from_graph()` for 1D linearized track environments.
 
-## Milestone 1: Foundation
-
-Create base module structure and shared utilities.
-
-### 1.1 Create Module Structure
-
-- [x] Create `src/neurospatial/simulation/mazes/` directory
-- [x] Create `src/neurospatial/simulation/mazes/__init__.py` with placeholder exports
-- [x] Verify import works: `from neurospatial.simulation.mazes import MazeEnvironments`
-
-### 1.2 Implement Base Classes
-
-**File**: `src/neurospatial/simulation/mazes/_base.py`
-
-- [x] Create `MazeDims` frozen dataclass (base class for dimension specs)
-- [x] Create `MazeEnvironments` dataclass with `env_2d: Environment` and `env_track: Environment | None`
-- [x] Add NumPy-style docstrings with examples
-- [x] Verify: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/_base.py`
-
-### 1.3 Implement Geometry Helpers
-
-**File**: `src/neurospatial/simulation/mazes/_geometry.py`
-
-- [x] Implement `make_corridor_polygon(start, end, width)` → Shapely Polygon
-- [x] Implement `make_buffered_line(start, end, width)` → Shapely Polygon (buffer around LineString)
-- [x] Implement `union_polygons(polygons)` → combined Polygon with cleanup
-- [x] Implement `make_circular_arena(center, radius)` → circular Polygon
-- [x] Implement `make_star_graph(center, arm_endpoints, spacing)` → nx.Graph for star topology
-- [x] Add unit tests: `tests/simulation/mazes/test_geometry.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_geometry.py -v`
+**Goal**: Users can interactively build track graphs on video frames in napari, with output ready for `Environment.from_graph()`.
 
 ---
 
-## Milestone 2: Simple Corridor Mazes (Phase 2 Partial)
+## Milestone 1: Core Infrastructure
 
-Implement the simplest mazes first to establish patterns.
+### Task 1.1: Create Type Definitions
 
-### 2.1 Linear Track
+**File**: `src/neurospatial/annotation/_track_types.py`
 
-**File**: `src/neurospatial/simulation/mazes/linear_track.py`
+**Actions**:
+- [x] Create `_track_types.py` with `TrackGraphMode` type alias
+- [x] Define: `TrackGraphMode = Literal["add_node", "add_edge", "delete"]`
 
-- [x] Create `LinearTrackDims(length=150.0, width=10.0)` frozen dataclass
-- [x] Implement `make_linear_track(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment using `Environment.from_polygon()` (single rectangle)
-- [x] Create track graph with `start` and `end` nodes + intermediate nodes
-- [x] Add regions: `reward_left` (0, 0), `reward_right` (length, 0)
-- [x] Set `env.units = "cm"`
-- [x] Add doctests demonstrating usage
-- [x] Add tests: `tests/simulation/mazes/test_linear_track.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_linear_track.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+**Success Criteria**:
+- Type alias imports correctly
+- Mypy passes without errors
 
-**Success criteria**:
+**Status**: COMPLETE (2025-11-27)
 
-- `make_linear_track()` returns valid MazeEnvironments
-- `env_2d.units == "cm"`
-- Track graph is connected from start to end
-- Regions are queryable: `env_2d.bins_in_region("reward_left")`
-
-### 2.2 T-Maze
-
-**File**: `src/neurospatial/simulation/mazes/t_maze.py`
-
-- [x] Create `TMazeDims(stem_length=100.0, arm_length=50.0, width=10.0)` frozen dataclass
-- [x] Implement `make_t_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: union of 3 rectangles (stem + left arm + right arm)
-- [x] Create track graph with nodes: `start`, `junction`, `left_end`, `right_end`
-- [x] Add edges: start→junction, junction→left_end, junction→right_end
-- [x] Add regions: `start`, `junction`, `left_end`, `right_end`
-- [x] Set `env.units = "cm"` and center at (0, 0)
-- [x] Add doctests
-- [x] Add tests: `tests/simulation/mazes/test_t_maze.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_t_maze.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Junction is at T-intersection
-- Track graph has 3 edges from junction node
-- All regions queryable
-
-### 2.3 Y-Maze
-
-**File**: `src/neurospatial/simulation/mazes/y_maze.py`
-
-- [x] Create `YMazeDims(arm_length=50.0, width=10.0)` frozen dataclass *(Note: arm_angle hardcoded internally)*
-- [x] Implement `make_y_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: 3 buffered lines at 120° separation (90°, 210°, 330°)
-- [x] Use `shapely.buffer()` on LineString for corridor polygons
-- [x] Create track graph: star with 3 arms from center (Y-junction)
-- [x] Add regions: `center`, `arm1_end`, `arm2_end`, `arm3_end`
-- [x] Set `env.units = "cm"`
-- [x] Add doctests
-- [x] Add tests: `tests/simulation/mazes/test_y_maze.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_y_maze.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Arms are at correct 120° angles
-- Track graph has 3-way connectivity at center
-- Arm endpoints at correct positions (trigonometry verified)
+**Estimated Complexity**: Simple (< 20 lines)
 
 ---
 
-## Milestone 3: Simple Open-Field Mazes (Phase 4 Partial)
+### Task 1.2: Implement TrackBuilderState
 
-Implement circular arenas without complex topology.
+**File**: `src/neurospatial/annotation/_track_state.py`
 
-### 3.1 Morris Water Maze
+**Dependencies**: Task 1.1
 
-**File**: `src/neurospatial/simulation/mazes/watermaze.py`
+**Actions**:
+- [ ] Create `TrackBuilderState` dataclass with fields:
+  - `mode: TrackGraphMode` (default: "add_node")
+  - `nodes: list[tuple[float, float]]`
+  - `edges: list[tuple[int, int]]`
+  - `node_labels: list[str]`
+  - `start_node: int | None`
+  - `edge_start_node: int | None` (transient for two-click edge creation)
+  - `undo_stack: list[dict]` and `redo_stack: list[dict]`
+  - `_max_undo_depth: int = 50`
 
-- [x] Create `WatermazeDims(pool_diameter=150.0, platform_radius=5.0)` frozen dataclass
-- [x] Implement `make_watermaze(dims, platform_position, bin_size)` → MazeEnvironments
-- [x] Create 2D environment: `Environment.from_polygon()` with circular arena
-- [x] `env_track = None` (open field has no track topology)
-- [x] Add regions: `platform` (point or small circle), `NE`, `NW`, `SE`, `SW` quadrants
-- [x] Platform defaults to center of one quadrant if not specified
-- [x] Set `env.units = "cm"`
-- [x] Add doctests
-- [x] Add tests: `tests/simulation/mazes/test_watermaze.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_watermaze.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+- [ ] Implement snapshot methods:
+  - `_snapshot() -> dict` - Create serializable state copy
+  - `_restore_snapshot(snapshot: dict)` - Restore from snapshot
+  - `_save_for_undo()` - Save before mutation, clear redo stack
 
-**Success criteria**:
+- [ ] Implement undo/redo:
+  - `undo() -> bool` - Restore previous state
+  - `redo() -> bool` - Restore next state
 
-- Pool is circular with correct diameter
-- Platform region is queryable
-- Quadrant regions partition the pool
+- [ ] Implement node operations:
+  - `add_node(x, y, label=None) -> int` - Add node, return index
+  - `delete_node(idx)` - Delete node + connected edges, reindex remaining
+  - `set_start_node(idx)` - Designate start for linearization
+  - `find_nearest_node(x, y, threshold) -> int | None`
 
-### 3.2 Barnes Maze
+- [ ] Implement edge operations:
+  - `add_edge(node1, node2) -> bool` - Add if valid (no self-loops/duplicates)
+  - `delete_edge(edge_idx)` - Delete by index
 
-**File**: `src/neurospatial/simulation/mazes/barnes.py`
+- [ ] Implement validation:
+  - `to_track_graph() -> nx.Graph` - Build graph from state (pixel coords)
+  - `validate() -> dict` - Use `check_track_graph_validity()`
+  - `is_valid_for_save() -> tuple[bool, list[str], list[str]]`
+  - `get_effective_start_node() -> int | None` - Default to 0 if unset
 
-- [x] Create `BarnesDims(diameter=120.0, n_holes=18, hole_radius=2.5)` frozen dataclass *(Note: holes_on_perimeter hardcoded)*
-- [x] Implement `make_barnes_maze(dims, escape_hole_index, bin_size)` → MazeEnvironments
-- [x] Create 2D environment: circular arena (holes don't affect navigable space)
-- [x] `env_track = None` (open field)
-- [x] Add regions: `escape_hole` (goal), `hole_0` through `hole_{n-1}` evenly spaced on perimeter
-- [x] Calculate hole positions using angles: `2π * i / n_holes`
-- [x] Set `env.units = "cm"`
-- [x] Add doctests
-- [x] Add tests: `tests/simulation/mazes/test_barnes.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_barnes.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+**Success Criteria**:
+- All operations save to undo stack before mutation
+- `delete_node` correctly reindexes edges and updates `start_node`
+- Self-loops and duplicate edges are rejected
+- Undo/redo work correctly for all operations
+- Unit tests pass for all methods
 
-**Success criteria**:
-
-- Holes are evenly distributed on perimeter
-- Escape hole is one of the holes
-- 18 holes by default (original Barnes 1979)
-
----
-
-## Milestone 4: Remaining Corridor Mazes (Phase 2 Remaining)
-
-### 4.1 W-Maze
-
-**File**: `src/neurospatial/simulation/mazes/w_maze.py`
-
-- [x] Create `WMazeDims(width=120.0, height=80.0, corridor_width=10.0, n_wells=3)` frozen dataclass
-- [x] Implement `make_w_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: 3 parallel vertical corridors connected at base (horizontal corridor)
-- [x] Create track graph: chain of nodes through W pattern
-- [x] Add regions: `start`, `well_1`, `well_2`, `well_3`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_w_maze.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_w_maze.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- W shape is correct (3 vertical wells + horizontal base)
-- Track graph follows corridor path
-- All wells are accessible
-
-### 4.2 Small Hex Maze
-
-**File**: `src/neurospatial/simulation/mazes/hex_small.py`
-
-- [x] Create `SmallHexDims(hex_spacing=14.0, corridor_width=10.0)` frozen dataclass
-- [x] Implement `make_small_hex_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: `HexagonalLayout` with triangular cluster mask (~7-10 hexes)
-- [x] Create track graph: hex grid connectivity (constrained by barriers)
-- [x] Add regions for key hex platforms
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_hex_small.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_hex_small.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Hexagonal arrangement is correct
-- Triangular cluster shape (4-3-2-1 or similar)
-- Connectivity respects barrier constraints
+**Estimated Complexity**: Medium (~200 lines)
 
 ---
 
-## Milestone 5: Repeated Alleyway Mazes (Phase 3)
+### Task 1.3: Create Graph Building Helpers
 
-### 5.1 Repeated Y-Maze
+**File**: `src/neurospatial/annotation/_track_helpers.py`
 
-**File**: `src/neurospatial/simulation/mazes/repeated_y.py`
+**Dependencies**: Task 1.2
 
-- [x] Create `RepeatedYDims(n_junctions=3, segment_length=50.0, width=10.0)` frozen dataclass
-- [x] Implement `make_repeated_y_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment using corridor mask pattern (3 Y-junctions in series)
-- [x] Implement Warner-Warden trick: dead ends split into two small corridors
-- [x] Create track graph: chain of Y-junction nodes
-- [x] Add regions for junctions and endpoints
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_repeated_y.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_repeated_y.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+**Actions**:
+- [ ] Implement `transform_nodes_to_output(nodes_px, calibration) -> list[tuple]`:
+  - Return pixel coords if no calibration
+  - Use `calibration.transform_px_to_cm()` if provided
+  - Match behavior of `annotate_video` exactly
 
-**Success criteria**:
+- [ ] Implement `build_track_graph_from_positions(node_positions, edges) -> nx.Graph`:
+  - Use `track_linearization.make_track_graph()` internally
+  - Ensures proper `distance` and `edge_id` edge attributes
 
-- 3 sequential Y-junctions
-- Dead ends have Warner-Warden split (two small corridors)
-- Track graph is connected
+- [ ] Implement `build_track_graph_result(state, calibration) -> TrackGraphResult`:
+  - Store `pixel_positions` (original)
+  - Transform `node_positions` using calibration
+  - Build track graph from transformed positions
+  - Call `infer_edge_layout()` for edge_order and edge_spacing
+  - Handle empty/invalid graphs gracefully (return None for track_graph)
 
-### 5.2 Repeated T-Maze
+**Success Criteria**:
+- `transform_nodes_to_output` produces identical results to `annotate_video` coordinate transforms
+- `build_track_graph_from_positions` creates valid graph with proper attributes
+- Result matches `TrackGraphResult` schema
 
-**File**: `src/neurospatial/simulation/mazes/repeated_t.py`
-
-- [x] Create `RepeatedTDims(spine_length=150.0, arm_length=40.0, n_junctions=3, width=10.0)` frozen dataclass
-- [x] Implement `make_repeated_t_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: horizontal spine + perpendicular T-arms (comb shape)
-- [x] Create track graph: linear spine with branch nodes at each T-junction
-- [x] Add regions: `start`, `junction_0` through `junction_2`, `arm_0_end` through `arm_2_end`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_repeated_t.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_repeated_t.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Comb/rake shape with 3 perpendicular arms
-- 90° angles at all junctions
-- Track graph correctly represents topology
-
-### 5.3 Hampton Court Maze
-
-**File**: `src/neurospatial/simulation/mazes/hampton_court.py`
-
-- [x] Create `HamptonCourtDims(size=300.0, corridor_width=11.0)` frozen dataclass
-- [x] Implement `make_hampton_court_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create maze pattern (options: embedded binary image, procedural generation)
-- [x] Create 2D environment: `Environment.from_image()` or `Environment.from_mask()`
-- [x] Create track graph: skeletonize corridor mask → graph
-- [x] Add regions: `start`, `goal` (center of maze)
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_hampton_court.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_hampton_court.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Complex labyrinth structure with dead ends
-- Track graph navigable from start to goal
-- ~300 × 300 cm size
+**Estimated Complexity**: Medium (~150 lines)
 
 ---
 
-## Milestone 6: Remaining Open-Field Mazes (Phase 4 Remaining)
+### Task 1.4: Write Unit Tests for State Management
 
-### 6.1 Radial Arm Maze
+**File**: `tests/annotation/test_track_state.py`
 
-**File**: `src/neurospatial/simulation/mazes/radial_arm.py`
+**Dependencies**: Tasks 1.1, 1.2, 1.3
 
-- [x] Create `RadialArmDims(center_radius=15.0, arm_length=50.0, arm_width=10.0, n_arms=8)` frozen dataclass
-- [x] Implement `make_radial_arm_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: octagonal center + arms at equal angular spacing (45° for 8 arms)
-- [x] Create track graph: star graph (center → each arm end)
-- [x] Add regions: `center`, `arm_0` through `arm_{n-1}`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_radial_arm.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_radial_arm.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+**Actions**:
+- [ ] Test node operations:
+  - `test_add_node_returns_index`
+  - `test_add_node_with_label`
+  - `test_delete_node_removes_connected_edges`
+  - `test_delete_node_reindexes_remaining_edges`
+  - `test_delete_node_updates_start_node`
+  - `test_find_nearest_node_within_threshold`
+  - `test_find_nearest_node_outside_threshold_returns_none`
 
-**Success criteria**:
+- [ ] Test edge operations:
+  - `test_add_edge_success`
+  - `test_add_edge_rejects_self_loop`
+  - `test_add_edge_rejects_duplicate`
+  - `test_delete_edge`
 
-- 8 arms by default (6 for mice variant)
-- Arms at correct angular spacing
-- Star graph topology from center
+- [ ] Test undo/redo:
+  - `test_undo_restores_previous_state`
+  - `test_redo_restores_next_state`
+  - `test_undo_empty_stack_returns_false`
+  - `test_new_action_clears_redo_stack`
+  - `test_undo_stack_depth_limit`
 
-### 6.2 Cheeseboard Maze
+- [ ] Test validation:
+  - `test_is_valid_for_save_requires_nodes_and_edges`
+  - `test_is_valid_for_save_warns_no_start_node`
+  - `test_get_effective_start_node_defaults_to_zero`
+  - `test_validate_uses_check_track_graph_validity`
 
-**File**: `src/neurospatial/simulation/mazes/cheeseboard.py`
+- [ ] Test graph building:
+  - `test_to_track_graph_has_pos_attributes`
+  - `test_transform_nodes_to_output_with_calibration`
+  - `test_transform_nodes_to_output_without_calibration`
+  - `test_build_track_graph_result_complete`
 
-- [x] Create `CheeseboardDims(diameter=110.0, grid_spacing=9.0, well_radius=1.5)` frozen dataclass
-- [x] Implement `make_cheeseboard_maze(dims, bin_size)` → MazeEnvironments
-- [x] Create 2D environment: circular arena
-- [x] `env_track = None` (open field)
-- [x] Add regions: grid of `well_i_j` point regions across entire surface
-- [x] Calculate well positions on regular grid, filter to those within circular boundary
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_cheeseboard.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_cheeseboard.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+**Success Criteria**:
+- All tests pass
+- Coverage > 90% for `_track_state.py` and `_track_helpers.py`
+- Edge cases covered (empty state, single node, etc.)
 
-**Success criteria**:
-
-- Wells distributed across entire surface (not just perimeter)
-- Regular grid spacing
-- Wells within circular boundary only
-
----
-
-## Milestone 7: Structured Lattice Mazes (Phase 5)
-
-### 7.1 Crossword Maze
-
-**File**: `src/neurospatial/simulation/mazes/crossword.py`
-
-- [x] Create `CrosswordDims(grid_spacing=30.0, corridor_width=10.0, n_rows=4, n_cols=4)` frozen dataclass
-- [x] Implement `make_crossword_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: 4×4 Manhattan-style grid pattern
-- [x] Create track graph: Manhattan grid (4-connectivity)
-- [x] Add regions: `node_i_j` at each intersection, `box_0` through `box_3` (corner boxes)
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_crossword.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_crossword.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- 4×4 grid structure
-- 90° angles throughout
-- Four corner boxes identified as start/goal locations
-
-### 7.2 Honeycomb Maze
-
-**File**: `src/neurospatial/simulation/mazes/honeycomb.py`
-
-- [x] Create `HoneycombDims(spacing=25.0, n_rings=3)` frozen dataclass (37 platforms: 1 + 6 + 12 + 18)
-- [x] Implement `make_honeycomb_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: `HexagonalLayout` with all 37 platforms active
-- [x] Create track graph: hexagonal 6-connectivity
-- [x] Add regions: `platform_0` through `platform_36`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_honeycomb.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_honeycomb.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- 37 hexagonal platforms (1 center + 3 rings)
-- 6-connectivity in track graph
-- All platforms have region labels
-
-### 7.3 Hamlet Maze
-
-**File**: `src/neurospatial/simulation/mazes/hamlet.py`
-
-- [x] Create `HamletDims(central_radius=30.0, arm_length=40.0, corridor_width=10.0, n_peripheral_arms=5)` frozen dataclass
-- [x] Implement `make_hamlet_maze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: pentagon ring + 5 radiating arms, each splitting into 2 terminal boxes
-- [x] Create track graph: pentagon ring nodes + arm nodes + 10 terminal goal nodes
-- [x] Add regions: `ring_0` through `ring_4`, `goal_0` through `goal_9`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_hamlet.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_hamlet.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
-
-**Success criteria**:
-
-- Pentagonal ring center with 5 arms
-- Each arm splits into 2 terminal boxes (10 total goals)
-- Track graph correctly represents connectivity
+**Estimated Complexity**: Medium (~300 lines of tests)
 
 ---
 
-## Milestone 8: Rat HexMaze (Phase 6)
+## Milestone 2: Widget and Layers
 
-**File**: `src/neurospatial/simulation/mazes/rat_hexmaze.py`
+### Task 2.1: Create Layer Setup
 
-### 8.1 Mouse HexMaze (Base Unit)
+**File**: `src/neurospatial/annotation/_track_widget.py` (partial)
 
-- [x] Create `MouseHexmazeDims(n_nodes=24, n_corridors=30, corridor_width=11.0)` frozen dataclass
-- [x] Implement `make_mouse_hexmaze(dims, bin_size, include_track)` as internal helper
-- [x] 24 crossing nodes, 30 corridors, 120° angles
-- [x] Implement Warner-Warden dead-end trick (edges split before ending)
+**Dependencies**: Milestone 1 complete
 
-### 8.2 Rat HexMaze (4× Mouse)
+**Actions**:
+- [ ] Define color constants (colorblind-safe):
+  ```python
+  NODE_COLOR = "#1f77b4"       # Blue
+  EDGE_COLOR = "#ff7f0e"       # Orange
+  START_NODE_COLOR = "#2ca02c" # Green
+  SELECTED_COLOR = "#d62728"   # Red
+  PREVIEW_COLOR = "#7f7f7f"    # Gray (dashed)
+  ```
 
-- [x] Create `RatHexmazeDims(module_width=90.0, corridor_width=11.0, n_modules=3, nodes_per_module=24)` frozen dataclass
-- [x] Implement `make_rat_hexmaze(dims, bin_size, include_track)` → MazeEnvironments
-- [x] Create 2D environment: 3 hex clusters (A, B, C) with bridging corridors
-- [x] Create track graph: 96 junction nodes + corridor edges
-- [x] Add regions: `module_A`, `module_B`, `module_C`, `corridor_AB`, `corridor_BC`
-- [x] Set `env.units = "cm"`
-- [x] Add tests: `tests/simulation/mazes/test_rat_hexmaze.py`
-- [x] Verify: `uv run pytest tests/simulation/mazes/test_rat_hexmaze.py -v`
-- [x] Add to visualization script and run: `uv run python scripts/visualize_mazes.py`
+- [ ] Implement `setup_track_layers(viewer) -> tuple[Shapes, Points]`:
+  - Create Shapes layer for edges (middle, `shape_type="path"`)
+  - Create Points layer for nodes (top, interactive)
+  - Set proper z-ordering (edges below nodes)
+  - Return `(edges_layer, nodes_layer)`
 
-**Success criteria**:
+**Success Criteria**:
+- Layers created in correct z-order
+- Nodes are clickable (on top)
+- Colors match spec
 
-- 96 total nodes (3 × 32 from figure, or 4 × 24 from text)
-- 120° junction angles throughout
-- 3 distinct modules connected by bridges
-- All nodes look identical (Warner-Warden trick at dead ends)
-- Full maze spans ~9 × 5 m (900 × 500 cm)
-
----
-
-## Milestone 9: Integration & Testing (Phase 7)
-
-### 9.1 Update Module Exports
-
-- [x] Update `src/neurospatial/simulation/mazes/__init__.py` with all factory functions
-- [x] Update `src/neurospatial/simulation/__init__.py` to include maze exports
-- [x] Verify: `from neurospatial.simulation.mazes import make_t_maze, make_watermaze, ...`
-
-### 9.2 Create Test Infrastructure
-
-- [x] Create `tests/simulation/mazes/conftest.py` with shared fixtures
-- [x] Create base test class or helper for common maze assertions
-
-### 9.3 Comprehensive Test Suite
-
-- [x] `tests/simulation/mazes/test_base.py` - MazeEnvironments, MazeDims
-- [x] `tests/simulation/mazes/test_geometry.py` - Helper functions (already done in M1.3)
-- [x] `tests/simulation/mazes/test_corridor_mazes.py` - Integration tests for T, Y, W, Linear, Small Hex
-- [x] `tests/simulation/mazes/test_repeated_mazes.py` - Integration tests for Repeated Y, T, Hampton Court
-- [x] `tests/simulation/mazes/test_openfield_mazes.py` - Integration tests for Watermaze, Barnes, Radial, Cheeseboard
-- [x] `tests/simulation/mazes/test_lattice_mazes.py` - Integration tests for Crossword, Honeycomb, Hamlet
-- [x] `tests/simulation/mazes/test_rat_hexmaze.py` - Rat HexMaze specific tests
-
-### 9.4 Validation Tests
-
-For all mazes, verify:
-
-- [x] Default dimensions create valid environment: `validate_environment(env, strict=True)`
-- [x] Custom dimensions work without errors
-- [x] `env.units == "cm"`
-- [x] All regions exist and are queryable
-- [x] Track graph (if present) is connected
-- [x] Bin centers within expected spatial extent
-
-### 9.5 Doctest Verification
-
-- [x] All modules have working doctests: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
-
-### 9.6 Integration with Simulation
-
-- [ ] Verify compatibility with `simulate_trajectory_ou()` from existing simulation module
-- [ ] Create example notebook or script demonstrating maze usage
+**Estimated Complexity**: Simple (~50 lines)
 
 ---
 
-## Validation Checklist
+### Task 2.2: Implement Event Handlers
 
-Run after each milestone:
+**File**: `src/neurospatial/annotation/_track_widget.py` (partial)
 
-- [x] Full test suite passes: `uv run pytest tests/simulation/mazes/ -v`
-- [x] No regressions: `uv run pytest`
-- [x] Linting passes: `uv run ruff check . && uv run ruff format .`
-- [x] Type checking passes: `uv run mypy src/neurospatial/simulation/mazes/`
-- [x] Doctests pass: `uv run pytest --doctest-modules src/neurospatial/simulation/mazes/`
+**Dependencies**: Task 2.1
+
+**Actions**:
+- [ ] Implement `_sync_layers_from_state(state, nodes_layer, edges_layer)`:
+  - Update Points layer data from `state.nodes`
+  - Update Shapes layer data from `state.edges`
+  - Highlight start node (larger size, green color)
+
+- [ ] Implement node click handler:
+  - In `add_node` mode: Add node at click position
+  - In `delete` mode: Delete nearest node within threshold
+  - In `add_edge` mode: Select node for edge creation
+
+- [ ] Implement edge creation (two-click pattern):
+  - First click: Set `state.edge_start_node`, show preview line
+  - Second click: Call `state.add_edge()`, clear preview
+  - Escape: Cancel edge creation
+
+- [ ] Implement edge preview:
+  - Show dashed line from start node to cursor
+  - Update on mouse move when `edge_start_node` is set
+  - Use `PREVIEW_COLOR` with dashed style
+
+- [ ] Implement keyboard shortcuts:
+  - `A` → add_node mode
+  - `E` → add_edge mode
+  - `X` → delete mode
+  - `Shift+S` → set selected node as start
+  - `Delete` → delete selected item
+  - `Ctrl+Z` → undo
+  - `Ctrl+Shift+Z` → redo
+  - `Escape` → cancel edge / close without save
+  - `Ctrl+Enter` → save and close
+
+**Success Criteria**:
+- All keyboard shortcuts work
+- Two-click edge creation pattern works with visual feedback
+- Preview line updates smoothly
+- State changes reflect immediately in layers
+
+**Estimated Complexity**: High (~300 lines)
 
 ---
 
-## Success Metrics
+### Task 2.3: Create Control Widget
 
-| Metric | Target | Status |
-|--------|--------|--------|
-| Mazes implemented | 15/15 | ✅ Complete |
-| Test coverage for factories | 100% | ✅ Complete |
-| All environments pass `validate_environment()` | 15/15 | ✅ Complete |
-| Doctests pass in all modules | 15/15 | ✅ Complete |
-| Compatible with trajectory simulation | Yes | ⬜ Not verified |
+**File**: `src/neurospatial/annotation/_track_widget.py` (partial)
+
+**Dependencies**: Tasks 2.1, 2.2
+
+**Actions**:
+- [ ] Implement `create_track_widget(viewer, edges_layer, nodes_layer, state) -> QWidget`:
+  - Use magicgui for widget construction
+
+- [ ] Add UI components:
+  - Mode selector (RadioButtons: add_node/add_edge/delete)
+  - Node list (Select widget with labels)
+  - Edge list (Select widget)
+  - Node label input (LineEdit for naming selected node)
+  - Start node button ("Set as Start")
+  - Validation status label
+  - Delete buttons (Delete Node / Delete Edge)
+  - Save and Close button
+
+- [ ] Add help text panel:
+  ```
+  Track Graph Builder
+  -------------------
+  1. Press A → Click to add nodes
+  2. Press E → Click two nodes to connect
+  3. Press X → Click node/edge to delete
+  4. Select node → Shift+S to set as start
+  5. Ctrl+Enter to save
+
+  Shortcuts: A (add) | E (edge) | X (delete) | Ctrl+Z (undo)
+  ```
+
+- [ ] Implement visual mode indicator:
+  - Update status bar: `"Track Graph Mode: ADD_NODE"`
+  - Show current mode in bold in widget header
+
+- [ ] Implement save validation dialog:
+  - Block if < 2 nodes or < 1 edge
+  - Show errors in modal dialog
+  - Show warnings but allow save
+  - Default start node to 0 with warning if unset
+
+**Success Criteria**:
+- Widget docks correctly in napari
+- Mode selector syncs with keyboard shortcuts
+- Node/edge lists update in real-time
+- Save validates before closing
+- Help text visible
+
+**Estimated Complexity**: High (~350 lines)
 
 ---
 
-## File Summary
+### Task 2.4: Write Widget Integration Tests
+
+**File**: `tests/annotation/test_track_widget.py`
+
+**Dependencies**: Tasks 2.1-2.3
+
+**Actions**:
+- [ ] Test layer setup:
+  - `test_setup_track_layers_returns_correct_types`
+  - `test_layers_z_order_correct`
+  - `test_node_layer_is_interactive`
+
+- [ ] Test event handlers (with mock viewer):
+  - `test_click_in_add_node_mode_adds_node`
+  - `test_click_in_delete_mode_removes_node`
+  - `test_two_click_edge_creation`
+  - `test_escape_cancels_edge_creation`
+  - `test_keyboard_shortcuts_change_mode`
+
+- [ ] Test widget components:
+  - `test_mode_selector_syncs_with_state`
+  - `test_node_list_updates_on_add`
+  - `test_edge_list_updates_on_add`
+  - `test_start_node_button_updates_state`
+
+- [ ] Test validation:
+  - `test_save_blocked_with_empty_graph`
+  - `test_save_shows_errors_modal`
+  - `test_save_shows_warnings_but_allows`
+
+**Success Criteria**:
+- All tests pass with mocked napari viewer
+- Event handlers trigger correct state changes
+- Widget syncs bidirectionally with state
+
+**Estimated Complexity**: Medium (~250 lines of tests)
+
+---
+
+## Milestone 3: Entry Point and Result
+
+### Task 3.1: Implement TrackGraphResult
+
+**File**: `src/neurospatial/annotation/track_graph.py`
+
+**Dependencies**: Milestone 2 complete
+
+**Actions**:
+- [ ] Create `TrackGraphResult` NamedTuple with fields:
+  - `track_graph: nx.Graph | None`
+  - `node_positions: list[tuple[float, float]]`
+  - `edges: list[tuple[int, int]]`
+  - `edge_order: list[tuple[int, int]]`
+  - `edge_spacing: NDArray[np.float64]`
+  - `node_labels: list[str]`
+  - `start_node: int | None`
+  - `pixel_positions: list[tuple[float, float]]`
+
+- [ ] Implement `to_environment(bin_size, edge_spacing=None, name="") -> Environment`:
+  - Raise `ValueError` if `track_graph` is None
+  - Use `self.edge_spacing` if `edge_spacing` not provided
+  - Call `Environment.from_graph()` with all parameters
+
+**Success Criteria**:
+- All fields correctly typed
+- `to_environment()` produces valid Environment
+- Method handles edge_spacing override correctly
+
+**Estimated Complexity**: Simple (~80 lines)
+
+---
+
+### Task 3.2: Implement annotate_track_graph Entry Point
+
+**File**: `src/neurospatial/annotation/track_graph.py`
+
+**Dependencies**: Task 3.1
+
+**Actions**:
+- [ ] Implement `annotate_track_graph()` with signature:
+  ```python
+  def annotate_track_graph(
+      video_path: str | Path | None = None,
+      *,
+      image: NDArray[np.uint8] | None = None,
+      frame_index: int = 0,
+      calibration: VideoCalibration | None = None,
+      initial_nodes: NDArray[np.float64] | None = None,
+      initial_edges: list[tuple[int, int]] | None = None,
+      initial_node_labels: list[str] | None = None,
+  ) -> TrackGraphResult:
+  ```
+
+- [ ] Implement input validation:
+  - Require either `video_path` or `image`
+  - Validate `frame_index` in range for video
+
+- [ ] Load background image:
+  - Use `VideoReader` for video files (same as `annotate_video`)
+  - Use provided image array directly
+
+- [ ] Create napari viewer:
+  - Add video frame as bottom Image layer (RGB)
+  - Title: "Track Graph Builder"
+
+- [ ] Initialize state:
+  - Create `TrackBuilderState`
+  - Populate with `initial_nodes`, `initial_edges`, `initial_node_labels`
+
+- [ ] Set up layers and widget:
+  - Call `setup_track_layers(viewer)`
+  - Call `create_track_widget(viewer, edges_layer, nodes_layer, state)`
+  - Dock widget
+
+- [ ] Run napari and return result:
+  - `napari.run()` (blocking)
+  - Call `build_track_graph_result(state, calibration)`
+  - Return `TrackGraphResult`
+
+**Success Criteria**:
+- Function opens napari with video frame
+- Initial data populates correctly
+- Returns valid `TrackGraphResult` on close
+- Handles both video and image inputs
+
+**Estimated Complexity**: Medium (~150 lines)
+
+---
+
+### Task 3.3: Add Module Exports
+
+**File**: `src/neurospatial/annotation/__init__.py`
+
+**Dependencies**: Tasks 3.1, 3.2
+
+**Actions**:
+- [ ] Add exports:
+  ```python
+  from neurospatial.annotation.track_graph import (
+      annotate_track_graph,
+      TrackGraphResult,
+  )
+  ```
+
+- [ ] Update `__all__` list to include new exports
+
+**Success Criteria**:
+- `from neurospatial.annotation import annotate_track_graph` works
+- `from neurospatial.annotation import TrackGraphResult` works
+
+**Estimated Complexity**: Simple (< 10 lines)
+
+---
+
+### Task 3.4: Write End-to-End Tests
+
+**File**: `tests/annotation/test_track_graph.py`
+
+**Dependencies**: Tasks 3.1-3.3
+
+**Actions**:
+- [ ] Test input validation:
+  - `test_requires_video_or_image`
+  - `test_frame_index_out_of_range_raises`
+
+- [ ] Test with mock viewer (skip napari.run):
+  - `test_annotate_with_video_path`
+  - `test_annotate_with_image_array`
+  - `test_initial_data_populates_state`
+
+- [ ] Test result construction:
+  - `test_result_has_all_fields`
+  - `test_result_to_environment_success`
+  - `test_result_to_environment_no_graph_raises`
+  - `test_result_edge_spacing_override`
+
+- [ ] Test calibration:
+  - `test_coordinates_in_pixels_without_calibration`
+  - `test_coordinates_in_cm_with_calibration`
+  - `test_pixel_positions_preserved`
+
+- [ ] Test integration with Environment.from_graph:
+  - `test_full_workflow_creates_valid_environment`
+  - `test_environment_has_correct_bin_count`
+
+**Success Criteria**:
+- All tests pass
+- Full workflow from annotation to Environment works
+- Calibration transforms coordinates correctly
+
+**Estimated Complexity**: Medium (~300 lines of tests)
+
+---
+
+## Milestone 4: Polish
+
+### Task 4.1: Implement Edge Order Editing UI
+
+**File**: `src/neurospatial/annotation/_track_widget.py` (enhancement)
+
+**Dependencies**: Milestone 3 complete
+
+**Actions**:
+- [ ] Add edge order list widget:
+  - Show edges in `edge_order` sequence
+  - Allow drag-and-drop reordering
+  - "Reset to Auto" button (re-run `infer_edge_layout()`)
+
+- [ ] Add edge spacing input:
+  - Default: use `infer_edge_layout()` values
+  - Optional: let user set custom spacing per edge
+  - "Use Default Spacing" checkbox
+
+- [ ] Update result building:
+  - Use manual edge_order if modified
+  - Use custom edge_spacing if provided
+
+**Success Criteria**:
+- Edge order can be manually reordered
+- Custom spacing can be set
+- Auto-inference can be reset
+
+**Estimated Complexity**: Medium (~150 lines)
+
+---
+
+### Task 4.2: Add 1D Preview (Optional Enhancement)
+
+**File**: `src/neurospatial/annotation/_track_widget.py` (enhancement)
+
+**Dependencies**: Task 4.1
+
+**Actions**:
+- [ ] Add "Preview Linearization" button
+- [ ] Open matplotlib figure showing linearized track layout:
+  - Use `track_linearization.plot_track_graph()` or equivalent
+  - Show edge order visually
+  - Update when edge_order changes
+
+**Success Criteria**:
+- Preview shows linearized track structure
+- Updates when edge order changes
+- Helps user verify correct ordering
+
+**Estimated Complexity**: Medium (~100 lines)
+
+---
+
+### Task 4.3: Update CLAUDE.md Documentation
+
+**File**: `CLAUDE.md`
+
+**Dependencies**: Milestone 3 complete
+
+**Actions**:
+- [ ] Add to Quick Reference:
+  ```python
+  # Annotate track graph interactively (v0.X.0+)
+  from neurospatial.annotation import annotate_track_graph
+
+  result = annotate_track_graph("maze.mp4", calibration=calib)
+  env = result.to_environment(bin_size=2.0)
+  ```
+
+- [ ] Add to Common Patterns section:
+  - Track graph annotation workflow
+  - Using with Environment.from_graph()
+  - Calibration for pixel-to-cm conversion
+
+- [ ] Add keyboard shortcuts table:
+  | Key | Action |
+  |-----|--------|
+  | `A` | Add node mode |
+  | `E` | Add edge mode |
+  | `X` | Delete mode |
+  | ... | ... |
+
+- [ ] Add troubleshooting section:
+  - "No start node set" warning
+  - Edge order issues
+  - Calibration coordinate conventions
+
+**Success Criteria**:
+- CLAUDE.md includes complete annotate_track_graph documentation
+- Examples are correct and tested
+- Keyboard shortcuts documented
+
+**Estimated Complexity**: Medium (~100 lines of docs)
+
+---
+
+### Task 4.4: Add Docstrings and Examples
+
+**Files**: All new files
+
+**Dependencies**: All previous tasks
+
+**Actions**:
+- [ ] Add NumPy-style docstrings to all public functions:
+  - `annotate_track_graph()`
+  - `TrackGraphResult`
+  - `TrackBuilderState`
+
+- [ ] Add doctests:
+  ```python
+  >>> result = annotate_track_graph(image=frame)  # doctest: +SKIP
+  >>> env = result.to_environment(bin_size=2.0)  # doctest: +SKIP
+  ```
+
+- [ ] Run `uv run pytest --doctest-modules src/neurospatial/annotation/track_graph.py`
+
+**Success Criteria**:
+- All public APIs have complete docstrings
+- Docstrings follow NumPy format
+- Examples are accurate
+
+**Estimated Complexity**: Medium (~200 lines of docs)
+
+---
+
+### Task 4.5: Final Review and Testing
+
+**Dependencies**: All previous tasks
+
+**Actions**:
+- [ ] Run full test suite: `uv run pytest tests/annotation/`
+- [ ] Run type checking: `uv run mypy src/neurospatial/annotation/`
+- [ ] Run linting: `uv run ruff check src/neurospatial/annotation/`
+- [ ] Manual testing:
+  - Open video file, create track graph
+  - Open image, create track graph
+  - Use calibration
+  - Test all keyboard shortcuts
+  - Test undo/redo
+  - Test save validation
+- [ ] Verify integration: `result.to_environment()` creates valid Environment
+
+**Success Criteria**:
+- All tests pass
+- Mypy passes without errors
+- Ruff passes without errors
+- Manual testing confirms UX works as designed
+- Integration with Environment.from_graph() verified
+
+---
+
+## Summary
+
+| Milestone | Tasks | Estimated Lines | Key Deliverable |
+|-----------|-------|-----------------|-----------------|
+| 1. Core Infrastructure | 4 | ~650 | State management, graph building |
+| 2. Widget and Layers | 4 | ~950 | napari UI, event handlers |
+| 3. Entry Point | 4 | ~540 | `annotate_track_graph()` API |
+| 4. Polish | 5 | ~550 | Edge ordering, docs, testing |
+| **Total** | **17** | **~2700** | Complete track graph annotation |
+
+## Dependencies Graph
 
 ```
-src/neurospatial/simulation/mazes/
-├── __init__.py           # Public API exports
-├── _base.py              # MazeEnvironments, MazeDims
-├── _geometry.py          # Polygon/graph helpers
-├── linear_track.py       # Linear Track
-├── t_maze.py             # T-Maze
-├── y_maze.py             # Y-Maze
-├── w_maze.py             # W-Maze
-├── hex_small.py          # Small Hex Maze
-├── repeated_y.py         # Repeated Y-Maze
-├── repeated_t.py         # Repeated T-Maze
-├── hampton_court.py      # Hampton Court Maze
-├── radial_arm.py         # Radial Arm Maze
-├── barnes.py             # Barnes Maze
-├── cheeseboard.py        # Cheeseboard Maze
-├── watermaze.py          # Morris Water Maze
-├── crossword.py          # Crossword Maze
-├── honeycomb.py          # Honeycomb Maze
-├── hamlet.py             # Hamlet Maze
-└── rat_hexmaze.py        # Rat HexMaze
-
-tests/simulation/mazes/
-├── conftest.py           # Shared fixtures
-├── test_base.py          # Base classes
-├── test_geometry.py      # Helpers
-├── test_linear_track.py
-├── test_t_maze.py
-├── test_y_maze.py
-├── test_w_maze.py
-├── test_hex_small.py
-├── test_repeated_y.py
-├── test_repeated_t.py
-├── test_hampton_court.py
-├── test_radial_arm.py
-├── test_barnes.py
-├── test_cheeseboard.py
-├── test_watermaze.py
-├── test_crossword.py
-├── test_honeycomb.py
-├── test_hamlet.py
-├── test_rat_hexmaze.py
-├── test_corridor_mazes.py    # Integration
-├── test_repeated_mazes.py    # Integration
-├── test_openfield_mazes.py   # Integration
-└── test_lattice_mazes.py     # Integration
+Task 1.1 ─┬─> Task 1.2 ─┬─> Task 1.3 ─┬─> Task 1.4
+          │            │            │
+          └────────────┴────────────┴─> Milestone 2
+                                        │
+Task 2.1 ─> Task 2.2 ─> Task 2.3 ─> Task 2.4
+                                        │
+                                        v
+Task 3.1 ─> Task 3.2 ─> Task 3.3 ─> Task 3.4
+                                        │
+                                        v
+Task 4.1 ─> Task 4.2 (optional)
+    │
+Task 4.3 ─> Task 4.4 ─> Task 4.5
 ```
 
----
+## Notes
 
-## Dependencies
-
-**Existing (no new dependencies needed)**:
-
-- `shapely` - Polygon operations (buffer, union)
-- `networkx` - Track graphs
-- `numpy` - Numerical operations
-
-**Existing neurospatial APIs**:
-
-- `Environment.from_polygon()` - Polygon-bounded grids
-- `Environment.from_mask()` - Pre-defined N-D boolean mask
-- `Environment.from_image()` - Binary image mask
-- `Environment.from_graph()` - 1D track-based environments (requires `track-linearization`)
-- `HexagonalLayout` - Hexagonal tessellations
-- `Regions` - Named regions of interest
+- Tasks should be completed in order within each milestone
+- Milestones can be reviewed independently
+- Task 4.2 (1D Preview) is optional enhancement
+- All code should follow CLAUDE.md patterns and conventions

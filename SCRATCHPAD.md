@@ -1,7 +1,39 @@
-# Simulation Mazes Implementation - Scratchpad
+# Track Graph Annotation Implementation - Scratchpad
+
+**Started**: 2025-11-27
+**Current Status**: Milestone 1 in progress - Task 1.1 Complete
+
+---
+
+## Session Notes
+
+### 2025-11-27 - Task 1.1 Complete (Type Definitions)
+
+**Completed**: Task 1.1 - Create Type Definitions
+
+**Work Done**:
+
+1. Created `tests/annotation/test_track_types.py` with 3 tests:
+   - `test_import` - Type alias importable
+   - `test_literal_values` - Has expected literal values (add_node, add_edge, delete)
+   - `test_valid_literal_assignment` - Valid assignments work at runtime
+
+2. Created `src/neurospatial/annotation/_track_types.py`:
+   - `TrackGraphMode = Literal["add_node", "add_edge", "delete"]`
+   - Commented with interaction modes description
+
+**Tests**: 3 tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Next**: Task 1.2 - Implement TrackBuilderState
+
+---
+
+## Previous Work: Simulation Mazes Implementation (COMPLETE)
 
 **Started**: 2025-11-25
-**Current Status**: ALL 15 MAZES IMPLEMENTED - Verification Complete
+**Status**: ALL 15 MAZES IMPLEMENTED - Verification Complete
 
 ---
 
