@@ -35,7 +35,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 1.1
 
 **Actions**:
-- [ ] Create `TrackBuilderState` dataclass with fields:
+- [x] Create `TrackBuilderState` dataclass with fields:
   - `mode: TrackGraphMode` (default: "add_node")
   - `nodes: list[tuple[float, float]]`
   - `edges: list[tuple[int, int]]`
@@ -45,26 +45,26 @@ Implementation tasks for adding interactive track graph building functionality t
   - `undo_stack: list[dict]` and `redo_stack: list[dict]`
   - `_max_undo_depth: int = 50`
 
-- [ ] Implement snapshot methods:
+- [x] Implement snapshot methods:
   - `_snapshot() -> dict` - Create serializable state copy
   - `_restore_snapshot(snapshot: dict)` - Restore from snapshot
   - `_save_for_undo()` - Save before mutation, clear redo stack
 
-- [ ] Implement undo/redo:
+- [x] Implement undo/redo:
   - `undo() -> bool` - Restore previous state
   - `redo() -> bool` - Restore next state
 
-- [ ] Implement node operations:
+- [x] Implement node operations:
   - `add_node(x, y, label=None) -> int` - Add node, return index
   - `delete_node(idx)` - Delete node + connected edges, reindex remaining
   - `set_start_node(idx)` - Designate start for linearization
   - `find_nearest_node(x, y, threshold) -> int | None`
 
-- [ ] Implement edge operations:
+- [x] Implement edge operations:
   - `add_edge(node1, node2) -> bool` - Add if valid (no self-loops/duplicates)
   - `delete_edge(edge_idx)` - Delete by index
 
-- [ ] Implement validation:
+- [x] Implement validation:
   - `to_track_graph() -> nx.Graph` - Build graph from state (pixel coords)
   - `validate() -> dict` - Use `check_track_graph_validity()`
   - `is_valid_for_save() -> tuple[bool, list[str], list[str]]`
@@ -76,6 +76,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - Self-loops and duplicate edges are rejected
 - Undo/redo work correctly for all operations
 - Unit tests pass for all methods
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~200 lines)
 
