@@ -223,27 +223,27 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Implement `_sync_layers_from_state(state, nodes_layer, edges_layer)`:
+- [x] Implement `_sync_layers_from_state(state, nodes_layer, edges_layer)`:
   - Update Points layer data from `state.nodes`
   - Update Shapes layer data from `state.edges`
   - Highlight start node (larger size, green color)
 
-- [ ] Implement node click handler:
+- [x] Implement node click handler:
   - In `add_node` mode: Add node at click position
   - In `delete` mode: Delete nearest node within threshold
   - In `add_edge` mode: Select node for edge creation
 
-- [ ] Implement edge creation (two-click pattern):
+- [x] Implement edge creation (two-click pattern):
   - First click: Set `state.edge_start_node`, show preview line
   - Second click: Call `state.add_edge()`, clear preview
   - Escape: Cancel edge creation
 
-- [ ] Implement edge preview:
+- [x] Implement edge preview:
   - Show dashed line from start node to cursor
   - Update on mouse move when `edge_start_node` is set
   - Use `PREVIEW_COLOR` with dashed style
 
-- [ ] Implement keyboard shortcuts:
+- [x] Implement keyboard shortcuts:
   - `A` → add_node mode
   - `E` → add_edge mode
   - `X` → delete mode
@@ -260,6 +260,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - Two-click edge creation pattern works with visual feedback
 - Preview line updates smoothly
 - State changes reflect immediately in layers
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: High (~300 lines)
 

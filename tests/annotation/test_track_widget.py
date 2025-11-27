@@ -275,3 +275,566 @@ class TestLayerProperties:
         assert edges_layer.current_edge_width > 1
 
         viewer.close()
+
+
+# =============================================================================
+# Task 2.2 Tests: Event Handlers
+# =============================================================================
+
+
+@pytest.mark.gui
+class TestSyncLayersFromState:
+    """Tests for _sync_layers_from_state() function."""
+
+    def test_sync_updates_nodes_layer_data(self):
+        """_sync_layers_from_state updates nodes layer with state.nodes."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # Check nodes layer has 2 points
+        assert len(nodes_layer.data) == 2
+        viewer.close()
+
+    def test_sync_updates_edges_layer_data(self):
+        """_sync_layers_from_state updates edges layer with state.edges."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.add_edge(0, 1)
+
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # Check edges layer has 1 path
+        assert len(edges_layer.data) == 1
+        viewer.close()
+
+    def test_sync_highlights_start_node_with_different_color(self):
+        """Start node gets highlighted with START_NODE_COLOR."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.set_start_node(0)
+
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # Check that face colors are different for start vs non-start nodes
+        # Start node (index 0) should have different color than node 1
+        assert len(nodes_layer.face_color) == 2
+        # The colors should not be identical
+        start_color = nodes_layer.face_color[0]
+        other_color = nodes_layer.face_color[1]
+        assert not np.allclose(start_color, other_color), (
+            "Start node should have different color"
+        )
+        viewer.close()
+
+    def test_sync_highlights_start_node_with_larger_size(self):
+        """Start node gets larger size than other nodes."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.set_start_node(0)
+
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # Start node (index 0) should be larger
+        assert nodes_layer.size[0] > nodes_layer.size[1]
+        viewer.close()
+
+    def test_sync_clears_layers_when_state_empty(self):
+        """_sync_layers_from_state clears layers when state is empty."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        # Add data manually first
+        nodes_layer.add([[100, 200]])
+        edges_layer.add_paths([np.array([[0, 0], [10, 10]])])
+
+        # Sync with empty state
+        state = TrackBuilderState()
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # Layers should be empty
+        assert len(nodes_layer.data) == 0
+        assert len(edges_layer.data) == 0
+        viewer.close()
+
+    def test_sync_uses_napari_row_col_convention(self):
+        """Coordinates are converted to napari (row, col) format."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _sync_layers_from_state,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        # State uses (x, y) = (100, 200) meaning x=100, y=200
+        state.add_node(100.0, 200.0)
+
+        _sync_layers_from_state(state, nodes_layer, edges_layer)
+
+        # napari uses (row, col) = (y, x) = (200, 100)
+        assert nodes_layer.data[0][0] == 200.0  # row = y
+        assert nodes_layer.data[0][1] == 100.0  # col = x
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestClickHandlerAddNodeMode:
+    """Tests for click handler in add_node mode."""
+
+    def test_click_in_add_node_mode_adds_node_to_state(self):
+        """Clicking in add_node mode adds a node to state."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        # Simulate click at (row=200, col=100) in napari coords
+        # This should add node at (x=100, y=200) in state coords
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+
+        assert len(state.nodes) == 1
+        assert state.nodes[0] == (100.0, 200.0)  # (x, y) format
+        viewer.close()
+
+    def test_click_in_add_node_mode_syncs_layers(self):
+        """Clicking in add_node mode updates napari layers."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+
+        # Layer should show the new node
+        assert len(nodes_layer.data) == 1
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestClickHandlerDeleteMode:
+    """Tests for click handler in delete mode."""
+
+    def test_click_in_delete_mode_removes_nearest_node(self):
+        """Clicking near a node in delete mode removes it."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)  # Node at (x=100, y=200)
+        state.mode = "delete"
+
+        # Click near the node (within threshold)
+        # Node is at (row=200, col=100) in napari coords
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+
+        assert len(state.nodes) == 0
+        viewer.close()
+
+    def test_click_in_delete_mode_ignores_click_far_from_nodes(self):
+        """Clicking far from any node in delete mode does nothing."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)  # Node at (x=100, y=200)
+        state.mode = "delete"
+
+        # Click far from the node
+        _handle_click(state, nodes_layer, edges_layer, position=(500.0, 500.0))
+
+        # Node should still exist
+        assert len(state.nodes) == 1
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestClickHandlerAddEdgeMode:
+    """Tests for click handler in add_edge mode (two-click pattern)."""
+
+    def test_first_click_in_add_edge_mode_sets_edge_start_node(self):
+        """First click on node in add_edge mode sets edge_start_node."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)  # Node 0
+        state.add_node(300.0, 400.0)  # Node 1
+        state.mode = "add_edge"
+
+        # Click on first node (at row=200, col=100)
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+
+        assert state.edge_start_node == 0
+        viewer.close()
+
+    def test_second_click_in_add_edge_mode_creates_edge(self):
+        """Second click on node in add_edge mode creates edge."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)  # Node 0
+        state.add_node(300.0, 400.0)  # Node 1
+        state.mode = "add_edge"
+
+        # First click on node 0
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+        # Second click on node 1
+        _handle_click(state, nodes_layer, edges_layer, position=(400.0, 300.0))
+
+        assert len(state.edges) == 1
+        assert state.edges[0] == (0, 1)
+        viewer.close()
+
+    def test_second_click_clears_edge_start_node(self):
+        """After creating edge, edge_start_node is cleared."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.mode = "add_edge"
+
+        # Two clicks to create edge
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+        _handle_click(state, nodes_layer, edges_layer, position=(400.0, 300.0))
+
+        assert state.edge_start_node is None
+        viewer.close()
+
+    def test_click_on_same_node_twice_does_not_create_self_loop(self):
+        """Clicking the same node twice doesn't create a self-loop edge."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.mode = "add_edge"
+
+        # Click same node twice
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+        _handle_click(state, nodes_layer, edges_layer, position=(200.0, 100.0))
+
+        # No edge should be created
+        assert len(state.edges) == 0
+        viewer.close()
+
+    def test_click_away_from_nodes_in_add_edge_mode_does_nothing(self):
+        """Clicking empty space in add_edge mode doesn't start edge creation."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _handle_click,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, nodes_layer = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.mode = "add_edge"
+
+        # Click far from any node
+        _handle_click(state, nodes_layer, edges_layer, position=(500.0, 500.0))
+
+        assert state.edge_start_node is None
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestCancelEdgeCreation:
+    """Tests for canceling edge creation with Escape."""
+
+    def test_cancel_edge_creation_clears_edge_start_node(self):
+        """cancel_edge_creation clears edge_start_node."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _cancel_edge_creation
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.mode = "add_edge"
+        state.edge_start_node = 0
+
+        _cancel_edge_creation(state)
+
+        assert state.edge_start_node is None
+
+
+@pytest.mark.gui
+class TestEdgePreview:
+    """Tests for edge preview line during edge creation."""
+
+    def test_show_edge_preview_creates_preview_shape(self):
+        """_show_edge_preview adds a preview path to edges layer."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _show_edge_preview,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, _ = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.edge_start_node = 0
+
+        # Show preview from node 0 to cursor position
+        _show_edge_preview(state, edges_layer, cursor_position=(400.0, 300.0))
+
+        # Should have one preview path
+        assert len(edges_layer.data) == 1
+        viewer.close()
+
+    def test_clear_edge_preview_removes_preview_shape(self):
+        """_clear_edge_preview removes the preview path."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import (
+            _clear_edge_preview,
+            _show_edge_preview,
+            setup_track_layers,
+        )
+
+        viewer = napari.Viewer(show=False)
+        edges_layer, _ = setup_track_layers(viewer)
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.edge_start_node = 0
+
+        _show_edge_preview(state, edges_layer, cursor_position=(400.0, 300.0))
+        _clear_edge_preview(edges_layer)
+
+        # Preview should be removed
+        assert len(edges_layer.data) == 0
+        viewer.close()
+
+
+@pytest.mark.gui
+class TestKeyboardShortcuts:
+    """Tests for keyboard shortcut handler."""
+
+    def test_a_key_switches_to_add_node_mode(self):
+        """Pressing 'A' switches mode to add_node."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.mode = "delete"
+
+        _handle_key(state, key="A")
+
+        assert state.mode == "add_node"
+
+    def test_e_key_switches_to_add_edge_mode(self):
+        """Pressing 'E' switches mode to add_edge."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        _handle_key(state, key="E")
+
+        assert state.mode == "add_edge"
+
+    def test_x_key_switches_to_delete_mode(self):
+        """Pressing 'X' switches mode to delete."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.mode = "add_node"
+
+        _handle_key(state, key="X")
+
+        assert state.mode == "delete"
+
+    def test_ctrl_z_triggers_undo(self):
+        """Pressing 'Ctrl+Z' triggers undo."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)  # Creates undo snapshot
+        state.add_node(300.0, 400.0)  # Creates undo snapshot
+
+        result = _handle_key(state, key="Z", modifiers=["Control"])
+
+        assert result == "undo"
+        assert len(state.nodes) == 1  # Undid second add_node
+
+    def test_ctrl_shift_z_triggers_redo(self):
+        """Pressing 'Ctrl+Shift+Z' triggers redo."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+        state.undo()  # Now have 1 node
+
+        result = _handle_key(state, key="Z", modifiers=["Control", "Shift"])
+
+        assert result == "redo"
+        assert len(state.nodes) == 2  # Redid second add_node
+
+    def test_escape_cancels_edge_creation(self):
+        """Pressing 'Escape' cancels edge creation."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.mode = "add_edge"
+        state.edge_start_node = 0
+
+        result = _handle_key(state, key="Escape")
+
+        assert result == "cancel"
+        assert state.edge_start_node is None
+
+    def test_shift_s_sets_start_node(self):
+        """Pressing 'Shift+S' sets selected node as start."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.add_node(100.0, 200.0)
+        state.add_node(300.0, 400.0)
+
+        # Simulate having node 1 selected
+        result = _handle_key(state, key="S", modifiers=["Shift"], selected_node=1)
+
+        assert result == "set_start"
+        assert state.start_node == 1
+
+    def test_lowercase_keys_also_work(self):
+        """Keyboard shortcuts work with lowercase keys too."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+        from neurospatial.annotation._track_widget import _handle_key
+
+        state = TrackBuilderState()
+        state.mode = "delete"
+
+        _handle_key(state, key="a")
+
+        assert state.mode == "add_node"

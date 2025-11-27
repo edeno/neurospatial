@@ -1,11 +1,60 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 2 IN PROGRESS - Task 2.1 Complete
+**Current Status**: Milestone 2 IN PROGRESS - Task 2.2 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 2.2 Complete (Implement Event Handlers)
+
+**Completed**: Task 2.2 - Implement Event Handlers
+
+**Work Done**:
+
+1. Added 26 new tests to `tests/annotation/test_track_widget.py` covering:
+   - `TestSyncLayersFromState` (7 tests) - layer sync, coordinate conversion, start node highlighting
+   - `TestClickHandlerAddNodeMode` (2 tests) - add node, layer sync
+   - `TestClickHandlerDeleteMode` (2 tests) - delete node, threshold checking
+   - `TestClickHandlerAddEdgeMode` (5 tests) - two-click pattern, self-loop rejection
+   - `TestCancelEdgeCreation` (1 test) - cancel clears edge_start_node
+   - `TestEdgePreview` (2 tests) - show/clear preview shapes
+   - `TestKeyboardShortcuts` (8 tests) - mode switching, undo/redo, set start node
+
+2. Extended `src/neurospatial/annotation/_track_widget.py` (~350 lines total):
+   - `_hex_to_rgba()` helper for napari RGBA arrays
+   - `_sync_layers_from_state()` - sync state to napari layers with coordinate conversion
+   - `_handle_click()` - click handler for add_node, delete, add_edge modes
+   - `_show_edge_preview()` / `_clear_edge_preview()` - edge preview management
+   - `_cancel_edge_creation()` - cancel in-progress edge
+   - `_handle_key()` - keyboard shortcuts (A/E/X modes, Ctrl+Z/Ctrl+Shift+Z, Escape, Shift+S)
+   - Constants: DEFAULT_NODE_SIZE, START_NODE_SIZE, CLICK_THRESHOLD
+
+**TDD Process**:
+
+- Wrote 26 tests first → all failed (functions not implemented)
+- Implemented functions → tests still failing (napari face_color API issue)
+- Fixed: napari requires RGBA arrays, not string arrays → added `_hex_to_rgba()`
+- Fixed: ruff SIM102 nested if statements → combined into single condition
+- All 45 tests pass (19 from Task 2.1 + 26 from Task 2.2)
+
+**Code Review**: Approved - minor fix for unused test variables applied
+
+**Tests**: 45 tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes (no issues)
+
+**Key Implementation Details**:
+
+- Coordinate conversion: state (x, y) ↔ napari (row, col) = (y, x)
+- Start node highlighted with larger size (20px vs 15px) and green color
+- Two-click edge creation pattern with preview line
+- Keyboard shortcuts case-insensitive (A/a both work)
+
+**Next**: Task 2.3 - Create Control Widget
+
+---
 
 ### 2025-11-27 - Task 2.1 Complete (Create Layer Setup)
 
