@@ -13,7 +13,7 @@ without napari.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -540,10 +540,12 @@ class TrackGraphWidget:
     ) -> None:
         from qtpy.QtWidgets import (
             QComboBox,
+            QDoubleSpinBox,
             QGroupBox,
             QHBoxLayout,
             QLabel,
             QLineEdit,
+            QListWidget,
             QPushButton,
             QVBoxLayout,
             QWidget,
@@ -640,6 +642,53 @@ class TrackGraphWidget:
 
         layout.addWidget(edge_group)
 
+        # Edge Order group
+        edge_order_group = QGroupBox("Edge Order")
+        edge_order_layout = QVBoxLayout()
+        edge_order_group.setLayout(edge_order_layout)
+
+        # Edge order list widget
+        self._edge_order_list = QListWidget()
+        edge_order_layout.addWidget(self._edge_order_list)
+
+        # Move buttons
+        move_btn_layout = QHBoxLayout()
+
+        self._move_up_btn = QPushButton("▲ Up")
+        self._move_up_btn.clicked.connect(self._on_move_up)
+        move_btn_layout.addWidget(self._move_up_btn)
+
+        self._move_down_btn = QPushButton("▼ Down")
+        self._move_down_btn.clicked.connect(self._on_move_down)
+        move_btn_layout.addWidget(self._move_down_btn)
+
+        edge_order_layout.addLayout(move_btn_layout)
+
+        # Reset to Auto button
+        self._reset_to_auto_btn = QPushButton("Reset to Auto")
+        self._reset_to_auto_btn.clicked.connect(self._on_reset_to_auto)
+        edge_order_layout.addWidget(self._reset_to_auto_btn)
+
+        # Edge spacing input
+        spacing_layout = QHBoxLayout()
+        spacing_label = QLabel("Edge Spacing:")
+        spacing_layout.addWidget(spacing_label)
+
+        self._edge_spacing_spin = QDoubleSpinBox()
+        self._edge_spacing_spin.setRange(0.0, 1000.0)
+        self._edge_spacing_spin.setDecimals(2)
+        self._edge_spacing_spin.setSingleStep(0.1)
+        self._edge_spacing_spin.setValue(0.0)
+        spacing_layout.addWidget(self._edge_spacing_spin)
+
+        self._apply_spacing_btn = QPushButton("Apply")
+        self._apply_spacing_btn.clicked.connect(self._on_apply_spacing)
+        spacing_layout.addWidget(self._apply_spacing_btn)
+
+        edge_order_layout.addLayout(spacing_layout)
+
+        layout.addWidget(edge_order_group)
+
         # Validation status
         self._validation_label = QLabel("")
         layout.addWidget(self._validation_label)
@@ -704,6 +753,36 @@ class TrackGraphWidget:
         """Apply label button accessor for tests."""
         return _Button(self._apply_label_btn)
 
+    @property
+    def edge_order_list(self) -> _EdgeOrderList:
+        """Edge order list accessor for tests."""
+        return _EdgeOrderList(self._edge_order_list, self._state, self)
+
+    @property
+    def move_up_button(self) -> _Button:
+        """Move up button accessor for tests."""
+        return _Button(self._move_up_btn)
+
+    @property
+    def move_down_button(self) -> _Button:
+        """Move down button accessor for tests."""
+        return _Button(self._move_down_btn)
+
+    @property
+    def reset_to_auto_button(self) -> _Button:
+        """Reset to auto button accessor for tests."""
+        return _Button(self._reset_to_auto_btn)
+
+    @property
+    def edge_spacing_input(self) -> _EdgeSpacingInput:
+        """Edge spacing input accessor for tests."""
+        return _EdgeSpacingInput(self._edge_spacing_spin, self._state)
+
+    @property
+    def apply_edge_spacing_button(self) -> _Button:
+        """Apply edge spacing button accessor for tests."""
+        return _Button(self._apply_spacing_btn)
+
     # -------------------------------------------------------------------------
     # QWidget compatibility
     # -------------------------------------------------------------------------
@@ -767,6 +846,78 @@ class TrackGraphWidget:
         if self.try_save():
             self._viewer.close()
 
+    def _on_move_up(self) -> None:
+        """Handle Move Up button click."""
+        idx = self._edge_order_list.currentRow()
+        if idx > 0:
+            self._move_edge_order_item(idx, idx - 1)
+
+    def _on_move_down(self) -> None:
+        """Handle Move Down button click."""
+        idx = self._edge_order_list.currentRow()
+        if idx >= 0 and idx < self._edge_order_list.count() - 1:
+            self._move_edge_order_item(idx, idx + 1)
+
+    def _move_edge_order_item(self, from_idx: int, to_idx: int) -> None:
+        """Move edge order item from one position to another."""
+        # Get current edge order (compute if needed)
+        current_order = self._get_current_edge_order()
+        if len(current_order) <= 1:
+            return
+
+        # Swap items
+        item = current_order.pop(from_idx)
+        current_order.insert(to_idx, item)
+
+        # Update state with manual override
+        self._state.set_edge_order(current_order)
+        self.sync_from_state()
+
+    def _get_current_edge_order(self) -> list[tuple[int, int]]:
+        """Get current edge order (from override or computed)."""
+        if self._state.edge_order_override is not None:
+            return list(self._state.edge_order_override)
+        return self._state.compute_edge_order()
+
+    def _on_reset_to_auto(self) -> None:
+        """Handle Reset to Auto button click."""
+        self._state.clear_edge_order()
+        self._state.clear_edge_spacing()
+        self.sync_from_state()
+
+    def _on_apply_spacing(self) -> None:
+        """Handle Apply edge spacing button click."""
+        # Get the selected edge index in the order list
+        idx = self._edge_order_list.currentRow()
+        if idx < 0:
+            return
+
+        # Get current edge spacing (n_edges - 1 values)
+        current_order = self._get_current_edge_order()
+        n_spacing = max(0, len(current_order) - 1)
+
+        if n_spacing == 0:
+            return
+
+        # Get current spacing values (from override or computed)
+        if self._state.edge_spacing_override is not None:
+            spacing = list(self._state.edge_spacing_override)
+        else:
+            spacing = list(self._state.compute_edge_spacing())
+
+        # Ensure spacing list has correct length
+        while len(spacing) < n_spacing:
+            spacing.append(0.0)
+
+        # Update spacing for the gap before the selected edge
+        # (spacing[i] is the gap between edge[i] and edge[i+1])
+        spacing_idx = min(idx, n_spacing - 1)
+        if spacing_idx >= 0:
+            spacing[spacing_idx] = self._edge_spacing_spin.value()
+
+        self._state.set_edge_spacing(spacing)
+        self.sync_from_state()
+
     # -------------------------------------------------------------------------
     # Public methods
     # -------------------------------------------------------------------------
@@ -794,6 +945,12 @@ class TrackGraphWidget:
         self._edge_combo.clear()
         for i, edge in enumerate(self._state.edges):
             self._edge_combo.addItem(f"Edge {i}: {edge[0]} → {edge[1]}")
+
+        # Update edge order list
+        self._edge_order_list.clear()
+        edge_order = self._get_current_edge_order()
+        for i, edge in enumerate(edge_order):
+            self._edge_order_list.addItem(f"{i + 1}. ({edge[0]}, {edge[1]})")
 
         # Update validation status
         _is_valid, errors, warnings = self.get_validation_status()
@@ -957,3 +1114,44 @@ class _LineEdit:
     @value.setter
     def value(self, text: str) -> None:
         self._edit.setText(text)
+
+
+class _EdgeOrderList:
+    """Accessor for edge order list in tests."""
+
+    def __init__(
+        self,
+        list_widget: Any,
+        state: TrackBuilderState,
+        widget: TrackGraphWidget,
+    ) -> None:
+        self._list = list_widget
+        self._state = state
+        self._widget = widget
+
+    @property
+    def items(self) -> list[tuple[int, int]]:
+        """Get current edge order as list of edge tuples."""
+        result: list[tuple[int, int]] = self._widget._get_current_edge_order()
+        return result
+
+    def select(self, idx: int) -> None:
+        """Select item at index."""
+        self._list.setCurrentRow(idx)
+
+    def move_item(self, from_idx: int, to_idx: int) -> None:
+        """Move item from one position to another."""
+        self._widget._move_edge_order_item(from_idx, to_idx)
+
+
+class _EdgeSpacingInput:
+    """Accessor for edge spacing input in tests."""
+
+    def __init__(self, spin, state) -> None:
+        self._spin = spin
+        self._state = state
+
+    def set_value(self, spacing_idx: int, value: float) -> None:
+        """Set spacing value for a specific gap between edges."""
+        # Set the spin box value
+        self._spin.setValue(value)

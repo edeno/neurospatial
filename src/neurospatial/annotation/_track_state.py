@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 import networkx as nx
+import numpy as np
+from numpy.typing import NDArray
 
 from neurospatial.annotation._track_types import TrackGraphMode
 
@@ -66,6 +68,10 @@ class TrackBuilderState:
     # Edge creation state (transient for two-click pattern)
     edge_start_node: int | None = None
 
+    # Edge order and spacing overrides (None = use auto-inferred)
+    edge_order_override: list[tuple[int, int]] | None = None
+    edge_spacing_override: list[float] | None = None
+
     # Undo/redo stacks
     undo_stack: list[dict[str, Any]] = field(default_factory=list)
     redo_stack: list[dict[str, Any]] = field(default_factory=list)
@@ -77,7 +83,8 @@ class TrackBuilderState:
         Returns
         -------
         dict
-            Snapshot containing nodes, edges, node_labels, and start_node.
+            Snapshot containing nodes, edges, node_labels, start_node,
+            and edge order/spacing overrides.
             Uses explicit deep copies to ensure independence from live state.
         """
         return {
@@ -85,6 +92,16 @@ class TrackBuilderState:
             "edges": [tuple(e) for e in self.edges],
             "node_labels": list(self.node_labels),
             "start_node": self.start_node,
+            "edge_order_override": (
+                [tuple(e) for e in self.edge_order_override]
+                if self.edge_order_override is not None
+                else None
+            ),
+            "edge_spacing_override": (
+                list(self.edge_spacing_override)
+                if self.edge_spacing_override is not None
+                else None
+            ),
         }
 
     def _restore_snapshot(self, snapshot: dict[str, Any]) -> None:
@@ -99,6 +116,17 @@ class TrackBuilderState:
         self.edges = [tuple(e) for e in snapshot["edges"]]
         self.node_labels = list(snapshot["node_labels"])
         self.start_node = snapshot["start_node"]
+        # Restore edge order/spacing overrides (handle missing keys for backwards compat)
+        self.edge_order_override = (
+            [tuple(e) for e in snapshot["edge_order_override"]]
+            if snapshot.get("edge_order_override") is not None
+            else None
+        )
+        self.edge_spacing_override = (
+            list(snapshot["edge_spacing_override"])
+            if snapshot.get("edge_spacing_override") is not None
+            else None
+        )
 
     def _save_for_undo(self) -> None:
         """Save current state before mutation.
@@ -417,3 +445,118 @@ class TrackBuilderState:
         if len(self.nodes) > 0:
             return 0
         return None
+
+    # =========================================================================
+    # Edge Order and Spacing Override Methods
+    # =========================================================================
+
+    def set_edge_order(self, edge_order: list[tuple[int, int]]) -> None:
+        """Set manual edge order override.
+
+        When set, the manual edge order will be used instead of
+        automatically inferred order from infer_edge_layout().
+
+        Parameters
+        ----------
+        edge_order : list of tuple
+            Ordered list of edges as (node1_idx, node2_idx) tuples.
+        """
+        self._save_for_undo()
+        self.edge_order_override = [(e[0], e[1]) for e in edge_order]
+
+    def clear_edge_order(self) -> None:
+        """Clear manual edge order override.
+
+        After clearing, the edge order will be automatically inferred
+        using infer_edge_layout() when building the result.
+        """
+        self._save_for_undo()
+        self.edge_order_override = None
+
+    def set_edge_spacing(self, edge_spacing: list[float]) -> None:
+        """Set manual edge spacing override.
+
+        When set, the manual spacing will be used instead of
+        automatically inferred spacing from infer_edge_layout().
+
+        Parameters
+        ----------
+        edge_spacing : list of float
+            Spacing values between consecutive edges.
+            Should have length = n_edges - 1.
+        """
+        self._save_for_undo()
+        self.edge_spacing_override = list(edge_spacing)
+
+    def clear_edge_spacing(self) -> None:
+        """Clear manual edge spacing override.
+
+        After clearing, the edge spacing will be automatically inferred
+        using infer_edge_layout() when building the result.
+        """
+        self._save_for_undo()
+        self.edge_spacing_override = None
+
+    def compute_edge_order(self) -> list[tuple[int, int]]:
+        """Compute edge order using infer_edge_layout.
+
+        Uses the current nodes, edges, and start_node to compute
+        the recommended edge traversal order.
+
+        Returns
+        -------
+        list of tuple
+            Ordered list of edges as (node1_idx, node2_idx) tuples.
+            Returns empty list if graph is invalid or empty.
+
+        Notes
+        -----
+        This method does NOT modify edge_order_override. Use set_edge_order()
+        to set a manual override based on this computed order.
+        """
+        if len(self.nodes) < 2 or len(self.edges) < 1:
+            return []
+
+        try:
+            from track_linearization import infer_edge_layout
+
+            graph = self.to_track_graph()
+            edge_order, _spacing = infer_edge_layout(
+                graph, start_node=self.get_effective_start_node()
+            )
+            return list(edge_order)
+        except ImportError:
+            # Fallback: return edges in creation order
+            return list(self.edges)
+
+    def compute_edge_spacing(self) -> NDArray[np.float64]:
+        """Compute edge spacing using infer_edge_layout.
+
+        Uses the current nodes, edges, and start_node to compute
+        the recommended spacing between consecutive edges.
+
+        Returns
+        -------
+        np.ndarray
+            Array of spacing values between consecutive edges.
+            Returns empty array if graph is invalid or empty.
+
+        Notes
+        -----
+        This method does NOT modify edge_spacing_override. Use set_edge_spacing()
+        to set a manual override based on this computed spacing.
+        """
+        if len(self.nodes) < 2 or len(self.edges) < 1:
+            return np.array([], dtype=np.float64)
+
+        try:
+            from track_linearization import infer_edge_layout
+
+            graph = self.to_track_graph()
+            _edge_order, edge_spacing = infer_edge_layout(
+                graph, start_node=self.get_effective_start_node()
+            )
+            return np.asarray(edge_spacing, dtype=np.float64)
+        except ImportError:
+            # Fallback: zero spacing
+            return np.zeros(max(0, len(self.edges) - 1), dtype=np.float64)

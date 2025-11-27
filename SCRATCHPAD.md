@@ -1,11 +1,66 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 3 COMPLETE - All Tasks Done
+**Current Status**: Task 4.1 COMPLETE - Edge Order Editing UI
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 4.1 Complete (Edge Order Editing UI)
+
+**Completed**: Task 4.1 - Implement Edge Order Editing UI
+
+**Work Done**:
+
+1. Added edge order override functionality to `TrackBuilderState` (`_track_state.py`):
+   - `edge_order_override: list[tuple[int, int]] | None` field
+   - `edge_spacing_override: list[float] | None` field
+   - `set_edge_order()`, `clear_edge_order()` methods
+   - `set_edge_spacing()`, `clear_edge_spacing()` methods
+   - `compute_edge_order()`, `compute_edge_spacing()` methods
+   - Updated snapshot/restore to include new fields with backwards compat
+
+2. Updated `build_track_graph_result()` (`_track_helpers.py`):
+   - Uses `state.edge_order_override` if set, otherwise auto-infers
+   - Uses `state.edge_spacing_override` if set, otherwise auto-infers
+
+3. Added Edge Order UI section to widget (`_track_widget.py`):
+   - QListWidget showing edge order
+   - Move Up / Move Down buttons for reordering
+   - Reset to Auto button (clears overrides)
+   - Edge spacing input with Apply button
+   - Test accessor classes (`_EdgeOrderList`, `_EdgeSpacingInput`)
+
+4. Created `tests/annotation/test_edge_order.py` with 29 tests:
+   - State field tests (8 tests) - initially None, set/clear, undo/redo
+   - Compute method tests (5 tests) - edge order, spacing, edge cases
+   - Build result tests (3 tests) - manual overrides, auto fallback
+   - Widget UI tests (13 tests) - components, button functionality, reordering
+
+**TDD Process**:
+
+- Wrote 29 tests first → all failed (fields/methods not implemented)
+- Implemented state changes → 16 state/helper tests pass
+- Implemented widget UI → all 29 tests pass
+- Fixed mypy issues (tuple type annotations)
+- Ran code review → Approved
+
+**Tests**: 29 new tests pass, 119 annotation tests pass total
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Key Implementation Details**:
+
+- Overrides are stored in state and preserved in undo/redo snapshots
+- Widget computes edge order on sync from state (lazy computation)
+- Move Up/Down swap items in the order list and update state
+- Reset to Auto clears both edge_order_override and edge_spacing_override
+- Edge spacing input applies to the gap between selected edge and next edge
+
+**Next**: Task 4.2 (optional) or Task 4.3 (Update CLAUDE.md Documentation)
+
+---
 
 ### 2025-11-27 - Task 3.4 Complete (Write End-to-End Tests)
 

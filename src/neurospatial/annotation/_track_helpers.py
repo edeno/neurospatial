@@ -286,17 +286,34 @@ def build_track_graph_result(
     if len(state.nodes) >= 2 and len(state.edges) >= 1:
         track_graph = build_track_graph_from_positions(node_positions, edges)
 
-        try:
-            from track_linearization import infer_edge_layout
+        # Use manual overrides if set, otherwise auto-infer
+        if state.edge_order_override is not None:
+            edge_order = list(state.edge_order_override)
+        else:
+            try:
+                from track_linearization import infer_edge_layout
 
-            edge_order, edge_spacing = infer_edge_layout(
-                track_graph,
-                start_node=start_node,
-            )
-        except ImportError:
-            # Fallback: use edges in creation order with zero spacing
-            edge_order = edges
-            edge_spacing = np.zeros(max(0, len(edges) - 1), dtype=np.float64)
+                edge_order, _spacing = infer_edge_layout(
+                    track_graph,
+                    start_node=start_node,
+                )
+            except ImportError:
+                # Fallback: use edges in creation order
+                edge_order = edges
+
+        if state.edge_spacing_override is not None:
+            edge_spacing = np.array(state.edge_spacing_override, dtype=np.float64)
+        else:
+            try:
+                from track_linearization import infer_edge_layout
+
+                _order, edge_spacing = infer_edge_layout(
+                    track_graph,
+                    start_node=start_node,
+                )
+            except ImportError:
+                # Fallback: zero spacing
+                edge_spacing = np.zeros(max(0, len(edges) - 1), dtype=np.float64)
     else:
         track_graph = None
         edge_order = []
