@@ -1,11 +1,41 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 1 in progress - Tasks 1.1, 1.2 Complete
+**Current Status**: Milestone 1 in progress - Tasks 1.1, 1.2, 1.3 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 1.3 Complete (Graph Building Helpers)
+
+**Completed**: Task 1.3 - Create Graph Building Helpers
+
+**Work Done**:
+
+1. Created `tests/annotation/test_track_helpers.py` with 31 tests covering:
+   - `transform_nodes_to_output` (5 tests) - pixel coords, calibration transform, edge cases
+   - `build_track_graph_from_positions` (5 tests) - graph creation, node/edge attributes
+   - `build_track_graph_result` (14 tests) - all fields, pixel_positions preservation, calibration
+   - `TrackGraphResult` (7 tests) - NamedTuple structure, `to_environment()` method
+
+2. Created `src/neurospatial/annotation/_track_helpers.py` (~315 lines):
+   - `transform_nodes_to_output(nodes_px, calibration)` - uses `calibration.transform_px_to_cm()`
+   - `build_track_graph_from_positions(node_positions, edges)` - uses `make_track_graph()` with fallback
+   - `build_track_graph_result(state, calibration)` - builds complete TrackGraphResult
+   - `TrackGraphResult` NamedTuple with `to_environment()` method
+   - Graceful handling of empty/invalid graphs (returns None for track_graph)
+   - Full NumPy-style docstrings with examples
+
+**Code Review**: Approved - production-ready with comprehensive test coverage
+
+**Tests**: 31 tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes
+
+**Next**: Task 1.4 - Write Unit Tests for State Management (partially done - tests already exist)
+
+---
 
 ### 2025-11-27 - Task 1.2 Complete (TrackBuilderState)
 

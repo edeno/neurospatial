@@ -90,16 +90,16 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 1.2
 
 **Actions**:
-- [ ] Implement `transform_nodes_to_output(nodes_px, calibration) -> list[tuple]`:
+- [x] Implement `transform_nodes_to_output(nodes_px, calibration) -> list[tuple]`:
   - Return pixel coords if no calibration
   - Use `calibration.transform_px_to_cm()` if provided
   - Match behavior of `annotate_video` exactly
 
-- [ ] Implement `build_track_graph_from_positions(node_positions, edges) -> nx.Graph`:
+- [x] Implement `build_track_graph_from_positions(node_positions, edges) -> nx.Graph`:
   - Use `track_linearization.make_track_graph()` internally
   - Ensures proper `distance` and `edge_id` edge attributes
 
-- [ ] Implement `build_track_graph_result(state, calibration) -> TrackGraphResult`:
+- [x] Implement `build_track_graph_result(state, calibration) -> TrackGraphResult`:
   - Store `pixel_positions` (original)
   - Transform `node_positions` using calibration
   - Build track graph from transformed positions
@@ -110,6 +110,8 @@ Implementation tasks for adding interactive track graph building functionality t
 - `transform_nodes_to_output` produces identical results to `annotate_video` coordinate transforms
 - `build_track_graph_from_positions` creates valid graph with proper attributes
 - Result matches `TrackGraphResult` schema
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Medium (~150 lines)
 
