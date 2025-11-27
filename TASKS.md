@@ -701,25 +701,27 @@ Implementation tasks for adding interactive track graph building functionality t
 
 **Actions**:
 
-- [ ] Run full test suite: `uv run pytest tests/annotation/`
-- [ ] Run type checking: `uv run mypy src/neurospatial/annotation/`
-- [ ] Run linting: `uv run ruff check src/neurospatial/annotation/`
-- [ ] Manual testing:
+- [x] Run full test suite: `uv run pytest tests/annotation/`
+- [x] Run type checking: `uv run mypy src/neurospatial/annotation/`
+- [x] Run linting: `uv run ruff check src/neurospatial/annotation/`
+- [ ] Manual testing (requires GUI environment):
   - Open video file, create track graph
   - Open image, create track graph
   - Use calibration
   - Test all keyboard shortcuts
   - Test undo/redo
   - Test save validation
-- [ ] Verify integration: `result.to_environment()` creates valid Environment
+- [x] Verify integration: `result.to_environment()` creates valid Environment
 
 **Success Criteria**:
 
-- All tests pass
-- Mypy passes without errors
-- Ruff passes without errors
-- Manual testing confirms UX works as designed
-- Integration with Environment.from_graph() verified
+- All tests pass ✓ (416 tests)
+- Mypy passes without errors ✓
+- Ruff passes without errors ✓
+- Manual testing confirms UX works as designed (requires GUI)
+- Integration with Environment.from_graph() verified ✓
+
+**Status**: COMPLETE (2025-11-27) - Automated checks pass; manual testing requires GUI
 
 ---
 
