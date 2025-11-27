@@ -15,10 +15,12 @@ Implementation tasks for adding interactive track graph building functionality t
 **File**: `src/neurospatial/annotation/_track_types.py`
 
 **Actions**:
+
 - [x] Create `_track_types.py` with `TrackGraphMode` type alias
 - [x] Define: `TrackGraphMode = Literal["add_node", "add_edge", "delete"]`
 
 **Success Criteria**:
+
 - Type alias imports correctly
 - Mypy passes without errors
 
@@ -35,6 +37,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 1.1
 
 **Actions**:
+
 - [x] Create `TrackBuilderState` dataclass with fields:
   - `mode: TrackGraphMode` (default: "add_node")
   - `nodes: list[tuple[float, float]]`
@@ -71,6 +74,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `get_effective_start_node() -> int | None` - Default to 0 if unset
 
 **Success Criteria**:
+
 - All operations save to undo stack before mutation
 - `delete_node` correctly reindexes edges and updates `start_node`
 - Self-loops and duplicate edges are rejected
@@ -90,6 +94,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 1.2
 
 **Actions**:
+
 - [x] Implement `transform_nodes_to_output(nodes_px, calibration) -> list[tuple]`:
   - Return pixel coords if no calibration
   - Use `calibration.transform_px_to_cm()` if provided
@@ -107,6 +112,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Handle empty/invalid graphs gracefully (return None for track_graph)
 
 **Success Criteria**:
+
 - `transform_nodes_to_output` produces identical results to `annotate_video` coordinate transforms
 - `build_track_graph_from_positions` creates valid graph with proper attributes
 - Result matches `TrackGraphResult` schema
@@ -124,6 +130,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 1.1, 1.2, 1.3
 
 **Actions**:
+
 - [x] Test node operations:
   - `test_add_node_returns_index`
   - `test_add_node_with_label`
@@ -159,6 +166,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `test_build_track_graph_result_complete`
 
 **Success Criteria**:
+
 - All tests pass
 - Coverage > 90% for `_track_state.py` and `_track_helpers.py`
 - Edge cases covered (empty state, single node, etc.)
@@ -178,7 +186,9 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Milestone 1 complete
 
 **Actions**:
-- [ ] Define color constants (colorblind-safe):
+
+- [x] Define color constants (colorblind-safe):
+
   ```python
   NODE_COLOR = "#1f77b4"       # Blue
   EDGE_COLOR = "#ff7f0e"       # Orange
@@ -187,16 +197,19 @@ Implementation tasks for adding interactive track graph building functionality t
   PREVIEW_COLOR = "#7f7f7f"    # Gray (dashed)
   ```
 
-- [ ] Implement `setup_track_layers(viewer) -> tuple[Shapes, Points]`:
+- [x] Implement `setup_track_layers(viewer) -> tuple[Shapes, Points]`:
   - Create Shapes layer for edges (middle, `shape_type="path"`)
   - Create Points layer for nodes (top, interactive)
   - Set proper z-ordering (edges below nodes)
   - Return `(edges_layer, nodes_layer)`
 
 **Success Criteria**:
+
 - Layers created in correct z-order
 - Nodes are clickable (on top)
 - Colors match spec
+
+**Status**: COMPLETE (2025-11-27)
 
 **Estimated Complexity**: Simple (~50 lines)
 
@@ -209,6 +222,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 2.1
 
 **Actions**:
+
 - [ ] Implement `_sync_layers_from_state(state, nodes_layer, edges_layer)`:
   - Update Points layer data from `state.nodes`
   - Update Shapes layer data from `state.edges`
@@ -241,6 +255,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `Ctrl+Enter` → save and close
 
 **Success Criteria**:
+
 - All keyboard shortcuts work
 - Two-click edge creation pattern works with visual feedback
 - Preview line updates smoothly
@@ -257,6 +272,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 2.1, 2.2
 
 **Actions**:
+
 - [ ] Implement `create_track_widget(viewer, edges_layer, nodes_layer, state) -> QWidget`:
   - Use magicgui for widget construction
 
@@ -271,6 +287,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Save and Close button
 
 - [ ] Add help text panel:
+
   ```
   Track Graph Builder
   -------------------
@@ -294,6 +311,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Default start node to 0 with warning if unset
 
 **Success Criteria**:
+
 - Widget docks correctly in napari
 - Mode selector syncs with keyboard shortcuts
 - Node/edge lists update in real-time
@@ -311,6 +329,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 2.1-2.3
 
 **Actions**:
+
 - [ ] Test layer setup:
   - `test_setup_track_layers_returns_correct_types`
   - `test_layers_z_order_correct`
@@ -335,6 +354,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `test_save_shows_warnings_but_allows`
 
 **Success Criteria**:
+
 - All tests pass with mocked napari viewer
 - Event handlers trigger correct state changes
 - Widget syncs bidirectionally with state
@@ -352,6 +372,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Milestone 2 complete
 
 **Actions**:
+
 - [ ] Create `TrackGraphResult` NamedTuple with fields:
   - `track_graph: nx.Graph | None`
   - `node_positions: list[tuple[float, float]]`
@@ -368,6 +389,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Call `Environment.from_graph()` with all parameters
 
 **Success Criteria**:
+
 - All fields correctly typed
 - `to_environment()` produces valid Environment
 - Method handles edge_spacing override correctly
@@ -383,7 +405,9 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 3.1
 
 **Actions**:
+
 - [ ] Implement `annotate_track_graph()` with signature:
+
   ```python
   def annotate_track_graph(
       video_path: str | Path | None = None,
@@ -424,6 +448,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Return `TrackGraphResult`
 
 **Success Criteria**:
+
 - Function opens napari with video frame
 - Initial data populates correctly
 - Returns valid `TrackGraphResult` on close
@@ -440,7 +465,9 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 3.1, 3.2
 
 **Actions**:
+
 - [ ] Add exports:
+
   ```python
   from neurospatial.annotation.track_graph import (
       annotate_track_graph,
@@ -451,6 +478,7 @@ Implementation tasks for adding interactive track graph building functionality t
 - [ ] Update `__all__` list to include new exports
 
 **Success Criteria**:
+
 - `from neurospatial.annotation import annotate_track_graph` works
 - `from neurospatial.annotation import TrackGraphResult` works
 
@@ -465,6 +493,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Tasks 3.1-3.3
 
 **Actions**:
+
 - [ ] Test input validation:
   - `test_requires_video_or_image`
   - `test_frame_index_out_of_range_raises`
@@ -490,6 +519,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - `test_environment_has_correct_bin_count`
 
 **Success Criteria**:
+
 - All tests pass
 - Full workflow from annotation to Environment works
 - Calibration transforms coordinates correctly
@@ -507,6 +537,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Milestone 3 complete
 
 **Actions**:
+
 - [ ] Add edge order list widget:
   - Show edges in `edge_order` sequence
   - Allow drag-and-drop reordering
@@ -522,6 +553,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Use custom edge_spacing if provided
 
 **Success Criteria**:
+
 - Edge order can be manually reordered
 - Custom spacing can be set
 - Auto-inference can be reset
@@ -537,6 +569,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Task 4.1
 
 **Actions**:
+
 - [ ] Add "Preview Linearization" button
 - [ ] Open matplotlib figure showing linearized track layout:
   - Use `track_linearization.plot_track_graph()` or equivalent
@@ -544,6 +577,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Update when edge_order changes
 
 **Success Criteria**:
+
 - Preview shows linearized track structure
 - Updates when edge order changes
 - Helps user verify correct ordering
@@ -559,7 +593,9 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: Milestone 3 complete
 
 **Actions**:
+
 - [ ] Add to Quick Reference:
+
   ```python
   # Annotate track graph interactively (v0.X.0+)
   from neurospatial.annotation import annotate_track_graph
@@ -574,6 +610,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Calibration for pixel-to-cm conversion
 
 - [ ] Add keyboard shortcuts table:
+
   | Key | Action |
   |-----|--------|
   | `A` | Add node mode |
@@ -587,6 +624,7 @@ Implementation tasks for adding interactive track graph building functionality t
   - Calibration coordinate conventions
 
 **Success Criteria**:
+
 - CLAUDE.md includes complete annotate_track_graph documentation
 - Examples are correct and tested
 - Keyboard shortcuts documented
@@ -602,12 +640,14 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: All previous tasks
 
 **Actions**:
+
 - [ ] Add NumPy-style docstrings to all public functions:
   - `annotate_track_graph()`
   - `TrackGraphResult`
   - `TrackBuilderState`
 
 - [ ] Add doctests:
+
   ```python
   >>> result = annotate_track_graph(image=frame)  # doctest: +SKIP
   >>> env = result.to_environment(bin_size=2.0)  # doctest: +SKIP
@@ -616,6 +656,7 @@ Implementation tasks for adding interactive track graph building functionality t
 - [ ] Run `uv run pytest --doctest-modules src/neurospatial/annotation/track_graph.py`
 
 **Success Criteria**:
+
 - All public APIs have complete docstrings
 - Docstrings follow NumPy format
 - Examples are accurate
@@ -629,6 +670,7 @@ Implementation tasks for adding interactive track graph building functionality t
 **Dependencies**: All previous tasks
 
 **Actions**:
+
 - [ ] Run full test suite: `uv run pytest tests/annotation/`
 - [ ] Run type checking: `uv run mypy src/neurospatial/annotation/`
 - [ ] Run linting: `uv run ruff check src/neurospatial/annotation/`
@@ -642,6 +684,7 @@ Implementation tasks for adding interactive track graph building functionality t
 - [ ] Verify integration: `result.to_environment()` creates valid Environment
 
 **Success Criteria**:
+
 - All tests pass
 - Mypy passes without errors
 - Ruff passes without errors

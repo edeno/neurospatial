@@ -1,11 +1,47 @@
 # Track Graph Annotation Implementation - Scratchpad
 
 **Started**: 2025-11-27
-**Current Status**: Milestone 1 COMPLETE - Tasks 1.1, 1.2, 1.3, 1.4 Complete
+**Current Status**: Milestone 2 IN PROGRESS - Task 2.1 Complete
 
 ---
 
 ## Session Notes
+
+### 2025-11-27 - Task 2.1 Complete (Create Layer Setup)
+
+**Completed**: Task 2.1 - Create Layer Setup
+
+**Work Done**:
+
+1. Created `tests/annotation/test_track_widget.py` with 19 tests covering:
+   - `TestSetupTrackLayers` (8 tests) - return types, z-ordering, layer names, empty initialization
+   - `TestColorConstants` (6 tests) - all 5 color constants defined and colorblind-safe
+   - `TestLayerColors` (3 tests) - node face_color, edge edge_color, border visibility
+   - `TestLayerProperties` (2 tests) - node size, edge width
+
+2. Created `src/neurospatial/annotation/_track_widget.py` (~100 lines):
+   - 5 colorblind-safe color constants (NODE_COLOR, EDGE_COLOR, START_NODE_COLOR, SELECTED_COLOR, PREVIEW_COLOR)
+   - `setup_track_layers(viewer) -> tuple[Shapes, Points]` function
+   - Proper z-ordering (nodes on top for clickability)
+   - Full NumPy-style docstrings with examples
+   - TYPE_CHECKING guard for lazy napari import
+
+**TDD Process**:
+
+- Wrote tests first → all 19 failed (module not found)
+- Implemented function → 15 passed, 4 failed (napari API issues)
+- Fixed border_width_is_relative setting and test assertions for array properties
+- All 19 tests pass
+
+**Code Review**: Approved - production-ready with comprehensive test coverage
+
+**Tests**: 19 tests pass
+**Linting**: ruff check passes
+**Type checking**: mypy passes (no issues)
+
+**Next**: Task 2.2 - Implement Event Handlers
+
+---
 
 ### 2025-11-27 - Task 1.4 Complete (Unit Tests for State Management)
 
