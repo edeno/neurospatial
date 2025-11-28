@@ -1110,3 +1110,209 @@ def goal_pair_direction_labels(
         labels[mask] = label
 
     return labels
+
+
+def heading_direction_labels(
+    positions: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64] | None = None,
+    *,
+    speed: NDArray[np.float64] | None = None,
+    heading: NDArray[np.float64] | None = None,
+    n_directions: int = 8,
+    min_speed: float = 5.0,
+) -> NDArray[np.object_]:
+    """Generate per-timepoint direction labels from heading angle.
+
+    Bins heading angles into sectors (e.g., "0–45°", "45–90°", ...) and labels
+    slow-moving periods as "stationary". This is useful for computing
+    direction-conditioned place fields in open field experiments.
+
+    Parameters
+    ----------
+    positions : NDArray[np.float64], shape (n_samples, 2), optional
+        2D position coordinates over time. Required if speed/heading not provided.
+    times : NDArray[np.float64], shape (n_samples,), optional
+        Timestamps (seconds). Required if positions provided.
+    speed : NDArray[np.float64], shape (n_samples,), optional
+        Precomputed speed at each timepoint. If provided with heading, takes
+        precedence over positions/times.
+    heading : NDArray[np.float64], shape (n_samples,), optional
+        Precomputed heading angle in radians at each timepoint (−π to π).
+        Standard convention: 0 = +x (right), π/2 = +y (up).
+    n_directions : int, default=8
+        Number of direction bins. Default 8 creates 45° bins.
+    min_speed : float, default=5.0
+        Minimum speed threshold. Timepoints with speed < min_speed are labeled
+        "stationary". Units should match your position data (e.g., cm/s).
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Direction label for each timepoint. Labels are either "stationary" or
+        formatted as "start°–end°" (e.g., "0–45°", "45–90°").
+
+    Raises
+    ------
+    ValueError
+        If neither (positions, times) nor (speed, heading) are provided, or if
+        incomplete pairs are provided.
+
+    Notes
+    -----
+    **Input modes**:
+
+    - **Compute from trajectory**: Provide ``positions`` and ``times``. Velocity
+      is computed via finite differences, and the first timepoint is padded with
+      speed=0 (labeled "stationary").
+
+    - **Precomputed kinematics**: Provide ``speed`` and ``heading`` arrays. This
+      is preferred when you have smoothed kinematics from tracking software
+      (DeepLabCut, SLEAP, etc.) or want to use a custom velocity computation.
+
+    If both modes are provided, precomputed speed/heading takes precedence.
+
+    **Bin boundaries**:
+
+    Bins span [−180°, 180°) with boundaries at ``i * (360° / n_directions) - 180°``
+    for i = 0, 1, ..., n_directions. For n_directions=8 (default):
+
+    - "−180–−135°", "−135–−90°", "−90–−45°", "−45–0°",
+      "0–45°", "45–90°", "90–135°", "135–180°"
+
+    Angles exactly on boundaries fall into the higher bin (right-inclusive).
+
+    **Label format**:
+
+    Labels use the en-dash (–, U+2013) for ranges and degree symbol (°) for
+    clarity. Example: "45–90°" means heading ∈ [45°, 90°).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavioral import heading_direction_labels
+    >>>
+    >>> # From trajectory (open field exploration)
+    >>> times = np.linspace(0, 100, 1000)  # 10 Hz for 100 seconds
+    >>> positions = np.random.rand(1000, 2) * 100  # Random walk in 100x100 cm arena
+    >>> labels = heading_direction_labels(positions=positions, times=times)
+    >>>
+    >>> # From precomputed kinematics (DeepLabCut output)
+    >>> speed = np.load("speed.npy")
+    >>> heading = np.load("heading.npy")
+    >>> labels = heading_direction_labels(speed=speed, heading=heading)
+    >>>
+    >>> # Custom binning (4 cardinal directions)
+    >>> labels = heading_direction_labels(
+    ...     positions=positions, times=times, n_directions=4
+    ... )  # Creates 90° bins
+
+    See Also
+    --------
+    goal_pair_direction_labels : Direction labels for trialized tasks
+    compute_directional_place_fields : Compute place fields per direction
+    """
+    # --- Input validation ---
+
+    # Check if precomputed kinematics provided
+    has_precomputed = speed is not None or heading is not None
+
+    # Check if position/time provided
+    has_trajectory = positions is not None or times is not None
+
+    # Validate input combinations
+    if has_precomputed:
+        # If either speed or heading provided, both must be provided
+        if speed is None or heading is None:
+            raise ValueError(
+                "If providing precomputed kinematics, both speed and heading "
+                "must be provided."
+            )
+        # Use precomputed values
+        speed_arr = np.asarray(speed, dtype=np.float64)
+        heading_arr = np.asarray(heading, dtype=np.float64)
+
+        # Validate array lengths match
+        if len(speed_arr) != len(heading_arr):
+            raise ValueError(
+                f"Speed and heading arrays must have the same length. "
+                f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
+            )
+
+        n_samples = len(speed_arr)
+
+    elif has_trajectory:
+        # If either positions or times provided, both must be provided
+        if positions is None or times is None:
+            raise ValueError(
+                "If providing trajectory data, both positions and times "
+                "must be provided."
+            )
+
+        positions_arr = np.asarray(positions, dtype=np.float64)
+        times_arr = np.asarray(times, dtype=np.float64)
+        n_samples = len(times_arr)
+
+        # Handle edge cases
+        if n_samples == 0:
+            return np.array([], dtype=object)
+        if n_samples == 1:
+            return np.array(["stationary"], dtype=object)
+
+        # Compute velocity from positions and times
+        dt = np.diff(times_arr)
+        velocity = np.diff(positions_arr, axis=0) / dt[:, np.newaxis]
+
+        # Compute speed and heading
+        speed_computed = np.linalg.norm(velocity, axis=1)
+        heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
+
+        # Pad first element (can't compute velocity for first timepoint)
+        speed_arr = np.concatenate([[0.0], speed_computed])
+        heading_arr = np.concatenate([[0.0], heading_computed])
+
+    else:
+        raise ValueError(
+            "Must provide either (positions, times) or (speed, heading). "
+            "Neither was provided."
+        )
+
+    # --- Generate labels ---
+
+    # Initialize labels array
+    labels = np.empty(n_samples, dtype=object)
+
+    # Compute bin edges in radians (from -π to π)
+    bin_edges_rad = np.linspace(-np.pi, np.pi, n_directions + 1)
+
+    # Convert to degrees for label formatting
+    bin_edges_deg = np.linspace(-180.0, 180.0, n_directions + 1)
+
+    # Create bin labels
+    bin_labels = []
+    for i in range(n_directions):
+        start_deg = round(bin_edges_deg[i])
+        end_deg = round(bin_edges_deg[i + 1])
+        # Use en-dash (–) and degree symbol (°)
+        label = f"{start_deg:.0f}–{end_deg:.0f}°"  # noqa: RUF001
+        bin_labels.append(label)
+
+    # Assign labels for each timepoint
+    for i in range(n_samples):
+        if speed_arr[i] < min_speed:
+            labels[i] = "stationary"
+        else:
+            # Normalize heading to [-π, π]
+            h = heading_arr[i]
+            # Wrap to [-π, π] range
+            h = np.arctan2(np.sin(h), np.cos(h))
+
+            # Find bin index using digitize (right-inclusive)
+            # np.digitize returns 1-indexed, subtract 1
+            # For edge cases at exactly π, map to last bin
+            bin_idx = np.digitize(h, bin_edges_rad[1:], right=False)
+            # Clip to valid range
+            bin_idx = min(bin_idx, n_directions - 1)
+
+            labels[i] = bin_labels[bin_idx]
+
+    return labels

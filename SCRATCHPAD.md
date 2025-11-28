@@ -53,8 +53,28 @@
 - Comprehensive NumPy docstring
 - Ruff and mypy pass
 
+### Task 2.2: heading_direction_labels ✅
+- Added to `src/neurospatial/behavioral.py`
+- Generates per-timepoint direction labels from heading angle
+- Accepts either (positions, times) or precomputed (speed, heading)
+- Precomputed values take precedence if both provided
+- Bins heading into sectors (e.g., "−180–−135°", "0–45°", etc.)
+- Labels slow-moving periods (< min_speed) as "stationary"
+- Uses en-dash (–, U+2013) and degree symbol (°) for professional labels
+- Edge cases handled: empty arrays, single timepoint, mismatched lengths
+- All 18 tests pass covering:
+  - Straight paths (+x, +y directions)
+  - Stationary detection and min_speed threshold
+  - Precomputed vs computed kinematics (equivalence and precedence)
+  - Input validation (error cases for missing/incomplete/mismatched inputs)
+  - Binning behavior (n_directions customization, boundary cases)
+  - Negative angles, output shape/dtype
+- Comprehensive NumPy docstring with scientific detail
+- Code review: APPROVED with length validation enhancement added
+- Ruff and mypy pass
+
 ## Next Up
-- Task 2.2: `heading_direction_labels` function (behavioral.py)
+- Task 3.1: `directional_field_index` function (metrics/place_fields.py)
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety

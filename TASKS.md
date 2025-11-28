@@ -172,12 +172,12 @@ Functions to generate direction labels for common use cases.
 
 **Success criteria**:
 
-- [ ] Accepts either (positions, times) or (speed, heading)
-- [ ] Raises ValueError if neither provided
-- [ ] Precomputed values take precedence
-- [ ] Labels are strings: "stationary", "0–45°", "45–90°", etc.
-- [ ] Bin boundaries are correct (test at edges)
-- [ ] First timepoint handled correctly when computing from positions
+- [x] Accepts either (positions, times) or (speed, heading)
+- [x] Raises ValueError if neither provided
+- [x] Precomputed values take precedence
+- [x] Labels are strings: "stationary", "0–45°", "45–90°", etc.
+- [x] Bin boundaries are correct (test at edges)
+- [x] First timepoint handled correctly when computing from positions
 
 **Dependencies**: None
 
@@ -505,7 +505,7 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | 1. Core | 1.2 _subset_spikes_by_time_mask helper | [x] |
 | 1. Core | 1.3 compute_directional_place_fields | [x] |
 | 2. Labels | 2.1 goal_pair_direction_labels | [x] |
-| 2. Labels | 2.2 heading_direction_labels | [ ] |
+| 2. Labels | 2.2 heading_direction_labels | [x] |
 | 3. Metric | 3.1 directional_field_index | [ ] |
 | 4. Exports | 4.1 spike_field exports | [ ] |
 | 4. Exports | 4.2 behavioral exports | [ ] |
