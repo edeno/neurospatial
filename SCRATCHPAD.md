@@ -237,12 +237,29 @@ Added `TestArrayPreservation` class with 7 tests:
 - No additional dependency
 - Proven in production
 
-Offer `use_dask=True` as an option for users who prefer native napari dask integration.
+### Decision: Remove Dask Renderer (2025-11-28)
+
+Based on the benchmark results showing LazyFieldRenderer dramatically outperforming dask (20-45,000x faster creation, 20-220x faster access), the dask renderer has been **removed entirely** from the codebase.
+
+**Rationale**:
+
+1. LazyFieldRenderer is strictly superior in all measured metrics
+2. No compelling use case for the dask option
+3. Simplifies codebase by removing unused code path
+4. Removes dask as an optional dependency
+
+**Removed**:
+
+- `_create_dask_field_renderer()` function from `napari_backend.py`
+- `use_dask: bool = False` parameter from `render_napari()`
+- 14 dask-related tests from `test_napari_backend.py`
+- Dask benchmarking code from `bench_lazy_renderers.py`
 
 **Verification**:
 
-- `uv run python benchmarks/bench_lazy_renderers.py --all` → All configs pass
-- `uv run ruff check benchmarks/bench_lazy_renderers.py` → All checks passed
+- All 81 animation tests pass (40 napari + 41 core)
+- Linting and mypy pass
+- Benchmark file simplified to focus on LazyFieldRenderer performance profiling
 
 ---
 
@@ -285,6 +302,7 @@ None currently.
 4. **isinstance in __len__**: Use `isinstance(self.fields, np.ndarray)` directly in `__len__` for mypy type narrowing, even though we have `_fields_is_array` flag
 5. **int() cast for shape[0]**: Cast `self.fields.shape[0]` to `int()` to satisfy mypy's `no-any-return` check
 6. **Dask renderer validation**: Added comprehensive input validation (array type, 2D shape, n_frames > 0, chunk_size > 0) after code review identified edge case bugs
+7. **Remove dask renderer**: After benchmarking showed LazyFieldRenderer is 20-45,000x faster for creation and 20-220x faster for access, removed dask renderer entirely (no `use_dask` parameter)
 
 ---
 
