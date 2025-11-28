@@ -1293,3 +1293,45 @@ class TestLargeDatasetColormapRange:
 # NOTE: Dask renderer tests removed after benchmarking showed LazyFieldRenderer
 # significantly outperforms dask (20-45,000x faster creation, 20-220x faster access).
 # See benchmarks/bench_lazy_renderers.py for details.
+
+
+class TestMultiscaleDisabled:
+    """Test that multiscale=False is always set for add_image calls.
+
+    This prevents napari from computing expensive multiscale pyramids
+    which we don't need for animation playback.
+    """
+
+    @pytest.fixture
+    def env(self):
+        """Create minimal environment for testing."""
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100
+        from neurospatial import Environment
+
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    def test_render_napari_sets_multiscale_false(self, env):
+        """Test that render_napari passes multiscale=False to add_image."""
+        from unittest.mock import patch
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Create small field sequence
+            n_frames = 10
+            rng = np.random.default_rng(42)
+            fields = rng.random((n_frames, env.n_bins))
+
+            render_napari(env, fields, fps=10)
+
+            # Verify add_image was called with multiscale=False
+            mock_viewer.add_image.assert_called()
+            call_kwargs = mock_viewer.add_image.call_args[1]
+            assert "multiscale" in call_kwargs
+            assert call_kwargs["multiscale"] is False

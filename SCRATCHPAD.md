@@ -338,9 +338,41 @@ All 6 tasks completed:
 - `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
 - `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
 
-### Task 3.3: Always Set multiscale=False
+### Task 3.3: Always Set multiscale=False ✅ COMPLETED
 
-- [ ] Add `multiscale=False` to `viewer.add_image()` call
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Added `multiscale=False` to `viewer.add_image()` call in `render_napari()` (line 1727)
+2. Added `multiscale=False` to `viewer.add_image()` call in `render_napari_multi_field()` (line 1995)
+
+This prevents napari from computing expensive multiscale pyramids which we don't need
+for animation playback, and which can cause slow startup for large datasets.
+
+**Tests Added** (`tests/animation/test_napari_backend.py`):
+
+- `test_render_napari_sets_multiscale_false`
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_napari_backend.py -v` → 43 passed, 1 skipped
+- `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
+
+---
+
+## Completed: Milestone 3 - Scalable Colormap Range Computation
+
+**Status**: COMPLETED
+
+All 3 tasks completed:
+
+- [x] Task 3.1: Add Streaming Path to compute_global_colormap_range
+- [x] Task 3.2: Update render_napari to Use Streaming
+- [x] Task 3.3: Always Set multiscale=False
 
 ---
 

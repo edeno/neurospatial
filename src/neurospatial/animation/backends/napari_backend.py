@@ -1724,6 +1724,7 @@ def render_napari(
         name="Spatial Fields",
         rgb=True,  # Already RGB
         scale=layer_scale,  # Physical units scale (enables correct scale bar)
+        multiscale=False,  # Disable pyramid computation for large datasets
         # Don't pass contrast_limits for RGB images - they're already [0, 255]
     )
 
@@ -1991,6 +1992,7 @@ def _render_multi_field_napari(
             name=name,
             rgb=True,
             scale=layer_scale,  # Physical units scale (enables correct scale bar)
+            multiscale=False,  # Disable pyramid computation for large datasets
         )
 
     # Configure grid mode based on layout parameter
