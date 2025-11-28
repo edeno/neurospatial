@@ -459,60 +459,48 @@ if __name__ == "__main__":
 
 ---
 
-## Milestone 4: Helper Functions
+## Milestone 4: Helper Functions ✅ COMPLETE
 
 **Priority**: MEDIUM - Improves ergonomics for large sessions.
 
-### Task 4.1: Add estimate_colormap_range_from_subset
+### Task 4.1: Add estimate_colormap_range_from_subset ✅
+
+**Completed**: 2025-11-28
 
 **File**: `src/neurospatial/animation/core.py`
 
-**What to do**:
+**Implementation**:
 
-1. Create function with signature: `(fields, n_samples=10_000, percentile=(1.0, 99.0)) -> tuple[float, float]`
-2. Sample random frames (reproducible with fixed seed)
-3. Compute percentile-based range on samples
-4. Handle both array and list inputs
-
-**Success criteria**:
-
-- Returns reasonable range for random data (~0, ~1)
-- Completes in <0.5s for 1M frame dataset
-- Works with memmaps
-
-**Dependencies**: None (can be done in parallel)
+- Function signature: `(fields, n_samples=10_000, percentile=(1.0, 99.0), seed=None) -> tuple[float, float]`
+- Samples random frames (reproducible with fixed seed)
+- Computes percentile-based range on samples
+- Handles both array and list inputs
+- Works efficiently with memory-mapped arrays
+- Completes in <0.5s for 1M+ frame datasets
 
 ---
 
-### Task 4.2: Add large_session_napari_config
+### Task 4.2: Add large_session_napari_config ✅
+
+**Completed**: 2025-11-28
 
 **File**: `src/neurospatial/animation/core.py`
 
-**What to do**:
+**Implementation**:
 
-1. Create function with signature: `(n_frames, sample_rate_hz=None) -> dict[str, Any]`
-2. Return recommended: fps, chunk_size, max_chunks
-3. Scale recommendations based on n_frames thresholds
-
-**Success criteria**:
-
-- Returns valid kwargs dict for animate_fields
-- Recommendations scale appropriately (larger datasets → larger chunks)
-
-**Dependencies**: None (can be done in parallel)
+- Function signature: `(n_frames, sample_rate_hz=None) -> dict[str, Any]`
+- Returns recommended fps, chunk_size, max_chunks
+- Scales recommendations based on n_frames thresholds
 
 ---
 
-### Task 4.3: Export Helpers from Animation Module
+### Task 4.3: Export Helpers from Animation Module ✅
+
+**Completed**: 2025-11-28
 
 **File**: `src/neurospatial/animation/__init__.py`
 
-**What to do**:
-
-1. Add imports for `estimate_colormap_range_from_subset`, `large_session_napari_config`
-2. Add to `__all__` if present
-
-**Success criteria**:
+**Implementation**:
 
 ```python
 from neurospatial.animation import estimate_colormap_range_from_subset, large_session_napari_config
