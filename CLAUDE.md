@@ -167,7 +167,6 @@ from neurospatial import (
     goal_pair_direction_labels,
     heading_direction_labels,
 )
-from neurospatial.metrics import directional_field_index
 
 # For trialized tasks (T-maze, Y-maze, linear track)
 trials = segment_trials(trajectory_bins, times, env,
@@ -176,18 +175,14 @@ labels = goal_pair_direction_labels(times, trials)
 result = compute_directional_place_fields(
     env, spike_times, times, positions, labels, bandwidth=5.0
 )
-forward_field = result.fields["home→goal"]
-reverse_field = result.fields["goal→home"]
+outbound_field = result.fields["home→goal"]
+inbound_field = result.fields["goal→home"]
 
 # For open fields (heading-based)
 labels = heading_direction_labels(positions, times, n_directions=8)
 result = compute_directional_place_fields(
     env, spike_times, times, positions, labels, bandwidth=5.0
 )
-
-# Quantify directionality per bin: (forward - reverse) / (forward + reverse)
-# Range: [-1, 1] where +1 = forward-preferring, -1 = reverse-preferring
-index = directional_field_index(forward_field, reverse_field)
 
 # Animate spatial fields over time (v0.3.0+)
 from neurospatial.animation import subsample_frames
@@ -213,6 +208,24 @@ subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
 # IMPORTANT: Clear caches before parallel rendering (pickle-ability requirement)
 env.clear_cache()  # Makes environment pickle-able for multiprocessing
 env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
+
+# Scale bars on visualizations (v0.11.0+)
+from neurospatial import ScaleBarConfig
+
+# Static plots with scale bar
+ax = env.plot_field(field, scale_bar=True)  # Auto-sized based on extent
+ax = env.plot(scale_bar=True)  # Works with plot() too
+
+# Custom scale bar configuration
+config = ScaleBarConfig(length=20, position="lower left", color="white")
+ax = env.plot_field(field, scale_bar=config)
+
+# Scale bars in animations
+env.animate_fields(fields, scale_bar=True, backend="napari")  # Native napari scale bar
+env.animate_fields(fields, scale_bar=True, save_path="video.mp4")  # Matplotlib scale bar
+
+# Note: scale_bar is different from calibrate_video(scale_bar=...) which is for
+# calibrating video coordinates. This scale_bar adds visual scale bars to plots.
 
 # Animation overlays (v0.4.0+)
 from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
