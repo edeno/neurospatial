@@ -65,11 +65,11 @@ assert np.isfinite(ll).all()
 
 ### 1.4 Posterior Normalization (`posterior.py`)
 
-- [ ] Implement `normalize_to_posterior(log_likelihood, *, prior=None, axis=-1, handle_degenerate="uniform")`
+- [x] Implement `normalize_to_posterior(log_likelihood, *, prior=None, axis=-1, handle_degenerate="uniform")`
   - Log-sum-exp implementation: `ll -= ll.max(keepdims=True); post = exp(ll); post /= post.sum()`
   - Prior handling: normalize to sum=1, apply as `log_likelihood + log(prior)`
   - Degenerate handling: detect all-inf rows, apply `handle_degenerate` strategy
-- [ ] Implement `decode_position(env, spike_counts, encoding_models, dt, *, prior=None, method="poisson", times=None, validate=False)`
+- [x] Implement `decode_position(env, spike_counts, encoding_models, dt, *, prior=None, method="poisson", times=None, validate=False)`
   - Call `log_poisson_likelihood` → `normalize_to_posterior` → `DecodingResult`
   - Implement `validate=True` checks (row sums, NaN/Inf, extreme values)
 

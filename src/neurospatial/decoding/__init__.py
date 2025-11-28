@@ -98,88 +98,24 @@ The implementation is based on standard Bayesian methods for neural decoding,
 with numerical stability considerations for log-domain computation.
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-import numpy as np
-from numpy.typing import NDArray
-
 from neurospatial.decoding._result import DecodingResult
 from neurospatial.decoding.likelihood import (
     log_poisson_likelihood,
     poisson_likelihood,
 )
-
-if TYPE_CHECKING:
-    from neurospatial.environment import Environment
-
-
-# =============================================================================
-# Placeholder decode_position (will be moved to posterior.py in Milestone 1.4)
-# =============================================================================
-
-
-def decode_position(
-    env: Environment,
-    spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64],
-    dt: float,
-    *,
-    prior: NDArray[np.float64] | None = None,
-    method: str = "poisson",
-    times: NDArray[np.float64] | None = None,
-    validate: bool = False,
-) -> DecodingResult:
-    """Decode position from population spike counts.
-
-    This is a placeholder that will be implemented in Milestone 1.4.
-
-    Parameters
-    ----------
-    env : Environment
-        Spatial environment defining the discretization.
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts per neuron per time bin.
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) for each neuron.
-    dt : float
-        Time bin width in seconds.
-    prior : NDArray[np.float64] | None, default=None
-        Prior probability over positions.
-    method : str, default="poisson"
-        Likelihood model.
-    times : NDArray[np.float64] | None, default=None
-        Time bin centers (seconds).
-    validate : bool, default=False
-        If True, run extra validation checks.
-
-    Returns
-    -------
-    DecodingResult
-        Container with posterior, estimates, and metadata.
-
-    Raises
-    ------
-    NotImplementedError
-        This is a placeholder implementation.
-    """
-    raise NotImplementedError(
-        "decode_position is not yet implemented. "
-        "This is a placeholder for Milestone 1.4."
-    )
-
+from neurospatial.decoding.posterior import (
+    decode_position,
+    normalize_to_posterior,
+)
 
 # =============================================================================
 # Public API exports
 # =============================================================================
 
 __all__ = [
-    # Result container
     "DecodingResult",
-    # Main entry point
     "decode_position",
-    # Likelihood functions
     "log_poisson_likelihood",
+    "normalize_to_posterior",
     "poisson_likelihood",
 ]

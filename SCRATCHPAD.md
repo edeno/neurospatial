@@ -3,9 +3,34 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: 1.4 Posterior Normalization
+**Current Milestone**: 1.5 Estimate Functions (Next)
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 1.4 Complete
+
+**Milestone 1.4 - Posterior Normalization**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/posterior.py` with two functions:
+  - `normalize_to_posterior()` - Log-sum-exp normalization with prior and degenerate handling
+  - `decode_position()` - Main entry point combining likelihood + posterior
+- Created comprehensive test suite: `tests/decoding/test_posterior.py` (41 tests)
+- All tests pass (101 total in decoding/, 1 skipped)
+- Code review passed with excellent rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- Log-sum-exp trick for numerical stability: `ll -= ll.max(); post = exp(ll); post /= post.sum()`
+- Prior handling: normalizes prior internally, supports 1D (stationary) and 2D (time-varying)
+- Degenerate handling: three strategies ("uniform", "nan", "raise")
+- Input validation: optional `validate=True` catches NaN/Inf in inputs
+- NumPy 2.x doctest compatibility with `bool()` conversion
+- Type annotations with `Literal` types for enums
+
+**Next task**: Milestone 1.5 - Estimate Functions
+- `map_estimate()`, `map_position()`, `mean_position()` - Already implemented as DecodingResult properties
+- `entropy()` - Already implemented as DecodingResult.uncertainty property
+- `credible_region()` - New: HPD bin indices
 
 ### 2025-11-28 - Milestone 1.3 Complete
 

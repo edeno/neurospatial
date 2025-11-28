@@ -4,8 +4,6 @@ These tests verify that the decoding subpackage structure is correctly set up
 and all expected public APIs are importable.
 """
 
-import pytest
-
 
 class TestPackageImports:
     """Test that package structure is correct."""
@@ -21,7 +19,6 @@ class TestPackageImports:
         """Test that decode_position can be imported from subpackage."""
         from neurospatial.decoding import decode_position
 
-        # At this stage, it's a placeholder that raises NotImplementedError
         assert callable(decode_position)
 
     def test_decoding_result_importable(self):
@@ -39,12 +36,11 @@ class TestPackageImports:
         assert isinstance(DecodingResult, type)
 
 
-class TestPlaceholderBehavior:
-    """Test that placeholders behave correctly."""
+class TestNormalizeToPosteriorImport:
+    """Test that normalize_to_posterior can be imported."""
 
-    def test_decode_position_placeholder_raises(self):
-        """Placeholder decode_position should raise NotImplementedError."""
-        from neurospatial.decoding import decode_position
+    def test_normalize_to_posterior_importable(self):
+        """Test that normalize_to_posterior can be imported from subpackage."""
+        from neurospatial.decoding import normalize_to_posterior
 
-        with pytest.raises(NotImplementedError):
-            decode_position(None, None, None, 0.025)
+        assert callable(normalize_to_posterior)
