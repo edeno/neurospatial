@@ -35,6 +35,10 @@ from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
+    from neurospatial.visualization.scale_bar import ScaleBarConfig
+else:
+    # Runtime import handled lazily in methods
+    ScaleBarConfig = "ScaleBarConfig"  # For type annotations only
 
 
 class EnvironmentVisualization:
@@ -74,6 +78,7 @@ class EnvironmentVisualization:
         show_regions: bool = False,
         layout_plot_kwargs: dict[str, Any] | None = None,
         regions_plot_kwargs: dict[str, Any] | None = None,
+        scale_bar: bool | ScaleBarConfig = False,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes:
         """Plot the environment's layout and optionally defined regions.
@@ -96,6 +101,10 @@ class EnvironmentVisualization:
         regions_plot_kwargs : Optional[Dict[str, Any]], optional
             Keyword arguments to pass to the `regions.plot_regions()` method.
             Defaults to None.
+        scale_bar : bool or ScaleBarConfig, default=False
+            Whether to add a scale bar showing physical scale. If True, uses
+            auto-calculated length based on environment extent. If ScaleBarConfig,
+            uses the specified configuration. Default: False (no scale bar).
         **kwargs : Any
             Additional keyword arguments that are passed to `layout.plot()`.
             These can be overridden by `layout_plot_kwargs`.
@@ -148,6 +157,45 @@ class EnvironmentVisualization:
         # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
         if ax.get_title() == "":
             ax.set_title(plot_title)
+
+        # Add scale bar if requested
+        if scale_bar:
+            from neurospatial.visualization.scale_bar import (
+                ScaleBarConfig as _ScaleBarConfig,
+            )
+            from neurospatial.visualization.scale_bar import (
+                add_scale_bar_to_axes,
+            )
+
+            config = (
+                scale_bar
+                if isinstance(scale_bar, _ScaleBarConfig)
+                else _ScaleBarConfig()
+            )
+
+            # Validate extent is available and reasonable
+            if not self.dimension_ranges:
+                warnings.warn(
+                    "Cannot add scale bar: dimension_ranges not available",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif not np.isfinite(self.dimension_ranges[0]).all():
+                warnings.warn(
+                    "Cannot add scale bar: dimension_ranges contains non-finite values",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                extent_x = self.dimension_ranges[0][1] - self.dimension_ranges[0][0]
+                if extent_x < 1e-6:
+                    warnings.warn(
+                        f"Cannot add scale bar: extent too small ({extent_x})",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                else:
+                    add_scale_bar_to_axes(ax, extent_x, self.units, config)
 
         return ax
 
@@ -231,6 +279,7 @@ class EnvironmentVisualization:
         colorbar_label: str = "",
         nan_color: str | None = "lightgray",
         rasterized: bool = True,
+        scale_bar: bool | ScaleBarConfig = False,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes:
         """Plot spatial field data over the environment.
@@ -269,6 +318,10 @@ class EnvironmentVisualization:
         rasterized : bool, default=True
             Rasterize output for better performance and smaller file sizes with
             large grids. Recommended for environments with >1000 bins.
+        scale_bar : bool or ScaleBarConfig, default=False
+            Whether to add a scale bar showing physical scale. If True, uses
+            auto-calculated length based on environment extent. If ScaleBarConfig,
+            uses the specified configuration. Default: False (no scale bar).
         **kwargs : Any
             Additional keyword arguments passed to underlying plot function
             (e.g., ``pcolormesh``, ``PatchCollection.set``).
@@ -447,6 +500,45 @@ class EnvironmentVisualization:
             if self.dimension_ranges and len(self.dimension_ranges) >= 2:
                 ax.set_xlim(self.dimension_ranges[0])
                 ax.set_ylim(self.dimension_ranges[1])
+
+        # Add scale bar if requested
+        if scale_bar:
+            from neurospatial.visualization.scale_bar import (
+                ScaleBarConfig as _ScaleBarConfig,
+            )
+            from neurospatial.visualization.scale_bar import (
+                add_scale_bar_to_axes,
+            )
+
+            config = (
+                scale_bar
+                if isinstance(scale_bar, _ScaleBarConfig)
+                else _ScaleBarConfig()
+            )
+
+            # Validate extent is available and reasonable
+            if not self.dimension_ranges:
+                warnings.warn(
+                    "Cannot add scale bar: dimension_ranges not available",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif not np.isfinite(self.dimension_ranges[0]).all():
+                warnings.warn(
+                    "Cannot add scale bar: dimension_ranges contains non-finite values",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                extent_x = self.dimension_ranges[0][1] - self.dimension_ranges[0][0]
+                if extent_x < 1e-6:
+                    warnings.warn(
+                        f"Cannot add scale bar: extent too small ({extent_x})",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                else:
+                    add_scale_bar_to_axes(ax, extent_x, self.units, config)
 
         return ax
 
