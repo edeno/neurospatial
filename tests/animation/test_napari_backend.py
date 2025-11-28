@@ -969,3 +969,218 @@ def test_playback_widget_scrubbing_updates_immediately():
         f"Expected 5 updates when scrubbing, got {len(frame_info_values)}. "
         "Scrubbing (not playing) should not be throttled."
     )
+
+
+# ============================================================================
+# Array Input Tests (Task 2.1: render_napari accepts 2D arrays)
+# ============================================================================
+
+
+class TestRenderNapariArrayInput:
+    """Test render_napari with 2D array inputs (memmap-friendly).
+
+    These tests verify that render_napari and related functions accept
+    2D numpy arrays (shape: n_frames, n_bins) in addition to lists of arrays.
+    This enables efficient memmap passthrough without list conversion.
+    """
+
+    @pytest.fixture
+    def env(self):
+        """Create simple 2D environment for testing."""
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    @pytest.fixture
+    def fields_array(self, env):
+        """Create 2D array of fields (n_frames, n_bins)."""
+        n_frames = 50
+        rng = np.random.default_rng(42)
+        return rng.random((n_frames, env.n_bins)).astype(np.float64)
+
+    @pytest.fixture
+    def fields_list(self, env):
+        """Create list of 1D field arrays for comparison."""
+        n_frames = 50
+        rng = np.random.default_rng(42)
+        return [rng.random(env.n_bins).astype(np.float64) for _ in range(n_frames)]
+
+    @pytest.mark.napari
+    def test_render_napari_accepts_2d_array(self, env, fields_array):
+        """Test render_napari accepts 2D numpy array as fields input."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should accept 2D array without error
+            viewer = render_napari(
+                env,
+                fields_array,  # 2D array, not list
+                fps=10,
+                cmap="viridis",
+            )
+
+            # Verify viewer was created
+            assert viewer is not None
+            mock_viewer.add_image.assert_called_once()
+
+    @pytest.mark.napari
+    def test_render_napari_array_produces_correct_frame_count(self, env, fields_array):
+        """Test render_napari computes n_frames from array.shape[0]."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            render_napari(env, fields_array, fps=10)
+
+            # Check that lazy_frames passed to add_image has correct length
+            call_args = mock_viewer.add_image.call_args
+            lazy_frames = call_args[0][0]  # First positional arg
+            assert len(lazy_frames) == fields_array.shape[0]
+
+    def test_create_lazy_field_renderer_accepts_array(self, env, fields_array):
+        """Test _create_lazy_field_renderer accepts 2D array input."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_lazy_field_renderer,
+        )
+
+        cmap = plt.get_cmap("viridis")
+        cmap_lookup = (cmap(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        # Should accept 2D array
+        renderer = _create_lazy_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        assert len(renderer) == fields_array.shape[0]
+        assert renderer.dtype == np.uint8
+
+    def test_create_lazy_field_renderer_array_frame_access(self, env, fields_array):
+        """Test frame access works correctly for array input."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_lazy_field_renderer,
+        )
+
+        cmap = plt.get_cmap("viridis")
+        cmap_lookup = (cmap(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        renderer = _create_lazy_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Access various frames
+        frame_0 = renderer[0]
+        frame_last = renderer[-1]
+        frame_mid = renderer[25]
+
+        # All should be valid RGB frames
+        assert frame_0.dtype == np.uint8
+        assert frame_0.ndim == 3
+        assert frame_0.shape[-1] == 3
+
+        assert frame_last.dtype == np.uint8
+        assert frame_mid.dtype == np.uint8
+
+    def test_create_lazy_field_renderer_array_vs_list_equivalence(
+        self, env, fields_array
+    ):
+        """Test array and list inputs produce equivalent outputs."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_lazy_field_renderer,
+        )
+
+        cmap = plt.get_cmap("viridis")
+        cmap_lookup = (cmap(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        # Create list version of same data
+        fields_list = [fields_array[i] for i in range(fields_array.shape[0])]
+
+        # Create renderers for both
+        renderer_array = _create_lazy_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+        renderer_list = _create_lazy_field_renderer(
+            env, fields_list, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Outputs should be identical
+        np.testing.assert_array_equal(renderer_array[0], renderer_list[0])
+        np.testing.assert_array_equal(renderer_array[25], renderer_list[25])
+        np.testing.assert_array_equal(renderer_array[-1], renderer_list[-1])
+
+    def test_array_input_skips_validate_field_types(self, env, fields_array):
+        """Test array input skips _validate_field_types_consistent (no list iteration)."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with (
+            patch(
+                "neurospatial.animation.backends.napari_backend.napari.Viewer"
+            ) as mock_viewer_class,
+            patch(
+                "neurospatial.animation.backends.napari_backend._validate_field_types_consistent"
+            ) as mock_validate,
+        ):
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Render with array input
+            render_napari(env, fields_array, fps=10)
+
+            # _validate_field_types_consistent should NOT be called for array input
+            mock_validate.assert_not_called()
+
+    def test_memmap_input_accepted(self, env, tmp_path):
+        """Test memmap arrays are accepted without error."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_lazy_field_renderer,
+        )
+
+        # Create memmap
+        n_frames = 100
+        mmap_path = tmp_path / "test_fields.dat"
+        fields_mmap = np.memmap(
+            str(mmap_path), dtype="float64", mode="w+", shape=(n_frames, env.n_bins)
+        )
+        rng = np.random.default_rng(42)
+        fields_mmap[:] = rng.random((n_frames, env.n_bins))
+        fields_mmap.flush()
+
+        cmap = plt.get_cmap("viridis")
+        cmap_lookup = (cmap(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+        # Should accept memmap
+        renderer = _create_lazy_field_renderer(
+            env, fields_mmap, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        assert len(renderer) == n_frames
+
+        # Frame access should work
+        frame = renderer[50]
+        assert frame.dtype == np.uint8
+        assert frame.shape[-1] == 3
+
+        # Cleanup
+        del fields_mmap

@@ -28,6 +28,7 @@
 **File: `tests/animation/test_core.py`**
 
 Added `TestArrayPreservation` class with 7 tests:
+
 - `test_napari_backend_receives_array_not_list`
 - `test_html_backend_receives_list_from_array`
 - `test_video_backend_receives_list_from_array`
@@ -42,6 +43,7 @@ Added `TestArrayPreservation` class with 7 tests:
 **Result**: APPROVED
 
 **Key findings:**
+
 - Logic is sound and handles edge cases
 - Tests are comprehensive and use proper mocking
 - Backward compatibility fully maintained
@@ -49,19 +51,51 @@ Added `TestArrayPreservation` class with 7 tests:
 - Type safety considered (mypy compliant)
 
 **Minor suggestions (low priority, for future):**
+
 - Add test for 3D array edge case
 - Document memmap preservation in docstring
 - Consider extracting array validation to helper function
 
 ---
 
-## Next Up: Milestone 2 - Napari Backend Array Support
+## In Progress: Milestone 2 - Napari Backend Array Support
 
-Ready to start Milestone 2 which includes:
-- Task 2.1: Update render_napari Type Hints
-- Task 2.2: Update _create_lazy_field_renderer
-- Task 2.3: Update LazyFieldRenderer for Array Input
-- Task 2.4: Update ChunkedLazyFieldRenderer for Array Input
+### Task 2.1: Update render_napari Type Hints ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Updated `render_napari` signature to accept `NDArray[np.float64]` in type union
+2. Added `fields_is_array = isinstance(fields, np.ndarray) and fields.ndim == 2`
+3. Skip `_validate_field_types_consistent` for array inputs (no list iteration needed)
+4. Skip `_is_multi_field_input` for array inputs (arrays can't be multi-field)
+5. Updated docstring to document array mode as "recommended for large datasets"
+
+**Tests Added** (`tests/animation/test_napari_backend.py`):
+
+- `test_render_napari_accepts_2d_array`
+- `test_render_napari_array_produces_correct_frame_count`
+- `test_create_lazy_field_renderer_accepts_array`
+- `test_create_lazy_field_renderer_array_frame_access`
+- `test_create_lazy_field_renderer_array_vs_list_equivalence`
+- `test_array_input_skips_validate_field_types`
+- `test_memmap_input_accepted`
+
+**Code Review**: APPROVED
+
+- Implementation is minimal and surgical
+- Duck typing handles array indexing correctly in internal functions
+- Tests comprehensive (7 new tests, all passing)
+- Backward compatible
+
+### Next Tasks
+
+- [ ] Task 2.2: Update _create_lazy_field_renderer
+- [ ] Task 2.3: Update LazyFieldRenderer for Array Input
+- [ ] Task 2.4: Update ChunkedLazyFieldRenderer for Array Input
 
 ---
 

@@ -1346,7 +1346,11 @@ def _add_speed_control_widget(
 
 def render_napari(
     env: Environment,
-    fields: list[NDArray[np.float64]] | list[list[NDArray[np.float64]]],
+    fields: (
+        list[NDArray[np.float64]]
+        | list[list[NDArray[np.float64]]]
+        | NDArray[np.float64]
+    ),
     *,
     fps: int = DEFAULT_FPS,
     cmap: str = "viridis",
@@ -1376,10 +1380,12 @@ def render_napari(
     ----------
     env : Environment
         Environment defining spatial structure.
-    fields : list of ndarray of shape (n_bins,) or list of list of ndarray of shape (n_bins,)
-        Field data to animate, dtype float64. Two modes:
-        - Single-field mode: List of arrays, each with shape (n_bins,)
-        - Multi-field mode: List of field sequences, where each sequence
+    fields : ndarray of shape (n_frames, n_bins), or list of ndarray of shape (n_bins,), or list of list
+        Field data to animate, dtype float64. Three input formats:
+        - **Array mode (recommended for large datasets)**: 2D array with shape
+          (n_frames, n_bins). Efficient for memory-mapped arrays (memmaps).
+        - **Single-field list mode**: List of 1D arrays, each with shape (n_bins,)
+        - **Multi-field list mode**: List of field sequences, where each sequence
           is a list of 1D arrays. Automatically detected based on input structure.
           All sequences must have the same length (same number of frames).
     fps : int, default=30
@@ -1600,11 +1606,19 @@ def render_napari(
             "  uv add napari[all]"
         )
 
-    # Validate field types are consistent (all arrays or all lists)
-    _validate_field_types_consistent(fields)
+    # Detect if fields is a 2D array (memmap-friendly path)
+    # This skips validation/multi-field detection which require list iteration
+    fields_is_array = isinstance(fields, np.ndarray) and fields.ndim == 2
+
+    # Only validate list inputs (array inputs don't need type consistency checks)
+    if not fields_is_array:
+        # Validate field types are consistent (all arrays or all lists)
+        _validate_field_types_consistent(fields)  # type: ignore[arg-type]
 
     # Detect multi-field input and route appropriately
-    if _is_multi_field_input(fields):
+    # (only possible for list inputs, not arrays)
+    # Type narrowing: if not fields_is_array, fields is a list
+    if not fields_is_array and _is_multi_field_input(fields):  # type: ignore[arg-type]
         # Multi-field viewer support
         return _render_multi_field_napari(
             env=env,
@@ -1627,7 +1641,9 @@ def render_napari(
         )
 
     # Single-field viewer (original behavior)
-    # At this point, fields is guaranteed to be list[NDArray] (not multi-field)
+    # At this point, fields is either:
+    # - 2D array with shape (n_frames, n_bins) if fields_is_array is True
+    # - list[NDArray] if fields_is_array is False (not multi-field)
     from neurospatial.animation.rendering import compute_global_colormap_range
 
     # Compute global color scale

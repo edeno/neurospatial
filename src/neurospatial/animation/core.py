@@ -325,7 +325,7 @@ def animate_fields(
 
         return render_napari(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
-            fields,  # type: ignore[arg-type]  # Napari accepts arrays (Milestone 2)
+            fields,  # Now accepts arrays after Task 2.1
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
