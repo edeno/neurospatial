@@ -207,7 +207,9 @@ from neurospatial.behavioral import (
     compute_trajectory_curvature,
     cost_to_goal,
     distance_to_region,
+    goal_pair_direction_labels,
     graph_turn_sequence,
+    heading_direction_labels,
     path_progress,
     time_to_goal,
     trials_to_region_arrays,
@@ -257,7 +259,12 @@ from neurospatial.spatial import (
     regions_to_mask,
     resample_field,
 )
-from neurospatial.spike_field import compute_place_field, spikes_to_field
+from neurospatial.spike_field import (
+    DirectionalPlaceFields,
+    compute_directional_place_fields,
+    compute_place_field,
+    spikes_to_field,
+)
 from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
@@ -311,7 +318,9 @@ __all__ = [
     "compute_trajectory_curvature",
     "cost_to_goal",
     "distance_to_region",
+    "goal_pair_direction_labels",
     "graph_turn_sequence",
+    "heading_direction_labels",
     "path_progress",
     "time_to_goal",
     "trials_to_region_arrays",
@@ -321,8 +330,10 @@ __all__ = [
     "clamp",
     "combine_fields",
     "compute_diffusion_kernels",
+    "compute_directional_place_fields",
     "compute_place_field",
     "convolve",
+    "DirectionalPlaceFields",
     "distance_field",
     "divergence",
     "estimate_transform",

@@ -92,8 +92,15 @@
 - Code review: APPROVED
 - Ruff and mypy pass
 
+### Task 4.1-4.3: Public API Exports ✅
+- Added `DirectionalPlaceFields` and `compute_directional_place_fields` to `neurospatial/__init__.py`
+- Added `goal_pair_direction_labels` and `heading_direction_labels` to `neurospatial/__init__.py`
+- Added `directional_field_index` to `neurospatial.metrics/__init__.py`
+- All imports verified working
+- Ruff and mypy pass
+
 ## Next Up
-- Task 4.1: Update spike_field exports in `__init__.py`
+- Task 5.1: Add tests for compute_directional_place_fields
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety

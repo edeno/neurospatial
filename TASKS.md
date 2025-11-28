@@ -249,8 +249,8 @@ Make new functions accessible from top-level imports.
 
 **Success criteria**:
 
-- [ ] `from neurospatial import compute_directional_place_fields` works
-- [ ] `from neurospatial import DirectionalPlaceFields` works
+- [x] `from neurospatial import compute_directional_place_fields` works
+- [x] `from neurospatial import DirectionalPlaceFields` works
 
 **Dependencies**: Task 1.1, Task 1.3
 
@@ -278,8 +278,8 @@ Make new functions accessible from top-level imports.
 
 **Success criteria**:
 
-- [ ] `from neurospatial import goal_pair_direction_labels` works
-- [ ] `from neurospatial import heading_direction_labels` works
+- [x] `from neurospatial import goal_pair_direction_labels` works
+- [x] `from neurospatial import heading_direction_labels` works
 
 **Dependencies**: Task 2.1, Task 2.2
 
@@ -302,7 +302,7 @@ Make new functions accessible from top-level imports.
 
 **Success criteria**:
 
-- [ ] `from neurospatial.metrics import directional_field_index` works
+- [x] `from neurospatial.metrics import directional_field_index` works
 
 **Dependencies**: Task 3.1
 
@@ -507,9 +507,9 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | 2. Labels | 2.1 goal_pair_direction_labels | [x] |
 | 2. Labels | 2.2 heading_direction_labels | [x] |
 | 3. Metric | 3.1 directional_field_index | [x] |
-| 4. Exports | 4.1 spike_field exports | [ ] |
-| 4. Exports | 4.2 behavioral exports | [ ] |
-| 4. Exports | 4.3 metrics exports | [ ] |
+| 4. Exports | 4.1 spike_field exports | [x] |
+| 4. Exports | 4.2 behavioral exports | [x] |
+| 4. Exports | 4.3 metrics exports | [x] |
 | 5. Tests | 5.1 directional_place_fields tests | [ ] |
 | 5. Tests | 5.2 direction_labels tests | [ ] |
 | 5. Tests | 5.3 directional_index tests | [ ] |

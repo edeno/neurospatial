@@ -30,6 +30,7 @@ from neurospatial.metrics.grid_cells import (
 from neurospatial.metrics.place_fields import (
     compute_field_emd,
     detect_place_fields,
+    directional_field_index,
     field_centroid,
     field_shape_metrics,
     field_shift_distance,
@@ -67,6 +68,7 @@ __all__ = [
     "compute_turn_angles",
     "count_place_cells",
     "detect_place_fields",
+    "directional_field_index",
     "field_centroid",
     "field_density_map",
     "field_overlap",
