@@ -2264,3 +2264,140 @@ def compute_field_emd(
     # EMD is the optimal cost
     emd = float(result.fun)
     return emd
+
+
+def directional_field_index(
+    field_forward: NDArray[np.float64],
+    field_reverse: NDArray[np.float64],
+    *,
+    eps: float = 1e-9,
+) -> NDArray[np.float64]:
+    """
+    Compute per-bin directional index from two place field maps.
+
+    The directional index quantifies the preference for forward vs reverse
+    direction at each spatial bin. A value of +1 indicates exclusive forward
+    firing, -1 indicates exclusive reverse firing, and 0 indicates equal firing
+    in both directions.
+
+    Parameters
+    ----------
+    field_forward : NDArray[np.float64], shape (n_bins,)
+        Firing rate map for forward direction (Hz or spikes/second).
+    field_reverse : NDArray[np.float64], shape (n_bins,)
+        Firing rate map for reverse direction (Hz or spikes/second).
+    eps : float, default=1e-9
+        Small constant added to denominator to prevent division by zero when
+        both fields have zero firing at a bin.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_bins,)
+        Per-bin directional index in range [-1, 1]:
+
+        - ``+1``: Exclusively forward firing (no reverse)
+        - ``0``: Equal firing in both directions
+        - ``-1``: Exclusively reverse firing (no forward)
+
+        NaN values in inputs propagate to the corresponding output positions.
+
+    Raises
+    ------
+    ValueError
+        If ``field_forward`` and ``field_reverse`` have different shapes.
+
+    Notes
+    -----
+    **Formula**:
+
+    .. math::
+
+        DI_i = \\frac{r_f^i - r_r^i}{r_f^i + r_r^i + \\epsilon}
+
+    where :math:`r_f^i` is the forward firing rate at bin :math:`i`,
+    :math:`r_r^i` is the reverse firing rate, and :math:`\\epsilon` is
+    a small constant to prevent division by zero.
+
+    **Interpretation**:
+
+    - **DI = +1**: Forward-only place cell (fires only when moving forward)
+    - **DI = 0**: Non-directional cell (fires equally in both directions)
+    - **DI = -1**: Reverse-only place cell (fires only when moving in reverse)
+    - **|DI| > 0.5**: Strong directional preference
+
+    **Use cases**:
+
+    - Quantifying directional tuning in hippocampal place cells
+    - Identifying bidirectional vs unidirectional place cells on linear tracks
+    - Analyzing remapping of directional preference across conditions
+
+    **NaN handling**: NaN values in either input array propagate to the output.
+    The function does not filter or replace NaN values.
+
+    **No environment dependency**: This function operates purely on rate map
+    arrays without requiring an Environment object, making it easy to use
+    with any pair of rate maps regardless of how they were computed.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics.place_fields import directional_field_index
+
+    Forward-only firing (DI ≈ +1):
+
+    >>> forward = np.array([10.0, 20.0, 15.0])
+    >>> reverse = np.array([0.0, 0.0, 0.0])
+    >>> di = directional_field_index(forward, reverse)
+    >>> np.allclose(di, 1.0, atol=1e-7)
+    True
+
+    Equal firing in both directions (DI = 0):
+
+    >>> forward = np.array([10.0, 20.0, 15.0])
+    >>> reverse = np.array([10.0, 20.0, 15.0])
+    >>> di = directional_field_index(forward, reverse)
+    >>> np.allclose(di, 0.0, atol=1e-6)
+    True
+
+    Mixed directionality:
+
+    >>> forward = np.array([10.0, 0.0])  # Bin 0: forward, Bin 1: reverse
+    >>> reverse = np.array([0.0, 10.0])
+    >>> di = directional_field_index(forward, reverse)
+    >>> di[0] > 0.9  # Bin 0: forward dominant
+    True
+    >>> di[1] < -0.9  # Bin 1: reverse dominant
+    True
+
+    See Also
+    --------
+    compute_directional_place_fields : Compute place fields per direction
+    goal_pair_direction_labels : Generate direction labels from trials
+    heading_direction_labels : Generate direction labels from heading
+
+    References
+    ----------
+    .. [1] McNaughton et al. (1983). The contributions of position, direction, and
+           velocity to single unit activity in the hippocampus of freely-moving rats.
+           Experimental Brain Research 52(1).
+    .. [2] Markus et al. (1995). Interactions between location and task affect
+           the spatial and directional firing of hippocampal neurons. J Neurosci 15(11).
+    """
+    # Convert to numpy arrays if needed
+    field_forward = np.asarray(field_forward)
+    field_reverse = np.asarray(field_reverse)
+
+    # Validate shapes match
+    if field_forward.shape != field_reverse.shape:
+        raise ValueError(
+            f"field_forward and field_reverse must have the same shape. "
+            f"Got {field_forward.shape} and {field_reverse.shape}."
+        )
+
+    # Compute directional index: (f - r) / (f + r + eps)
+    numerator = field_forward - field_reverse
+    denominator = field_forward + field_reverse + eps
+
+    index = numerator / denominator
+
+    return index

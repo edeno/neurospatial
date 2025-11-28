@@ -73,8 +73,27 @@
 - Code review: APPROVED with length validation enhancement added
 - Ruff and mypy pass
 
+### Task 3.1: directional_field_index ✅
+- Added to `src/neurospatial/metrics/place_fields.py`
+- Formula: `(forward - reverse) / (forward + reverse + eps)`
+- Returns per-bin directional index in range [-1, 1]
+- eps=1e-9 prevents division by zero
+- NaN values propagate naturally
+- No Environment dependency (works with raw arrays)
+- All 11 tests pass covering:
+  - Forward/reverse dominance (±1)
+  - Equal firing (0)
+  - NaN propagation
+  - Division by zero prevention
+  - Shape preservation and validation
+  - Value range validation
+  - Mixed directionality
+- Comprehensive NumPy docstring with LaTeX formula, references
+- Code review: APPROVED
+- Ruff and mypy pass
+
 ## Next Up
-- Task 3.1: `directional_field_index` function (metrics/place_fields.py)
+- Task 4.1: Update spike_field exports in `__init__.py`
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety

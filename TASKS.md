@@ -212,11 +212,11 @@ Metric for comparing directional place fields.
 
 **Success criteria**:
 
-- [ ] Returns array of same shape as inputs
-- [ ] Values in range [-1, 1]
-- [ ] eps prevents division by zero
-- [ ] NaN inputs produce NaN outputs
-- [ ] No environment dependency
+- [x] Returns array of same shape as inputs
+- [x] Values in range [-1, 1]
+- [x] eps prevents division by zero
+- [x] NaN inputs produce NaN outputs
+- [x] No environment dependency
 
 **Dependencies**: None
 
@@ -506,7 +506,7 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | 1. Core | 1.3 compute_directional_place_fields | [x] |
 | 2. Labels | 2.1 goal_pair_direction_labels | [x] |
 | 2. Labels | 2.2 heading_direction_labels | [x] |
-| 3. Metric | 3.1 directional_field_index | [ ] |
+| 3. Metric | 3.1 directional_field_index | [x] |
 | 4. Exports | 4.1 spike_field exports | [ ] |
 | 4. Exports | 4.2 behavioral exports | [ ] |
 | 4. Exports | 4.3 metrics exports | [ ] |
