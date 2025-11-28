@@ -39,8 +39,22 @@
 - Fixed mypy issue: `NDArray[object]` → `NDArray[np.object_]`
 - Ruff and mypy pass
 
+### Task 2.1: goal_pair_direction_labels ✅
+- Added to `src/neurospatial/behavioral.py`
+- Generates per-timepoint direction labels from trial data
+- Uses arrow notation: "start→end" (Unicode right arrow U+2192)
+- Failed trials (end_region=None) are labeled "other"
+- Later trials overwrite earlier if overlapping (documented behavior)
+- Inclusive boundaries: `>=` and `<=`
+- All 9 tests pass covering:
+  - Basic trials, outside trials, failed trials
+  - Overlapping trials, empty inputs, boundary inclusive
+  - Arrow notation format, multiple region names
+- Comprehensive NumPy docstring
+- Ruff and mypy pass
+
 ## Next Up
-- Task 2.1: `goal_pair_direction_labels` function (behavioral.py)
+- Task 2.2: `heading_direction_labels` function (behavioral.py)
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety

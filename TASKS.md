@@ -136,11 +136,11 @@ Functions to generate direction labels for common use cases.
 
 **Success criteria**:
 
-- [ ] Returns array of same length as `times`
-- [ ] Failed trials (end_region=None) are labeled "other"
-- [ ] Labels use arrow notation: "start→end"
-- [ ] Later trials overwrite earlier if overlapping
-- [ ] Docstring documents overlap behavior
+- [x] Returns array of same length as `times`
+- [x] Failed trials (end_region=None) are labeled "other"
+- [x] Labels use arrow notation: "start→end"
+- [x] Later trials overwrite earlier if overlapping
+- [x] Docstring documents overlap behavior
 
 **Dependencies**: None (uses existing Trial class)
 
@@ -504,7 +504,7 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | 1. Core | 1.1 DirectionalPlaceFields dataclass | [x] |
 | 1. Core | 1.2 _subset_spikes_by_time_mask helper | [x] |
 | 1. Core | 1.3 compute_directional_place_fields | [x] |
-| 2. Labels | 2.1 goal_pair_direction_labels | [ ] |
+| 2. Labels | 2.1 goal_pair_direction_labels | [x] |
 | 2. Labels | 2.2 heading_direction_labels | [ ] |
 | 3. Metric | 3.1 directional_field_index | [ ] |
 | 4. Exports | 4.1 spike_field exports | [ ] |

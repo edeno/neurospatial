@@ -1015,3 +1015,98 @@ def graph_turn_sequence(
 
     # Step 5: Join turns into sequence string
     return "-".join(turns)
+
+
+def goal_pair_direction_labels(
+    times: NDArray[np.float64],
+    trials: list[Trial],
+) -> NDArray[np.object_]:
+    """Generate per-timepoint direction labels from trial data.
+
+    Creates labels like 'home→goal_left', 'goal_left→home', or 'other' based on
+    which trial (if any) each timepoint belongs to. This is useful for computing
+    direction-conditioned place fields in trialized tasks (T-maze, Y-maze, etc.).
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps for the entire session (seconds).
+    trials : list[Trial]
+        Trial segmentation from ``segment_trials()``. Each trial specifies
+        start_time, end_time, start_region, and end_region.
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Direction label for each timepoint. Labels use arrow notation:
+        ``"{start_region}→{end_region}"``. Timepoints outside trials or
+        during failed trials (end_region=None) are labeled "other".
+
+    Notes
+    -----
+    **Label assignment rules**:
+
+    - Timepoints within ``[trial.start_time, trial.end_time]`` (inclusive)
+      receive the trial's direction label
+    - Failed trials (``trial.end_region is None``) are labeled "other"
+    - Timepoints outside all trials are labeled "other"
+
+    **Overlap behavior**:
+
+    If trials overlap in time (rare but possible), later trials in the list
+    overwrite earlier ones. This follows standard "last write wins" semantics.
+
+    **Arrow notation**:
+
+    Labels use the Unicode right arrow (→, U+2192) for readability. This
+    matches neuroscience conventions for describing directional navigation
+    (e.g., "home→goal" for outbound, "goal→home" for inbound).
+
+    Examples
+    --------
+    >>> from neurospatial import segment_trials
+    >>> from neurospatial.behavioral import goal_pair_direction_labels
+    >>>
+    >>> # Segment trajectory into trials
+    >>> trials = segment_trials(
+    ...     trajectory_bins,
+    ...     times,
+    ...     env,
+    ...     start_region="home",
+    ...     end_regions=["goal_left", "goal_right"],
+    ... )
+    >>>
+    >>> # Generate direction labels
+    >>> labels = goal_pair_direction_labels(times, trials)
+    >>>
+    >>> # Use with compute_directional_place_fields
+    >>> from neurospatial import compute_directional_place_fields
+    >>> result = compute_directional_place_fields(
+    ...     env, spike_times, times, positions, labels
+    ... )
+
+    See Also
+    --------
+    segment_trials : Segment trajectory into behavioral trials
+    compute_directional_place_fields : Compute place fields per direction
+    heading_direction_labels : Direction labels based on heading angle
+    """
+    # Initialize all labels as "other"
+    labels = np.full(len(times), "other", dtype=object)
+
+    # Loop over trials (small - typically 10-100)
+    for trial in trials:
+        # Skip failed trials (no end region reached)
+        if trial.end_region is None:
+            continue
+
+        # Create label using arrow notation
+        label = f"{trial.start_region}→{trial.end_region}"
+
+        # Create mask for timepoints within this trial (inclusive boundaries)
+        mask = (times >= trial.start_time) & (times <= trial.end_time)
+
+        # Assign label (later trials overwrite earlier if overlapping)
+        labels[mask] = label
+
+    return labels
