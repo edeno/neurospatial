@@ -29,8 +29,8 @@
 # - Use `goal_pair_direction_labels` for trialized tasks (T-maze, linear track)
 # - Use `heading_direction_labels` for open field exploration
 # - Compute directional place fields with `compute_directional_place_fields`
-# - Quantify directionality using `directional_field_index`
-# - Visualize forward vs reverse place fields
+# - Quantify directionality using a simple index formula
+# - Visualize outbound vs inbound place fields
 #
 # ## Background
 #
@@ -60,7 +60,6 @@ from neurospatial import (
     heading_direction_labels,
     segment_trials,
 )
-from neurospatial.metrics import directional_field_index
 
 # Simulation imports
 from neurospatial.simulation import (
@@ -87,7 +86,7 @@ np.random.seed(42)
 # 3. Segment into trials using `segment_trials()`
 # 4. Generate direction labels with `goal_pair_direction_labels()`
 # 5. Compute directional place fields
-# 6. Compare forward vs reverse fields
+# 6. Compare outbound vs inbound fields
 
 # %% [markdown]
 # ### Create Linear Track Environment
@@ -234,10 +233,10 @@ for label, count in zip(unique_labels, counts, strict=True):
 
 # %%
 # Create a place cell at the center of the track
-# It will have different field shapes for forward vs reverse directions
+# It will have different field shapes for outbound vs inbound directions
 field_center = np.array([50.0, track_width / 2])
 
-# Forward direction: field slightly ahead of center
+# Outbound direction: field slightly ahead of center
 pc_forward = PlaceCellModel(
     track_env,
     center=field_center + np.array([10.0, 0.0]),  # Shifted right
@@ -248,7 +247,7 @@ pc_forward = PlaceCellModel(
     seed=42,
 )
 
-# Reverse direction: field slightly behind center
+# Inbound direction: field slightly behind center
 pc_reverse = PlaceCellModel(
     track_env,
     center=field_center - np.array([10.0, 0.0]),  # Shifted left
@@ -260,8 +259,8 @@ pc_reverse = PlaceCellModel(
 )
 
 # Generate spikes based on direction
-# Forward trials (home -> goal): use forward field
-# Reverse trials (goal -> home): use reverse field
+# Outbound trials (home -> goal): use outbound field
+# Inbound trials (goal -> home): use inbound field
 forward_mask = direction_labels == "home\u2192goal"
 reverse_mask = direction_labels == "goal\u2192home"
 
@@ -307,12 +306,12 @@ for label in directional_fields.labels:
     print(f"  {label}: peak={np.nanmax(field):.2f} Hz, mean={np.nanmean(field):.2f} Hz")
 
 # %% [markdown]
-# ### Visualize Forward vs Reverse Fields
+# ### Visualize Outbound vs Inbound Fields
 
 # %%
 # Get fields for each direction
-forward_field = directional_fields.fields["home\u2192goal"]
-reverse_field = directional_fields.fields["goal\u2192home"]
+outbound_field = directional_fields.fields["home\u2192goal"]
+inbound_field = directional_fields.fields["goal\u2192home"]
 
 # Also compute overall (non-directional) place field for comparison
 overall_field = compute_place_field(
@@ -327,25 +326,25 @@ overall_field = compute_place_field(
 # Create visualization
 fig, axes = plt.subplots(1, 3, figsize=(18, 4), constrained_layout=True)
 
-# Forward field
+# Outbound field
 track_env.plot_field(
-    forward_field,
+    outbound_field,
     ax=axes[0],
     cmap="hot",
     colorbar_label="Firing Rate (Hz)",
 )
-axes[0].set_title("Forward (Home \u2192 Goal)", fontsize=14, fontweight="bold")
+axes[0].set_title("Outbound (Home \u2192 Goal)", fontsize=14, fontweight="bold")
 axes[0].axvline(60, color="cyan", linestyle="--", alpha=0.7, label="True center")
 axes[0].legend()
 
-# Reverse field
+# Inbound field
 track_env.plot_field(
-    reverse_field,
+    inbound_field,
     ax=axes[1],
     cmap="hot",
     colorbar_label="Firing Rate (Hz)",
 )
-axes[1].set_title("Reverse (Goal \u2192 Home)", fontsize=14, fontweight="bold")
+axes[1].set_title("Inbound (Goal \u2192 Home)", fontsize=14, fontweight="bold")
 axes[1].axvline(40, color="cyan", linestyle="--", alpha=0.7, label="True center")
 axes[1].legend()
 
@@ -364,14 +363,15 @@ plt.show()
 # %% [markdown]
 # ### Quantify Directionality
 #
-# The `directional_field_index` computes per-bin directionality: (forward - reverse) / (forward + reverse).
-# - Values near +1: bin fires mainly during forward runs
-# - Values near -1: bin fires mainly during reverse runs
+# A simple directionality index computes per-bin preference: (outbound - inbound) / (outbound + inbound).
+# - Values near +1: bin fires mainly during outbound runs
+# - Values near -1: bin fires mainly during inbound runs
 # - Values near 0: equal firing in both directions
 
 # %%
-# Compute directional index
-dir_index = directional_field_index(forward_field, reverse_field)
+# Compute directional index: (outbound - inbound) / (outbound + inbound + eps)
+eps = 1e-9  # Prevent division by zero
+dir_index = (outbound_field - inbound_field) / (outbound_field + inbound_field + eps)
 
 print("\nDirectional Index Statistics:")
 print(f"  Range: [{np.nanmin(dir_index):.2f}, {np.nanmax(dir_index):.2f}]")
@@ -389,15 +389,15 @@ track_env.plot_field(
     colorbar_label="Directional Index",
 )
 ax.set_title(
-    "Directional Index (Red=Forward, Blue=Reverse)", fontsize=14, fontweight="bold"
+    "Directional Index (Red=Outbound, Blue=Inbound)", fontsize=14, fontweight="bold"
 )
 plt.show()
 
 # %% [markdown]
 # The directional index map shows clear separation: the right side of the track (x > 50 cm)
-# has positive values (forward-preferring) while the left side has negative values
-# (reverse-preferring). This matches our simulation where the forward field was shifted
-# right and the reverse field was shifted left.
+# has positive values (outbound-preferring) while the left side has negative values
+# (inbound-preferring). This matches our simulation where the outbound field was shifted
+# right and the inbound field was shifted left.
 
 # %% [markdown]
 # ---
@@ -669,8 +669,8 @@ if east_label and west_label:
     east_field = directional_fields_heading.fields[east_label]
     west_field = directional_fields_heading.fields[west_label]
 
-    # Compute directional index (east vs west)
-    ew_index = directional_field_index(east_field, west_field)
+    # Compute directional index (east vs west): (east - west) / (east + west + eps)
+    ew_index = (east_field - west_field) / (east_field + west_field + 1e-9)
 
     print("\nEast vs West Directional Index:")
     print(f"  Range: [{np.nanmin(ew_index):.2f}, {np.nanmax(ew_index):.2f}]")
@@ -726,9 +726,9 @@ if east_label and west_label:
 #    - Reuses `compute_place_field` internally
 #    - Returns `DirectionalPlaceFields` dataclass with fields and labels
 #
-# 4. **Directional Index** (`directional_field_index`):
-#    - Quantifies per-bin directionality: (forward - reverse) / (forward + reverse)
-#    - Range [-1, +1]: negative = reverse-preferring, positive = forward-preferring
+# 4. **Directional Index** (simple formula):
+#    - Quantifies per-bin directionality: `(field_a - field_b) / (field_a + field_b + eps)`
+#    - Range [-1, +1]: negative = B-preferring, positive = A-preferring
 #
 # ### Key Functions
 #
@@ -738,7 +738,6 @@ if east_label and west_label:
 #     goal_pair_direction_labels,
 #     heading_direction_labels,
 # )
-# from neurospatial.metrics import directional_field_index
 # ```
 #
 # ### Typical Workflow
@@ -753,8 +752,10 @@ if east_label and west_label:
 # labels = heading_direction_labels(positions, times, n_directions=8)
 # result = compute_directional_place_fields(env, spike_times, times, positions, labels)
 #
-# # Quantify directionality
-# index = directional_field_index(result.fields["forward"], result.fields["reverse"])
+# # Quantify directionality (simple formula)
+# outbound = result.fields["home→goal"]
+# inbound = result.fields["goal→home"]
+# index = (outbound - inbound) / (outbound + inbound + 1e-9)
 # ```
 #
 # ### References
