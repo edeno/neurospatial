@@ -269,6 +269,7 @@ from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
 )
+from neurospatial.visualization.scale_bar import ScaleBarConfig
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -286,6 +287,8 @@ __all__ = [
     "HeadDirectionOverlay",
     "PositionOverlay",
     "VideoOverlay",
+    # Visualization config
+    "ScaleBarConfig",
     # Annotation tools
     "AnnotationResult",
     "annotate_video",
