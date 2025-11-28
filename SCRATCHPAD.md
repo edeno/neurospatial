@@ -24,8 +24,23 @@
   - Single timepoint segment
 - Ruff and mypy pass
 
+### Task 1.3: compute_directional_place_fields ✅
+- Main function that computes place fields conditioned on direction labels
+- Reuses compute_place_field for each direction (no code duplication)
+- Excludes "other" label from results
+- Returns DirectionalPlaceFields dataclass
+- All 7 tests pass covering:
+  - Constant labels equals compute_place_field
+  - Two directions partition
+  - "other" label exclusion
+  - Empty spike train handling
+  - Length mismatch error
+  - All "other" returns empty
+- Fixed mypy issue: `NDArray[object]` → `NDArray[np.object_]`
+- Ruff and mypy pass
+
 ## Next Up
-- Task 1.3: `compute_directional_place_fields` function
+- Task 2.1: `goal_pair_direction_labels` function (behavioral.py)
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety

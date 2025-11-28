@@ -164,6 +164,147 @@ def _subset_spikes_by_time_mask(
     return times[mask], spike_times_sub
 
 
+def compute_directional_place_fields(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    direction_labels: NDArray[np.object_],
+    *,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy_seconds: float = 0.0,
+) -> DirectionalPlaceFields:
+    """Compute place fields conditioned on movement direction or trial type.
+
+    Separates trajectory data by direction labels and computes independent
+    place fields for each direction. This enables analysis of directional
+    tuning in place cells, where firing rates differ based on which way
+    the animal is moving through a location.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Timestamps of spike occurrences (seconds).
+    times : NDArray[np.float64], shape (n_timepoints,)
+        Timestamps of trajectory samples (seconds). Must be sorted.
+    positions : NDArray[np.float64], shape (n_timepoints, n_dims) or (n_timepoints,)
+        Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
+    direction_labels : NDArray[object], shape (n_timepoints,)
+        Direction label for each timepoint. Each label is a hashable string
+        (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
+        from results, allowing unlabeled periods to be ignored.
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Estimation method passed to ``compute_place_field``. See that function
+        for detailed descriptions of each method.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units (e.g., cm).
+    min_occupancy_seconds : float, default=0.0
+        Minimum occupancy threshold (only used with method="binned").
+
+    Returns
+    -------
+    DirectionalPlaceFields
+        Container with:
+        - ``fields``: Mapping from direction label to firing rate array (n_bins,)
+        - ``labels``: Tuple of direction labels in iteration order
+
+    Raises
+    ------
+    ValueError
+        If ``direction_labels`` length doesn't match ``times`` length.
+    ValueError
+        If ``bandwidth`` is not positive (passed through to ``compute_place_field``).
+
+    See Also
+    --------
+    compute_place_field : Compute single (non-directional) place field.
+    goal_pair_direction_labels : Generate labels from trialized tasks.
+    heading_direction_labels : Generate labels from movement heading.
+
+    Notes
+    -----
+    The "other" label is reserved for timepoints that should be excluded from
+    analysis (e.g., inter-trial intervals, stationary periods). Any timepoints
+    with label "other" are ignored when computing fields.
+
+    For each unique non-"other" label, this function:
+    1. Creates a boolean mask for timepoints with that label
+    2. Extracts the trajectory and spikes within those masked periods
+    3. Calls ``compute_place_field`` on the subset
+    4. Stores the resulting field in the output mapping
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.spike_field import compute_directional_place_fields
+    >>>
+    >>> # Create environment and trajectory
+    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> times = np.linspace(0, 100, 1000)
+    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>>
+    >>> # Create directional labels (first half forward, second half backward)
+    >>> labels = np.array(["forward"] * 500 + ["backward"] * 500, dtype=object)
+    >>> spike_times = np.random.uniform(0, 100, 50)
+    >>>
+    >>> # Compute directional place fields
+    >>> result = compute_directional_place_fields(
+    ...     env, spike_times, times, positions, labels, bandwidth=10.0
+    ... )
+    >>> "forward" in result.fields
+    True
+    >>> "backward" in result.fields
+    True
+    """
+    # Validate direction_labels length matches times
+    if len(direction_labels) != len(times):
+        raise ValueError(
+            f"direction_labels must have same length as times, "
+            f"got {len(direction_labels)} and {len(times)}"
+        )
+
+    # Convert labels to array
+    labels_arr = np.asarray(direction_labels, dtype=object)
+
+    # Get unique labels, excluding "other"
+    unique_labels = [label for label in np.unique(labels_arr) if label != "other"]
+
+    # Sort labels for reproducibility
+    unique_labels = sorted(unique_labels, key=str)
+
+    # Compute place field for each direction
+    fields_dict: dict[str, NDArray[np.float64]] = {}
+
+    for label in unique_labels:
+        # Build mask for this direction
+        mask = labels_arr == label
+
+        # Get subsets using our helper
+        times_sub, spike_times_sub = _subset_spikes_by_time_mask(
+            times, spike_times, mask
+        )
+        positions_sub = positions[mask]
+
+        # Compute place field for this direction
+        field = compute_place_field(
+            env,
+            spike_times_sub,
+            times_sub,
+            positions_sub,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy_seconds=min_occupancy_seconds,
+        )
+
+        fields_dict[label] = field
+
+    return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
+
+
 def spikes_to_field(
     env: Environment,
     spike_times: NDArray[np.float64],

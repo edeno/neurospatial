@@ -6,9 +6,11 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
+from neurospatial import Environment, compute_place_field
 from neurospatial.spike_field import (
     DirectionalPlaceFields,
     _subset_spikes_by_time_mask,
+    compute_directional_place_fields,
 )
 
 
@@ -211,3 +213,219 @@ class TestSubsetSpikesByTimeMask:
         times_sub, _ = _subset_spikes_by_time_mask(times, spike_times, mask)
 
         assert len(times_sub) == np.sum(mask)
+
+
+class TestComputeDirectionalPlaceFields:
+    """Tests for the compute_directional_place_fields function."""
+
+    @pytest.fixture
+    def sample_env(self) -> Environment:
+        """Create a simple 2D environment for testing."""
+        positions = np.column_stack(
+            [np.linspace(0, 100, 200), np.linspace(0, 100, 200)]
+        )
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    @pytest.fixture
+    def sample_trajectory(self) -> tuple[np.ndarray, np.ndarray]:
+        """Create sample trajectory data."""
+        times = np.linspace(0, 20, 200)  # 20 seconds
+        positions = np.column_stack(
+            [np.linspace(0, 100, 200), np.linspace(0, 100, 200)]
+        )
+        return times, positions
+
+    def test_constant_labels_equals_compute_place_field(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """If all labels are the same, result equals compute_place_field."""
+        times, positions = sample_trajectory
+        spike_times = np.array([2.0, 5.0, 10.0, 15.0])
+
+        # All labels the same (not "other")
+        labels = np.full(len(times), "forward", dtype=object)
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        # Compare with compute_place_field
+        expected = compute_place_field(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        assert len(result.fields) == 1
+        assert "forward" in result.fields
+        assert result.labels == ("forward",)
+        # Should be numerically close
+        assert_array_almost_equal(result.fields["forward"], expected, decimal=5)
+
+    def test_two_directions_partition(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """Two non-overlapping directions produce independent fields."""
+        times, positions = sample_trajectory
+        spike_times = np.array([2.0, 5.0, 12.0, 15.0])
+
+        # First half is "A", second half is "B"
+        labels = np.array(
+            ["A"] * 100 + ["B"] * 100, dtype=object
+        )  # 200 total like times
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        assert len(result.fields) == 2
+        assert "A" in result.fields
+        assert "B" in result.fields
+        assert set(result.labels) == {"A", "B"}
+
+        # Each field should have shape (n_bins,)
+        assert result.fields["A"].shape == (sample_env.n_bins,)
+        assert result.fields["B"].shape == (sample_env.n_bins,)
+
+    def test_other_label_excluded(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """The 'other' label is excluded from results."""
+        times, positions = sample_trajectory
+        spike_times = np.array([2.0, 5.0, 15.0])
+
+        # Mix of "forward", "other", and "backward"
+        labels = np.array(
+            ["forward"] * 50 + ["other"] * 100 + ["backward"] * 50, dtype=object
+        )
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        # "other" should NOT be in results
+        assert "other" not in result.fields
+        assert "other" not in result.labels
+        assert len(result.fields) == 2
+        assert "forward" in result.fields
+        assert "backward" in result.fields
+
+    def test_no_spikes_returns_zero_or_nan_fields(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """Empty spike train produces zero/NaN fields."""
+        times, positions = sample_trajectory
+        spike_times = np.array([])  # No spikes
+
+        labels = np.full(len(times), "forward", dtype=object)
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        assert "forward" in result.fields
+        # Field should be all zeros or NaN (depending on occupancy)
+        field = result.fields["forward"]
+        assert np.all(np.isnan(field) | (field == 0))
+
+    def test_result_structure(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """DirectionalPlaceFields has correct structure."""
+        times, positions = sample_trajectory
+        spike_times = np.array([5.0, 10.0])
+
+        labels = np.array(["A"] * 100 + ["B"] * 100, dtype=object)
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        # Result should be DirectionalPlaceFields
+        assert isinstance(result, DirectionalPlaceFields)
+
+        # fields should be a mapping
+        assert hasattr(result.fields, "__getitem__")
+
+        # labels should be a tuple
+        assert isinstance(result.labels, tuple)
+
+        # All fields should have correct shape
+        for label in result.labels:
+            assert result.fields[label].shape == (sample_env.n_bins,)
+
+    def test_length_mismatch_raises_error(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """Raises ValueError if direction_labels length doesn't match times."""
+        times, positions = sample_trajectory
+        spike_times = np.array([5.0])
+
+        # Wrong length labels
+        wrong_labels = np.array(["A", "B", "C"], dtype=object)
+
+        with pytest.raises(ValueError, match="direction_labels"):
+            compute_directional_place_fields(
+                sample_env,
+                spike_times,
+                times,
+                positions,
+                wrong_labels,
+                method="binned",
+                bandwidth=10.0,
+            )
+
+    def test_all_other_labels_returns_empty(
+        self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """If all labels are 'other', returns empty fields."""
+        times, positions = sample_trajectory
+        spike_times = np.array([5.0, 10.0])
+
+        labels = np.full(len(times), "other", dtype=object)
+
+        result = compute_directional_place_fields(
+            sample_env,
+            spike_times,
+            times,
+            positions,
+            labels,
+            method="binned",
+            bandwidth=10.0,
+        )
+
+        assert len(result.fields) == 0
+        assert len(result.labels) == 0

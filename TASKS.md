@@ -94,11 +94,11 @@ Foundation for directional place field computation. No external dependencies.
 
 **Success criteria**:
 
-- [ ] Signature matches PLAN.md exactly
-- [ ] Reuses `compute_place_field` for each direction (no duplication)
-- [ ] Excludes "other" label from results
-- [ ] Returns DirectionalPlaceFields with correct structure
-- [ ] Docstring includes Parameters, Returns, Raises, Examples sections
+- [x] Signature matches PLAN.md exactly
+- [x] Reuses `compute_place_field` for each direction (no duplication)
+- [x] Excludes "other" label from results
+- [x] Returns DirectionalPlaceFields with correct structure
+- [x] Docstring includes Parameters, Returns, Raises, Examples sections
 
 **Dependencies**: Task 1.1, Task 1.2
 
@@ -503,7 +503,7 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 |-----------|------|--------|
 | 1. Core | 1.1 DirectionalPlaceFields dataclass | [x] |
 | 1. Core | 1.2 _subset_spikes_by_time_mask helper | [x] |
-| 1. Core | 1.3 compute_directional_place_fields | [ ] |
+| 1. Core | 1.3 compute_directional_place_fields | [x] |
 | 2. Labels | 2.1 goal_pair_direction_labels | [ ] |
 | 2. Labels | 2.2 heading_direction_labels | [ ] |
 | 3. Metric | 3.1 directional_field_index | [ ] |
