@@ -1186,6 +1186,110 @@ class TestRenderNapariArrayInput:
         del fields_mmap
 
 
+class TestLargeDatasetColormapRange:
+    """Test colormap range computation warning for very large datasets."""
+
+    @pytest.fixture
+    def env(self):
+        """Create minimal environment for testing."""
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100
+        from neurospatial import Environment
+
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    def test_large_dataset_emits_warning_without_explicit_vmin_vmax(self, env):
+        """Test that very large datasets emit UserWarning about sampled range."""
+        from unittest.mock import patch
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with (
+            patch(
+                "neurospatial.animation.backends.napari_backend.napari.Viewer"
+            ) as mock_viewer_class,
+            patch(
+                "neurospatial.animation.rendering.compute_global_colormap_range",
+                wraps=lambda fields, vmin=None, vmax=None, **kwargs: (0.0, 1.0),
+            ) as mock_range,
+        ):
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Large array without explicit vmin/vmax should trigger warning
+            n_frames = 250_000
+            n_bins = env.n_bins
+            rng = np.random.default_rng(42)
+            fields = rng.random((n_frames, n_bins))
+
+            with pytest.warns(UserWarning, match="Estimating colormap range"):
+                render_napari(env, fields, fps=10)
+
+            # Check that sample_stride was passed to compute_global_colormap_range
+            mock_range.assert_called()
+            call_kwargs = mock_range.call_args[1]
+            assert "sample_stride" in call_kwargs
+            assert call_kwargs["sample_stride"] is not None
+
+    def test_small_dataset_no_warning(self, env):
+        """Test that smaller datasets don't emit warning."""
+        from unittest.mock import patch
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Small dataset should not warn
+            n_frames = 10_000
+            n_bins = env.n_bins
+            rng = np.random.default_rng(42)
+            fields = rng.random((n_frames, n_bins))
+
+            # No warning expected
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                render_napari(env, fields, fps=10)
+                # Filter for our specific warning
+                colormap_warnings = [
+                    x for x in w if "colormap range" in str(x.message).lower()
+                ]
+                assert len(colormap_warnings) == 0
+
+    def test_explicit_vmin_vmax_no_warning(self, env):
+        """Test that explicit vmin/vmax skips warning even for large datasets."""
+        from unittest.mock import patch
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Large dataset but with explicit vmin/vmax - should not warn
+            n_frames = 250_000
+            n_bins = env.n_bins
+            rng = np.random.default_rng(42)
+            fields = rng.random((n_frames, n_bins))
+
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                render_napari(env, fields, fps=10, vmin=0.0, vmax=1.0)
+                colormap_warnings = [
+                    x for x in w if "colormap range" in str(x.message).lower()
+                ]
+                assert len(colormap_warnings) == 0
+
+
 # NOTE: Dask renderer tests removed after benchmarking showed LazyFieldRenderer
 # significantly outperforms dask (20-45,000x faster creation, 20-220x faster access).
 # See benchmarks/bench_lazy_renderers.py for details.

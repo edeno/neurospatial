@@ -1648,7 +1648,32 @@ def render_napari(
 
     # Compute global color scale
     if vmin is None or vmax is None:
-        vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
+        # Compute n_frames for large dataset detection
+        n_frames_for_range = (
+            fields.shape[0] if fields_is_array else len(fields)  # type: ignore[union-attr]
+        )
+
+        # For very large datasets, use subsampling for faster range estimation
+        sample_stride: int | None = None
+        large_dataset_threshold = 200_000
+
+        if n_frames_for_range > large_dataset_threshold:
+            # Compute sample_stride to sample ~50K frames
+            sample_stride = max(1, n_frames_for_range // 50_000)
+            warnings.warn(
+                f"Estimating colormap range from {n_frames_for_range:,} frames using "
+                f"sample_stride={sample_stride} (sampling every {sample_stride}th frame). "
+                f"For exact range, pass explicit vmin/vmax parameters.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        vmin_computed, vmax_computed = compute_global_colormap_range(
+            fields,  # type: ignore[arg-type]
+            vmin=vmin,
+            vmax=vmax,
+            sample_stride=sample_stride,
+        )
         vmin = vmin if vmin is not None else vmin_computed
         vmax = vmax if vmax is not None else vmax_computed
 

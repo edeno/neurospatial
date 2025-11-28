@@ -311,11 +311,32 @@ All 6 tasks completed:
 - `uv run ruff check src/neurospatial/animation/rendering.py` → All checks passed
 - `uv run mypy src/neurospatial/animation/rendering.py` → Success: no issues found
 
-### Task 3.2: Update render_napari to Use Streaming
+### Task 3.2: Update render_napari to Use Streaming ✅ COMPLETED
 
-- [ ] For `n_frames > 200_000` without explicit vmin/vmax: compute sample_stride
-- [ ] Emit UserWarning explaining sampled range estimation
-- [ ] Pass `sample_stride` to `compute_global_colormap_range`
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Added `large_dataset_threshold = 200_000` for detecting large datasets
+2. For n_frames > threshold without explicit vmin/vmax:
+   - Compute `sample_stride = max(1, n_frames // 50_000)` to sample ~50K frames
+   - Emit `UserWarning` with message explaining sampled range estimation
+   - Pass `sample_stride` to `compute_global_colormap_range`
+3. When vmin and vmax are both explicitly provided, skip warning and subsampling
+
+**Tests Added** (`tests/animation/test_napari_backend.py`):
+
+- `test_large_dataset_emits_warning_without_explicit_vmin_vmax`
+- `test_small_dataset_no_warning`
+- `test_explicit_vmin_vmax_no_warning`
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_napari_backend.py -v` → 42 passed, 1 skipped
+- `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
 
 ### Task 3.3: Always Set multiscale=False
 
