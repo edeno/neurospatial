@@ -443,10 +443,35 @@ All 3 tasks completed:
 - `uv run ruff check src/neurospatial/animation/core.py` → All checks passed
 - `uv run mypy src/neurospatial/animation/core.py` → Success: no issues found
 
-### Task 4.3: Export Helpers from Animation Module
+### Task 4.3: Export Helpers from Animation Module ✅ COMPLETED
 
-- [ ] Add imports for `estimate_colormap_range_from_subset`, `large_session_napari_config`
-- [ ] Add to `__all__` if present
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/__init__.py`
+
+**Implementation**:
+
+1. Added imports for `estimate_colormap_range_from_subset` and `large_session_napari_config` from `core.py`
+2. Added to `__all__` list
+3. Updated module docstring with new functions
+
+**Verification**:
+
+```python
+from neurospatial.animation import estimate_colormap_range_from_subset, large_session_napari_config
+```
+
+---
+
+## Completed: Milestone 4 - Helper Functions
+
+**Status**: COMPLETED
+
+All 3 tasks completed:
+
+- [x] Task 4.1: Add estimate_colormap_range_from_subset
+- [x] Task 4.2: Add large_session_napari_config
+- [x] Task 4.3: Export Helpers from Animation Module
 
 ---
 

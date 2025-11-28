@@ -14,6 +14,10 @@ Public API
 ----------
 subsample_frames : function
     Subsample frames to target frame rate for large-scale sessions
+estimate_colormap_range_from_subset : function
+    Estimate colormap vmin/vmax from random subset of frames
+large_session_napari_config : function
+    Get recommended napari settings for large datasets
 Skeleton : class
     Immutable skeleton definition for pose tracking
 MOUSE_SKELETON, RAT_SKELETON, SIMPLE_SKELETON : Skeleton
@@ -39,7 +43,11 @@ PositionData, BodypartData, HeadDirectionData, VideoData : dataclass
 
 from neurospatial.animation._video_io import VideoReaderProtocol
 from neurospatial.animation.calibration import calibrate_video
-from neurospatial.animation.core import subsample_frames
+from neurospatial.animation.core import (
+    estimate_colormap_range_from_subset,
+    large_session_napari_config,
+    subsample_frames,
+)
 from neurospatial.animation.overlays import (
     BodypartData,
     HeadDirectionData,
@@ -70,5 +78,7 @@ __all__: list[str] = [
     "VideoOverlay",
     "VideoReaderProtocol",
     "calibrate_video",
+    "estimate_colormap_range_from_subset",
+    "large_session_napari_config",
     "subsample_frames",
 ]
