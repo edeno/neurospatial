@@ -105,45 +105,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.decoding._result import DecodingResult
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-
-
-# =============================================================================
-# Placeholder DecodingResult (will be moved to _result.py in Milestone 1.2)
-# =============================================================================
-
-
-class DecodingResult:
-    """Placeholder DecodingResult class.
-
-    This is a minimal placeholder that will be replaced with the full
-    implementation in Milestone 1.2.
-
-    Parameters
-    ----------
-    posterior : NDArray[np.float64]
-        Posterior probability distribution, shape (n_time_bins, n_bins).
-    env : Environment
-        Reference to environment used for decoding.
-    times : NDArray[np.float64] | None
-        Time bin centers (seconds), if provided.
-    """
-
-    def __init__(
-        self,
-        posterior: NDArray[np.float64],
-        env: Environment,
-        times: NDArray[np.float64] | None = None,
-    ) -> None:
-        self.posterior = posterior
-        self.env = env
-        self.times = times
-
-    @property
-    def n_time_bins(self) -> int:
-        """Number of time bins."""
-        return int(self.posterior.shape[0])
 
 
 # =============================================================================

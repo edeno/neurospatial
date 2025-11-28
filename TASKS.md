@@ -20,15 +20,15 @@ Implementation tasks for `neurospatial.decoding` based on [DECODING_PLAN.md](DEC
 
 ### 1.2 DecodingResult Container (`_result.py`)
 
-- [ ] Create `_result.py` with `DecodingResult` dataclass
-- [ ] Implement fields: `posterior`, `env`, `times`
-- [ ] Implement `@cached_property` for `map_estimate` (argmax)
-- [ ] Implement `@cached_property` for `map_position` (env.bin_centers lookup)
-- [ ] Implement `@cached_property` for `mean_position` (posterior @ bin_centers)
-- [ ] Implement `@cached_property` for `uncertainty` (mask-based entropy)
-- [ ] Implement `n_time_bins` property
-- [ ] Add `plot()` method stub (heatmap visualization)
-- [ ] Add `to_dataframe()` method stub
+- [x] Create `_result.py` with `DecodingResult` dataclass
+- [x] Implement fields: `posterior`, `env`, `times`
+- [x] Implement `@cached_property` for `map_estimate` (argmax)
+- [x] Implement `@cached_property` for `map_position` (env.bin_centers lookup)
+- [x] Implement `@cached_property` for `mean_position` (posterior @ bin_centers)
+- [x] Implement `@cached_property` for `uncertainty` (mask-based entropy)
+- [x] Implement `n_time_bins` property
+- [x] Add `plot()` method stub (heatmap visualization)
+- [x] Add `to_dataframe()` method stub
 
 **Success**:
 
