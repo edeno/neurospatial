@@ -30,12 +30,17 @@ def compute_global_colormap_range(
     fields: list[NDArray[np.float64]] | NDArray[np.float64],
     vmin: float | None = None,
     vmax: float | None = None,
+    max_frames_for_exact: int = 50_000,
+    sample_stride: int | None = None,
 ) -> tuple[float, float]:
     """Compute NaN-robust color scale across all fields.
 
     Vectorized computation for efficiency. Ignores NaN and infinite values
     when computing the range. Automatically stacks list inputs for ~10x
     faster processing on large datasets.
+
+    For very large datasets, uses chunked streaming to avoid loading all data
+    into memory at once.
 
     Parameters
     ----------
@@ -49,6 +54,15 @@ def compute_global_colormap_range(
     vmax : float, optional
         Manual maximum limit. If provided, skips computation for maximum.
         Useful for consistent colormaps across multiple animations.
+    max_frames_for_exact : int, default=50_000
+        For 2D arrays with more frames than this threshold, use chunked
+        streaming to compute min/max without loading all data at once.
+        This prevents memory spikes for very large datasets.
+    sample_stride : int, optional
+        If provided, subsample the array using `fields[::sample_stride]`
+        for faster (but approximate) range estimation. Useful for quick
+        preview of very large datasets. Note: may miss true extremes
+        if they occur at non-sampled positions.
 
     Returns
     -------
@@ -65,6 +79,9 @@ def compute_global_colormap_range(
     - List iteration: ~265ms
     - Stacked array: ~22ms
 
+    For very large datasets (100K+ frames), chunked streaming prevents
+    memory spikes by processing 10K frames at a time.
+
     Examples
     --------
     >>> import numpy as np
@@ -78,12 +95,20 @@ def compute_global_colormap_range(
     >>> vmin, vmax = compute_global_colormap_range(fields_2d)
     >>> vmin, vmax
     (0.0, 5.0)
+
+    For very large arrays, use sample_stride for faster estimation:
+    >>> large_fields = np.random.rand(100_000, 500)
+    >>> vmin, vmax = compute_global_colormap_range(large_fields, sample_stride=10)
     """
     # Vectorized min/max computation with NaN-robustness
     if vmin is None or vmax is None:
         # Handle empty input
         if len(fields) == 0:
             return (0.0, 1.0)
+
+        # Apply sample_stride if provided (for faster approximate estimation)
+        if sample_stride is not None and isinstance(fields, np.ndarray):
+            fields = fields[::sample_stride]
 
         # Try to stack list into array for vectorized operations (~10x faster)
         # Falls back to iteration if shapes don't match (rare edge case)
@@ -103,17 +128,39 @@ def compute_global_colormap_range(
             warnings.filterwarnings("ignore", "All-NaN slice encountered")
 
             if stacked is not None:
-                # Fast path: mask out NaN and inf, then take min/max
-                # np.isfinite filters both NaN and inf in one vectorized pass
-                finite_mask = np.isfinite(stacked)
-                if finite_mask.any():
-                    finite_values = stacked[finite_mask]
-                    all_min = float(finite_values.min())
-                    all_max = float(finite_values.max())
-                else:
-                    # All NaN/inf - will be handled by degenerate case below
+                n_frames = stacked.shape[0]
+
+                # For large arrays, use chunked streaming to avoid memory spikes
+                if n_frames > max_frames_for_exact:
+                    # Chunked streaming: process 10K frames at a time
+                    chunk_size = 10_000
                     all_min = float("inf")
                     all_max = float("-inf")
+
+                    for start in range(0, n_frames, chunk_size):
+                        end = min(start + chunk_size, n_frames)
+                        chunk = stacked[start:end]
+
+                        # Find finite values in this chunk
+                        finite_mask = np.isfinite(chunk)
+                        if finite_mask.any():
+                            finite_values = chunk[finite_mask]
+                            chunk_min = float(finite_values.min())
+                            chunk_max = float(finite_values.max())
+                            all_min = min(all_min, chunk_min)
+                            all_max = max(all_max, chunk_max)
+                else:
+                    # Fast path: mask out NaN and inf, then take min/max
+                    # np.isfinite filters both NaN and inf in one vectorized pass
+                    finite_mask = np.isfinite(stacked)
+                    if finite_mask.any():
+                        finite_values = stacked[finite_mask]
+                        all_min = float(finite_values.min())
+                        all_max = float(finite_values.max())
+                    else:
+                        # All NaN/inf - will be handled by degenerate case below
+                        all_min = float("inf")
+                        all_max = float("-inf")
             else:
                 # Fallback: iterate when shapes don't match
                 all_min = float("inf")

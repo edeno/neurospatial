@@ -278,13 +278,48 @@ All 6 tasks completed:
 
 ---
 
-## Next: Milestone 3 - Scalable Colormap Range Computation
+## In Progress: Milestone 3 - Scalable Colormap Range Computation
 
-### Upcoming Tasks
+### Task 3.1: Add Streaming Path to compute_global_colormap_range ✅ COMPLETED
 
-- [ ] Task 3.1: Add Streaming Path to compute_global_colormap_range
-- [ ] Task 3.2: Update render_napari to Use Streaming
-- [ ] Task 3.3: Always Set multiscale=False
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/rendering.py`
+
+**Implementation**:
+
+1. Added `max_frames_for_exact: int = 50_000` parameter
+2. Added `sample_stride: int | None = None` parameter
+3. For arrays with `n_frames > max_frames_for_exact`: use chunked streaming (10K frames at a time)
+4. For `sample_stride` provided: subsample with `fields[::sample_stride]`
+5. Both paths handle NaN/inf values correctly
+6. Updated docstring with new parameters and examples
+
+**Tests Added** (`tests/animation/test_rendering.py`):
+
+- `test_small_array_uses_exact_computation`
+- `test_large_array_uses_streaming`
+- `test_sample_stride_reduces_computation`
+- `test_streaming_with_nan_values`
+- `test_streaming_with_manual_vmin_vmax`
+- `test_default_threshold_is_50000`
+- `test_memmap_streaming`
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_rendering.py -v` → 28 passed
+- `uv run ruff check src/neurospatial/animation/rendering.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/rendering.py` → Success: no issues found
+
+### Task 3.2: Update render_napari to Use Streaming
+
+- [ ] For `n_frames > 200_000` without explicit vmin/vmax: compute sample_stride
+- [ ] Emit UserWarning explaining sampled range estimation
+- [ ] Pass `sample_stride` to `compute_global_colormap_range`
+
+### Task 3.3: Always Set multiscale=False
+
+- [ ] Add `multiscale=False` to `viewer.add_image()` call
 
 ---
 
