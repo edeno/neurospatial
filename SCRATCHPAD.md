@@ -409,11 +409,39 @@ All 3 tasks completed:
 - `uv run ruff check src/neurospatial/animation/core.py` → All checks passed
 - `uv run mypy src/neurospatial/animation/core.py` → Success: no issues found
 
-### Task 4.2: Add large_session_napari_config
+### Task 4.2: Add large_session_napari_config ✅ COMPLETED
 
-- [ ] Create function with signature: `(n_frames, sample_rate_hz=None) -> dict[str, Any]`
-- [ ] Return recommended: fps, chunk_size, max_chunks
-- [ ] Scale recommendations based on n_frames thresholds
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/core.py`
+
+**Implementation**:
+
+1. Created function with signature: `(n_frames, sample_rate_hz=None) -> dict[str, Any]`
+2. Returns recommended: fps, chunk_size, max_chunks
+3. Scales recommendations based on n_frames thresholds:
+   - <50K: chunk_size=100, max_chunks=10
+   - 50K-200K: chunk_size=500, max_chunks=20
+   - 200K-1M: chunk_size=1000, max_chunks=50
+   - >1M: chunk_size=1000, max_chunks=100
+4. sample_rate_hz affects fps (caps at 30 or sample rate)
+
+**Tests Added** (`tests/animation/test_core.py`):
+
+- `test_returns_dict`
+- `test_contains_expected_keys`
+- `test_fps_is_positive_int`
+- `test_chunk_size_is_positive_int`
+- `test_max_chunks_is_positive_int`
+- `test_larger_datasets_get_larger_chunks`
+- `test_sample_rate_affects_fps`
+- `test_can_unpack_into_animate_fields`
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_core.py::TestLargeSessionNapariConfig -v` → 8 passed
+- `uv run ruff check src/neurospatial/animation/core.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/core.py` → Success: no issues found
 
 ### Task 4.3: Export Helpers from Animation Module
 

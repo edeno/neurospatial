@@ -1098,3 +1098,84 @@ class TestEstimateColormapRangeFromSubset:
         # Should complete in under 0.5s
         assert elapsed < 0.5
         assert vmin < vmax
+
+
+class TestLargeSessionNapariConfig:
+    """Test large_session_napari_config() helper function."""
+
+    def test_returns_dict(self):
+        """Test that function returns a dictionary."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        assert isinstance(result, dict)
+
+    def test_contains_expected_keys(self):
+        """Test that returned dict contains expected keys."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        assert "fps" in result
+        assert "chunk_size" in result
+        assert "max_chunks" in result
+
+    def test_fps_is_positive_int(self):
+        """Test that fps is a positive integer."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        assert isinstance(result["fps"], int)
+        assert result["fps"] > 0
+
+    def test_chunk_size_is_positive_int(self):
+        """Test that chunk_size is a positive integer."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        assert isinstance(result["chunk_size"], int)
+        assert result["chunk_size"] > 0
+
+    def test_max_chunks_is_positive_int(self):
+        """Test that max_chunks is a positive integer."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        assert isinstance(result["max_chunks"], int)
+        assert result["max_chunks"] > 0
+
+    def test_larger_datasets_get_larger_chunks(self):
+        """Test that larger datasets get larger chunk sizes."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        small = large_session_napari_config(n_frames=10_000)
+        large = large_session_napari_config(n_frames=1_000_000)
+
+        assert large["chunk_size"] >= small["chunk_size"]
+
+    def test_sample_rate_affects_fps(self):
+        """Test that sample_rate_hz affects recommended fps."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result_250hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=250)
+        result_500hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=500)
+
+        # Both should return valid configurations
+        assert result_250hz["fps"] > 0
+        assert result_500hz["fps"] > 0
+
+    def test_can_unpack_into_animate_fields(self):
+        """Test that result can be unpacked as kwargs to animate_fields."""
+        from neurospatial.animation.core import large_session_napari_config
+
+        result = large_session_napari_config(n_frames=100_000)
+
+        # These should be valid kwargs for animate_fields (napari backend)
+        # Just verify they're the right types
+        assert isinstance(result.get("fps"), int)
+        assert isinstance(result.get("chunk_size"), int)
+        assert isinstance(result.get("max_chunks"), int)

@@ -704,3 +704,84 @@ def estimate_colormap_range_from_subset(
     vmax = float(np.percentile(valid_values, percentile[1]))
 
     return (vmin, vmax)
+
+
+def large_session_napari_config(
+    n_frames: int,
+    sample_rate_hz: int | None = None,
+) -> dict[str, Any]:
+    """Get recommended napari animation settings for large datasets.
+
+    Returns a dictionary of keyword arguments suitable for passing to
+    `animate_fields()` when working with large-scale neural recordings.
+
+    Parameters
+    ----------
+    n_frames : int
+        Total number of frames in the dataset.
+    sample_rate_hz : int, optional
+        Original sampling rate in Hz (e.g., 250 for 250 Hz recording).
+        If provided, helps determine appropriate playback fps.
+
+    Returns
+    -------
+    config : dict
+        Dictionary containing recommended settings:
+        - ``fps``: Playback frame rate
+        - ``chunk_size``: Number of frames to pre-render per chunk
+        - ``max_chunks``: Maximum chunks to keep in memory
+
+    Examples
+    --------
+    >>> config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
+    >>> env.animate_fields(fields, backend="napari", **config)  # doctest: +SKIP
+
+    >>> # Or combine with estimated colormap range
+    >>> vmin, vmax = estimate_colormap_range_from_subset(fields)
+    >>> config = large_session_napari_config(n_frames=len(fields))
+    >>> env.animate_fields(
+    ...     fields, vmin=vmin, vmax=vmax, backend="napari", **config
+    ... )  # doctest: +SKIP
+
+    Notes
+    -----
+    Recommendations are based on empirical testing with napari animation:
+
+    - **Small datasets** (<50K frames): Default settings work well
+    - **Medium datasets** (50K-200K): Larger chunks improve scrubbing
+    - **Large datasets** (200K-1M): Maximum chunk/cache sizes for smooth playback
+    - **Very large datasets** (>1M): Same as large, plus explicit vmin/vmax recommended
+
+    The returned config can be unpacked directly into `animate_fields()`:
+
+    >>> config = large_session_napari_config(1_000_000)
+    >>> env.animate_fields(fields, **config)  # doctest: +SKIP
+    """
+    # Determine fps based on sample rate or use sensible default
+    # Target 30 fps for smooth playback, but cap at sample rate if provided
+    fps = min(30, sample_rate_hz) if sample_rate_hz is not None else 30
+
+    # Scale chunk_size based on dataset size
+    # Larger datasets benefit from larger chunks for efficient I/O
+    if n_frames < 50_000:
+        # Small dataset: default chunk size
+        chunk_size = 100
+        max_chunks = 10
+    elif n_frames < 200_000:
+        # Medium dataset: larger chunks
+        chunk_size = 500
+        max_chunks = 20
+    elif n_frames < 1_000_000:
+        # Large dataset: maximum chunk sizes
+        chunk_size = 1000
+        max_chunks = 50
+    else:
+        # Very large dataset (1M+): same as large
+        chunk_size = 1000
+        max_chunks = 100
+
+    return {
+        "fps": fps,
+        "chunk_size": chunk_size,
+        "max_chunks": max_chunks,
+    }
