@@ -94,6 +94,58 @@ class TestComputeNiceLength:
         """Test with large extents (e.g., meters)."""
         assert compute_nice_length(10000) == 2000
 
+    def test_zero_extent_raises(self):
+        """Zero extent should raise ValueError."""
+        with pytest.raises(ValueError, match="must be a positive finite number"):
+            compute_nice_length(0.0)
+
+    def test_negative_extent_raises(self):
+        """Negative extent should raise ValueError."""
+        with pytest.raises(ValueError, match="must be a positive finite number"):
+            compute_nice_length(-10.0)
+
+    def test_inf_extent_raises(self):
+        """Infinite extent should raise ValueError."""
+        with pytest.raises(ValueError, match="must be a positive finite number"):
+            compute_nice_length(np.inf)
+
+    def test_nan_extent_raises(self):
+        """NaN extent should raise ValueError."""
+        with pytest.raises(ValueError, match="must be a positive finite number"):
+            compute_nice_length(np.nan)
+
+
+class TestAutoContrast:
+    """Test _auto_contrast_color function."""
+
+    def test_dark_background_selects_white(self):
+        """Dark background should select white text."""
+        from neurospatial.visualization.scale_bar import _auto_contrast_color
+
+        fig, ax = plt.subplots()
+        ax.set_facecolor("black")
+        assert _auto_contrast_color(ax) == "white"
+        plt.close(fig)
+
+    def test_light_background_selects_black(self):
+        """Light background should select black text."""
+        from neurospatial.visualization.scale_bar import _auto_contrast_color
+
+        fig, ax = plt.subplots()
+        ax.set_facecolor("white")
+        assert _auto_contrast_color(ax) == "black"
+        plt.close(fig)
+
+    def test_gray_background(self):
+        """Mid-gray background (luminance ~0.5) should pick one."""
+        from neurospatial.visualization.scale_bar import _auto_contrast_color
+
+        fig, ax = plt.subplots()
+        ax.set_facecolor((0.5, 0.5, 0.5))  # RGB gray
+        color = _auto_contrast_color(ax)
+        assert color in ("white", "black")
+        plt.close(fig)
+
 
 class TestFormatScaleLabel:
     """Test scale label formatting."""

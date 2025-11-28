@@ -41,6 +41,65 @@ else:
     ScaleBarConfig = "ScaleBarConfig"  # For type annotations only
 
 
+# Minimum extent threshold for scale bar (avoids issues with very small extents)
+_MIN_EXTENT_FOR_SCALE_BAR = 1e-6
+
+
+def _add_scale_bar_if_requested(
+    env: SelfEnv,
+    ax: matplotlib.axes.Axes,
+    scale_bar: bool | ScaleBarConfig,
+    stacklevel: int = 2,
+) -> None:
+    """Add scale bar to axes if requested and valid.
+
+    Helper function to reduce code duplication between plot() and plot_field().
+    Handles validation of dimension_ranges and emits warnings for invalid cases.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment instance (provides dimension_ranges and units).
+    ax : matplotlib.axes.Axes
+        The axes to add the scale bar to.
+    scale_bar : bool or ScaleBarConfig
+        If truthy, adds a scale bar. If ScaleBarConfig, uses that configuration.
+    stacklevel : int, optional
+        Stack level for warnings (default 2, adjust if called from nested functions).
+    """
+    if not scale_bar:
+        return
+
+    from neurospatial.visualization.scale_bar import ScaleBarConfig as _ScaleBarConfig
+    from neurospatial.visualization.scale_bar import add_scale_bar_to_axes
+
+    config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
+
+    # Validate extent is available and reasonable
+    if not env.dimension_ranges:
+        warnings.warn(
+            "Cannot add scale bar: dimension_ranges not available",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+    elif not np.isfinite(env.dimension_ranges[0]).all():
+        warnings.warn(
+            "Cannot add scale bar: dimension_ranges contains non-finite values",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+    else:
+        extent_x = env.dimension_ranges[0][1] - env.dimension_ranges[0][0]
+        if extent_x < _MIN_EXTENT_FOR_SCALE_BAR:
+            warnings.warn(
+                f"Cannot add scale bar: extent too small ({extent_x})",
+                UserWarning,
+                stacklevel=stacklevel,
+            )
+        else:
+            add_scale_bar_to_axes(ax, extent_x, env.units, config)
+
+
 class EnvironmentVisualization:
     """Mixin class providing visualization methods for Environment.
 
@@ -159,43 +218,7 @@ class EnvironmentVisualization:
             ax.set_title(plot_title)
 
         # Add scale bar if requested
-        if scale_bar:
-            from neurospatial.visualization.scale_bar import (
-                ScaleBarConfig as _ScaleBarConfig,
-            )
-            from neurospatial.visualization.scale_bar import (
-                add_scale_bar_to_axes,
-            )
-
-            config = (
-                scale_bar
-                if isinstance(scale_bar, _ScaleBarConfig)
-                else _ScaleBarConfig()
-            )
-
-            # Validate extent is available and reasonable
-            if not self.dimension_ranges:
-                warnings.warn(
-                    "Cannot add scale bar: dimension_ranges not available",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            elif not np.isfinite(self.dimension_ranges[0]).all():
-                warnings.warn(
-                    "Cannot add scale bar: dimension_ranges contains non-finite values",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            else:
-                extent_x = self.dimension_ranges[0][1] - self.dimension_ranges[0][0]
-                if extent_x < 1e-6:
-                    warnings.warn(
-                        f"Cannot add scale bar: extent too small ({extent_x})",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                else:
-                    add_scale_bar_to_axes(ax, extent_x, self.units, config)
+        _add_scale_bar_if_requested(self, ax, scale_bar, stacklevel=2)
 
         return ax
 
@@ -502,43 +525,7 @@ class EnvironmentVisualization:
                 ax.set_ylim(self.dimension_ranges[1])
 
         # Add scale bar if requested
-        if scale_bar:
-            from neurospatial.visualization.scale_bar import (
-                ScaleBarConfig as _ScaleBarConfig,
-            )
-            from neurospatial.visualization.scale_bar import (
-                add_scale_bar_to_axes,
-            )
-
-            config = (
-                scale_bar
-                if isinstance(scale_bar, _ScaleBarConfig)
-                else _ScaleBarConfig()
-            )
-
-            # Validate extent is available and reasonable
-            if not self.dimension_ranges:
-                warnings.warn(
-                    "Cannot add scale bar: dimension_ranges not available",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            elif not np.isfinite(self.dimension_ranges[0]).all():
-                warnings.warn(
-                    "Cannot add scale bar: dimension_ranges contains non-finite values",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            else:
-                extent_x = self.dimension_ranges[0][1] - self.dimension_ranges[0][0]
-                if extent_x < 1e-6:
-                    warnings.warn(
-                        f"Cannot add scale bar: extent too small ({extent_x})",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                else:
-                    add_scale_bar_to_axes(ax, extent_x, self.units, config)
+        _add_scale_bar_if_requested(self, ax, scale_bar, stacklevel=2)
 
         return ax
 

@@ -103,6 +103,7 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     ----------
     extent : float
         The total extent of the axis (max - min) in environment units.
+        Must be positive.
     target_fraction : float, optional
         Target scale bar length as a fraction of extent (default 0.2 = 20%).
 
@@ -110,6 +111,11 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     -------
     float
         A "nice" length value following the 1-2-5 rule.
+
+    Raises
+    ------
+    ValueError
+        If extent is zero, negative, or non-finite.
 
     Examples
     --------
@@ -125,6 +131,10 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     >>> compute_nice_length(0.5)
     0.1
     """
+    # Validate extent
+    if not np.isfinite(extent) or extent <= 0:
+        raise ValueError(f"extent must be a positive finite number, got {extent}")
+
     target = extent * target_fraction
 
     # Find order of magnitude
