@@ -1145,6 +1145,7 @@ def parallel_render_frames(
     overlay_data: Any | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
 ) -> str:
     """Render frames in parallel across worker processes.
 
@@ -1290,6 +1291,7 @@ def parallel_render_frames(
                 "overlay_data": overlay_data,
                 "show_regions": show_regions,
                 "region_alpha": region_alpha,
+                "scale_bar": scale_bar,
             }
         )
 
@@ -1398,6 +1400,7 @@ def _render_worker_frames(task: dict) -> None:
     overlay_data = task.get("overlay_data")
     show_regions = task.get("show_regions", False)
     region_alpha = task.get("region_alpha", 0.3)
+    scale_bar = task.get("scale_bar", False)
 
     # Lean rcParams for bulk rasterization
     import matplotlib
@@ -1426,6 +1429,7 @@ def _render_worker_frames(task: dict) -> None:
         vmin=vmin,
         vmax=vmax,
         colorbar=False,
+        scale_bar=scale_bar,
     )
 
     # Add label for first frame if provided
@@ -1513,6 +1517,7 @@ def _render_worker_frames(task: dict) -> None:
                     vmin=vmin,
                     vmax=vmax,
                     colorbar=False,
+                    scale_bar=scale_bar,
                 )
 
                 # Add label if provided

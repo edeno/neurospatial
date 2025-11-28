@@ -80,6 +80,7 @@ def render_video(
     overlay_data: Any | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     **kwargs,
 ) -> Path | None:
     """Export animation as video using parallel frame rendering.
@@ -280,7 +281,7 @@ def render_video(
 
         # Render one test frame to measure timing
         start = time.time()
-        _ = render_field_to_rgb(env, fields[0], cmap, vmin, vmax, dpi)
+        _ = render_field_to_rgb(env, fields[0], cmap, vmin, vmax, dpi, scale_bar)
         frame_time = time.time() - start
 
         # Estimate total time (with parallelization)
@@ -335,6 +336,7 @@ def render_video(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
         )
 
         # Encode video with ffmpeg

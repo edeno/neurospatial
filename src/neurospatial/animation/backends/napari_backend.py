@@ -1362,6 +1362,7 @@ def render_napari(
     overlay_data: OverlayData | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     **kwargs: Any,
 ) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -1622,6 +1623,7 @@ def render_napari(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
         )
 
     # Single-field viewer (original behavior)
@@ -1752,6 +1754,16 @@ def render_napari(
     if show_regions:
         _render_regions(viewer, env, show_regions, region_alpha)
 
+    # Configure napari's native scale bar if requested
+    if scale_bar:
+        from neurospatial.visualization.scale_bar import (
+            ScaleBarConfig,
+            configure_napari_scale_bar,
+        )
+
+        config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
+        configure_napari_scale_bar(viewer, units=env.units, config=config)
+
     return viewer
 
 
@@ -1773,6 +1785,7 @@ def _render_multi_field_napari(
     overlay_data: OverlayData | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
 ) -> napari.Viewer:
     """Render multiple field sequences in a single napari viewer.
 
@@ -1999,6 +2012,16 @@ def _render_multi_field_napari(
     # Render regions if requested
     if show_regions:
         _render_regions(viewer, env, show_regions, region_alpha)
+
+    # Configure napari's native scale bar if requested
+    if scale_bar:
+        from neurospatial.visualization.scale_bar import (
+            ScaleBarConfig,
+            configure_napari_scale_bar,
+        )
+
+        config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
+        configure_napari_scale_bar(viewer, units=env.units, config=config)
 
     return viewer
 

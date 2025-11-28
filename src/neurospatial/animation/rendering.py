@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -148,6 +148,7 @@ def render_field_to_rgb(
     vmin: float,
     vmax: float,
     dpi: int = 100,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
 ) -> NDArray[np.uint8]:
     """Render field to RGB array using environment layout.
 
@@ -168,6 +169,9 @@ def render_field_to_rgb(
         Maximum value for color scale normalization.
     dpi : int, default=100
         Figure resolution in dots per inch.
+    scale_bar : bool or ScaleBarConfig, default=False
+        Whether to add a scale bar. If True, uses default config.
+        If ScaleBarConfig, uses provided configuration.
 
     Returns
     -------
@@ -196,6 +200,7 @@ def render_field_to_rgb(
             vmin=vmin,
             vmax=vmax,
             colorbar=False,  # Skip colorbar for animation frames
+            scale_bar=scale_bar,
         )
 
         # Convert figure to RGB array
@@ -221,6 +226,7 @@ def render_field_to_image_bytes(
     vmax: float,
     dpi: int = 100,
     image_format: str = "png",
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
 ) -> bytes:
     """Render field to image bytes (PNG or JPEG) for HTML embedding.
 
@@ -240,6 +246,9 @@ def render_field_to_image_bytes(
         Figure resolution in dots per inch.
     image_format : {"png", "jpeg"}, default="png"
         Image format. PNG is lossless, JPEG is smaller but lossy.
+    scale_bar : bool or ScaleBarConfig, default=False
+        Whether to add a scale bar. If True, uses default config.
+        If ScaleBarConfig, uses provided configuration.
 
     Returns
     -------
@@ -295,6 +304,7 @@ def render_field_to_image_bytes(
         vmin=vmin,
         vmax=vmax,
         colorbar=False,
+        scale_bar=scale_bar,
     )
 
     buf = io.BytesIO()
@@ -341,6 +351,7 @@ def render_field_to_png_bytes(
     vmin: float,
     vmax: float,
     dpi: int = 100,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
 ) -> bytes:
     """Render field to PNG bytes (for HTML embedding).
 
@@ -361,6 +372,9 @@ def render_field_to_png_bytes(
         Maximum value for color scale normalization.
     dpi : int, default=100
         Figure resolution in dots per inch.
+    scale_bar : bool or ScaleBarConfig, default=False
+        Whether to add a scale bar. If True, uses default config.
+        If ScaleBarConfig, uses provided configuration.
 
     Returns
     -------
@@ -384,7 +398,7 @@ def render_field_to_png_bytes(
     b'\\x89PNG\\r\\n\\x1a\\n'
     """
     return render_field_to_image_bytes(
-        env, field, cmap, vmin, vmax, dpi, image_format="png"
+        env, field, cmap, vmin, vmax, dpi, image_format="png", scale_bar=scale_bar
     )
 
 

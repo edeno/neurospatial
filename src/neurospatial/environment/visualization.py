@@ -557,6 +557,7 @@ class EnvironmentVisualization:
         frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
+        scale_bar: bool | ScaleBarConfig = False,
         **kwargs: Any,
     ) -> Any:
         """Animate spatial fields over time with multiple backend options.
@@ -650,6 +651,15 @@ class EnvironmentVisualization:
             Alpha transparency for region overlays. Range: [0.0, 1.0] where
             0.0 is fully transparent and 1.0 is fully opaque. Only used when
             show_regions is True or a list. Default: 0.3.
+        scale_bar : bool or ScaleBarConfig, default=False
+            Whether to add a scale bar to rendered frames. If True, uses default
+            ScaleBarConfig with auto-calculated length. If ScaleBarConfig instance,
+            uses provided configuration.
+
+            - **napari backend**: Configures napari's native scale bar
+            - **video/html/widget backends**: Adds scale bar to each rendered frame
+
+            Default: False (no scale bar).
         **kwargs : dict
             Backend-specific parameters. Common backend-specific options:
 
@@ -919,6 +929,7 @@ class EnvironmentVisualization:
             frame_times=frame_times,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
             **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
         )
 

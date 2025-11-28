@@ -241,6 +241,7 @@ class EnvironmentProtocol(Protocol):
         frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
+        scale_bar: bool | Any = False,  # bool | ScaleBarConfig
         **kwargs: Any,
     ) -> Any: ...
 

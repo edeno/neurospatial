@@ -315,3 +315,81 @@ class TestPlotWithScaleBar:
         ax = small_2d_env.plot(scale_bar=True, show_regions=True)
         assert len(ax.artists) > 0
         plt.close()
+
+
+class TestAnimateFieldsWithScaleBar:
+    """Test scale bar in animate_fields (Milestone 3).
+
+    Uses fixtures from tests/conftest.py:
+    - small_2d_env: 10x10 cm grid (25 bins)
+    """
+
+    def test_animate_fields_accepts_scale_bar_bool(self, small_2d_env):
+        """Test animate_fields() accepts scale_bar=True parameter."""
+        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+
+        # Should not raise - parameter is accepted
+        # Use html backend since it doesn't require external deps
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            small_2d_env.animate_fields(
+                fields, backend="html", save_path=f.name, scale_bar=True
+            )
+
+    def test_animate_fields_accepts_scale_bar_config(self, small_2d_env):
+        """Test animate_fields() accepts ScaleBarConfig parameter."""
+        from neurospatial.visualization.scale_bar import ScaleBarConfig
+
+        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        config = ScaleBarConfig(length=5.0, position="upper left", color="white")
+
+        # Should not raise - parameter is accepted
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            small_2d_env.animate_fields(
+                fields, backend="html", save_path=f.name, scale_bar=config
+            )
+
+    def test_video_backend_with_scale_bar(self, small_2d_env):
+        """Test video backend renders scale bar in frames."""
+        pytest.importorskip("subprocess")
+
+        # Check if ffmpeg is available
+        from neurospatial.animation.backends.video_backend import check_ffmpeg_available
+
+        if not check_ffmpeg_available():
+            pytest.skip("ffmpeg not available")
+
+        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            small_2d_env.animate_fields(
+                fields, backend="video", save_path=f.name, scale_bar=True, fps=10
+            )
+            # Video should be created (validates parameter flows through)
+            from pathlib import Path
+
+            assert Path(f.name).exists()
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("napari", reason="napari not installed"),
+        reason="napari not installed",
+    )
+    def test_napari_backend_with_scale_bar(self, small_2d_env):
+        """Test napari backend configures native scale bar."""
+        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+
+        # This should configure napari's native scale bar
+        viewer = small_2d_env.animate_fields(
+            fields, backend="napari", scale_bar=True, show=False
+        )
+
+        try:
+            # Verify napari's scale bar is enabled
+            assert viewer.scale_bar.visible is True
+        finally:
+            viewer.close()

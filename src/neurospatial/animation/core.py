@@ -65,6 +65,7 @@ def animate_fields(
     frame_times: NDArray[np.float64] | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     **kwargs: Any,
 ) -> Any:
     """Main animation dispatcher.
@@ -294,6 +295,7 @@ def animate_fields(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
@@ -333,6 +335,7 @@ def animate_fields(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
@@ -348,6 +351,7 @@ def animate_fields(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
@@ -360,6 +364,7 @@ def animate_fields(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
