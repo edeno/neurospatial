@@ -201,16 +201,27 @@ def animate_fields(
     Ensure environment is pickle-able by calling ``env.clear_cache()`` before
     animating with ``n_workers > 1``.
     """
-    # Normalize fields to list of arrays
-    if isinstance(fields, np.ndarray):
-        if fields.ndim < 2:
-            raise ValueError("fields must be at least 2D (n_frames, n_bins)")
-        fields = [fields[i] for i in range(len(fields))]
-    else:
-        fields = list(fields)
+    # Detect if input is a 2D+ numpy array (potential memmap)
+    # This must happen before any conversion to preserve array format for napari
+    fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 
-    if len(fields) == 0:
-        raise ValueError("fields cannot be empty")
+    # Validate array dimensions if array input
+    if isinstance(fields, np.ndarray) and fields.ndim < 2:
+        raise ValueError("fields must be at least 2D (n_frames, n_bins)")
+
+    # Compute n_frames from appropriate source
+    if fields_is_array:
+        # Type assertion: fields_is_array means fields is a 2D+ ndarray
+        assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
+        n_frames = fields.shape[0]
+        if n_frames == 0:
+            raise ValueError("fields cannot be empty")
+    else:
+        # Convert to list for non-array inputs
+        fields = list(fields)
+        if len(fields) == 0:
+            raise ValueError("fields cannot be empty")
+        n_frames = len(fields)
 
     # Validate environment is fitted
     if not hasattr(env, "_is_fitted") or not env._is_fitted:
@@ -221,19 +232,34 @@ def animate_fields(
 
     # Detect multi-field format (napari-specific feature)
     # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])
-    is_multi_field = len(fields) > 0 and isinstance(fields[0], (list, tuple))
+    # Note: Arrays are never multi-field (they're always single-field with shape (n_frames, n_bins))
+    is_multi_field = (
+        not fields_is_array and len(fields) > 0 and isinstance(fields[0], (list, tuple))
+    )
 
     # Validate field shapes (skip for multi-field - backend will validate)
     if not is_multi_field:
-        for i, field in enumerate(fields):
-            if len(field) != env.n_bins:
+        if fields_is_array:
+            # Type assertion: fields_is_array means fields is a 2D+ ndarray
+            assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
+            # For arrays, validate second dimension matches n_bins
+            if fields.shape[1] != env.n_bins:
                 raise ValueError(
-                    f"Field {i} has {len(field)} values but environment has {env.n_bins} bins. "
-                    f"Expected shape: ({env.n_bins},)"
+                    f"Fields array has shape {fields.shape} but expected "
+                    f"({n_frames}, {env.n_bins}). Second dimension must match env.n_bins."
                 )
+        else:
+            # For lists, validate each element
+            for i, field in enumerate(fields):
+                if len(field) != env.n_bins:
+                    raise ValueError(
+                        f"Field {i} has {len(field)} values but environment has {env.n_bins} bins. "
+                        f"Expected shape: ({env.n_bins},)"
+                    )
 
-    # Compute n_frames (for multi-field, use length of first sequence)
-    n_frames = len(fields[0]) if is_multi_field else len(fields)
+    # Update n_frames for multi-field case
+    if is_multi_field:
+        n_frames = len(fields[0])
 
     # Build or verify frame_times for overlay alignment
     if overlays is not None or frame_times is not None:
@@ -268,6 +294,14 @@ def animate_fields(
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
 
+    # Convert arrays to list for non-napari backends
+    # Napari backend can handle arrays directly (enables memmap efficiency)
+    # Other backends expect list semantics for per-frame iteration
+    if fields_is_array and backend != "napari":
+        # Type assertion: fields_is_array means fields is a 2D+ ndarray
+        assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
+        fields = [fields[i] for i in range(fields.shape[0])]
+
     # Multi-field inputs are only supported by the napari backend
     if is_multi_field and backend != "napari":
         raise ValueError(
@@ -291,7 +325,7 @@ def animate_fields(
 
         return render_napari(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
-            fields,
+            fields,  # type: ignore[arg-type]  # Napari accepts arrays (Milestone 2)
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
@@ -330,7 +364,7 @@ def animate_fields(
 
         return render_video(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
-            fields,
+            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overlay_data=overlay_data,
             show_regions=show_regions,
@@ -346,7 +380,7 @@ def animate_fields(
             save_path = "animation.html"
         return render_html(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
-            fields,
+            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overlay_data=overlay_data,
             show_regions=show_regions,
@@ -360,7 +394,7 @@ def animate_fields(
 
         return render_widget(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
-            fields,
+            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,

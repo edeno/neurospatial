@@ -763,3 +763,220 @@ class TestDispatcherOverlayIntegration:
             call_kwargs = mock.call_args[1]
             assert call_kwargs["show_regions"] == ["region1", "region2"]
             assert call_kwargs["region_alpha"] == 0.4
+
+
+class TestArrayPreservation:
+    """Test array format preservation for different backends (Milestone 1).
+
+    These tests verify that:
+    - napari backend receives arrays as-is (not converted to list)
+    - non-napari backends receive lists (arrays are converted)
+    - list inputs remain lists for all backends
+    """
+
+    def test_napari_backend_receives_array_not_list(self):
+        """Test that napari backend receives 2D array without list conversion.
+
+        This is the core test for Task 1.1: arrays should pass through to
+        napari backend unchanged to enable memmap efficiency.
+        """
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass 2D ndarray
+        fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+
+        # Mock napari backend
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
+            mock.return_value = MagicMock()
+
+            animate_fields(env, fields_array, backend="napari")
+
+            # Check backend received array, NOT list
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]  # Second positional arg
+            assert isinstance(fields_arg, np.ndarray), (
+                f"Expected np.ndarray, got {type(fields_arg).__name__}"
+            )
+            assert fields_arg.shape == (10, env.n_bins)
+
+    def test_html_backend_receives_list_from_array(self):
+        """Test that HTML backend receives list when given array input.
+
+        Non-napari backends expect list iteration semantics.
+        """
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass 2D ndarray
+        fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+
+        # Mock HTML backend
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(env, fields_array, backend="html", save_path="test.html")
+
+            # Check backend received list, NOT array
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, list), (
+                f"Expected list, got {type(fields_arg).__name__}"
+            )
+            assert len(fields_arg) == 10
+
+    def test_video_backend_receives_list_from_array(self):
+        """Test that video backend receives list when given array input."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass 2D ndarray
+        fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+
+        # Mock video backend
+        with (
+            patch(
+                "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
+                return_value=True,
+            ),
+            patch("neurospatial.animation.backends.video_backend.render_video") as mock,
+        ):
+            mock.return_value = Path("test.mp4")
+
+            animate_fields(env, fields_array, backend="video", save_path="test.mp4")
+
+            # Check backend received list
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, list), (
+                f"Expected list, got {type(fields_arg).__name__}"
+            )
+
+    def test_widget_backend_receives_list_from_array(self):
+        """Test that widget backend receives list when given array input."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass 2D ndarray
+        fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+
+        # Mock widget backend
+        with patch(
+            "neurospatial.animation.backends.widget_backend.render_widget"
+        ) as mock:
+            mock.return_value = MagicMock()
+
+            animate_fields(env, fields_array, backend="widget")
+
+            # Check backend received list
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, list), (
+                f"Expected list, got {type(fields_arg).__name__}"
+            )
+
+    def test_list_input_stays_list_for_napari(self):
+        """Test that list input remains list for napari backend."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass list of arrays
+        fields_list = [rng.random(env.n_bins) for _ in range(10)]
+
+        # Mock napari backend
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
+            mock.return_value = MagicMock()
+
+            animate_fields(env, fields_list, backend="napari")
+
+            # Check backend received list
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, list)
+            assert len(fields_arg) == 10
+
+    def test_list_input_stays_list_for_html(self):
+        """Test that list input remains list for HTML backend."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Pass list of arrays
+        fields_list = [rng.random(env.n_bins) for _ in range(10)]
+
+        # Mock HTML backend
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(env, fields_list, backend="html", save_path="test.html")
+
+            # Check backend received list
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, list)
+            assert len(fields_arg) == 10
+
+    def test_memmap_preserved_for_napari(self):
+        """Test that memory-mapped arrays are preserved for napari backend.
+
+        This is critical for large-session support: memmaps should not be
+        converted to list (which would load all data into RAM).
+        """
+        import tempfile
+        from pathlib import Path as PathlibPath
+
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create memmap
+        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+            tmpfile_path = PathlibPath(tmpfile.name)
+            fields_mmap = np.memmap(
+                tmpfile.name, dtype="float64", mode="w+", shape=(100, env.n_bins)
+            )
+            fields_mmap[:] = rng.random((100, env.n_bins))
+            fields_mmap.flush()
+
+            # Mock napari backend
+            with patch(
+                "neurospatial.animation.backends.napari_backend.render_napari"
+            ) as mock:
+                mock.return_value = MagicMock()
+
+                animate_fields(env, fields_mmap, backend="napari")
+
+                # Check backend received memmap (or at least ndarray)
+                call_args = mock.call_args
+                fields_arg = call_args[0][1]
+                assert isinstance(fields_arg, np.ndarray), (
+                    f"Expected np.ndarray/memmap, got {type(fields_arg).__name__}"
+                )
+                # Verify it's the same object (not a copy)
+                assert fields_arg is fields_mmap
+
+        # Cleanup
+        tmpfile_path.unlink()
