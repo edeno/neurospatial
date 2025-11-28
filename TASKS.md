@@ -12,11 +12,11 @@ Implementation tasks for `neurospatial.decoding` based on [DECODING_PLAN.md](DEC
 
 ### 1.1 Package Setup
 
-- [ ] Create `src/neurospatial/decoding/` directory
-- [ ] Create `__init__.py` with placeholder exports
-- [ ] Add `decoding` to main package `__init__.py` imports
+- [x] Create `src/neurospatial/decoding/` directory
+- [x] Create `__init__.py` with placeholder exports
+- [x] Add `decoding` to main package `__init__.py` imports
 
-**Success**: `from neurospatial.decoding import decode_position` imports without error (even if not implemented).
+**Success**: `from neurospatial.decoding import decode_position` imports without error (even if not implemented). ✅
 
 ### 1.2 DecodingResult Container (`_result.py`)
 
