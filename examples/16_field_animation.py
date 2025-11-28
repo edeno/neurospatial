@@ -203,6 +203,7 @@ try:
         fps=10,
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         title="Place Field Remapping",
+        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
     )
 
     print("✓ Napari viewer opened")
@@ -314,6 +315,7 @@ try:
         fps=10,
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         title="Multi-Neuron Comparison",
+        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
     )
 
     print("✓ Multi-field viewer opened!")
@@ -552,6 +554,7 @@ try:
         backend="napari",
         fps=250,  # Match recording rate
         title="Large Session Demo (1000 frames)",
+        scale_bar=True,  # Shows scale bar with units (env.units = "cm")
         # cache_chunk_size=100,  # Auto-detected (default for >10K frames)
     )
     print("✓ Napari viewer opened!")
