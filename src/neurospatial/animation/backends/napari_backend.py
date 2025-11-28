@@ -1659,11 +1659,30 @@ def render_napari(
     # Create napari viewer
     viewer = napari.Viewer(title=title)
 
+    # Compute scale for napari (converts pixels to environment units)
+    # This enables the scale bar to show correct physical units (e.g., "10 cm")
+    # Scale is (time, y, x) for shape (time, height, width, channels)
+    layer_scale: tuple[float, float, float] | None = None
+    if (
+        hasattr(env.layout, "grid_shape")
+        and env.layout.grid_shape is not None
+        and len(env.layout.grid_shape) == 2
+        and env.dimension_ranges is not None
+    ):
+        n_x, n_y = env.layout.grid_shape
+        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
+        # After transposition: image is (n_y, n_x) so scale is (y_scale, x_scale)
+        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
+        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
+        # Scale for (time, height, width): time=1 (no scaling)
+        layer_scale = (1.0, y_scale, x_scale)
+
     # Add image layer (RGB - no contrast_limits needed)
     viewer.add_image(
         lazy_frames,
         name="Spatial Fields",
         rgb=True,  # Already RGB
+        scale=layer_scale,  # Physical units scale (enables correct scale bar)
         # Don't pass contrast_limits for RGB images - they're already [0, 255]
     )
 
@@ -1909,12 +1928,28 @@ def _render_multi_field_napari(
     # Create napari viewer
     viewer = napari.Viewer(title=title)
 
+    # Compute scale for napari (converts pixels to environment units)
+    # This enables the scale bar to show correct physical units (e.g., "10 cm")
+    layer_scale: tuple[float, float, float] | None = None
+    if (
+        hasattr(env.layout, "grid_shape")
+        and env.layout.grid_shape is not None
+        and len(env.layout.grid_shape) == 2
+        and env.dimension_ranges is not None
+    ):
+        n_x, n_y = env.layout.grid_shape
+        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
+        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
+        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
+        layer_scale = (1.0, y_scale, x_scale)
+
     # Add image layers
     for renderer, name in zip(lazy_renderers, layer_names, strict=True):
         viewer.add_image(
             renderer,
             name=name,
             rgb=True,
+            scale=layer_scale,  # Physical units scale (enables correct scale bar)
         )
 
     # Configure grid mode based on layout parameter
