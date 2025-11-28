@@ -209,6 +209,29 @@ subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
 env.clear_cache()  # Makes environment pickle-able for multiprocessing
 env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
 
+# Large session helpers (v0.x.x+)
+from neurospatial.animation import (
+    estimate_colormap_range_from_subset,
+    large_session_napari_config,
+)
+
+# Pre-compute colormap range from subset (~10K frames) instead of scanning all data
+# Essential for large sessions to avoid napari scanning millions of values
+vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
+
+# Get recommended napari settings based on session size
+napari_config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
+# Returns: {'fps': 30, 'chunk_size': 1000, 'max_chunks': 50}
+
+# Combine for large session workflow
+env.animate_fields(
+    fields,
+    backend="napari",
+    vmin=vmin,       # Pre-computed from subset (fast)
+    vmax=vmax,       # Pre-computed from subset (fast)
+    **napari_config, # Optimized fps, chunk_size, max_chunks
+)
+
 # Scale bars on visualizations (v0.11.0+)
 from neurospatial import ScaleBarConfig
 

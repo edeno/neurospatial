@@ -393,6 +393,104 @@ env.clear_cache()
 env.animate_fields(interesting_subset, save_path="subset.mp4", n_workers=4)
 ```
 
+### Large Session Helper Functions (v0.x.x+)
+
+Two utility functions make large-session workflows ergonomic:
+
+#### estimate_colormap_range_from_subset
+
+Pre-compute colormap range without scanning all frames:
+
+```python
+from neurospatial.animation import estimate_colormap_range_from_subset
+
+# Samples ~10K random frames (fast: <0.5s for 1M+ frames)
+vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
+
+# Use pre-computed range (avoids napari scanning all data)
+env.animate_fields(fields, vmin=vmin, vmax=vmax, backend="napari")
+```
+
+**Parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `fields` | Required | Array shape (n_frames, n_bins) or list of fields |
+| `n_samples` | 10,000 | Max frames to sample |
+| `percentile` | (1.0, 99.0) | Percentile range (excludes outliers) |
+| `seed` | None | Random seed for reproducibility |
+
+**Why this matters**: Without explicit `vmin/vmax`, napari computes min/max over the **entire dataset**, causing "extremely long processing times" per napari docs. This function samples a representative subset instead.
+
+#### large_session_napari_config
+
+Get recommended napari settings based on session size:
+
+```python
+from neurospatial.animation import large_session_napari_config
+
+# Returns optimized fps, chunk_size, max_chunks
+config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
+# {'fps': 30, 'chunk_size': 1000, 'max_chunks': 50}
+
+env.animate_fields(fields, backend="napari", **config)
+```
+
+**Recommended Settings by Session Size:**
+
+| Session Duration | Frames (at 250 Hz) | chunk_size | max_chunks | Notes |
+|------------------|-------------------|------------|------------|-------|
+| <3 min | <50K | 100 | 10 | Default settings |
+| 3-13 min | 50K-200K | 500 | 20 | Medium sessions |
+| 13-66 min | 200K-1M | 1000 | 50 | Large sessions |
+| >66 min | >1M | 1000 | 100 | Very large sessions |
+
+### Complete Large-Session Example
+
+Full workflow combining both helper functions:
+
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.animation import (
+    estimate_colormap_range_from_subset,
+    large_session_napari_config,
+)
+
+# Create or load environment
+env = Environment.from_samples(positions, bin_size=2.5)
+
+# Create memory-mapped fields (100K+ frames)
+n_frames = 500_000  # ~33 minutes at 250 Hz
+fields = np.memmap(
+    "large_session.dat",
+    dtype="float32",
+    mode="w+",
+    shape=(n_frames, env.n_bins),
+)
+
+# ... populate fields (writes to disk) ...
+
+# STEP 1: Pre-compute colormap range from subset (~10K frames)
+vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
+print(f"Colormap range: [{vmin:.2f}, {vmax:.2f}]")
+
+# STEP 2: Get recommended napari settings
+config = large_session_napari_config(n_frames, sample_rate_hz=250)
+print(f"Config: {config}")
+
+# STEP 3: Launch napari with optimized settings
+env.animate_fields(
+    fields,
+    backend="napari",
+    vmin=vmin,       # Pre-computed (avoids full scan)
+    vmax=vmax,       # Pre-computed (avoids full scan)
+    **config,        # Optimized fps, chunk_size, max_chunks
+)
+```
+
+**Memory usage**: ~0 MB RAM regardless of session length (memmap + lazy loading).
+
 ## Remote Server Workflow
 
 When working on a remote server without display:
@@ -598,4 +696,6 @@ For complete parameter documentation, see:
 
 - `Environment.animate_fields()` - Main animation method
 - `subsample_frames()` - Frame subsampling utility
+- `estimate_colormap_range_from_subset()` - Pre-compute colormap range from subset
+- `large_session_napari_config()` - Get recommended napari settings for large sessions
 - Animation backend modules in `neurospatial.animation.backends`

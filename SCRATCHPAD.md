@@ -475,6 +475,38 @@ All 3 tasks completed:
 
 ---
 
+## Completed: Milestone 6 - Example Scripts & Documentation
+
+**Status**: COMPLETED (2025-11-28)
+
+All 4 tasks completed:
+
+- [x] Task 6.1: Update view_bandit_napari.py with best practices
+- [x] Task 6.2: Update large_session_napari_example.py (N_FRAMES=100K, helper functions)
+- [x] Task 6.3: Update Animation Documentation (added helper functions section)
+- [x] Task 6.4: Update CLAUDE.md Quick Reference
+
+---
+
+## Completed: Milestone 7 - Testing
+
+**Status**: COMPLETED (2025-11-28)
+
+All non-deferred tasks completed:
+
+- [x] Task 7.1: Test Array Input to Lazy Renderers (7 tests in TestRenderNapariArrayInput)
+- [x] Task 7.2: Test Streaming Colormap Range (7 tests in TestColormapRangeStreaming)
+- [x] Task 7.4: Run Full Test Suite (868 passed, 1 skipped)
+- [-] Task 7.3: Test Overlay Subsampling (DEFERRED - depends on Milestone 5)
+
+**Verification Results**:
+
+- All animation tests pass: 868 passed, 1 skipped
+- Mypy passes: Success: no issues found in 16 source files
+- Documentation updated and linked
+
+---
+
 ## Blockers
 
 None currently.
