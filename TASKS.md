@@ -406,71 +406,56 @@ if __name__ == "__main__":
 
 ---
 
-## Milestone 3: Scalable Colormap Range Computation
+## Milestone 3: Scalable Colormap Range Computation ✅ COMPLETE
 
 **Priority**: HIGH - Prevents OOM on large datasets.
 
 **CRITICAL**: Per napari docs, omitting `contrast_limits` (vmin/vmax) causes napari to compute min/max over the **entire dataset** - "extremely long processing times". Also set `multiscale=False` to avoid unnecessary pyramid computation.
 
-### Task 3.1: Add Streaming Path to compute_global_colormap_range
+### Task 3.1: Add Streaming Path to compute_global_colormap_range ✅
 
 **File**: `src/neurospatial/animation/rendering.py`
 
-**What to do**:
+**Completed**: 2025-11-28
 
-1. Add parameters: `max_frames_for_exact=50_000`, `sample_stride=None`
-2. For arrays with `n_frames > max_frames_for_exact`: use chunked streaming
-3. Process 10K frames at a time, track running min/max
-4. If `sample_stride` provided: use `fields[::sample_stride]`
-5. Update docstring with new parameters
+**Implementation**:
 
-**Success criteria**:
-
-- Large array (100K+ frames) doesn't spike RAM during range computation
-- `sample_stride` reduces computation time proportionally
-- Existing tests pass with default parameters
-
-**Dependencies**: Milestone 2
+- Added `max_frames_for_exact=50_000` parameter
+- Added `sample_stride=None` parameter
+- For arrays > threshold: uses chunked streaming (10K frames at a time)
+- For sample_stride: subsamples with `fields[::sample_stride]`
+- Added 7 comprehensive tests in `TestColormapRangeStreaming` class
 
 ---
 
-### Task 3.2: Update render_napari to Use Streaming
+### Task 3.2: Update render_napari to Use Streaming ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
-**What to do**:
+**Completed**: 2025-11-28
 
-1. For `n_frames > 200_000` and no explicit vmin/vmax: compute sample_stride
-2. Emit UserWarning explaining sampled range estimation
-3. Pass `sample_stride` to `compute_global_colormap_range`
+**Implementation**:
 
-**Success criteria**:
-
-- Warning emitted for very large datasets without explicit vmin/vmax
-- Range estimation completes in <1s for 500K frames (vs potentially minutes)
-
-**Dependencies**: Task 3.1
+- Added `large_dataset_threshold = 200_000` for detecting large datasets
+- For n_frames > threshold without explicit vmin/vmax:
+  - Compute `sample_stride = max(1, n_frames // 50_000)` to sample ~50K frames
+  - Emit `UserWarning` with message explaining sampled range estimation
+  - Pass `sample_stride` to `compute_global_colormap_range`
+- Added 3 tests in `TestLargeDatasetColormapRange` class
 
 ---
 
-### Task 3.3: Always Set multiscale=False
+### Task 3.3: Always Set multiscale=False ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
-**What to do**:
+**Completed**: 2025-11-28
 
-1. Find where `viewer.add_image()` is called for the field layer
-2. Add `multiscale=False` parameter unconditionally
-3. This prevents napari from computing image pyramids (not needed for spatial fields)
+**Implementation**:
 
-Note: napari's default is already non-multiscale for single 4D arrays, but setting this explicitly ensures consistent behavior and documents the intent.
-
-**Success criteria**:
-
-- `viewer.add_image(..., multiscale=False)` present in code
-- No regressions in existing tests
-
-**Dependencies**: Task 2.1
+- Added `multiscale=False` to `viewer.add_image()` in `render_napari()` (line 1727)
+- Added `multiscale=False` to `viewer.add_image()` in `render_napari_multi_field()` (line 1995)
+- Added `test_render_napari_sets_multiscale_false` test
 
 ---
 

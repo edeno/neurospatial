@@ -376,6 +376,52 @@ All 3 tasks completed:
 
 ---
 
+## In Progress: Milestone 4 - Helper Functions
+
+### Task 4.1: Add estimate_colormap_range_from_subset ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/core.py`
+
+**Implementation**:
+
+1. Added function with signature: `(fields, n_samples=10_000, percentile=(1.0, 99.0), seed=None) -> tuple[float, float]`
+2. Samples random frames (reproducible with fixed seed)
+3. Computes percentile-based range on samples
+4. Handles both array and list inputs
+5. Works efficiently with memory-mapped arrays
+
+**Tests Added** (`tests/animation/test_core.py`):
+
+- `test_returns_tuple_of_floats`
+- `test_reasonable_range_for_uniform_random`
+- `test_works_with_list_input`
+- `test_reproducible_with_seed`
+- `test_custom_percentiles`
+- `test_n_samples_parameter`
+- `test_works_with_memmap`
+- `test_fast_for_large_dataset`
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_core.py::TestEstimateColormapRangeFromSubset -v` → 8 passed
+- `uv run ruff check src/neurospatial/animation/core.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/core.py` → Success: no issues found
+
+### Task 4.2: Add large_session_napari_config
+
+- [ ] Create function with signature: `(n_frames, sample_rate_hz=None) -> dict[str, Any]`
+- [ ] Return recommended: fps, chunk_size, max_chunks
+- [ ] Scale recommendations based on n_frames thresholds
+
+### Task 4.3: Export Helpers from Animation Module
+
+- [ ] Add imports for `estimate_colormap_range_from_subset`, `large_session_napari_config`
+- [ ] Add to `__all__` if present
+
+---
+
 ## Blockers
 
 None currently.

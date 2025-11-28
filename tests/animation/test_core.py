@@ -980,3 +980,121 @@ class TestArrayPreservation:
 
         # Cleanup
         tmpfile_path.unlink()
+
+
+class TestEstimateColormapRangeFromSubset:
+    """Test estimate_colormap_range_from_subset() helper function."""
+
+    def test_returns_tuple_of_floats(self):
+        """Test that function returns tuple of two floats."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((100, 50))
+
+        result = estimate_colormap_range_from_subset(fields)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], float)
+        assert isinstance(result[1], float)
+
+    def test_reasonable_range_for_uniform_random(self):
+        """Test that range is reasonable for uniform random [0, 1] data."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((10_000, 50))
+
+        vmin, vmax = estimate_colormap_range_from_subset(fields)
+
+        # For uniform random [0, 1], 1st and 99th percentiles should be ~0.01 and ~0.99
+        assert 0.0 <= vmin <= 0.05
+        assert 0.95 <= vmax <= 1.0
+
+    def test_works_with_list_input(self):
+        """Test that function works with list of arrays."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = [rng.random(50) for _ in range(100)]
+
+        vmin, vmax = estimate_colormap_range_from_subset(fields)
+
+        assert isinstance(vmin, float)
+        assert isinstance(vmax, float)
+        assert vmin < vmax
+
+    def test_reproducible_with_seed(self):
+        """Test that results are reproducible with same seed."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((1000, 50))
+
+        result1 = estimate_colormap_range_from_subset(fields, seed=123)
+        result2 = estimate_colormap_range_from_subset(fields, seed=123)
+
+        assert result1 == result2
+
+    def test_custom_percentiles(self):
+        """Test custom percentile range."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((10_000, 50))
+
+        # Use 5th and 95th percentiles
+        vmin, vmax = estimate_colormap_range_from_subset(fields, percentile=(5.0, 95.0))
+
+        # Should be tighter than default 1st/99th
+        assert 0.02 <= vmin <= 0.1
+        assert 0.9 <= vmax <= 0.98
+
+    def test_n_samples_parameter(self):
+        """Test that n_samples controls sampling."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((100_000, 50))
+
+        # Small sample should still work
+        vmin, vmax = estimate_colormap_range_from_subset(fields, n_samples=100)
+
+        assert vmin < vmax
+
+    def test_works_with_memmap(self, tmp_path):
+        """Test that function works with memory-mapped arrays."""
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        # Create memmap
+        mmap_path = tmp_path / "test.dat"
+        fields = np.memmap(
+            str(mmap_path), dtype=np.float64, mode="w+", shape=(1000, 50)
+        )
+        rng = np.random.default_rng(42)
+        fields[:] = rng.random((1000, 50))
+        fields.flush()
+
+        vmin, vmax = estimate_colormap_range_from_subset(fields)
+
+        assert isinstance(vmin, float)
+        assert isinstance(vmax, float)
+        assert vmin < vmax
+
+    def test_fast_for_large_dataset(self):
+        """Test that function completes quickly for large datasets."""
+        import time
+
+        from neurospatial.animation.core import estimate_colormap_range_from_subset
+
+        rng = np.random.default_rng(42)
+        fields = rng.random((1_000_000, 50))
+
+        start = time.perf_counter()
+        vmin, vmax = estimate_colormap_range_from_subset(fields)
+        elapsed = time.perf_counter() - start
+
+        # Should complete in under 0.5s
+        assert elapsed < 0.5
+        assert vmin < vmax

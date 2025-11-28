@@ -612,3 +612,95 @@ def subsample_frames(
     else:
         result_list: NDArray | list = [fields[i] for i in indices]
         return result_list
+
+
+def estimate_colormap_range_from_subset(
+    fields: NDArray | list,
+    n_samples: int = 10_000,
+    percentile: tuple[float, float] = (1.0, 99.0),
+    seed: int | None = None,
+) -> tuple[float, float]:
+    """Estimate colormap range from random subset of frames.
+
+    Essential utility for large-scale sessions where computing exact min/max
+    over all frames would be too slow or memory-intensive.
+
+    Parameters
+    ----------
+    fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
+        Full field data, dtype float64. If ndarray, first dimension is time.
+        If list, each element is a single frame's field values.
+    n_samples : int, default=10_000
+        Maximum number of frames to sample. If dataset has fewer frames,
+        all frames are used.
+    percentile : tuple of float, default=(1.0, 99.0)
+        Lower and upper percentiles for range estimation. Using percentiles
+        instead of min/max provides robustness against outliers.
+    seed : int, optional
+        Random seed for reproducibility. If None, results may vary between calls.
+
+    Returns
+    -------
+    vmin, vmax : tuple of float
+        Estimated colormap range (lower and upper bounds).
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(42)
+    >>> fields = rng.random((100_000, 500))  # 100K frames, 500 bins
+    >>> vmin, vmax = estimate_colormap_range_from_subset(fields)
+    >>> env.animate_fields(
+    ...     fields, vmin=vmin, vmax=vmax, backend="napari"
+    ... )  # doctest: +SKIP
+
+    >>> # Tighter range with 5th/95th percentiles
+    >>> vmin, vmax = estimate_colormap_range_from_subset(
+    ...     fields, percentile=(5.0, 95.0)
+    ... )  # doctest: +SKIP
+
+    Notes
+    -----
+    For uniform random [0, 1] data with default percentiles (1, 99):
+    - Expected vmin: ~0.01
+    - Expected vmax: ~0.99
+
+    This function is designed to complete quickly (<0.5s) even for
+    datasets with 1M+ frames by sampling a subset rather than computing
+    over the entire dataset.
+
+    Works efficiently with memory-mapped arrays - only the sampled
+    indices are loaded into memory.
+    """
+    # Get number of frames
+    n_frames = fields.shape[0] if isinstance(fields, np.ndarray) else len(fields)
+
+    # Determine indices to sample
+    rng = np.random.default_rng(seed)
+    if n_frames <= n_samples:
+        # Use all frames
+        indices = np.arange(n_frames)
+    else:
+        # Sample without replacement
+        indices = rng.choice(n_frames, size=n_samples, replace=False)
+
+    # Collect sampled values
+    if isinstance(fields, np.ndarray):
+        # For arrays, advanced indexing creates a copy (required for memmaps)
+        sampled = fields[indices]  # Shape: (n_samples, n_bins)
+        values = sampled.ravel()
+    else:
+        # For lists, gather sampled frames
+        values = np.concatenate([fields[i] for i in indices])
+
+    # Filter NaN/inf values
+    valid_values = values[np.isfinite(values)]
+
+    if len(valid_values) == 0:
+        # Fallback for all-NaN data
+        return (0.0, 1.0)
+
+    # Compute percentiles
+    vmin = float(np.percentile(valid_values, percentile[0]))
+    vmax = float(np.percentile(valid_values, percentile[1]))
+
+    return (vmin, vmax)
