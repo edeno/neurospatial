@@ -161,6 +161,34 @@ for trial in trials:
     )
     print(f"Trial {trial.start_region} → {trial.end_region}: {turn_seq}")  # e.g., "left-right"
 
+# Directional Place Fields (v0.10.0+)
+from neurospatial import (
+    compute_directional_place_fields,
+    goal_pair_direction_labels,
+    heading_direction_labels,
+)
+from neurospatial.metrics import directional_field_index
+
+# For trialized tasks (T-maze, Y-maze, linear track)
+trials = segment_trials(trajectory_bins, times, env,
+                        start_region="home", end_regions=["goal"])
+labels = goal_pair_direction_labels(times, trials)
+result = compute_directional_place_fields(
+    env, spike_times, times, positions, labels, bandwidth=5.0
+)
+forward_field = result.fields["home→goal"]
+reverse_field = result.fields["goal→home"]
+
+# For open fields (heading-based)
+labels = heading_direction_labels(positions, times, n_directions=8)
+result = compute_directional_place_fields(
+    env, spike_times, times, positions, labels, bandwidth=5.0
+)
+
+# Quantify directionality per bin: (forward - reverse) / (forward + reverse)
+# Range: [-1, 1] where +1 = forward-preferring, -1 = reverse-preferring
+index = directional_field_index(forward_field, reverse_field)
+
 # Animate spatial fields over time (v0.3.0+)
 from neurospatial.animation import subsample_frames
 

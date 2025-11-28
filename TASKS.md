@@ -331,9 +331,9 @@ Comprehensive test coverage for all new functionality.
 
 **Success criteria**:
 
-- [ ] All tests pass with `uv run pytest tests/test_directional_place_fields.py -v`
-- [ ] Tests cover happy path and edge cases
-- [ ] Tests are independent (no shared mutable state)
+- [x] All tests pass with `uv run pytest tests/test_directional_place_fields.py -v`
+- [x] Tests cover happy path and edge cases
+- [x] Tests are independent (no shared mutable state)
 
 **Dependencies**: Task 1.3
 
@@ -361,9 +361,9 @@ Comprehensive test coverage for all new functionality.
 
 **Success criteria**:
 
-- [ ] All tests pass with `uv run pytest tests/test_direction_labels.py -v`
-- [ ] Tests for both functions
-- [ ] Edge cases covered
+- [x] All tests pass with `uv run pytest tests/test_direction_labels.py -v`
+- [x] Tests for both functions
+- [x] Edge cases covered
 
 **Dependencies**: Task 2.1, Task 2.2
 
@@ -386,8 +386,8 @@ Comprehensive test coverage for all new functionality.
 
 **Success criteria**:
 
-- [ ] All tests pass with `uv run pytest tests/metrics/test_directional_index.py -v`
-- [ ] Numerical edge cases covered
+- [x] All tests pass with `uv run pytest tests/metrics/test_directional_index.py -v`
+- [x] Numerical edge cases covered
 
 **Dependencies**: Task 3.1
 
@@ -420,10 +420,10 @@ Example scripts and user guide updates.
 
 **Success criteria**:
 
-- [ ] Script runs without errors: `uv run python docs/examples/20_directional_place_fields.py`
-- [ ] Produces interpretable visualizations
-- [ ] Comments explain the workflow
-- [ ] Follows existing example script patterns
+- [x] Script runs without errors: `uv run python docs/examples/20_directional_place_fields.py`
+- [x] Produces interpretable visualizations
+- [x] Comments explain the workflow
+- [x] Follows existing example script patterns
 
 **Dependencies**: All implementation tasks (1.1-4.3)
 
@@ -467,8 +467,8 @@ Example scripts and user guide updates.
 
 **Success criteria**:
 
-- [ ] Examples are correct and follow existing CLAUDE.md patterns
-- [ ] Version number updated appropriately
+- [x] Examples are correct and follow existing CLAUDE.md patterns
+- [x] Version number updated appropriately
 
 **Dependencies**: All implementation tasks
 
@@ -510,8 +510,8 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | 4. Exports | 4.1 spike_field exports | [x] |
 | 4. Exports | 4.2 behavioral exports | [x] |
 | 4. Exports | 4.3 metrics exports | [x] |
-| 5. Tests | 5.1 directional_place_fields tests | [ ] |
-| 5. Tests | 5.2 direction_labels tests | [ ] |
-| 5. Tests | 5.3 directional_index tests | [ ] |
-| 6. Docs | 6.1 Example script | [ ] |
-| 6. Docs | 6.2 CLAUDE.md update | [ ] |
+| 5. Tests | 5.1 directional_place_fields tests | [x] |
+| 5. Tests | 5.2 direction_labels tests | [x] |
+| 5. Tests | 5.3 directional_index tests | [x] |
+| 6. Docs | 6.1 Example script | [x] |
+| 6. Docs | 6.2 CLAUDE.md update | [x] |

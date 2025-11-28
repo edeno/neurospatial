@@ -99,8 +99,29 @@
 - All imports verified working
 - Ruff and mypy pass
 
-## Next Up
-- Task 5.1: Add tests for compute_directional_place_fields
+### Task 5.1-5.3: Tests ✅ (Already existed from TDD)
+- All 60 tests pass from earlier TDD implementation
+- Covers directional place fields, direction labels, and directional index
+
+### Task 6.1: Example Script ✅
+- Created `docs/examples/20_directional_place_fields.py`
+- Two sections: linear track (goal_pair_direction_labels) and open field (heading_direction_labels)
+- Script runs without errors
+- Uses matplotlib for visualization
+- Follows existing example patterns with jupytext header
+
+### Task 6.2: CLAUDE.md Update ✅
+- Added Directional Place Fields section (v0.10.0+) to Quick Reference
+- Examples for trialized tasks and open fields
+- Documented directional_field_index usage
+
+## Project Complete!
+All tasks in TASKS.md are now complete. Verification checklist passes:
+- ✅ 60 tests pass
+- ✅ Ruff linting passes
+- ✅ Mypy type checking passes
+- ✅ Example script runs
+- ✅ All imports work
 
 ## Design Decisions
 1. **Frozen dataclass**: Makes `DirectionalPlaceFields` immutable for safety
