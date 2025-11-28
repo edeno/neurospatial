@@ -1,517 +1,548 @@
-# Directional Place Fields - Implementation Tasks
+# TASKS.md - Scale Bar Implementation
 
-This document breaks down the implementation plan into actionable tasks organized by milestone. Each task includes success criteria and dependencies.
+## Overview
+
+Add scale bar functionality to neurospatial visualizations for publication-quality figures and accurate spatial interpretation.
+
+**Target Version**: v0.11.0
+**Status**: Not Started
 
 ---
 
-## Milestone 1: Core Infrastructure
+## Milestone 1: Core Scale Bar Utilities (P0)
 
-Foundation for directional place field computation. No external dependencies.
+Foundation work for scale bar rendering. Must be completed before any integration.
 
-### Task 1.1: Add DirectionalPlaceFields dataclass
+### Task 1.1: Create visualization subpackage structure
 
-**File**: `src/neurospatial/spike_field.py`
+**File**: `src/neurospatial/visualization/__init__.py` (NEW)
 
-**What to do**:
+**Actions**:
 
-1. Add imports: `from dataclasses import dataclass` and `from collections.abc import Mapping`
-2. Add frozen dataclass after existing imports, before function definitions:
+1. Create `src/neurospatial/visualization/` directory
+2. Create `__init__.py` with exports for `ScaleBarConfig`, `add_scale_bar_to_axes`, `compute_nice_length`, `format_scale_label`
+
+**Success Criteria**:
+
+- `from neurospatial.visualization import ScaleBarConfig` works
+- No circular import errors
+
+---
+
+### Task 1.2: Implement ScaleBarConfig dataclass
+
+**File**: `src/neurospatial/visualization/scale_bar.py` (NEW)
+
+**Actions**:
+
+1. Create frozen dataclass `ScaleBarConfig` with these fields:
+   - `length: float | None = None` - Auto-calculated if None
+   - `position: Literal["lower right", "lower left", "upper right", "upper left"] = "lower right"`
+   - `color: str | None = None` - Auto-contrast if None
+   - `background: str | None = "white"`
+   - `background_alpha: float = 0.7`
+   - `font_size: int = 10`
+   - `pad: float = 0.5` - Multiple of font size for AnchoredSizeBar
+   - `sep: float = 5.0` - Separation between bar and label (points)
+   - `label_top: bool = True`
+   - `box_style: Literal["round", "square", None] = "round"`
+   - `show_label: bool = True`
+2. Add NumPy-style docstring documenting matplotlib-only vs all-backend attributes
+
+**Success Criteria**:
+
+- `ScaleBarConfig()` creates default config
+- `ScaleBarConfig(length=20, color="white")` creates custom config
+- Frozen (immutable)
+
+---
+
+### Task 1.3: Implement compute_nice_length function
+
+**File**: `src/neurospatial/visualization/scale_bar.py`
+
+**Actions**:
+
+1. Implement 1-2-5 rule algorithm:
 
    ```python
-   @dataclass(frozen=True)
-   class DirectionalPlaceFields:
-       fields: Mapping[str, NDArray[np.float64]]
-       labels: tuple[str, ...]
+   def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
+       target = extent * target_fraction
+       magnitude = 10 ** np.floor(np.log10(target))
+       normalized = target / magnitude
+       if normalized < 1.5:
+           nice = 1
+       elif normalized < 3.5:
+           nice = 2
+       elif normalized < 7.5:
+           nice = 5
+       else:
+           nice = 10
+       return nice * magnitude
    ```
 
-3. Add NumPy-style docstring documenting both attributes
+2. Add NumPy-style docstring with examples
 
-**Success criteria**:
+**Success Criteria**:
 
-- [x] Dataclass is frozen (immutable)
-- [x] `fields` maps string labels to 1D firing rate arrays
-- [x] `labels` is a tuple preserving iteration order
-- [x] Docstring follows NumPy format with Attributes section
-
-**Dependencies**: None
+- `compute_nice_length(100) == 20`
+- `compute_nice_length(50) == 10`
+- `compute_nice_length(0.5) == 0.1`
+- Result mantissa always 1, 2, or 5
 
 ---
 
-### Task 1.2: Add _subset_spikes_by_time_mask helper
+### Task 1.4: Implement format_scale_label function
 
-**File**: `src/neurospatial/spike_field.py`
+**File**: `src/neurospatial/visualization/scale_bar.py`
 
-**What to do**:
+**Actions**:
 
-1. Add private helper function after imports, before public functions:
+1. Implement label formatter:
 
    ```python
-   def _subset_spikes_by_time_mask(
-       times: NDArray[np.float64],
-       spike_times: NDArray[np.float64],
-       mask: NDArray[np.bool_],
-   ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+   def format_scale_label(length: float, units: str | None) -> str:
+       # Integer if whole number
+       if length == int(length):
+           length_str = str(int(length))
+       else:
+           length_str = str(length)
+       if units:
+           return f"{length_str} {units}"
+       return length_str
    ```
 
-2. Implementation:
-   - Find contiguous True segments in mask using `np.diff` on mask indices
-   - For each segment, get `t_start = times[seg_start]`, `t_end = times[seg_end]`
-   - Use `np.searchsorted(spike_times, t_start, side="left")` and `np.searchsorted(spike_times, t_end, side="right")` to slice spikes
-   - Concatenate all spike slices
-   - Return `(times[mask], concatenated_spikes)`
+2. Add NumPy-style docstring
 
-**Success criteria**:
+**Success Criteria**:
 
-- [x] Correctly identifies contiguous segments
-- [x] Uses searchsorted for O(log n) spike slicing per segment
-- [x] Returns times_sub with same length as `np.sum(mask)`
-- [x] Returns spike_times_sub containing only spikes within masked time ranges
-- [x] Handles edge cases: empty mask, no spikes, single segment
-
-**Dependencies**: None
+- `format_scale_label(10, "cm") == "10 cm"`
+- `format_scale_label(10.0, "cm") == "10 cm"` (not "10.0 cm")
+- `format_scale_label(2.5, "cm") == "2.5 cm"`
+- `format_scale_label(10, None) == "10"`
 
 ---
 
-### Task 1.3: Add compute_directional_place_fields function
+### Task 1.5: Implement add_scale_bar_to_axes function
 
-**File**: `src/neurospatial/spike_field.py`
+**File**: `src/neurospatial/visualization/scale_bar.py`
 
-**What to do**:
+**Dependencies**: Tasks 1.2, 1.3, 1.4
 
-1. Add function with signature from PLAN.md Section 1.2
-2. Implementation:
-   - Validate `len(direction_labels) == len(times)`
-   - Convert labels: `labels_arr = np.asarray(direction_labels, dtype=object)`
-   - Get unique labels: `unique_labels = [l for l in np.unique(labels_arr) if l != "other"]`
-   - For each label:
-     - Build mask: `mask = labels_arr == label`
-     - Get subsets: `times_sub, spike_times_sub = _subset_spikes_by_time_mask(times, spike_times, mask)`
-     - Get positions: `positions_sub = positions[mask]`
-     - Call: `field = compute_place_field(env, spike_times_sub, times_sub, positions_sub, method=method, bandwidth=bandwidth, min_occupancy_seconds=min_occupancy_seconds)`
-     - Store in dict
-   - Return `DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))`
-3. Add comprehensive NumPy-style docstring
+**Actions**:
 
-**Success criteria**:
-
-- [x] Signature matches PLAN.md exactly
-- [x] Reuses `compute_place_field` for each direction (no duplication)
-- [x] Excludes "other" label from results
-- [x] Returns DirectionalPlaceFields with correct structure
-- [x] Docstring includes Parameters, Returns, Raises, Examples sections
-
-**Dependencies**: Task 1.1, Task 1.2
-
----
-
-## Milestone 2: Direction Label Helpers
-
-Functions to generate direction labels for common use cases.
-
-### Task 2.1: Add goal_pair_direction_labels function
-
-**File**: `src/neurospatial/behavioral.py`
-
-**What to do**:
-
-1. Add import: `from neurospatial.segmentation import Trial` (use TYPE_CHECKING guard)
-2. Add function:
+1. Import `AnchoredSizeBar` from `mpl_toolkits.axes_grid1.anchored_artists`
+2. Implement function:
 
    ```python
-   def goal_pair_direction_labels(
-       times: NDArray[np.float64],
-       trials: list[Trial],
-   ) -> NDArray[object]:
+   def add_scale_bar_to_axes(
+       ax: matplotlib.axes.Axes,
+       extent: float,
+       units: str | None = None,
+       config: ScaleBarConfig | None = None,
+   ) -> AnchoredOffsetbox:
    ```
 
-3. Implementation:
-   - Initialize: `labels = np.full(len(times), "other", dtype=object)`
-   - Loop over trials:
-     - Skip if `trial.end_region is None` (failed trial)
-     - Create label: `f"{trial.start_region}→{trial.end_region}"`
-     - Create mask: `mask = (times >= trial.start_time) & (times <= trial.end_time)`
-     - Assign: `labels[mask] = label`
-   - Return labels
-4. Add NumPy-style docstring
+3. Handle config defaults (use ScaleBarConfig() if None)
+4. Compute length if not specified using `compute_nice_length(extent)`
+5. Format label using `format_scale_label()`
+6. Handle auto-contrast color (compute from axes background luminance)
+7. Map position strings to AnchoredSizeBar loc parameter
+8. Create and add AnchoredSizeBar to axes
+9. Return the artist
 
-**Success criteria**:
+**Success Criteria**:
 
-- [x] Returns array of same length as `times`
-- [x] Failed trials (end_region=None) are labeled "other"
-- [x] Labels use arrow notation: "start→end"
-- [x] Later trials overwrite earlier if overlapping
-- [x] Docstring documents overlap behavior
-
-**Dependencies**: None (uses existing Trial class)
+- Adds scale bar to matplotlib axes
+- Auto-sizes correctly when length=None
+- Custom config overrides work
+- Returns the artist for optional further manipulation
 
 ---
 
-### Task 2.2: Add heading_direction_labels function
+### Task 1.6: Implement configure_napari_scale_bar function
 
-**File**: `src/neurospatial/behavioral.py`
+**File**: `src/neurospatial/visualization/scale_bar.py`
 
-**What to do**:
+**Dependencies**: Task 1.2
 
-1. Add function with signature from PLAN.md Section 3.2
-2. Implementation:
-   - Validate inputs: require either (positions, times) or (speed, heading)
-   - If speed/heading not provided:
-     - Compute velocity: `velocity = np.diff(positions, axis=0) / np.diff(times)[:, np.newaxis]`
-     - Compute speed: `speed_computed = np.linalg.norm(velocity, axis=1)`
-     - Compute heading: `heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])`
-     - Pad first element: `speed = np.concatenate([[0], speed_computed])`
-     - Pad first element: `heading = np.concatenate([[0], heading_computed])`
-   - Validate speed and heading have same length
-   - Create labels array
-   - Compute bin edges: `edges = np.linspace(-np.pi, np.pi, n_directions + 1)`
-   - For each timepoint:
-     - If `speed[i] < min_speed`: label = "stationary"
-     - Else: bin heading into sector, create label like "0–45°"
-   - Return labels
-3. Add NumPy-style docstring
+**Actions**:
 
-**Success criteria**:
-
-- [x] Accepts either (positions, times) or (speed, heading)
-- [x] Raises ValueError if neither provided
-- [x] Precomputed values take precedence
-- [x] Labels are strings: "stationary", "0–45°", "45–90°", etc.
-- [x] Bin boundaries are correct (test at edges)
-- [x] First timepoint handled correctly when computing from positions
-
-**Dependencies**: None
-
----
-
-## Milestone 3: Directional Index Metric
-
-Metric for comparing directional place fields.
-
-### Task 3.1: Add directional_field_index function
-
-**File**: `src/neurospatial/metrics/place_fields.py`
-
-**What to do**:
-
-1. Add function:
+1. Implement napari configuration helper:
 
    ```python
-   def directional_field_index(
-       field_forward: NDArray[np.float64],
-       field_reverse: NDArray[np.float64],
-       *,
-       eps: float = 1e-9,
-   ) -> NDArray[np.float64]:
+   def configure_napari_scale_bar(
+       viewer: napari.Viewer,
+       units: str | None = None,
+       config: ScaleBarConfig | None = None,
+   ) -> None:
    ```
 
-2. Implementation:
-   - Validate shapes match
-   - Compute: `index = (field_forward - field_reverse) / (field_forward + field_reverse + eps)`
-   - Return index
-3. Add NumPy-style docstring
+2. Map position names: "lower right" -> "bottom_right", etc.
+3. Set `viewer.scale_bar.visible = True`
+4. Apply config.position, config.font_size, config.color
+5. Set units if provided
+6. Document that `config.length` is ignored (napari auto-sizes)
 
-**Success criteria**:
+**Success Criteria**:
 
-- [x] Returns array of same shape as inputs
-- [x] Values in range [-1, 1]
-- [x] eps prevents division by zero
-- [x] NaN inputs produce NaN outputs
-- [x] No environment dependency
-
-**Dependencies**: None
+- `viewer.scale_bar.visible` becomes True
+- Position maps correctly
+- Font size and color apply
 
 ---
 
-## Milestone 4: Public API Exports
+## Milestone 2: Static Plot Integration (P1)
 
-Make new functions accessible from top-level imports.
+Integrate scale bars into matplotlib-based static visualizations.
 
-### Task 4.1: Update spike_field exports
+### Task 2.1: Add scale_bar parameter to plot_field()
 
-**File**: `src/neurospatial/__init__.py`
+**File**: `src/neurospatial/environment/visualization.py`
 
-**What to do**:
+**Dependencies**: Milestone 1 complete
 
-1. Add to existing spike_field import line:
+**Actions**:
+
+1. Add parameter: `scale_bar: bool | ScaleBarConfig = False`
+2. Add import (inside function to avoid circular imports):
 
    ```python
-   from neurospatial.spike_field import (
-       compute_place_field,
-       compute_directional_place_fields,
-       DirectionalPlaceFields,
-       spikes_to_field,
+   from neurospatial.visualization.scale_bar import (
+       add_scale_bar_to_axes,
+       ScaleBarConfig,
    )
    ```
 
-2. Add to `__all__` list:
-   - `"compute_directional_place_fields"`
-   - `"DirectionalPlaceFields"`
+3. At end of function, before return:
+   - Check if `scale_bar` is truthy
+   - Convert bool to ScaleBarConfig if needed
+   - Validate `dimension_ranges` exists and is finite
+   - Compute extent from `dimension_ranges[0]`
+   - Warn and skip if extent invalid
+   - Call `add_scale_bar_to_axes(ax, extent, self.units, config)`
+4. Update docstring with scale_bar parameter documentation
 
-**Success criteria**:
+**Success Criteria**:
 
-- [x] `from neurospatial import compute_directional_place_fields` works
-- [x] `from neurospatial import DirectionalPlaceFields` works
-
-**Dependencies**: Task 1.1, Task 1.3
+- `env.plot_field(field, scale_bar=True)` adds scale bar
+- `env.plot_field(field, scale_bar=ScaleBarConfig(...))` uses custom config
+- `env.plot_field(field)` (default) has no scale bar
+- Warnings emitted for invalid extents
 
 ---
 
-### Task 4.2: Update behavioral exports
+### Task 2.2: Add scale_bar parameter to plot()
+
+**File**: `src/neurospatial/environment/visualization.py`
+
+**Dependencies**: Task 2.1
+
+**Actions**:
+
+1. Add parameter: `scale_bar: bool | ScaleBarConfig = False`
+2. Apply same logic as plot_field() at end of function
+3. Update docstring
+
+**Success Criteria**:
+
+- `env.plot(scale_bar=True)` adds scale bar
+- Works with `show_regions=True`
+
+---
+
+## Milestone 3: Animation System Integration (P1)
+
+Propagate scale bar through animation pipeline.
+
+### Task 3.1: Add scale_bar to animate_fields() method
+
+**File**: `src/neurospatial/environment/visualization.py`
+
+**Dependencies**: Milestone 1 complete
+
+**Actions**:
+
+1. Add parameter: `scale_bar: bool | ScaleBarConfig = False`
+2. Pass to `_animate()` call
+3. Update docstring
+
+**Success Criteria**:
+
+- `env.animate_fields(fields, scale_bar=True)` accepted
+
+---
+
+### Task 3.2: Update animation core dispatcher
+
+**File**: `src/neurospatial/animation/core.py`
+
+**Dependencies**: Task 3.1
+
+**Actions**:
+
+1. Add `scale_bar: bool | ScaleBarConfig = False` to `animate_fields()` signature
+2. Pass to backend-specific functions
+3. Add import for ScaleBarConfig type hint
+
+**Success Criteria**:
+
+- Scale bar parameter flows to backend functions
+
+---
+
+### Task 3.3: Update rendering functions
+
+**File**: `src/neurospatial/animation/rendering.py`
+
+**Dependencies**: Task 3.2
+
+**Actions**:
+
+1. Add `scale_bar: bool | ScaleBarConfig = False` to:
+   - `render_field_to_rgb()`
+   - `render_field_to_image_bytes()`
+2. Pass `scale_bar=scale_bar` to `env.plot_field()` calls
+3. Add import for ScaleBarConfig type hint
+
+**Success Criteria**:
+
+- Video/HTML/Widget backends get scale bars automatically via plot_field()
+
+---
+
+### Task 3.4: Update parallel rendering
+
+**File**: `src/neurospatial/animation/_parallel.py`
+
+**Dependencies**: Task 3.3
+
+**Actions**:
+
+1. Add `scale_bar` to `_render_frames_worker()` params
+2. Add `scale_bar` to `RenderParams` if using dataclass for params
+3. Pass through to render functions
+
+**Success Criteria**:
+
+- Parallel video rendering includes scale bars
+
+---
+
+### Task 3.5: Update napari backend
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Dependencies**: Task 1.6
+
+**Actions**:
+
+1. Add `scale_bar` parameter to `render_napari()` and `_render_multi_field_napari()`
+2. Import `configure_napari_scale_bar` from visualization module
+3. After viewer setup, call:
+
+   ```python
+   if scale_bar:
+       from neurospatial.visualization.scale_bar import configure_napari_scale_bar
+       config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
+       configure_napari_scale_bar(viewer, units=env.units, config=config)
+   ```
+
+**Success Criteria**:
+
+- `env.animate_fields(fields, scale_bar=True, backend="napari")` shows scale bar
+- Napari's native scale bar is enabled and configured
+
+---
+
+## Milestone 4: Public API Export (P2)
+
+### Task 4.1: Export ScaleBarConfig from main package
 
 **File**: `src/neurospatial/__init__.py`
 
-**What to do**:
+**Dependencies**: Milestone 1 complete
 
-1. Add to existing behavioral import:
+**Actions**:
 
-   ```python
-   from neurospatial.behavioral import (
-       # ... existing imports ...
-       goal_pair_direction_labels,
-       heading_direction_labels,
-   )
-   ```
+1. Add import: `from neurospatial.visualization.scale_bar import ScaleBarConfig`
+2. Add `"ScaleBarConfig"` to `__all__`
 
-2. Add to `__all__` list:
-   - `"goal_pair_direction_labels"`
-   - `"heading_direction_labels"`
+**Success Criteria**:
 
-**Success criteria**:
-
-- [x] `from neurospatial import goal_pair_direction_labels` works
-- [x] `from neurospatial import heading_direction_labels` works
-
-**Dependencies**: Task 2.1, Task 2.2
+- `from neurospatial import ScaleBarConfig` works
 
 ---
 
-### Task 4.3: Update metrics exports
+## Milestone 5: Testing (P3)
 
-**File**: `src/neurospatial/metrics/__init__.py`
+### Task 5.1: Create test directory structure
 
-**What to do**:
+**Actions**:
 
-1. Add import:
-
-   ```python
-   from neurospatial.metrics.place_fields import directional_field_index
-   ```
-
-2. Add to `__all__` list:
-   - `"directional_field_index"`
-
-**Success criteria**:
-
-- [x] `from neurospatial.metrics import directional_field_index` works
-
-**Dependencies**: Task 3.1
+1. Create `tests/visualization/__init__.py`
 
 ---
 
-## Milestone 5: Tests
+### Task 5.2: Test compute_nice_length
 
-Comprehensive test coverage for all new functionality.
+**File**: `tests/visualization/test_scale_bar.py` (NEW)
 
-### Task 5.1: Add tests for compute_directional_place_fields
+**Actions**:
 
-**File**: `tests/test_directional_place_fields.py`
-
-**What to do**:
-
-1. Create new test file
-2. Add fixtures for sample environment, trajectory, spikes
-3. Add tests:
-   - `test_constant_labels_equals_compute_place_field`: All same label → result matches compute_place_field
-   - `test_two_directions_partition`: Split session in half with different labels → verify each field computed correctly
-   - `test_other_label_excluded`: "other" labels not in result
-   - `test_no_spikes`: Empty spike train → fields are all zero/NaN
-   - `test_label_with_few_samples`: Label with <3 samples → handled gracefully
-   - `test_nan_handling`: Verify NaN behavior matches compute_place_field
-   - `test_result_structure`: DirectionalPlaceFields has correct fields and labels
-
-**Success criteria**:
-
-- [x] All tests pass with `uv run pytest tests/test_directional_place_fields.py -v`
-- [x] Tests cover happy path and edge cases
-- [x] Tests are independent (no shared mutable state)
-
-**Dependencies**: Task 1.3
+1. Create `TestComputeNiceLength` class
+2. Test basic extents: 100 -> 20, 50 -> 10
+3. Test 1-2-5 rule compliance using mantissa check with `np.isclose()`
+4. Test target_fraction parameter
+5. Test small extents (0.1 -> 0.02)
+6. Test large extents (10000 -> 2000)
 
 ---
 
-### Task 5.2: Add tests for direction label helpers
+### Task 5.3: Test format_scale_label
 
-**File**: `tests/test_direction_labels.py`
+**File**: `tests/visualization/test_scale_bar.py`
 
-**What to do**:
+**Actions**:
 
-1. Create new test file
-2. Add tests for `goal_pair_direction_labels`:
-   - `test_basic_trials`: Two trials → correct labels assigned
-   - `test_outside_trials`: Timepoints outside trials → "other"
-   - `test_failed_trial`: Trial with end_region=None → "other"
-   - `test_overlapping_trials`: Later trial overwrites earlier
-3. Add tests for `heading_direction_labels`:
-   - `test_straight_path_x`: Movement in +x → single direction label
-   - `test_stationary`: Low speed → "stationary"
-   - `test_bin_boundaries`: Test heading at exactly 0°, 45°, 90°
-   - `test_precomputed_matches_computed`: Same result from both input modes
-   - `test_error_no_inputs`: Raises ValueError if no inputs provided
-   - `test_n_directions`: Different n_directions values produce correct bins
-
-**Success criteria**:
-
-- [x] All tests pass with `uv run pytest tests/test_direction_labels.py -v`
-- [x] Tests for both functions
-- [x] Edge cases covered
-
-**Dependencies**: Task 2.1, Task 2.2
+1. Create `TestFormatScaleLabel` class
+2. Test with units
+3. Test without units
+4. Test integer display (10.0 -> "10", not "10.0")
+5. Test decimal display
 
 ---
 
-### Task 5.3: Add tests for directional_field_index
+### Task 5.4: Test add_scale_bar_to_axes
 
-**File**: `tests/metrics/test_directional_index.py`
+**File**: `tests/visualization/test_scale_bar.py`
 
-**What to do**:
+**Actions**:
 
-1. Create new test file in tests/metrics/
-2. Add tests:
-   - `test_all_forward`: field_forward >> field_reverse → index ≈ +1
-   - `test_all_reverse`: field_reverse >> field_forward → index ≈ -1
-   - `test_equal_fields`: Equal fields → index ≈ 0
-   - `test_nan_propagation`: NaN in input → NaN in output at that position
-   - `test_eps_prevents_division_by_zero`: Both fields zero → finite result
-   - `test_shape_preserved`: Output shape matches input shape
-
-**Success criteria**:
-
-- [x] All tests pass with `uv run pytest tests/metrics/test_directional_index.py -v`
-- [x] Numerical edge cases covered
-
-**Dependencies**: Task 3.1
+1. Create `TestAddScaleBarToAxes` class
+2. Test artist is added to axes
+3. Test custom config applies
+4. Test no background option
 
 ---
 
-## Milestone 6: Documentation
+### Task 5.5: Test plot_field with scale_bar
 
-Example scripts and user guide updates.
+**File**: `tests/visualization/test_scale_bar.py`
 
-### Task 6.1: Add example script
+**Actions**:
 
-**File**: `docs/examples/20_directional_place_fields.py`
-
-**What to do**:
-
-1. Create example script with two sections:
-   - **Section 1: Linear track with goal_pair_direction_labels**
-     - Create simple 1D environment
-     - Simulate trajectory with outbound/inbound runs
-     - Segment into trials
-     - Compute directional place fields
-     - Plot forward vs reverse fields
-   - **Section 2: Open field with heading_direction_labels**
-     - Create 2D environment
-     - Simulate trajectory with various headings
-     - Compute heading-binned place fields
-     - Plot fields for different heading sectors
-2. Use matplotlib for visualization
-3. Add comments explaining each step
-
-**Success criteria**:
-
-- [x] Script runs without errors: `uv run python docs/examples/20_directional_place_fields.py`
-- [x] Produces interpretable visualizations
-- [x] Comments explain the workflow
-- [x] Follows existing example script patterns
-
-**Dependencies**: All implementation tasks (1.1-4.3)
+1. Create `TestPlotFieldWithScaleBar` class
+2. Use fixtures: `small_2d_env`, `medium_2d_env`, `small_1d_env` from `tests/conftest.py`
+3. Test `scale_bar=True`
+4. Test `scale_bar=ScaleBarConfig(...)`
+5. Test with colorbar
+6. Test 1D environment
+7. Test default (no scale bar)
 
 ---
 
-### Task 6.2: Update CLAUDE.md quick reference
+### Task 5.6: Test plot with scale_bar
+
+**File**: `tests/visualization/test_scale_bar.py`
+
+**Actions**:
+
+1. Create `TestPlotWithScaleBar` class
+2. Test `env.plot(scale_bar=True)`
+
+---
+
+### Task 5.7: Test animation backends
+
+**File**: `tests/visualization/test_scale_bar.py`
+
+**Actions**:
+
+1. Create `TestAnimateFieldsWithScaleBar` class
+2. Test video backend with scale_bar (skip if ffmpeg unavailable)
+3. Test napari scale bar configuration (skip if napari unavailable)
+
+---
+
+## Milestone 6: Documentation (P3)
+
+### Task 6.1: Update CLAUDE.md Quick Reference
 
 **File**: `CLAUDE.md`
 
-**What to do**:
+**Actions**:
 
-1. Add to Quick Reference section under "Most Common Patterns":
+1. Add scale bar examples to Quick Reference section:
 
    ```python
-   # Compute directional place fields (v0.10.0+)
-   from neurospatial import (
-       compute_directional_place_fields,
-       goal_pair_direction_labels,
-       heading_direction_labels,
-   )
-   from neurospatial.metrics import directional_field_index
+   # Scale bars on visualizations (v0.11.0+)
+   ax = env.plot_field(field, scale_bar=True)  # Auto-sized
+   ax = env.plot(scale_bar=True)
 
-   # For trialized tasks (T-maze, Y-maze)
-   trials = segment_trials(trajectory_bins, times, env, ...)
-   labels = goal_pair_direction_labels(times, trials)
-   result = compute_directional_place_fields(
-       env, spike_times, times, positions, labels, bandwidth=5.0
-   )
-   forward_field = result.fields["home→goal"]
-   reverse_field = result.fields["goal→home"]
+   from neurospatial import ScaleBarConfig
+   config = ScaleBarConfig(length=20, position="lower left", color="white")
+   ax = env.plot_field(field, scale_bar=config)
 
-   # For open fields (heading-based)
-   labels = heading_direction_labels(positions, times, n_directions=8)
-   result = compute_directional_place_fields(
-       env, spike_times, times, positions, labels, bandwidth=5.0
-   )
-
-   # Compare directionality
-   index = directional_field_index(forward_field, reverse_field)
+   # Scale bars in animations
+   env.animate_fields(fields, scale_bar=True, backend="napari")
+   env.animate_fields(fields, scale_bar=True, save_path="video.mp4")
    ```
 
-**Success criteria**:
-
-- [x] Examples are correct and follow existing CLAUDE.md patterns
-- [x] Version number updated appropriately
-
-**Dependencies**: All implementation tasks
+2. Add terminology note distinguishing from `calibrate_video(scale_bar=...)`
 
 ---
 
-## Verification Checklist
+### Task 6.2: Update method docstrings
 
-Run after all tasks complete:
+**Files**: `src/neurospatial/environment/visualization.py`
 
-```bash
-# 1. All tests pass
-uv run pytest tests/test_directional_place_fields.py tests/test_direction_labels.py tests/metrics/test_directional_index.py -v
+**Actions**:
 
-# 2. Linting passes
-uv run ruff check src/neurospatial/spike_field.py src/neurospatial/behavioral.py src/neurospatial/metrics/place_fields.py
-
-# 3. Type checking passes
-uv run mypy src/neurospatial/spike_field.py src/neurospatial/behavioral.py src/neurospatial/metrics/place_fields.py
-
-# 4. Example script runs
-uv run python docs/examples/20_directional_place_fields.py
-
-# 5. Imports work
-uv run python -c "from neurospatial import compute_directional_place_fields, DirectionalPlaceFields, goal_pair_direction_labels, heading_direction_labels; from neurospatial.metrics import directional_field_index; print('All imports successful')"
-```
+1. Add `scale_bar` parameter to `plot_field()` docstring Examples section
+2. Add `scale_bar` parameter to `plot()` docstring Examples section
+3. Add `scale_bar` parameter to `animate_fields()` docstring Examples section
 
 ---
 
-## Task Summary
+## Implementation Order
 
-| Milestone | Task | Status |
-|-----------|------|--------|
-| 1. Core | 1.1 DirectionalPlaceFields dataclass | [x] |
-| 1. Core | 1.2 _subset_spikes_by_time_mask helper | [x] |
-| 1. Core | 1.3 compute_directional_place_fields | [x] |
-| 2. Labels | 2.1 goal_pair_direction_labels | [x] |
-| 2. Labels | 2.2 heading_direction_labels | [x] |
-| 3. Metric | 3.1 directional_field_index | [x] |
-| 4. Exports | 4.1 spike_field exports | [x] |
-| 4. Exports | 4.2 behavioral exports | [x] |
-| 4. Exports | 4.3 metrics exports | [x] |
-| 5. Tests | 5.1 directional_place_fields tests | [x] |
-| 5. Tests | 5.2 direction_labels tests | [x] |
-| 5. Tests | 5.3 directional_index tests | [x] |
-| 6. Docs | 6.1 Example script | [x] |
-| 6. Docs | 6.2 CLAUDE.md update | [x] |
+Execute milestones in this order:
+
+1. **Milestone 1** (Tasks 1.1-1.6) - Core utilities must exist first
+2. **Milestone 2** (Tasks 2.1-2.2) - Static plots depend on M1
+3. **Milestone 3** (Tasks 3.1-3.5) - Animation depends on M1
+4. **Milestone 4** (Task 4.1) - Export after implementation works
+5. **Milestone 5** (Tasks 5.1-5.7) - Tests after implementation
+6. **Milestone 6** (Tasks 6.1-6.2) - Documentation last
+
+---
+
+## Edge Cases to Handle
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| `dimension_ranges` is None | Warn, skip scale bar |
+| `dimension_ranges` has infinite values | Warn, skip scale bar |
+| Extent < 1e-6 | Warn, skip scale bar |
+| `env.units` is None | Show numeric value only ("10" not "10 cm") |
+| 3D+ environments | Not supported, skip (future work) |
+| 1D environments | Use dimension_ranges[0], works normally |
+
+---
+
+## Files Summary
+
+| File | Action | Milestone |
+|------|--------|-----------|
+| `src/neurospatial/visualization/__init__.py` | CREATE | M1 |
+| `src/neurospatial/visualization/scale_bar.py` | CREATE | M1 |
+| `src/neurospatial/environment/visualization.py` | MODIFY | M2, M3 |
+| `src/neurospatial/animation/core.py` | MODIFY | M3 |
+| `src/neurospatial/animation/rendering.py` | MODIFY | M3 |
+| `src/neurospatial/animation/_parallel.py` | MODIFY | M3 |
+| `src/neurospatial/animation/backends/napari_backend.py` | MODIFY | M3 |
+| `src/neurospatial/__init__.py` | MODIFY | M4 |
+| `tests/visualization/__init__.py` | CREATE | M5 |
+| `tests/visualization/test_scale_bar.py` | CREATE | M5 |
+| `CLAUDE.md` | MODIFY | M6 |
