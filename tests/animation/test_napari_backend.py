@@ -1184,3 +1184,323 @@ class TestRenderNapariArrayInput:
 
         # Cleanup
         del fields_mmap
+
+
+# ============================================================================
+# Dask-Based Renderer Tests (Task 2.5: Alternative lazy loading via dask)
+# ============================================================================
+
+
+class TestDaskFieldRenderer:
+    """Test dask-based alternative renderer for large datasets.
+
+    These tests verify that _create_dask_field_renderer creates a dask array
+    that napari can consume directly, leveraging napari's native dask support
+    for lazy loading.
+    """
+
+    @pytest.fixture
+    def env(self):
+        """Create simple 2D environment for testing."""
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    @pytest.fixture
+    def fields_array(self, env):
+        """Create 2D array of fields (n_frames, n_bins)."""
+        n_frames = 50
+        rng = np.random.default_rng(42)
+        return rng.random((n_frames, env.n_bins)).astype(np.float64)
+
+    @pytest.fixture
+    def cmap_lookup(self):
+        """Create colormap lookup table."""
+        import matplotlib.pyplot as plt
+
+        cmap_obj = plt.get_cmap("viridis")
+        return (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
+
+    def test_create_dask_field_renderer_returns_dask_array(
+        self, env, fields_array, cmap_lookup
+    ):
+        """Test _create_dask_field_renderer returns a dask array."""
+        da = pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        assert isinstance(result, da.Array)
+
+    def test_dask_renderer_has_correct_shape(self, env, fields_array, cmap_lookup):
+        """Test dask array has shape (n_frames, height, width, 3)."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Should be 4D: (n_frames, height, width, 3)
+        assert result.ndim == 4
+        assert result.shape[0] == fields_array.shape[0]  # n_frames
+        assert result.shape[3] == 3  # RGB channels
+
+    def test_dask_renderer_has_correct_dtype(self, env, fields_array, cmap_lookup):
+        """Test dask array has uint8 dtype for RGB."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        assert result.dtype == np.uint8
+
+    def test_dask_renderer_frame_access(self, env, fields_array, cmap_lookup):
+        """Test accessing individual frames from dask array."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Access a frame and compute it
+        frame = result[0].compute()
+
+        assert frame.dtype == np.uint8
+        assert frame.ndim == 3  # (height, width, 3)
+        assert frame.shape[-1] == 3
+
+    def test_dask_renderer_lazy_until_compute(self, env, fields_array, cmap_lookup):
+        """Test dask array is lazy until .compute() is called."""
+        da = pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Should still be a dask array (not computed)
+        assert isinstance(result, da.Array)
+
+        # Frame slice should also be dask array until computed
+        frame_slice = result[0]
+        assert isinstance(frame_slice, da.Array)
+
+    def test_dask_renderer_with_memmap(self, env, cmap_lookup, tmp_path):
+        """Test dask renderer works with memmap input."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        # Create memmap file
+        n_frames = 100
+        mmap_path = tmp_path / "test_fields.dat"
+        fields_mmap = np.memmap(
+            str(mmap_path), dtype="float64", mode="w+", shape=(n_frames, env.n_bins)
+        )
+        rng = np.random.default_rng(42)
+        fields_mmap[:] = rng.random((n_frames, env.n_bins))
+        fields_mmap.flush()
+
+        result = _create_dask_field_renderer(
+            env, fields_mmap, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Should work with memmap
+        assert result.shape[0] == n_frames
+
+        # Frame access should work
+        frame = result[50].compute()
+        assert frame.dtype == np.uint8
+        assert frame.shape[-1] == 3
+
+        # Cleanup
+        del fields_mmap
+
+    def test_dask_renderer_vs_lazy_renderer_equivalence(
+        self, env, fields_array, cmap_lookup
+    ):
+        """Test dask renderer produces same output as LazyFieldRenderer."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+            _create_lazy_field_renderer,
+        )
+
+        dask_result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        lazy_result = _create_lazy_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0
+        )
+
+        # Compare a few frames
+        for idx in [0, 10, 25, 49]:
+            dask_frame = dask_result[idx].compute()
+            lazy_frame = lazy_result[idx]
+            np.testing.assert_array_equal(dask_frame, lazy_frame)
+
+    def test_dask_renderer_chunk_size_parameter(self, env, fields_array, cmap_lookup):
+        """Test chunk_size parameter affects dask chunking."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        chunk_size = 5
+        result = _create_dask_field_renderer(
+            env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0, chunk_size=chunk_size
+        )
+
+        # Check that chunks are set correctly along time axis
+        # Dask chunks are tuples of chunk sizes per axis
+        assert result.chunks[0][0] == chunk_size or result.chunks[0][0] <= chunk_size
+
+    def test_dask_renderer_requires_array_input(self, env, cmap_lookup):
+        """Test _create_dask_field_renderer requires array input, not list."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        # Create list input
+        n_frames = 10
+        rng = np.random.default_rng(42)
+        fields_list = [
+            rng.random(env.n_bins).astype(np.float64) for _ in range(n_frames)
+        ]
+
+        # Should raise TypeError for list input
+        with pytest.raises(TypeError, match="array"):
+            _create_dask_field_renderer(
+                env, fields_list, cmap_lookup, vmin=0.0, vmax=1.0
+            )
+
+    def test_dask_renderer_empty_array_raises_error(self, env, cmap_lookup):
+        """Test _create_dask_field_renderer rejects empty arrays."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        # Empty array (0 frames)
+        fields_empty = np.zeros((0, env.n_bins), dtype=np.float64)
+
+        with pytest.raises(ValueError, match="at least 1 frame"):
+            _create_dask_field_renderer(
+                env, fields_empty, cmap_lookup, vmin=0.0, vmax=1.0
+            )
+
+    def test_dask_renderer_wrong_shape_raises_error(self, env, cmap_lookup):
+        """Test _create_dask_field_renderer rejects non-2D arrays."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        # 1D array
+        fields_1d = np.random.rand(100).astype(np.float64)
+        with pytest.raises(ValueError, match="2D array"):
+            _create_dask_field_renderer(env, fields_1d, cmap_lookup, 0.0, 1.0)
+
+        # 3D array
+        fields_3d = np.random.rand(10, env.n_bins, 5).astype(np.float64)
+        with pytest.raises(ValueError, match="2D array"):
+            _create_dask_field_renderer(env, fields_3d, cmap_lookup, 0.0, 1.0)
+
+    def test_dask_renderer_invalid_chunk_size_raises_error(
+        self, env, fields_array, cmap_lookup
+    ):
+        """Test _create_dask_field_renderer rejects non-positive chunk_size."""
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _create_dask_field_renderer,
+        )
+
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            _create_dask_field_renderer(
+                env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0, chunk_size=0
+            )
+
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            _create_dask_field_renderer(
+                env, fields_array, cmap_lookup, vmin=0.0, vmax=1.0, chunk_size=-5
+            )
+
+    @pytest.mark.napari
+    def test_render_napari_use_dask_parameter(self, env, fields_array):
+        """Test render_napari with use_dask=True uses dask renderer."""
+        pytest.importorskip("napari")
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with (
+            patch(
+                "neurospatial.animation.backends.napari_backend._create_dask_field_renderer"
+            ) as mock_dask,
+            patch(
+                "neurospatial.animation.backends.napari_backend._create_lazy_field_renderer"
+            ) as mock_lazy,
+            patch("napari.Viewer") as mock_viewer,
+        ):
+            mock_viewer.return_value = _create_mock_viewer()
+
+            # Create dask mock return
+            import dask.array as da
+
+            mock_dask.return_value = da.zeros((50, 10, 10, 3), dtype=np.uint8)
+
+            render_napari(env, fields_array, use_dask=True)
+
+            # Dask renderer should be called, not lazy renderer
+            mock_dask.assert_called_once()
+            mock_lazy.assert_not_called()
+
+    @pytest.mark.napari
+    def test_render_napari_use_dask_requires_array(self, env):
+        """Test render_napari with use_dask=True requires array input."""
+        pytest.importorskip("napari")
+        pytest.importorskip("dask.array")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        # Create list input
+        n_frames = 10
+        rng = np.random.default_rng(42)
+        fields_list = [
+            rng.random(env.n_bins).astype(np.float64) for _ in range(n_frames)
+        ]
+
+        # Should raise TypeError for list input with use_dask=True
+        with pytest.raises(TypeError, match="use_dask=True requires array input"):
+            render_napari(env, fields_list, use_dask=True)

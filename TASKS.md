@@ -189,7 +189,7 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 
 ---
 
-### Task 2.5: Implement Dask-Based Alternative Renderer
+### Task 2.5: Implement Dask-Based Alternative Renderer ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
@@ -200,6 +200,25 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 3. Use `dask.array.map_blocks()` to apply `field_to_rgb_for_napari` lazily
 4. Return dask array that napari can consume directly
 5. Add `use_dask: bool = False` parameter to `render_napari`
+
+**Completed**: 2025-11-28
+
+**Implementation Notes**:
+
+- Added `_create_dask_field_renderer()` with comprehensive input validation:
+  - Requires numpy array input (not list)
+  - Requires 2D shape (n_frames, n_bins)
+  - Requires at least 1 frame
+  - Validates chunk_size > 0
+- Added `use_dask: bool = False` parameter to `render_napari`
+- Added 14 comprehensive tests in `TestDaskFieldRenderer` class:
+  - Core functionality (returns dask array, correct shape, dtype)
+  - Lazy evaluation verification
+  - Memmap support
+  - Equivalence with LazyFieldRenderer
+  - Edge case validation (empty array, wrong shape, list input, invalid chunk_size)
+  - Integration with render_napari
+- All existing tests pass (53 passed, 1 skipped)
 
 **Implementation sketch**:
 

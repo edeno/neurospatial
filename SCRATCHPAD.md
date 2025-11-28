@@ -140,9 +140,55 @@ Added `TestArrayPreservation` class with 7 tests:
 - `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
 - `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
 
+### Task 2.5: Implement Dask-Based Alternative Renderer ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Added `_create_dask_field_renderer()` function with comprehensive validation:
+   - Validates input is numpy array (not list)
+   - Validates 2D shape (n_frames, n_bins)
+   - Validates at least 1 frame
+   - Validates chunk_size > 0
+2. Uses `dask.array.from_array()` with chunking along time axis
+3. Uses `dask.array.map_blocks()` to lazily apply `field_to_rgb_for_napari`
+4. Returns dask array that napari consumes directly
+5. Added `use_dask: bool = False` parameter to `render_napari`
+
+**Tests Added** (`tests/animation/test_napari_backend.py`):
+
+- `test_create_dask_field_renderer_returns_dask_array`
+- `test_dask_renderer_has_correct_shape`
+- `test_dask_renderer_has_correct_dtype`
+- `test_dask_renderer_frame_access`
+- `test_dask_renderer_lazy_until_compute`
+- `test_dask_renderer_with_memmap`
+- `test_dask_renderer_vs_lazy_renderer_equivalence`
+- `test_dask_renderer_chunk_size_parameter`
+- `test_dask_renderer_requires_array_input`
+- `test_dask_renderer_empty_array_raises_error`
+- `test_dask_renderer_wrong_shape_raises_error`
+- `test_dask_renderer_invalid_chunk_size_raises_error`
+- `test_render_napari_use_dask_parameter`
+- `test_render_napari_use_dask_requires_array`
+
+**Code Review**: APPROVED with enhancements
+
+- Initial review identified critical edge cases (empty array, wrong shape)
+- Added comprehensive input validation after review
+- All 14 tests pass, all 53 napari backend tests pass
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_napari_backend.py -v` → 53 passed, 1 skipped
+- `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
+
 ### Next Tasks
 
-- [ ] Task 2.5: Implement Dask-Based Alternative Renderer (optional)
 - [ ] Task 2.6: Benchmark LazyFieldRenderer vs Dask (optional)
 
 ---
@@ -160,6 +206,7 @@ None currently.
 3. **Backend type ignores**: Use `# type: ignore[arg-type]` for backend calls since updating signatures is Milestone 2
 4. **isinstance in __len__**: Use `isinstance(self.fields, np.ndarray)` directly in `__len__` for mypy type narrowing, even though we have `_fields_is_array` flag
 5. **int() cast for shape[0]**: Cast `self.fields.shape[0]` to `int()` to satisfy mypy's `no-any-return` check
+6. **Dask renderer validation**: Added comprehensive input validation (array type, 2D shape, n_frames > 0, chunk_size > 0) after code review identified edge case bugs
 
 ---
 

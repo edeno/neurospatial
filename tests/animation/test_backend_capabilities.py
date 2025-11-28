@@ -261,14 +261,14 @@ class TestNapariCapabilities:
                 )
 
             assert result is not None
-            # Verify points layer was created for head direction
-            # (Uses Points instead of Vectors for improved playback performance)
-            points_calls = [
+            # Verify tracks layer was created for head direction
+            # (Uses Tracks layer for improved playback performance)
+            tracks_calls = [
                 call
-                for call in mock_viewer.add_points.call_args_list
+                for call in mock_viewer.add_tracks.call_args_list
                 if call[1].get("name", "").startswith("Head Direction")
             ]
-            assert len(points_calls) > 0, "Expected Points layer for Head Direction"
+            assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
     def test_supports_regions(self, simple_env, simple_fields):
         """Test Napari renders regions without errors."""

@@ -230,13 +230,13 @@ class TestNapariBackendIntegration:
         # Verify viewer created
         assert result is mock_viewer
 
-        # Verify points layer added for head direction (uses Points, not Vectors)
-        points_calls = [
+        # Verify tracks layer added for head direction (uses Tracks layer)
+        tracks_calls = [
             call
-            for call in mock_viewer.add_points.call_args_list
+            for call in mock_viewer.add_tracks.call_args_list
             if call[1].get("name", "").startswith("Head Direction")
         ]
-        assert len(points_calls) > 0, "Expected Points layer for Head Direction"
+        assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
     @patch("neurospatial.animation.backends.napari_backend.napari")
     def test_napari_with_all_overlays(
@@ -275,20 +275,18 @@ class TestNapariBackendIntegration:
         assert result is mock_viewer
 
         # Verify all layer types added
-        assert (
-            mock_viewer.add_points.called
-        )  # For position, bodyparts, and head direction
+        assert mock_viewer.add_points.called  # For position and bodyparts
         # Skeleton uses precomputed vectors layer
         assert (
             mock_viewer.add_vectors.call_count >= 1
-        )  # Skeleton only (head direction now uses Points)
-        # Verify head direction creates Points layer (not Vectors)
-        points_calls = [
+        )  # Skeleton only (head direction now uses Tracks)
+        # Verify head direction creates Tracks layer (not Vectors or Points)
+        tracks_calls = [
             call
-            for call in mock_viewer.add_points.call_args_list
+            for call in mock_viewer.add_tracks.call_args_list
             if call[1].get("name", "").startswith("Head Direction")
         ]
-        assert len(points_calls) > 0, "Expected Points layer for Head Direction"
+        assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
     @patch("neurospatial.animation.backends.napari_backend.napari")
     def test_napari_with_regions(self, mock_napari, env_with_regions, spatial_fields):
@@ -928,16 +926,16 @@ class TestMixedOverlayTypes:
         assert result is mock_viewer
 
         # Verify all three overlay types rendered
-        assert mock_viewer.add_points.called  # Position, bodyparts, and head direction
-        # Skeleton uses vectors layer (head direction now uses Points)
+        assert mock_viewer.add_points.called  # Position and bodyparts
+        # Skeleton uses vectors layer (head direction now uses Tracks)
         assert mock_viewer.add_vectors.call_count >= 1  # Skeleton only
-        # Verify head direction creates Points layer (not Vectors)
-        points_calls = [
+        # Verify head direction creates Tracks layer (not Vectors or Points)
+        tracks_calls = [
             call
-            for call in mock_viewer.add_points.call_args_list
+            for call in mock_viewer.add_tracks.call_args_list
             if call[1].get("name", "").startswith("Head Direction")
         ]
-        assert len(points_calls) > 0, "Expected Points layer for Head Direction"
+        assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
 
     @patch("neurospatial.animation._parallel.parallel_render_frames")
     @patch("neurospatial.animation.backends.video_backend.subprocess.run")

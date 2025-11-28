@@ -158,8 +158,8 @@ class TestHeadDirectionOverlay:
 
         assert_array_equal(overlay.data, data)
         assert overlay.times is None
-        assert overlay.color == "yellow"
-        assert overlay.length == 0.25
+        assert overlay.color == "hsv"
+        assert overlay.length == 15.0
 
     def test_with_unit_vectors(self):
         """Test HeadDirectionOverlay with unit vector data."""
@@ -661,8 +661,8 @@ class TestOverlayDataclassDefaults:
         data = np.array([0.0])
         overlay = HeadDirectionOverlay(data=data)
 
-        assert overlay.color == "yellow"
-        assert overlay.length == 0.25
+        assert overlay.color == "hsv"
+        assert overlay.length == 15.0
 
     def test_video_overlay_defaults(self):
         """Test VideoOverlay default values."""

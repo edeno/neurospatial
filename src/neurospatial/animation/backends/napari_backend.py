@@ -1367,6 +1367,7 @@ def render_napari(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    use_dask: bool = False,
     **kwargs: Any,
 ) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -1441,6 +1442,17 @@ def render_napari(
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only applies when show_regions
         is True or a non-empty list.
+    use_dask : bool, default=False
+        If True, use dask-based lazy rendering instead of custom LazyFieldRenderer.
+        Dask leverages napari's native dask support for chunk-based loading.
+        Requires dask to be installed. Only works with array input (not lists).
+        Trade-offs vs default LazyFieldRenderer:
+
+        - **Pros**: Leverages napari's built-in dask integration, simpler code
+        - **Cons**: Less control over caching, requires dask dependency
+
+        Use this option for experimentation; default LazyFieldRenderer is
+        recommended for production use until benchmarking confirms benefits.
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -1660,17 +1672,33 @@ def render_napari(
     cmap_obj = plt.get_cmap(cmap)
     cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
 
-    # Create lazy frame loader (with optional chunked caching)
-    lazy_frames = _create_lazy_field_renderer(
-        env,
-        fields,  # type: ignore[arg-type]
-        cmap_lookup,
-        vmin,
-        vmax,
-        cache_size,
-        chunk_size,
-        max_chunks,
-    )
+    # Create lazy frame loader (with optional chunked caching or dask)
+    if use_dask:
+        # Dask renderer requires array input
+        if not fields_is_array:
+            raise TypeError(
+                "use_dask=True requires array input (shape: n_frames, n_bins), "
+                "not list. Either convert to array or use use_dask=False."
+            )
+        lazy_frames = _create_dask_field_renderer(
+            env,
+            fields,  # type: ignore[arg-type]
+            cmap_lookup,
+            vmin,
+            vmax,
+            chunk_size,
+        )
+    else:
+        lazy_frames = _create_lazy_field_renderer(
+            env,
+            fields,  # type: ignore[arg-type]
+            cmap_lookup,
+            vmin,
+            vmax,
+            cache_size,
+            chunk_size,
+            max_chunks,
+        )
 
     # Create napari viewer
     viewer = napari.Viewer(title=title)
@@ -2075,6 +2103,147 @@ def _render_multi_field_napari(
         configure_napari_scale_bar(viewer, units=env.units, config=config)
 
     return viewer
+
+
+def _create_dask_field_renderer(
+    env: Environment,
+    fields: NDArray[np.float64],
+    cmap_lookup: NDArray[np.uint8],
+    vmin: float,
+    vmax: float,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+) -> Any:
+    """Create dask-based lazy renderer leveraging napari's native dask support.
+
+    This function wraps field data in a dask array with lazy RGB conversion,
+    allowing napari to consume it directly. Dask handles chunk-based loading
+    and caching automatically.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment defining spatial structure.
+    fields : ndarray of shape (n_frames, n_bins)
+        Field data as 2D numpy array. Must be array, not list.
+        Memory-mapped arrays are efficiently handled.
+    cmap_lookup : ndarray of shape (256, 3), dtype uint8
+        Pre-computed colormap RGB lookup table with values in range [0, 255].
+    vmin : float
+        Minimum value for color scale normalization.
+    vmax : float
+        Maximum value for color scale normalization.
+    chunk_size : int, default=DEFAULT_CHUNK_SIZE
+        Number of frames per chunk for dask chunking.
+
+    Returns
+    -------
+    dask.array.Array
+        Dask array of shape (n_frames, height, width, 3) with uint8 dtype.
+        Frames are converted lazily when accessed.
+
+    Raises
+    ------
+    TypeError
+        If fields is not a numpy array (e.g., if it's a list).
+
+    Notes
+    -----
+    This is an alternative to :func:`_create_lazy_field_renderer` that
+    leverages napari's native dask support. Trade-offs:
+
+    - **Pros**: Simpler code, leverages napari's dask integration
+    - **Cons**: Requires dask dependency, less control over caching
+
+    See Also
+    --------
+    _create_lazy_field_renderer : Custom lazy renderer with LRU caching.
+
+    Examples
+    --------
+    >>> import dask.array as da
+    >>> renderer = _create_dask_field_renderer(env, fields, cmap_lookup, 0, 1)
+    >>> isinstance(renderer, da.Array)
+    True
+    >>> frame = renderer[0].compute()  # Lazily computes first frame
+    """
+    try:
+        import dask.array as da
+    except ImportError as e:
+        raise ImportError(
+            "dask is required for dask-based rendering. Install with: pip install dask"
+        ) from e
+
+    # Validate input is array (not list)
+    if not isinstance(fields, np.ndarray):
+        raise TypeError(
+            f"_create_dask_field_renderer requires numpy array input, "
+            f"got {type(fields).__name__}. Use _create_lazy_field_renderer for lists."
+        )
+
+    # Validate array shape (must be 2D: n_frames, n_bins)
+    if fields.ndim != 2:
+        raise ValueError(
+            f"fields must be 2D array with shape (n_frames, n_bins), "
+            f"got {fields.ndim}D array with shape {fields.shape}"
+        )
+
+    # Validate at least one frame
+    if fields.shape[0] == 0:
+        raise ValueError(
+            f"fields must have at least 1 frame, got {fields.shape[0]} frames"
+        )
+
+    # Validate chunk_size
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+
+    from neurospatial.animation.rendering import field_to_rgb_for_napari
+
+    # Wrap fields in dask array with chunking along time axis
+    fields_dask = da.from_array(fields, chunks=(chunk_size, -1))
+
+    # Get output shape from a sample render
+    sample_rgb = field_to_rgb_for_napari(env, fields[0], cmap_lookup, vmin, vmax)
+    height, width = sample_rgb.shape[:2]
+
+    # Define per-chunk conversion function
+    def _convert_chunk(
+        block: NDArray[np.float64], block_info: dict | None = None
+    ) -> NDArray[np.uint8]:
+        """Convert a chunk of fields to RGB.
+
+        Parameters
+        ----------
+        block : ndarray of shape (chunk_size, n_bins)
+            Chunk of field values.
+        block_info : dict, optional
+            Dask block info (unused but required by map_blocks signature).
+
+        Returns
+        -------
+        ndarray of shape (chunk_size, height, width, 3)
+            RGB frames for the chunk.
+        """
+        frames = np.stack(
+            [
+                field_to_rgb_for_napari(env, field, cmap_lookup, vmin, vmax)
+                for field in block
+            ],
+            axis=0,
+        )
+        return frames
+
+    # Apply conversion lazily using map_blocks
+    rgb_dask = da.map_blocks(
+        _convert_chunk,
+        fields_dask,
+        dtype=np.uint8,
+        drop_axis=1,  # Remove n_bins axis
+        new_axis=[1, 2, 3],  # Add height, width, channels axes
+        chunks=(chunk_size, height, width, 3),
+    )
+
+    return rgb_dask
 
 
 def _create_lazy_field_renderer(
