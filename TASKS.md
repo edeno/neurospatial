@@ -62,11 +62,11 @@ Foundation for directional place field computation. No external dependencies.
 
 **Success criteria**:
 
-- [ ] Correctly identifies contiguous segments
-- [ ] Uses searchsorted for O(log n) spike slicing per segment
-- [ ] Returns times_sub with same length as `np.sum(mask)`
-- [ ] Returns spike_times_sub containing only spikes within masked time ranges
-- [ ] Handles edge cases: empty mask, no spikes, single segment
+- [x] Correctly identifies contiguous segments
+- [x] Uses searchsorted for O(log n) spike slicing per segment
+- [x] Returns times_sub with same length as `np.sum(mask)`
+- [x] Returns spike_times_sub containing only spikes within masked time ranges
+- [x] Handles edge cases: empty mask, no spikes, single segment
 
 **Dependencies**: None
 
@@ -502,7 +502,7 @@ uv run python -c "from neurospatial import compute_directional_place_fields, Dir
 | Milestone | Task | Status |
 |-----------|------|--------|
 | 1. Core | 1.1 DirectionalPlaceFields dataclass | [x] |
-| 1. Core | 1.2 _subset_spikes_by_time_mask helper | [ ] |
+| 1. Core | 1.2 _subset_spikes_by_time_mask helper | [x] |
 | 1. Core | 1.3 compute_directional_place_fields | [ ] |
 | 2. Labels | 2.1 goal_pair_direction_labels | [ ] |
 | 2. Labels | 2.2 heading_direction_labels | [ ] |

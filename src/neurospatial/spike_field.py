@@ -62,6 +62,108 @@ class DirectionalPlaceFields:
     labels: tuple[str, ...]
 
 
+def _subset_spikes_by_time_mask(
+    times: NDArray[np.float64],
+    spike_times: NDArray[np.float64],
+    mask: NDArray[np.bool_],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Subset spike times by a boolean mask over trajectory times.
+
+    Extracts spikes that fall within the time ranges defined by contiguous
+    True segments in the mask. Uses binary search (searchsorted) for
+    efficient O(log n) spike slicing per segment.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_timepoints,)
+        Timestamps of trajectory samples (seconds). Must be sorted.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Timestamps of spike occurrences (seconds). Must be sorted.
+    mask : NDArray[np.bool_], shape (n_timepoints,)
+        Boolean mask indicating which timepoints to include.
+        Contiguous True segments define time ranges for spike inclusion.
+
+    Returns
+    -------
+    times_sub : NDArray[np.float64]
+        Subset of times where mask is True. Same as ``times[mask]``.
+    spike_times_sub : NDArray[np.float64]
+        Spikes that fall within the time ranges of contiguous True segments.
+        Boundaries are inclusive: spikes at segment start/end are included.
+
+    Notes
+    -----
+    For each contiguous segment of True values in mask:
+    - ``t_start = times[segment_first_index]``
+    - ``t_end = times[segment_last_index]``
+    - Spikes in ``[t_start, t_end]`` (inclusive) are selected
+
+    This function is designed for conditioning place field analysis on
+    subsets of the trajectory (e.g., by movement direction, trial type).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    >>> spike_times = np.array([0.5, 1.5, 2.5, 3.5])
+    >>> mask = np.array([False, True, True, False, False])
+    >>> times_sub, spikes_sub = _subset_spikes_by_time_mask(times, spike_times, mask)
+    >>> times_sub
+    array([1., 2.])
+    >>> spikes_sub
+    array([1.5])
+    """
+    # Fast path: empty mask
+    if not np.any(mask):
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    # Get indices where mask is True
+    true_indices = np.where(mask)[0]
+
+    # Find contiguous segments by looking for gaps > 1
+    # diff > 1 indicates a break in contiguity
+    if len(true_indices) == 0:
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    # Find segment boundaries: where consecutive indices are not adjacent
+    breaks = np.where(np.diff(true_indices) > 1)[0] + 1
+    segment_starts = np.concatenate([[0], breaks])
+    segment_ends = np.concatenate([breaks, [len(true_indices)]])
+
+    # Fast path: empty spike train
+    if len(spike_times) == 0:
+        return times[mask], np.array([], dtype=np.float64)
+
+    # Collect spikes from each segment
+    spike_slices = []
+
+    for seg_start_idx, seg_end_idx in zip(segment_starts, segment_ends, strict=True):
+        # Get the actual time indices for this segment
+        first_time_idx = true_indices[seg_start_idx]
+        last_time_idx = true_indices[seg_end_idx - 1]
+
+        # Get time boundaries
+        t_start = times[first_time_idx]
+        t_end = times[last_time_idx]
+
+        # Use searchsorted for O(log n) spike slicing
+        # side="left" for t_start: include spikes at exactly t_start
+        # side="right" for t_end: include spikes at exactly t_end
+        spike_start = np.searchsorted(spike_times, t_start, side="left")
+        spike_end = np.searchsorted(spike_times, t_end, side="right")
+
+        if spike_start < spike_end:
+            spike_slices.append(spike_times[spike_start:spike_end])
+
+    # Concatenate all spike slices
+    if spike_slices:
+        spike_times_sub = np.concatenate(spike_slices)
+    else:
+        spike_times_sub = np.array([], dtype=np.float64)
+
+    return times[mask], spike_times_sub
+
+
 def spikes_to_field(
     env: Environment,
     spike_times: NDArray[np.float64],
