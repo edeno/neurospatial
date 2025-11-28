@@ -124,7 +124,7 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 
 ---
 
-### Task 2.2: Update _create_lazy_field_renderer
+### Task 2.2: Update _create_lazy_field_renderer ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
@@ -141,9 +141,11 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 
 **Dependencies**: Task 2.1
 
+**Completed**: 2025-11-28
+
 ---
 
-### Task 2.3: Update LazyFieldRenderer for Array Input
+### Task 2.3: Update LazyFieldRenderer for Array Input ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
@@ -162,9 +164,11 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 
 **Dependencies**: Task 2.2
 
+**Completed**: 2025-11-28
+
 ---
 
-### Task 2.4: Update ChunkedLazyFieldRenderer for Array Input
+### Task 2.4: Update ChunkedLazyFieldRenderer for Array Input ✅
 
 **File**: `src/neurospatial/animation/backends/napari_backend.py`
 
@@ -180,6 +184,8 @@ fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
 - `self.fields[start:end]` creates view for memmaps (verify with `np.shares_memory`)
 
 **Dependencies**: Task 2.3
+
+**Completed**: 2025-11-28
 
 ---
 

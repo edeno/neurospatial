@@ -91,11 +91,59 @@ Added `TestArrayPreservation` class with 7 tests:
 - Tests comprehensive (7 new tests, all passing)
 - Backward compatible
 
+### Task 2.2: Update _create_lazy_field_renderer ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Updated function signature to accept `list[NDArray[np.float64]] | NDArray[np.float64]`
+2. Changed `n_frames = len(fields)` to `fields.shape[0] if isinstance(fields, np.ndarray) else len(fields)`
+3. Updated docstring to document array mode
+
+### Task 2.3: Update LazyFieldRenderer for Array Input ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Updated `__init__` signature to accept `list[NDArray[np.float64]] | NDArray[np.float64]`
+2. Added `_fields_is_array` flag to track input type
+3. Updated `__len__` with isinstance check for mypy type narrowing
+4. Updated all uses of `len(self.fields)` to `len(self)` in `_getitem_locked`, `_get_frame`, `shape`
+5. Updated docstring to document array mode
+
+### Task 2.4: Update ChunkedLazyFieldRenderer for Array Input ✅ COMPLETED
+
+**Status**: COMPLETED (2025-11-28)
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Implementation**:
+
+1. Same pattern as LazyFieldRenderer
+2. Updated `__init__` signature and added `_fields_is_array` flag
+3. Updated `__len__` with isinstance check for mypy type narrowing
+4. Updated all uses of `len(self.fields)` to `len(self)` in `_render_chunk`, `_getitem_locked`, `_get_frame`, `shape`
+5. Updated docstring to document array mode
+
+**Tests**: All 39 napari backend tests pass, all 42 core animation tests pass
+
+**Verification**:
+
+- `uv run pytest tests/animation/test_napari_backend.py -v` → 39 passed, 1 skipped
+- `uv run pytest tests/animation/test_core.py -v` → 42 passed
+- `uv run ruff check src/neurospatial/animation/backends/napari_backend.py` → All checks passed
+- `uv run mypy src/neurospatial/animation/backends/napari_backend.py` → Success: no issues found
+
 ### Next Tasks
 
-- [ ] Task 2.2: Update _create_lazy_field_renderer
-- [ ] Task 2.3: Update LazyFieldRenderer for Array Input
-- [ ] Task 2.4: Update ChunkedLazyFieldRenderer for Array Input
+- [ ] Task 2.5: Implement Dask-Based Alternative Renderer (optional)
+- [ ] Task 2.6: Benchmark LazyFieldRenderer vs Dask (optional)
 
 ---
 
@@ -110,6 +158,8 @@ None currently.
 1. **Array preservation strategy**: Use `fields_is_array` boolean flag to track input format, defer list conversion until after backend selection
 2. **Type narrowing approach**: Use `assert isinstance()` with `# nosec` comment to help mypy understand type narrowing
 3. **Backend type ignores**: Use `# type: ignore[arg-type]` for backend calls since updating signatures is Milestone 2
+4. **isinstance in __len__**: Use `isinstance(self.fields, np.ndarray)` directly in `__len__` for mypy type narrowing, even though we have `_fields_is_array` flag
+5. **int() cast for shape[0]**: Cast `self.fields.shape[0]` to `int()` to satisfy mypy's `no-any-return` check
 
 ---
 

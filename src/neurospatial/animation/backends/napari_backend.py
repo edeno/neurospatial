@@ -2079,7 +2079,7 @@ def _render_multi_field_napari(
 
 def _create_lazy_field_renderer(
     env: Environment,
-    fields: list[NDArray[np.float64]],
+    fields: list[NDArray[np.float64]] | NDArray[np.float64],
     cmap_lookup: NDArray[np.uint8],
     vmin: float,
     vmax: float,
@@ -2097,8 +2097,10 @@ def _create_lazy_field_renderer(
     ----------
     env : Environment
         Environment defining spatial structure
-    fields : list of arrays
-        All fields to animate
+    fields : list of arrays or 2D array
+        All fields to animate. Can be a list of 1D arrays (n_bins,) or a
+        2D array (n_frames, n_bins). Array input is recommended for large
+        datasets and memory-mapped files.
     cmap_lookup : ndarray, shape (256, 3)
         Pre-computed colormap RGB lookup table
     vmin, vmax : float
@@ -2116,7 +2118,8 @@ def _create_lazy_field_renderer(
         Lazy renderer instance implementing array-like interface
         for Napari
     """
-    n_frames = len(fields)
+    # Compute n_frames: use shape[0] for arrays, len() for lists
+    n_frames = fields.shape[0] if isinstance(fields, np.ndarray) else len(fields)
 
     # Auto-select caching strategy based on dataset size
     if n_frames <= CHUNKED_CACHE_THRESHOLD:
@@ -2153,8 +2156,10 @@ class LazyFieldRenderer:
     ----------
     env : Environment
         Environment defining spatial structure.
-    fields : list of ndarray of shape (n_bins,), dtype float64
-        All fields to animate. Each array contains field values for one frame.
+    fields : list of ndarray or 2D ndarray
+        All fields to animate. Can be a list of 1D arrays (n_bins,) or a
+        2D array (n_frames, n_bins). Array input is recommended for large
+        datasets and memory-mapped files.
     cmap_lookup : ndarray of shape (256, 3), dtype uint8
         Pre-computed colormap RGB lookup table with values in range [0, 255].
     vmin : float
@@ -2172,6 +2177,8 @@ class LazyFieldRenderer:
         Maximum number of frames to cache
     _lock : Lock
         Thread lock for thread-safe cache operations
+    _fields_is_array : bool
+        True if fields is a 2D numpy array, False if list
 
     Notes
     -----
@@ -2201,7 +2208,7 @@ class LazyFieldRenderer:
     def __init__(
         self,
         env: Environment,
-        fields: list[NDArray[np.float64]],
+        fields: list[NDArray[np.float64]] | NDArray[np.float64],
         cmap_lookup: NDArray[np.uint8],
         vmin: float,
         vmax: float,
@@ -2210,6 +2217,7 @@ class LazyFieldRenderer:
         """Initialize lazy field renderer."""
         self.env = env
         self.fields = fields
+        self._fields_is_array = isinstance(fields, np.ndarray)
         self.cmap_lookup = cmap_lookup
         self.vmin = vmin
         self.vmax = vmax
@@ -2219,6 +2227,9 @@ class LazyFieldRenderer:
 
     def __len__(self) -> int:
         """Return number of frames."""
+        # Use isinstance for mypy type narrowing (faster check already done in __init__)
+        if isinstance(self.fields, np.ndarray):
+            return int(self.fields.shape[0])
         return len(self.fields)
 
     def __getitem__(self, idx: int | tuple) -> NDArray[np.uint8]:
@@ -2268,7 +2279,7 @@ class LazyFieldRenderer:
             # Handle slice objects for frame index
             if isinstance(frame_idx, slice):
                 # Return multiple frames as array
-                start, stop, step = frame_idx.indices(len(self.fields))
+                start, stop, step = frame_idx.indices(len(self))
                 frames = [self._get_frame(i) for i in range(start, stop, step)]
                 result = np.stack(frames, axis=0)
 
@@ -2301,14 +2312,15 @@ class LazyFieldRenderer:
             Rendered RGB frame
         """
         # Handle negative indexing
+        n_frames = len(self)
         if idx < 0:
-            idx = len(self.fields) + idx
+            idx = n_frames + idx
 
         # Validate bounds
-        if idx < 0 or idx >= len(self.fields):
-            original_idx = idx - len(self.fields) if idx < 0 else idx
+        if idx < 0 or idx >= n_frames:
+            original_idx = idx - n_frames if idx < 0 else idx
             raise IndexError(
-                f"Frame index {original_idx} out of range for {len(self.fields)} frames"
+                f"Frame index {original_idx} out of range for {n_frames} frames"
             )
 
         if idx not in self._cache:
@@ -2343,7 +2355,7 @@ class LazyFieldRenderer:
         Napari needs to know the shape to properly display the image layer.
         """
         sample = self[0]
-        return (len(self.fields), *sample.shape)
+        return (len(self), *sample.shape)
 
     @property
     def dtype(self) -> np.dtype[np.uint8]:
@@ -2371,8 +2383,10 @@ class ChunkedLazyFieldRenderer:
     ----------
     env : Environment
         Environment defining spatial structure.
-    fields : list of ndarray of shape (n_bins,), dtype float64
-        All fields to animate. Each array contains field values for one frame.
+    fields : list of ndarray or 2D ndarray
+        All fields to animate. Can be a list of 1D arrays (n_bins,) or a
+        2D array (n_frames, n_bins). Array input is recommended for large
+        datasets and memory-mapped files.
     cmap_lookup : ndarray of shape (256, 3), dtype uint8
         Pre-computed colormap RGB lookup table with values in range [0, 255].
     vmin : float
@@ -2394,6 +2408,8 @@ class ChunkedLazyFieldRenderer:
         Max chunks to cache
     _lock : Lock
         Thread lock for thread-safe cache operations
+    _fields_is_array : bool
+        True if fields is a 2D numpy array, False if list
 
     Notes
     -----
@@ -2435,7 +2451,7 @@ class ChunkedLazyFieldRenderer:
     def __init__(
         self,
         env: Environment,
-        fields: list[NDArray[np.float64]],
+        fields: list[NDArray[np.float64]] | NDArray[np.float64],
         cmap_lookup: NDArray[np.uint8],
         vmin: float,
         vmax: float,
@@ -2445,6 +2461,7 @@ class ChunkedLazyFieldRenderer:
         """Initialize chunked lazy field renderer."""
         self.env = env
         self.fields = fields
+        self._fields_is_array = isinstance(fields, np.ndarray)
         self.cmap_lookup = cmap_lookup
         self.vmin = vmin
         self.vmax = vmax
@@ -2455,6 +2472,9 @@ class ChunkedLazyFieldRenderer:
 
     def __len__(self) -> int:
         """Return number of frames."""
+        # Use isinstance for mypy type narrowing (faster check already done in __init__)
+        if isinstance(self.fields, np.ndarray):
+            return int(self.fields.shape[0])
         return len(self.fields)
 
     def _get_chunk_index(self, frame_idx: int) -> int:
@@ -2489,7 +2509,7 @@ class ChunkedLazyFieldRenderer:
 
         # Calculate frame range for this chunk
         start_frame = chunk_idx * self._chunk_size
-        end_frame = min(start_frame + self._chunk_size, len(self.fields))
+        end_frame = min(start_frame + self._chunk_size, len(self))
 
         # Render all frames in chunk
         frames = []
@@ -2573,7 +2593,7 @@ class ChunkedLazyFieldRenderer:
 
             # Handle slice objects for frame index
             if isinstance(frame_idx, slice):
-                start, stop, step = frame_idx.indices(len(self.fields))
+                start, stop, step = frame_idx.indices(len(self))
                 frames = [self._get_frame(i) for i in range(start, stop, step)]
                 result = np.stack(frames, axis=0)
 
@@ -2605,14 +2625,15 @@ class ChunkedLazyFieldRenderer:
             Rendered RGB frame
         """
         # Handle negative indexing
+        n_frames = len(self)
         if idx < 0:
-            idx = len(self.fields) + idx
+            idx = n_frames + idx
 
         # Validate bounds
-        if idx < 0 or idx >= len(self.fields):
-            original_idx = idx - len(self.fields) if idx < 0 else idx
+        if idx < 0 or idx >= n_frames:
+            original_idx = idx - n_frames if idx < 0 else idx
             raise IndexError(
-                f"Frame index {original_idx} out of range for {len(self.fields)} frames"
+                f"Frame index {original_idx} out of range for {n_frames} frames"
             )
 
         # Get chunk containing this frame
@@ -2627,7 +2648,7 @@ class ChunkedLazyFieldRenderer:
     def shape(self) -> tuple[int, ...]:
         """Return shape for napari (time, height, width, channels)."""
         sample = self[0]
-        return (len(self.fields), *sample.shape)
+        return (len(self), *sample.shape)
 
     @property
     def dtype(self) -> np.dtype[np.uint8]:
