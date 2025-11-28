@@ -3,9 +3,34 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: 1.3 Likelihood Functions
+**Current Milestone**: 1.4 Posterior Normalization
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 1.3 Complete
+
+**Milestone 1.3 - Likelihood Functions**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/likelihood.py` with two functions:
+  - `log_poisson_likelihood()` - Primary function for numerically stable log-likelihood
+  - `poisson_likelihood()` - Thin wrapper with underflow protection
+- Formula: `sum_i [n_i * log(lambda_i * dt) - lambda_i * dt]`
+- Omits `-log(n_i!)` term (constant across positions, cancels in normalization)
+- Created comprehensive test suite: `tests/decoding/test_likelihood.py` (28 tests)
+- All tests pass, doctests pass
+- Code review passed - addressed mypy type issues with `cast()`
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- Uses matrix multiplication for efficient vectorization
+- `min_rate` parameter (default 1e-10) prevents log(0)
+- Handles edge cases: zero spikes, single neuron/bin, extreme rates
+- NumPy 2.x doctest compatibility with `bool()` conversion
+- Type annotations with `cast("NDArray[np.float64]", ...)` for mypy
+
+**Next task**: Milestone 1.4 - Posterior Normalization
+- `normalize_to_posterior()` - Bayes rule with log-sum-exp trick
+- `decode_position()` - Main entry point combining likelihood + posterior
 
 ### 2025-11-28 - Milestone 1.2 Complete
 

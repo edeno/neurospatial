@@ -106,6 +106,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.decoding._result import DecodingResult
+from neurospatial.decoding.likelihood import (
+    log_poisson_likelihood,
+    poisson_likelihood,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -175,4 +179,7 @@ __all__ = [
     "DecodingResult",
     # Main entry point
     "decode_position",
+    # Likelihood functions
+    "log_poisson_likelihood",
+    "poisson_likelihood",
 ]

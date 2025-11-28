@@ -42,12 +42,12 @@ assert result.uncertainty.shape == (10,)
 
 ### 1.3 Likelihood Functions (`likelihood.py`)
 
-- [ ] Implement `log_poisson_likelihood(spike_counts, encoding_models, dt, *, min_rate=1e-10)`
+- [x] Implement `log_poisson_likelihood(spike_counts, encoding_models, dt, *, min_rate=1e-10)`
   - Shape: `(n_time_bins, n_neurons)` x `(n_neurons, n_bins)` → `(n_time_bins, n_bins)`
   - Formula: `sum_i [n_i * log(lambda_i * dt) - lambda_i * dt]`
   - Clip rates to `[min_rate, inf)` before log
   - Omit `-log(n_i!)` term (constant across positions)
-- [ ] Implement `poisson_likelihood()` as thin wrapper
+- [x] Implement `poisson_likelihood()` as thin wrapper
   - Call `log_poisson_likelihood`, then `np.exp(ll - ll.max(axis=1, keepdims=True))`
   - Add docstring warning about underflow
 
