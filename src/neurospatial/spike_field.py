@@ -7,6 +7,8 @@ into occupancy-normalized spatial fields (firing rate maps).
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
@@ -15,6 +17,49 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
+
+
+@dataclass(frozen=True)
+class DirectionalPlaceFields:
+    """Container for direction-conditioned place field results.
+
+    Stores firing rate maps computed separately for different movement
+    directions or trial types. This enables analysis of directional
+    tuning in place cells.
+
+    Attributes
+    ----------
+    fields : Mapping[str, NDArray[np.float64]]
+        Dictionary mapping direction labels (e.g., "A→B", "forward") to
+        firing rate arrays. Each array has shape (n_bins,) matching the
+        environment's bin structure.
+    labels : tuple[str, ...]
+        Tuple of direction labels in iteration order. Preserves the order
+        in which directions were processed, enabling reproducible iteration.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> fields = {
+    ...     "home→goal": np.array([1.0, 2.0, 3.0]),
+    ...     "goal→home": np.array([3.0, 2.0, 1.0]),
+    ... }
+    >>> result = DirectionalPlaceFields(
+    ...     fields=fields,
+    ...     labels=("home→goal", "goal→home"),
+    ... )
+    >>> result.fields["home→goal"]
+    array([1., 2., 3.])
+    >>> result.labels
+    ('home→goal', 'goal→home')
+
+    See Also
+    --------
+    compute_directional_place_fields : Compute directional place fields from spike data.
+    """
+
+    fields: Mapping[str, NDArray[np.float64]]
+    labels: tuple[str, ...]
 
 
 def spikes_to_field(
