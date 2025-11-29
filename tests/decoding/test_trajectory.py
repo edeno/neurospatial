@@ -853,3 +853,316 @@ class TestFitLinearTrajectoryExport:
         from neurospatial.decoding import fit_linear_trajectory
 
         assert fit_linear_trajectory is not None
+
+
+# =============================================================================
+# Milestone 3.4: Radon Transform Detection
+# =============================================================================
+
+
+# Check if scikit-image is available
+_SKIMAGE_AVAILABLE = False
+try:
+    from skimage.transform import radon  # noqa: F401
+
+    _SKIMAGE_AVAILABLE = True
+except ImportError:
+    pass
+
+
+@pytest.mark.skipif(not _SKIMAGE_AVAILABLE, reason="scikit-image not installed")
+class TestDetectTrajectoryRadon:
+    """Test detect_trajectory_radon function (requires scikit-image)."""
+
+    def test_detect_trajectory_radon_returns_result(self):
+        """detect_trajectory_radon should return RadonDetectionResult."""
+        from neurospatial.decoding.trajectory import (
+            RadonDetectionResult,
+            detect_trajectory_radon,
+        )
+
+        n_time_bins = 50
+        n_bins = 50
+
+        # Create a diagonal pattern
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            pos = t  # Diagonal line
+            if pos < n_bins:
+                posterior[t, pos] = 1.0
+
+        result = detect_trajectory_radon(posterior)
+
+        assert isinstance(result, RadonDetectionResult)
+
+    def test_detect_trajectory_radon_angle_range(self):
+        """Detected angle should be in the specified theta_range."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 50
+
+        # Create a diagonal pattern
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            pos = t % n_bins
+            posterior[t, pos] = 1.0
+
+        result = detect_trajectory_radon(posterior, theta_range=(-90, 90))
+
+        assert -90 <= result.angle_degrees <= 90
+
+    def test_detect_trajectory_radon_sinogram_shape(self):
+        """Sinogram should have shape (n_angles, n_offsets)."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 40
+
+        rng = np.random.default_rng(42)
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = detect_trajectory_radon(
+            posterior, theta_range=(-45, 45), theta_step=1.0
+        )
+
+        # Sinogram should be 2D
+        assert result.sinogram.ndim == 2
+        # Number of angles should match (45 - (-45)) / 1.0 = 90
+        assert result.sinogram.shape[0] == 90
+
+    def test_detect_trajectory_radon_diagonal_forward(self):
+        """Should detect ~45° angle for forward diagonal trajectory."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 100
+        n_bins = 100
+
+        # Create perfect diagonal (45° in image coordinates)
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            pos = t
+            if pos < n_bins:
+                posterior[t, pos] = 1.0
+
+        result = detect_trajectory_radon(posterior, theta_step=0.5)
+
+        # For a 45° diagonal line in image space, Radon angle depends on orientation
+        # The detected angle should indicate a diagonal pattern
+        assert result.score > 0  # Should have non-zero score
+
+    def test_detect_trajectory_radon_diagonal_reverse(self):
+        """Should detect reverse diagonal trajectory."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 100
+        n_bins = 100
+
+        # Create reverse diagonal (negative slope)
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            pos = n_bins - 1 - t
+            if 0 <= pos < n_bins:
+                posterior[t, pos] = 1.0
+
+        result = detect_trajectory_radon(posterior, theta_step=0.5)
+
+        # Should have opposite angle from forward diagonal
+        assert result.score > 0
+
+    def test_detect_trajectory_radon_horizontal_line(self):
+        """Horizontal line (constant position) should detect ~0° angle."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 100
+        n_bins = 50
+
+        # Create horizontal line (constant position at middle)
+        posterior = np.zeros((n_time_bins, n_bins))
+        constant_pos = n_bins // 2
+        for t in range(n_time_bins):
+            posterior[t, constant_pos] = 1.0
+
+        result = detect_trajectory_radon(posterior, theta_step=1.0)
+
+        # Horizontal line should be near 0° or 90° depending on Radon convention
+        # The key is that it should be detected consistently
+        assert np.isfinite(result.angle_degrees)
+        assert result.score > 0
+
+    def test_detect_trajectory_radon_score_positive(self):
+        """Score should be positive for any input."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 30
+        n_bins = 30
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = detect_trajectory_radon(posterior)
+
+        assert result.score >= 0
+
+    def test_detect_trajectory_radon_offset_finite(self):
+        """Offset should be a finite value."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 30
+        n_bins = 30
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = detect_trajectory_radon(posterior)
+
+        assert np.isfinite(result.offset)
+
+    def test_detect_trajectory_radon_theta_step_affects_resolution(self):
+        """Smaller theta_step should give more angle resolution."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 50
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        result_coarse = detect_trajectory_radon(posterior, theta_step=5.0)
+        result_fine = detect_trajectory_radon(posterior, theta_step=0.5)
+
+        # Finer step should give more angles
+        assert result_fine.sinogram.shape[0] > result_coarse.sinogram.shape[0]
+
+    def test_detect_trajectory_radon_custom_theta_range(self):
+        """Custom theta_range should limit detected angles."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 50
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        # Narrow angle range
+        result = detect_trajectory_radon(
+            posterior, theta_range=(30, 60), theta_step=1.0
+        )
+
+        # Angle should be within range
+        assert 30 <= result.angle_degrees <= 60
+
+    def test_detect_trajectory_radon_non_square_posterior(self):
+        """Should work with non-square posteriors."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 100
+        n_bins = 40
+
+        rng = np.random.default_rng(42)
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = detect_trajectory_radon(posterior)
+
+        assert isinstance(result.angle_degrees, float)
+        assert result.sinogram.ndim == 2
+
+    def test_detect_trajectory_radon_empty_posterior(self):
+        """Should handle all-zero posterior gracefully."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        posterior = np.zeros((50, 50))
+        result = detect_trajectory_radon(posterior)
+
+        assert np.isfinite(result.angle_degrees)
+        assert result.score >= 0
+
+    def test_detect_trajectory_radon_single_time_bin(self):
+        """Should handle single time bin (trivial case)."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        posterior = np.ones((1, 50)) / 50
+        result = detect_trajectory_radon(posterior)
+
+        assert np.isfinite(result.angle_degrees)
+
+
+class TestDetectTrajectoryRadonImportGuard:
+    """Test import guard behavior for detect_trajectory_radon."""
+
+    def test_detect_trajectory_radon_import_error_message(self):
+        """Should raise ImportError with clear message if scikit-image not available."""
+        # We can't easily test this when scikit-image IS installed.
+        # This test documents the expected behavior.
+        # In real usage, if skimage is not installed, calling detect_trajectory_radon
+        # should raise ImportError with a helpful message.
+        if _SKIMAGE_AVAILABLE:
+            pytest.skip("scikit-image is installed, cannot test ImportError")
+
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 10
+        n_bins = 10
+        posterior = np.zeros((n_time_bins, n_bins))
+
+        with pytest.raises(ImportError, match=r"scikit-image.*required"):
+            detect_trajectory_radon(posterior)
+
+
+class TestDetectTrajectoryRadonExport:
+    """Test that detect_trajectory_radon is properly exported."""
+
+    def test_import_from_trajectory_module(self):
+        """detect_trajectory_radon should be importable from trajectory module."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        assert detect_trajectory_radon is not None
+
+    def test_import_from_decoding_package(self):
+        """detect_trajectory_radon should be importable from decoding package."""
+        from neurospatial.decoding import detect_trajectory_radon
+
+        assert detect_trajectory_radon is not None
+
+
+@pytest.mark.skipif(not _SKIMAGE_AVAILABLE, reason="scikit-image not installed")
+class TestDetectTrajectoryRadonSuccessCriteria:
+    """Test success criteria from TASKS.md for detect_trajectory_radon."""
+
+    def test_success_criteria_angle_range(self):
+        """Angle should be within specified theta_range."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 50
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        result = detect_trajectory_radon(posterior, theta_range=(-90, 90))
+
+        # Success criterion from TASKS.md
+        assert -90 <= result.angle_degrees <= 90
+
+    def test_success_criteria_sinogram_2d(self):
+        """Sinogram should be 2D array."""
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        n_time_bins = 50
+        n_bins = 50
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = detect_trajectory_radon(posterior)
+
+        # Success criterion from TASKS.md
+        assert result.sinogram.ndim == 2

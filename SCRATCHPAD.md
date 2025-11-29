@@ -3,9 +3,45 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 3.3 Complete - Next: 3.4 Radon Transform Detection
+**Current Milestone**: Milestone 3.4 Complete - Next: 4.1 Core Temporal Shuffles
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 3.4 Complete (Radon Transform Detection)
+
+**Milestone 3.4 - Radon Transform Detection**: ✅ COMPLETED
+
+- Implemented `detect_trajectory_radon()` function in `trajectory.py`:
+  - Uses scikit-image's `skimage.transform.radon()` for Radon transform
+  - Optional dependency check with graceful ImportError message
+  - Configurable theta_range and theta_step for angular resolution
+  - Returns `RadonDetectionResult` with angle_degrees, score, offset, sinogram
+- Added import guard at module level for scikit-image
+- Comprehensive docstring with angle interpretation notes
+- Added 21 tests (20 pass, 1 skipped for import guard when scikit-image unavailable)
+- Code review passed with "APPROVE" rating
+- All 252 decoding tests pass, ruff and mypy pass
+
+**Implementation details**:
+- Radon transform treats posterior as 2D image (time × position)
+- Uses `circle=False` for rectangular image interpretation
+- Peak detection with `np.unravel_index(np.argmax(sinogram))`
+- Offset computed relative to centered projection: `offset_idx - (n_offsets - 1) / 2`
+- Sinogram transposed to (n_angles, n_offsets) convention for consistency with docstring
+
+**Angle interpretation**:
+- θ = 0°: Horizontal line (constant position)
+- θ = ±45°: Diagonal (forward/reverse replay)
+- θ = 90°: Vertical line (instantaneous position change)
+
+**Milestone 3.5 - Phase 3 Tests**: ✅ COMPLETED (61 tests total in test_trajectory.py)
+
+**Next task**: Milestone 4 - Shuffle-Based Significance Testing
+- 4.1: Core temporal shuffles (shuffle_time_bins, shuffle_time_bins_coherent)
+- 4.2: Cell identity shuffles
+- 4.3: Posterior shuffles
+- 4.4: Surrogate generation
+- 4.5: Significance testing functions
 
 ### 2025-11-28 - Milestone 3.3 Complete (Linear Regression)
 

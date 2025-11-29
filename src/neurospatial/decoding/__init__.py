@@ -141,6 +141,7 @@ from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
+    detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
 )
@@ -159,6 +160,7 @@ __all__ = [
     "decode_position",
     "decoding_correlation",
     "decoding_error",
+    "detect_trajectory_radon",
     "entropy",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",

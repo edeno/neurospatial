@@ -35,6 +35,15 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
+# Check for optional scikit-image dependency
+_SKIMAGE_AVAILABLE = False
+try:
+    from skimage.transform import radon
+
+    _SKIMAGE_AVAILABLE = True
+except ImportError:
+    radon = None
+
 
 @dataclass(frozen=True)
 class IsotonicFitResult:
@@ -547,10 +556,143 @@ def _fit_line(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, fl
     return float(slope), float(intercept)
 
 
+def detect_trajectory_radon(
+    posterior: NDArray[np.float64],
+    *,
+    theta_range: tuple[float, float] = (-90, 90),
+    theta_step: float = 1.0,
+) -> RadonDetectionResult:
+    """Detect linear trajectory using Radon transform.
+
+    Treats the posterior as a 2D image (time × position) and finds the line
+    with maximum integrated probability mass. This is particularly useful
+    for detecting diagonal stripe patterns in replay posteriors.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution over spatial bins for each time bin.
+        Treated as a 2D image where rows are time bins and columns are spatial bins.
+    theta_range : tuple[float, float], optional
+        Range of angles to search in degrees. Default is (-90, 90).
+        - 0° corresponds to a horizontal line (constant position).
+        - 90° corresponds to a vertical line (instantaneous jump).
+        - Positive angles indicate forward replay.
+        - Negative angles indicate reverse replay.
+    theta_step : float, optional
+        Angular resolution in degrees. Default is 1.0.
+        Smaller values give finer angle resolution but take longer to compute.
+
+    Returns
+    -------
+    RadonDetectionResult
+        Container with angle_degrees, score, offset, and sinogram.
+
+    Raises
+    ------
+    ImportError
+        If scikit-image is not installed. Install with:
+        ``pip install scikit-image`` or ``pip install neurospatial[trajectory]``
+
+    See Also
+    --------
+    RadonDetectionResult : Container for Radon detection results.
+    fit_linear_trajectory : For parametric linear fits.
+    fit_isotonic_trajectory : For monotonic trajectory fits.
+
+    Notes
+    -----
+    The Radon transform computes line integrals of the posterior at all
+    specified angles. The angle with the highest integrated mass indicates
+    the dominant trajectory direction.
+
+    **Interpretation of angles:**
+
+    The detected angle is in Radon space, where:
+
+    - θ = 0° means the line is perpendicular to the first axis (time axis),
+      i.e., a horizontal line in the posterior (constant position).
+    - θ = 90° means the line is perpendicular to the second axis (position axis),
+      i.e., a vertical line (instantaneous position change).
+    - θ ≈ 45° typically indicates forward replay (position increases with time).
+    - θ ≈ -45° typically indicates reverse replay (position decreases with time).
+
+    **Time uniformity assumption:**
+
+    Time bins are assumed to be uniformly spaced for image interpretation.
+    For non-uniform times, consider interpolating the posterior to a uniform
+    time grid first.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.trajectory import detect_trajectory_radon
+    >>>
+    >>> # Create posterior with diagonal pattern (forward replay)
+    >>> n_time_bins, n_bins = 50, 50
+    >>> posterior = np.zeros((n_time_bins, n_bins))
+    >>> for t in range(n_time_bins):
+    ...     posterior[t, t] = 1.0  # Perfect diagonal
+    >>>
+    >>> result = detect_trajectory_radon(posterior)
+    >>> print(f"Detected angle: {result.angle_degrees:.1f}°")  # doctest: +SKIP
+    Detected angle: 45.0°
+    """
+    if not _SKIMAGE_AVAILABLE:
+        raise ImportError(
+            "scikit-image is required for Radon transform trajectory detection. "
+            "Install with: pip install scikit-image\n"
+            "Or install neurospatial with trajectory extras: "
+            "pip install neurospatial[trajectory]"
+        )
+
+    # Generate angle array
+    theta_start, theta_end = theta_range
+    # Use endpoint=False to get consistent behavior with theta_step
+    n_angles = int((theta_end - theta_start) / theta_step)
+    theta = np.linspace(theta_start, theta_end, n_angles, endpoint=False)
+
+    # Compute Radon transform
+    # The posterior is treated as an image with:
+    # - rows = time bins (vertical axis in image)
+    # - columns = spatial bins (horizontal axis in image)
+    sinogram = radon(posterior, theta=theta, circle=False)
+
+    # Find the peak in the sinogram
+    # sinogram has shape (n_offsets, n_angles)
+    peak_idx = np.unravel_index(np.argmax(sinogram), sinogram.shape)
+    offset_idx, angle_idx = peak_idx
+
+    # Get the detected angle
+    angle_degrees = float(theta[angle_idx])
+
+    # Get the score (peak value)
+    score = float(sinogram[offset_idx, angle_idx])
+
+    # Compute offset in the original coordinate system
+    # The offset index corresponds to the distance from the center
+    n_offsets = sinogram.shape[0]
+    # Center offset (Radon transform centers the projection)
+    center_offset = (n_offsets - 1) / 2
+    offset = float(offset_idx - center_offset)
+
+    # Transpose sinogram to match (n_angles, n_offsets) convention
+    # (scikit-image's radon() returns (n_offsets, n_angles))
+    sinogram_transposed = sinogram.T
+
+    return RadonDetectionResult(
+        angle_degrees=angle_degrees,
+        score=score,
+        offset=offset,
+        sinogram=sinogram_transposed,
+    )
+
+
 __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "detect_trajectory_radon",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
 ]

@@ -270,15 +270,15 @@ assert result.slope_std is not None  # Only for method="sample"
 
 ### 3.4 Radon Transform Detection (`trajectory.py` - Part 4)
 
-- [ ] Add scikit-image optional dependency check
-- [ ] Implement `detect_trajectory_radon(posterior, *, theta_range=(-90, 90), theta_step=1.0)`
+- [x] Add scikit-image optional dependency check
+- [x] Implement `detect_trajectory_radon(posterior, *, theta_range=(-90, 90), theta_step=1.0)`
   - Import guard for `skimage.transform.radon`
   - Clear ImportError message with install instructions
   - Compute Radon transform of posterior image
   - Find peak in sinogram
   - Return `RadonDetectionResult`
 
-**Success**:
+**Success**: ✅ (21 tests, 20 passed, 1 skipped for import guard)
 
 ```python
 # With scikit-image installed:
@@ -294,7 +294,7 @@ assert result.sinogram.ndim == 2
 
 ### 3.5 Phase 3 Tests
 
-- [ ] `tests/decoding/test_trajectory.py`
+- [x] `tests/decoding/test_trajectory.py`
   - Test isotonic regression on synthetic monotonic data
   - Test linear regression reproducibility with rng
   - Test Radon detection on diagonal posterior pattern
