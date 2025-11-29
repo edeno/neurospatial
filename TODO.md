@@ -314,3 +314,5 @@
 * Consider integration with pynapple.
 
 * Consider what we could learn from video games (in terms of paradigms for spatial representation, navigation, and environment design). Also consider robotics literature for path planning and spatial mapping.
+
+* plot spikes at position in napari (dynamic raster overlay) - could be useful for QC. Color different units differently. (RasterOverlay class?)
