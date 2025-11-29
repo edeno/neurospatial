@@ -335,13 +335,13 @@ for i, shuffled in enumerate(shuffle_time_bins(spikes, n_shuffles=100, rng=42)):
 
 ### 4.2 Cell Identity Shuffles (`shuffle.py` - Part 2)
 
-- [ ] Implement `shuffle_cell_identity(spike_counts, encoding_models, *, n_shuffles=1000, rng=None)`
+- [x] Implement `shuffle_cell_identity(spike_counts, encoding_models, *, n_shuffles=1000, rng=None)`
   - Permute columns (neuron axis) of spike_counts
   - Yield (shuffled_counts, original_models) tuples
-- [ ] Implement `shuffle_place_fields_circular(encoding_models, *, n_shuffles=1000, rng=None)`
+- [x] Implement `shuffle_place_fields_circular(encoding_models, *, n_shuffles=1000, rng=None)`
   - Circularly shift each place field by random amount
   - Each neuron shifted independently
-- [ ] Implement `shuffle_place_fields_circular_2d(encoding_models, env, ...)` for 2D environments
+- [x] Implement `shuffle_place_fields_circular_2d(encoding_models, env, ...)` for 2D environments
 
 **Success**:
 

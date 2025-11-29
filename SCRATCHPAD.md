@@ -3,9 +3,39 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 4.1 Complete - Next: 4.2 Cell Identity Shuffles
+**Current Milestone**: Milestone 4.2 Complete - Next: 4.3 Posterior Shuffles
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 4.2 Complete (Cell Identity Shuffles)
+
+**Milestone 4.2 - Cell Identity Shuffles**: ✅ COMPLETED
+
+- Added three new generator functions to `src/neurospatial/decoding/shuffle.py`:
+  - `shuffle_cell_identity()` - Permute spike train-to-place field mapping (column shuffle)
+  - `shuffle_place_fields_circular()` - Circularly shift each place field independently
+  - `shuffle_place_fields_circular_2d()` - 2D circular shifts for grid environments
+- Comprehensive test suite: 38 new tests (69 total in test_shuffle.py)
+- Code review passed with "APPROVE" rating
+- All tests pass, ruff and mypy pass
+
+**Implementation highlights**:
+- `shuffle_cell_identity`: Returns tuple `(shuffled_counts, original_models)` for API clarity
+- `shuffle_place_fields_circular`: Uses `np.roll()` with independent shifts per neuron
+- `shuffle_place_fields_circular_2d`: Requires full grid (no inactive bins), validates grid_shape
+- Added validation for 2D environments (n_dims == 2) and grid layout (grid_shape attribute)
+- Clear error messages for masked grids: suggests using 1D shuffle instead
+- Type annotations with `type: ignore[index]` for numpy scalar indexing (mypy false positive)
+
+**Design decisions**:
+- 2D circular shuffle requires `prod(grid_shape) == n_bins` (no masked grids)
+- Masked grids would have unclear semantics after circular shift
+- Error message explains this and suggests `shuffle_place_fields_circular` for masked environments
+- All functions follow same generator pattern as temporal shuffles
+
+**Next task**: Milestone 4.3 - Posterior Shuffles
+- `shuffle_posterior_circular()` - Circular shift posterior rows
+- `shuffle_posterior_weighted_circular()` - Edge effect mitigation
 
 ### 2025-11-28 - Milestone 4.1 Complete (Core Temporal Shuffles)
 

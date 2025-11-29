@@ -138,6 +138,9 @@ from neurospatial.decoding.posterior import (
     normalize_to_posterior,
 )
 from neurospatial.decoding.shuffle import (
+    shuffle_cell_identity,
+    shuffle_place_fields_circular,
+    shuffle_place_fields_circular_2d,
     shuffle_time_bins,
     shuffle_time_bins_coherent,
 )
@@ -175,7 +178,9 @@ __all__ = [
     "median_decoding_error",
     "normalize_to_posterior",
     "poisson_likelihood",
-    # Shuffles - Temporal
+    "shuffle_cell_identity",
+    "shuffle_place_fields_circular",
+    "shuffle_place_fields_circular_2d",
     "shuffle_time_bins",
     "shuffle_time_bins_coherent",
 ]

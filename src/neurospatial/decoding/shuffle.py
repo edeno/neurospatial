@@ -45,9 +45,13 @@ neurospatial.decoding.metrics : Decoding quality metrics
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from neurospatial.environment.core import Environment
 
 
 def _ensure_rng(
@@ -217,3 +221,291 @@ def shuffle_time_bins_coherent(
         perm = generator.permutation(n_time_bins)
         # Apply permutation to rows
         yield spike_counts[perm].copy()
+
+
+# =============================================================================
+# II. Cell Identity Shuffles - Test spatial code coherence
+# =============================================================================
+
+
+def shuffle_cell_identity(
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[tuple[NDArray[np.int64], NDArray[np.float64]], None, None]:
+    """Shuffle mapping between spike trains and place fields.
+
+    **Primary test for spatial code coherence.** Disrupts the learned
+    relationship between a neuron's activity and its encoded spatial location
+    by randomly permuting which spike train is associated with which place
+    field.
+
+    This shuffle randomly permutes columns (neuron axis) of spike_counts,
+    effectively reassigning which place field goes with which spike train.
+    The encoding models are returned unchanged.
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts per neuron per time bin.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps (place fields) for each neuron.
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts with neuron identities permuted (columns shuffled).
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Original encoding models (unchanged, same object).
+
+    Notes
+    -----
+    - Randomly permutes columns of spike_counts (neuron axis)
+    - Encoding models remain fixed (same object returned each iteration)
+    - Equivalent to randomly reassigning which place field goes with which
+      spike train
+    - Preserves spike counts per neuron per time bin
+    - Preserves total spikes per time bin
+    - Caution: Can introduce noise if firing rates differ greatly between
+      cells
+
+    Alternative implementation (equivalent):
+        Instead of shuffling spike_counts columns, shuffle encoding_models
+        rows. This yields the same decoded posteriors.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import shuffle_cell_identity
+
+    >>> spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
+    >>> encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    >>> for i, (shuffled, models) in enumerate(
+    ...     shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(
+    ...         f"Shuffle {i}: sum={shuffled.sum()}, models unchanged={models is encoding_models}"
+    ...     )
+    Shuffle 0: sum=6, models unchanged=True
+    Shuffle 1: sum=6, models unchanged=True
+    Shuffle 2: sum=6, models unchanged=True
+
+    See Also
+    --------
+    shuffle_place_fields_circular : Circular shift of place fields
+    shuffle_time_bins : Temporal order shuffle
+    """
+    generator = _ensure_rng(rng)
+    n_neurons = spike_counts.shape[1]
+
+    for _ in range(n_shuffles):
+        # Generate a random permutation of column indices
+        perm = generator.permutation(n_neurons)
+        # Apply permutation to columns (neuron axis)
+        yield spike_counts[:, perm].copy(), encoding_models
+
+
+def shuffle_place_fields_circular(
+    encoding_models: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Circularly shift each place field by a random amount.
+
+    **Conservative null hypothesis.** Preserves individual cell spiking
+    properties and local place field structure while disrupting spatial
+    relationships between neurons.
+
+    Each neuron's place field is independently shifted by a random amount
+    along the position axis. This preserves the shape of each place field
+    but destroys the spatial relationships between neurons.
+
+    Parameters
+    ----------
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps (place fields) for each neuron.
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Place fields with each row circularly shifted by a random amount.
+
+    Notes
+    -----
+    - Each neuron's place field is shifted independently
+    - Preserves the shape of each place field
+    - Destroys spatial relationships between neurons
+    - More conservative than cell identity shuffle
+    - For 2D environments: consider ``shuffle_place_fields_circular_2d``
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+
+    >>> encoding_models = np.array(
+    ...     [
+    ...         [1.0, 2.0, 3.0, 4.0],
+    ...         [4.0, 3.0, 2.0, 1.0],
+    ...     ]
+    ... )
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_place_fields_circular(encoding_models, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(f"Shuffle {i}: shape={shuffled.shape}")
+    Shuffle 0: shape=(2, 4)
+    Shuffle 1: shape=(2, 4)
+    Shuffle 2: shape=(2, 4)
+
+    See Also
+    --------
+    shuffle_place_fields_circular_2d : 2D circular shift for 2D environments
+    shuffle_cell_identity : Shuffle neuron-to-place-field mapping
+    """
+    generator = _ensure_rng(rng)
+    n_neurons, n_bins = encoding_models.shape
+
+    for _ in range(n_shuffles):
+        # Generate random shift amounts for each neuron
+        shifts = generator.integers(0, n_bins, size=n_neurons)
+        # Apply circular shifts to each row independently
+        shuffled = np.empty_like(encoding_models)
+        for i in range(n_neurons):
+            shift_amount: int = int(shifts[i])  # type: ignore[index]
+            shuffled[i, :] = np.roll(encoding_models[i, :], shift_amount)
+        yield shuffled
+
+
+def shuffle_place_fields_circular_2d(
+    encoding_models: NDArray[np.float64],
+    env: Environment,
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Circularly shift 2D place fields in both dimensions.
+
+    For 2D environments, shifts place fields in both x and y dimensions.
+    This is the 2D analog of ``shuffle_place_fields_circular``.
+
+    Each neuron's place field is reshaped to a 2D grid, shifted by random
+    amounts in both dimensions, and flattened back to 1D.
+
+    Parameters
+    ----------
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps (place fields) for each neuron.
+    env : Environment
+        2D environment with grid layout (provides ``grid_shape``).
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Place fields with 2D circular shifts applied.
+
+    Raises
+    ------
+    ValueError
+        If environment is not 2D or doesn't have grid layout.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+
+    >>> positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> encoding_models = np.random.default_rng(42).random((3, env.n_bins))
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(f"Shuffle {i}: shape={shuffled.shape}")
+    Shuffle 0: shape=(3, 36)
+    Shuffle 1: shape=(3, 36)
+    Shuffle 2: shape=(3, 36)
+
+    See Also
+    --------
+    shuffle_place_fields_circular : 1D circular shift
+    shuffle_cell_identity : Shuffle neuron-to-place-field mapping
+    """
+    # Validate 2D environment
+    if env.n_dims != 2:
+        raise ValueError(
+            f"shuffle_place_fields_circular_2d requires a 2D environment, "
+            f"got {env.n_dims}D"
+        )
+
+    # Get grid shape from environment
+    if not hasattr(env.layout, "grid_shape") or env.layout.grid_shape is None:
+        raise ValueError(
+            "shuffle_place_fields_circular_2d requires environment with grid layout "
+            "(grid_shape attribute)"
+        )
+
+    grid_shape = env.layout.grid_shape
+
+    # Verify encoding models match expected size
+    expected_bins = int(np.prod(grid_shape))
+    actual_bins = encoding_models.shape[1]
+    if actual_bins != expected_bins:
+        raise ValueError(
+            f"shuffle_place_fields_circular_2d requires encoding models with "
+            f"{expected_bins} bins (matching grid_shape {grid_shape}), but got "
+            f"{actual_bins} bins. This may occur if the environment has inactive "
+            f"bins (masked grid). Consider using shuffle_place_fields_circular "
+            f"for masked environments."
+        )
+    generator = _ensure_rng(rng)
+    n_neurons = encoding_models.shape[0]
+
+    for _ in range(n_shuffles):
+        # Generate random shift amounts for each neuron in each dimension
+        shifts_x = generator.integers(0, grid_shape[0], size=n_neurons)
+        shifts_y = generator.integers(0, grid_shape[1], size=n_neurons)
+
+        # Apply 2D circular shifts to each neuron
+        shuffled = np.empty_like(encoding_models)
+        for i in range(n_neurons):
+            shift_x: int = int(shifts_x[i])  # type: ignore[index]
+            shift_y: int = int(shifts_y[i])  # type: ignore[index]
+            # Reshape to 2D grid
+            field_2d = encoding_models[i, :].reshape(grid_shape)
+            # Apply circular shift in both dimensions
+            shifted_2d = np.roll(
+                np.roll(field_2d, shift_x, axis=0),
+                shift_y,
+                axis=1,
+            )
+            # Flatten back to 1D
+            shuffled[i, :] = shifted_2d.ravel()
+
+        yield shuffled
