@@ -3,9 +3,31 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 2.1 Complete - Working on Quality Metrics
+**Current Milestone**: Milestone 2.2 Complete - Working on Correlation Metric
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 2.2 Complete (Confusion Matrix)
+
+**Milestone 2.2 - Confusion Matrix**: ✅ COMPLETED
+
+- Added `confusion_matrix()` function to `src/neurospatial/decoding/metrics.py`
+- Supports two methods:
+  - `method="map"`: Uses argmax for discrete bin predictions (integer counts)
+  - `method="expected"`: Accumulates full posterior mass (probability-weighted)
+- Created comprehensive test suite in `tests/decoding/test_metrics.py` (16 new tests)
+- All tests pass (169 total in decoding/, 2 skipped)
+- Code review passed with "APPROVE" rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- Vectorized MAP method using `np.add.at()` for 10-100x speedup on large datasets
+- Input validation: shape checks, bin range validation, method validation
+- Helpful error messages with diagnostics (shows actual range found)
+- Proper row/column semantics: rows=actual bins, columns=decoded bins
+- Exported in `__init__.py` and `__all__` list
+
+**Next task**: Milestone 2.3 - Correlation Metric (`decoding_correlation`)
 
 ### 2025-11-28 - Milestone 2.1 Complete (Error Metrics)
 

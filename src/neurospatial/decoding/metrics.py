@@ -9,6 +9,8 @@ decoding_error
     Compute position error for each time bin.
 median_decoding_error
     Compute median decoding error (convenience wrapper).
+confusion_matrix
+    Confusion matrix between decoded and actual bin indices.
 """
 
 from __future__ import annotations
@@ -182,3 +184,126 @@ def median_decoding_error(
     """
     errors = decoding_error(decoded_positions, actual_positions, metric="euclidean")
     return float(np.nanmedian(errors))
+
+
+def confusion_matrix(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    actual_bins: NDArray[np.int64],
+    *,
+    method: Literal["map", "expected"] = "map",
+) -> NDArray[np.float64]:
+    """Confusion matrix between decoded and actual bin indices.
+
+    Computes a confusion matrix summarizing decoding performance across
+    all spatial bins. Rows represent actual bins, columns represent decoded bins.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization (used for n_bins).
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution from decoding.
+        Each row should sum to 1.0.
+    actual_bins : NDArray[np.int64], shape (n_time_bins,)
+        Ground truth bin indices. Values must be in [0, n_bins).
+    method : {"map", "expected"}, default="map"
+        How to summarize the posterior for each time bin:
+
+        - "map": Use argmax (most likely bin). Returns integer counts.
+          Cell (i, j) contains the count of time bins where actual=i and
+          decoded=j.
+        - "expected": Accumulate full posterior mass. Cell (i, j) contains
+          sum of P(decoded=j | actual=i) across all time bins where
+          actual=i. Rows sum to the count of actual bin occurrences.
+
+    Returns
+    -------
+    cm : NDArray[np.float64], shape (n_bins, n_bins)
+        Confusion matrix. Rows are actual bins, columns are decoded bins.
+        For ``method="map"``, the matrix sums to n_time_bins.
+        For ``method="expected"``, each row sums to the count of that bin's
+        occurrences in actual_bins.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not "map" or "expected".
+        If ``actual_bins`` contains values outside [0, n_bins).
+        If shapes are inconsistent.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding.metrics import confusion_matrix
+
+    Create a simple environment and posterior:
+
+    >>> positions = np.array([[0, 0], [5, 0], [0, 5], [5, 5]])
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> n_bins = env.n_bins
+
+    Perfect decoding (posterior peaks at actual position):
+
+    >>> posterior = np.eye(n_bins)  # Delta functions
+    >>> actual_bins = np.arange(n_bins)
+    >>> cm = confusion_matrix(env, posterior, actual_bins, method="map")
+    >>> bool(np.allclose(cm, np.eye(n_bins)))
+    True
+
+    See Also
+    --------
+    decoding_error : Per-time-bin position error.
+    decoding_correlation : Weighted correlation between decoded and actual.
+    """
+    posterior = np.asarray(posterior, dtype=np.float64)
+    actual_bins = np.asarray(actual_bins, dtype=np.int64)
+
+    n_bins = env.n_bins
+    n_time_bins = posterior.shape[0]
+
+    # Validate method
+    if method not in ("map", "expected"):
+        raise ValueError(f"Invalid method '{method}'. Must be 'map' or 'expected'.")
+
+    # Validate shapes
+    if posterior.ndim != 2:
+        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
+    if posterior.shape[1] != n_bins:
+        raise ValueError(
+            f"posterior has {posterior.shape[1]} bins but environment has {n_bins} bins"
+        )
+    if actual_bins.ndim != 1:
+        raise ValueError(f"actual_bins must be 1D, got shape {actual_bins.shape}")
+    if len(actual_bins) != n_time_bins:
+        raise ValueError(
+            f"Length mismatch: posterior has {n_time_bins} time bins but "
+            f"actual_bins has {len(actual_bins)}"
+        )
+
+    # Validate actual_bins range
+    if np.any(actual_bins < 0) or np.any(actual_bins >= n_bins):
+        min_bin = int(actual_bins.min())
+        max_bin = int(actual_bins.max())
+        raise ValueError(
+            f"actual_bins contains values outside valid range [0, {n_bins}). "
+            f"Found range [{min_bin}, {max_bin}]."
+        )
+
+    # Initialize confusion matrix
+    cm = np.zeros((n_bins, n_bins), dtype=np.float64)
+
+    if method == "map":
+        # Use argmax to get decoded bin for each time step
+        decoded_bins = np.argmax(posterior, axis=1)
+
+        # Vectorized counting using np.add.at (much faster for large datasets)
+        np.add.at(cm, (actual_bins, decoded_bins), 1.0)
+
+    else:  # method == "expected"
+        # Accumulate posterior mass: cm[actual, :] += posterior[t, :]
+        for t in range(n_time_bins):
+            cm[actual_bins[t], :] += posterior[t, :]
+
+    return cm

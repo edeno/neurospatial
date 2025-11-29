@@ -161,7 +161,7 @@ assert isinstance(median, float)
 
 ### 2.2 Confusion Matrix (`metrics.py` - Part 2)
 
-- [ ] Implement `confusion_matrix(env, posterior, actual_bins, *, method="map")`
+- [x] Implement `confusion_matrix(env, posterior, actual_bins, *, method="map")`
   - method="map": Count argmax predictions
   - method="expected": Accumulate full posterior mass
   - Return shape `(n_bins, n_bins)`

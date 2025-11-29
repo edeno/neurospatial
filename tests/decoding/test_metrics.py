@@ -392,3 +392,305 @@ class TestEdgeCases:
 
         with pytest.raises((ValueError, IndexError)):
             decoding_error(decoded, actual)
+
+
+class TestConfusionMatrix:
+    """Test confusion_matrix function."""
+
+    def test_confusion_matrix_shape(self, small_2d_env):
+        """confusion_matrix should return (n_bins, n_bins) array."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 50
+        rng = np.random.default_rng(42)
+
+        # Create random posterior (normalized per row)
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        # Random actual bins
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        result = confusion_matrix(small_2d_env, posterior, actual_bins)
+
+        assert result.shape == (n_bins, n_bins)
+        assert result.dtype == np.float64
+
+    def test_confusion_matrix_map_method_sum_equals_n_time_bins(self, small_2d_env):
+        """For method='map', confusion matrix should sum to n_time_bins."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 100
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+
+        # For MAP method, total counts should equal n_time_bins
+        assert result.sum() == pytest.approx(n_time_bins)
+
+    def test_confusion_matrix_expected_method_row_sums(self, small_2d_env):
+        """For method='expected', each row should sum to count of actual bin occurrences."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 100
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, method="expected"
+        )
+
+        # Each row should sum to the count of times that bin occurred
+        for bin_idx in range(n_bins):
+            expected_count = np.sum(actual_bins == bin_idx)
+            assert result[bin_idx].sum() == pytest.approx(expected_count)
+
+    def test_confusion_matrix_perfect_decoding_map(self, small_2d_env):
+        """Perfect decoding should produce diagonal confusion matrix (MAP)."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = n_bins * 2  # Each bin occurs twice
+        rng = np.random.default_rng(42)
+
+        # Create actual bins - each bin appears twice
+        actual_bins = np.repeat(np.arange(n_bins), 2)
+        rng.shuffle(actual_bins)
+
+        # Create posterior that perfectly decodes (delta at actual position)
+        posterior = np.zeros((n_time_bins, n_bins))
+        posterior[np.arange(n_time_bins), actual_bins] = 1.0
+
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+
+        # Should be diagonal with 2 in each diagonal entry
+        expected = np.diag(np.full(n_bins, 2.0))
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_confusion_matrix_perfect_decoding_expected(self, small_2d_env):
+        """Perfect decoding should produce diagonal matrix (expected)."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = n_bins * 2
+        rng = np.random.default_rng(42)
+
+        actual_bins = np.repeat(np.arange(n_bins), 2)
+        rng.shuffle(actual_bins)
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        posterior[np.arange(n_time_bins), actual_bins] = 1.0
+
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, method="expected"
+        )
+
+        expected = np.diag(np.full(n_bins, 2.0))
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_confusion_matrix_uniform_posterior_expected(self, small_2d_env):
+        """Uniform posterior should spread mass equally across columns."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = n_bins  # One occurrence per bin
+
+        # Uniform posterior
+        posterior = np.ones((n_time_bins, n_bins)) / n_bins
+        actual_bins = np.arange(n_bins)  # Each bin occurs once
+
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, method="expected"
+        )
+
+        # Each row should sum to 1 (one occurrence per actual bin)
+        # Each entry in a row should be 1/n_bins (uniform spread)
+        expected = np.ones((n_bins, n_bins)) / n_bins
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_confusion_matrix_known_values_map(self, small_2d_env):
+        """Test with known posterior and actual bins (MAP)."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        if n_bins < 3:
+            pytest.skip("Need at least 3 bins for this test")
+
+        # Create simple 3-time-bin scenario
+        posterior = np.zeros((3, n_bins))
+        # Time 0: max at bin 0 (actual: bin 0 -> correct)
+        # Time 1: max at bin 1 (actual: bin 0 -> wrong)
+        # Time 2: max at bin 2 (actual: bin 1 -> wrong)
+        posterior[0, 0] = 0.8
+        posterior[0, 1] = 0.2
+        posterior[1, 1] = 0.9
+        posterior[1, 0] = 0.1
+        posterior[2, 2] = 0.7
+        posterior[2, 1] = 0.3
+
+        actual_bins = np.array([0, 0, 1])
+
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+
+        # Row 0 (actual=0): decoded=0 once, decoded=1 once
+        assert result[0, 0] == pytest.approx(1.0)
+        assert result[0, 1] == pytest.approx(1.0)
+        # Row 1 (actual=1): decoded=2 once
+        assert result[1, 2] == pytest.approx(1.0)
+
+    def test_confusion_matrix_known_values_expected(self, small_2d_env):
+        """Test with known posterior and actual bins (expected)."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        if n_bins < 3:
+            pytest.skip("Need at least 3 bins for this test")
+
+        # Create simple scenario
+        posterior = np.zeros((2, n_bins))
+        # Time 0: 0.8 at bin 0, 0.2 at bin 1 (actual: bin 0)
+        # Time 1: 0.5 at bin 0, 0.5 at bin 1 (actual: bin 0)
+        posterior[0, 0] = 0.8
+        posterior[0, 1] = 0.2
+        posterior[1, 0] = 0.5
+        posterior[1, 1] = 0.5
+
+        actual_bins = np.array([0, 0])
+
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, method="expected"
+        )
+
+        # Row 0 (actual=0): accumulate posteriors for both time bins
+        # Col 0: 0.8 + 0.5 = 1.3
+        # Col 1: 0.2 + 0.5 = 0.7
+        assert result[0, 0] == pytest.approx(1.3)
+        assert result[0, 1] == pytest.approx(0.7)
+        # Row 1 should be all zeros (no time bins with actual=1)
+        np.testing.assert_array_almost_equal(result[1], np.zeros(n_bins))
+
+    def test_confusion_matrix_non_negative(self, small_2d_env):
+        """Confusion matrix should have non-negative entries."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 50
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        for method in ["map", "expected"]:
+            result = confusion_matrix(
+                small_2d_env, posterior, actual_bins, method=method
+            )
+            assert np.all(result >= 0), f"Negative values for method={method}"
+
+    def test_confusion_matrix_invalid_method_raises(self, small_2d_env):
+        """Invalid method should raise ValueError."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        posterior = np.ones((5, n_bins)) / n_bins
+        actual_bins = np.zeros(5, dtype=np.int64)
+
+        with pytest.raises(ValueError, match=r"method.*map.*expected"):
+            confusion_matrix(small_2d_env, posterior, actual_bins, method="invalid")
+
+    def test_confusion_matrix_out_of_range_bins_raises(self, small_2d_env):
+        """Actual bins outside valid range should raise ValueError."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        posterior = np.ones((5, n_bins)) / n_bins
+        # Bin index out of range
+        actual_bins = np.array([0, 1, n_bins, 0, 0])  # n_bins is out of range
+
+        with pytest.raises(ValueError, match=r"actual_bins.*range"):
+            confusion_matrix(small_2d_env, posterior, actual_bins)
+
+    def test_confusion_matrix_negative_bins_raises(self, small_2d_env):
+        """Negative bin indices should raise ValueError."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        posterior = np.ones((5, n_bins)) / n_bins
+        actual_bins = np.array([0, 1, -1, 0, 0])
+
+        with pytest.raises(ValueError, match=r"actual_bins.*range"):
+            confusion_matrix(small_2d_env, posterior, actual_bins)
+
+    def test_confusion_matrix_shape_mismatch_raises(self, small_2d_env):
+        """Mismatched time bins between posterior and actual_bins should raise."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        posterior = np.ones((10, n_bins)) / n_bins
+        actual_bins = np.zeros(5, dtype=np.int64)  # Different length
+
+        with pytest.raises(ValueError, match=r"mismatch|length"):
+            confusion_matrix(small_2d_env, posterior, actual_bins)
+
+    def test_confusion_matrix_posterior_bins_mismatch_raises(self, small_2d_env):
+        """Posterior with wrong number of bins should raise."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        wrong_n_bins = n_bins + 5
+        posterior = np.ones((10, wrong_n_bins)) / wrong_n_bins
+        actual_bins = np.zeros(10, dtype=np.int64)
+
+        with pytest.raises(ValueError, match=r"bins|posterior"):
+            confusion_matrix(small_2d_env, posterior, actual_bins)
+
+    def test_confusion_matrix_empty_bins_have_zero_rows(self, small_2d_env):
+        """Bins that never occur should have all-zero rows."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        if n_bins < 2:
+            pytest.skip("Need at least 2 bins")
+
+        # Only use bin 0, never bin 1 or higher
+        posterior = np.zeros((5, n_bins))
+        posterior[:, 0] = 1.0  # Always decode to bin 0
+        actual_bins = np.zeros(5, dtype=np.int64)  # Always at bin 0
+
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+
+        # Row 0 should have all mass, rows 1+ should be zero
+        assert result[0, 0] == pytest.approx(5.0)
+        for i in range(1, n_bins):
+            np.testing.assert_array_almost_equal(result[i], np.zeros(n_bins))
+
+
+class TestConfusionMatrixSuccessCriteria:
+    """Test success criteria from TASKS.md for confusion_matrix."""
+
+    def test_success_criteria_shapes_and_sums(self, small_2d_env):
+        """Verify success criteria from TASKS.md for Milestone 2.2."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 100
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        # Success criteria from TASKS.md
+        cm = confusion_matrix(small_2d_env, posterior, actual_bins)
+        assert cm.shape == (n_bins, n_bins)
+        assert cm.sum() == pytest.approx(n_time_bins)  # for method="map"
