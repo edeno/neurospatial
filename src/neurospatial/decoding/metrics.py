@@ -11,6 +11,8 @@ median_decoding_error
     Compute median decoding error (convenience wrapper).
 confusion_matrix
     Confusion matrix between decoded and actual bin indices.
+decoding_correlation
+    Weighted Pearson correlation between decoded and actual positions.
 """
 
 from __future__ import annotations
@@ -307,3 +309,191 @@ def confusion_matrix(
             cm[actual_bins[t], :] += posterior[t, :]
 
     return cm
+
+
+def decoding_correlation(
+    decoded_positions: NDArray[np.float64],
+    actual_positions: NDArray[np.float64],
+    weights: NDArray[np.float64] | None = None,
+) -> float:
+    """Weighted Pearson correlation between decoded and actual positions.
+
+    Computes a (possibly weighted) Pearson correlation coefficient between
+    decoded position estimates and ground truth positions. For multi-dimensional
+    positions, returns the mean correlation across all dimensions.
+
+    Parameters
+    ----------
+    decoded_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
+        Decoded position estimates (e.g., MAP or mean positions).
+    actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
+        Ground truth positions.
+    weights : NDArray[np.float64], shape (n_time_bins,), optional
+        Per-time-bin weights. If None, uniform weights (standard correlation).
+        Typical use: weight by posterior certainty (1 - normalized_entropy) to
+        down-weight uncertain time bins.
+
+    Returns
+    -------
+    r : float
+        Weighted Pearson correlation coefficient.
+        For ``n_dims > 1``, returns mean correlation across dimensions.
+        Returns NaN if:
+
+        - Fewer than 2 valid (non-NaN, non-zero-weight) time bins remain
+        - Either decoded or actual positions has zero variance in the
+          valid samples (constant values after excluding NaN/zero-weight bins)
+        - All weights are zero or weight sum overflows
+
+    Raises
+    ------
+    ValueError
+        If ``decoded_positions`` and ``actual_positions`` have different shapes.
+        If ``weights`` shape doesn't match ``(n_time_bins,)``.
+
+    Notes
+    -----
+    Time bins with NaN in positions or zero weight are excluded from the
+    computation. This allows robust correlation even with missing data.
+
+    The implementation uses a numerically stable centered formula to minimize
+    catastrophic cancellation, especially important for long time series with
+    large weights:
+
+    .. code-block:: python
+
+        # Normalize weights
+        w = weights / weights.sum()
+
+        # Weighted means (stable via np.average)
+        mean_x = np.average(x, weights=w)
+        mean_y = np.average(y, weights=w)
+
+        # Center the data (reduces cancellation)
+        x_centered = x - mean_x
+        y_centered = y - mean_y
+
+        # Weighted covariance and variances
+        cov_xy = np.sum(w * x_centered * y_centered)
+        var_x = np.sum(w * x_centered**2)
+        var_y = np.sum(w * y_centered**2)
+
+        # Correlation with zero-variance check
+        denom = np.sqrt(var_x * var_y)
+        r = cov_xy / denom if denom > 0 else np.nan
+
+    This approach is more stable than the direct formula
+    ``(sum(wx*y) - n*mean_x*mean_y) / ...`` which can suffer from
+    cancellation when sums are large.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.metrics import decoding_correlation
+
+    Perfect correlation (same positions):
+
+    >>> decoded = np.array([[0.0], [1.0], [2.0], [3.0]])
+    >>> actual = np.array([[0.0], [1.0], [2.0], [3.0]])
+    >>> r = decoding_correlation(decoded, actual)
+    >>> bool(abs(r - 1.0) < 1e-10)
+    True
+
+    Weighted correlation (down-weight uncertain bins):
+
+    >>> decoded = np.array([[0.0], [1.0], [2.0], [100.0]])  # Outlier
+    >>> actual = np.array([[0.0], [1.0], [2.0], [3.0]])
+    >>> weights = np.array([1.0, 1.0, 1.0, 0.0])  # Zero-weight outlier
+    >>> r = decoding_correlation(decoded, actual, weights=weights)
+    >>> bool(abs(r - 1.0) < 1e-10)
+    True
+
+    See Also
+    --------
+    decoding_error : Per-time-bin position error.
+    median_decoding_error : Median error summary statistic.
+    """
+    decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
+    actual_positions = np.asarray(actual_positions, dtype=np.float64)
+
+    # Validate shapes match
+    if decoded_positions.shape != actual_positions.shape:
+        raise ValueError(
+            f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
+            f"but actual_positions has shape {actual_positions.shape}"
+        )
+
+    n_time_bins = decoded_positions.shape[0]
+    n_dims = decoded_positions.shape[1] if decoded_positions.ndim > 1 else 1
+
+    # Handle 1D case: reshape to (n_time_bins, 1)
+    if decoded_positions.ndim == 1:
+        decoded_positions = decoded_positions.reshape(-1, 1)
+        actual_positions = actual_positions.reshape(-1, 1)
+
+    # Setup weights
+    if weights is None:
+        weights = np.ones(n_time_bins, dtype=np.float64)
+    else:
+        weights = np.asarray(weights, dtype=np.float64)
+        if weights.shape != (n_time_bins,):
+            raise ValueError(
+                f"weights must have shape ({n_time_bins},), got {weights.shape}"
+            )
+
+    # Create valid mask: exclude NaN in any dimension and zero weights
+    valid_mask = np.ones(n_time_bins, dtype=bool)
+    valid_mask &= ~np.any(np.isnan(decoded_positions), axis=1)
+    valid_mask &= ~np.any(np.isnan(actual_positions), axis=1)
+    valid_mask &= weights > 0
+
+    n_valid = valid_mask.sum()
+
+    # Need at least 2 valid samples for correlation
+    if n_valid < 2:
+        return float(np.nan)
+
+    # Filter to valid samples
+    decoded_valid = decoded_positions[valid_mask]
+    actual_valid = actual_positions[valid_mask]
+    weights_valid = weights[valid_mask]
+
+    # Normalize weights to sum to 1 (with overflow check)
+    weight_sum = weights_valid.sum()
+    if weight_sum == 0 or not np.isfinite(weight_sum):
+        return float(np.nan)
+    w = weights_valid / weight_sum
+
+    # Compute correlation for each dimension, then average
+    correlations = np.empty(n_dims, dtype=np.float64)
+
+    for dim in range(n_dims):
+        x = decoded_valid[:, dim]
+        y = actual_valid[:, dim]
+
+        # Weighted means (stable via np.average)
+        mean_x = np.average(x, weights=w)
+        mean_y = np.average(y, weights=w)
+
+        # Center the data
+        x_centered = x - mean_x
+        y_centered = y - mean_y
+
+        # Weighted covariance and variances
+        cov_xy = np.sum(w * x_centered * y_centered)
+        var_x = np.sum(w * x_centered**2)
+        var_y = np.sum(w * y_centered**2)
+
+        # Correlation with zero-variance check
+        denom = np.sqrt(var_x * var_y)
+        if denom > 0:
+            correlations[dim] = cov_xy / denom
+        else:
+            correlations[dim] = np.nan
+
+    # Return mean correlation across dimensions
+    # If any dimension is NaN, result is NaN
+    if np.any(np.isnan(correlations)):
+        return float(np.nan)
+
+    return float(np.mean(correlations))

@@ -129,6 +129,7 @@ from neurospatial.decoding.likelihood import (
 )
 from neurospatial.decoding.metrics import (
     confusion_matrix,
+    decoding_correlation,
     decoding_error,
     median_decoding_error,
 )
@@ -146,6 +147,7 @@ __all__ = [
     "confusion_matrix",
     "credible_region",
     "decode_position",
+    "decoding_correlation",
     "decoding_error",
     "entropy",
     "log_poisson_likelihood",

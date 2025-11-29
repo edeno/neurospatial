@@ -3,9 +3,36 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 2.2 Complete - Working on Correlation Metric
+**Current Milestone**: Milestone 2.3 Complete - Next: Phase 2 Tests
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 2.3 Complete (Correlation Metric)
+
+**Milestone 2.3 - Correlation Metric**: ✅ COMPLETED
+
+- Added `decoding_correlation()` function to `src/neurospatial/decoding/metrics.py`
+- Implemented weighted Pearson correlation with numerically stable centered formula
+- Key features:
+  - Uses `np.average()` for weighted means (stable computation)
+  - Centers data before computing covariance (prevents catastrophic cancellation)
+  - Handles multi-dimensional positions (computes per-dimension correlation, returns mean)
+  - Excludes NaN values and zero-weight bins automatically
+  - Returns NaN for edge cases: <2 valid samples, zero variance, weight sum overflow
+- Created comprehensive test suite (22 new tests covering all edge cases)
+- All tests pass (191 total in decoding/, 2 skipped)
+- Code review passed with "APPROVE" rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+
+- Numerically stable centered formula avoids cancellation for large datasets
+- Explicit overflow check: `if weight_sum == 0 or not np.isfinite(weight_sum)`
+- Per-dimension correlation with NaN propagation if any dimension has zero variance
+- Comprehensive docstring with NumPy format, pseudo-code explanation, and examples
+- Exported in `__init__.py` and `__all__` list
+
+**Next task**: Milestone 2.4 - Phase 2 Tests (complete test suite for metrics.py)
 
 ### 2025-11-28 - Milestone 2.2 Complete (Confusion Matrix)
 

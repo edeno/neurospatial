@@ -694,3 +694,326 @@ class TestConfusionMatrixSuccessCriteria:
         cm = confusion_matrix(small_2d_env, posterior, actual_bins)
         assert cm.shape == (n_bins, n_bins)
         assert cm.sum() == pytest.approx(n_time_bins)  # for method="map"
+
+
+class TestDecodingCorrelation:
+    """Test decoding_correlation function."""
+
+    def test_decoding_correlation_returns_float(self):
+        """decoding_correlation should return a single float."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        decoded = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        actual = np.array([[1.5, 2.5], [3.5, 4.5], [5.5, 6.5]])
+
+        result = decoding_correlation(decoded, actual)
+
+        assert isinstance(result, (float, np.floating))
+
+    def test_decoding_correlation_perfect_positive(self):
+        """Perfect positive correlation should return 1.0."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Perfect correlation: decoded = actual + constant shift
+        actual = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+        decoded = actual + 5.0  # Same pattern, shifted
+
+        result = decoding_correlation(decoded, actual)
+
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_perfect_negative(self):
+        """Perfect negative correlation should return -1.0."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        actual = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+        decoded = -actual + 10.0  # Negative slope
+
+        result = decoding_correlation(decoded, actual)
+
+        assert result == pytest.approx(-1.0)
+
+    def test_decoding_correlation_no_correlation(self):
+        """Uncorrelated data should return ~0.0."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Construct orthogonal data: decoded[i] = actual[n-1-i]
+        # For special case where mean-centered versions are orthogonal
+        rng = np.random.default_rng(42)
+
+        # Generate random data that should be approximately uncorrelated
+        n = 1000
+        actual = rng.uniform(0, 100, (n, 2))
+        decoded = rng.uniform(0, 100, (n, 2))
+
+        result = decoding_correlation(decoded, actual)
+
+        # With random data, correlation should be near zero (not exact)
+        assert -0.2 < result < 0.2
+
+    def test_decoding_correlation_range(self):
+        """Correlation should always be in [-1, 1]."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        rng = np.random.default_rng(42)
+
+        for _ in range(10):
+            n = rng.integers(10, 100)
+            n_dims = rng.integers(1, 4)
+            decoded = rng.uniform(-100, 100, (n, n_dims))
+            actual = rng.uniform(-100, 100, (n, n_dims))
+
+            result = decoding_correlation(decoded, actual)
+
+            assert -1 <= result <= 1 or np.isnan(result)
+
+    def test_decoding_correlation_symmetric(self):
+        """Correlation should be symmetric: r(a, b) == r(b, a)."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        rng = np.random.default_rng(42)
+        decoded = rng.uniform(0, 100, (50, 2))
+        actual = rng.uniform(0, 100, (50, 2))
+
+        r_ab = decoding_correlation(decoded, actual)
+        r_ba = decoding_correlation(actual, decoded)
+
+        assert r_ab == pytest.approx(r_ba)
+
+    def test_decoding_correlation_multidimensional(self):
+        """Correlation should work with multi-dimensional positions (mean across dims)."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # 3D positions with perfect correlation in each dimension
+        actual = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
+        decoded = actual + 1.0  # Perfect correlation in each dim
+
+        result = decoding_correlation(decoded, actual)
+
+        # Mean of perfect correlations should be 1.0
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_mixed_dimensions(self):
+        """Correlation should average across dimensions with different correlations."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Construct 2D positions where dim 0 has r=1 and dim 1 has r=-1
+        # Mean should be ~0
+        actual_dim0 = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        actual_dim1 = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+
+        decoded_dim0 = actual_dim0.copy()  # r = 1
+        decoded_dim1 = -actual_dim1 + 4.0  # r = -1
+
+        decoded = np.column_stack([decoded_dim0, decoded_dim1])
+        actual = np.column_stack([actual_dim0, actual_dim1])
+
+        result = decoding_correlation(decoded, actual)
+
+        # Average of 1.0 and -1.0 should be 0.0
+        assert result == pytest.approx(0.0, abs=0.01)
+
+
+class TestDecodingCorrelationWeighted:
+    """Test weighted correlation in decoding_correlation."""
+
+    def test_decoding_correlation_uniform_weights(self):
+        """Uniform weights should give same result as no weights."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        rng = np.random.default_rng(42)
+        decoded = rng.uniform(0, 100, (50, 2))
+        actual = rng.uniform(0, 100, (50, 2))
+
+        r_unweighted = decoding_correlation(decoded, actual)
+        r_weighted = decoding_correlation(decoded, actual, weights=np.ones(50))
+
+        assert r_unweighted == pytest.approx(r_weighted)
+
+    def test_decoding_correlation_weights_change_result(self):
+        """Non-uniform weights should change the correlation."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        rng = np.random.default_rng(42)
+        decoded = rng.uniform(0, 100, (50, 2))
+        actual = rng.uniform(0, 100, (50, 2))
+
+        # Create non-uniform weights
+        weights = np.linspace(0.1, 2.0, 50)
+
+        r_weighted = decoding_correlation(decoded, actual, weights=weights)
+
+        # Check that result is valid (weights can change the result)
+        assert -1 <= r_weighted <= 1
+
+    def test_decoding_correlation_zero_weight_excludes(self):
+        """Zero weights should effectively exclude those time bins."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Create data where last point would ruin correlation
+        actual = np.array([[0.0], [1.0], [2.0], [3.0], [100.0]])  # Outlier at end
+        decoded = np.array([[0.0], [1.0], [2.0], [3.0], [0.0]])  # Breaks pattern
+
+        # With uniform weights, correlation is lowered by outlier
+        r_uniform = decoding_correlation(decoded, actual)
+
+        # With zero weight on outlier, correlation should be perfect
+        weights = np.array([1.0, 1.0, 1.0, 1.0, 0.0])
+        r_weighted = decoding_correlation(decoded, actual, weights=weights)
+
+        # Weighted (excluding outlier) should have higher/perfect correlation
+        assert r_weighted > r_uniform
+        assert r_weighted == pytest.approx(1.0)
+
+    def test_decoding_correlation_all_zero_weights_returns_nan(self):
+        """All zero weights should return NaN."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        decoded = np.array([[1.0], [2.0], [3.0]])
+        actual = np.array([[1.0], [2.0], [3.0]])
+        weights = np.array([0.0, 0.0, 0.0])
+
+        result = decoding_correlation(decoded, actual, weights=weights)
+
+        assert np.isnan(result)
+
+
+class TestDecodingCorrelationNaNHandling:
+    """Test NaN handling in decoding_correlation."""
+
+    def test_decoding_correlation_nan_excluded(self):
+        """NaN values should be excluded from correlation computation."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Perfect correlation except for NaN values
+        actual = np.array([[0.0], [1.0], [np.nan], [3.0], [4.0]])
+        decoded = np.array([[0.0], [1.0], [999.0], [3.0], [4.0]])
+
+        result = decoding_correlation(decoded, actual)
+
+        # Should ignore NaN row, remaining data has r=1
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_nan_in_any_dim(self):
+        """NaN in any dimension should exclude that time bin."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        actual = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, np.nan], [3.0, 3.0]])
+        decoded = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+
+        result = decoding_correlation(decoded, actual)
+
+        # Should ignore row 2 (has NaN), remaining data has r=1
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_all_nan_returns_nan(self):
+        """All NaN values should return NaN."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        decoded = np.full((5, 2), np.nan)
+        actual = np.full((5, 2), np.nan)
+
+        result = decoding_correlation(decoded, actual)
+
+        assert np.isnan(result)
+
+    def test_decoding_correlation_single_valid_returns_nan(self):
+        """Single valid time bin should return NaN (need at least 2)."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        actual = np.array([[0.0], [np.nan], [np.nan]])
+        decoded = np.array([[1.0], [2.0], [3.0]])
+
+        result = decoding_correlation(decoded, actual)
+
+        # Only 1 valid pair, need at least 2 for correlation
+        assert np.isnan(result)
+
+
+class TestDecodingCorrelationEdgeCases:
+    """Test edge cases in decoding_correlation."""
+
+    def test_decoding_correlation_constant_values_returns_nan(self):
+        """Constant values (zero variance) should return NaN."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Both decoded and actual are constant
+        decoded = np.full((5, 2), 3.0)
+        actual = np.full((5, 2), 5.0)
+
+        result = decoding_correlation(decoded, actual)
+
+        # Zero variance means correlation is undefined
+        assert np.isnan(result)
+
+    def test_decoding_correlation_one_constant_returns_nan(self):
+        """One constant variable (zero variance) should return NaN."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        decoded = np.array([[1.0], [2.0], [3.0], [4.0]])
+        actual = np.full((4, 1), 5.0)  # Constant
+
+        result = decoding_correlation(decoded, actual)
+
+        # Zero variance in actual means correlation is undefined
+        assert np.isnan(result)
+
+    def test_decoding_correlation_two_points(self):
+        """Correlation with exactly two points should work."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        decoded = np.array([[0.0], [1.0]])
+        actual = np.array([[0.0], [1.0]])
+
+        result = decoding_correlation(decoded, actual)
+
+        # With exactly 2 points and same values, r=1
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_large_values(self):
+        """Correlation should be stable with large values."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Large values that could cause numerical issues
+        decoded = np.array([[1e6], [2e6], [3e6], [4e6], [5e6]])
+        actual = np.array([[1e6], [2e6], [3e6], [4e6], [5e6]])
+
+        result = decoding_correlation(decoded, actual)
+
+        assert result == pytest.approx(1.0)
+
+    def test_decoding_correlation_small_values(self):
+        """Correlation should be stable with small values."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        # Small values that could cause numerical issues
+        decoded = np.array([[1e-10], [2e-10], [3e-10], [4e-10], [5e-10]])
+        actual = np.array([[1e-10], [2e-10], [3e-10], [4e-10], [5e-10]])
+
+        result = decoding_correlation(decoded, actual)
+
+        assert result == pytest.approx(1.0)
+
+
+class TestDecodingCorrelationSuccessCriteria:
+    """Test success criteria from TASKS.md for Milestone 2.3."""
+
+    def test_success_criteria(self):
+        """Verify success criteria from TASKS.md for Milestone 2.3."""
+        from neurospatial.decoding.metrics import decoding_correlation
+
+        rng = np.random.default_rng(42)
+        n_time_bins = 100
+        n_dims = 2
+
+        decoded = rng.uniform(0, 100, (n_time_bins, n_dims))
+        actual = rng.uniform(0, 100, (n_time_bins, n_dims))
+
+        # Success criteria from TASKS.md
+        r = decoding_correlation(decoded, actual)
+        assert -1 <= r <= 1
+
+        # With weights
+        certainty = rng.uniform(0.1, 1.0, n_time_bins)
+        r_weighted = decoding_correlation(decoded, actual, weights=certainty)
+        assert -1 <= r_weighted <= 1

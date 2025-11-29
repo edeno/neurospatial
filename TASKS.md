@@ -178,7 +178,7 @@ assert cm.sum() == n_time_bins  # for method="map"
 
 ### 2.3 Correlation Metric (`metrics.py` - Part 3)
 
-- [ ] Implement `decoding_correlation(decoded_positions, actual_positions, weights=None)`
+- [x] Implement `decoding_correlation(decoded_positions, actual_positions, weights=None)`
   - Weighted Pearson correlation with numerically stable formula
   - Use centered computation: `np.average()` for weighted means
   - Handle multi-dimensional positions (mean across dims)
