@@ -193,8 +193,10 @@ from neurospatial.alignment import (
 )
 from neurospatial.animation.overlays import (
     BodypartOverlay,
+    EventOverlay,
     HeadDirectionOverlay,
     PositionOverlay,
+    SpikeOverlay,
     VideoOverlay,
 )
 from neurospatial.annotation import (
@@ -295,8 +297,10 @@ __all__ = [
     "median_decoding_error",
     # Animation overlays
     "BodypartOverlay",
+    "EventOverlay",
     "HeadDirectionOverlay",
     "PositionOverlay",
+    "SpikeOverlay",
     "VideoOverlay",
     # Visualization config
     "ScaleBarConfig",
