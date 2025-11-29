@@ -13,7 +13,8 @@ Overlay Rendering Layer Order (zorder):
 - 100: Position trails
 - 101: Position markers, bodypart skeletons
 - 102: Bodypart keypoints
-- 103: Head direction arrows (foreground)
+- 103: Head direction arrows
+- 104: Event markers (foreground)
 """
 
 from __future__ import annotations
@@ -36,6 +37,75 @@ from tqdm import tqdm
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
+
+
+def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -> None:
+    """Render event markers for current frame on matplotlib axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes to render on.
+    event_data : EventData
+        Event overlay data containing positions, frame indices, colors, markers.
+    frame_idx : int
+        Current frame index.
+
+    Notes
+    -----
+    For instant mode (decay_frames=0): Only events on exactly this frame are shown.
+    For decay mode (decay_frames > 0): Events within the decay window are shown
+    with alpha decaying based on age (newest = alpha 1.0, oldest = faded).
+
+    Events render at zorder=104, above head direction overlays (103).
+    """
+    for event_name, positions in event_data.event_positions.items():
+        frame_indices = event_data.event_frame_indices[event_name]
+        color = event_data.colors[event_name]
+        marker = event_data.markers[event_name]
+
+        if len(positions) == 0:
+            continue
+
+        if event_data.decay_frames <= 0:
+            # Instant mode: only show events on their exact frame
+            mask = frame_indices == frame_idx
+        else:
+            # Decay mode: show events within decay window
+            min_frame = frame_idx - event_data.decay_frames
+            mask = (frame_indices >= max(0, min_frame)) & (frame_indices <= frame_idx)
+
+        active_positions = positions[mask]
+        active_frames = frame_indices[mask]
+
+        if len(active_positions) == 0:
+            continue
+
+        # Compute per-event alpha based on recency
+        if event_data.decay_frames > 0:
+            # Alpha = 1.0 for current frame, decays to lower for oldest
+            ages = frame_idx - active_frames  # 0 = newest, decay_frames = oldest
+            # +1 prevents alpha from reaching exactly 0 for oldest events
+            alphas = 1.0 - (ages / (event_data.decay_frames + 1))
+        else:
+            alphas = np.ones(len(active_positions))
+
+        # Render each event with its computed alpha
+        base_rgba = to_rgba(color)
+
+        for pos, alpha in zip(active_positions, alphas, strict=True):
+            if np.any(np.isnan(pos)):
+                continue
+            ax.scatter(
+                pos[0],
+                pos[1],
+                c=[(*base_rgba[:3], alpha)],
+                s=event_data.size**2,
+                marker=marker,
+                zorder=104,
+                edgecolors=event_data.border_color,
+                linewidths=event_data.border_width,
+            )
 
 
 def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) -> None:
@@ -1082,7 +1152,8 @@ def _render_all_overlays(
     2. Regions (zorder=99)
     3. Position/bodypart overlays (zorder=100-102)
     4. Head direction overlays (zorder=103)
-    5. Video foregrounds (z_order="above", zorder=1)
+    5. Event overlays (zorder=104)
+    6. Video foregrounds (z_order="above", zorder=1)
     """
     # Early return if no overlay data
     if overlay_data is None:
@@ -1103,6 +1174,7 @@ def _render_all_overlays(
         len(overlay_data.positions) > 0
         or len(overlay_data.bodypart_sets) > 0
         or len(overlay_data.head_directions) > 0
+        or len(overlay_data.events) > 0
     )
 
     if overlay_data_present:
@@ -1124,6 +1196,10 @@ def _render_all_overlays(
             _render_head_direction_overlay_matplotlib(
                 ax, head_dir_data, frame_idx, env, position_data=paired_position
             )
+
+        # Render event overlays (zorder=104, above head direction)
+        for event_data in overlay_data.events:
+            _render_event_overlay_matplotlib(ax, event_data, frame_idx)
 
     # Render video foregrounds last (z_order="above")
     for video_data in overlay_data.videos:

@@ -1556,5 +1556,469 @@ class TestNapariEventOverlayEdgeCases:
         assert len(event_points_calls) == 2
 
 
+# =============================================================================
+# Milestone 3: Video/Matplotlib Backend Tests
+# =============================================================================
+
+
+class TestMatplotlibEventOverlayInstantMode:
+    """Test matplotlib backend event rendering in instant mode (decay_frames=0)."""
+
+    @pytest.fixture
+    def mock_ax(self):
+        """Create mock matplotlib axes."""
+        return MagicMock()
+
+    @pytest.fixture
+    def event_data_instant(self):
+        """Create EventData with instant mode (no decay)."""
+        from neurospatial.animation.overlays import EventData
+
+        return EventData(
+            event_positions={
+                "spikes": np.array([[5.0, 5.0], [10.0, 8.0], [15.0, 3.0]])
+            },
+            event_frame_indices={"spikes": np.array([1, 4, 7])},
+            colors={"spikes": "#ff0000"},
+            markers={"spikes": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+
+    def test_instant_mode_renders_only_current_frame_events(
+        self, mock_ax, event_data_instant
+    ):
+        """Test instant mode only renders events on their exact frame."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 1 has 1 event, frame 4 has 1 event
+        _render_event_overlay_matplotlib(mock_ax, event_data_instant, frame_idx=1)
+
+        # Should call scatter once for the event on frame 1
+        assert mock_ax.scatter.call_count == 1
+
+    def test_instant_mode_no_events_on_frame(self, mock_ax, event_data_instant):
+        """Test instant mode doesn't render anything when no events on frame."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 0 has no events
+        _render_event_overlay_matplotlib(mock_ax, event_data_instant, frame_idx=0)
+
+        # Should not call scatter
+        assert mock_ax.scatter.call_count == 0
+
+    def test_instant_mode_correct_position(self, mock_ax, event_data_instant):
+        """Test instant mode renders event at correct position."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        _render_event_overlay_matplotlib(mock_ax, event_data_instant, frame_idx=1)
+
+        # Get the scatter call
+        call_args = mock_ax.scatter.call_args
+        x, y = call_args[0][:2]
+
+        # Event at frame 1 should be at (5.0, 5.0)
+        assert x == 5.0
+        assert y == 5.0
+
+    def test_instant_mode_applies_styling(self, mock_ax, event_data_instant):
+        """Test instant mode applies color, marker, and size."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        _render_event_overlay_matplotlib(mock_ax, event_data_instant, frame_idx=1)
+
+        call_kwargs = mock_ax.scatter.call_args[1]
+
+        # Check marker is applied
+        assert "marker" in call_kwargs
+        assert call_kwargs["marker"] == "o"
+
+        # Check size (scatter uses s=size**2 for area)
+        assert "s" in call_kwargs
+        assert call_kwargs["s"] == 8.0**2
+
+        # Check border
+        assert "edgecolors" in call_kwargs
+        assert call_kwargs["edgecolors"] == "white"
+        assert "linewidths" in call_kwargs
+        assert call_kwargs["linewidths"] == 0.5
+
+    def test_instant_mode_uses_correct_zorder(self, mock_ax, event_data_instant):
+        """Test instant mode events render at zorder 104 (above head direction)."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        _render_event_overlay_matplotlib(mock_ax, event_data_instant, frame_idx=1)
+
+        call_kwargs = mock_ax.scatter.call_args[1]
+        assert "zorder" in call_kwargs
+        assert call_kwargs["zorder"] == 104
+
+
+class TestMatplotlibEventOverlayDecayMode:
+    """Test matplotlib backend event rendering in decay mode (decay_frames > 0)."""
+
+    @pytest.fixture
+    def mock_ax(self):
+        """Create mock matplotlib axes."""
+        return MagicMock()
+
+    @pytest.fixture
+    def event_data_decay(self):
+        """Create EventData with decay enabled."""
+        from neurospatial.animation.overlays import EventData
+
+        return EventData(
+            event_positions={
+                "events": np.array([[5.0, 5.0], [10.0, 8.0], [15.0, 3.0], [20.0, 6.0]])
+            },
+            event_frame_indices={"events": np.array([1, 4, 7, 8])},
+            colors={"events": "#00ff00"},
+            markers={"events": "o"},
+            size=8.0,
+            decay_frames=3,  # Events visible for 3 frames after occurrence
+            border_color="white",
+            border_width=0.5,
+        )
+
+    def test_decay_mode_shows_events_in_window(self, mock_ax, event_data_decay):
+        """Test decay mode shows events within decay window."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 4 has event at frame 4, and decay_frames=3 includes frames 2-4
+        # Event at frame 1 is NOT in window (frame 4 - 3 = 1, but exclusive)
+        # Event at frame 4 IS in window
+        _render_event_overlay_matplotlib(mock_ax, event_data_decay, frame_idx=4)
+
+        # Should render at least 1 event (frame 4 event)
+        assert mock_ax.scatter.call_count >= 1
+
+    def test_decay_mode_applies_alpha_based_on_age(self, mock_ax, event_data_decay):
+        """Test decay mode applies decaying alpha based on event age."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # At frame 8: events at frames 7 and 8 are in window (8-3=5, so 6, 7, 8)
+        _render_event_overlay_matplotlib(mock_ax, event_data_decay, frame_idx=8)
+
+        # Get all scatter calls
+        calls = mock_ax.scatter.call_args_list
+
+        # Each call should have color with alpha
+        for call in calls:
+            kwargs = call[1]
+            assert "c" in kwargs
+            colors = kwargs["c"]
+            # Colors should be RGBA tuples with alpha
+            if isinstance(colors, list):
+                for c in colors:
+                    assert len(c) == 4  # RGBA
+                    assert 0 <= c[3] <= 1  # Alpha in valid range
+
+    def test_decay_mode_newest_event_has_full_alpha(self, mock_ax, event_data_decay):
+        """Test newest event in decay window has alpha=1.0."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 7 has event at exactly frame 7 (age=0)
+        _render_event_overlay_matplotlib(mock_ax, event_data_decay, frame_idx=7)
+
+        # Get the scatter call for frame 7 event
+        calls = mock_ax.scatter.call_args_list
+        assert len(calls) >= 1
+
+        # Find call for frame 7 event (should have alpha close to 1)
+        found_full_alpha = False
+        for call in calls:
+            kwargs = call[1]
+            colors = kwargs["c"]
+            if isinstance(colors, list):
+                for c in colors:
+                    if c[3] > 0.9:  # Alpha close to 1
+                        found_full_alpha = True
+
+        assert found_full_alpha, "Newest event should have alpha close to 1.0"
+
+    def test_decay_mode_old_events_excluded(self, mock_ax, event_data_decay):
+        """Test events older than decay window are excluded."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 10: decay_frames=3 means window is frames 7, 8, 9, 10
+        # Events at frames 1 and 4 are outside window
+        _render_event_overlay_matplotlib(mock_ax, event_data_decay, frame_idx=10)
+
+        # Should render events at frames 7 and 8
+        assert mock_ax.scatter.call_count == 2
+
+
+class TestMatplotlibEventOverlayMultipleTypes:
+    """Test matplotlib backend with multiple event types."""
+
+    @pytest.fixture
+    def mock_ax(self):
+        """Create mock matplotlib axes."""
+        return MagicMock()
+
+    @pytest.fixture
+    def event_data_multi(self):
+        """Create EventData with multiple event types."""
+        from neurospatial.animation.overlays import EventData
+
+        return EventData(
+            event_positions={
+                "licks": np.array([[5.0, 5.0], [8.0, 8.0]]),
+                "rewards": np.array([[50.0, 25.0]]),
+            },
+            event_frame_indices={
+                "licks": np.array([2, 5]),
+                "rewards": np.array([5]),
+            },
+            colors={"licks": "cyan", "rewards": "gold"},
+            markers={"licks": "o", "rewards": "s"},
+            size=10.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+
+    def test_multiple_types_renders_all_on_frame(self, mock_ax, event_data_multi):
+        """Test multiple event types render on same frame."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        # Frame 5 has lick at (8, 8) and reward at (50, 25)
+        _render_event_overlay_matplotlib(mock_ax, event_data_multi, frame_idx=5)
+
+        # Should call scatter twice (once for each event type)
+        assert mock_ax.scatter.call_count == 2
+
+    def test_multiple_types_uses_correct_colors(self, mock_ax, event_data_multi):
+        """Test each event type uses its own color."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        _render_event_overlay_matplotlib(mock_ax, event_data_multi, frame_idx=5)
+
+        # Get scatter calls and check colors
+        calls = mock_ax.scatter.call_args_list
+        colors_used = set()
+        for call in calls:
+            kwargs = call[1]
+            # Color can be in 'c' kwarg as RGBA tuple or string
+            c = kwargs.get("c")
+            if isinstance(c, list) and len(c) > 0:
+                colors_used.add(str(c[0][:3]))  # RGB without alpha
+
+        # Should have 2 distinct colors
+        assert len(colors_used) == 2
+
+    def test_multiple_types_uses_correct_markers(self, mock_ax, event_data_multi):
+        """Test each event type uses its own marker style."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+
+        _render_event_overlay_matplotlib(mock_ax, event_data_multi, frame_idx=5)
+
+        # Get marker styles
+        markers_used = set()
+        for call in mock_ax.scatter.call_args_list:
+            kwargs = call[1]
+            marker = kwargs.get("marker")
+            markers_used.add(marker)
+
+        # Should have both 'o' and 's' markers
+        assert "o" in markers_used
+        assert "s" in markers_used
+
+
+class TestMatplotlibEventOverlayIntegration:
+    """Test integration with _render_all_overlays and _render_single_frame."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create simple 2D environment."""
+        from neurospatial import Environment
+
+        positions = np.array(
+            [[0.0, 0.0], [50.0, 0.0], [100.0, 0.0], [0.0, 50.0], [50.0, 50.0]]
+        )
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    def test_render_all_overlays_includes_events(self, simple_env):
+        """Test _render_all_overlays renders event overlays."""
+        from neurospatial.animation._parallel import _render_all_overlays
+        from neurospatial.animation.overlays import EventData, OverlayData
+
+        mock_ax = MagicMock()
+
+        event_data = EventData(
+            event_positions={"test": np.array([[25.0, 25.0]])},
+            event_frame_indices={"test": np.array([0])},
+            colors={"test": "red"},
+            markers={"test": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+        overlay_data = OverlayData(events=[event_data])
+
+        _render_all_overlays(
+            ax=mock_ax,
+            env=simple_env,
+            frame_idx=0,
+            overlay_data=overlay_data,
+            show_regions=False,
+            region_alpha=0.3,
+        )
+
+        # Should call scatter for event
+        assert mock_ax.scatter.called
+
+    def test_render_all_overlays_with_mixed_types(self, simple_env):
+        """Test _render_all_overlays handles events with other overlay types."""
+        from neurospatial.animation._parallel import _render_all_overlays
+        from neurospatial.animation.overlays import (
+            EventData,
+            OverlayData,
+            PositionData,
+        )
+
+        mock_ax = MagicMock()
+        mock_ax.collections = []
+
+        # Position overlay
+        pos_data = PositionData(
+            data=np.array([[10.0, 10.0]]),
+            color="blue",
+            size=10.0,
+            trail_length=None,
+        )
+
+        # Event overlay
+        event_data = EventData(
+            event_positions={"test": np.array([[25.0, 25.0]])},
+            event_frame_indices={"test": np.array([0])},
+            colors={"test": "red"},
+            markers={"test": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+
+        overlay_data = OverlayData(positions=[pos_data], events=[event_data])
+
+        _render_all_overlays(
+            ax=mock_ax,
+            env=simple_env,
+            frame_idx=0,
+            overlay_data=overlay_data,
+            show_regions=False,
+            region_alpha=0.3,
+        )
+
+        # Should call scatter for both position and event
+        assert mock_ax.scatter.call_count >= 2
+
+
+class TestMatplotlibEventOverlayEdgeCases:
+    """Test edge cases for matplotlib event rendering."""
+
+    @pytest.fixture
+    def mock_ax(self):
+        """Create mock matplotlib axes."""
+        return MagicMock()
+
+    def test_empty_event_data_no_crash(self, mock_ax):
+        """Test empty event data doesn't crash."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+        from neurospatial.animation.overlays import EventData
+
+        event_data = EventData(
+            event_positions={"empty": np.array([]).reshape(0, 2)},
+            event_frame_indices={"empty": np.array([], dtype=np.int_)},
+            colors={"empty": "red"},
+            markers={"empty": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+
+        # Should not crash
+        _render_event_overlay_matplotlib(mock_ax, event_data, frame_idx=0)
+
+        # Should not call scatter for empty data
+        assert mock_ax.scatter.call_count == 0
+
+    def test_nan_position_skipped(self, mock_ax):
+        """Test events with NaN positions are skipped."""
+        from neurospatial.animation._parallel import _render_event_overlay_matplotlib
+        from neurospatial.animation.overlays import EventData
+
+        event_data = EventData(
+            event_positions={
+                "test": np.array([[5.0, 5.0], [np.nan, np.nan], [15.0, 15.0]])
+            },
+            event_frame_indices={"test": np.array([0, 0, 0])},
+            colors={"test": "red"},
+            markers={"test": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+
+        _render_event_overlay_matplotlib(mock_ax, event_data, frame_idx=0)
+
+        # Should render 2 events (NaN skipped)
+        assert mock_ax.scatter.call_count == 2
+
+
+class TestOverlayArtistManagerWithEvents:
+    """Test OverlayArtistManager handles events efficiently."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create simple 2D environment."""
+        from neurospatial import Environment
+
+        positions = np.array(
+            [[0.0, 0.0], [50.0, 0.0], [100.0, 0.0], [0.0, 50.0], [50.0, 50.0]]
+        )
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    def test_manager_initializes_with_events(self, simple_env):
+        """Test OverlayArtistManager initializes correctly with events."""
+        from neurospatial.animation._parallel import OverlayArtistManager
+        from neurospatial.animation.overlays import EventData, OverlayData
+
+        mock_ax = MagicMock()
+        mock_ax.collections = []
+
+        event_data = EventData(
+            event_positions={"test": np.array([[25.0, 25.0]])},
+            event_frame_indices={"test": np.array([0])},
+            colors={"test": "red"},
+            markers={"test": "o"},
+            size=8.0,
+            decay_frames=0,
+            border_color="white",
+            border_width=0.5,
+        )
+        overlay_data = OverlayData(events=[event_data])
+
+        manager = OverlayArtistManager(
+            ax=mock_ax,
+            env=simple_env,
+            overlay_data=overlay_data,
+            show_regions=False,
+            region_alpha=0.3,
+        )
+
+        # Initialize should not crash
+        manager.initialize(frame_idx=0)
+
+        # Should have initialized
+        assert manager._initialized
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

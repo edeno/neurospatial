@@ -8,7 +8,7 @@
 |-----------|-------------|--------|
 | M1 | Core Data Structures | ✅ Complete |
 | M2 | Napari Backend | ✅ Complete |
-| M3 | Video/Matplotlib Backend | Not Started |
+| M3 | Video/Matplotlib Backend | ✅ Complete |
 | M4 | HTML Backend | Not Started |
 | M5 | Public API & Documentation | Not Started |
 | M6 | Testing | Not Started |
@@ -178,38 +178,38 @@
 
 ### Tasks
 
-- [ ] **3.1** Add `_render_event_overlay_matplotlib()` function
+- [x] **3.1** Add `_render_event_overlay_matplotlib()` function
   - File: `src/neurospatial/animation/_parallel.py`
   - Signature: `(ax, event_data, frame_idx) -> None`
 
-- [ ] **3.2** Implement instant mode rendering
+- [x] **3.2** Implement instant mode rendering
   - Filter events where `frame_indices == frame_idx`
   - Use `ax.scatter()` with marker, color, size from EventData
 
-- [ ] **3.3** Implement decay mode rendering
+- [x] **3.3** Implement decay mode rendering
   - Filter events in window `[frame_idx - decay_frames, frame_idx]`
   - Compute alpha based on age: `alpha = 1.0 - (age / (decay_frames + 1))`
   - Use `matplotlib.colors.to_rgba()` to apply per-event alpha
 
-- [ ] **3.4** Handle multiple event types
+- [x] **3.4** Handle multiple event types
   - Iterate over all event types in EventData
   - Apply per-type colors and markers
 
-- [ ] **3.5** Update `_render_single_frame()` to call event renderer
+- [x] **3.5** Update `_render_single_frame()` to call event renderer
   - Add call after existing overlay rendering
   - Check if `overlay_data.events` is non-empty
 
-- [ ] **3.6** Set appropriate zorder
+- [x] **3.6** Set appropriate zorder
   - Events should render above position overlay
-  - Use `zorder=103` or similar (check existing overlay zorders)
+  - Use `zorder=104` (above head direction at 103)
 
 ### Success Criteria
 
-- [ ] Events display correctly in exported videos
-- [ ] Instant and decay modes work
-- [ ] Different markers per event type render correctly
-- [ ] Alpha decay produces smooth fade effect
-- [ ] Events don't obscure main field visualization
+- [x] Events display correctly in exported videos
+- [x] Instant and decay modes work
+- [x] Different markers per event type render correctly
+- [x] Alpha decay produces smooth fade effect
+- [x] Events don't obscure main field visualization
 
 ---
 
