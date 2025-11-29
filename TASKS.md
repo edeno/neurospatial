@@ -313,11 +313,11 @@ assert result.sinogram.ndim == 2
 
 ### 4.1 Core Temporal Shuffles (`shuffle.py` - Part 1)
 
-- [ ] Implement `shuffle_time_bins(spike_counts, *, n_shuffles=1000, rng=None)`
+- [x] Implement `shuffle_time_bins(spike_counts, *, n_shuffles=1000, rng=None)`
   - Generator that yields shuffled versions
   - Randomly permute rows (time bins) of spike_counts
   - Preserve spike counts per neuron per time bin
-- [ ] Implement `shuffle_time_bins_coherent()` (time-swap shuffle)
+- [x] Implement `shuffle_time_bins_coherent()` (time-swap shuffle)
   - Same permutation applied to all neurons
   - Preserves instantaneous population vectors
 

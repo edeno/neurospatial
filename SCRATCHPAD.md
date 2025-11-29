@@ -3,9 +3,41 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 3.4 Complete - Next: 4.1 Core Temporal Shuffles
+**Current Milestone**: Milestone 4.1 Complete - Next: 4.2 Cell Identity Shuffles
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 4.1 Complete (Core Temporal Shuffles)
+
+**Milestone 4.1 - Core Temporal Shuffles**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/shuffle.py` with two generator functions:
+  - `shuffle_time_bins()` - Randomly permute time bins (rows) of spike counts
+  - `shuffle_time_bins_coherent()` - Same as above but emphasizes coherent permutation
+- Key design decisions:
+  - Generator pattern for memory efficiency (yields one shuffle at a time)
+  - `rng` parameter accepts `Generator | int | None` for reproducibility
+  - Helper function `_ensure_rng()` for RNG handling
+  - `.copy()` on yield to prevent reference bugs
+- Comprehensive test suite: 31 tests covering:
+  - Shape and dtype preservation
+  - Statistical invariants (total spikes, per-neuron, per-time-bin)
+  - Reproducibility with seeds and Generators
+  - Edge cases (empty arrays, single time bin, single neuron)
+  - Generator laziness verification
+- Code review passed with "APPROVE" rating
+- All 283 decoding tests pass, ruff and mypy pass
+
+**Implementation details**:
+- Both functions currently have identical implementation (row permutation)
+- Naming distinction clarifies intent in null hypothesis testing
+- Docstrings include scientific rationale and usage examples
+- Module docstring has shuffle category table (temporal, cell identity, posterior, surrogate)
+
+**Next task**: Milestone 4.2 - Cell Identity Shuffles
+- `shuffle_cell_identity()` - Permute neuron-to-place-field mapping
+- `shuffle_place_fields_circular()` - Circularly shift each place field
+- `shuffle_place_fields_circular_2d()` - 2D circular shifts
 
 ### 2025-11-28 - Milestone 3.4 Complete (Radon Transform Detection)
 
