@@ -3,7 +3,7 @@
 ## Current Status
 
 **Date**: 2025-11-29
-**Working on**: Milestone 4 Complete - Moving to M5
+**Working on**: All Milestones Complete - Feature F24 Done
 
 ## Progress
 
@@ -11,10 +11,41 @@
 - [x] M2: Napari Backend - COMPLETE
 - [x] M3: Video/Matplotlib Backend - COMPLETE
 - [x] M4: HTML Backend - COMPLETE
-- [ ] M5: Public API & Documentation
-- [ ] M6: Testing
+- [x] M5: Public API & Documentation - COMPLETE
+- [x] M6: Testing - COMPLETE (72 tests, all passing)
 
 ## Notes
+
+### Milestone 6 Completed (2025-11-29)
+
+**All EventOverlay tests verified and passing:**
+
+- 72 total tests in `tests/animation/test_event_overlay.py`
+- All tasks 6.2-6.17 mapped to existing tests
+- Performance test (`test_high_event_count_performance`) marked `@pytest.mark.slow`
+- Full animation test suite: 955 passed
+
+**Test coverage summary:**
+
+| Task | Coverage |
+|------|----------|
+| 6.2 Explicit positions | `test_explicit_positions_mode_basic_creation`, `test_convert_explicit_positions_mode` |
+| 6.3 Trajectory mode | `test_trajectory_mode_basic_creation`, `test_convert_trajectory_mode_*` |
+| 6.4 Position broadcast | `test_single_position_broadcast_*`, `test_convert_single_position_broadcast` |
+| 6.5 Mutual exclusion | `test_mutual_exclusion_*`, `test_trajectory_mode_missing_*` |
+| 6.6 Decay mode | `test_convert_decay_frames_*`, `TestNapariEventOverlayDecayMode`, `TestMatplotlibEventOverlayDecayMode` |
+| 6.7 Auto-colors | `test_convert_auto_colors_tab10` |
+| 6.8 Custom colors | `test_dict_custom_colors_per_type`, `test_convert_custom_colors_dict` |
+| 6.9 Custom markers | `test_dict_custom_markers_per_type`, `test_multiple_types_uses_correct_markers` |
+| 6.10 Outside range | `test_events_outside_*_range_warns` |
+| 6.11 Empty events | `test_empty_event_*` |
+| 6.12 Performance | `test_high_event_count_performance` |
+| 6.14 Video backend | `test_render_all_overlays_*`, `TestMatplotlibEventOverlay*` |
+| 6.15 Temporal alignment | `test_convert_frame_indices_correct` |
+| 6.16 SpikeOverlay alias | `test_spike_overlay_*` |
+| 6.17 Interpolation modes | `test_interp_*`, `test_convert_trajectory_mode_*_interp` |
+
+---
 
 ### Milestone 4 Completed (2025-11-29)
 
@@ -135,8 +166,36 @@ None currently.
 
 ## Next Steps
 
-1. Milestone 5: Public API & Documentation
-   - Update top-level exports in `__init__.py`
-   - Update CLAUDE.md with EventOverlay examples
-   - Add to overlay coordinate conventions table
-   - Add to backend capability matrix
+Feature F24 (EventOverlay) is COMPLETE. All milestones M1-M6 done.
+
+Potential follow-up items:
+- Add integration example in docs/examples/
+- Performance profiling with large spike datasets
+
+---
+
+### Milestone 5 Completed (2025-11-29)
+
+**Public API & Documentation:**
+
+1. Updated `src/neurospatial/__init__.py` with top-level exports:
+   - `EventOverlay`, `SpikeOverlay` now importable from `neurospatial`
+   - Added to `__all__` list under "Animation overlays" section
+
+2. Updated CLAUDE.md Quick Reference:
+   - Added EventOverlay examples after "Multi-animal tracking"
+   - Includes: single neuron, multiple neurons, fixed-location events
+   - Updated backend capabilities comment
+
+3. Updated overlay coordinate conventions table:
+   - Added EventOverlay to list of overlays using environment space
+   - Note about trajectory interpolation
+
+4. Updated backend capability matrix:
+   - Napari/Video/Widget: All overlays including EventOverlay (with decay) ✓
+   - HTML: Position + EventOverlay (instant only) + regions ⚠️
+
+5. Created demo script `data/demo_event_overlay.py`:
+   - Shows real spike data visualization on place fields
+   - Supports napari, video, and HTML backends
+   - Demonstrates trajectory mode with multiple neurons

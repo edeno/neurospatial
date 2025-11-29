@@ -10,8 +10,8 @@
 | M2 | Napari Backend | ✅ Complete |
 | M3 | Video/Matplotlib Backend | ✅ Complete |
 | M4 | HTML Backend | ✅ Complete |
-| M5 | Public API & Documentation | Not Started |
-| M6 | Testing | Not Started |
+| M5 | Public API & Documentation | ✅ Complete |
+| M6 | Testing | ✅ Complete |
 
 ---
 
@@ -258,11 +258,11 @@
   - Add exports: `EventOverlay`, `SpikeOverlay`, `EventData`
   - Add to `__all__` list
 
-- [ ] **5.2** Update `src/neurospatial/__init__.py`
+- [x] **5.2** Update `src/neurospatial/__init__.py`
   - Add top-level exports: `EventOverlay`, `SpikeOverlay`
   - Users should be able to: `from neurospatial import EventOverlay`
 
-- [ ] **5.3** Update CLAUDE.md Quick Reference
+- [x] **5.3** Update CLAUDE.md Quick Reference
   - Add EventOverlay examples after existing overlay examples
   - Include:
     - Single neuron spike visualization (using SpikeOverlay)
@@ -270,19 +270,19 @@
     - Behavioral events with different markers
     - Decay mode example
 
-- [ ] **5.4** Add EventOverlay to overlay coordinate conventions table
+- [x] **5.4** Add EventOverlay to overlay coordinate conventions table
   - Clarify that event positions use position trajectory coordinates
   - Note that events are plotted at interpolated animal position
 
-- [ ] **5.5** Add EventOverlay to backend capability matrix
+- [x] **5.5** Add EventOverlay to backend capability matrix
   - Document: Napari ✓, Video ✓, HTML ⚠️ (instant only)
 
 ### Success Criteria
 
-- [ ] `from neurospatial import EventOverlay` works
-- [ ] `from neurospatial import SpikeOverlay` works
-- [ ] CLAUDE.md has complete usage examples
-- [ ] Backend limitations documented
+- [x] `from neurospatial import EventOverlay` works
+- [x] `from neurospatial import SpikeOverlay` works
+- [x] CLAUDE.md has complete usage examples
+- [x] Backend limitations documented
 
 ---
 
@@ -297,82 +297,97 @@
 - [x] **6.1** Create test file `tests/animation/test_event_overlay.py`
   - Follow existing test patterns in `tests/animation/`
 
-- [ ] **6.2** Test explicit positions mode (Mode A)
+- [x] **6.2** Test explicit positions mode (Mode A)
   - Create EventOverlay with `event_positions` array
   - Verify positions used directly (no interpolation)
   - Verify frame_indices correct
+  - Tests: `test_explicit_positions_mode_basic_creation`, `test_convert_explicit_positions_mode`, `test_convert_frame_indices_correct`
 
-- [ ] **6.3** Test trajectory interpolation mode (Mode B)
+- [x] **6.3** Test trajectory interpolation mode (Mode B)
   - Create EventOverlay with `positions` + `position_times`
   - Verify positions interpolated at event times
   - Verify frame_indices correct
+  - Tests: `test_trajectory_mode_basic_creation`, `test_convert_trajectory_mode_linear_interp`, `test_convert_trajectory_mode_nearest_interp`
 
-- [ ] **6.4** Test position broadcast (single position)
+- [x] **6.4** Test position broadcast (single position)
   - Provide single position (1, 2) with multiple events
   - Verify position broadcast to all events
+  - Tests: `test_single_position_broadcast_to_all_events`, `test_single_position_broadcast_in_dict`, `test_convert_single_position_broadcast`
 
-- [ ] **6.5** Test mutual exclusion validation
+- [x] **6.5** Test mutual exclusion validation
   - Error if both `event_positions` AND `positions`/`position_times` provided
   - Error if neither provided
   - Verify clear error messages
+  - Tests: `test_mutual_exclusion_both_modes_raises`, `test_mutual_exclusion_neither_mode_raises`, `test_trajectory_mode_missing_*`
 
-- [ ] **6.6** Test decay mode
+- [x] **6.6** Test decay mode
   - decay_frames=5
   - Verify EventData.decay_frames set correctly
+  - Tests: `test_convert_decay_frames_preserved`, `test_convert_decay_frames_none_becomes_zero`, `TestMatplotlibEventOverlayDecayMode`, `TestNapariEventOverlayDecayMode`
 
-- [ ] **6.7** Test multiple event types, auto-colors
+- [x] **6.7** Test multiple event types, auto-colors
   - Dict of 3+ event types
   - Verify colors auto-assigned from tab10
   - Verify colors are distinct
+  - Tests: `test_convert_auto_colors_tab10`, `test_dict_event_times_*`
 
-- [ ] **6.8** Test multiple event types, custom colors
+- [x] **6.8** Test multiple event types, custom colors
   - Provide colors dict
   - Verify colors match input
+  - Tests: `test_dict_custom_colors_per_type`, `test_convert_custom_colors_dict`, `test_convert_single_color_string`
 
-- [ ] **6.9** Test multiple event types, custom markers
+- [x] **6.9** Test multiple event types, custom markers
   - Provide markers dict
   - Verify markers match input
+  - Tests: `test_dict_custom_markers_per_type`, `test_multiple_types_uses_correct_markers`
 
-- [ ] **6.10** Test events outside time range
+- [x] **6.10** Test events outside time range
   - Some events before/after frame_times (or position_times in Mode B)
   - Verify warning emitted
   - Verify out-of-range events excluded
+  - Tests: `test_events_outside_frame_times_range_warns`, `test_events_outside_position_times_range_warns`
 
-- [ ] **6.11** Test empty event times
+- [x] **6.11** Test empty event times
   - Empty array input
   - Verify returns empty EventData (no crash)
+  - Tests: `test_empty_event_times_array`, `test_empty_event_data_no_crash`, `test_empty_events_does_not_create_layer`
 
-- [ ] **6.12** Test high event rate (performance)
+- [x] **6.12** Test high event rate (performance)
   - 10,000+ events
   - Verify convert_to_data() completes in reasonable time (<1s)
+  - Tests: `test_high_event_count_performance` (marked @pytest.mark.slow)
 
 - [x] **6.13** Test napari backend integration
   - Mock napari.Viewer for unit tests
   - Verify layers created correctly (instant mode, decay mode)
   - Tests in `TestNapariEventOverlay*` classes
 
-- [ ] **6.14** Test video backend integration
+- [x] **6.14** Test video backend integration
   - Create small animation with events
   - Verify no errors during rendering
+  - Tests: `test_render_all_overlays_includes_events`, `test_render_all_overlays_with_mixed_types`, `TestMatplotlibEventOverlay*`
 
-- [ ] **6.15** Test temporal alignment
+- [x] **6.15** Test temporal alignment
   - Events at different rate than frames
   - Verify events assigned to correct frames
+  - Tests: `test_convert_frame_indices_correct`
 
-- [ ] **6.16** Test SpikeOverlay alias
+- [x] **6.16** Test SpikeOverlay alias
   - Verify `SpikeOverlay is EventOverlay`
   - Verify SpikeOverlay instantiation works
+  - Tests: `test_spike_overlay_is_event_overlay`, `test_spike_overlay_can_be_instantiated`
 
-- [ ] **6.17** Test position interpolation modes (Mode B only)
+- [x] **6.17** Test position interpolation modes (Mode B only)
   - Test interp="linear" (default)
   - Test interp="nearest"
   - Verify different results
+  - Tests: `test_interp_linear_default`, `test_interp_nearest`, `test_convert_trajectory_mode_*`
 
 ### Success Criteria
 
-- [ ] All tests pass with `uv run pytest tests/animation/test_event_overlay.py`
-- [ ] Test coverage >90% for new code
-- [ ] Edge cases handled gracefully (no crashes)
+- [x] All tests pass with `uv run pytest tests/animation/test_event_overlay.py` (72 tests)
+- [x] Test coverage >90% for new code
+- [x] Edge cases handled gracefully (no crashes)
 
 ---
 
