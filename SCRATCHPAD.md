@@ -3,9 +3,56 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 5.2 Complete - Visualization. Next: 5.3 Documentation
+**Current Milestone**: Milestone 5 Complete - All Integration & Documentation done!
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 5.4 Complete (Optional Dependencies)
+
+**Milestone 5.4 - Optional Dependency Setup**: ✅ COMPLETED
+
+- Added `[trajectory]` extra to `pyproject.toml`:
+  - `scikit-image>=0.19.0` for Radon transform trajectory detection
+  - Install with: `pip install neurospatial[trajectory]`
+- Documented optional dependencies in CLAUDE.md:
+  - Added trajectory analysis section after NWB dependencies
+- Verified with `uv sync --all-extras` - all dependencies resolve correctly
+- All 20 Radon transform tests pass
+
+**Milestone 5 - Integration & Documentation**: ✅ ALL COMPLETE
+
+- 5.1 Public API Finalization ✅
+- 5.2 Visualization ✅
+- 5.3 Documentation ✅
+- 5.4 Optional Dependency Setup ✅
+
+**Core decoding subpackage is feature-complete!**
+
+Remaining tasks in TASKS.md are all Milestone 6 (Future Extensions - Low Priority).
+
+### 2025-11-28 - Milestone 5.3 Complete (Documentation)
+
+**Milestone 5.3 - Documentation**: ✅ COMPLETED
+
+- Added decoding quick reference section to CLAUDE.md:
+  - Comprehensive code examples showing end-to-end decoding workflow
+  - Import patterns for all decoding module exports
+  - Trajectory analysis examples (isotonic, linear, Radon)
+  - Shuffle-based significance testing examples
+- Created `examples/20_bayesian_decoding.ipynb` notebook:
+  - 8 parts covering full workflow
+  - Uses neurospatial.simulation for synthetic data generation
+  - Demonstrates all major decoding functions
+  - Includes visualizations and error metrics
+  - Shuffle-based significance testing with null distribution visualization
+  - Export to DataFrame for further analysis
+  - All cells execute successfully
+- Updated TASKS.md with completed documentation tasks
+- All 448 decoding tests still pass
+
+**Next task**: Milestone 5.4 - Optional Dependency Setup
+- Add `[trajectory]` extra to `pyproject.toml` for scikit-image
+- Document optional dependencies in README/docs
 
 ### 2025-11-28 - Milestone 5.2 Complete (Visualization)
 

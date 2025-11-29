@@ -456,20 +456,22 @@ assert "time" in df.columns or result.times is None
 
 ### 5.3 Documentation
 
-- [ ] Add decoding quick reference to CLAUDE.md
-- [ ] Create `examples/bayesian_decoding.ipynb` notebook
+- [x] Add decoding quick reference to CLAUDE.md
+- [x] Create `examples/20_bayesian_decoding.ipynb` notebook
   - Show end-to-end workflow
   - Demonstrate all main functions
   - Include visualization examples
 
-**Success**: Example notebook runs without error.
+**Success**: Example notebook runs without error. ✅
 
 **Dependencies**: Milestones 1-3
 
 ### 5.4 Optional Dependency Setup
 
-- [ ] Add `[trajectory]` extra to `pyproject.toml` for scikit-image
-- [ ] Document optional dependencies in README/docs
+- [x] Add `[trajectory]` extra to `pyproject.toml` for scikit-image
+- [x] Document optional dependencies in CLAUDE.md
+
+**Success**: `pip install neurospatial[trajectory]` installs scikit-image. ✅
 
 ---
 
