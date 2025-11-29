@@ -141,11 +141,11 @@ assert (ent >= 0).all() and (ent <= np.log2(env.n_bins)).all()
 
 ### 2.1 Error Metrics (`metrics.py` - Part 1)
 
-- [ ] Implement `decoding_error(decoded_positions, actual_positions, *, metric="euclidean", env=None)`
+- [x] Implement `decoding_error(decoded_positions, actual_positions, *, metric="euclidean", env=None)`
   - Euclidean: `np.linalg.norm(decoded - actual, axis=1)`
   - Graph: Use `env.distance_between()` for shortest-path distance
   - Handle NaN propagation
-- [ ] Implement `median_decoding_error(decoded_positions, actual_positions)`
+- [x] Implement `median_decoding_error(decoded_positions, actual_positions)`
   - `np.nanmedian(decoding_error(...))`
 
 **Success**:

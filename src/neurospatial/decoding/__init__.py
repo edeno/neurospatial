@@ -127,6 +127,10 @@ from neurospatial.decoding.likelihood import (
     log_poisson_likelihood,
     poisson_likelihood,
 )
+from neurospatial.decoding.metrics import (
+    decoding_error,
+    median_decoding_error,
+)
 from neurospatial.decoding.posterior import (
     decode_position,
     normalize_to_posterior,
@@ -140,11 +144,13 @@ __all__ = [
     "DecodingResult",
     "credible_region",
     "decode_position",
+    "decoding_error",
     "entropy",
     "log_poisson_likelihood",
     "map_estimate",
     "map_position",
     "mean_position",
+    "median_decoding_error",
     "normalize_to_posterior",
     "poisson_likelihood",
 ]

@@ -3,9 +3,31 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 1 Complete - Ready for Milestone 2 (Quality Metrics)
+**Current Milestone**: Milestone 2.1 Complete - Working on Quality Metrics
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 2.1 Complete (Error Metrics)
+
+**Milestone 2.1 - Error Metrics**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/metrics.py` with two functions:
+  - `decoding_error()` - Per-time-bin position error (Euclidean or graph-based)
+  - `median_decoding_error()` - Median error summary statistic
+- Created comprehensive test suite: `tests/decoding/test_metrics.py` (26 tests)
+- All tests pass (152 total in decoding/, 2 skipped)
+- Code review passed with "APPROVE" rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- Euclidean metric uses vectorized `np.linalg.norm(diff, axis=1)`
+- Graph metric uses `env.distance_between()` for shortest-path distances
+- NaN values propagate correctly (explicit check for graph metric)
+- `median_decoding_error` uses `np.nanmedian` for robust statistics
+- Type annotations with `cast()` for mypy compatibility
+- Comprehensive docstrings with NumPy format, examples, and type annotations
+
+**Next task**: Milestone 2.2 - Confusion Matrix
 
 ### 2025-11-28 - Milestone 1.5 & 1.6 Complete (Phase 1 Done!)
 
