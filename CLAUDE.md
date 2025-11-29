@@ -328,7 +328,7 @@ env.animate_fields(fields, scale_bar=True, save_path="video.mp4")  # Matplotlib 
 # calibrating video coordinates. This scale_bar adds visual scale bars to plots.
 
 # Animation overlays (v0.4.0+)
-from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
+from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay, EventOverlay
 
 # Position overlay with trail
 # NOTE: All overlay coordinates use environment space (x, y) - automatic napari conversion
@@ -363,6 +363,54 @@ animal1 = PositionOverlay(data=traj1, color="red", trail_length=10)
 animal2 = PositionOverlay(data=traj2, color="blue", trail_length=10)
 env.animate_fields(fields, overlays=[animal1, animal2], backend="napari")
 
+# Event overlays (v0.13.0+) - visualize spikes, licks, rewards at spatial positions
+from neurospatial import EventOverlay, SpikeOverlay  # SpikeOverlay is alias
+
+# Single neuron spikes at animal position (trajectory mode)
+spike_overlay = EventOverlay(
+    event_times=spike_times,           # When spikes occurred
+    positions=trajectory,              # Animal trajectory (n_samples, 2)
+    position_times=timestamps,         # Trajectory timestamps
+    color="red",
+    size=8.0,
+    decay_frames=5,                    # Fade over 5 frames (0 = instant)
+)
+env.animate_fields(fields, overlays=[spike_overlay], frame_times=frame_times)
+
+# Multiple neurons with auto-assigned colors
+spike_overlay = EventOverlay(
+    event_times={
+        "cell_001": spikes_cell1,
+        "cell_002": spikes_cell2,
+        "cell_003": spikes_cell3,
+    },
+    positions=trajectory,
+    position_times=timestamps,
+    colors=None,  # Auto-assign from tab10 colormap
+    size=8.0,
+    decay_frames=5,
+)
+
+# Fixed-location events (explicit positions mode) - rewards, stimuli
+reward_overlay = EventOverlay(
+    event_times=reward_times,
+    event_positions=np.array([[50.0, 25.0]]),  # Single position broadcasts to all
+    color="gold",
+    size=15.0,
+    decay_frames=10,
+)
+
+# Multiple event types with different positions
+event_overlay = EventOverlay(
+    event_times={"reward": reward_times, "punishment": punishment_times},
+    event_positions={
+        "reward": np.array([[50.0, 25.0]]),      # Reward location
+        "punishment": np.array([[75.0, 50.0]]),  # Punishment location
+    },
+    colors={"reward": "gold", "punishment": "red"},
+    markers={"reward": "o", "punishment": "s"},  # Circle vs square (video only)
+)
+
 # Mixed-rate temporal alignment (120 Hz position → 10 Hz fields)
 overlay = PositionOverlay(
     data=trajectory_120hz,
@@ -387,8 +435,8 @@ env.animate_fields(
 )
 
 # Backend capabilities:
-# - Napari/Video/Widget: All overlays including VideoOverlay
-# - HTML: Position + regions only (VideoOverlay skipped with warning)
+# - Napari/Video/Widget: All overlays including VideoOverlay and EventOverlay (with decay)
+# - HTML: Position + EventOverlay (instant only) + regions (VideoOverlay skipped with warning)
 
 # Video overlay - display recorded video behind/above spatial fields (v0.5.0+)
 from neurospatial.animation import VideoOverlay, calibrate_video
@@ -477,10 +525,11 @@ Environment and napari use different coordinate systems:
 | Environment | Horizontal (columns) | Vertical (rows), up is positive | Bottom-left |
 | Napari | Column index | Row index, down is positive | Top-left |
 
-When providing overlay data (PositionOverlay, BodypartOverlay, HeadDirectionOverlay):
+When providing overlay data (PositionOverlay, BodypartOverlay, HeadDirectionOverlay, EventOverlay):
 - Use **environment coordinates** (same as your position data)
 - The animation system automatically transforms to napari pixel space
 - Transformations include: (x,y) to (row,col) swap and Y-axis inversion
+- For EventOverlay: positions are interpolated from trajectory or provided explicitly
 
 ```python
 # Your data is in environment coordinates (x, y)
@@ -1862,10 +1911,10 @@ env.animate_fields(
 
 **Backend capability matrix**:
 
-- Napari: All overlays including VideoOverlay ✓
-- Video: All overlays including VideoOverlay ✓
-- Widget: All overlays including VideoOverlay ✓
-- HTML: Position + regions only (VideoOverlay skipped with warning) ⚠️
+- Napari: All overlays including VideoOverlay, EventOverlay (with decay) ✓
+- Video: All overlays including VideoOverlay, EventOverlay (with decay) ✓
+- Widget: All overlays including VideoOverlay, EventOverlay (with decay) ✓
+- HTML: Position + EventOverlay (instant only) + regions (VideoOverlay skipped with warning) ⚠️
 
 ### 13. Overlay coordinates use environment space
 
