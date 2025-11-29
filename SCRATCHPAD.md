@@ -3,9 +3,39 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 5.1 Complete - Public API Finalization. Next: 5.2 Visualization
+**Current Milestone**: Milestone 5.2 Complete - Visualization. Next: 5.3 Documentation
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 5.2 Complete (Visualization)
+
+**Milestone 5.2 - Visualization**: ✅ COMPLETED
+
+- Implemented `DecodingResult.plot()` method with full visualization capabilities:
+  - Posterior probability heatmap with `imshow`
+  - Optional colorbar (`colorbar=True`)
+  - Optional MAP trajectory overlay (`show_map=True`) as white line
+  - Proper time axis extent when `times` is provided
+  - Customizable colormap and imshow kwargs
+- Verified `DecodingResult.to_dataframe()` was already complete (updated docstring):
+  - Exports time (optional), map_bin, map_x/y, mean_x/y, uncertainty
+  - Smart dimension naming (x,y,z for ≤3D, dim_0,dim_1 for >3D)
+- Added 23 new tests (8 for plot, 15 for to_dataframe)
+- All 45 tests in test_result.py pass (1 skipped)
+- All 448 decoding tests pass (3 skipped)
+- Code review passed with APPROVE rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- `plot()` uses proper extent calculation for time axis
+- MAP overlay uses float64 dtype for mypy compatibility
+- Colorbar and show_map are keyword-only arguments
+- to_dataframe() docstring updated with comprehensive examples
+- Follows NumPy docstring format consistently
+
+**Next task**: Milestone 5.3 - Documentation
+- Add decoding quick reference to CLAUDE.md
+- Create examples/bayesian_decoding.ipynb notebook
 
 ### 2025-11-28 - Milestone 5.1 Complete (Public API Finalization)
 

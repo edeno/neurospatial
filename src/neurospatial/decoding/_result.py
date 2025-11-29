@@ -209,42 +209,120 @@ class DecodingResult:
     def plot(
         self,
         ax: Axes | None = None,
-        **kwargs,
+        *,
+        colorbar: bool = False,
+        show_map: bool = False,
+        cmap: str = "viridis",
+        **kwargs: Any,
     ) -> Axes:
         """Plot posterior probability over time as heatmap.
+
+        Visualizes the posterior probability distribution as a 2D heatmap
+        with time on the x-axis and spatial bins on the y-axis.
 
         Parameters
         ----------
         ax : matplotlib.axes.Axes | None, optional
             Axes to plot on. If None, creates new figure and axes.
+        colorbar : bool, default=False
+            If True, add a colorbar showing probability scale.
+        show_map : bool, default=False
+            If True, overlay the MAP (maximum a posteriori) trajectory
+            as a line plot on top of the heatmap.
+        cmap : str, default="viridis"
+            Colormap name for the heatmap.
         **kwargs
             Additional keyword arguments passed to ``imshow``.
+            Common options: ``vmin``, ``vmax``, ``interpolation``.
 
         Returns
         -------
         matplotlib.axes.Axes
             The axes containing the plot.
 
+        Examples
+        --------
+        >>> result = decode_position(env, spike_counts, encoding_models, dt)
+        >>> ax = result.plot()  # Basic heatmap
+
+        >>> # With colorbar and MAP overlay
+        >>> ax = result.plot(colorbar=True, show_map=True)
+
+        >>> # With custom colormap
+        >>> ax = result.plot(cmap="hot", vmin=0, vmax=0.5)
+
         Notes
         -----
-        This is a stub implementation. Full visualization will be added
-        in Milestone 5.2.
+        When ``times`` is provided, the x-axis shows time in seconds with
+        proper extent. Otherwise, the x-axis shows time bin indices.
+
+        The MAP trajectory (``show_map=True``) shows the bin with highest
+        posterior probability at each time step as a white line.
+
+        See Also
+        --------
+        to_dataframe : Export results to pandas DataFrame
         """
         import matplotlib.pyplot as plt
 
         if ax is None:
             _, ax = plt.subplots()
 
-        # Stub: just show the posterior as an image
+        # Compute extent for proper axis labeling
+        # extent = [left, right, bottom, top]
+        if self.times is not None:
+            # Use actual time values
+            t_min = float(self.times[0])
+            t_max = float(self.times[-1])
+            extent = [t_min, t_max, -0.5, self.posterior.shape[1] - 0.5]
+            x_label = "Time (s)"
+        else:
+            # Use bin indices
+            extent = [
+                -0.5,
+                self.posterior.shape[0] - 0.5,
+                -0.5,
+                self.posterior.shape[1] - 0.5,
+            ]
+            x_label = "Time bin"
+
+        # Build imshow kwargs
         im_kwargs: dict[str, Any] = {
             "aspect": "auto",
             "origin": "lower",
             "interpolation": "nearest",
+            "cmap": cmap,
+            "extent": extent,
         }
         im_kwargs.update(kwargs)
 
-        ax.imshow(self.posterior.T, **im_kwargs)
-        ax.set_xlabel("Time bin")
+        # Plot the heatmap
+        im = ax.imshow(self.posterior.T, **im_kwargs)
+
+        # Add colorbar if requested
+        if colorbar:
+            plt.colorbar(im, ax=ax, label="Probability")
+
+        # Add MAP trajectory overlay if requested
+        if show_map:
+            # Get time coordinates for plotting
+            if self.times is not None:
+                x_coords: NDArray[np.float64] = self.times
+            else:
+                x_coords = np.arange(self.n_time_bins, dtype=np.float64)
+
+            # Plot MAP estimate as a line
+            ax.plot(
+                x_coords,
+                self.map_estimate,
+                color="white",
+                linewidth=1.5,
+                linestyle="-",
+                alpha=0.8,
+                label="MAP",
+            )
+
+        ax.set_xlabel(x_label)
         ax.set_ylabel("Spatial bin")
         ax.set_title("Posterior probability")
 
@@ -253,23 +331,43 @@ class DecodingResult:
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to pandas DataFrame with times and position estimates.
 
+        Creates a DataFrame with one row per time bin, containing the
+        decoded position estimates and uncertainty measures.
+
         Returns
         -------
         pd.DataFrame
             DataFrame with columns:
-            - 'time' (if times provided)
-            - 'map_bin': MAP bin index
-            - 'map_x', 'map_y', ...: MAP position coordinates
-            - 'mean_x', 'mean_y', ...: Mean position coordinates
-            - 'uncertainty': Posterior entropy
+
+            - ``time`` : Time bin center in seconds (only if times provided)
+            - ``map_bin`` : Bin index of maximum posterior probability
+            - ``map_x``, ``map_y``, ... : MAP position coordinates
+            - ``mean_x``, ``mean_y``, ... : Mean position coordinates
+            - ``uncertainty`` : Posterior entropy in bits
 
         Notes
         -----
-        This is a stub implementation. Full DataFrame export will be added
-        in Milestone 5.2.
+        Coordinate column naming:
 
-        For dimensions <= 3, uses coordinate names 'x', 'y', 'z'.
-        For higher dimensions, uses 'dim_0', 'dim_1', etc.
+        - For 1D environments: uses ``x``
+        - For 2D environments: uses ``x``, ``y``
+        - For 3D environments: uses ``x``, ``y``, ``z``
+        - For higher dimensions: uses ``dim_0``, ``dim_1``, etc.
+
+        Examples
+        --------
+        >>> result = decode_position(
+        ...     env, spike_counts, encoding_models, dt, times=times
+        ... )
+        >>> df = result.to_dataframe()
+        >>> df.head()
+           time  map_bin   map_x   map_y  mean_x  mean_y  uncertainty
+        0  0.000       12  25.5    32.5   24.8    31.2         2.45
+        1  0.025       15  32.5    40.5   33.1    39.8         1.89
+
+        See Also
+        --------
+        plot : Visualize posterior as heatmap
         """
         data: dict[str, Any] = {}
 

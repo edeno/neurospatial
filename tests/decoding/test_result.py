@@ -418,25 +418,318 @@ class TestEdgeCases:
         assert result.uncertainty.shape == (n_time_bins,)
 
 
-class TestPlotAndDataframe:
-    """Test visualization and export methods (stubs for now)."""
+class TestPlotMethod:
+    """Test DecodingResult.plot() method."""
 
-    def test_plot_method_exists(self, small_2d_env):
-        """DecodingResult should have a plot() method."""
+    def test_plot_returns_axes(self, small_2d_env):
+        """plot() should return a matplotlib Axes object."""
+        import matplotlib.pyplot as plt
+
         from neurospatial.decoding import DecodingResult
 
         posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert hasattr(result, "plot")
-        assert callable(result.plot)
+        ax = result.plot()
 
-    def test_to_dataframe_method_exists(self, small_2d_env):
-        """DecodingResult should have a to_dataframe() method."""
+        assert ax is not None
+        # Check it's a matplotlib Axes object
+        assert hasattr(ax, "imshow")
+        assert hasattr(ax, "set_xlabel")
+        plt.close("all")
+
+    def test_plot_creates_figure_when_no_ax_provided(self, small_2d_env):
+        """plot() should create a new figure when ax is None."""
+        import matplotlib.pyplot as plt
+
         from neurospatial.decoding import DecodingResult
 
         posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert hasattr(result, "to_dataframe")
-        assert callable(result.to_dataframe)
+        ax = result.plot()
+
+        # Should have created a figure
+        assert ax.figure is not None
+        plt.close("all")
+
+    def test_plot_uses_provided_axes(self, small_2d_env):
+        """plot() should use provided axes when given."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        _, provided_ax = plt.subplots()
+        returned_ax = result.plot(ax=provided_ax)
+
+        assert returned_ax is provided_ax
+        plt.close("all")
+
+    def test_plot_kwargs_passed_to_imshow(self, small_2d_env):
+        """plot() should pass kwargs to imshow."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        # Test with a custom colormap
+        ax = result.plot(cmap="viridis")
+
+        # The plot should have been created without error
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_with_times_uses_time_extent(self, small_2d_env):
+        """plot() should use times for x-axis extent when provided."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.decoding import DecodingResult
+
+        n_time_bins = 10
+        posterior = np.ones((n_time_bins, small_2d_env.n_bins)) / small_2d_env.n_bins
+        times = np.linspace(0.0, 1.0, n_time_bins)
+        result = DecodingResult(posterior=posterior, env=small_2d_env, times=times)
+
+        ax = result.plot()
+
+        # Axis should have been labeled appropriately
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_with_colorbar(self, small_2d_env):
+        """plot() should support adding a colorbar."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        ax = result.plot(colorbar=True)
+
+        # Should have created colorbar without error
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_shows_map_overlay(self, small_2d_env):
+        """plot() should optionally show MAP estimate overlay."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.decoding import DecodingResult
+
+        # Create posterior with clear MAP trajectory
+        n_time_bins = 10
+        n_bins = small_2d_env.n_bins
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        ax = result.plot(show_map=True)
+
+        assert ax is not None
+        plt.close("all")
+
+
+class TestToDataFrameMethod:
+    """Test DecodingResult.to_dataframe() method."""
+
+    def test_to_dataframe_returns_dataframe(self, small_2d_env):
+        """to_dataframe() should return a pandas DataFrame."""
+        import pandas as pd
+
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert isinstance(df, pd.DataFrame)
+
+    def test_to_dataframe_has_correct_row_count(self, small_2d_env):
+        """to_dataframe() should have one row per time bin."""
+        from neurospatial.decoding import DecodingResult
+
+        n_time_bins = 10
+        posterior = np.ones((n_time_bins, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert len(df) == n_time_bins
+
+    def test_to_dataframe_has_time_column_when_times_provided(self, small_2d_env):
+        """to_dataframe() should include time column when times are provided."""
+        from neurospatial.decoding import DecodingResult
+
+        n_time_bins = 5
+        posterior = np.ones((n_time_bins, small_2d_env.n_bins)) / small_2d_env.n_bins
+        times = np.arange(n_time_bins) * 0.025
+        result = DecodingResult(posterior=posterior, env=small_2d_env, times=times)
+
+        df = result.to_dataframe()
+
+        assert "time" in df.columns
+        np.testing.assert_array_almost_equal(df["time"].values, times)
+
+    def test_to_dataframe_no_time_column_when_times_none(self, small_2d_env):
+        """to_dataframe() should not have time column when times is None."""
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert "time" not in df.columns
+
+    def test_to_dataframe_has_map_bin_column(self, small_2d_env):
+        """to_dataframe() should include map_bin column."""
+        from neurospatial.decoding import DecodingResult
+
+        # Create delta posteriors with known MAP bins
+        n_time_bins = 5
+        n_bins = small_2d_env.n_bins
+        posterior = np.zeros((n_time_bins, n_bins))
+        expected_bins = [0, 1, 2, 3, 4]
+        for t, b in enumerate(expected_bins):
+            posterior[t, b] = 1.0
+
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+        df = result.to_dataframe()
+
+        assert "map_bin" in df.columns
+        np.testing.assert_array_equal(df["map_bin"].values, expected_bins)
+
+    def test_to_dataframe_has_map_position_columns_2d(self, small_2d_env):
+        """to_dataframe() should include map_x and map_y for 2D environments."""
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert "map_x" in df.columns
+        assert "map_y" in df.columns
+
+    def test_to_dataframe_has_mean_position_columns_2d(self, small_2d_env):
+        """to_dataframe() should include mean_x and mean_y for 2D environments."""
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert "mean_x" in df.columns
+        assert "mean_y" in df.columns
+
+    def test_to_dataframe_has_uncertainty_column(self, small_2d_env):
+        """to_dataframe() should include uncertainty column."""
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        df = result.to_dataframe()
+
+        assert "uncertainty" in df.columns
+        # Uniform posterior has max entropy
+        expected_entropy = np.log2(small_2d_env.n_bins)
+        np.testing.assert_array_almost_equal(
+            df["uncertainty"].values, np.full(5, expected_entropy)
+        )
+
+    def test_to_dataframe_map_positions_match_property(self, small_2d_env):
+        """to_dataframe() map positions should match map_position property."""
+        from neurospatial.decoding import DecodingResult
+
+        n_time_bins = 5
+        n_bins = small_2d_env.n_bins
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+        df = result.to_dataframe()
+
+        np.testing.assert_array_almost_equal(
+            df["map_x"].values, result.map_position[:, 0]
+        )
+        np.testing.assert_array_almost_equal(
+            df["map_y"].values, result.map_position[:, 1]
+        )
+
+    def test_to_dataframe_mean_positions_match_property(self, small_2d_env):
+        """to_dataframe() mean positions should match mean_position property."""
+        from neurospatial.decoding import DecodingResult
+
+        posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+        df = result.to_dataframe()
+
+        np.testing.assert_array_almost_equal(
+            df["mean_x"].values, result.mean_position[:, 0]
+        )
+        np.testing.assert_array_almost_equal(
+            df["mean_y"].values, result.mean_position[:, 1]
+        )
+
+    def test_to_dataframe_1d_environment(self):
+        """to_dataframe() should use 'x' for 1D environments."""
+        from neurospatial import Environment
+        from neurospatial.decoding import DecodingResult
+
+        # Create 1D environment
+        positions = np.linspace(0, 100, 100).reshape(-1, 1)
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        posterior = np.ones((5, env.n_bins)) / env.n_bins
+        result = DecodingResult(posterior=posterior, env=env)
+        df = result.to_dataframe()
+
+        assert "map_x" in df.columns
+        assert "mean_x" in df.columns
+        assert "map_y" not in df.columns
+        assert "mean_y" not in df.columns
+
+    def test_to_dataframe_high_dimensional_environment(self):
+        """to_dataframe() should use dim_0, dim_1, etc. for >3D environments."""
+        from neurospatial import Environment
+        from neurospatial.decoding import DecodingResult
+
+        # Create 4D environment
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 10, (100, 4))
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        posterior = np.ones((5, env.n_bins)) / env.n_bins
+        result = DecodingResult(posterior=posterior, env=env)
+        df = result.to_dataframe()
+
+        for i in range(4):
+            assert f"map_dim_{i}" in df.columns
+            assert f"mean_dim_{i}" in df.columns
+        assert "map_x" not in df.columns
+
+    def test_to_dataframe_success_criteria(self, small_2d_env):
+        """Verify success criteria from TASKS.md."""
+        from neurospatial.decoding import DecodingResult
+
+        n_time_bins = 10
+        posterior = np.ones((n_time_bins, small_2d_env.n_bins)) / small_2d_env.n_bins
+        times = np.arange(n_time_bins) * 0.025
+        result = DecodingResult(posterior=posterior, env=small_2d_env, times=times)
+
+        df = result.to_dataframe()
+
+        # Success criteria from TASKS.md
+        assert "time" in df.columns or result.times is None

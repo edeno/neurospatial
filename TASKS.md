@@ -441,10 +441,10 @@ assert np.isfinite(z)
 
 ### 5.2 Visualization
 
-- [ ] Implement `DecodingResult.plot()` - posterior heatmap
-- [ ] Implement `DecodingResult.to_dataframe()` - pandas export
+- [x] Implement `DecodingResult.plot()` - posterior heatmap
+- [x] Implement `DecodingResult.to_dataframe()` - pandas export
 
-**Success**:
+**Success**: ✅ All tests pass (45 tests in test_result.py)
 
 ```python
 result.plot()  # Shows matplotlib figure
