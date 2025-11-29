@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.overlays import (
         BodypartData,
+        EventData,
         HeadDirectionData,
         OverlayData,
         PositionData,
@@ -998,6 +999,144 @@ def _render_head_direction_overlay(
     return layers
 
 
+def _render_event_overlay(
+    viewer: napari.Viewer,
+    event_data: EventData,
+    env: Environment,
+    name_suffix: str = "",
+) -> list[Layer]:
+    """Render event overlay (spike events, region crossings, etc.).
+
+    Supports two rendering modes based on decay_frames:
+    - **Instant mode** (decay_frames=0): Events appear only on their exact frame.
+      Rendered as a Points layer with time dimension.
+    - **Decay mode** (decay_frames > 0): Events persist and fade over time.
+      Rendered as a Tracks layer with tail_length for efficient GPU rendering.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    event_data : EventData
+        Event overlay data aligned to animation frames. Contains:
+        - event_positions: Dict mapping event type to (n_events, n_dims) arrays
+        - event_frame_indices: Dict mapping event type to frame indices
+        - colors, size, decay_frames, border_color, border_width
+        - markers: Marker styles (not used - napari renders all events as circles)
+    env : Environment
+        Environment instance for coordinate transformation.
+    name_suffix : str
+        Suffix for layer names (e.g., for multiple event overlays).
+
+    Returns
+    -------
+    layers : list of Layer
+        List of created napari layer objects.
+
+    Notes
+    -----
+    Each event type creates its own layer for clarity and independent visibility
+    toggling in the napari layer list.
+
+    For decay mode, we use napari's Tracks layer which provides efficient
+    GPU-accelerated tail rendering. Each event becomes a short track that
+    persists for decay_frames frames.
+    """
+    layers: list[Layer] = []
+
+    use_decay = event_data.decay_frames > 0
+
+    # Process each event type
+    for event_type, positions in event_data.event_positions.items():
+        frame_indices = event_data.event_frame_indices[event_type]
+        color = event_data.colors.get(event_type, "#ffffff")
+        n_events = len(positions)
+
+        if n_events == 0:
+            continue
+
+        # Transform coordinates to napari (y, x) with Y-axis inversion
+        transformed_positions = _transform_coords_for_napari(positions, env)
+
+        layer_name = f"Events {event_type}{name_suffix}"
+
+        if use_decay:
+            # Decay mode: Create Tracks layer with tail_length
+            # Tracks format: (track_id, t, y, x)
+            # Each event becomes a short track from frame to frame + decay_frames
+            track_data = np.column_stack(
+                [
+                    np.arange(n_events),  # track_id (one track per event)
+                    frame_indices.astype(np.float64),  # time (event onset frame)
+                    transformed_positions[:, 0],  # y
+                    transformed_positions[:, 1],  # x
+                ]
+            )
+
+            # Create colormap for uniform color
+            from napari.utils.colormaps import Colormap
+
+            features = {"color": np.zeros(n_events)}
+            custom_colormap = Colormap(
+                colors=[color, color],
+                name=f"event_color_{event_type}{name_suffix}",
+            )
+            colormaps_dict = {"color": custom_colormap}
+
+            layer = viewer.add_tracks(
+                track_data,
+                name=layer_name,
+                tail_length=event_data.decay_frames,
+                head_length=0,  # No future visibility
+                features=features,
+                colormaps_dict=colormaps_dict,
+            )
+            layer.color_by = "color"  # Set after features applied
+            layers.append(layer)
+
+            # Also add a points layer for prominent current-frame marker
+            points_data = np.column_stack(
+                [
+                    frame_indices.astype(np.float64),  # time
+                    transformed_positions[:, 0],  # y
+                    transformed_positions[:, 1],  # x
+                ]
+            )
+
+            marker_layer = viewer.add_points(
+                points_data,
+                name=f"Event Markers {event_type}{name_suffix}",
+                size=event_data.size,
+                face_color=color,
+                border_color=event_data.border_color,
+                border_width=event_data.border_width,
+            )
+            layers.append(marker_layer)
+
+        else:
+            # Instant mode: Simple Points layer with time dimension
+            # Points format: (time, y, x)
+            points_data = np.column_stack(
+                [
+                    frame_indices.astype(np.float64),  # time
+                    transformed_positions[:, 0],  # y
+                    transformed_positions[:, 1],  # x
+                ]
+            )
+
+            layer = viewer.add_points(
+                points_data,
+                name=layer_name,
+                size=event_data.size,
+                face_color=color,
+                border_color=event_data.border_color,
+                border_width=event_data.border_width,
+            )
+            layers.append(layer)
+
+    return layers
+
+
 def _render_regions(
     viewer: napari.Viewer,
     env: Environment,
@@ -1811,6 +1950,11 @@ def render_napari(
                 position_data=paired_position,
             )
 
+        # Render event overlays (spike events, region crossings, etc.)
+        for idx, event_data in enumerate(overlay_data.events):
+            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+            _render_event_overlay(viewer, event_data, env, name_suffix=suffix)
+
     # Render regions if requested
     if show_regions:
         _render_regions(viewer, env, show_regions, region_alpha)
@@ -2086,6 +2230,11 @@ def _render_multi_field_napari(
                 name_suffix=suffix,
                 position_data=paired_position,
             )
+
+        # Render event overlays (spike events, region crossings, etc.)
+        for idx, event_data in enumerate(overlay_data.events):
+            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+            _render_event_overlay(viewer, event_data, env, name_suffix=suffix)
 
     # Render regions if requested
     if show_regions:

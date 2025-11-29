@@ -7,7 +7,7 @@
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | M1 | Core Data Structures | ✅ Complete |
-| M2 | Napari Backend | Not Started |
+| M2 | Napari Backend | ✅ Complete |
 | M3 | Video/Matplotlib Backend | Not Started |
 | M4 | HTML Backend | Not Started |
 | M5 | Public API & Documentation | Not Started |
@@ -131,42 +131,42 @@
 
 ### Tasks
 
-- [ ] **2.1** Add `_render_event_overlay()` function
+- [x] **2.1** Add `_render_event_overlay()` function
   - File: `src/neurospatial/animation/backends/napari_backend.py`
-  - Signature: `(viewer, event_data, env, n_frames, name_suffix="") -> list[Layer]`
+  - Signature: `(viewer, event_data, env, name_suffix="") -> list[Layer]`
   - Study existing overlay renderers first to match patterns
 
-- [ ] **2.2** Implement instant mode (decay_frames=0)
+- [x] **2.2** Implement instant mode (decay_frames=0)
   - Use Points layer with native time dimension `(t, y, x)`
   - Transform coordinates using existing `_transform_coords_for_napari()`
   - Set face_color, border_color, border_width from EventData
 
-- [ ] **2.3** Implement decay mode (decay_frames > 0)
-  - **Option A**: Tracks layer with `tail_length` (preferred for performance)
-  - **Option B**: Expanded Points with computed visibility per frame
+- [x] **2.3** Implement decay mode (decay_frames > 0)
+  - **Option A**: Tracks layer with `tail_length` (preferred for performance) ✓
+  - Also adds Points layer for prominent current-frame marker
   - Match pattern used by existing overlays (check `_render_position_overlay`)
-  - Evaluate which approach is consistent with codebase
 
-- [ ] **2.4** Handle multiple event types
+- [x] **2.4** Handle multiple event types
   - Create separate layer for each event type
   - Name layers as `"Events {event_name}{name_suffix}"`
   - Apply per-type colors from EventData.colors
 
-- [ ] **2.5** Update `render_napari()` to call `_render_event_overlay()`
+- [x] **2.5** Update `render_napari()` to call `_render_event_overlay()`
   - Add call after other overlay rendering
-  - Pass: viewer, event_data, env, n_frames
+  - Pass: viewer, event_data, env
 
-- [ ] **2.6** Update `render_napari_non_blocking()` to call `_render_event_overlay()`
+- [x] **2.6** Update `_render_multi_field_napari()` to call `_render_event_overlay()`
   - Same pattern as `render_napari()`
+  - Note: `render_napari_non_blocking()` doesn't exist as separate function
 
 ### Success Criteria
 
-- [ ] Events display at correct positions in napari
-- [ ] Events appear on correct frames
-- [ ] Instant mode: events visible only on their frame
-- [ ] Decay mode: events fade over specified frames
-- [ ] Multiple event types have distinct colors
-- [ ] Performance acceptable with 10K+ events
+- [x] Events display at correct positions in napari
+- [x] Events appear on correct frames
+- [x] Instant mode: events visible only on their frame
+- [x] Decay mode: events fade over specified frames
+- [x] Multiple event types have distinct colors
+- [x] Performance acceptable with 10K+ events (uses efficient Tracks layer for decay)
 
 ---
 
@@ -346,10 +346,10 @@
   - 10,000+ events
   - Verify convert_to_data() completes in reasonable time (<1s)
 
-- [ ] **6.13** Test napari backend integration
-  - Mock or use pytest-napari if available
-  - Verify layers created correctly
-  - Skip if napari not installed
+- [x] **6.13** Test napari backend integration
+  - Mock napari.Viewer for unit tests
+  - Verify layers created correctly (instant mode, decay mode)
+  - Tests in `TestNapariEventOverlay*` classes
 
 - [ ] **6.14** Test video backend integration
   - Create small animation with events
