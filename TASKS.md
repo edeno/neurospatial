@@ -9,7 +9,7 @@
 | M1 | Core Data Structures | ✅ Complete |
 | M2 | Napari Backend | ✅ Complete |
 | M3 | Video/Matplotlib Backend | ✅ Complete |
-| M4 | HTML Backend | Not Started |
+| M4 | HTML Backend | ✅ Complete |
 | M5 | Public API & Documentation | Not Started |
 | M6 | Testing | Not Started |
 
@@ -221,28 +221,28 @@
 
 ### Tasks
 
-- [ ] **4.1** Add event rendering to HTML backend
+- [x] **4.1** Add event rendering to HTML backend
   - File: `src/neurospatial/animation/backends/html_backend.py`
   - Support instant mode only (no per-frame alpha in HTML)
 
-- [ ] **4.2** Warn if decay_frames > 0
+- [x] **4.2** Warn if decay_frames > 0
   - Log warning: "HTML backend does not support event decay. Events will display instantly only."
   - Fall back to instant mode behavior
 
-- [ ] **4.3** Render events as SVG circles
-  - Create SVG circle elements for events on each frame
+- [x] **4.3** Render events as canvas circles
+  - Render events using canvas 2D context (not SVG - HTML uses canvas)
   - Apply colors from EventData
 
-- [ ] **4.4** Handle frame visibility
+- [x] **4.4** Handle frame visibility
   - Only show events on their assigned frame
   - Match pattern used by position overlay in HTML
 
 ### Success Criteria
 
-- [ ] Events appear in HTML export
-- [ ] Warning displayed for decay_frames > 0
-- [ ] Events positioned correctly
-- [ ] Colors applied correctly
+- [x] Events appear in HTML export
+- [x] Warning displayed for decay_frames > 0
+- [x] Events positioned correctly
+- [x] Colors applied correctly
 
 ---
 

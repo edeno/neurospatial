@@ -17,6 +17,21 @@ The schema is:
             },
             // ... more position overlays
         ],
+        "events": [
+            {
+                "event_positions": {
+                    "spikes": [[x0, y0], [x1, y1], ...]  // Event positions
+                },
+                "frame_indices": {
+                    "spikes": [1, 4, 7, ...]             // Frame indices when events occur
+                },
+                "colors": {"spikes": "#ff0000"},         // Color per event type
+                "size": 8.0,                             // Marker size in pixels
+                "border_color": "white",
+                "border_width": 0.5
+            },
+            // ... more event overlays
+        ],
         "regions": [
             {
                 "name": "goal",
@@ -40,12 +55,14 @@ All coordinates are in environment space (cm), NOT pixels. The JavaScript
 renderer transforms these to canvas coordinates based on dimension_ranges.
 
 - Position data: (n_frames, 2) array as nested lists, each row is [x, y]
+- Event positions: Per-event-type dict of [x, y] coordinates
 - Region coordinates: Environment (x, y) coordinates
 - dimension_ranges: Bounding box for coordinate scaling
 
 Limitations
 -----------
-- Only PositionOverlay and regions are supported
+- Only PositionOverlay, EventOverlay (instant mode), and regions are supported
+- EventOverlay decay_frames > 0 falls back to instant mode (warning emitted)
 - BodypartOverlay and HeadDirectionOverlay are silently skipped (warning emitted)
 - VideoOverlay is not supported (warning emitted)
 - Large overlay datasets (>1 MB JSON) may cause browser rendering delays
@@ -133,6 +150,34 @@ class PolygonRegionJSON(TypedDict):
     coordinates: list[list[float]]
 
 
+class EventOverlayJSON(TypedDict):
+    """JSON structure for a single event overlay.
+
+    Attributes
+    ----------
+    event_positions : dict[str, list[list[float]]]
+        Event positions per event type as nested list of [x, y] coordinates.
+        Keys are event type names (e.g., "spikes", "cell_001").
+    frame_indices : dict[str, list[int]]
+        Frame indices per event type when each event occurs.
+    colors : dict[str, str]
+        CSS color per event type (e.g., {"spikes": "#ff0000"}).
+    size : float
+        Marker size in environment units.
+    border_color : str
+        Border/edge color for markers.
+    border_width : float
+        Border/edge width in pixels.
+    """
+
+    event_positions: dict[str, list[list[float]]]
+    frame_indices: dict[str, list[int]]
+    colors: dict[str, str]
+    size: float
+    border_color: str
+    border_width: float
+
+
 class OverlayDataJSON(TypedDict, total=False):
     """Complete JSON structure for overlay data passed to JavaScript.
 
@@ -144,6 +189,8 @@ class OverlayDataJSON(TypedDict, total=False):
     ----------
     positions : list[PositionOverlayJSON]
         List of position overlay objects with trajectory data.
+    events : list[EventOverlayJSON]
+        List of event overlay objects with event positions and frame indices.
     regions : list[PointRegionJSON | PolygonRegionJSON]
         List of region objects (points or polygons).
     dimension_ranges : list[list[float]]
@@ -162,6 +209,16 @@ class OverlayDataJSON(TypedDict, total=False):
     ...             "trail_length": 5,
     ...         }
     ...     ],
+    ...     "events": [
+    ...         {
+    ...             "event_positions": {"spikes": [[10, 20], [30, 40]]},
+    ...             "frame_indices": {"spikes": [1, 4]},
+    ...             "colors": {"spikes": "#ff0000"},
+    ...             "size": 8,
+    ...             "border_color": "white",
+    ...             "border_width": 0.5,
+    ...         }
+    ...     ],
     ...     "regions": [{"name": "goal", "kind": "point", "coordinates": [50, 50]}],
     ...     "dimension_ranges": [[0, 100], [0, 100]],
     ...     "region_alpha": 0.3,
@@ -169,6 +226,7 @@ class OverlayDataJSON(TypedDict, total=False):
     """
 
     positions: list[PositionOverlayJSON]
+    events: list[EventOverlayJSON]
     regions: list[PointRegionJSON | PolygonRegionJSON]
     dimension_ranges: list[list[float]]
     region_alpha: float
@@ -199,6 +257,7 @@ def _estimate_overlay_json_size(
     -----
     Estimation is based on:
     - Position data: ~20 bytes per coordinate (JSON overhead + float representation)
+    - Event data: ~25 bytes per event (position + frame index + JSON overhead)
     - Regions: ~30 bytes per vertex (polygon coordinates)
     - Small overhead for metadata (colors, names, etc.)
 
@@ -221,6 +280,18 @@ def _estimate_overlay_json_size(
 
             # Add overhead for color, size, trail_length (small)
             total_bytes += 100  # Metadata per overlay
+
+        # Estimate event overlay size
+        for event_data in overlay_data.events:
+            # Each event: (n_events, n_dims) floats for positions + frame index
+            for _event_type, positions in event_data.event_positions.items():
+                n_events = len(positions)
+                # Position coordinates (2D) + frame index int
+                bytes_per_event = 25  # 2 floats + 1 int + JSON overhead
+                total_bytes += n_events * bytes_per_event
+
+            # Add overhead for colors, markers, sizes, borders
+            total_bytes += 200  # Metadata per event overlay
 
     # Estimate region size
     # Prefer normalized format from overlay_data.regions if available
@@ -280,14 +351,15 @@ def _serialize_overlay_data(
 
     Notes
     -----
-    Only positions and regions are serialized. Bodyparts and head directions
-    are not supported in HTML backend.
+    Positions, events (instant mode), and regions are serialized.
+    Bodyparts and head directions are not supported in HTML backend.
     """
     # Get dimension ranges (convert to list for JSON)
     dim_ranges = env.dimension_ranges if env.dimension_ranges is not None else []
 
     result: dict[str, Any] = {
         "positions": [],
+        "events": [],
         "regions": [],
         "dimension_ranges": [list(r) for r in dim_ranges],
         "region_alpha": region_alpha,
@@ -302,6 +374,29 @@ def _serialize_overlay_data(
                     "color": pos_data.color,
                     "size": pos_data.size,
                     "trail_length": pos_data.trail_length,
+                }
+            )
+
+        # Serialize event overlays
+        for event_data in overlay_data.events:
+            # Convert numpy arrays to lists for JSON serialization
+            event_positions_json: dict[str, list[list[float]]] = {}
+            frame_indices_json: dict[str, list[int]] = {}
+
+            for event_type, positions in event_data.event_positions.items():
+                event_positions_json[event_type] = positions.tolist()
+
+            for event_type, indices in event_data.event_frame_indices.items():
+                frame_indices_json[event_type] = indices.tolist()
+
+            result["events"].append(
+                {
+                    "event_positions": event_positions_json,
+                    "frame_indices": frame_indices_json,
+                    "colors": event_data.colors,
+                    "size": event_data.size,
+                    "border_color": event_data.border_color,
+                    "border_width": event_data.border_width,
                 }
             )
 
@@ -532,6 +627,22 @@ def render_html(
                 "     env.animate_fields(fields, backend='napari', overlays=[video_overlay])\n"
                 "\n"
                 "Video overlays will be skipped. Other overlays (positions, regions) will render.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        # Check for event overlays with decay_frames > 0
+        has_event_decay = any(
+            event_data.decay_frames > 0 for event_data in overlay_data.events
+        )
+        if has_event_decay:
+            warnings.warn(
+                "HTML backend does not support event decay (decay_frames > 0).\n"
+                "Events will render in instant mode (visible only on their exact frame).\n"
+                "\n"
+                "For decay animation, use video or napari backend:\n"
+                "  env.animate_fields(fields, backend='video', save_path='output.mp4', ...)\n"
+                "  env.animate_fields(fields, backend='napari', ...)",
                 UserWarning,
                 stacklevel=2,
             )
@@ -1078,6 +1189,48 @@ def _generate_html_player(
                     ctx.globalAlpha = 1.0;
                 }});
             }}
+
+            // Render events (instant mode - visible only on their exact frame)
+            if (overlayData.events && overlayData.events.length > 0) {{
+                overlayData.events.forEach(eventOverlay => {{
+                    const eventPositions = eventOverlay.event_positions;
+                    const frameIndices = eventOverlay.frame_indices;
+                    const colors = eventOverlay.colors;
+                    const size = eventOverlay.size || 8;
+                    const borderColor = eventOverlay.border_color || 'white';
+                    const borderWidth = eventOverlay.border_width || 0.5;
+
+                    // Iterate over each event type
+                    Object.keys(eventPositions).forEach(eventType => {{
+                        const positions = eventPositions[eventType];
+                        const indices = frameIndices[eventType];
+                        const color = colors[eventType] || '#ff0000';
+
+                        // Find events that occur on this frame
+                        for (let i = 0; i < indices.length; i++) {{
+                            if (indices[i] === frameIdx) {{
+                                const pos = positions[i];
+                                if (!pos || pos.length < 2) continue;
+
+                                // Skip NaN positions
+                                if (isNaN(pos[0]) || isNaN(pos[1])) continue;
+
+                                const x = scaleX(pos[0]);
+                                const y = scaleY(pos[1]);
+
+                                // Draw filled circle with border
+                                ctx.fillStyle = color;
+                                ctx.strokeStyle = borderColor;
+                                ctx.lineWidth = borderWidth;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size, 0, 2 * Math.PI);
+                                ctx.fill();
+                                ctx.stroke();
+                            }}
+                        }}
+                    }});
+                }});
+            }}
         }}
 
         // Initialize
@@ -1566,6 +1719,48 @@ def _generate_non_embedded_html_player(
                     }}
 
                     ctx.globalAlpha = 1.0;
+                }});
+            }}
+
+            // Render events (instant mode - visible only on their exact frame)
+            if (overlayData.events && overlayData.events.length > 0) {{
+                overlayData.events.forEach(eventOverlay => {{
+                    const eventPositions = eventOverlay.event_positions;
+                    const frameIndices = eventOverlay.frame_indices;
+                    const colors = eventOverlay.colors;
+                    const size = eventOverlay.size || 8;
+                    const borderColor = eventOverlay.border_color || 'white';
+                    const borderWidth = eventOverlay.border_width || 0.5;
+
+                    // Iterate over each event type
+                    Object.keys(eventPositions).forEach(eventType => {{
+                        const positions = eventPositions[eventType];
+                        const indices = frameIndices[eventType];
+                        const color = colors[eventType] || '#ff0000';
+
+                        // Find events that occur on this frame
+                        for (let i = 0; i < indices.length; i++) {{
+                            if (indices[i] === frameIdx) {{
+                                const pos = positions[i];
+                                if (!pos || pos.length < 2) continue;
+
+                                // Skip NaN positions
+                                if (isNaN(pos[0]) || isNaN(pos[1])) continue;
+
+                                const x = scaleX(pos[0]);
+                                const y = scaleY(pos[1]);
+
+                                // Draw filled circle with border
+                                ctx.fillStyle = color;
+                                ctx.strokeStyle = borderColor;
+                                ctx.lineWidth = borderWidth;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size, 0, 2 * Math.PI);
+                                ctx.fill();
+                                ctx.stroke();
+                            }}
+                        }}
+                    }});
                 }});
             }}
         }}

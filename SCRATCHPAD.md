@@ -3,18 +3,52 @@
 ## Current Status
 
 **Date**: 2025-11-29
-**Working on**: Milestone 3 Complete - Moving to M4
+**Working on**: Milestone 4 Complete - Moving to M5
 
 ## Progress
 
 - [x] M1: Core Data Structures - COMPLETE
 - [x] M2: Napari Backend - COMPLETE
 - [x] M3: Video/Matplotlib Backend - COMPLETE
-- [ ] M4: HTML Backend
+- [x] M4: HTML Backend - COMPLETE
 - [ ] M5: Public API & Documentation
 - [ ] M6: Testing
 
 ## Notes
+
+### Milestone 4 Completed (2025-11-29)
+
+**Implemented event overlay support in HTML backend:**
+
+1. **Instant mode** (decay_frames=0):
+   - Events visible only on their exact frame
+   - Uses Canvas 2D context for rendering (not SVG)
+   - Renders filled circles with border
+
+2. **Decay warning** (decay_frames > 0):
+   - Emits UserWarning: "HTML backend does not support event decay"
+   - Falls back to instant mode behavior
+   - Suggests video or napari backends for decay support
+
+3. **Event serialization to JSON**:
+   - Added `EventOverlayJSON` TypedDict for type safety
+   - Events serialized via `_serialize_overlay_data()` function
+   - Includes event_positions, frame_indices, colors, size, border settings
+
+4. **JavaScript rendering in `renderOverlays()`:**
+   - Iterates over event types, checks frame_indices matching current frame
+   - Renders circles with fillStyle and strokeStyle
+   - Handles NaN positions gracefully
+
+**Key implementation details:**
+
+- Added event size estimation to `_estimate_overlay_json_size()`
+- Updated module docstring with events in JSON schema
+- Both embedded and non-embedded HTML modes support events
+- Tests: 16 HTML event overlay tests added and passing
+- All 955 animation tests pass
+
+---
 
 ### Milestone 3 Completed (2025-11-29)
 
@@ -101,7 +135,8 @@ None currently.
 
 ## Next Steps
 
-1. Milestone 4: HTML Backend
-   - Add event rendering to HTML backend
-   - Support instant mode only (warn if decay_frames > 0)
-   - Render events as SVG circles
+1. Milestone 5: Public API & Documentation
+   - Update top-level exports in `__init__.py`
+   - Update CLAUDE.md with EventOverlay examples
+   - Add to overlay coordinate conventions table
+   - Add to backend capability matrix
