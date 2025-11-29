@@ -230,13 +230,13 @@ assert -1 <= r_weighted <= 1
 
 ### 3.2 Isotonic Regression (`trajectory.py` - Part 2)
 
-- [ ] Implement `fit_isotonic_trajectory(posterior, times, *, increasing=None, method="expected")`
+- [x] Implement `fit_isotonic_trajectory(posterior, times, *, increasing=None, method="expected")`
   - Extract positions: `argmax` (method="map") or weighted mean (method="expected")
   - Use `sklearn.isotonic.IsotonicRegression`
   - If `increasing=None`, try both directions, return better R²
   - Return `IsotonicFitResult`
 
-**Success**:
+**Success**: ✅ (15 new tests, 27 total in test_trajectory.py)
 
 ```python
 result = fit_isotonic_trajectory(posterior, times)

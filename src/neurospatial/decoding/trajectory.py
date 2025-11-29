@@ -172,8 +172,167 @@ class RadonDetectionResult:
     sinogram: NDArray[np.float64]
 
 
+def fit_isotonic_trajectory(
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    increasing: bool | None = None,
+    method: Literal["map", "expected"] = "expected",
+) -> IsotonicFitResult:
+    """Fit monotonic trajectory using isotonic regression.
+
+    Isotonic regression fits a monotonic (non-decreasing or non-increasing)
+    function to the decoded position sequence. This is useful for detecting
+    replay events that represent sequential traversal of spatial locations.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution over spatial bins for each time bin.
+        Each row should sum to 1.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time values for each time bin. Used as the independent variable (x)
+        in the regression.
+    increasing : bool | None, optional
+        Direction constraint for the isotonic fit:
+        - True: Fit increasing (non-decreasing) monotonic function
+        - False: Fit decreasing (non-increasing) monotonic function
+        - None (default): Try both directions and return the one with higher R²
+    method : {"map", "expected"}, optional
+        How to extract position from the posterior for fitting:
+        - "map": Use argmax (maximum a posteriori) bin index
+        - "expected" (default): Use weighted mean (expected) bin index
+
+    Returns
+    -------
+    IsotonicFitResult
+        Container with fitted_positions, r_squared, direction, and residuals.
+
+    Raises
+    ------
+    ValueError
+        If method is not "map" or "expected".
+
+    See Also
+    --------
+    IsotonicFitResult : Container for isotonic fit results.
+    fit_linear_trajectory : For unconstrained linear fits.
+
+    Notes
+    -----
+    This function uses scikit-learn's IsotonicRegression, which implements
+    the pool adjacent violators algorithm (PAVA). The R² is computed as:
+
+    .. math::
+
+        R^2 = 1 - \\frac{SS_{res}}{SS_{tot}}
+
+    where :math:`SS_{res}` is the sum of squared residuals and :math:`SS_{tot}`
+    is the total sum of squares.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+    >>>
+    >>> # Create posterior with increasing positions
+    >>> n_time_bins, n_bins = 20, 50
+    >>> posterior = np.zeros((n_time_bins, n_bins))
+    >>> for t in range(n_time_bins):
+    ...     posterior[t, t * 2] = 1.0  # Delta posteriors
+    >>> times = np.linspace(0, 1, n_time_bins)
+    >>>
+    >>> result = fit_isotonic_trajectory(posterior, times)
+    >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
+    R² = 1.000, direction = increasing
+    """
+    from sklearn.isotonic import IsotonicRegression
+
+    if method not in ("map", "expected"):
+        raise ValueError(f"method must be 'map' or 'expected', got {method!r}")
+
+    # Extract positions from posterior
+    n_bins = posterior.shape[1]
+    bin_indices = np.arange(n_bins)
+
+    if method == "map":
+        # Use argmax positions
+        positions = np.argmax(posterior, axis=1).astype(np.float64)
+    else:
+        # Use expected (weighted mean) positions
+        positions = np.sum(posterior * bin_indices, axis=1)
+
+    # If direction is specified, fit once
+    if increasing is not None:
+        iso_reg = IsotonicRegression(increasing=increasing)
+        fitted = iso_reg.fit_transform(times, positions)
+        direction: Literal["increasing", "decreasing"] = (
+            "increasing" if increasing else "decreasing"
+        )
+        residuals = positions - fitted
+        r_squared = _compute_r_squared(positions, fitted)
+
+        return IsotonicFitResult(
+            fitted_positions=fitted,
+            r_squared=float(r_squared),
+            direction=direction,
+            residuals=residuals,
+        )
+
+    # Try both directions and return the one with better R²
+    iso_inc = IsotonicRegression(increasing=True)
+    fitted_inc = iso_inc.fit_transform(times, positions)
+    r2_inc = _compute_r_squared(positions, fitted_inc)
+
+    iso_dec = IsotonicRegression(increasing=False)
+    fitted_dec = iso_dec.fit_transform(times, positions)
+    r2_dec = _compute_r_squared(positions, fitted_dec)
+
+    if r2_inc >= r2_dec:
+        return IsotonicFitResult(
+            fitted_positions=fitted_inc,
+            r_squared=float(r2_inc),
+            direction="increasing",
+            residuals=positions - fitted_inc,
+        )
+    else:
+        return IsotonicFitResult(
+            fitted_positions=fitted_dec,
+            r_squared=float(r2_dec),
+            direction="decreasing",
+            residuals=positions - fitted_dec,
+        )
+
+
+def _compute_r_squared(
+    observed: NDArray[np.float64], predicted: NDArray[np.float64]
+) -> float:
+    """Compute R² (coefficient of determination).
+
+    Parameters
+    ----------
+    observed : NDArray[np.float64]
+        Observed values.
+    predicted : NDArray[np.float64]
+        Predicted (fitted) values.
+
+    Returns
+    -------
+    float
+        R² value in [0, 1]. Returns 0 if total variance is zero.
+    """
+    ss_res = np.sum((observed - predicted) ** 2)
+    ss_tot = np.sum((observed - np.mean(observed)) ** 2)
+
+    if ss_tot == 0:
+        return 1.0 if ss_res == 0 else 0.0
+
+    return float(1.0 - ss_res / ss_tot)
+
+
 __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "fit_isotonic_trajectory",
 ]

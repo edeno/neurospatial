@@ -199,3 +199,298 @@ class TestResultDataclassesExport:
         assert IsotonicFitResult is not None
         assert LinearFitResult is not None
         assert RadonDetectionResult is not None
+
+
+# =============================================================================
+# Milestone 3.2: Isotonic Regression
+# =============================================================================
+
+
+class TestFitIsotonicTrajectory:
+    """Test fit_isotonic_trajectory function."""
+
+    def test_fit_isotonic_trajectory_returns_result(self):
+        """fit_isotonic_trajectory should return IsotonicFitResult."""
+        from neurospatial.decoding.trajectory import (
+            IsotonicFitResult,
+            fit_isotonic_trajectory,
+        )
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with increasing MAP positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert isinstance(result, IsotonicFitResult)
+
+    def test_fit_isotonic_trajectory_fitted_positions_shape(self):
+        """Fitted positions should have shape (n_time_bins,)."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 15
+        n_bins = 30
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.fitted_positions.shape == (n_time_bins,)
+
+    def test_fit_isotonic_trajectory_residuals_shape(self):
+        """Residuals should have shape (n_time_bins,)."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 15
+        n_bins = 30
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.residuals.shape == (n_time_bins,)
+
+    def test_fit_isotonic_trajectory_r_squared_range(self):
+        """R² should be in [0, 1]."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 40
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert 0.0 <= result.r_squared <= 1.0
+
+    def test_fit_isotonic_trajectory_direction_values(self):
+        """Direction should be 'increasing' or 'decreasing'."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 40
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.direction in ("increasing", "decreasing")
+
+    def test_fit_isotonic_trajectory_increasing_direction(self):
+        """Should detect increasing direction for monotonically increasing data."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with strictly increasing MAP positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.direction == "increasing"
+        assert result.r_squared > 0.99  # Should be near-perfect fit
+
+    def test_fit_isotonic_trajectory_decreasing_direction(self):
+        """Should detect decreasing direction for monotonically decreasing data."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with strictly decreasing MAP positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(45, 5, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.direction == "decreasing"
+        assert result.r_squared > 0.99  # Should be near-perfect fit
+
+    def test_fit_isotonic_trajectory_force_increasing(self):
+        """Should force increasing direction when specified."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with decreasing positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(45, 5, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times, increasing=True)
+
+        assert result.direction == "increasing"
+
+    def test_fit_isotonic_trajectory_force_decreasing(self):
+        """Should force decreasing direction when specified."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with increasing positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times, increasing=False)
+
+        assert result.direction == "decreasing"
+
+    def test_fit_isotonic_trajectory_method_map(self):
+        """method='map' should use argmax positions."""
+        from neurospatial.decoding.trajectory import (
+            IsotonicFitResult,
+            fit_isotonic_trajectory,
+        )
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with clear MAP positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 0.9
+            # Add some noise
+            posterior[t, (pos + 1) % n_bins] = 0.1
+
+        result = fit_isotonic_trajectory(posterior, times, method="map")
+
+        assert isinstance(result, IsotonicFitResult)
+
+    def test_fit_isotonic_trajectory_method_expected(self):
+        """method='expected' should use weighted mean positions."""
+        from neurospatial.decoding.trajectory import (
+            IsotonicFitResult,
+            fit_isotonic_trajectory,
+        )
+
+        n_time_bins = 20
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result = fit_isotonic_trajectory(posterior, times, method="expected")
+
+        assert isinstance(result, IsotonicFitResult)
+
+    def test_fit_isotonic_trajectory_fitted_is_monotonic(self):
+        """Fitted positions should be monotonic."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 30
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        # Add some noise to positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        base_positions = np.linspace(5, 45, n_time_bins)
+        noisy_positions = base_positions + rng.normal(0, 3, n_time_bins)
+        noisy_positions = np.clip(noisy_positions, 0, n_bins - 1).astype(int)
+        for t, pos in enumerate(noisy_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        # Check monotonicity
+        diffs = np.diff(result.fitted_positions)
+        if result.direction == "increasing":
+            assert np.all(diffs >= 0)
+        else:
+            assert np.all(diffs <= 0)
+
+    def test_fit_isotonic_trajectory_non_uniform_times(self):
+        """Should work with non-uniformly spaced time bins."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 20
+        n_bins = 50
+
+        # Non-uniform times
+        times = np.sort(np.random.default_rng(42).uniform(0, 1, n_time_bins))
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        assert result.fitted_positions.shape == (n_time_bins,)
+
+    def test_fit_isotonic_trajectory_invalid_method_raises(self):
+        """Invalid method should raise ValueError."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 10
+        n_bins = 20
+        times = np.linspace(0, 1, n_time_bins)
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        with pytest.raises(ValueError, match=r"method.*map.*expected"):
+            fit_isotonic_trajectory(posterior, times, method="invalid")
+
+
+class TestFitIsotonicTrajectorySuccessCriteria:
+    """Test success criteria from TASKS.md for fit_isotonic_trajectory."""
+
+    def test_success_criteria(self):
+        """Verify success criteria from TASKS.md for Milestone 3.2."""
+        from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+
+        n_time_bins = 25
+        n_bins = 50
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with monotonic pattern
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_isotonic_trajectory(posterior, times)
+
+        # Success criteria from TASKS.md
+        assert result.fitted_positions.shape == (n_time_bins,)
+        assert 0.0 <= result.r_squared <= 1.0
+        assert result.direction in ("increasing", "decreasing")

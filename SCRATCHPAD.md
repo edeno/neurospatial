@@ -3,9 +3,23 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 3.1 Complete - Next: 3.2 Isotonic Regression
+**Current Milestone**: Milestone 3.2 Complete - Next: 3.3 Linear Regression
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 3.2 Complete (Isotonic Regression)
+
+**Milestone 3.2 - Isotonic Regression**: ✅ COMPLETED
+
+- Implemented `fit_isotonic_trajectory()` function in `trajectory.py`:
+  - Uses scikit-learn's `IsotonicRegression` (PAVA algorithm)
+  - Supports `method="map"` (argmax) and `method="expected"` (weighted mean)
+  - Auto-selects direction (increasing/decreasing) based on R² when `increasing=None`
+  - Returns `IsotonicFitResult` with fitted_positions, r_squared, direction, residuals
+- Added comprehensive test suite (15 new tests)
+- All 27 trajectory tests pass, ruff and mypy pass
+
+**Next task**: Milestone 3.3 - Linear Regression (`fit_linear_trajectory`)
 
 ### 2025-11-28 - Milestone 3.1 Complete (Result Dataclasses)
 
