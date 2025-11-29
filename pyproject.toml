@@ -118,6 +118,10 @@ nwb-full = [
     "ndx-pose>=0.2.0",
     "ndx-events>=0.4.0",
 ]
+# Trajectory analysis extras (for Radon transform detection)
+trajectory = [
+    "scikit-image>=0.19.0",  # Radon transform for trajectory detection
+]
 # Annotation boundary inference extras
 annotation-kde = [
     "scikit-image>=0.19.0",  # KDE boundary method

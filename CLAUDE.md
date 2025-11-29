@@ -82,6 +82,83 @@ firing_rate = compute_place_field(
 )
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 
+# Bayesian Position Decoding (v0.12.0+)
+from neurospatial import DecodingResult, decode_position, decoding_error, median_decoding_error
+
+# Build encoding models from place fields (one per neuron)
+encoding_models = np.array([
+    compute_place_field(env, spike_times_list[i], times, positions, bandwidth=8.0)
+    for i in range(n_neurons)
+])  # Shape: (n_neurons, n_bins)
+
+# Bin spikes for decoding
+dt = 0.025  # 25 ms time bins
+time_bins = np.arange(0, times[-1], dt)
+spike_counts = np.zeros((len(time_bins) - 1, n_neurons), dtype=np.int64)
+for i, spikes in enumerate(spike_times_list):
+    spike_counts[:, i], _ = np.histogram(spikes, bins=time_bins)
+
+# Decode position from population activity
+result = decode_position(
+    env, spike_counts, encoding_models, dt,
+    prior=None,  # Uniform prior (or custom prior array)
+    times=time_bins[:-1] + dt/2,  # Time bin centers
+)
+
+# Access results (lazy-computed, cached)
+posterior = result.posterior       # (n_time_bins, n_bins) probability distribution
+map_pos = result.map_position      # (n_time_bins, n_dims) MAP position estimates
+mean_pos = result.mean_position    # (n_time_bins, n_dims) posterior mean
+uncertainty = result.uncertainty   # (n_time_bins,) entropy in bits
+
+# Evaluate decoding accuracy
+from neurospatial.decoding import decoding_error, median_decoding_error
+errors = decoding_error(map_pos, actual_positions)  # Per-time-bin error
+median_err = median_decoding_error(map_pos, actual_positions)  # Summary statistic
+
+# Visualization
+result.plot()  # Posterior heatmap with optional MAP overlay
+result.plot(show_map=True, colorbar=True)  # With MAP trajectory and colorbar
+df = result.to_dataframe()  # Export to pandas DataFrame
+
+# Trajectory analysis (for replay detection)
+from neurospatial.decoding import (
+    fit_isotonic_trajectory,
+    fit_linear_trajectory,
+    detect_trajectory_radon,
+)
+
+# Fit monotonic trajectory (isotonic regression)
+iso_result = fit_isotonic_trajectory(posterior, times, method="expected")
+print(f"R²={iso_result.r_squared:.3f}, direction={iso_result.direction}")
+
+# Fit linear trajectory with uncertainty (Monte Carlo sampling)
+lin_result = fit_linear_trajectory(env, posterior, times, method="sample", rng=42)
+print(f"Slope={lin_result.slope:.1f} bins/s ± {lin_result.slope_std:.2f}")
+
+# Detect trajectory angle with Radon transform (requires scikit-image)
+radon_result = detect_trajectory_radon(posterior)
+print(f"Detected angle: {radon_result.angle_degrees:.1f}°")
+
+# Shuffle-based significance testing
+from neurospatial.decoding import (
+    shuffle_time_bins,
+    shuffle_cell_identity,
+    compute_shuffle_pvalue,
+    ShuffleTestResult,
+)
+
+# Test if sequential structure is significant
+observed_score = iso_result.r_squared
+null_scores = []
+for shuffled in shuffle_time_bins(spike_counts, n_shuffles=1000, rng=42):
+    shuffled_result = decode_position(env, shuffled, encoding_models, dt)
+    null_fit = fit_isotonic_trajectory(shuffled_result.posterior, times)
+    null_scores.append(null_fit.r_squared)
+
+p_value = compute_shuffle_pvalue(observed_score, np.array(null_scores))
+print(f"Sequence p-value: {p_value:.4f}")
+
 # Validate environment (v0.1.0+)
 from neurospatial import validate_environment
 validate_environment(env, strict=True)  # Warns if units/frame missing
@@ -876,6 +953,57 @@ from neurospatial.nwb import (
     bodypart_overlay_from_nwb,
     head_direction_overlay_from_nwb,
 )
+
+# Bayesian decoding (v0.12.0+)
+from neurospatial import (
+    DecodingResult,          # Result container class
+    decode_position,         # Main entry point
+    decoding_error,          # Per-time-bin position error
+    median_decoding_error,   # Summary statistic
+)
+
+# Full decoding API (from subpackage)
+from neurospatial.decoding import (
+    # Likelihood computation
+    log_poisson_likelihood,
+    poisson_likelihood,
+
+    # Posterior estimation
+    normalize_to_posterior,
+
+    # Point estimates
+    map_estimate,
+    map_position,
+    mean_position,
+    entropy,
+    credible_region,
+
+    # Trajectory analysis
+    fit_isotonic_trajectory,
+    fit_linear_trajectory,
+    detect_trajectory_radon,  # Requires scikit-image
+    IsotonicFitResult,
+    LinearFitResult,
+    RadonDetectionResult,
+
+    # Quality metrics
+    confusion_matrix,
+    decoding_correlation,
+
+    # Shuffle-based significance testing
+    shuffle_time_bins,
+    shuffle_time_bins_coherent,
+    shuffle_cell_identity,
+    shuffle_place_fields_circular,
+    shuffle_place_fields_circular_2d,
+    shuffle_posterior_circular,
+    shuffle_posterior_weighted_circular,
+    generate_poisson_surrogates,
+    generate_inhomogeneous_poisson_surrogates,
+    compute_shuffle_pvalue,
+    compute_shuffle_zscore,
+    ShuffleTestResult,
+)
 ```
 
 ## Important Patterns & Constraints
@@ -1281,6 +1409,12 @@ Optional NWB dependencies (v0.7.0+):
 - `ndx-events` - Events extension (for EventsTable data)
 
 Install with: `pip install neurospatial[nwb-full]` or `uv add neurospatial[nwb-full]`
+
+Optional trajectory analysis dependencies (v0.12.0+):
+
+- `scikit-image` - Radon transform for trajectory detection (`detect_trajectory_radon`)
+
+Install with: `pip install neurospatial[trajectory]` or `uv add neurospatial[trajectory]`
 
 ### Animation Overlay Architecture (v0.4.0+)
 
