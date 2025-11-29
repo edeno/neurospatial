@@ -389,17 +389,17 @@ for surrogate in generate_poisson_surrogates(spikes, dt=0.025, n_surrogates=10, 
 
 ### 4.5 Significance Testing Functions (`shuffle.py` - Part 5)
 
-- [ ] Implement `compute_shuffle_pvalue(observed, null_scores, *, tail="greater")`
+- [x] Implement `compute_shuffle_pvalue(observed, null_scores, *, tail="greater")`
   - Monte Carlo p-value with correction: (k + 1) / (n + 1)
   - Support "greater", "less", "two-sided" tails
-- [ ] Implement `compute_shuffle_zscore(observed, null_scores)`
+- [x] Implement `compute_shuffle_zscore(observed, null_scores)`
   - Z-score: (observed - null_mean) / null_std
-- [ ] Implement `ShuffleTestResult` frozen dataclass
+- [x] Implement `ShuffleTestResult` frozen dataclass
   - Fields: observed_score, null_scores, p_value, z_score, shuffle_type, n_shuffles
   - Property: is_significant (p < 0.05)
   - Method: plot() for null distribution visualization
 
-**Success**:
+**Success**: ✅ (31 new tests for significance testing)
 
 ```python
 p = compute_shuffle_pvalue(5.0, np.array([1, 2, 3, 4]))
@@ -414,7 +414,7 @@ assert np.isfinite(z)
 
 ### 4.6 Phase 4 Tests
 
-- [ ] `tests/decoding/test_shuffle.py`
+- [x] `tests/decoding/test_shuffle.py`
   - Test each shuffle function preserves invariants
   - Test reproducibility with rng parameter
   - Test p-value calculation edge cases (observed > all null, observed < all null)

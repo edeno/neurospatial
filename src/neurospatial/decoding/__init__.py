@@ -81,6 +81,12 @@ generate_inhomogeneous_poisson_surrogates : Inhomogeneous Poisson surrogates
 compute_shuffle_pvalue : P-value from shuffle null distribution
     Monte Carlo p-value with correction.
 
+compute_shuffle_zscore : Z-score from shuffle null distribution
+    Standard score relative to null distribution.
+
+ShuffleTestResult : Container for shuffle test results
+    Frozen dataclass with p-value, z-score, and plotting.
+
 Examples
 --------
 Basic decoding workflow::
@@ -141,6 +147,9 @@ from neurospatial.decoding.posterior import (
     normalize_to_posterior,
 )
 from neurospatial.decoding.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    compute_shuffle_zscore,
     generate_inhomogeneous_poisson_surrogates,
     generate_poisson_surrogates,
     shuffle_cell_identity,
@@ -169,6 +178,9 @@ __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "ShuffleTestResult",
+    "compute_shuffle_pvalue",
+    "compute_shuffle_zscore",
     "confusion_matrix",
     "credible_region",
     "decode_position",

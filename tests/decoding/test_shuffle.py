@@ -1932,3 +1932,403 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         ):
             assert surrogate.shape == zeros.shape
             assert (surrogate >= 0).all()
+
+
+# =============================================================================
+# Tests for compute_shuffle_pvalue
+# =============================================================================
+
+
+class TestComputeShufflePvalue:
+    """Tests for compute_shuffle_pvalue function."""
+
+    def test_basic_greater_tail(self) -> None:
+        """P-value for observed > all null should be minimal (1/(n+1))."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 10.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All less than observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        # Monte Carlo correction: (k + 1) / (n + 1) where k=0 (no null >= observed)
+        assert p == (0 + 1) / (4 + 1)
+        assert p == 0.2
+
+    def test_basic_less_tail(self) -> None:
+        """P-value for observed < all null should be minimal."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 0.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All greater than observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        # (k + 1) / (n + 1) where k=0 (no null <= observed)
+        assert p == (0 + 1) / (4 + 1)
+        assert p == 0.2
+
+    def test_observed_in_null_distribution_greater(self) -> None:
+        """P-value when observed is in the middle of null distribution."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 5.0, 6.0, 10.0 >= observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        # k=3 (three values >= 5.0), n=5
+        assert p == (3 + 1) / (5 + 1)
+        assert np.isclose(p, 4 / 6)
+
+    def test_observed_in_null_distribution_less(self) -> None:
+        """P-value when observed is in the middle of null distribution (less tail)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 1.0, 2.0, 5.0 <= observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        # k=3 (three values <= 5.0), n=5
+        assert p == (3 + 1) / (5 + 1)
+        assert np.isclose(p, 4 / 6)
+
+    def test_two_sided_tail(self) -> None:
+        """Two-sided p-value should be 2 * min(p_greater, p_less)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 8.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        # Greater: k=0 (no null >= 8.0), p_greater = 1/6
+        # Less: k=5 (all null <= 8.0), p_less = 6/6 = 1.0
+        # Two-sided: 2 * min(1/6, 1.0) = 2/6 = 1/3
+        p = compute_shuffle_pvalue(observed, null_scores, tail="two-sided")
+        expected = 2 * (1 / 6)
+        assert np.isclose(p, expected)
+
+    def test_two_sided_capped_at_one(self) -> None:
+        """Two-sided p-value should not exceed 1.0."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 3.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        # Greater: k=3 (3.0, 4.0, 5.0 >= 3.0), p_greater = 4/6
+        # Less: k=3 (1.0, 2.0, 3.0 <= 3.0), p_less = 4/6
+        # Two-sided: 2 * min(4/6, 4/6) = 8/6 -> capped to 1.0
+        p = compute_shuffle_pvalue(observed, null_scores, tail="two-sided")
+        assert p <= 1.0
+        assert np.isclose(p, 1.0)
+
+    def test_all_null_equal_observed_greater(self) -> None:
+        """When all null values equal observed (greater tail)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        # k=3 (all >= 5.0), n=3
+        assert p == (3 + 1) / (3 + 1)
+        assert p == 1.0
+
+    def test_all_null_equal_observed_less(self) -> None:
+        """When all null values equal observed (less tail)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
+        p = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        # k=3 (all <= 5.0), n=3
+        assert p == (3 + 1) / (3 + 1)
+        assert p == 1.0
+
+    def test_single_null_value(self) -> None:
+        """Should work with single null value."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([3.0])
+        p_greater = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        # k=0 (no null >= 5.0), n=1
+        assert p_greater == (0 + 1) / (1 + 1)
+        assert p_greater == 0.5
+
+        p_less = compute_shuffle_pvalue(observed, null_scores, tail="less")
+        # k=1 (3.0 <= 5.0), n=1
+        assert p_less == (1 + 1) / (1 + 1)
+        assert p_less == 1.0
+
+    def test_large_null_distribution(self) -> None:
+        """Should work with many null values."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        rng = np.random.default_rng(42)
+        null_scores = rng.normal(0, 1, 10000)
+        observed = 3.0  # Far in the tail
+
+        p = compute_shuffle_pvalue(observed, null_scores, tail="greater")
+        # Should be small (around 0.001 for z=3)
+        assert 0 < p < 0.01
+
+    def test_returns_float(self) -> None:
+        """Should return a float."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0])
+        p = compute_shuffle_pvalue(observed, null_scores)
+        assert isinstance(p, float)
+
+    def test_default_tail_is_greater(self) -> None:
+        """Default tail parameter should be 'greater'."""
+        import inspect
+
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        sig = inspect.signature(compute_shuffle_pvalue)
+        assert sig.parameters["tail"].default == "greater"
+
+    def test_pvalue_range(self) -> None:
+        """P-value should always be in (0, 1]."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        # Various test cases
+        test_cases = [
+            (10.0, np.array([1.0, 2.0, 3.0]), "greater"),
+            (0.0, np.array([1.0, 2.0, 3.0]), "greater"),
+            (2.0, np.array([1.0, 2.0, 3.0]), "greater"),
+            (10.0, np.array([1.0, 2.0, 3.0]), "less"),
+            (0.0, np.array([1.0, 2.0, 3.0]), "less"),
+            (2.0, np.array([1.0, 2.0, 3.0]), "two-sided"),
+        ]
+        for observed, null, tail in test_cases:
+            p = compute_shuffle_pvalue(observed, null, tail=tail)
+            assert 0 < p <= 1.0, f"p={p} out of range for {observed}, {null}, {tail}"
+
+    def test_invalid_tail_raises_error(self) -> None:
+        """Invalid tail parameter should raise ValueError."""
+        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 3.0])
+        with pytest.raises(ValueError, match="tail"):
+            compute_shuffle_pvalue(observed, null_scores, tail="invalid")  # type: ignore[arg-type]
+
+
+# =============================================================================
+# Tests for compute_shuffle_zscore
+# =============================================================================
+
+
+class TestComputeShuffleZscore:
+    """Tests for compute_shuffle_zscore function."""
+
+    def test_basic_zscore(self) -> None:
+        """Z-score should be (observed - mean) / std."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        # mean = 3.0, std = sqrt(2.0)
+        expected_z = (5.0 - 3.0) / np.std(null_scores)
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert np.isclose(z, expected_z)
+
+    def test_observed_equals_mean(self) -> None:
+        """Z-score should be 0 when observed equals null mean."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        observed = np.mean(null_scores)
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert np.isclose(z, 0.0)
+
+    def test_positive_zscore(self) -> None:
+        """Z-score should be positive when observed > mean."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 10.0
+        null_scores = np.array([1.0, 2.0, 3.0])  # mean = 2.0
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert z > 0
+
+    def test_negative_zscore(self) -> None:
+        """Z-score should be negative when observed < mean."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 0.0
+        null_scores = np.array([1.0, 2.0, 3.0])  # mean = 2.0
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert z < 0
+
+    def test_zero_variance_returns_nan(self) -> None:
+        """Z-score should be NaN when null distribution has zero variance."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 5.0
+        null_scores = np.array([3.0, 3.0, 3.0])  # All equal, std = 0
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert np.isnan(z)
+
+    def test_single_null_value_returns_nan(self) -> None:
+        """Z-score should be NaN with single null value (undefined std)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 5.0
+        null_scores = np.array([3.0])
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert np.isnan(z)
+
+    def test_large_null_distribution(self) -> None:
+        """Should work with many null values."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        rng = np.random.default_rng(42)
+        null_scores = rng.normal(0, 1, 10000)
+        observed = 3.0  # 3 standard deviations away
+
+        z = compute_shuffle_zscore(observed, null_scores)
+        # Should be close to 3 (within statistical variation)
+        assert 2.5 < z < 3.5
+
+    def test_returns_float(self) -> None:
+        """Should return a float."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0])
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert isinstance(z, float)
+
+    def test_uses_sample_std(self) -> None:
+        """Should use sample standard deviation (ddof=0 by default for numpy)."""
+        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+        observed = 5.0
+        null_scores = np.array([1.0, 2.0, 3.0, 4.0])
+        expected_z = (observed - np.mean(null_scores)) / np.std(null_scores)
+        z = compute_shuffle_zscore(observed, null_scores)
+        assert np.isclose(z, expected_z)
+
+
+# =============================================================================
+# Tests for ShuffleTestResult
+# =============================================================================
+
+
+class TestShuffleTestResult:
+    """Tests for ShuffleTestResult dataclass."""
+
+    def test_creation(self) -> None:
+        """Should create result with all required fields."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
+            p_value=0.2,
+            z_score=1.5,
+            shuffle_type="time_bins",
+            n_shuffles=4,
+        )
+        assert result.observed_score == 5.0
+        assert result.p_value == 0.2
+        assert result.z_score == 1.5
+        assert result.shuffle_type == "time_bins"
+        assert result.n_shuffles == 4
+        assert len(result.null_scores) == 4
+
+    def test_is_frozen(self) -> None:
+        """ShuffleTestResult should be a frozen dataclass."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
+            p_value=0.2,
+            z_score=1.5,
+            shuffle_type="time_bins",
+            n_shuffles=4,
+        )
+        # Try to modify - should raise
+        with pytest.raises((AttributeError, TypeError)):
+            result.observed_score = 10.0  # type: ignore[misc]
+
+    def test_is_significant_property_true(self) -> None:
+        """is_significant should be True when p < 0.05."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0]),
+            p_value=0.01,  # < 0.05
+            z_score=2.5,
+            shuffle_type="time_bins",
+            n_shuffles=3,
+        )
+        assert result.is_significant is True
+
+    def test_is_significant_property_false(self) -> None:
+        """is_significant should be False when p >= 0.05."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0]),
+            p_value=0.10,  # >= 0.05
+            z_score=1.0,
+            shuffle_type="time_bins",
+            n_shuffles=3,
+        )
+        assert result.is_significant is False
+
+    def test_is_significant_at_boundary(self) -> None:
+        """is_significant should be False when p == 0.05 exactly."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0]),
+            p_value=0.05,  # == 0.05 (not significant)
+            z_score=1.5,
+            shuffle_type="time_bins",
+            n_shuffles=3,
+        )
+        assert result.is_significant is False
+
+    def test_null_scores_preserved(self) -> None:
+        """null_scores array should be preserved correctly."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=null,
+            p_value=0.2,
+            z_score=1.5,
+            shuffle_type="time_bins",
+            n_shuffles=5,
+        )
+        assert_array_equal(result.null_scores, null)
+
+    def test_shuffle_type_string(self) -> None:
+        """shuffle_type should be stored as string."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0]),
+            p_value=0.2,
+            z_score=1.5,
+            shuffle_type="cell_identity",
+            n_shuffles=3,
+        )
+        assert result.shuffle_type == "cell_identity"
+        assert isinstance(result.shuffle_type, str)
+
+    def test_has_plot_method(self) -> None:
+        """Should have a plot method."""
+        from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        result = ShuffleTestResult(
+            observed_score=5.0,
+            null_scores=np.array([1.0, 2.0, 3.0]),
+            p_value=0.2,
+            z_score=1.5,
+            shuffle_type="time_bins",
+            n_shuffles=3,
+        )
+        assert hasattr(result, "plot")
+        assert callable(result.plot)

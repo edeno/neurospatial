@@ -3,9 +3,66 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 4.4 Complete - Next: 4.5 Significance Testing
+**Current Milestone**: Milestone 4.5 Complete - Milestone 4 DONE! Next: 5.1 Public API
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 4.5 Complete (Significance Testing Functions)
+
+**Milestone 4.5 - Significance Testing Functions**: ✅ COMPLETED
+
+- Added three new items to `src/neurospatial/decoding/shuffle.py`:
+  - `compute_shuffle_pvalue()` - Monte Carlo p-value with Phipson-Smyth correction
+  - `compute_shuffle_zscore()` - Z-score from null distribution
+  - `ShuffleTestResult` - Frozen dataclass container for results
+- Comprehensive test suite: 31 new tests (164 total in test_shuffle.py)
+- Code review passed with "APPROVE" rating
+- All tests pass, ruff and mypy pass
+- Functions exported in `decoding/__init__.py`
+
+**Implementation highlights**:
+- `compute_shuffle_pvalue`:
+  - Uses `(k + 1) / (n + 1)` formula (Phipson-Smyth correction)
+  - Prevents zero p-values, important for FDR/Bonferroni corrections
+  - Supports "greater", "less", "two-sided" tails
+  - Greater: counts null >= observed; Less: counts null <= observed
+  - Two-sided: 2 * min(p_greater, p_less), capped at 1.0
+- `compute_shuffle_zscore`:
+  - Standard formula: (observed - mean(null)) / std(null)
+  - Returns NaN for zero variance or single null value
+- `ShuffleTestResult`:
+  - Frozen dataclass for immutability
+  - Fields: observed_score, null_scores, p_value, z_score, shuffle_type, n_shuffles
+  - Property: `is_significant` (p < 0.05)
+  - Method: `plot()` for null distribution visualization with histogram
+
+**Design decisions**:
+- Phipson-Smyth correction ensures unbiased Monte Carlo p-values
+- Z-score returns NaN for degenerate cases (better than inf or zero division errors)
+- Plot method has lazy matplotlib import for optional dependency
+- Type annotation uses Literal["greater", "less", "two-sided"] for tail parameter
+
+**Milestone 4.6 - Phase 4 Tests**: ✅ COMPLETED (164 tests total in test_shuffle.py)
+
+**Milestone 4 COMPLETE!** All shuffle functions implemented:
+- `shuffle_time_bins()` ✅
+- `shuffle_time_bins_coherent()` ✅
+- `shuffle_cell_identity()` ✅
+- `shuffle_place_fields_circular()` ✅
+- `shuffle_place_fields_circular_2d()` ✅
+- `shuffle_posterior_circular()` ✅
+- `shuffle_posterior_weighted_circular()` ✅
+- `generate_poisson_surrogates()` ✅
+- `generate_inhomogeneous_poisson_surrogates()` ✅
+- `compute_shuffle_pvalue()` ✅
+- `compute_shuffle_zscore()` ✅
+- `ShuffleTestResult` ✅
+
+**Next task**: Milestone 5 - Integration & Documentation
+- 5.1: Public API Finalization
+- 5.2: Visualization (optional)
+- 5.3: Documentation
+- 5.4: Optional Dependencies Check
 
 ### 2025-11-28 - Milestone 4.4 Complete (Surrogate Generation)
 

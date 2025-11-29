@@ -45,12 +45,15 @@ neurospatial.decoding.metrics : Decoding quality metrics
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
     from neurospatial.environment.core import Environment
 
 
@@ -930,3 +933,319 @@ def generate_inhomogeneous_poisson_surrogates(
         # Each (time_bin, neuron) pair uses its corresponding smoothed rate
         surrogate = generator.poisson(lam=smoothed_counts)
         yield surrogate.astype(np.int64)
+
+
+# =============================================================================
+# V. Significance Testing Functions
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ShuffleTestResult:
+    """Result container for shuffle-based significance testing.
+
+    A frozen dataclass containing the observed score, null distribution,
+    and computed statistics (p-value, z-score) from a shuffle test.
+
+    Parameters
+    ----------
+    observed_score : float
+        The score computed from the original (non-shuffled) data.
+    null_scores : NDArray[np.float64]
+        Array of scores computed from shuffled data, forming the null
+        distribution.
+    p_value : float
+        Monte Carlo p-value with correction: (k + 1) / (n + 1) where k is
+        the count of null scores at least as extreme as observed and n is
+        the number of shuffles.
+    z_score : float
+        Standard score: (observed - mean(null)) / std(null). NaN if null
+        has zero variance.
+    shuffle_type : str
+        Name of the shuffle method used (e.g., "time_bins", "cell_identity").
+    n_shuffles : int
+        Number of shuffles performed.
+
+    Attributes
+    ----------
+    is_significant : bool
+        True if p_value < 0.05 (convenience property).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import ShuffleTestResult
+
+    >>> result = ShuffleTestResult(
+    ...     observed_score=5.0,
+    ...     null_scores=np.array([1.0, 2.0, 3.0, 4.0]),
+    ...     p_value=0.2,
+    ...     z_score=1.5,
+    ...     shuffle_type="time_bins",
+    ...     n_shuffles=4,
+    ... )
+    >>> result.is_significant
+    False
+    >>> result.p_value
+    0.2
+
+    See Also
+    --------
+    compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
+    compute_shuffle_zscore : Compute z-score from null distribution.
+    """
+
+    observed_score: float
+    null_scores: NDArray[np.float64]
+    p_value: float
+    z_score: float
+    shuffle_type: str
+    n_shuffles: int
+
+    @property
+    def is_significant(self) -> bool:
+        """Return True if p_value < 0.05.
+
+        Returns
+        -------
+        bool
+            True if the result is statistically significant at alpha=0.05.
+        """
+        return self.p_value < 0.05
+
+    def plot(self, ax: Axes | None = None, **kwargs) -> Axes:
+        """Plot the null distribution with observed score.
+
+        Creates a histogram of the null distribution with a vertical line
+        showing the observed score and annotations for p-value and z-score.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes | None, default=None
+            Axes to plot on. If None, creates a new figure.
+        **kwargs
+            Additional keyword arguments passed to matplotlib's hist().
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.decoding.shuffle import ShuffleTestResult
+
+        >>> result = ShuffleTestResult(
+        ...     observed_score=5.0,
+        ...     null_scores=np.random.default_rng(42).normal(2.0, 1.0, 100),
+        ...     p_value=0.01,
+        ...     z_score=3.0,
+        ...     shuffle_type="time_bins",
+        ...     n_shuffles=100,
+        ... )
+        >>> ax = result.plot()  # doctest: +SKIP
+        """
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        # Default histogram settings
+        hist_kwargs = {
+            "bins": 30,
+            "alpha": 0.7,
+            "color": "steelblue",
+            "edgecolor": "white",
+        }
+        hist_kwargs.update(kwargs)
+
+        # Plot null distribution
+        ax.hist(self.null_scores, **hist_kwargs)  # type: ignore[arg-type]
+
+        # Add observed score line
+        ax.axvline(
+            self.observed_score,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=f"Observed: {self.observed_score:.3f}",
+        )
+
+        # Add annotations
+        sig_marker = "*" if self.is_significant else ""
+        ax.set_title(
+            f"Shuffle Test ({self.shuffle_type})\n"
+            f"p = {self.p_value:.4f}{sig_marker}, z = {self.z_score:.2f}"
+        )
+        ax.set_xlabel("Score")
+        ax.set_ylabel("Count")
+        ax.legend()
+
+        return ax
+
+
+def compute_shuffle_pvalue(
+    observed: float,
+    null_scores: NDArray[np.float64],
+    *,
+    tail: Literal["greater", "less", "two-sided"] = "greater",
+) -> float:
+    """Compute Monte Carlo p-value with Phipson-Smyth correction.
+
+    Computes the probability of observing a score at least as extreme as
+    the observed value under the null distribution using the formula
+    (k + 1) / (n + 1), which provides an unbiased estimate and avoids
+    p-values of exactly zero.
+
+    Parameters
+    ----------
+    observed : float
+        The observed score from the original (non-shuffled) data.
+    null_scores : NDArray[np.float64]
+        Array of scores from shuffled data, forming the null distribution.
+    tail : {"greater", "less", "two-sided"}, default="greater"
+        Direction of the test:
+
+        - "greater": Tests if observed is significantly greater than null
+          (counts null >= observed).
+        - "less": Tests if observed is significantly less than null
+          (counts null <= observed).
+        - "two-sided": Tests if observed is significantly different from
+          null in either direction. Computed as 2 * min(p_greater, p_less),
+          capped at 1.0.
+
+    Returns
+    -------
+    float
+        The Monte Carlo p-value in the range (0, 1].
+
+    Notes
+    -----
+    The Phipson-Smyth correction (k + 1) / (n + 1) ensures that:
+
+    1. The p-value is never exactly zero, which is important for downstream
+       corrections (e.g., Bonferroni, FDR).
+    2. The estimator is unbiased for uniformly distributed test statistics.
+
+    For replay analysis, "greater" is typically used because we expect
+    significant sequences to have higher scores than shuffled controls.
+
+    References
+    ----------
+    .. [1] Phipson, B., & Smyth, G. K. (2010). Permutation P-values should
+           never be zero: calculating exact P-values when permutations are
+           randomly drawn. Statistical Applications in Genetics and Molecular
+           Biology, 9(1).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+
+    >>> # Observed score higher than all null values
+    >>> observed = 10.0
+    >>> null = np.array([1.0, 2.0, 3.0, 4.0])
+    >>> compute_shuffle_pvalue(observed, null, tail="greater")
+    0.2
+
+    >>> # Two-sided test
+    >>> compute_shuffle_pvalue(observed, null, tail="two-sided")
+    0.4
+
+    See Also
+    --------
+    compute_shuffle_zscore : Compute z-score from null distribution.
+    ShuffleTestResult : Container for shuffle test results.
+    """
+    n = len(null_scores)
+
+    if tail == "greater":
+        # Count how many null values are >= observed
+        k = int(np.sum(null_scores >= observed))
+        return float((k + 1) / (n + 1))
+
+    elif tail == "less":
+        # Count how many null values are <= observed
+        k = int(np.sum(null_scores <= observed))
+        return float((k + 1) / (n + 1))
+
+    elif tail == "two-sided":
+        # Compute both tails and take 2 * min, capped at 1.0
+        k_greater = int(np.sum(null_scores >= observed))
+        k_less = int(np.sum(null_scores <= observed))
+        p_greater = (k_greater + 1) / (n + 1)
+        p_less = (k_less + 1) / (n + 1)
+        return float(min(2 * min(p_greater, p_less), 1.0))
+
+    else:
+        raise ValueError(
+            f"tail must be 'greater', 'less', or 'two-sided', got '{tail}'"
+        )
+
+
+def compute_shuffle_zscore(
+    observed: float,
+    null_scores: NDArray[np.float64],
+) -> float:
+    """Compute z-score of observed value relative to null distribution.
+
+    Calculates the standard score: (observed - mean(null)) / std(null).
+    Returns NaN if the null distribution has zero variance.
+
+    Parameters
+    ----------
+    observed : float
+        The observed score from the original (non-shuffled) data.
+    null_scores : NDArray[np.float64]
+        Array of scores from shuffled data, forming the null distribution.
+
+    Returns
+    -------
+    float
+        The z-score (standard score). NaN if null has zero variance or
+        contains only one value.
+
+    Notes
+    -----
+    The z-score indicates how many standard deviations the observed value
+    is from the mean of the null distribution. Positive values indicate
+    the observed is above the null mean; negative values indicate below.
+
+    Common interpretation thresholds:
+
+    - |z| > 1.96: Approximately p < 0.05 (two-tailed) if null is normal
+    - |z| > 2.58: Approximately p < 0.01 (two-tailed) if null is normal
+    - |z| > 3.0: Strong evidence against null hypothesis
+
+    Unlike p-values, z-scores are useful for comparing effect sizes across
+    different analyses.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import compute_shuffle_zscore
+
+    >>> null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    >>> observed = 5.0
+    >>> z = compute_shuffle_zscore(observed, null)
+    >>> np.isclose(z, (5.0 - 3.0) / np.std(null))
+    True
+
+    >>> # Zero variance returns NaN
+    >>> compute_shuffle_zscore(5.0, np.array([3.0, 3.0, 3.0]))
+    nan
+
+    See Also
+    --------
+    compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
+    ShuffleTestResult : Container for shuffle test results.
+    """
+    mean_null = float(np.mean(null_scores))
+    std_null = float(np.std(null_scores))
+
+    # Handle zero variance (all values equal) or single value
+    if std_null == 0.0:
+        return float("nan")
+
+    return float((observed - mean_null) / std_null)
