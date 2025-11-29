@@ -137,6 +137,11 @@ from neurospatial.decoding.posterior import (
     decode_position,
     normalize_to_posterior,
 )
+from neurospatial.decoding.trajectory import (
+    IsotonicFitResult,
+    LinearFitResult,
+    RadonDetectionResult,
+)
 
 # =============================================================================
 # Public API exports
@@ -144,6 +149,9 @@ from neurospatial.decoding.posterior import (
 
 __all__ = [
     "DecodingResult",
+    "IsotonicFitResult",
+    "LinearFitResult",
+    "RadonDetectionResult",
     "confusion_matrix",
     "credible_region",
     "decode_position",

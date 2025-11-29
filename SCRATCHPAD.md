@@ -3,9 +3,50 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 2.3 Complete - Next: Phase 2 Tests
+**Current Milestone**: Milestone 3.1 Complete - Next: 3.2 Isotonic Regression
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 3.1 Complete (Result Dataclasses)
+
+**Milestone 3.1 - Result Dataclasses**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/trajectory.py` with three frozen dataclasses:
+  - `IsotonicFitResult`: fitted_positions, r_squared, direction, residuals
+  - `LinearFitResult`: slope, intercept, r_squared, slope_std
+  - `RadonDetectionResult`: angle_degrees, score, offset, sinogram
+- All dataclasses have comprehensive NumPy docstrings with examples
+- Exported in `decoding/__init__.py` and `__all__` list
+- Created test suite: `tests/decoding/test_trajectory.py` (12 tests)
+- All tests pass, ruff and mypy pass
+
+**Next task**: Milestone 3.2 - Isotonic Regression (`fit_isotonic_trajectory`)
+
+### 2025-11-28 - Milestone 2.4 Complete (Phase 2 Tests)
+
+**Milestone 2.4 - Phase 2 Tests**: ✅ COMPLETED
+
+- Verified all 64 tests in `tests/decoding/test_metrics.py` pass
+- Test coverage confirmed for all Phase 2 requirements:
+  - `decoding_error()` - known positions, graph metric, NaN handling
+  - `median_decoding_error()` - basic functionality, NaN handling
+  - `confusion_matrix()` - shapes, sums, MAP vs expected methods
+  - `decoding_correlation()` - range, symmetry, weighted, NaN handling
+- All tests pass (64 passed, 1 warning for expected NaN behavior)
+
+**Phase 2 Complete!** All metrics functions implemented and tested:
+
+- `decoding_error()` ✅
+- `median_decoding_error()` ✅
+- `confusion_matrix()` ✅
+- `decoding_correlation()` ✅
+
+**Next task**: Milestone 3 - Trajectory Analysis
+
+- 3.1: Result dataclasses (IsotonicFitResult, LinearFitResult, RadonDetectionResult)
+- 3.2: Isotonic regression
+- 3.3: Linear regression
+- 3.4: Radon transform detection
 
 ### 2025-11-28 - Milestone 2.3 Complete (Correlation Metric)
 

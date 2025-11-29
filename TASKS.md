@@ -197,7 +197,7 @@ assert -1 <= r_weighted <= 1
 
 ### 2.4 Phase 2 Tests
 
-- [ ] `tests/decoding/test_metrics.py`
+- [x] `tests/decoding/test_metrics.py`
   - Test decoding_error with known positions
   - Test graph metric requires env
   - Test confusion_matrix shapes and sums
@@ -205,7 +205,7 @@ assert -1 <= r_weighted <= 1
   - Test NaN handling in all functions
   - Test weighted correlation against unweighted
 
-**Success**: `uv run pytest tests/decoding/test_metrics.py -v` passes.
+**Success**: `uv run pytest tests/decoding/test_metrics.py -v` passes. ✅ (64 tests)
 
 **Dependencies**: 2.1-2.3
 
@@ -217,12 +217,14 @@ assert -1 <= r_weighted <= 1
 
 ### 3.1 Result Dataclasses (`trajectory.py` - Part 1)
 
-- [ ] Implement `IsotonicFitResult` frozen dataclass
+- [x] Implement `IsotonicFitResult` frozen dataclass
   - Fields: `fitted_positions`, `r_squared`, `direction`, `residuals`
-- [ ] Implement `LinearFitResult` frozen dataclass
+- [x] Implement `LinearFitResult` frozen dataclass
   - Fields: `slope`, `intercept`, `r_squared`, `slope_std`
-- [ ] Implement `RadonDetectionResult` frozen dataclass
+- [x] Implement `RadonDetectionResult` frozen dataclass
   - Fields: `angle_degrees`, `score`, `offset`, `sinogram`
+
+**Success**: All result dataclasses created and exported. ✅ (12 tests)
 
 **Dependencies**: None
 
