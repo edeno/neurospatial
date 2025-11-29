@@ -72,8 +72,11 @@ shuffle_cell_identity : Cell identity shuffle
 shuffle_posterior_circular : Posterior circular shuffle
     Test trajectory detection bias.
 
-generate_poisson_surrogates : Poisson surrogate generation
-    Test against rate-based null hypothesis.
+generate_poisson_surrogates : Homogeneous Poisson surrogates
+    Test against constant rate-based null hypothesis.
+
+generate_inhomogeneous_poisson_surrogates : Inhomogeneous Poisson surrogates
+    Test against time-varying rate-based null hypothesis.
 
 compute_shuffle_pvalue : P-value from shuffle null distribution
     Monte Carlo p-value with correction.
@@ -138,6 +141,8 @@ from neurospatial.decoding.posterior import (
     normalize_to_posterior,
 )
 from neurospatial.decoding.shuffle import (
+    generate_inhomogeneous_poisson_surrogates,
+    generate_poisson_surrogates,
     shuffle_cell_identity,
     shuffle_place_fields_circular,
     shuffle_place_fields_circular_2d,
@@ -173,6 +178,8 @@ __all__ = [
     "entropy",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    "generate_inhomogeneous_poisson_surrogates",
+    "generate_poisson_surrogates",
     "log_poisson_likelihood",
     "map_estimate",
     "map_position",

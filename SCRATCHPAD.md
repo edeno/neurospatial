@@ -3,9 +3,50 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 4.3 Complete - Next: 4.4 Surrogate Generation
+**Current Milestone**: Milestone 4.4 Complete - Next: 4.5 Significance Testing
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 4.4 Complete (Surrogate Generation)
+
+**Milestone 4.4 - Surrogate Generation**: ✅ COMPLETED
+
+- Added two new generator functions to `src/neurospatial/decoding/shuffle.py`:
+  - `generate_poisson_surrogates()` - Homogeneous Poisson surrogates from mean firing rates
+  - `generate_inhomogeneous_poisson_surrogates()` - Time-varying rate surrogates with smoothed rates
+- Comprehensive test suite: 32 new tests (133 total in test_shuffle.py)
+- Code review passed with "APPROVE" rating
+- All tests pass, ruff and mypy pass
+- Functions exported in `decoding/__init__.py`
+
+**Implementation highlights**:
+- `generate_poisson_surrogates`:
+  - Computes mean spike count per neuron across all time bins
+  - Each (time_bin, neuron) pair independently samples from Poisson(mean_count)
+  - Destroys all temporal structure while preserving average rates
+- `generate_inhomogeneous_poisson_surrogates`:
+  - Uses `scipy.ndimage.uniform_filter1d()` to smooth spike counts in time
+  - Smoothed counts become time-varying Poisson rate parameters
+  - Preserves slow rate fluctuations, destroys fine temporal structure
+  - Default smoothing_window=3 bins
+- Both functions follow same generator pattern as other shuffle functions
+- `dt` parameter accepted for API consistency but not used in computation (counts used directly as rates)
+
+**Design decisions**:
+- Generators yield surrogates one at a time for memory efficiency
+- Empty inputs handled gracefully (yield empty arrays)
+- Uses `_ensure_rng()` helper for consistent RNG handling
+- Type annotations include `NDArray[np.int64]` return type
+- Comprehensive docstrings with scientific rationale
+
+**Code review feedback addressed**:
+- Added exports to `decoding/__init__.py` (imports and `__all__` list)
+- Updated module docstring to document both functions
+
+**Next task**: Milestone 4.5 - Significance Testing Functions
+- `compute_shuffle_pvalue()` - Monte Carlo p-value with correction
+- `compute_shuffle_zscore()` - Z-score from null distribution
+- `ShuffleTestResult` - Result container dataclass
 
 ### 2025-11-28 - Milestone 4.3 Complete (Posterior Shuffles)
 

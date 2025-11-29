@@ -372,10 +372,10 @@ for shuffled_post in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42
 
 ### 4.4 Surrogate Generation (`shuffle.py` - Part 4)
 
-- [ ] Implement `generate_poisson_surrogates(spike_counts, dt, *, n_surrogates=1000, rng=None)`
+- [x] Implement `generate_poisson_surrogates(spike_counts, dt, *, n_surrogates=1000, rng=None)`
   - Compute mean firing rate per neuron
   - Generate spike counts from Poisson(rate * dt)
-- [ ] Implement `generate_inhomogeneous_poisson_surrogates()` with smoothed rates
+- [x] Implement `generate_inhomogeneous_poisson_surrogates()` with smoothed rates
 
 **Success**:
 
