@@ -141,6 +141,8 @@ from neurospatial.decoding.shuffle import (
     shuffle_cell_identity,
     shuffle_place_fields_circular,
     shuffle_place_fields_circular_2d,
+    shuffle_posterior_circular,
+    shuffle_posterior_weighted_circular,
     shuffle_time_bins,
     shuffle_time_bins_coherent,
 )
@@ -181,6 +183,8 @@ __all__ = [
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",
     "shuffle_place_fields_circular_2d",
+    "shuffle_posterior_circular",
+    "shuffle_posterior_weighted_circular",
     "shuffle_time_bins",
     "shuffle_time_bins_coherent",
 ]

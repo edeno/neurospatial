@@ -355,12 +355,12 @@ for shuffled_spikes, models in shuffle_cell_identity(spikes, encoding, n_shuffle
 
 ### 4.3 Posterior Shuffles (`shuffle.py` - Part 3)
 
-- [ ] Implement `shuffle_posterior_circular(posterior, *, n_shuffles=1000, rng=None)`
+- [x] Implement `shuffle_posterior_circular(posterior, *, n_shuffles=1000, rng=None)`
   - Circularly shift each row (time bin) by random amount
   - Each time bin shifted independently
-- [ ] Implement `shuffle_posterior_weighted_circular()` with edge effect mitigation
+- [x] Implement `shuffle_posterior_weighted_circular()` with edge effect mitigation
 
-**Success**:
+**Success**: ✅ (32 tests for posterior shuffles)
 
 ```python
 for shuffled_post in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):

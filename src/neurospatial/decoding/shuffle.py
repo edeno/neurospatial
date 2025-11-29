@@ -509,3 +509,223 @@ def shuffle_place_fields_circular_2d(
             shuffled[i, :] = shifted_2d.ravel()
 
         yield shuffled
+
+
+# =============================================================================
+# III. Posterior/Position Shuffles - Test trajectory detection
+# =============================================================================
+
+
+def shuffle_posterior_circular(
+    posterior: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Circularly shift posterior at each time bin independently.
+
+    Controls for chance linear alignment of position estimates by disrupting
+    trajectory progression while preserving local smoothness. Each time bin's
+    posterior is independently shifted by a random amount along the position
+    axis.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution from decoding. Each row should
+        sum to 1.0.
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior with each row circularly shifted by a random amount.
+
+    Notes
+    -----
+    - Each time bin is shifted independently
+    - Preserves the shape of each instantaneous posterior
+    - Destroys temporal continuity of decoded positions
+    - Caution: Can generate position representations that don't exist in
+      original data (edge effects near track boundaries)
+    - Normalization is preserved (each row still sums to 1.0)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+    >>> # Create a normalized posterior (3 time bins, 5 spatial bins)
+    >>> raw = np.array(
+    ...     [
+    ...         [0.1, 0.2, 0.4, 0.2, 0.1],
+    ...         [0.5, 0.3, 0.1, 0.05, 0.05],
+    ...         [0.05, 0.1, 0.2, 0.4, 0.25],
+    ...     ]
+    ... )
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_posterior_circular(raw, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(
+    ...         f"Shuffle {i}: shape={shuffled.shape}, sums to 1={np.allclose(shuffled.sum(axis=1), 1.0)}"
+    ...     )
+    Shuffle 0: shape=(3, 5), sums to 1=True
+    Shuffle 1: shape=(3, 5), sums to 1=True
+    Shuffle 2: shape=(3, 5), sums to 1=True
+
+    See Also
+    --------
+    shuffle_posterior_weighted_circular : Weighted circular shift with edge
+        effect mitigation
+    shuffle_place_fields_circular : Circular shift of place fields
+    """
+    generator = _ensure_rng(rng)
+    n_time_bins, n_bins = posterior.shape
+
+    for _ in range(n_shuffles):
+        # Generate random shift amounts for each time bin
+        shifts = generator.integers(0, n_bins, size=n_time_bins)
+        # Apply circular shifts to each row independently
+        shuffled = np.empty_like(posterior)
+        for i in range(n_time_bins):
+            shift_amount: int = int(shifts[i])  # type: ignore[index]
+            shuffled[i, :] = np.roll(posterior[i, :], shift_amount)
+        yield shuffled
+
+
+def shuffle_posterior_weighted_circular(
+    posterior: NDArray[np.float64],
+    *,
+    edge_buffer: int = 5,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Weighted circular shift with edge effect mitigation.
+
+    Refined version of posterior shuffle that maintains non-uniformity and
+    reduces edge effects by restricting shifts when the MAP position is near
+    track boundaries. This is more conservative than standard circular shuffle.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution from decoding. Each row should
+        sum to 1.0.
+    edge_buffer : int, default=5
+        Number of bins from track ends where shifts are restricted.
+        When the MAP position is within ``edge_buffer`` bins of either edge,
+        the shift is restricted to keep the MAP position within bounds
+        (not wrapping to the other end).
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior with weighted circular shifts applied.
+
+    Notes
+    -----
+    - More conservative than standard circular shuffle
+    - Shifts are restricted near track ends to mitigate edge effects
+    - When MAP position is within ``edge_buffer`` of an edge, shift is
+      constrained to avoid wrapping probability mass to the other end
+    - Preserves row normalization (each row still sums to 1.0)
+
+    The edge restriction works as follows:
+    - For each time bin, compute MAP position (argmax)
+    - If MAP is within ``edge_buffer`` of left edge (bin < edge_buffer):
+      restrict shift to [-MAP, n_bins - 2*edge_buffer] to keep MAP in center
+    - If MAP is within ``edge_buffer`` of right edge (bin >= n_bins - edge_buffer):
+      restrict shift to [-(MAP - center), n_bins - MAP] to keep MAP in center
+    - Otherwise: allow full circular shift [0, n_bins)
+
+    Example with n_bins=20 and edge_buffer=5:
+    - MAP at bin 2 (near left): shift limited to [-2, 10) so MAP stays in [0, 11]
+    - MAP at bin 17 (near right): shift limited to [-7, 3) so MAP stays in [10, 19]
+    - MAP at bin 10 (center): full circular shift [0, 20)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+    >>> # Create a normalized posterior (3 time bins, 10 spatial bins)
+    >>> raw = np.random.default_rng(42).random((3, 10))
+    >>> posterior = raw / raw.sum(axis=1, keepdims=True)
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_posterior_weighted_circular(
+    ...         posterior, edge_buffer=2, n_shuffles=3, rng=42
+    ...     )
+    ... ):
+    ...     print(f"Shuffle {i}: sums to 1={np.allclose(shuffled.sum(axis=1), 1.0)}")
+    Shuffle 0: sums to 1=True
+    Shuffle 1: sums to 1=True
+    Shuffle 2: sums to 1=True
+
+    See Also
+    --------
+    shuffle_posterior_circular : Standard circular shift without edge restriction
+    shuffle_place_fields_circular : Circular shift of place fields
+    """
+    generator = _ensure_rng(rng)
+    n_time_bins, n_bins = posterior.shape
+
+    # Handle empty posterior
+    if n_time_bins == 0:
+        for _ in range(n_shuffles):
+            yield posterior.copy()
+        return
+
+    # Compute MAP positions for each time bin (used to determine shift restrictions)
+    map_positions = np.argmax(posterior, axis=1)
+
+    for _ in range(n_shuffles):
+        shuffled = np.empty_like(posterior)
+        for i in range(n_time_bins):
+            map_pos = map_positions[i]
+
+            # Determine allowed shift range based on MAP position
+            # The key principle: restrict shifts to prevent probability mass from
+            # wrapping to the opposite end of the track when near edges.
+            if edge_buffer == 0 or n_bins <= 2 * edge_buffer:
+                # No edge restriction or buffer spans entire track
+                # Allow any shift in [0, n_bins)
+                shift_amount = generator.integers(0, n_bins)
+            elif map_pos < edge_buffer:
+                # Near left edge: restrict shift range to avoid wrapping to far right
+                # Allow negative shifts (move left) but limit positive shifts
+                min_shift = -map_pos  # Don't shift MAP below 0
+                # Limit positive shift: keep shifted MAP within center region
+                max_shift = min(n_bins - map_pos, n_bins - 2 * edge_buffer)
+                if max_shift <= min_shift:
+                    max_shift = min_shift + 1  # Ensure valid range
+                shift_amount = generator.integers(min_shift, max_shift)
+            elif map_pos >= n_bins - edge_buffer:
+                # Near right edge: restrict shift range to avoid wrapping to far left
+                # Allow positive shifts (move right) but limit negative shifts
+                max_shift = n_bins - map_pos  # Don't shift MAP beyond last bin
+                # Limit negative shift: keep shifted MAP within center region
+                min_shift = max(-(map_pos - (n_bins - 2 * edge_buffer)), -(map_pos))
+                if max_shift <= min_shift:
+                    min_shift = max_shift - 1  # Ensure valid range
+                shift_amount = generator.integers(min_shift, max_shift)
+            else:
+                # Not near edge: allow full circular shift
+                shift_amount = generator.integers(0, n_bins)
+
+            shuffled[i, :] = np.roll(posterior[i, :], shift_amount)
+        yield shuffled

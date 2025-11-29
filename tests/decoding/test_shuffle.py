@@ -944,3 +944,454 @@ class TestShufflePlaceFieldsCircular2D:
                     encoding_models, env, n_shuffles=5, rng=42
                 )
             )
+
+
+# =============================================================================
+# Tests for shuffle_posterior_circular
+# =============================================================================
+
+
+class TestShufflePosteriorCircular:
+    """Tests for shuffle_posterior_circular (circular shift of posterior rows)."""
+
+    @pytest.fixture
+    def posterior(self) -> np.ndarray:
+        """Sample normalized posterior: (5 time bins, 8 spatial bins)."""
+        rng = np.random.default_rng(42)
+        raw = rng.random((5, 8))
+        # Normalize each row to sum to 1
+        return raw / raw.sum(axis=1, keepdims=True)
+
+    def test_yields_correct_number_of_shuffles(self, posterior: np.ndarray) -> None:
+        """Should yield exactly n_shuffles arrays."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        n_shuffles = 10
+        shuffles = list(
+            shuffle_posterior_circular(posterior, n_shuffles=n_shuffles, rng=42)
+        )
+        assert len(shuffles) == n_shuffles
+
+    def test_yields_correct_shape(self, posterior: np.ndarray) -> None:
+        """Each shuffled array should have same shape as input."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=5, rng=42):
+            assert shuffled.shape == posterior.shape
+
+    def test_preserves_dtype(self, posterior: np.ndarray) -> None:
+        """Shuffled arrays should preserve input dtype."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=5, rng=42):
+            assert shuffled.dtype == posterior.dtype
+
+    def test_preserves_normalization(self, posterior: np.ndarray) -> None:
+        """Each row should still sum to 1.0 after shuffle."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+            row_sums = shuffled.sum(axis=1)
+            assert np.allclose(row_sums, 1.0), f"Row sums should be 1.0, got {row_sums}"
+
+    def test_preserves_row_values(self, posterior: np.ndarray) -> None:
+        """Each row should contain same values (multiset) as original.
+
+        Circular shift preserves the shape of each posterior.
+        """
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+            for i in range(posterior.shape[0]):
+                original_sorted = sorted(posterior[i, :].tolist())
+                shuffled_sorted = sorted(shuffled[i, :].tolist())
+                assert np.allclose(shuffled_sorted, original_sorted), (
+                    f"Row {i} values changed"
+                )
+
+    def test_rows_are_circular_shifts(self, posterior: np.ndarray) -> None:
+        """Each row should be a circular shift of the original."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+            for i in range(posterior.shape[0]):
+                orig = posterior[i, :]
+                shuf = shuffled[i, :]
+                n_bins = len(orig)
+                is_shift = any(
+                    np.allclose(shuf, np.roll(orig, shift)) for shift in range(n_bins)
+                )
+                assert is_shift, f"Row {i} is not a circular shift"
+
+    def test_each_time_bin_shifted_independently(self, posterior: np.ndarray) -> None:
+        """Different time bins should get different shift amounts."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        # With enough shuffles, different time bins should have different shifts
+        # at least sometimes
+        found_different = False
+        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=50, rng=42):
+            # Check shift amounts for each time bin
+            shifts = []
+            for i in range(posterior.shape[0]):
+                orig = posterior[i, :]
+                shuf = shuffled[i, :]
+                # Find the shift amount
+                for shift in range(len(orig)):
+                    if np.allclose(shuf, np.roll(orig, shift)):
+                        shifts.append(shift)
+                        break
+            # Check if different time bins got different shifts
+            if len(set(shifts)) > 1:
+                found_different = True
+                break
+        assert found_different, "Each time bin should be shifted independently"
+
+    def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
+        """Same seed should produce same shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
+        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
+        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
+            assert_array_equal(s1, s2)
+
+    def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
+        """Same generator state should produce same shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=rng1))
+        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=rng2))
+        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
+            assert_array_equal(s1, s2)
+
+    def test_different_seeds_produce_different_shuffles(
+        self, posterior: np.ndarray
+    ) -> None:
+        """Different seeds should produce different shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
+        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=123))
+        any_different = any(
+            not np.array_equal(s1, s2)
+            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
+        )
+        assert any_different
+
+    def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
+        """rng=None should still produce valid shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        shuffles = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=None))
+        assert len(shuffles) == 5
+        for shuffled in shuffles:
+            assert shuffled.shape == posterior.shape
+
+    def test_generator_is_lazy(self, posterior: np.ndarray) -> None:
+        """Generator should be lazy."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        gen = shuffle_posterior_circular(posterior, n_shuffles=1000, rng=42)
+        first_three = [next(gen) for _ in range(3)]
+        assert len(first_three) == 3
+
+    def test_empty_posterior(self) -> None:
+        """Should handle empty posterior gracefully."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        empty = np.zeros((0, 5), dtype=np.float64)
+        shuffles = list(shuffle_posterior_circular(empty, n_shuffles=5, rng=42))
+        assert len(shuffles) == 5
+        for s in shuffles:
+            assert s.shape == (0, 5)
+
+    def test_single_time_bin(self) -> None:
+        """Should handle single time bin."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
+        for shuffled in shuffle_posterior_circular(single, n_shuffles=5, rng=42):
+            assert shuffled.shape == single.shape
+            # Should be a circular shift (including identity)
+            is_shift = any(
+                np.allclose(shuffled[0], np.roll(single[0], shift))
+                for shift in range(4)
+            )
+            assert is_shift
+
+    def test_single_bin(self) -> None:
+        """Should handle single spatial bin (trivial shuffle)."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+
+        single_bin = np.array([[1.0], [1.0], [1.0]], dtype=np.float64)
+        for shuffled in shuffle_posterior_circular(single_bin, n_shuffles=5, rng=42):
+            assert_array_equal(shuffled, single_bin)
+
+
+# =============================================================================
+# Tests for shuffle_posterior_weighted_circular
+# =============================================================================
+
+
+class TestShufflePosteriorWeightedCircular:
+    """Tests for shuffle_posterior_weighted_circular (edge-aware circular shift)."""
+
+    @pytest.fixture
+    def posterior(self) -> np.ndarray:
+        """Sample normalized posterior: (10 time bins, 20 spatial bins).
+
+        Create a posterior with clear edge structure - higher probability
+        mass near the center to test edge effect mitigation.
+        """
+        rng = np.random.default_rng(42)
+        raw = rng.random((10, 20))
+        # Add some center-biased structure
+        center = 10
+        for i in range(raw.shape[0]):
+            raw[i, :] += np.exp(-((np.arange(20) - center) ** 2) / 20)
+        # Normalize each row to sum to 1
+        return raw / raw.sum(axis=1, keepdims=True)
+
+    def test_yields_correct_number_of_shuffles(self, posterior: np.ndarray) -> None:
+        """Should yield exactly n_shuffles arrays."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        n_shuffles = 10
+        shuffles = list(
+            shuffle_posterior_weighted_circular(
+                posterior, n_shuffles=n_shuffles, rng=42
+            )
+        )
+        assert len(shuffles) == n_shuffles
+
+    def test_yields_correct_shape(self, posterior: np.ndarray) -> None:
+        """Each shuffled array should have same shape as input."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, n_shuffles=5, rng=42
+        ):
+            assert shuffled.shape == posterior.shape
+
+    def test_preserves_dtype(self, posterior: np.ndarray) -> None:
+        """Shuffled arrays should preserve input dtype."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, n_shuffles=5, rng=42
+        ):
+            assert shuffled.dtype == posterior.dtype
+
+    def test_preserves_normalization(self, posterior: np.ndarray) -> None:
+        """Each row should still sum to 1.0 after shuffle."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, n_shuffles=10, rng=42
+        ):
+            row_sums = shuffled.sum(axis=1)
+            assert np.allclose(row_sums, 1.0), f"Row sums should be 1.0, got {row_sums}"
+
+    def test_preserves_row_values(self, posterior: np.ndarray) -> None:
+        """Each row should contain same values (multiset) as original."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, n_shuffles=10, rng=42
+        ):
+            for i in range(posterior.shape[0]):
+                original_sorted = sorted(posterior[i, :].tolist())
+                shuffled_sorted = sorted(shuffled[i, :].tolist())
+                assert np.allclose(shuffled_sorted, original_sorted), (
+                    f"Row {i} values changed"
+                )
+
+    def test_rows_are_circular_shifts(self, posterior: np.ndarray) -> None:
+        """Each row should be a circular shift of the original."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, n_shuffles=10, rng=42
+        ):
+            for i in range(posterior.shape[0]):
+                orig = posterior[i, :]
+                shuf = shuffled[i, :]
+                n_bins = len(orig)
+                is_shift = any(
+                    np.allclose(shuf, np.roll(orig, shift)) for shift in range(n_bins)
+                )
+                assert is_shift, f"Row {i} is not a circular shift"
+
+    def test_edge_buffer_restricts_shifts(self, posterior: np.ndarray) -> None:
+        """With edge_buffer, shifts near boundaries should be restricted.
+
+        When the MAP position is near an edge, the shift should be limited
+        to avoid wrapping probability mass to the other end.
+        """
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        # Create a posterior with clear edge positions
+        # First row: peak at bin 2 (near left edge)
+        # Last row: peak at bin 17 (near right edge with 20 bins)
+        edge_posterior = np.zeros((3, 20), dtype=np.float64)
+        edge_posterior[0, 2] = 0.8  # Near left edge (within edge_buffer=5)
+        edge_posterior[1, 10] = 0.8  # Center (not restricted)
+        edge_posterior[2, 17] = 0.8  # Near right edge (within edge_buffer=5)
+        # Add small uniform noise and normalize
+        edge_posterior += 0.01
+        edge_posterior /= edge_posterior.sum(axis=1, keepdims=True)
+
+        # With edge_buffer=5, time bins with MAP near edges should have
+        # restricted shifts to avoid wrapping to the opposite side
+        for shuffled in shuffle_posterior_weighted_circular(
+            edge_posterior, edge_buffer=5, n_shuffles=100, rng=42
+        ):
+            assert shuffled.shape == edge_posterior.shape
+            assert np.allclose(shuffled.sum(axis=1), 1.0)
+
+            # Verify edge time bins don't wrap to opposite edge
+            # Time bin 0: MAP=2 (near left), shouldn't wrap to far right
+            map_0 = np.argmax(shuffled[0])
+            assert map_0 < 15, (
+                f"Left edge MAP shouldn't wrap to far right, got bin {map_0}"
+            )
+
+            # Time bin 2: MAP=17 (near right), shouldn't wrap to far left
+            map_2 = np.argmax(shuffled[2])
+            assert map_2 > 5, (
+                f"Right edge MAP shouldn't wrap to far left, got bin {map_2}"
+            )
+
+    def test_edge_buffer_zero_allows_full_shifts(self, posterior: np.ndarray) -> None:
+        """With edge_buffer=0, should behave like standard circular shuffle."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        # With edge_buffer=0, any shift should be possible
+        for shuffled in shuffle_posterior_weighted_circular(
+            posterior, edge_buffer=0, n_shuffles=10, rng=42
+        ):
+            assert shuffled.shape == posterior.shape
+            assert np.allclose(shuffled.sum(axis=1), 1.0)
+
+    def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
+        """Same seed should produce same shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        shuffles1 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+        )
+        shuffles2 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+        )
+        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
+            assert_array_equal(s1, s2)
+
+    def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
+        """Same generator state should produce same shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+        shuffles1 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=rng1)
+        )
+        shuffles2 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=rng2)
+        )
+        for s1, s2 in zip(shuffles1, shuffles2, strict=True):
+            assert_array_equal(s1, s2)
+
+    def test_different_seeds_produce_different_shuffles(
+        self, posterior: np.ndarray
+    ) -> None:
+        """Different seeds should produce different shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        shuffles1 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+        )
+        shuffles2 = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=123)
+        )
+        any_different = any(
+            not np.array_equal(s1, s2)
+            for s1, s2 in zip(shuffles1, shuffles2, strict=True)
+        )
+        assert any_different
+
+    def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
+        """rng=None should still produce valid shuffles."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        shuffles = list(
+            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=None)
+        )
+        assert len(shuffles) == 5
+        for shuffled in shuffles:
+            assert shuffled.shape == posterior.shape
+
+    def test_generator_is_lazy(self, posterior: np.ndarray) -> None:
+        """Generator should be lazy."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        gen = shuffle_posterior_weighted_circular(posterior, n_shuffles=1000, rng=42)
+        first_three = [next(gen) for _ in range(3)]
+        assert len(first_three) == 3
+
+    def test_empty_posterior(self) -> None:
+        """Should handle empty posterior gracefully."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        empty = np.zeros((0, 5), dtype=np.float64)
+        shuffles = list(
+            shuffle_posterior_weighted_circular(empty, n_shuffles=5, rng=42)
+        )
+        assert len(shuffles) == 5
+        for s in shuffles:
+            assert s.shape == (0, 5)
+
+    def test_single_time_bin(self) -> None:
+        """Should handle single time bin."""
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
+        for shuffled in shuffle_posterior_weighted_circular(
+            single, n_shuffles=5, rng=42
+        ):
+            assert shuffled.shape == single.shape
+            # Should be a circular shift (including identity)
+            is_shift = any(
+                np.allclose(shuffled[0], np.roll(single[0], shift))
+                for shift in range(4)
+            )
+            assert is_shift
+
+    def test_edge_buffer_larger_than_half_bins(self) -> None:
+        """Should handle edge_buffer larger than n_bins/2.
+
+        When edge_buffer is very large relative to n_bins, the allowed
+        shift range becomes very restricted.
+        """
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        # Small posterior (5 bins), large edge_buffer (4)
+        small = np.array(
+            [[0.2, 0.2, 0.2, 0.2, 0.2], [0.1, 0.2, 0.4, 0.2, 0.1]], dtype=np.float64
+        )
+        for shuffled in shuffle_posterior_weighted_circular(
+            small, edge_buffer=4, n_shuffles=5, rng=42
+        ):
+            assert shuffled.shape == small.shape
+            assert np.allclose(shuffled.sum(axis=1), 1.0)
+
+    def test_default_edge_buffer(self, posterior: np.ndarray) -> None:
+        """Default edge_buffer should be 5."""
+        import inspect
+
+        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+
+        sig = inspect.signature(shuffle_posterior_weighted_circular)
+        assert sig.parameters["edge_buffer"].default == 5

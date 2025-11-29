@@ -3,9 +3,46 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 4.2 Complete - Next: 4.3 Posterior Shuffles
+**Current Milestone**: Milestone 4.3 Complete - Next: 4.4 Surrogate Generation
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 4.3 Complete (Posterior Shuffles)
+
+**Milestone 4.3 - Posterior Shuffles**: ✅ COMPLETED
+
+- Added two new generator functions to `src/neurospatial/decoding/shuffle.py`:
+  - `shuffle_posterior_circular()` - Circularly shift each posterior row (time bin) independently
+  - `shuffle_posterior_weighted_circular()` - Edge-aware circular shift with edge buffer restriction
+- Comprehensive test suite: 32 new tests (101 total in test_shuffle.py)
+- Code review passed with "APPROVE" rating
+- All tests pass, ruff and mypy pass
+
+**Implementation highlights**:
+- `shuffle_posterior_circular`: Simple circular shifts with `np.roll()` per time bin
+- `shuffle_posterior_weighted_circular`: Smart edge buffer algorithm:
+  - Computes MAP position per time bin
+  - If MAP near left edge (< edge_buffer): restricts max positive shift to avoid wrapping to far right
+  - If MAP near right edge (>= n_bins - edge_buffer): restricts max negative shift to avoid wrapping to far left
+  - Center positions: full circular shift allowed
+  - Example (n_bins=20, edge_buffer=5): MAP at bin 2 → shifts in [-2, 10); MAP at bin 17 → shifts in [-7, 3)
+- Both functions preserve normalization (rows still sum to 1.0)
+- Type annotations with `type: ignore[index]` for numpy scalar indexing (mypy false positive)
+
+**Design decisions**:
+- Edge buffer default is 5 bins (typical for linear track decoding)
+- The edge buffer restricts shift range, not final position
+- Handles degenerate cases: empty posterior yields empty copies, single bin is identity
+- All functions follow same generator pattern as temporal shuffles
+
+**Bug fix during review**:
+- Initial implementation of edge buffer didn't actually restrict shifts properly
+- Test revealed MAP could wrap to opposite end despite being near an edge
+- Fixed by computing restricted shift ranges that keep MAP in "center region"
+
+**Next task**: Milestone 4.4 - Surrogate Generation
+- `generate_poisson_surrogates()` - Poisson spike count surrogates
+- `generate_inhomogeneous_poisson_surrogates()` - Smoothed rate surrogates
 
 ### 2025-11-28 - Milestone 4.2 Complete (Cell Identity Shuffles)
 
