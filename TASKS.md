@@ -433,11 +433,11 @@ assert np.isfinite(z)
 
 ### 5.1 Public API Finalization
 
-- [ ] Update `decoding/__init__.py` with all exports per plan
-- [ ] Update main `neurospatial/__init__.py` with top-level exports
-- [ ] Verify all `__all__` lists are complete
+- [x] Update `decoding/__init__.py` with all exports per plan
+- [x] Update main `neurospatial/__init__.py` with top-level exports
+- [x] Verify all `__all__` lists are complete
 
-**Success**: All public symbols importable from documented locations.
+**Success**: All public symbols importable from documented locations. ✅ (19 import tests)
 
 ### 5.2 Visualization
 

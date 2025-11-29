@@ -215,7 +215,12 @@ from neurospatial.behavioral import (
     trials_to_region_arrays,
 )
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.decoding import DecodingResult, decode_position
+from neurospatial.decoding import (
+    DecodingResult,
+    decode_position,
+    decoding_error,
+    median_decoding_error,
+)
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
 from neurospatial.environment import Environment, EnvironmentNotFittedError
@@ -286,6 +291,8 @@ __all__ = [
     # Decoding (Bayesian population analysis)
     "DecodingResult",
     "decode_position",
+    "decoding_error",
+    "median_decoding_error",
     # Animation overlays
     "BodypartOverlay",
     "HeadDirectionOverlay",

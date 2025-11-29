@@ -3,9 +3,31 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 4.5 Complete - Milestone 4 DONE! Next: 5.1 Public API
+**Current Milestone**: Milestone 5.1 Complete - Public API Finalization. Next: 5.2 Visualization
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 5.1 Complete (Public API Finalization)
+
+**Milestone 5.1 - Public API Finalization**: ✅ COMPLETED
+
+- Added `decoding_error` and `median_decoding_error` to main `neurospatial/__init__.py` exports
+- Updated `__all__` list in main package to include all four decoding exports per PLAN.md
+- Added comprehensive import tests to `tests/decoding/test_imports.py` (19 tests)
+- All decoding tests pass (430 passed, 3 skipped)
+- Ruff and mypy pass with no issues
+
+**Public API exports from main package (per PLAN.md)**:
+
+- `DecodingResult` - Result container class
+- `decode_position` - Main entry point function
+- `decoding_error` - Per-time-bin position error
+- `median_decoding_error` - Summary statistic
+
+**Next task**: Milestone 5.2 - Visualization
+
+- `DecodingResult.plot()` - Posterior heatmap
+- `DecodingResult.to_dataframe()` - Pandas export
 
 ### 2025-11-28 - Milestone 4.5 Complete (Significance Testing Functions)
 
