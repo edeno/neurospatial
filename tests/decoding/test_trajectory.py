@@ -494,3 +494,362 @@ class TestFitIsotonicTrajectorySuccessCriteria:
         assert result.fitted_positions.shape == (n_time_bins,)
         assert 0.0 <= result.r_squared <= 1.0
         assert result.direction in ("increasing", "decreasing")
+
+
+# =============================================================================
+# Milestone 3.3: Linear Regression
+# =============================================================================
+
+
+@pytest.fixture
+def simple_env():
+    """Create a simple 1D environment for testing."""
+    from neurospatial import Environment
+
+    positions = np.linspace(0, 100, 1000).reshape(-1, 1)
+    return Environment.from_samples(positions, bin_size=2.0)
+
+
+class TestFitLinearTrajectory:
+    """Test fit_linear_trajectory function."""
+
+    def test_fit_linear_trajectory_returns_result(self, simple_env):
+        """fit_linear_trajectory should return LinearFitResult."""
+        from neurospatial.decoding.trajectory import (
+            LinearFitResult,
+            fit_linear_trajectory,
+        )
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with linear positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, 45, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(simple_env, posterior, times, rng=42)
+
+        assert isinstance(result, LinearFitResult)
+
+    def test_fit_linear_trajectory_method_map(self, simple_env):
+        """method='map' should use argmax positions for fitting."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with clear MAP positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
+
+        assert result.slope_std is None  # No uncertainty for method="map"
+        assert result.slope > 0  # Increasing positions
+
+    def test_fit_linear_trajectory_method_sample(self, simple_env):
+        """method='sample' should provide uncertainty via Monte Carlo."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with some uncertainty
+        posterior = np.zeros((n_time_bins, n_bins))
+        base_positions = np.linspace(5, n_bins - 5, n_time_bins)
+        for t, pos in enumerate(base_positions):
+            pos = int(pos)
+            pos = np.clip(pos, 1, n_bins - 2)
+            posterior[t, pos] = 0.7
+            posterior[t, pos - 1] = 0.15
+            posterior[t, pos + 1] = 0.15
+
+        result = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+
+        assert result.slope_std is not None  # Should have uncertainty
+        assert result.slope_std >= 0  # Non-negative std
+
+    def test_fit_linear_trajectory_reproducible_with_rng_int(self, simple_env):
+        """Results should be reproducible with integer rng seed."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with some uncertainty
+        posterior = np.zeros((n_time_bins, n_bins))
+        base_positions = np.linspace(5, n_bins - 5, n_time_bins)
+        for t, pos in enumerate(base_positions):
+            pos = int(pos)
+            pos = np.clip(pos, 1, n_bins - 2)
+            posterior[t, pos] = 0.7
+            posterior[t, pos - 1] = 0.15
+            posterior[t, pos + 1] = 0.15
+
+        result1 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+        result2 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+
+        assert result1.slope == result2.slope
+        assert result1.intercept == result2.intercept
+
+    def test_fit_linear_trajectory_reproducible_with_rng_generator(self, simple_env):
+        """Results should be reproducible with Generator rng."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with some uncertainty
+        posterior = np.zeros((n_time_bins, n_bins))
+        base_positions = np.linspace(5, n_bins - 5, n_time_bins)
+        for t, pos in enumerate(base_positions):
+            pos = int(pos)
+            pos = np.clip(pos, 1, n_bins - 2)
+            posterior[t, pos] = 0.7
+            posterior[t, pos - 1] = 0.15
+            posterior[t, pos + 1] = 0.15
+
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+
+        result1 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=rng1
+        )
+        result2 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=rng2
+        )
+
+        assert result1.slope == result2.slope
+        assert result1.intercept == result2.intercept
+
+    def test_fit_linear_trajectory_r_squared_range(self, simple_env):
+        """R² should be in [0, 1]."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with linear positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(simple_env, posterior, times, rng=42)
+
+        assert 0.0 <= result.r_squared <= 1.0
+
+    def test_fit_linear_trajectory_perfect_linear_high_r_squared(self, simple_env):
+        """Perfect linear data should have R² ≈ 1."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with perfect linear positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(
+            simple_env, posterior, times, method="map", rng=42
+        )
+
+        assert result.r_squared > 0.99
+
+    def test_fit_linear_trajectory_negative_slope(self, simple_env):
+        """Decreasing positions should yield negative slope."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with decreasing positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(n_bins - 5, 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
+
+        assert result.slope < 0
+
+    def test_fit_linear_trajectory_non_uniform_times(self, simple_env):
+        """Should work with non-uniformly spaced time bins."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+
+        # Non-uniform times
+        rng = np.random.default_rng(42)
+        times = np.sort(rng.uniform(0, 1, n_time_bins))
+
+        # Create posterior with linear positions
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result = fit_linear_trajectory(simple_env, posterior, times, rng=42)
+
+        assert np.isfinite(result.slope)
+        assert np.isfinite(result.intercept)
+
+    def test_fit_linear_trajectory_n_samples_affects_std(self, simple_env):
+        """More samples should generally yield more stable estimates."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        # Create posterior with some uncertainty
+        rng = np.random.default_rng(42)
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+
+        result_100 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", n_samples=100, rng=42
+        )
+        result_1000 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", n_samples=1000, rng=43
+        )
+
+        # Both should have uncertainty estimates
+        assert result_100.slope_std is not None
+        assert result_1000.slope_std is not None
+
+    def test_fit_linear_trajectory_invalid_method_raises(self, simple_env):
+        """Invalid method should raise ValueError."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 10
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        with pytest.raises(ValueError, match=r"method.*map.*sample"):
+            fit_linear_trajectory(simple_env, posterior, times, method="invalid")
+
+    def test_fit_linear_trajectory_1d_posterior_raises(self, simple_env):
+        """1D posterior should raise ValueError."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        times = np.linspace(0, 1, 10)
+        posterior_1d = np.ones(10)  # 1D array - invalid
+
+        with pytest.raises(ValueError, match=r"posterior must be 2D"):
+            fit_linear_trajectory(simple_env, posterior_1d, times)
+
+    def test_fit_linear_trajectory_times_mismatch_raises(self, simple_env):
+        """Mismatched times length should raise ValueError."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 10
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins + 5)  # Wrong length
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        for t in range(n_time_bins):
+            posterior[t, t % n_bins] = 1.0
+
+        with pytest.raises(ValueError, match=r"times length.*must match posterior"):
+            fit_linear_trajectory(simple_env, posterior, times)
+
+
+class TestFitLinearTrajectorySuccessCriteria:
+    """Test success criteria from TASKS.md for fit_linear_trajectory."""
+
+    def test_success_criteria_reproducibility(self, simple_env):
+        """Verify reproducibility success criteria from TASKS.md."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        base_positions = np.linspace(5, n_bins - 5, n_time_bins)
+        for t, pos in enumerate(base_positions):
+            pos = int(np.clip(pos, 1, n_bins - 2))
+            posterior[t, pos] = 0.7
+            posterior[t, pos - 1] = 0.15
+            posterior[t, pos + 1] = 0.15
+
+        # Success criterion: results should be reproducible with same rng
+        result1 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+        result2 = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+
+        assert result1.slope == result2.slope  # Reproducible
+
+    def test_success_criteria_slope_std_only_for_sample(self, simple_env):
+        """slope_std should only be present for method='sample'."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        n_time_bins = 20
+        n_bins = simple_env.n_bins
+        times = np.linspace(0, 1, n_time_bins)
+
+        posterior = np.zeros((n_time_bins, n_bins))
+        map_positions = np.linspace(5, n_bins - 5, n_time_bins).astype(int)
+        map_positions = np.clip(map_positions, 0, n_bins - 1)
+        for t, pos in enumerate(map_positions):
+            posterior[t, pos] = 1.0
+
+        result_map = fit_linear_trajectory(simple_env, posterior, times, method="map")
+        result_sample = fit_linear_trajectory(
+            simple_env, posterior, times, method="sample", rng=42
+        )
+
+        # Success criteria
+        assert result_map.slope_std is None
+        assert result_sample.slope_std is not None
+
+
+class TestFitLinearTrajectoryExport:
+    """Test that fit_linear_trajectory is properly exported."""
+
+    def test_import_from_trajectory_module(self):
+        """fit_linear_trajectory should be importable from trajectory module."""
+        from neurospatial.decoding.trajectory import fit_linear_trajectory
+
+        assert fit_linear_trajectory is not None
+
+    def test_import_from_decoding_package(self):
+        """fit_linear_trajectory should be importable from decoding package."""
+        from neurospatial.decoding import fit_linear_trajectory
+
+        assert fit_linear_trajectory is not None

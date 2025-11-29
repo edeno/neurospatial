@@ -33,6 +33,8 @@ import numpy as np
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
+    from neurospatial import Environment
+
 
 @dataclass(frozen=True)
 class IsotonicFitResult:
@@ -99,8 +101,9 @@ class LinearFitResult:
         Coefficient of determination (R²) measuring goodness of fit.
         Range [0, 1] where 1 indicates perfect linear relationship.
     slope_std : float | None
-        Standard error of the slope estimate.
-        Only available when method="sample" (Monte Carlo estimation).
+        Standard deviation of slope estimates from Monte Carlo sampling.
+        Measures the spread of sampled slopes across different draws from
+        the posterior. Only available when method="sample".
         None when method="map" (deterministic fit).
 
     See Also
@@ -330,9 +333,224 @@ def _compute_r_squared(
     return float(1.0 - ss_res / ss_tot)
 
 
+def fit_linear_trajectory(
+    env: Environment,
+    posterior: NDArray[np.float64],
+    times: NDArray[np.float64],
+    *,
+    n_samples: int = 1000,
+    method: Literal["map", "sample"] = "sample",
+    rng: np.random.Generator | int | None = None,
+) -> LinearFitResult:
+    """Fit linear trajectory to posterior using linear regression.
+
+    Fits a straight line to the decoded position sequence, providing slope
+    (replay speed) and intercept estimates. Optionally uses Monte Carlo
+    sampling to quantify uncertainty in the slope estimate.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment (provides bin_centers for coordinate transforms).
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior probability distribution over spatial bins for each time bin.
+        Each row should sum to 1.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time values for each time bin. Used as the independent variable (x)
+        in the regression. Need not be uniformly spaced.
+    n_samples : int, optional
+        Number of Monte Carlo samples from the posterior for uncertainty
+        estimation (only used when method="sample"). Default is 1000.
+    method : {"map", "sample"}, optional
+        How to fit the linear trajectory:
+        - "map": Use argmax positions directly. Fast but ignores uncertainty.
+        - "sample" (default): Sample from posterior, fit to each sample,
+          average coefficients. Provides uncertainty estimate via slope_std.
+    rng : np.random.Generator | int | None, optional
+        Random number generator for reproducibility (method="sample" only).
+        - If Generator: Use directly
+        - If int: Seed for np.random.default_rng()
+        - If None: Use default RNG (not reproducible)
+
+    Returns
+    -------
+    LinearFitResult
+        Container with slope, intercept, r_squared, and slope_std.
+        slope_std is None when method="map".
+
+    Raises
+    ------
+    ValueError
+        If method is not "map" or "sample".
+        If posterior is not 2D.
+        If times length doesn't match posterior shape.
+
+    See Also
+    --------
+    LinearFitResult : Container for linear fit results.
+    fit_isotonic_trajectory : For monotonic (non-linear) fits.
+
+    Notes
+    -----
+    **Slope interpretation**: The slope is in units of bin indices per second.
+    To convert to environment units (e.g., cm/s):
+
+    .. code-block:: python
+
+        speed_cm_s = result.slope * env.bin_size  # for regular grids
+
+    **Sampling implementation** (for method="sample"):
+
+    Sampling is performed in cumulative-sum space to handle peaky posteriors:
+
+    .. code-block:: python
+
+        cumsum = np.cumsum(posterior, axis=1)
+        u = rng.random((n_samples, n_time_bins, 1))
+        samples = np.argmax(cumsum >= u, axis=-1)
+
+    This avoids numerical issues with np.random.choice on posteriors
+    with probabilities very close to 0 or 1.
+
+    **Edge cases**:
+
+    - **Constant positions**: If all decoded positions are identical, R² = 1.0
+      (perfect fit to horizontal line). Check if slope ≈ 0 to detect this case.
+    - **Constant times**: If all time values are identical, slope is undefined
+      and set to 0.0 with intercept = mean position.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.decoding.trajectory import fit_linear_trajectory
+    >>>
+    >>> # Create environment and posterior with linear trajectory
+    >>> positions = np.linspace(0, 100, 1000).reshape(-1, 1)
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> n_time_bins = 20
+    >>> posterior = np.zeros((n_time_bins, env.n_bins))
+    >>> for t in range(n_time_bins):
+    ...     posterior[t, t * 2] = 1.0  # Linear trajectory
+    >>> times = np.linspace(0, 1, n_time_bins)
+    >>>
+    >>> result = fit_linear_trajectory(env, posterior, times, method="map")
+    >>> print(f"slope = {result.slope:.2f} bins/s, R² = {result.r_squared:.3f}")
+    slope = 38.00 bins/s, R² = 1.000
+    """
+    if method not in ("map", "sample"):
+        raise ValueError(f"method must be 'map' or 'sample', got {method!r}")
+
+    # Input validation
+    if posterior.ndim != 2:
+        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
+
+    n_time_bins = posterior.shape[0]
+
+    if len(times) != n_time_bins:
+        raise ValueError(
+            f"times length ({len(times)}) must match posterior shape[0] ({n_time_bins})"
+        )
+
+    if method == "map":
+        # Use argmax positions directly
+        positions = np.argmax(posterior, axis=1).astype(np.float64)
+
+        # Simple linear regression
+        slope, intercept = _fit_line(times, positions)
+        predicted = slope * times + intercept
+        r_squared = _compute_r_squared(positions, predicted)
+
+        return LinearFitResult(
+            slope=float(slope),
+            intercept=float(intercept),
+            r_squared=float(r_squared),
+            slope_std=None,
+        )
+
+    # method == "sample"
+    # Set up RNG
+    if rng is None:
+        rng_gen = np.random.default_rng()
+    elif isinstance(rng, int):
+        rng_gen = np.random.default_rng(rng)
+    else:
+        rng_gen = rng
+
+    # Sample positions from posterior using cumulative sum approach
+    # This is numerically stable for peaky posteriors
+    cumsum = np.cumsum(posterior, axis=1)
+
+    # Generate uniform random values: (n_samples, n_time_bins, 1)
+    u = rng_gen.random((n_samples, n_time_bins, 1))
+
+    # Find bin indices where cumsum exceeds uniform values
+    # Shape: (n_samples, n_time_bins)
+    sampled_positions = np.argmax(cumsum >= u, axis=-1).astype(np.float64)
+
+    # Fit line to each sample
+    slopes = np.empty(n_samples)
+    intercepts = np.empty(n_samples)
+
+    for i in range(n_samples):
+        slopes[i], intercepts[i] = _fit_line(times, sampled_positions[i])
+
+    # Average coefficients
+    mean_slope = np.mean(slopes)
+    mean_intercept = np.mean(intercepts)
+    slope_std = np.std(slopes, ddof=1)
+
+    # Compute R² using mean coefficients on expected (weighted mean) positions
+    n_bins = posterior.shape[1]
+    bin_indices = np.arange(n_bins)
+    expected_positions = np.sum(posterior * bin_indices, axis=1)
+    predicted = mean_slope * times + mean_intercept
+    r_squared = _compute_r_squared(expected_positions, predicted)
+
+    return LinearFitResult(
+        slope=float(mean_slope),
+        intercept=float(mean_intercept),
+        r_squared=float(r_squared),
+        slope_std=float(slope_std),
+    )
+
+
+def _fit_line(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, float]:
+    """Fit a line y = slope*x + intercept using least squares.
+
+    Parameters
+    ----------
+    x : NDArray[np.float64]
+        Independent variable.
+    y : NDArray[np.float64]
+        Dependent variable.
+
+    Returns
+    -------
+    tuple[float, float]
+        (slope, intercept) of the fitted line.
+    """
+    x_mean = np.mean(x)
+    y_mean = np.mean(y)
+
+    # Compute slope and intercept
+    numerator = np.sum((x - x_mean) * (y - y_mean))
+    denominator = np.sum((x - x_mean) ** 2)
+
+    if denominator == 0:
+        # All x values are the same - slope is undefined
+        return 0.0, float(y_mean)
+
+    slope = numerator / denominator
+    intercept = y_mean - slope * x_mean
+
+    return float(slope), float(intercept)
+
+
 __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
     "fit_isotonic_trajectory",
+    "fit_linear_trajectory",
 ]

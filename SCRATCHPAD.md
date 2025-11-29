@@ -3,9 +3,32 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: Milestone 3.2 Complete - Next: 3.3 Linear Regression
+**Current Milestone**: Milestone 3.3 Complete - Next: 3.4 Radon Transform Detection
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 3.3 Complete (Linear Regression)
+
+**Milestone 3.3 - Linear Regression**: ✅ COMPLETED
+
+- Implemented `fit_linear_trajectory()` function in `trajectory.py`:
+  - Two methods: `method="map"` (argmax) and `method="sample"` (Monte Carlo)
+  - Uses cumulative-sum sampling for numerical stability with peaky posteriors
+  - Handles `rng` parameter for reproducibility (int seed or Generator)
+  - Returns `LinearFitResult` with slope, intercept, r_squared, slope_std
+- Added input validation for posterior shape and times length
+- Documented edge cases (constant positions, constant times)
+- Added comprehensive test suite (13 new tests)
+- Code review passed with "APPROVE" rating
+- All 44 trajectory tests pass, ruff and mypy pass
+
+**Implementation details**:
+- Cumulative-sum sampling: `cumsum = np.cumsum(posterior, axis=1); samples = np.argmax(cumsum >= u, axis=-1)`
+- Avoids issues with `np.random.choice` on near-zero probabilities
+- Helper function `_fit_line()` implements basic least squares regression
+- R² computed using `_compute_r_squared()` helper (shared with isotonic)
+
+**Next task**: Milestone 3.4 - Radon Transform Detection (`detect_trajectory_radon`)
 
 ### 2025-11-28 - Milestone 3.2 Complete (Isotonic Regression)
 

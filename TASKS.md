@@ -249,7 +249,7 @@ assert result.direction in ("increasing", "decreasing")
 
 ### 3.3 Linear Regression (`trajectory.py` - Part 3)
 
-- [ ] Implement `fit_linear_trajectory(env, posterior, times, *, n_samples=1000, method="sample", rng=None)`
+- [x] Implement `fit_linear_trajectory(env, posterior, times, *, n_samples=1000, method="sample", rng=None)`
   - method="map": Simple linear regression on argmax positions
   - method="sample": Monte Carlo sampling from posterior
     - Use cumulative-sum sampling for numerical stability
@@ -257,7 +257,7 @@ assert result.direction in ("increasing", "decreasing")
   - Handle `rng` parameter for reproducibility
   - Return `LinearFitResult`
 
-**Success**:
+**Success**: ✅ (13 new tests, 44 total in test_trajectory.py)
 
 ```python
 result = fit_linear_trajectory(env, posterior, times, rng=42)
