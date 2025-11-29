@@ -88,11 +88,11 @@ assert result.posterior.shape == (n_time_bins, env.n_bins)
 
 ### 1.5 Estimate Functions (`estimates.py`)
 
-- [ ] Implement `map_estimate(posterior)` → bin indices
-- [ ] Implement `map_position(env, posterior)` → coordinates
-- [ ] Implement `mean_position(env, posterior)` → coordinates
-- [ ] Implement `entropy(posterior)` → bits (mask-based)
-- [ ] Implement `credible_region(env, posterior, level=0.95)` → HPD bin indices
+- [x] Implement `map_estimate(posterior)` → bin indices
+- [x] Implement `map_position(env, posterior)` → coordinates
+- [x] Implement `mean_position(env, posterior)` → coordinates
+- [x] Implement `entropy(posterior)` → bits (mask-based)
+- [x] Implement `credible_region(env, posterior, level=0.95)` → HPD bin indices
 
 **Success**:
 
@@ -110,21 +110,21 @@ assert (ent >= 0).all() and (ent <= np.log2(env.n_bins)).all()
 
 ### 1.6 Phase 1 Tests
 
-- [ ] `tests/decoding/test_result.py`
+- [x] `tests/decoding/test_result.py`
   - Test DecodingResult properties compute correctly
   - Test cached_property caching behavior
   - Test with edge cases (uniform posterior, delta posterior)
-- [ ] `tests/decoding/test_likelihood.py`
+- [x] `tests/decoding/test_likelihood.py`
   - Test log_poisson_likelihood shape and dtype
   - Test min_rate clipping prevents -inf
   - Test against reference implementation (replay_trajectory_classification)
   - Test numerical stability with extreme rates
-- [ ] `tests/decoding/test_posterior.py`
+- [x] `tests/decoding/test_posterior.py`
   - Test normalize_to_posterior sums to 1
   - Test prior application
   - Test handle_degenerate modes
   - Test decode_position end-to-end
-- [ ] `tests/decoding/test_estimates.py`
+- [x] `tests/decoding/test_estimates.py`
   - Test each estimate function
   - Test consistency with DecodingResult properties
   - Test entropy bounds

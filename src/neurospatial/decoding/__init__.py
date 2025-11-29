@@ -19,6 +19,23 @@ Result Containers
 DecodingResult : Container for decoding results
     Stores posterior with lazy-computed derived properties (MAP, mean, entropy).
 
+Estimate Functions
+------------------
+map_estimate : Maximum a posteriori bin index
+    Bin index of highest posterior probability per time bin.
+
+map_position : MAP position in environment coordinates
+    Coordinate position of the MAP bin.
+
+mean_position : Posterior mean position
+    Probability-weighted average position.
+
+entropy : Posterior entropy in bits
+    Uncertainty measure (0 = certain, log2(n_bins) = uniform).
+
+credible_region : Highest posterior density region
+    Smallest set of bins containing specified probability mass.
+
 Quality Metrics
 ---------------
 decoding_error : Position error per time bin
@@ -99,6 +116,13 @@ with numerical stability considerations for log-domain computation.
 """
 
 from neurospatial.decoding._result import DecodingResult
+from neurospatial.decoding.estimates import (
+    credible_region,
+    entropy,
+    map_estimate,
+    map_position,
+    mean_position,
+)
 from neurospatial.decoding.likelihood import (
     log_poisson_likelihood,
     poisson_likelihood,
@@ -114,8 +138,13 @@ from neurospatial.decoding.posterior import (
 
 __all__ = [
     "DecodingResult",
+    "credible_region",
     "decode_position",
+    "entropy",
     "log_poisson_likelihood",
+    "map_estimate",
+    "map_position",
+    "mean_position",
     "normalize_to_posterior",
     "poisson_likelihood",
 ]

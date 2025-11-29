@@ -3,9 +3,49 @@
 ## Current Work
 
 **Started**: 2025-11-28
-**Current Milestone**: 1.5 Estimate Functions (Next)
+**Current Milestone**: Milestone 1 Complete - Ready for Milestone 2 (Quality Metrics)
 
 ## Session Notes
+
+### 2025-11-28 - Milestone 1.5 & 1.6 Complete (Phase 1 Done!)
+
+**Milestone 1.5 - Estimate Functions**: ✅ COMPLETED
+
+- Created `src/neurospatial/decoding/estimates.py` with five functions:
+  - `map_estimate()` - Maximum a posteriori bin index
+  - `map_position()` - MAP position in environment coordinates
+  - `mean_position()` - Posterior mean position (expected value)
+  - `entropy()` - Posterior entropy in bits (mask-based, numerically stable)
+  - `credible_region()` - Highest posterior density region (HPD)
+- Created comprehensive test suite: `tests/decoding/test_estimates.py` (27 tests)
+- All tests pass (127 total in decoding/, 2 skipped)
+- Code review passed with "APPROVE" rating
+- Ruff and mypy pass with no issues
+
+**Implementation highlights**:
+- Functions mirror DecodingResult properties for API consistency
+- Standalone functions enable use without creating DecodingResult container
+- Entropy uses mask-based computation (`np.where(p > 0, np.log2(p), 0.0)`)
+- HPD region uses sorted probabilities + cumsum + searchsorted
+- Comprehensive docstrings with NumPy format, examples, and type annotations
+- Tests verify consistency with DecodingResult properties
+
+**Milestone 1.6 - Phase 1 Tests**: ✅ COMPLETED
+
+All Phase 1 tests pass:
+
+- `test_result.py` - 28 tests
+- `test_likelihood.py` - 28 tests
+- `test_posterior.py` - 41 tests
+- `test_estimates.py` - 27 tests
+- Total: 127 passed, 2 skipped
+
+**Next task**: Milestone 2 - Quality Metrics
+
+- `decoding_error()` - Position error per time bin
+- `median_decoding_error()` - Median error summary
+- `confusion_matrix()` - Spatial confusion analysis
+- `decoding_correlation()` - Weighted correlation
 
 ### 2025-11-28 - Milestone 1.4 Complete
 
