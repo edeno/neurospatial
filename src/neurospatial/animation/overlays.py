@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
+from matplotlib import colormaps
+from matplotlib.colors import to_hex
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
@@ -118,7 +120,7 @@ class OverlayProtocol(Protocol):
         frame_times: NDArray[np.float64],
         n_frames: int,
         env: Any,
-    ) -> PositionData | BodypartData | HeadDirectionData | VideoData:
+    ) -> PositionData | BodypartData | HeadDirectionData | VideoData | EventData:
         """Convert overlay to internal data representation.
 
         Parameters
@@ -132,7 +134,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData
             Internal data container aligned to frame times.
 
         Notes
@@ -673,6 +675,543 @@ class HeadDirectionOverlay:
 
 
 @dataclass
+class EventOverlay:
+    """Overlay for discrete timestamped events at specified spatial positions.
+
+    Displays events (spikes, licks, rewards, zone entries, etc.) as markers at
+    positions that can be either:
+
+    - Explicitly provided per event (for rewards, stimuli, zone events)
+    - Interpolated from animal trajectory (for spikes, licks, animal-centric events)
+
+    Supports multiple event types with distinct colors and optional temporal
+    persistence (decay) to show recent event history.
+
+    Parameters
+    ----------
+    event_times : NDArray[np.float64] | dict[str, NDArray[np.float64]]
+        Event timestamps in seconds. Either:
+
+        - Single event type: 1D array of event times
+        - Multiple event types: dict mapping event names to time arrays
+
+    event_positions : NDArray[np.float64] | dict[str, NDArray[np.float64]] | None
+        **Position Mode A - Explicit positions** (for rewards, stimuli, zone events):
+        Explicit event positions in environment coordinates.
+
+        - Shape: (n_events, n_dims) for per-event positions
+        - Shape: (1, n_dims) to broadcast single position to all events
+        - dict: Mapping event names to position arrays
+
+        If provided, positions are used directly (no interpolation).
+        Mutually exclusive with ``positions``/``position_times``.
+        Default is None.
+    positions : NDArray[np.float64] | None
+        **Position Mode B - Trajectory interpolation** (for spikes, licks):
+        Animal position trajectory with shape (n_samples, n_dims) in environment
+        (x, y) coordinates. Used to interpolate position at each event time.
+        Mutually exclusive with ``event_positions``. Default is None.
+    position_times : NDArray[np.float64] | None
+        Timestamps for position samples in seconds. Must be monotonically
+        increasing. Required when using ``positions`` parameter. Default is None.
+    interp : {"linear", "nearest"}, optional
+        Interpolation for position lookup at event times. "linear" for smooth
+        trajectory-based positions, "nearest" to snap to exact samples.
+        Only used with ``positions``/``position_times`` mode. Default is "linear".
+    colors : str | dict[str, str] | None, optional
+        Colors for event markers:
+
+        - str: Single color for all event types (e.g., "red")
+        - dict: Mapping event names to colors
+        - None: Auto-assign from perceptually distinct colormap (tab10)
+
+        Default is None.
+    size : float, optional
+        Marker size in points. Default is 8.0.
+    decay_frames : int | None, optional
+        Number of frames over which event markers persist and fade.
+
+        - None: Events appear only on their exact frame (instant)
+        - 0: Same as None (instant)
+        - >0: Events persist for N frames with decaying opacity
+
+        Default is None (instant, no decay).
+    markers : str | dict[str, str] | None, optional
+        Marker style(s) for matplotlib/video backend ('o', 's', '^', 'v', 'd').
+
+        - str: Single marker for all event types
+        - dict: Mapping event names to markers
+        - None: Use 'o' (circle) for all
+
+        Napari uses circles regardless. Default is None.
+    border_color : str, optional
+        Border color for markers. Default is "white".
+    border_width : float, optional
+        Border width in pixels. Default is 0.5.
+
+    Attributes
+    ----------
+    event_times : NDArray[np.float64] | dict[str, NDArray[np.float64]]
+        Event timestamps (normalized to dict in __post_init__).
+    event_positions : NDArray[np.float64] | dict[str, NDArray[np.float64]] | None
+        Explicit event positions (Mode A).
+    positions : NDArray[np.float64] | None
+        Animal trajectory positions (Mode B).
+    position_times : NDArray[np.float64] | None
+        Trajectory timestamps (Mode B).
+    interp : str
+        Interpolation method.
+    colors : str | dict[str, str] | None
+        Event colors.
+    size : float
+        Marker size.
+    decay_frames : int | None
+        Decay frame count.
+    markers : str | dict[str, str] | None
+        Marker styles.
+    border_color : str
+        Border color.
+    border_width : float
+        Border width.
+
+    See Also
+    --------
+    SpikeOverlay : Convenience alias for EventOverlay for neural spike visualization.
+    PositionOverlay : Trajectory visualization overlay.
+
+    Notes
+    -----
+    **Position Modes:**
+
+    Mode A (explicit positions) is used when events occur at known fixed locations,
+    independent of animal position. Examples: reward delivery at feeder, zone entry
+    at boundary, stimulus presentation at screen location.
+
+    Mode B (trajectory interpolation) is used when events occur "at the animal",
+    and position should be interpolated from the animal's trajectory at event time.
+    Examples: neural spikes, licks, lever presses.
+
+    The two modes are mutually exclusive - provide either ``event_positions`` OR
+    ``positions`` + ``position_times``, but not both.
+
+    **Coordinate Convention:**
+
+    Event positions use environment coordinates (x, y), the same as tracking data.
+    The animation system automatically transforms to napari pixel space.
+
+    Examples
+    --------
+    Reward delivery at fixed feeder location (explicit positions)::
+
+        events = EventOverlay(
+            event_times=reward_times,
+            event_positions=np.array([[50.0, 25.0]]),  # Feeder location (broadcast)
+            colors="gold",
+            markers="s",
+        )
+
+    Zone entry events at zone boundaries (explicit positions per event)::
+
+        events = EventOverlay(
+            event_times=zone_entry_times,
+            event_positions=zone_entry_locations,  # (n_events, 2)
+            colors="cyan",
+        )
+
+    Neural spikes at animal position (trajectory interpolation)::
+
+        events = EventOverlay(
+            event_times=spike_times,  # Shape: (n_spikes,)
+            positions=trajectory,  # Shape: (n_samples, 2)
+            position_times=timestamps,  # Shape: (n_samples,)
+            colors="red",
+            size=10.0,
+        )
+        env.animate_fields(fields, overlays=[events])
+
+    Multiple neurons with auto-colors::
+
+        events = EventOverlay(
+            event_times={
+                "cell_001": spikes_1,
+                "cell_002": spikes_2,
+                "cell_003": spikes_3,
+            },
+            positions=trajectory,
+            position_times=timestamps,
+            # colors=None -> auto-assign from tab10
+        )
+
+    Behavioral events with different markers::
+
+        events = EventOverlay(
+            event_times={
+                "lick": lick_times,
+                "reward": reward_times,
+                "lever_press": press_times,
+            },
+            positions=trajectory,
+            position_times=timestamps,
+            colors={"lick": "cyan", "reward": "gold", "lever_press": "magenta"},
+            markers={"lick": "o", "reward": "s", "lever_press": "^"},
+        )
+
+    With temporal decay (events visible for 5 frames)::
+
+        events = EventOverlay(
+            event_times=event_times,
+            positions=trajectory,
+            position_times=timestamps,
+            decay_frames=5,  # Recent events fade over 5 frames
+        )
+    """
+
+    # Event times (required)
+    event_times: NDArray[np.float64] | dict[str, NDArray[np.float64]]
+
+    # Position Mode A: Explicit positions
+    event_positions: NDArray[np.float64] | dict[str, NDArray[np.float64]] | None = None
+
+    # Position Mode B: Trajectory interpolation
+    positions: NDArray[np.float64] | None = None
+    position_times: NDArray[np.float64] | None = None
+    interp: Literal["linear", "nearest"] = "linear"
+
+    # Appearance
+    colors: str | dict[str, str] | None = None
+    size: float = 8.0
+    decay_frames: int | None = None
+    markers: str | dict[str, str] | None = None
+    border_color: str = "white"
+    border_width: float = 0.5
+
+    # Protocol attributes (set to None - not used by EventOverlay directly)
+    times: NDArray[np.float64] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        """Validate inputs and normalize event_times to dict format."""
+        # Normalize event_times to dict format
+        if isinstance(self.event_times, np.ndarray):
+            object.__setattr__(self, "event_times", {"event": self.event_times})
+
+        # Normalize event_positions to dict format if provided
+        if self.event_positions is not None and isinstance(
+            self.event_positions, np.ndarray
+        ):
+            object.__setattr__(self, "event_positions", {"event": self.event_positions})
+
+        # Validate position mode (mutual exclusion)
+        has_explicit = self.event_positions is not None
+        has_trajectory = self.positions is not None or self.position_times is not None
+
+        if has_explicit and has_trajectory:
+            raise ValueError(
+                "WHAT: Both event_positions and positions/position_times provided.\n\n"
+                "WHY: EventOverlay supports two mutually exclusive position modes:\n"
+                "  - Mode A (explicit): Use event_positions for fixed-location events\n"
+                "  - Mode B (trajectory): Use positions + position_times for "
+                "events at animal location\n\n"
+                "HOW: Provide EITHER event_positions OR (positions AND position_times), "
+                "not both."
+            )
+
+        if not has_explicit and not has_trajectory:
+            raise ValueError(
+                "WHAT: No position data provided for events.\n\n"
+                "WHY: EventOverlay needs to know where to display each event.\n\n"
+                "HOW: Provide either:\n"
+                "  - event_positions: for events at fixed locations "
+                "(rewards, stimuli, zone entries)\n"
+                "  - positions + position_times: for events at animal location "
+                "(spikes, licks)"
+            )
+
+        # Validate trajectory mode has both required fields
+        if has_trajectory:
+            if self.positions is None:
+                raise ValueError(
+                    "WHAT: position_times provided without positions.\n\n"
+                    "WHY: Trajectory mode requires both the trajectory array (positions) "
+                    "and its timestamps (position_times).\n\n"
+                    "HOW: Provide positions array with shape (n_samples, n_dims)."
+                )
+            if self.position_times is None:
+                raise ValueError(
+                    "WHAT: positions provided without position_times.\n\n"
+                    "WHY: Trajectory mode requires both the trajectory array (positions) "
+                    "and its timestamps (position_times) for temporal interpolation.\n\n"
+                    "HOW: Provide position_times array with shape (n_samples,)."
+                )
+
+        # Validate event_positions shape compatibility (if explicit positions mode)
+        if self.event_positions is not None:
+            assert isinstance(self.event_positions, dict)  # Type narrowing for mypy
+            assert isinstance(self.event_times, dict)  # Type narrowing for mypy
+            for name, pos_arr in self.event_positions.items():
+                # Get matching event times (avoid `or` on numpy arrays)
+                times_arr = self.event_times.get(name)
+                if times_arr is None:
+                    times_arr = self.event_times.get("event")
+                if times_arr is not None and pos_arr.shape[0] not in (
+                    1,
+                    len(times_arr),
+                ):
+                    raise ValueError(
+                        f"WHAT: event_positions for '{name}' has incompatible shape.\n\n"
+                        f"WHY: Got {pos_arr.shape[0]} positions for {len(times_arr)} "
+                        f"events. Must be either 1 (broadcast) or {len(times_arr)} "
+                        "(per-event).\n\n"
+                        "HOW: Provide either:\n"
+                        f"  - Single position (1, n_dims) to broadcast to all events\n"
+                        f"  - One position per event ({len(times_arr)}, n_dims)"
+                    )
+
+        # Validate event times arrays (now guaranteed to be dict after normalization)
+        assert isinstance(self.event_times, dict)  # Type narrowing for mypy
+        for name, times_arr in self.event_times.items():
+            if times_arr.ndim != 1:
+                raise ValueError(
+                    f"WHAT: Event times for '{name}' is not 1D "
+                    f"(got shape {times_arr.shape}).\n\n"
+                    "WHY: Event times must be a 1D array of timestamps.\n\n"
+                    "HOW: Flatten the array or ensure shape is (n_events,)."
+                )
+            if not np.all(np.isfinite(times_arr)):
+                n_invalid = np.sum(~np.isfinite(times_arr))
+                raise ValueError(
+                    f"WHAT: Event times for '{name}' contains {n_invalid} "
+                    "non-finite values (NaN or Inf).\n\n"
+                    "WHY: Event timestamps must be finite numbers for temporal "
+                    "alignment.\n\n"
+                    "HOW: Remove or interpolate NaN/Inf values before creating overlay."
+                )
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> EventData:
+        """Convert EventOverlay to EventData aligned to animation frames.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        EventData
+            Internal data container with event positions and frame indices.
+        """
+        # Type narrowing: __post_init__ normalizes these to dict format
+        assert isinstance(self.event_times, dict)  # Always dict after __post_init__
+
+        event_positions_out: dict[str, NDArray[np.float64]] = {}
+        event_frame_indices_out: dict[str, NDArray[np.int_]] = {}
+
+        # Get frame time range for filtering
+        frame_t_min = frame_times[0] if len(frame_times) > 0 else 0.0
+        frame_t_max = frame_times[-1] if len(frame_times) > 0 else 0.0
+
+        # Process each event type
+        for event_name, event_times_arr in self.event_times.items():
+            # Filter events to those within frame time range
+            in_range_mask = (event_times_arr >= frame_t_min) & (
+                event_times_arr <= frame_t_max
+            )
+
+            # Also check position_times range if in trajectory mode
+            if self.positions is not None and self.position_times is not None:
+                pos_t_min = self.position_times[0]
+                pos_t_max = self.position_times[-1]
+                pos_range_mask = (event_times_arr >= pos_t_min) & (
+                    event_times_arr <= pos_t_max
+                )
+                combined_mask = in_range_mask & pos_range_mask
+
+                # Warn if events are outside range
+                n_outside = np.sum(~combined_mask)
+                if n_outside > 0:
+                    import warnings
+
+                    warnings.warn(
+                        f"EventOverlay '{event_name}': {n_outside} events are outside "
+                        f"the valid time range and will be excluded. "
+                        f"Frame range: [{frame_t_min:.3f}, {frame_t_max:.3f}], "
+                        f"Position range: [{pos_t_min:.3f}, {pos_t_max:.3f}].",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                in_range_mask = combined_mask
+            else:
+                # Explicit positions mode - only check frame range
+                n_outside = np.sum(~in_range_mask)
+                if n_outside > 0:
+                    import warnings
+
+                    warnings.warn(
+                        f"EventOverlay '{event_name}': {n_outside} events are outside "
+                        f"the frame time range [{frame_t_min:.3f}, {frame_t_max:.3f}] "
+                        "and will be excluded.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+
+            # Get filtered event times
+            filtered_times = event_times_arr[in_range_mask]
+
+            if len(filtered_times) == 0:
+                # No events in range - use empty arrays
+                event_positions_out[event_name] = np.array([]).reshape(0, env.n_dims)
+                event_frame_indices_out[event_name] = np.array([], dtype=np.int_)
+                continue
+
+            # Compute positions
+            if self.event_positions is not None:
+                # Mode A: Explicit positions
+                # Type narrowing: __post_init__ normalizes arrays to dict format
+                assert isinstance(self.event_positions, dict)
+                event_pos = self.event_positions.get(event_name)
+                if event_pos is None:
+                    # Single array normalized to dict with "event" key
+                    event_pos = self.event_positions.get("event")
+
+                if event_pos is not None:
+                    # Handle broadcast: single position to all events
+                    if event_pos.shape[0] == 1:
+                        # Broadcast single position to all filtered events
+                        positions_for_events = np.broadcast_to(
+                            event_pos, (len(filtered_times), event_pos.shape[1])
+                        ).copy()
+                    else:
+                        # Use positions for events in range
+                        positions_for_events = event_pos[in_range_mask]
+                else:
+                    # Fallback - should not happen if validation passed
+                    positions_for_events = np.zeros((len(filtered_times), env.n_dims))
+            else:
+                # Mode B: Interpolate from trajectory
+                # Type narrowing: validation ensures both are not None in this mode
+                assert self.positions is not None
+                assert self.position_times is not None
+                if self.interp == "linear":
+                    positions_for_events = np.column_stack(
+                        [
+                            np.interp(
+                                filtered_times,
+                                self.position_times,
+                                self.positions[:, d],
+                            )
+                            for d in range(self.positions.shape[1])
+                        ]
+                    )
+                else:  # nearest
+                    # Find nearest position sample for each event
+                    indices = np.searchsorted(self.position_times, filtered_times)
+                    indices = np.clip(indices, 0, len(self.position_times) - 1)
+
+                    # Check if previous index is closer
+                    prev_indices = np.maximum(indices - 1, 0)
+                    dist_to_current = np.abs(
+                        filtered_times - self.position_times[indices]
+                    )
+                    dist_to_prev = np.abs(
+                        filtered_times - self.position_times[prev_indices]
+                    )
+                    use_prev = dist_to_prev < dist_to_current
+                    final_indices = np.where(use_prev, prev_indices, indices)
+
+                    positions_for_events = self.positions[final_indices]
+
+            # Compute frame indices (nearest frame for each event)
+            frame_indices = np.searchsorted(frame_times, filtered_times)
+            frame_indices = np.clip(frame_indices, 0, n_frames - 1)
+
+            event_positions_out[event_name] = positions_for_events
+            event_frame_indices_out[event_name] = frame_indices.astype(np.int_)
+
+        # Resolve colors
+        colors_out = self._resolve_colors(list(self.event_times.keys()))
+
+        # Resolve markers
+        markers_out = self._resolve_markers(list(self.event_times.keys()))
+
+        # Resolve decay_frames (None -> 0)
+        decay = 0 if self.decay_frames is None else self.decay_frames
+
+        return EventData(
+            event_positions=event_positions_out,
+            event_frame_indices=event_frame_indices_out,
+            colors=colors_out,
+            markers=markers_out,
+            size=self.size,
+            decay_frames=decay,
+            border_color=self.border_color,
+            border_width=self.border_width,
+        )
+
+    def _resolve_colors(self, event_names: list[str]) -> dict[str, str]:
+        """Resolve colors to dict[str, str] format.
+
+        Parameters
+        ----------
+        event_names : list[str]
+            Names of event types.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping from event name to color string.
+        """
+        if self.colors is None:
+            # Auto-assign from tab10 colormap
+            tab10 = colormaps["tab10"]
+            return {name: to_hex(tab10(i % 10)) for i, name in enumerate(event_names)}
+        elif isinstance(self.colors, str):
+            # Single color for all
+            return dict.fromkeys(event_names, self.colors)
+        else:
+            # Dict provided
+            return self.colors
+
+    def _resolve_markers(self, event_names: list[str]) -> dict[str, str]:
+        """Resolve markers to dict[str, str] format.
+
+        Parameters
+        ----------
+        event_names : list[str]
+            Names of event types.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping from event name to marker style.
+        """
+        if self.markers is None:
+            # Default 'o' for all
+            return dict.fromkeys(event_names, "o")
+        elif isinstance(self.markers, str):
+            # Single marker for all
+            return dict.fromkeys(event_names, self.markers)
+        else:
+            # Dict provided
+            return self.markers
+
+
+# Convenience alias for neural spike visualization
+SpikeOverlay = EventOverlay
+"""Convenience alias for EventOverlay for neural spike visualization.
+
+See EventOverlay for full documentation.
+"""
+
+
+@dataclass
 class VideoOverlay:
     """Video background overlay for displaying recorded footage behind or above fields.
 
@@ -1129,6 +1668,68 @@ class HeadDirectionData:
 
 
 @dataclass
+class EventData:
+    """Internal container for event overlay data aligned to animation frames.
+
+    This is used internally by backends and should not be instantiated by users.
+    Created by the conversion pipeline from EventOverlay instances.
+
+    Parameters
+    ----------
+    event_positions : dict[str, NDArray[np.float64]]
+        Dict mapping event type names to position arrays with shape (n_events, n_dims).
+        Positions are in environment coordinates (x, y).
+    event_frame_indices : dict[str, NDArray[np.int_]]
+        Dict mapping event type names to frame index arrays with shape (n_events,).
+        Each value is the animation frame index where the event should appear.
+    colors : dict[str, str]
+        Dict mapping event type names to color strings.
+    markers : dict[str, str]
+        Dict mapping event type names to marker style strings.
+    size : float
+        Marker size in points.
+    decay_frames : int
+        Number of frames over which events persist (0 = instant).
+    border_color : str
+        Border color for markers.
+    border_width : float
+        Border width in pixels.
+
+    Attributes
+    ----------
+    event_positions : dict[str, NDArray[np.float64]]
+        Event positions by type.
+    event_frame_indices : dict[str, NDArray[np.int_]]
+        Frame indices by type.
+    colors : dict[str, str]
+        Colors by type.
+    markers : dict[str, str]
+        Markers by type.
+    size : float
+        Marker size.
+    decay_frames : int
+        Decay frame count (0 = instant).
+    border_color : str
+        Border color.
+    border_width : float
+        Border width.
+
+    See Also
+    --------
+    EventOverlay : User-facing overlay configuration
+    """
+
+    event_positions: dict[str, NDArray[np.float64]]
+    event_frame_indices: dict[str, NDArray[np.int_]]
+    colors: dict[str, str]
+    markers: dict[str, str]
+    size: float
+    decay_frames: int
+    border_color: str
+    border_width: float
+
+
+@dataclass
 class VideoData:
     """Internal container for video overlay data aligned to animation frames.
 
@@ -1247,6 +1848,8 @@ class OverlayData:
         List of head direction overlays. Default is empty list.
     videos : list[VideoData], optional
         List of video overlays. Default is empty list.
+    events : list[EventData], optional
+        List of event overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
         Region names in normalized format. Key is frame index (0 = all frames),
         value is list of region names. Populated by _convert_overlays_to_data()
@@ -1262,6 +1865,8 @@ class OverlayData:
         List of head direction overlays.
     videos : list[VideoData]
         List of video overlays.
+    events : list[EventData]
+        List of event overlays.
     regions : dict[int, list[str]] | None
         Region names in normalized format (key 0 = all frames).
 
@@ -1288,6 +1893,7 @@ class OverlayData:
     bodypart_sets: list[BodypartData] = field(default_factory=list)
     head_directions: list[HeadDirectionData] = field(default_factory=list)
     videos: list[VideoData] = field(default_factory=list)
+    events: list[EventData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
 
     def __post_init__(self) -> None:
@@ -2299,6 +2905,7 @@ def _convert_overlays_to_data(
     bodypart_data_list: list[BodypartData] = []
     head_direction_data_list: list[HeadDirectionData] = []
     video_data_list: list[VideoData] = []
+    event_data_list: list[EventData] = []
 
     # Process each overlay using protocol dispatch
     for overlay in overlays:
@@ -2322,10 +2929,13 @@ def _convert_overlays_to_data(
             head_direction_data_list.append(internal_data)
         elif isinstance(internal_data, VideoData):
             video_data_list.append(internal_data)
+        elif isinstance(internal_data, EventData):
+            event_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
-                f"HeadDirectionData, or VideoData, got {type(internal_data).__name__}."
+                f"HeadDirectionData, VideoData, or EventData, "
+                f"got {type(internal_data).__name__}."
             )
 
     # Normalize regions to dict[int, list[str]] format
@@ -2345,6 +2955,7 @@ def _convert_overlays_to_data(
         bodypart_sets=bodypart_data_list,
         head_directions=head_direction_data_list,
         videos=video_data_list,
+        events=event_data_list,
         regions=normalized_regions,
     )
 

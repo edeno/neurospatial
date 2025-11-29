@@ -24,6 +24,10 @@ MOUSE_SKELETON, RAT_SKELETON, SIMPLE_SKELETON : Skeleton
     Common skeleton presets
 VideoOverlay : class
     Video background overlay for displaying recorded footage
+EventOverlay : class
+    Overlay for discrete timestamped events (spikes, rewards, zone entries)
+SpikeOverlay : class
+    Convenience alias for EventOverlay for neural spike visualization
 VideoCalibration : class
     Coordinate transform from video pixels to environment cm
 VideoReaderProtocol : Protocol
@@ -36,7 +40,7 @@ Extensibility
 OverlayProtocol : Protocol
     Protocol for creating custom overlays. Implement ``times``, ``interp``,
     and ``convert_to_data()`` to create custom overlay types.
-PositionData, BodypartData, HeadDirectionData, VideoData : dataclass
+PositionData, BodypartData, HeadDirectionData, VideoData, EventData : dataclass
     Internal data containers returned by ``convert_to_data()``. Custom overlays
     should return one of these types.
 """
@@ -50,9 +54,12 @@ from neurospatial.animation.core import (
 )
 from neurospatial.animation.overlays import (
     BodypartData,
+    EventData,
+    EventOverlay,
     HeadDirectionData,
     OverlayProtocol,
     PositionData,
+    SpikeOverlay,
     VideoData,
     VideoOverlay,
 )
@@ -69,10 +76,13 @@ __all__: list[str] = [
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
     "BodypartData",
+    "EventData",
+    "EventOverlay",
     "HeadDirectionData",
     "OverlayProtocol",
     "PositionData",
     "Skeleton",
+    "SpikeOverlay",
     "VideoCalibration",
     "VideoData",
     "VideoOverlay",
