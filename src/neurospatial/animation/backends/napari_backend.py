@@ -1119,13 +1119,29 @@ def _render_event_overlay(
     frame_indices_array = np.concatenate(all_frame_indices)  # (N_total,)
     colors_array = np.array(all_colors)  # (N_total,) strings
 
-    # Sort by frame index for efficient cumulative updates (O(log N) via searchsorted)
+    # Sort by frame index for efficient per-frame updates
     sort_idx = np.argsort(frame_indices_array)
     positions_array = positions_array[sort_idx]
     frame_indices_array = frame_indices_array[sort_idx]
     colors_array = colors_array[sort_idx]
 
     n_events = len(positions_array)
+
+    # Precompute per-frame index ranges for O(events_per_frame) updates
+    # frame_starts[f] and frame_stops[f] give the slice of events for frame f
+    if n_events > 0:
+        max_frame = int(frame_indices_array[-1]) + 1
+        # Count events per frame
+        counts = np.bincount(frame_indices_array.astype(np.int64), minlength=max_frame)
+        # Cumulative sum gives end indices
+        frame_stops = np.cumsum(counts)
+        # Start indices are shifted stops
+        frame_starts = np.empty_like(frame_stops)
+        frame_starts[0] = 0
+        frame_starts[1:] = frame_stops[:-1]
+    else:
+        frame_starts = np.array([], dtype=np.int64)
+        frame_stops = np.array([], dtype=np.int64)
 
     # Convert string colors to RGBA arrays with user-specified opacity
     import matplotlib.colors as mcolors
@@ -1155,10 +1171,17 @@ def _render_event_overlay(
         scale=points_scale,
     )
 
-    # Store metadata for callback
+    # Store metadata for callback - includes precomputed per-frame ranges
     points_layer.metadata["event_frame_indices"] = frame_indices_array
     points_layer.metadata["event_decay_frames"] = event_data.decay_frames
     points_layer.metadata["event_n_events"] = n_events
+    points_layer.metadata["event_frame_starts"] = frame_starts
+    points_layer.metadata["event_frame_stops"] = frame_stops
+    # Persistent shown mask (updated in-place by callback)
+    points_layer.metadata["event_shown_mask"] = initial_shown
+    # State tracking for incremental updates
+    points_layer.metadata["event_last_frame"] = -1
+    points_layer.metadata["event_last_cutoff_idx"] = 0
 
     # Register frame-change callback
     _register_event_visibility_callback(viewer, points_layer)
@@ -1182,53 +1205,135 @@ def _register_event_visibility_callback(
         - event_frame_indices: Sorted array of frame indices for each event
         - event_decay_frames: None (cumulative), 0 (instant), or >0 (decay window)
         - event_n_events: Total number of events
+        - event_frame_starts: Precomputed start indices for each frame
+        - event_frame_stops: Precomputed stop indices for each frame
+        - event_shown_mask: Persistent boolean mask (updated in-place)
+        - event_last_frame: Last processed frame index
+        - event_last_cutoff_idx: Last cutoff index (for cumulative mode)
 
     Notes
     -----
-    Uses the ``shown`` mask for visibility control, which is ~30x faster than
-    alpha-based visibility (O(N) boolean operations vs O(N*4) float operations
-    plus napari color array processing).
+    Uses in-place updates to a persistent ``shown`` mask for O(events_per_frame)
+    performance instead of O(N_total) per frame. The precomputed frame_starts
+    and frame_stops arrays enable direct slicing without scanning all events.
 
-    Visibility modes:
-    - Cumulative (decay_frames=None): visible = frame_idx <= current_frame
-    - Instant (decay_frames=0): visible = frame_idx == current_frame
-    - Decay (decay_frames>0): visible = (current - decay) <= frame_idx <= current
+    Visibility modes with optimized update strategies:
 
-    For cumulative mode, uses searchsorted for O(log N) index lookup since
-    frame_indices are pre-sorted.
+    - **Cumulative** (decay_frames=None): Only set newly visible events to True.
+      Work is O(new_events) = O(events at current frame).
+    - **Instant** (decay_frames=0): Clear previous frame's events, set current.
+      Work is O(events_at_prev + events_at_current).
+    - **Decay** (decay_frames>0): Update sliding window edges.
+      Work is O(events_entering + events_leaving).
     """
 
     def on_frame_change(event: Any) -> None:
-        # Get current frame from dims slider
-        current_frame = int(viewer.dims.current_step[0])
+        with perf_timer("event_visibility_callback"):
+            # Get current frame from dims slider
+            current_frame = int(viewer.dims.current_step[0])
 
-        # Retrieve metadata
-        frame_indices = points_layer.metadata["event_frame_indices"]
-        decay_frames = points_layer.metadata["event_decay_frames"]
-        n_events = points_layer.metadata["event_n_events"]
+            # Retrieve metadata
+            frame_indices = points_layer.metadata["event_frame_indices"]
+            decay_frames = points_layer.metadata["event_decay_frames"]
+            n_events = points_layer.metadata["event_n_events"]
+            frame_starts = points_layer.metadata["event_frame_starts"]
+            frame_stops = points_layer.metadata["event_frame_stops"]
+            shown = points_layer.metadata["event_shown_mask"]
+            last_frame = points_layer.metadata["event_last_frame"]
+            last_cutoff_idx = points_layer.metadata["event_last_cutoff_idx"]
 
-        # Compute visibility mask based on mode
-        if decay_frames is None:
-            # Cumulative mode: all events up to current frame
-            # Use searchsorted for O(log N) instead of O(N) comparison
-            # frame_indices is sorted, so we find cutoff index
-            cutoff_idx = np.searchsorted(frame_indices, current_frame, side="right")
-            shown = np.zeros(n_events, dtype=bool)
-            shown[:cutoff_idx] = True
-        elif decay_frames == 0:
-            # Instant mode: only events on exact frame
-            shown = frame_indices == current_frame
-        else:
-            # Decay mode: events within window [current - decay, current]
-            start_frame = current_frame - decay_frames
-            shown = (frame_indices >= start_frame) & (frame_indices <= current_frame)
+            # Handle edge cases
+            if n_events == 0:
+                return
 
-        # Update visibility via shown mask (fast O(N) boolean operation)
-        # Block events during update to prevent race condition with status checker
-        with points_layer.events.blocker():
-            points_layer.shown = shown
-        # Force refresh to ensure _view_data and _view_size are consistent
-        points_layer.refresh()
+            n_frames = len(frame_starts)
+            mask_changed = False
+
+            # Compute visibility mask based on mode using in-place updates
+            if decay_frames is None:
+                # Cumulative mode: all events up to current frame
+                # Only set newly visible events (those between last_cutoff and new cutoff)
+                # Use searchsorted for O(log N) cutoff lookup
+                cutoff_idx = np.searchsorted(frame_indices, current_frame, side="right")
+                if cutoff_idx > last_cutoff_idx:
+                    # Moving forward: set new events to True
+                    shown[last_cutoff_idx:cutoff_idx] = True
+                    mask_changed = True
+                elif cutoff_idx < last_cutoff_idx:
+                    # Moving backward: set removed events to False
+                    shown[cutoff_idx:last_cutoff_idx] = False
+                    mask_changed = True
+                # Update state
+                points_layer.metadata["event_last_cutoff_idx"] = cutoff_idx
+
+            elif decay_frames == 0:
+                # Instant mode: only events on exact frame
+                # Clear previous frame's events, set current frame's events
+                if last_frame >= 0 and last_frame < n_frames:
+                    prev_start = frame_starts[last_frame]
+                    prev_stop = frame_stops[last_frame]
+                    if prev_stop > prev_start:
+                        shown[prev_start:prev_stop] = False
+                        mask_changed = True
+
+                if 0 <= current_frame < n_frames:
+                    curr_start = frame_starts[current_frame]
+                    curr_stop = frame_stops[current_frame]
+                    if curr_stop > curr_start:
+                        shown[curr_start:curr_stop] = True
+                        mask_changed = True
+
+            else:
+                # Decay mode: events within window [current - decay, current]
+                # Update sliding window: hide events leaving, show events entering
+                start_frame = max(0, current_frame - decay_frames)
+                prev_start_frame = (
+                    max(0, last_frame - decay_frames) if last_frame >= 0 else 0
+                )
+
+                if last_frame < 0:
+                    # First update: show entire window
+                    if start_frame < n_frames:
+                        window_start = frame_starts[start_frame]
+                        window_stop = frame_stops[min(current_frame, n_frames - 1)]
+                        if window_stop > window_start:
+                            shown[window_start:window_stop] = True
+                            mask_changed = True
+                elif current_frame > last_frame:
+                    # Moving forward: hide events leaving window, show new events
+                    # Events leaving: frames in [prev_start_frame, start_frame)
+                    for f in range(prev_start_frame, min(start_frame, n_frames)):
+                        if f < n_frames:
+                            shown[frame_starts[f] : frame_stops[f]] = False
+                            mask_changed = True
+                    # Events entering: frames in (last_frame, current_frame]
+                    for f in range(last_frame + 1, min(current_frame + 1, n_frames)):
+                        if f < n_frames:
+                            shown[frame_starts[f] : frame_stops[f]] = True
+                            mask_changed = True
+                elif current_frame < last_frame:
+                    # Moving backward: show events re-entering, hide events leaving
+                    # Events leaving: frames in (current_frame, last_frame]
+                    for f in range(current_frame + 1, min(last_frame + 1, n_frames)):
+                        if f < n_frames:
+                            shown[frame_starts[f] : frame_stops[f]] = False
+                            mask_changed = True
+                    # Events re-entering: frames in [start_frame, prev_start_frame)
+                    for f in range(start_frame, min(prev_start_frame, n_frames)):
+                        if f < n_frames:
+                            shown[frame_starts[f] : frame_stops[f]] = True
+                            mask_changed = True
+
+            # Update last_frame state
+            points_layer.metadata["event_last_frame"] = current_frame
+
+            # Only update layer if mask changed (napari repaints on shown change)
+            if mask_changed:
+                with perf_timer("event_shown_update"), points_layer.events.blocker():
+                    points_layer.shown = shown
+                # Force refresh to ensure _view_data and _view_size are consistent
+                with perf_timer("event_layer_refresh"):
+                    points_layer.refresh()
 
     # Connect to dims change event
     viewer.dims.events.current_step.connect(on_frame_change)
@@ -1588,8 +1693,10 @@ def _add_speed_control_widget(
 # =============================================================================
 
 # Maximum update rate for time series plot (Hz)
-# Prevents matplotlib from becoming bottleneck at high napari FPS
-TIMESERIES_MAX_UPDATE_HZ: int = 40
+# Prevents matplotlib from becoming bottleneck at high napari FPS.
+# Lower values reduce update frequency but improve playback smoothness.
+# Combined with draw-pending check, this prevents queue buildup.
+TIMESERIES_MAX_UPDATE_HZ: int = 30
 
 
 def _add_timeseries_dock(
@@ -1675,13 +1782,33 @@ def _add_timeseries_dock(
     last_update_time = [0.0]
     min_update_interval = 1.0 / TIMESERIES_MAX_UPDATE_HZ
 
+    # Track whether a draw is pending to prevent queue buildup
+    # When draw_idle() is called faster than matplotlib can render,
+    # redraws queue up and cause the UI to stall ("sticking" during playback).
+    # By skipping updates when a draw is pending, we prevent this backlog.
+    draw_pending = [False]
+
+    def on_draw_complete(event: Any) -> None:
+        """Reset draw_pending flag when canvas finishes drawing."""
+        draw_pending[0] = False
+
+    # Connect to matplotlib's draw_event to know when rendering is complete
+    canvas.mpl_connect("draw_event", on_draw_complete)
+
     def on_frame_change(event: Any) -> None:
-        """Update time series plot when frame changes (throttled)."""
+        """Update time series plot when frame changes.
+
+        Throttled and skips updates if previous draw is pending.
+        """
         current_time = time.time()
 
         # Throttle updates during playback (but allow immediate scrubbing response)
         if current_time - last_update_time[0] < min_update_interval:
             return  # Skip update, too soon
+
+        # Skip if previous draw hasn't completed (prevents queue buildup)
+        if draw_pending[0]:
+            return
 
         last_update_time[0] = current_time
 
@@ -1694,6 +1821,9 @@ def _add_timeseries_dock(
 
         # Update all artists for this frame
         manager.update(frame_idx, timeseries_data)
+
+        # Mark draw as pending before scheduling
+        draw_pending[0] = True
 
         # Redraw canvas (draw_idle is non-blocking)
         canvas.draw_idle()
