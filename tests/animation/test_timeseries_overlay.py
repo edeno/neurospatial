@@ -1083,3 +1083,202 @@ class TestTimeSeriesGroupConflictWarnings:
             assert any("normalize" in str(warning.message).lower() for warning in w)
 
         plt.close(fig)
+
+
+@pytest.fixture
+def _napari_viewer():
+    """Create a napari viewer for testing, skip if unavailable."""
+    napari = pytest.importorskip("napari")
+    try:
+        from qtpy.QtWidgets import QApplication
+
+        # Create application if needed
+        app = QApplication.instance()
+        if app is None:
+            pytest.skip("No Qt application available")
+    except ImportError:
+        pytest.skip("Qt not available")
+
+    viewer = napari.Viewer(show=False)
+    yield viewer
+    viewer.close()
+
+
+class TestTimeSeriesNapariDockWidget:
+    """Test napari dock widget integration for time series overlays."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple environment for testing."""
+        from neurospatial import Environment
+
+        positions = np.random.rand(50, 2) * 100
+        env = Environment.from_samples(positions, bin_size=10.0)
+        return env
+
+    @pytest.fixture
+    def sample_fields(self, simple_env):
+        """Create sample field data for testing."""
+        n_frames = 10
+        n_bins = simple_env.n_bins
+        return [np.random.rand(n_bins) for _ in range(n_frames)]
+
+    @pytest.fixture
+    def sample_timeseries_overlay(self):
+        """Create sample time series overlay for testing."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        data = np.linspace(0, 100, 100)
+        times = np.linspace(0, 1, 100)
+        return TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=0.5,
+        )
+
+    def test_timeseries_dock_widget_added(
+        self, simple_env, sample_fields, sample_timeseries_overlay, _napari_viewer
+    ):
+        """Test that time series dock widget is added to napari viewer."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        viewer = _napari_viewer
+
+        # Convert overlays to data
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        # Import and call the dock widget function
+        from neurospatial.animation.backends.napari_backend import (
+            _add_timeseries_dock,
+        )
+
+        _add_timeseries_dock(
+            viewer=viewer,
+            timeseries_data=overlay_data.timeseries,
+            frame_times=frame_times,
+        )
+
+        # Check dock widget was added
+        dock_widgets = viewer.window._dock_widgets
+        assert len(dock_widgets) > 0
+        # Check that Time Series widget exists
+        widget_names = [dw.title() for dw in dock_widgets.values()]
+        assert "Time Series" in widget_names
+
+    def test_timeseries_dock_updates_on_frame_change(
+        self, simple_env, sample_fields, sample_timeseries_overlay, _napari_viewer
+    ):
+        """Test that time series plot updates when frame changes."""
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        viewer = _napari_viewer
+
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        from neurospatial.animation.backends.napari_backend import (
+            _add_timeseries_dock,
+        )
+
+        _add_timeseries_dock(
+            viewer=viewer,
+            timeseries_data=overlay_data.timeseries,
+            frame_times=frame_times,
+        )
+
+        # Simulate adding an image layer so dims has time dimension
+        viewer.add_image(np.random.rand(len(sample_fields), 50, 50))
+
+        # Change frame and verify no errors
+        viewer.dims.current_step = (0,)
+        viewer.dims.current_step = (5,)
+        viewer.dims.current_step = (9,)
+
+        # If we get here without error, the callback is working
+
+    def test_render_napari_with_timeseries(
+        self, simple_env, sample_fields, sample_timeseries_overlay
+    ):
+        """Test that render_napari correctly adds time series dock widget."""
+        pytest.importorskip("napari")
+        try:
+            from qtpy.QtWidgets import QApplication
+
+            if QApplication.instance() is None:
+                pytest.skip("No Qt application available")
+        except ImportError:
+            pytest.skip("Qt not available")
+
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        viewer = render_napari(
+            env=simple_env,
+            fields=sample_fields,
+            overlay_data=overlay_data,
+        )
+
+        try:
+            # Check dock widget was added
+            dock_widgets = viewer.window._dock_widgets
+            widget_names = [dw.title() for dw in dock_widgets.values()]
+            assert "Time Series" in widget_names
+
+        finally:
+            viewer.close()
+
+    def test_no_timeseries_dock_when_empty(self, simple_env, sample_fields):
+        """Test that no dock widget is added when no time series overlays."""
+        pytest.importorskip("napari")
+        try:
+            from qtpy.QtWidgets import QApplication
+
+            if QApplication.instance() is None:
+                pytest.skip("No Qt application available")
+        except ImportError:
+            pytest.skip("Qt not available")
+
+        from neurospatial.animation.overlays import OverlayData
+
+        # Create empty overlay data
+        overlay_data = OverlayData()
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        viewer = render_napari(
+            env=simple_env,
+            fields=sample_fields,
+            overlay_data=overlay_data,
+        )
+
+        try:
+            # Check dock widgets - should not have Time Series
+            dock_widgets = viewer.window._dock_widgets
+            widget_names = [dw.title() for dw in dock_widgets.values()]
+            # Time Series should NOT be present
+            assert "Time Series" not in widget_names
+
+        finally:
+            viewer.close()

@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         HeadDirectionData,
         OverlayData,
         PositionData,
+        TimeSeriesData,
         VideoData,
     )
     from neurospatial.environment.core import Environment
@@ -1582,6 +1583,130 @@ def _add_speed_control_widget(
         )
 
 
+# =============================================================================
+# Time Series Dock Widget
+# =============================================================================
+
+# Maximum update rate for time series plot (Hz)
+# Prevents matplotlib from becoming bottleneck at high napari FPS
+TIMESERIES_MAX_UPDATE_HZ: int = 40
+
+
+def _add_timeseries_dock(
+    viewer: napari.Viewer,
+    timeseries_data: list[TimeSeriesData],
+    frame_times: NDArray[np.float64],
+) -> None:
+    """Add time series dock widget to napari viewer.
+
+    Creates a matplotlib figure embedded in a Qt widget, displaying time series
+    data as scrolling plots in the right dock area. Updates automatically when
+    the viewer's frame slider changes.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance to add widget to.
+    timeseries_data : list[TimeSeriesData]
+        Time series data containers from conversion pipeline.
+    frame_times : NDArray[np.float64]
+        Animation frame timestamps for synchronization.
+
+    Notes
+    -----
+    The widget updates are throttled to TIMESERIES_MAX_UPDATE_HZ (40 Hz) to
+    prevent matplotlib from becoming a performance bottleneck when napari's
+    FPS is higher. This throttling only applies during playback; manual
+    scrubbing triggers immediate updates for responsive feedback.
+
+    The matplotlib figure is styled to match napari's dark theme (background
+    color #262930, white text/ticks).
+    """
+    if not timeseries_data:
+        return  # No time series to display
+
+    try:
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+        from qtpy.QtWidgets import QVBoxLayout, QWidget
+    except ImportError:
+        warnings.warn(
+            "Time series dock widget requires Qt backend for matplotlib. "
+            "Install with: pip install PyQt5 or pip install PySide2",
+            UserWarning,
+            stacklevel=2,
+        )
+        return
+
+    from neurospatial.animation._timeseries import (
+        TimeSeriesArtistManager,
+        _group_timeseries,
+    )
+
+    # Compute figure size based on number of rows
+    groups = _group_timeseries(timeseries_data)
+    n_rows = len(groups)
+    fig_height = max(1.5, 1.2 * n_rows)  # Minimum 1.5 inches, scale with rows
+
+    # Create matplotlib figure ONCE
+    fig = Figure(figsize=(3.5, fig_height), dpi=100)
+
+    # Create artist manager ONCE (handles all matplotlib setup)
+    manager = TimeSeriesArtistManager.create(
+        fig=fig,
+        timeseries_data=timeseries_data,
+        frame_times=frame_times,
+        dark_theme=True,
+    )
+
+    # Create Qt canvas and widget
+    canvas = FigureCanvasQTAgg(fig)
+    widget = QWidget()
+    layout = QVBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(canvas)
+
+    # Add dock widget to viewer's right area
+    viewer.window.add_dock_widget(widget, name="Time Series", area="right")
+
+    # Throttle updates to prevent matplotlib bottleneck at high FPS
+    import time
+
+    last_update_time = [0.0]
+    min_update_interval = 1.0 / TIMESERIES_MAX_UPDATE_HZ
+
+    def on_frame_change(event: Any) -> None:
+        """Update time series plot when frame changes (throttled)."""
+        current_time = time.time()
+
+        # Throttle updates during playback (but allow immediate scrubbing response)
+        if current_time - last_update_time[0] < min_update_interval:
+            return  # Skip update, too soon
+
+        last_update_time[0] = current_time
+
+        # Get current frame index
+        frame_idx = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
+
+        # Bounds check
+        if frame_idx < 0 or frame_idx >= len(frame_times):
+            return
+
+        # Update all artists for this frame
+        manager.update(frame_idx, timeseries_data)
+
+        # Redraw canvas (draw_idle is non-blocking)
+        canvas.draw_idle()
+
+    # Connect to dims events
+    viewer.dims.events.current_step.connect(on_frame_change)
+
+    # Initial render at frame 0
+    if len(frame_times) > 0:
+        manager.update(0, timeseries_data)
+        canvas.draw()
+
+
 def render_napari(
     env: Environment,
     fields: (
@@ -2066,6 +2191,14 @@ def render_napari(
                 scale=overlay_scale,
             )
 
+        # Add time series dock widget if present
+        if overlay_data.timeseries and overlay_data.frame_times is not None:
+            _add_timeseries_dock(
+                viewer=viewer,
+                timeseries_data=overlay_data.timeseries,
+                frame_times=overlay_data.frame_times,
+            )
+
     # Render regions if requested
     if show_regions:
         _render_regions(viewer, env, show_regions, region_alpha)
@@ -2357,6 +2490,14 @@ def _render_multi_field_napari(
                 name_suffix=suffix,
                 position_data=paired_position,
                 scale=overlay_scale,
+            )
+
+        # Add time series dock widget if present
+        if overlay_data.timeseries and overlay_data.frame_times is not None:
+            _add_timeseries_dock(
+                viewer=viewer,
+                timeseries_data=overlay_data.timeseries,
+                frame_times=overlay_data.frame_times,
             )
 
     # Render regions if requested

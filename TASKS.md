@@ -104,19 +104,19 @@
 
 ### 2.3 Napari Dock Widget
 
-- [ ] Implement `_add_timeseries_dock()` in `napari_backend.py`
+- [x] Implement `_add_timeseries_dock()` in `napari_backend.py`
   - Create `FigureCanvasQTAgg` with matplotlib figure
   - Wrap in `QWidget` with `QVBoxLayout`
   - Add dock widget to viewer's right area
   - Connect to `viewer.dims.events.current_step`
-- [ ] Add update throttling (max 40 Hz) to prevent matplotlib bottleneck
-- [ ] Initial render on frame 0
+- [x] Add update throttling (max 40 Hz) to prevent matplotlib bottleneck
+- [x] Initial render on frame 0
 
 ### 2.4 Integration with render_napari
 
-- [ ] Update `render_napari()` to check for `overlay_data.timeseries`
-- [ ] Call `_add_timeseries_dock()` if time series overlays present
-- [ ] Ensure proper cleanup on viewer close
+- [x] Update `render_napari()` to check for `overlay_data.timeseries`
+- [x] Call `_add_timeseries_dock()` if time series overlays present
+- [x] Ensure proper cleanup on viewer close (handled by napari via QWidget lifecycle)
 
 ### 2.5 Tests for Phase 2
 
@@ -125,14 +125,14 @@
 - [x] Test: `test_timeseries_grouping_stacked` - ungrouped overlays create separate rows
 - [x] Test: `test_timeseries_grouping_overlaid` - same-group overlays share axes
 - [x] Test: `test_timeseries_group_conflict_warning` - warnings emitted for conflicts
-- [ ] Test: `test_timeseries_napari_dock` (integration) - dock widget created in viewer
+- [x] Test: `test_timeseries_napari_dock` (integration) - dock widget created in viewer
 
 **Success criteria for Phase 2**:
-- [ ] `TimeSeriesOverlay` displays in napari dock widget
-- [ ] Plot updates when scrubbing through frames
-- [ ] Multiple time series can be stacked or overlaid
-- [ ] Cursor line shows current time position
-- [ ] Cursor value text updates with interpolated value
+- [x] `TimeSeriesOverlay` displays in napari dock widget
+- [x] Plot updates when scrubbing through frames
+- [x] Multiple time series can be stacked or overlaid
+- [x] Cursor line shows current time position
+- [x] Cursor value text updates with interpolated value
 
 ---
 

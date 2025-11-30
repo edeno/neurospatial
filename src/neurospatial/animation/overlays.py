@@ -2394,6 +2394,10 @@ class OverlayData:
         Region names in normalized format. Key is frame index (0 = all frames),
         value is list of region names. Populated by _convert_overlays_to_data()
         from show_regions parameter. Default is None.
+    frame_times : NDArray[np.float64] | None, optional
+        Animation frame timestamps. Used for synchronizing time series overlays
+        with the animation. Populated by _convert_overlays_to_data() when time
+        series overlays are present. Default is None.
 
     Attributes
     ----------
@@ -2411,6 +2415,8 @@ class OverlayData:
         List of time series overlays.
     regions : dict[int, list[str]] | None
         Region names in normalized format (key 0 = all frames).
+    frame_times : NDArray[np.float64] | None
+        Animation frame timestamps for time series synchronization.
 
     Notes
     -----
@@ -2438,6 +2444,7 @@ class OverlayData:
     events: list[EventData] = field(default_factory=list)
     timeseries: list[TimeSeriesData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
+    frame_times: NDArray[np.float64] | None = None
 
     def __post_init__(self) -> None:
         """Post-initialization hook.
@@ -3504,6 +3511,7 @@ def _convert_overlays_to_data(
         events=event_data_list,
         timeseries=timeseries_data_list,
         regions=normalized_regions,
+        frame_times=frame_times,
     )
 
     return overlay_data

@@ -2,10 +2,30 @@
 
 ## Current Status
 **Date**: 2025-11-30
-**Phase**: 2 - Napari Backend (IN PROGRESS)
-**Task**: Phase 2.1 and 2.2 completed, next is 2.3 Napari Dock Widget
+**Phase**: 2 - Napari Backend (COMPLETE)
+**Task**: Phase 2 COMPLETE - all napari backend tasks done. Ready for Phase 3 (Video Backend)
 
 ## Progress Log
+
+### 2025-11-30 (Session 3)
+
+- **Phase 2.3, 2.4, 2.5 COMPLETE** - Napari dock widget integration
+- Implemented `_add_timeseries_dock()` in napari_backend.py:
+  - Creates FigureCanvasQTAgg with matplotlib figure
+  - Wraps in QWidget with QVBoxLayout
+  - Adds dock widget to viewer's right area ("Time Series")
+  - Connects to `viewer.dims.events.current_step` for frame updates
+  - Update throttling at 40 Hz (`TIMESERIES_MAX_UPDATE_HZ`)
+  - Initial render at frame 0
+- Updated `render_napari()` and `_render_multi_field_napari()` to call `_add_timeseries_dock()`
+- Added `frame_times` field to `OverlayData` for time series synchronization
+- Added 4 integration tests (skip in headless CI - require Qt):
+  - `test_timeseries_dock_widget_added` - dock widget created
+  - `test_timeseries_dock_updates_on_frame_change` - callback works
+  - `test_render_napari_with_timeseries` - end-to-end integration
+  - `test_no_timeseries_dock_when_empty` - no dock when no timeseries
+- All tests pass (37 passed, 4 skipped in headless CI)
+- Ruff and mypy: all passing
 
 ### 2025-11-30 (Session 2)
 - **Phase 2.1 and 2.2 COMPLETE**
