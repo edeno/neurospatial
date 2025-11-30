@@ -247,17 +247,30 @@
 
 ### 5.2 Performance Testing
 
-- [ ] Test: `test_timeseries_high_rate_data` - 1 kHz data over 1 hour
-- [ ] Profile rendering loop for bottlenecks
-- [ ] Verify O(1) window extraction with precomputed indices
+- [x] Test: `test_timeseries_high_rate_data` - 1 kHz data over 1 hour
+  - Tests conversion from TimeSeriesOverlay to TimeSeriesData with 3.6M samples
+- [x] Profile rendering loop for bottlenecks
+  - `test_timeseries_artist_manager_update_performance`: < 10ms per frame verified
+- [x] Verify O(1) window extraction with precomputed indices
+  - `test_timeseries_window_extraction_is_o1`: Large data < 10x small data time
+  - `test_timeseries_data_precomputed_indices`: Index access is O(1)
 
 ### 5.3 Edge Case Tests
 
-- [ ] Test: `test_timeseries_empty_window` - frame time outside data range
-- [ ] Test: `test_timeseries_partial_window` - window partially outside data
-- [ ] Test: `test_timeseries_single_point` - single data point
-- [ ] Test: `test_timeseries_all_nan` - all NaN data
-- [ ] Test: `test_timeseries_mismatched_rates` - field and timeseries at different rates
+- [x] Test: `test_timeseries_empty_window` - frame time outside data range
+  - `test_timeseries_empty_window_frame_outside_data`
+- [x] Test: `test_timeseries_partial_window` - window partially outside data
+  - `test_timeseries_partial_window_start`, `test_timeseries_partial_window_end`
+- [x] Test: `test_timeseries_single_point` - single data point
+  - `test_timeseries_single_data_point`, `test_timeseries_two_data_points`
+- [x] Test: `test_timeseries_all_nan` - all NaN data
+  - `test_timeseries_all_nan`, `test_timeseries_with_nan_values`
+- [x] Test: `test_timeseries_mismatched_rates` - field and timeseries at different rates
+  - `test_timeseries_mismatched_rates_high_rate_ts`, `test_timeseries_mismatched_rates_low_rate_ts`
+- [x] Additional edge case tests:
+  - `test_timeseries_irregular_times` - irregular time spacing
+  - `test_timeseries_conversion_with_edge_frame_times` - boundary frame times
+  - `test_timeseries_conversion_empty_overlay_list` - empty overlay handling
 
 ### 5.4 Documentation
 

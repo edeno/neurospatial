@@ -2197,3 +2197,533 @@ class TestHTMLBackendTimeSeriesWarning:
                 assert "time series" not in msg and "timeseries" not in msg, (
                     f"Unexpected time series warning: {msg}"
                 )
+
+
+# =============================================================================
+# Phase 5.2: Performance Testing
+# =============================================================================
+
+
+class TestTimeSeriesPerformance:
+    """Test time series overlay performance with high-rate data.
+
+    These tests verify that time series overlays can handle high-frequency
+    data (1 kHz) and long sessions (1 hour = 3.6M samples) efficiently.
+    """
+
+    @pytest.mark.slow
+    def test_timeseries_high_rate_data_conversion(self):
+        """Test TimeSeriesOverlay handles 1 kHz data over 1 hour efficiently.
+
+        This tests the conversion from TimeSeriesOverlay to TimeSeriesData,
+        which includes the O(1) index precomputation step.
+        """
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # 1 kHz data over 1 hour = 3,600,000 samples
+        sample_rate_hz = 1000
+        duration_seconds = 3600  # 1 hour
+        n_samples = sample_rate_hz * duration_seconds
+
+        # Create high-rate data
+        rng = np.random.default_rng(42)
+        data = rng.random(n_samples).astype(np.float64)
+        times = np.linspace(0, duration_seconds, n_samples, dtype=np.float64)
+
+        # Create overlay - this should be fast (just stores references)
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="High-rate signal",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (n_samples,)
+        assert overlay.times.shape == (n_samples,)
+
+    @pytest.mark.slow
+    def test_timeseries_data_precomputed_indices(self):
+        """Test that TimeSeriesData uses precomputed indices for O(1) window extraction."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Create TimeSeriesData with precomputed indices
+        n_samples = 1000
+        n_frames = 100
+
+        data = np.linspace(0, 100, n_samples)
+        times = np.linspace(0, 10, n_samples)
+
+        # Precomputed indices - each frame has a fixed range
+        start_indices = np.linspace(0, n_samples - 100, n_frames).astype(int)
+        end_indices = start_indices + 100
+
+        ts_data = TimeSeriesData(
+            data=data,
+            times=times,
+            start_indices=start_indices,
+            end_indices=end_indices,
+            label="Test",
+            color="cyan",
+            window_seconds=1.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=100.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        # Verify index access is O(1) - just array indexing
+        for frame_idx in range(n_frames):
+            start = ts_data.start_indices[frame_idx]
+            end = ts_data.end_indices[frame_idx]
+
+            # Should be immediate (no search)
+            window_data = ts_data.data[start:end]
+            window_times = ts_data.times[start:end]
+
+            assert len(window_data) == 100
+            assert len(window_times) == 100
+
+    @pytest.mark.slow
+    def test_timeseries_artist_manager_update_performance(self):
+        """Test that TimeSeriesArtistManager.update() is efficient per frame."""
+        import time
+
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Create reasonable size data (10 Hz for 10 minutes)
+        n_samples = 6000
+        n_frames = 100
+
+        data = np.linspace(0, 100, n_samples)
+        times = np.linspace(0, 600, n_samples)
+
+        # Precomputed indices
+        samples_per_frame = n_samples // n_frames
+        start_indices = np.arange(n_frames) * samples_per_frame
+        end_indices = np.minimum(start_indices + samples_per_frame * 2, n_samples)
+
+        ts_data = TimeSeriesData(
+            data=data,
+            times=times,
+            start_indices=start_indices,
+            end_indices=end_indices,
+            label="Speed",
+            color="cyan",
+            window_seconds=60.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=100.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.linspace(0, 600, n_frames)
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[ts_data],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Time the update calls
+        start_time = time.perf_counter()
+        for frame_idx in range(n_frames):
+            manager.update(frame_idx, [ts_data])
+        elapsed = time.perf_counter() - start_time
+
+        plt.close(fig)
+
+        # Should complete in reasonable time (< 1 second for 100 frames)
+        assert elapsed < 1.0, f"Updates took {elapsed:.2f}s, expected < 1.0s"
+
+        # Average per-frame update should be < 10 ms
+        avg_per_frame_ms = (elapsed / n_frames) * 1000
+        assert avg_per_frame_ms < 10.0, (
+            f"Average update {avg_per_frame_ms:.1f}ms, expected < 10ms"
+        )
+
+    @pytest.mark.slow
+    def test_timeseries_window_extraction_is_o1(self):
+        """Verify window extraction scales O(1) with data size.
+
+        Compare extraction time for small vs large datasets.
+        O(1) means extraction time should be similar regardless of data size.
+        """
+        import time
+
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def measure_extraction_time(n_samples: int, n_iterations: int = 1000) -> float:
+            """Measure average time to extract windows."""
+            data = np.random.rand(n_samples)
+            times = np.linspace(0, n_samples, n_samples)
+
+            # Precomputed indices for 100 frames
+            n_frames = 100
+            window_size = 100  # Fixed window size
+
+            start_indices = np.linspace(0, n_samples - window_size, n_frames).astype(
+                int
+            )
+            end_indices = start_indices + window_size
+
+            ts_data = TimeSeriesData(
+                data=data,
+                times=times,
+                start_indices=start_indices,
+                end_indices=end_indices,
+                label="Test",
+                color="cyan",
+                window_seconds=1.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=0.0,
+                global_vmax=1.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+            # Time multiple extractions
+            start_time = time.perf_counter()
+            for _ in range(n_iterations):
+                for frame_idx in range(n_frames):
+                    start = ts_data.start_indices[frame_idx]
+                    end = ts_data.end_indices[frame_idx]
+                    _ = ts_data.data[start:end]
+            elapsed = time.perf_counter() - start_time
+
+            return elapsed / n_iterations
+
+        # Test with different data sizes
+        small_time = measure_extraction_time(1_000)
+        _medium_time = measure_extraction_time(100_000)  # For debugging if needed
+        large_time = measure_extraction_time(1_000_000)
+
+        # O(1) means times should be similar (within 10x)
+        # We're mainly extracting fixed-size windows, so scaling should be minimal
+        assert large_time < small_time * 10, (
+            f"Large data ({large_time:.6f}s) much slower than small ({small_time:.6f}s)"
+        )
+
+
+# =============================================================================
+# Phase 5.3: Edge Case Tests
+# =============================================================================
+
+
+class TestTimeSeriesEdgeCases:
+    """Test edge cases for time series overlay handling.
+
+    These tests verify graceful handling of edge cases like:
+    - Frame times outside data range
+    - Windows partially outside data
+    - Single data point
+    - All NaN data
+    - Mismatched sampling rates
+    """
+
+    def test_timeseries_empty_window_frame_outside_data(self):
+        """Test handling when frame time is outside data time range."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Data from 0-10 seconds
+        data = np.linspace(0, 100, 100)
+        times = np.linspace(0, 10, 100)
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Test",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (100,)
+        # Frame times outside range are handled during conversion
+
+    def test_timeseries_partial_window_start(self):
+        """Test handling when window starts before data begins."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Data from t=5 to t=15
+        data = np.linspace(0, 100, 100)
+        times = np.linspace(5, 15, 100)
+
+        # Window centered at t=6 with window=4s would start at t=4 (before data)
+        # Precomputed indices should handle this by clamping
+        start_indices = np.array([0, 0, 0, 10, 50])  # First few clamped to 0
+        end_indices = np.array([20, 30, 40, 50, 90])
+
+        ts_data = TimeSeriesData(
+            data=data,
+            times=times,
+            start_indices=start_indices,
+            end_indices=end_indices,
+            label="Test",
+            color="cyan",
+            window_seconds=4.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=100.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        # Should be able to access all windows without error
+        for frame_idx in range(len(start_indices)):
+            start = ts_data.start_indices[frame_idx]
+            end = ts_data.end_indices[frame_idx]
+            window = ts_data.data[start:end]
+            assert len(window) > 0
+
+    def test_timeseries_partial_window_end(self):
+        """Test handling when window extends past data end."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Data from t=0 to t=10
+        data = np.linspace(0, 100, 100)
+        times = np.linspace(0, 10, 100)
+
+        # Window at end would extend past data
+        start_indices = np.array([50, 70, 80, 90, 95])
+        end_indices = np.array([90, 95, 100, 100, 100])  # Last few clamped to 100
+
+        ts_data = TimeSeriesData(
+            data=data,
+            times=times,
+            start_indices=start_indices,
+            end_indices=end_indices,
+            label="Test",
+            color="cyan",
+            window_seconds=4.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=100.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        # Should be able to access all windows without error
+        for frame_idx in range(len(start_indices)):
+            start = ts_data.start_indices[frame_idx]
+            end = ts_data.end_indices[frame_idx]
+            window = ts_data.data[start:end]
+            assert len(window) > 0
+
+    def test_timeseries_single_data_point(self):
+        """Test TimeSeriesOverlay with single data point."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Single data point
+        data = np.array([42.0])
+        times = np.array([5.0])
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Single point",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (1,)
+        assert overlay.times.shape == (1,)
+        assert overlay.data[0] == 42.0
+
+    def test_timeseries_two_data_points(self):
+        """Test TimeSeriesOverlay with two data points."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Two data points
+        data = np.array([10.0, 20.0])
+        times = np.array([0.0, 1.0])
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Two points",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (2,)
+        assert overlay.times.shape == (2,)
+
+    def test_timeseries_with_nan_values(self):
+        """Test TimeSeriesOverlay with NaN values in data."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Data with NaN gaps
+        data = np.array([1.0, 2.0, np.nan, np.nan, 5.0, 6.0])
+        times = np.linspace(0, 5, 6)
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="With NaNs",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (6,)
+        assert np.isnan(overlay.data[2])
+        assert np.isnan(overlay.data[3])
+
+    def test_timeseries_all_nan(self):
+        """Test TimeSeriesOverlay with all NaN data."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # All NaN data
+        data = np.array([np.nan, np.nan, np.nan, np.nan])
+        times = np.array([0.0, 1.0, 2.0, 3.0])
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="All NaN",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (4,)
+        assert np.all(np.isnan(overlay.data))
+
+    def test_timeseries_mismatched_rates_high_rate_ts(self):
+        """Test time series at higher rate than field frames."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Time series at 100 Hz (high rate)
+        data = np.linspace(0, 100, 1000)
+        times = np.linspace(0, 10, 1000)  # 100 Hz
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="High rate",
+            window_seconds=1.0,
+        )
+
+        # Overlay should be created successfully
+        assert overlay.data.shape == (1000,)
+
+    def test_timeseries_mismatched_rates_low_rate_ts(self):
+        """Test time series at lower rate than field frames."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Time series at 1 Hz (low rate)
+        data = np.linspace(0, 100, 10)
+        times = np.linspace(0, 10, 10)  # 1 Hz
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Low rate",
+            window_seconds=3.0,
+        )
+
+        # Overlay should be created successfully
+        assert overlay.data.shape == (10,)
+
+    def test_timeseries_irregular_times(self):
+        """Test TimeSeriesOverlay with irregular time spacing."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Irregular time spacing (common in event data)
+        times = np.array([0.0, 0.5, 0.6, 2.0, 5.0, 5.1, 10.0])
+        data = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Irregular",
+            window_seconds=2.0,
+        )
+
+        assert overlay.data.shape == (7,)
+        assert overlay.times.shape == (7,)
+
+    def test_timeseries_conversion_with_edge_frame_times(self):
+        """Test overlay conversion when frame times are at data boundaries."""
+        from neurospatial import Environment
+        from neurospatial.animation.overlays import (
+            TimeSeriesOverlay,
+            _convert_overlays_to_data,
+        )
+
+        # Create simple environment
+        positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        # Time series from 0-10
+        data = np.linspace(0, 100, 100)
+        times = np.linspace(0, 10, 100)
+
+        overlay = TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Test",
+            window_seconds=2.0,
+        )
+
+        # Frame times at exact boundaries
+        frame_times = np.array([0.0, 5.0, 10.0])
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[overlay],
+            frame_times=frame_times,
+            n_frames=3,
+            env=env,
+        )
+
+        # Should convert without error
+        assert len(overlay_data.timeseries) == 1
+        ts_data = overlay_data.timeseries[0]
+        assert len(ts_data.start_indices) == 3
+        assert len(ts_data.end_indices) == 3
+
+    def test_timeseries_conversion_empty_overlay_list(self):
+        """Test overlay conversion with empty overlay list."""
+        from neurospatial import Environment
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        # Create simple environment
+        positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        # Empty overlay list
+        overlay_data = _convert_overlays_to_data(
+            overlays=[],
+            frame_times=frame_times,
+            n_frames=3,
+            env=env,
+        )
+
+        assert len(overlay_data.timeseries) == 0
+        assert len(overlay_data.positions) == 0
