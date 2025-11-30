@@ -18,6 +18,68 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._protocols import EnvironmentProtocol
 
+# Playback speed limits (Task 1.1)
+MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
+MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
+DEFAULT_SPEED: float = 1.0  # Real-time by default
+
+
+def _compute_playback_fps(
+    frame_times: NDArray[np.float64],
+    speed: float,
+    max_fps: int = MAX_PLAYBACK_FPS,
+) -> tuple[int, float]:
+    """Compute playback fps from frame timestamps and speed multiplier.
+
+    Parameters
+    ----------
+    frame_times : NDArray[np.float64]
+        Timestamps for each frame in seconds. Shape: (n_frames,).
+    speed : float
+        Playback speed multiplier (1.0 = real-time).
+    max_fps : int, default=MAX_PLAYBACK_FPS
+        Maximum allowed playback fps.
+
+    Returns
+    -------
+    playback_fps : int
+        Computed playback fps, clamped to [MIN_PLAYBACK_FPS, max_fps].
+    actual_speed : float
+        Actual speed after clamping (may differ from requested if capped).
+
+    Notes
+    -----
+    The function handles edge cases gracefully:
+    - Single frame: returns (max_fps, speed)
+    - Zero duration: returns (max_fps, speed)
+    - Very slow speed: clamps to MIN_PLAYBACK_FPS
+    - Very fast speed: clamps to max_fps
+    """
+    # Edge case: single frame or fewer
+    if len(frame_times) < 2:
+        return max_fps, speed
+
+    # Compute duration
+    duration = float(frame_times[-1] - frame_times[0])
+
+    # Edge case: zero or negative duration
+    if duration <= 0:
+        return max_fps, speed
+
+    # Compute sample rate from timestamps
+    sample_rate_hz = (len(frame_times) - 1) / duration
+
+    # Compute requested fps
+    requested_fps = sample_rate_hz * speed
+
+    # Clamp to valid range [MIN_PLAYBACK_FPS, max_fps]
+    playback_fps = int(min(max(requested_fps, MIN_PLAYBACK_FPS), max_fps))
+
+    # Compute actual speed after clamping
+    actual_speed = playback_fps / sample_rate_hz
+
+    return playback_fps, actual_speed
+
 
 def _validate_env_pickleable(env: EnvironmentProtocol) -> None:
     """Validate that environment can be pickled for parallel processing.

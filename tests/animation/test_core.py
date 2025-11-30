@@ -16,6 +16,190 @@ from neurospatial import (
 )
 
 
+class TestPlaybackConstants:
+    """Test playback constants are defined and importable (Task 1.1)."""
+
+    def test_max_playback_fps_exists(self):
+        """Test that MAX_PLAYBACK_FPS constant exists."""
+        from neurospatial.animation.core import MAX_PLAYBACK_FPS
+
+        assert MAX_PLAYBACK_FPS is not None
+
+    def test_max_playback_fps_value(self):
+        """Test that MAX_PLAYBACK_FPS has correct value."""
+        from neurospatial.animation.core import MAX_PLAYBACK_FPS
+
+        assert MAX_PLAYBACK_FPS == 60
+
+    def test_max_playback_fps_is_int(self):
+        """Test that MAX_PLAYBACK_FPS is an integer."""
+        from neurospatial.animation.core import MAX_PLAYBACK_FPS
+
+        assert isinstance(MAX_PLAYBACK_FPS, int)
+
+    def test_min_playback_fps_exists(self):
+        """Test that MIN_PLAYBACK_FPS constant exists."""
+        from neurospatial.animation.core import MIN_PLAYBACK_FPS
+
+        assert MIN_PLAYBACK_FPS is not None
+
+    def test_min_playback_fps_value(self):
+        """Test that MIN_PLAYBACK_FPS has correct value."""
+        from neurospatial.animation.core import MIN_PLAYBACK_FPS
+
+        assert MIN_PLAYBACK_FPS == 1
+
+    def test_min_playback_fps_is_int(self):
+        """Test that MIN_PLAYBACK_FPS is an integer."""
+        from neurospatial.animation.core import MIN_PLAYBACK_FPS
+
+        assert isinstance(MIN_PLAYBACK_FPS, int)
+
+    def test_default_speed_exists(self):
+        """Test that DEFAULT_SPEED constant exists."""
+        from neurospatial.animation.core import DEFAULT_SPEED
+
+        assert DEFAULT_SPEED is not None
+
+    def test_default_speed_value(self):
+        """Test that DEFAULT_SPEED has correct value."""
+        from neurospatial.animation.core import DEFAULT_SPEED
+
+        assert DEFAULT_SPEED == 1.0
+
+    def test_default_speed_is_float(self):
+        """Test that DEFAULT_SPEED is a float."""
+        from neurospatial.animation.core import DEFAULT_SPEED
+
+        assert isinstance(DEFAULT_SPEED, float)
+
+    def test_constants_relationship(self):
+        """Test that MIN_PLAYBACK_FPS <= MAX_PLAYBACK_FPS."""
+        from neurospatial.animation.core import MAX_PLAYBACK_FPS, MIN_PLAYBACK_FPS
+
+        assert MIN_PLAYBACK_FPS <= MAX_PLAYBACK_FPS
+
+
+class TestComputePlaybackFps:
+    """Test _compute_playback_fps() helper function (Task 1.2)."""
+
+    def test_returns_tuple(self):
+        """Test that function returns tuple of (int, float)."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        frame_times = np.linspace(0, 10, 301)  # 30 Hz, 10 seconds
+        result = _compute_playback_fps(frame_times, speed=1.0)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], int)
+        assert isinstance(result[1], float)
+
+    def test_normal_case_30hz_realtime(self):
+        """Test 30 Hz data at real-time speed."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 30 Hz data, 10 seconds (301 frames)
+        frame_times = np.linspace(0, 10, 301)
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
+
+        assert fps == 30
+        assert actual_speed == pytest.approx(1.0, rel=0.01)
+
+    def test_capping_500hz_data(self):
+        """Test that 500 Hz data at speed=1.0 is capped to 60 fps."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 500 Hz data, 1 second (501 frames)
+        frame_times = np.linspace(0, 1, 501)
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
+
+        assert fps == 60  # Capped to MAX_PLAYBACK_FPS
+        assert actual_speed == pytest.approx(0.12, rel=0.01)  # 60/500 = 0.12
+
+    def test_slow_motion(self):
+        """Test slow motion playback (10% speed)."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 30 Hz data, 10% speed
+        frame_times = np.linspace(0, 10, 301)  # 30 Hz
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=0.1)
+
+        assert fps == 3  # 30 * 0.1 = 3 fps
+        assert actual_speed == pytest.approx(0.1, rel=0.01)
+
+    def test_minimum_fps_clamping(self):
+        """Test that fps is clamped to MIN_PLAYBACK_FPS (1 fps)."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 10 Hz data, 1% speed would be 0.1 fps
+        frame_times = np.linspace(0, 10, 101)  # 10 Hz
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=0.01)
+
+        assert fps == 1  # Clamped to MIN_PLAYBACK_FPS
+        assert actual_speed == pytest.approx(0.1, rel=0.01)  # 1/10 = 0.1
+
+    def test_single_frame_edge_case(self):
+        """Test edge case: single frame returns max_fps."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        frame_times = np.array([0.0])  # Single frame
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
+
+        assert fps == 60  # Returns max_fps
+        assert actual_speed == 1.0  # Returns requested speed
+
+    def test_zero_duration_edge_case(self):
+        """Test edge case: zero duration (all same timestamp)."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        frame_times = np.array([5.0, 5.0, 5.0])  # Zero duration
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
+
+        assert fps == 60  # Returns max_fps
+        assert actual_speed == 1.0  # Returns requested speed
+
+    def test_custom_max_fps(self):
+        """Test that custom max_fps is respected."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 500 Hz data with custom max of 120 fps
+        frame_times = np.linspace(0, 1, 501)  # 500 Hz
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0, max_fps=120)
+
+        assert fps == 120  # Custom max
+        assert actual_speed == pytest.approx(0.24, rel=0.01)  # 120/500 = 0.24
+
+    def test_fast_forward_2x(self):
+        """Test 2x fast forward playback."""
+        from neurospatial.animation.core import _compute_playback_fps
+
+        # 30 Hz data at 2x speed
+        frame_times = np.linspace(0, 10, 301)  # 30 Hz
+        fps, actual_speed = _compute_playback_fps(frame_times, speed=2.0)
+
+        assert fps == 60  # 30 * 2 = 60 fps (within limit)
+        assert actual_speed == pytest.approx(2.0, rel=0.01)
+
+    def test_uses_constants(self):
+        """Test that function uses MAX_PLAYBACK_FPS and MIN_PLAYBACK_FPS constants."""
+        from neurospatial.animation.core import (
+            MAX_PLAYBACK_FPS,
+            MIN_PLAYBACK_FPS,
+            _compute_playback_fps,
+        )
+
+        # High speed case should use MAX_PLAYBACK_FPS
+        frame_times = np.linspace(0, 1, 501)  # 500 Hz
+        fps_high, _ = _compute_playback_fps(frame_times, speed=1.0)
+        assert fps_high == MAX_PLAYBACK_FPS
+
+        # Very slow case should use MIN_PLAYBACK_FPS
+        frame_times_slow = np.linspace(0, 10, 11)  # 1 Hz
+        fps_low, _ = _compute_playback_fps(frame_times_slow, speed=0.01)
+        assert fps_low == MIN_PLAYBACK_FPS
+
+
 class TestSubsampleFrames:
     """Test subsample_frames() utility function."""
 
