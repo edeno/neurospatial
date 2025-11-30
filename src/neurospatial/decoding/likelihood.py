@@ -103,6 +103,18 @@ def log_poisson_likelihood(
     poisson_likelihood : Thin wrapper returning probability-space likelihoods
     normalize_to_posterior : Convert log-likelihood to posterior
     """
+    # Validate dt and min_rate parameters
+    if dt <= 0:
+        raise ValueError(
+            f"dt must be positive, got {dt}. "
+            f"Time bin width should be in seconds (typical values: 0.001-0.1s)."
+        )
+    if min_rate <= 0:
+        raise ValueError(
+            f"min_rate must be positive, got {min_rate}. "
+            f"This floor prevents log(0) in likelihood computation."
+        )
+
     # Ensure inputs are proper arrays
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)

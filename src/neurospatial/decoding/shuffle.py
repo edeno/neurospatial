@@ -761,8 +761,10 @@ def generate_poisson_surrogates(
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Original spike counts per neuron per time bin.
     dt : float
-        Time bin width in seconds. Used in combination with mean spike counts
-        to estimate firing rates for surrogate generation.
+        Time bin width in seconds. **Note:** This parameter is accepted for
+        API consistency with other decoding functions but is NOT used in the
+        computation. Surrogates are generated using mean spike counts directly
+        as Poisson rate parameters.
     n_surrogates : int, default=1000
         Number of surrogate spike trains to generate.
     rng : np.random.Generator | int | None, default=None
@@ -784,8 +786,6 @@ def generate_poisson_surrogates(
     - Destroys all temporal correlations and patterns
     - Preserves mean firing rates per neuron (statistically)
     - More conservative than shuffle methods (generates truly independent counts)
-    - The ``dt`` parameter is accepted for API consistency but does not affect
-      the computation (mean counts are used directly as Poisson rates)
 
     Examples
     --------
@@ -849,8 +849,10 @@ def generate_inhomogeneous_poisson_surrogates(
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Original spike counts per neuron per time bin.
     dt : float
-        Time bin width in seconds. Used in combination with spike counts
-        to estimate firing rates for surrogate generation.
+        Time bin width in seconds. **Note:** This parameter is accepted for
+        API consistency with other decoding functions but is NOT used in the
+        computation. Surrogates are generated using smoothed spike counts
+        directly as time-varying Poisson rate parameters.
     smoothing_window : int, default=3
         Size of the uniform smoothing window (in time bins) applied to
         estimate time-varying rates. Larger values preserve less temporal
@@ -877,8 +879,6 @@ def generate_inhomogeneous_poisson_surrogates(
     - Destroys fine temporal correlations and millisecond-scale patterns
     - More appropriate than homogeneous surrogates when rate modulation
       is a confound (e.g., ramping activity during replay events)
-    - The ``dt`` parameter is accepted for API consistency but does not affect
-      the computation (smoothed counts are used directly as Poisson rates)
 
     Examples
     --------

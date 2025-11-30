@@ -132,11 +132,44 @@ def normalize_to_posterior(
         )
 
     log_likelihood = np.asarray(log_likelihood, dtype=np.float64)
+
+    # Validate axis parameter
+    # The degeneracy handling logic assumes axis is the last dimension.
+    # Normalize axis to positive form for comparison.
+    effective_axis = axis if axis >= 0 else log_likelihood.ndim + axis
+    if effective_axis != log_likelihood.ndim - 1:
+        raise ValueError(
+            f"axis must be the last dimension (axis=-1 or axis={log_likelihood.ndim - 1}), "
+            f"got axis={axis}. The current implementation's degeneracy handling "
+            f"only supports normalization along the last axis."
+        )
     ll = log_likelihood.copy()
 
     # Apply prior if provided
     if prior is not None:
         prior_arr = np.asarray(prior, dtype=np.float64)
+
+        # Validate prior shape
+        n_bins = log_likelihood.shape[-1]  # Position axis (last dimension)
+        if prior_arr.ndim == 1:
+            # Stationary prior: shape (n_bins,)
+            if prior_arr.shape[0] != n_bins:
+                raise ValueError(
+                    f"1D prior must have shape ({n_bins},) to match log_likelihood "
+                    f"position axis, got shape {prior_arr.shape}"
+                )
+        elif prior_arr.ndim == 2:
+            # Time-varying prior: shape (n_time_bins, n_bins)
+            if prior_arr.shape != log_likelihood.shape:
+                raise ValueError(
+                    f"2D prior must have shape {log_likelihood.shape} to match "
+                    f"log_likelihood, got shape {prior_arr.shape}"
+                )
+        else:
+            raise ValueError(
+                f"prior must be 1D (stationary) or 2D (time-varying), "
+                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
+            )
 
         # Normalize prior along the specified axis
         # Handle 1D prior (stationary) vs 2D prior (time-varying)

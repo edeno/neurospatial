@@ -288,6 +288,43 @@ class TestNormalizeToPosterior:
         posterior = normalize_to_posterior(simple_log_likelihood, axis=1)
         assert_allclose(posterior.sum(axis=1), 1.0, atol=1e-10)
 
+    def test_axis_not_last_raises(self, simple_log_likelihood: np.ndarray) -> None:
+        """axis=0 should raise ValueError (degeneracy handling only supports last axis)."""
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        with pytest.raises(ValueError, match="axis must be the last dimension"):
+            normalize_to_posterior(simple_log_likelihood, axis=0)
+
+    def test_prior_wrong_1d_shape_raises(
+        self, simple_log_likelihood: np.ndarray
+    ) -> None:
+        """1D prior with wrong number of bins should raise ValueError."""
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # simple_log_likelihood has 4 bins, prior has 3
+        prior = np.array([0.5, 0.3, 0.2])
+        with pytest.raises(ValueError, match="1D prior must have shape"):
+            normalize_to_posterior(simple_log_likelihood, prior=prior)
+
+    def test_prior_wrong_2d_shape_raises(
+        self, simple_log_likelihood: np.ndarray
+    ) -> None:
+        """2D prior with wrong shape should raise ValueError."""
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # simple_log_likelihood is (3, 4), prior is (2, 4)
+        prior = np.ones((2, 4)) / 4
+        with pytest.raises(ValueError, match="2D prior must have shape"):
+            normalize_to_posterior(simple_log_likelihood, prior=prior)
+
+    def test_prior_3d_raises(self, simple_log_likelihood: np.ndarray) -> None:
+        """3D prior should raise ValueError."""
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        prior = np.ones((3, 4, 2)) / 4
+        with pytest.raises(ValueError, match=r"prior must be 1D .* or 2D"):
+            normalize_to_posterior(simple_log_likelihood, prior=prior)
+
 
 # =============================================================================
 # Tests for decode_position

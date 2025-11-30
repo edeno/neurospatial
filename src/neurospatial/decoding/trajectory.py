@@ -478,13 +478,10 @@ def fit_linear_trajectory(
         )
 
     # method == "sample"
-    # Set up RNG
-    if rng is None:
-        rng_gen = np.random.default_rng()
-    elif isinstance(rng, int):
-        rng_gen = np.random.default_rng(rng)
-    else:
-        rng_gen = rng
+    # Set up RNG using shared helper for consistency
+    from neurospatial.decoding.shuffle import _ensure_rng
+
+    rng_gen = _ensure_rng(rng)
 
     # Sample positions from posterior using cumulative sum approach
     # This is numerically stable for peaky posteriors

@@ -379,6 +379,40 @@ class TestEdgeCases:
         assert_array_equal(simple_spike_counts, spike_counts_copy)
         assert_array_equal(simple_encoding_models, encoding_models_copy)
 
+    def test_dt_zero_raises(
+        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
+    ) -> None:
+        """dt=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="dt must be positive"):
+            log_poisson_likelihood(simple_spike_counts, simple_encoding_models, dt=0.0)
+
+    def test_dt_negative_raises(
+        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
+    ) -> None:
+        """Negative dt should raise ValueError."""
+        with pytest.raises(ValueError, match="dt must be positive"):
+            log_poisson_likelihood(
+                simple_spike_counts, simple_encoding_models, dt=-0.025
+            )
+
+    def test_min_rate_zero_raises(
+        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
+    ) -> None:
+        """min_rate=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="min_rate must be positive"):
+            log_poisson_likelihood(
+                simple_spike_counts, simple_encoding_models, dt=0.025, min_rate=0.0
+            )
+
+    def test_min_rate_negative_raises(
+        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
+    ) -> None:
+        """Negative min_rate should raise ValueError."""
+        with pytest.raises(ValueError, match="min_rate must be positive"):
+            log_poisson_likelihood(
+                simple_spike_counts, simple_encoding_models, dt=0.025, min_rate=-1e-10
+            )
+
 
 # =============================================================================
 # Reference Implementation Comparison (placeholder for future)
