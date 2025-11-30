@@ -1612,7 +1612,6 @@ class TestAnimateFieldsSpeedBasedPlayback:
                 # Should not have emitted any warnings
                 assert len(w) == 0
 
-    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
     def test_sample_rate_hz_passed_to_backend(self):
         """Test that sample_rate_hz is passed to backend via kwargs (Task 3.2)."""
         from neurospatial.animation.core import animate_fields
@@ -1640,7 +1639,6 @@ class TestAnimateFieldsSpeedBasedPlayback:
             assert "sample_rate_hz" in call_kwargs
             assert call_kwargs["sample_rate_hz"] == pytest.approx(30.0, rel=0.01)
 
-    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
     def test_speed_passed_to_backend(self):
         """Test that speed is passed to backend via kwargs (Task 3.2)."""
         from neurospatial.animation.core import animate_fields
@@ -1667,7 +1665,6 @@ class TestAnimateFieldsSpeedBasedPlayback:
             assert "speed" in call_kwargs
             assert call_kwargs["speed"] == 0.5
 
-    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
     def test_max_playback_fps_passed_to_backend(self):
         """Test that max_playback_fps is passed to backend via kwargs (Task 3.2)."""
         from neurospatial.animation.core import animate_fields
