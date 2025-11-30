@@ -155,10 +155,12 @@
 
 ### **6.2 napari visualization**
 
-* [ ] Scale bar.
+* [x] Scale bar.
+  * `ScaleBarConfig`, `scale_bar=True` for plots and animations
 * [ ] Color bar.
 * [ ] 3D support (3D tunnels, ramps, VR environments).
-* [ ] Dynamic spike raster overlayed on position heatmap.
+* [x] Dynamic spike raster overlayed on position heatmap.
+  * `EventOverlay` / `SpikeOverlay` with decay_frames for visualization
 * [ ] Show events timeline synced to time slider.
 * [ ] Visualize continuous variables (speed, hd, acceleration).
 * [x] Multi-body-part tracking (nose, tail base, ears).
@@ -166,10 +168,12 @@
 * [x] Multi-animal support.
   * Multiple `PositionOverlay` instances
 * [ ] Sync multiple environments.
-* [ ] Track graph overlay.
+* [x] Track graph overlay.
+  * `annotate_track_graph()` for 1D linearized environments
 * [x] Integrate video (different sampling rates handled automatically).
   * `VideoOverlay` with `calibrate_video()`, auto temporal alignment
-* [ ] Mark events (reward, errors, choice) on video + environment.
+* [x] Mark events (reward, errors, choice) on video + environment.
+  * `EventOverlay` supports trajectory mode and fixed-location events
 * [ ] SAM based integration for quick region annotation.
 
 ---
@@ -315,4 +319,4 @@
 
 * Consider what we could learn from video games (in terms of paradigms for spatial representation, navigation, and environment design). Also consider robotics literature for path planning and spatial mapping.
 
-* plot spikes at position in napari (dynamic raster overlay) - could be useful for QC. Color different units differently. (RasterOverlay class?)
+* ~~plot spikes at position in napari (dynamic raster overlay) - could be useful for QC. Color different units differently.~~ ✅ DONE: `EventOverlay` / `SpikeOverlay` with multi-unit support, auto-colors, and decay_frames.
