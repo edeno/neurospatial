@@ -1,19 +1,18 @@
 """Tests for HTML backend EventOverlay rendering.
 
-Tests Milestone 4 tasks: HTML backend event support with instant mode only.
+Note: As of the matplotlib-based rendering fix, event overlays are rendered
+directly in matplotlib (baked into images) rather than via JavaScript canvas.
+This fixes coordinate alignment issues and enables full decay mode support.
 """
 
 from __future__ import annotations
-
-import json
-import re
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 from neurospatial.animation.backends.html_backend import render_html
-from neurospatial.animation.overlays import EventData, OverlayData
+from neurospatial.animation.overlays import EventData, OverlayData, PositionData
 
 
 @pytest.fixture
@@ -42,6 +41,7 @@ def event_data_instant():
         decay_frames=0,
         border_color="white",
         border_width=0.5,
+        opacity=0.7,
     )
 
 
@@ -57,6 +57,7 @@ def event_data_with_decay():
         decay_frames=5,  # Decay enabled
         border_color="black",
         border_width=1.0,
+        opacity=0.7,
     )
 
 
@@ -78,16 +79,17 @@ def event_data_multiple_types():
         decay_frames=0,
         border_color="white",
         border_width=0.5,
+        opacity=0.7,
     )
 
 
-class TestHTMLEventOverlaySerialization:
-    """Test event overlay data is serialized to JSON in HTML."""
+class TestHTMLEventOverlayBasics:
+    """Test basic event overlay rendering in HTML."""
 
-    def test_event_overlay_serialized_to_json(
+    def test_event_overlay_renders_successfully(
         self, simple_env, simple_fields, event_data_instant, tmp_path
     ):
-        """Test event overlay data is present in HTML JavaScript."""
+        """Test event overlay renders without error."""
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_instant])
 
@@ -98,92 +100,13 @@ class TestHTMLEventOverlaySerialization:
             overlay_data=overlay_data,
         )
 
-        html_content = path.read_text()
+        assert path.exists()
+        assert path.stat().st_size > 0
 
-        # Check that overlay data includes events
-        assert "overlayData" in html_content
-        assert "events" in html_content
-
-        # Extract JSON from script tag
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        assert match is not None
-
-        overlay_json = json.loads(match.group(1))
-        assert "events" in overlay_json
-        assert len(overlay_json["events"]) > 0
-
-    def test_event_overlay_includes_positions(
-        self, simple_env, simple_fields, event_data_instant, tmp_path
-    ):
-        """Test event overlay includes position data."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_instant])
-
-        path = render_html(
-            simple_env,
-            simple_fields,
-            str(save_path),
-            overlay_data=overlay_data,
-        )
-
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        event_overlay = overlay_json["events"][0]
-        assert "spikes" in event_overlay or "event_positions" in str(event_overlay)
-
-    def test_event_overlay_includes_frame_indices(
-        self, simple_env, simple_fields, event_data_instant, tmp_path
-    ):
-        """Test event overlay includes frame indices for visibility."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_instant])
-
-        path = render_html(
-            simple_env,
-            simple_fields,
-            str(save_path),
-            overlay_data=overlay_data,
-        )
-
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        event_overlay = overlay_json["events"][0]
-        # Should include frame indices for visibility logic
-        assert "frame_indices" in str(event_overlay) or "frameIndices" in str(
-            event_overlay
-        )
-
-    def test_event_overlay_includes_styling(
-        self, simple_env, simple_fields, event_data_instant, tmp_path
-    ):
-        """Test event overlay includes color, size, marker."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_instant])
-
-        path = render_html(
-            simple_env,
-            simple_fields,
-            str(save_path),
-            overlay_data=overlay_data,
-        )
-
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        event_overlay = overlay_json["events"][0]
-        # Should include styling info
-        assert "colors" in event_overlay or "color" in str(event_overlay)
-        assert "size" in event_overlay
-
-    def test_multiple_event_types_serialized(
+    def test_multiple_event_types_render(
         self, simple_env, simple_fields, event_data_multiple_types, tmp_path
     ):
-        """Test multiple event types are correctly serialized."""
+        """Test multiple event types render correctly."""
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_multiple_types])
 
@@ -194,95 +117,36 @@ class TestHTMLEventOverlaySerialization:
             overlay_data=overlay_data,
         )
 
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        # Should have event data with both event types
-        assert "events" in overlay_json
-        # Check that cell_001 and cell_002 are present in the serialization
-        json_str = json.dumps(overlay_json)
-        assert "cell_001" in json_str
-        assert "cell_002" in json_str
+        assert path.exists()
 
 
-class TestHTMLEventOverlayDecayWarning:
-    """Test warning when decay_frames > 0 in HTML backend."""
+class TestHTMLEventOverlayDecaySupport:
+    """Test decay mode support for event overlays.
 
-    def test_decay_frames_emits_warning(
+    Note: Decay mode is now fully supported via matplotlib rendering.
+    """
+
+    def test_decay_mode_renders_successfully(
         self, simple_env, simple_fields, event_data_with_decay, tmp_path
     ):
-        """Test that decay_frames > 0 emits a warning."""
+        """Test that decay mode renders without error (now fully supported)."""
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_with_decay])
 
-        with pytest.warns(UserWarning, match="HTML backend only supports instant mode"):
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=overlay_data,
-            )
+        # Should render successfully - decay is now supported
+        path = render_html(
+            simple_env,
+            simple_fields,
+            str(save_path),
+            overlay_data=overlay_data,
+        )
 
-    def test_decay_warning_suggests_instant_fallback(
-        self, simple_env, simple_fields, event_data_with_decay, tmp_path
-    ):
-        """Test warning message mentions instant mode fallback."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_with_decay])
+        assert path.exists()
 
-        with pytest.warns(UserWarning, match="instant"):
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=overlay_data,
-            )
-
-    def test_decay_warning_suggests_alternative_backends(
-        self, simple_env, simple_fields, event_data_with_decay, tmp_path
-    ):
-        """Test warning suggests video or napari backend for decay support."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_with_decay])
-
-        with pytest.warns(UserWarning, match="video.*napari"):
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=overlay_data,
-            )
-
-    def test_instant_mode_no_warning(
+    def test_instant_mode_renders_successfully(
         self, simple_env, simple_fields, event_data_instant, tmp_path
     ):
-        """Test that instant mode (decay_frames=0) doesn't emit decay warning."""
-        import warnings
-
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_instant])
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "error", message="HTML backend only supports instant mode"
-            )
-            # Should not raise warning about decay
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=overlay_data,
-            )
-
-
-class TestHTMLEventOverlayRendering:
-    """Test event rendering in HTML canvas."""
-
-    def test_render_events_function_present(
-        self, simple_env, simple_fields, event_data_instant, tmp_path
-    ):
-        """Test HTML includes JavaScript function to render events."""
+        """Test that instant mode renders correctly."""
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_instant])
 
@@ -293,31 +157,7 @@ class TestHTMLEventOverlayRendering:
             overlay_data=overlay_data,
         )
 
-        html_content = path.read_text()
-
-        # Check for event rendering logic in JavaScript
-        assert "events" in html_content.lower()
-        # Should have rendering function (renderOverlays or similar)
-        assert "renderOverlays" in html_content
-
-    def test_canvas_element_present(
-        self, simple_env, simple_fields, event_data_instant, tmp_path
-    ):
-        """Test HTML includes canvas element for overlays."""
-        save_path = tmp_path / "test.html"
-        overlay_data = OverlayData(events=[event_data_instant])
-
-        path = render_html(
-            simple_env,
-            simple_fields,
-            str(save_path),
-            overlay_data=overlay_data,
-        )
-
-        html_content = path.read_text()
-
-        # Should have canvas for overlay rendering
-        assert '<canvas id="overlay-canvas"' in html_content
+        assert path.exists()
 
 
 class TestHTMLEventOverlayWithOtherOverlays:
@@ -327,12 +167,11 @@ class TestHTMLEventOverlayWithOtherOverlays:
         self, simple_env, simple_fields, event_data_instant, tmp_path
     ):
         """Test events render alongside position overlays."""
-        from neurospatial.animation.overlays import PositionData
-
         save_path = tmp_path / "test.html"
 
+        rng = np.random.default_rng(47)
         pos_data = PositionData(
-            data=np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+            data=rng.random((10, 2)) * 10.0,  # 10 frames to match simple_fields
             color="blue",
             size=10.0,
             trail_length=5,
@@ -346,15 +185,7 @@ class TestHTMLEventOverlayWithOtherOverlays:
             overlay_data=overlay_data,
         )
 
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        # Should have both positions and events
-        assert "positions" in overlay_json
-        assert len(overlay_json["positions"]) == 1
-        assert "events" in overlay_json
-        assert len(overlay_json["events"]) > 0
+        assert path.exists()
 
     def test_events_with_regions(
         self, simple_env, simple_fields, event_data_instant, tmp_path
@@ -373,15 +204,7 @@ class TestHTMLEventOverlayWithOtherOverlays:
             show_regions=True,
         )
 
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        # Should have both regions and events
-        assert "regions" in overlay_json
-        assert len(overlay_json["regions"]) > 0
-        assert "events" in overlay_json
-        assert len(overlay_json["events"]) > 0
+        assert path.exists()
 
 
 class TestHTMLEventOverlayEdgeCases:
@@ -400,6 +223,7 @@ class TestHTMLEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         overlay_data = OverlayData(events=[event_data])
 
@@ -426,6 +250,7 @@ class TestHTMLEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         event_data2 = EventData(
             event_positions={"animal2": np.array([[7.0, 7.0]])},
@@ -436,6 +261,7 @@ class TestHTMLEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         overlay_data = OverlayData(events=[event_data1, event_data2])
 
@@ -446,12 +272,7 @@ class TestHTMLEventOverlayEdgeCases:
             overlay_data=overlay_data,
         )
 
-        html_content = path.read_text()
-        match = re.search(r"const overlayData = ({.*?});", html_content, re.DOTALL)
-        overlay_json = json.loads(match.group(1))
-
-        # Should have both event overlays
-        assert len(overlay_json["events"]) == 2
+        assert path.exists()
 
 
 class TestHTMLEventOverlayNonEmbeddedMode:
@@ -473,11 +294,7 @@ class TestHTMLEventOverlayNonEmbeddedMode:
             n_workers=1,
         )
 
-        html_content = path.read_text()
-
-        # Check overlay data is still in HTML
-        assert "overlayData" in html_content
-        assert "events" in html_content
+        assert path.exists()
 
 
 if __name__ == "__main__":
