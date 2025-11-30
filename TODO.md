@@ -162,6 +162,7 @@
 * [x] Dynamic spike raster overlayed on position heatmap.
   * `EventOverlay` / `SpikeOverlay` with decay_frames for visualization
 * [ ] Show events timeline synced to time slider.
+* [ ] add a small overview strip (full-session timeline) with a brushed window indicating the current animated window; the right-column plots then show “detail in context,” which aligns with his recommendations on focus+context views.
 * [ ] Visualize continuous variables (speed, hd, acceleration).
 * [x] Multi-body-part tracking (nose, tail base, ears).
   * `BodypartOverlay` with skeleton rendering
