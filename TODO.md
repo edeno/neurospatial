@@ -321,3 +321,9 @@
 * Consider what we could learn from video games (in terms of paradigms for spatial representation, navigation, and environment design). Also consider robotics literature for path planning and spatial mapping.
 
 * ~~plot spikes at position in napari (dynamic raster overlay) - could be useful for QC. Color different units differently.~~ ✅ DONE: `EventOverlay` / `SpikeOverlay` with multi-unit support, auto-colors, and decay_frames.
+
+* Simulation + benchmarking suite for replay/RL
+
+Simulation recipes that include explicit reward structure and policy (e.g., T‑maze alternation with changing contingencies), plus utilities to benchmark decoders and replay/theta metrics against ground truth (are sequences truly prospective/retrospective relative to value?).
+
+* egocentric spatial representations (transformations between allocentric and egocentric frames)
