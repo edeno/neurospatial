@@ -2028,7 +2028,15 @@ def render_napari(
         # Register callback to update video frames when animation frame changes
         _make_video_frame_callback(viewer, video_layers)
 
-        # Render position overlays (tracks + points)
+        # Render event overlays FIRST (spike events, region crossings, etc.)
+        # Events are background context, rendered below position/bodypart overlays
+        for idx, event_data in enumerate(overlay_data.events):
+            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+            _render_event_overlay(
+                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+            )
+
+        # Render position overlays (tracks + points) - above events
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
             _render_position_overlay(
@@ -2042,7 +2050,7 @@ def render_napari(
                 viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
             )
 
-        # Render head direction overlays (vectors)
+        # Render head direction overlays (vectors) - on top
         # Auto-pair with position overlay when there's exactly one position
         paired_position = (
             overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
@@ -2056,13 +2064,6 @@ def render_napari(
                 name_suffix=suffix,
                 position_data=paired_position,
                 scale=overlay_scale,
-            )
-
-        # Render event overlays (spike events, region crossings, etc.)
-        for idx, event_data in enumerate(overlay_data.events):
-            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(
-                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
             )
 
     # Render regions if requested
@@ -2320,7 +2321,15 @@ def _render_multi_field_napari(
         # Register callback to update video frames when animation frame changes
         _make_video_frame_callback(viewer, video_layers)
 
-        # Render position overlays (tracks + points)
+        # Render event overlays FIRST (spike events, region crossings, etc.)
+        # Events are background context, rendered below position/bodypart overlays
+        for idx, event_data in enumerate(overlay_data.events):
+            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+            _render_event_overlay(
+                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+            )
+
+        # Render position overlays (tracks + points) - above events
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
             _render_position_overlay(
@@ -2334,7 +2343,7 @@ def _render_multi_field_napari(
                 viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
             )
 
-        # Render head direction overlays (vectors)
+        # Render head direction overlays (vectors) - on top
         # Auto-pair with position overlay when there's exactly one position
         paired_position = (
             overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
@@ -2348,13 +2357,6 @@ def _render_multi_field_napari(
                 name_suffix=suffix,
                 position_data=paired_position,
                 scale=overlay_scale,
-            )
-
-        # Render event overlays (spike events, region crossings, etc.)
-        for idx, event_data in enumerate(overlay_data.events):
-            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(
-                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
             )
 
     # Render regions if requested
