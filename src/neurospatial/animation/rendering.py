@@ -274,6 +274,10 @@ def render_field_to_image_bytes(
     dpi: int = 100,
     image_format: str = "png",
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    overlay_data: Any = None,  # OverlayData
+    frame_idx: int = 0,
+    show_regions: bool | list[str] = False,
+    region_alpha: float = 0.3,
 ) -> bytes:
     """Render field to image bytes (PNG or JPEG) for HTML embedding.
 
@@ -353,6 +357,19 @@ def render_field_to_image_bytes(
         colorbar=False,
         scale_bar=scale_bar,
     )
+
+    # Render overlays if provided (using matplotlib, not JavaScript)
+    if overlay_data is not None:
+        from neurospatial.animation._parallel import _render_all_overlays
+
+        _render_all_overlays(
+            ax=ax,
+            env=env,
+            frame_idx=frame_idx,
+            overlay_data=overlay_data,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
+        )
 
     buf = io.BytesIO()
 

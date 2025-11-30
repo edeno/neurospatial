@@ -797,13 +797,24 @@ def render_html(
         return output_path
 
     # ---- Embedded mode (original behavior) ----
-    # Pre-render all frames to base64
+    # Pre-render all frames to base64 with overlays baked in
     print(f"Rendering {n_frames} frames to {image_format.upper()}...")
     frames_b64 = []
 
-    for field in tqdm(fields, desc="Encoding frames"):
+    for frame_idx, field in enumerate(tqdm(fields, desc="Encoding frames")):
+        # Render field with overlays directly in matplotlib (not JavaScript)
         image_bytes = render_field_to_image_bytes(
-            env, field, cmap, vmin, vmax, dpi, image_format=image_format
+            env,
+            field,
+            cmap,
+            vmin,
+            vmax,
+            dpi,
+            image_format=image_format,
+            overlay_data=overlay_data,
+            frame_idx=frame_idx,
+            show_regions=show_regions,
+            region_alpha=region_alpha,
         )
 
         # Convert to base64
@@ -814,19 +825,14 @@ def render_html(
     if frame_labels is None:
         frame_labels = [f"Frame {i + 1}" for i in range(len(fields))]
 
-    # Serialize overlay data
-    overlay_json = _serialize_overlay_data(
-        overlay_data, env, show_regions, region_alpha
-    )
-
-    # Create HTML
+    # Create HTML without JavaScript overlay data (overlays are baked into images)
     html = _generate_html_player(
         frames_b64=frames_b64,
         frame_labels=frame_labels,
         fps=fps,
         title=title,
         image_format=image_format,
-        overlay_data=overlay_json,
+        overlay_data=None,  # Overlays are now rendered in matplotlib, not JavaScript
     )
 
     # Write to file with UTF-8 encoding (for Unicode button symbols on Windows)
