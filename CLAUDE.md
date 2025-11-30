@@ -328,7 +328,7 @@ env.animate_fields(fields, scale_bar=True, save_path="video.mp4")  # Matplotlib 
 # calibrating video coordinates. This scale_bar adds visual scale bars to plots.
 
 # Animation overlays (v0.4.0+)
-from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay, EventOverlay
+from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay, EventOverlay, TimeSeriesOverlay
 
 # Position overlay with trail
 # NOTE: All overlay coordinates use environment space (x, y) - automatic napari conversion
@@ -434,9 +434,65 @@ env.animate_fields(
     backend="napari"
 )
 
+# Time series overlays (v0.14.0+) - display continuous variables alongside spatial field
+from neurospatial import TimeSeriesOverlay
+
+# Single variable time series (e.g., speed, head direction, LFP)
+speed_overlay = TimeSeriesOverlay(
+    data=speed_cm_s,              # Shape: (n_samples,) continuous variable
+    times=timestamps,              # Shape: (n_samples,) timestamps
+    label="Speed (cm/s)",          # Y-axis label
+    color="cyan",
+    window_seconds=2.0,            # Scrolling window width
+    linewidth=1.5,
+    show_cursor=True,              # Vertical line at current time
+    cursor_color="red",
+)
+env.animate_fields(fields, overlays=[speed_overlay], frame_times=frame_times)
+
+# Multiple time series stacked (separate rows)
+speed_overlay = TimeSeriesOverlay(data=speed, times=times, label="Speed", color="cyan")
+accel_overlay = TimeSeriesOverlay(data=accel, times=times, label="Accel", color="orange")
+env.animate_fields(
+    fields,
+    overlays=[speed_overlay, accel_overlay],  # Stacked vertically
+    frame_times=frame_times,
+    backend="napari"
+)
+
+# Multiple time series overlaid (same axes) - use group parameter
+left_lfp = TimeSeriesOverlay(
+    data=lfp_left, times=times, label="Left LFP", color="blue", group="lfp"
+)
+right_lfp = TimeSeriesOverlay(
+    data=lfp_right, times=times, label="Right LFP", color="red", group="lfp"
+)
+env.animate_fields(
+    fields,
+    overlays=[left_lfp, right_lfp],  # Same group → overlaid on same axes
+    frame_times=frame_times,
+    backend="video",
+    save_path="animation.mp4"
+)
+
+# Normalized time series (scales to [0, 1] for comparison)
+speed_overlay = TimeSeriesOverlay(
+    data=speed, times=times, label="Speed", color="cyan", normalize=True, group="kinematics"
+)
+accel_overlay = TimeSeriesOverlay(
+    data=accel, times=times, label="Accel", color="orange", normalize=True, group="kinematics"
+)
+
+# Fixed y-axis limits (manual control)
+temp_overlay = TimeSeriesOverlay(
+    data=temperature, times=times, label="Temp (°C)",
+    vmin=20.0, vmax=40.0,  # Fixed limits
+    color="red"
+)
+
 # Backend capabilities:
-# - Napari/Video/Widget: All overlays including VideoOverlay and EventOverlay (with decay)
-# - HTML: Position + EventOverlay (instant only) + regions (VideoOverlay skipped with warning)
+# - Napari/Video/Widget: All overlays including VideoOverlay, EventOverlay, TimeSeriesOverlay ✓
+# - HTML: Position + EventOverlay (instant only) + regions (Video/TimeSeries skipped with warning) ⚠️
 
 # Video overlay - display recorded video behind/above spatial fields (v0.5.0+)
 from neurospatial.animation import VideoOverlay, calibrate_video
@@ -1911,10 +1967,10 @@ env.animate_fields(
 
 **Backend capability matrix**:
 
-- Napari: All overlays including VideoOverlay, EventOverlay (with decay) ✓
-- Video: All overlays including VideoOverlay, EventOverlay (with decay) ✓
-- Widget: All overlays including VideoOverlay, EventOverlay (with decay) ✓
-- HTML: Position + EventOverlay (instant only) + regions (VideoOverlay skipped with warning) ⚠️
+- Napari: All overlays including VideoOverlay, EventOverlay (with decay), TimeSeriesOverlay ✓
+- Video: All overlays including VideoOverlay, EventOverlay (with decay), TimeSeriesOverlay ✓
+- Widget: All overlays including VideoOverlay, EventOverlay (with decay), TimeSeriesOverlay ✓
+- HTML: Position + EventOverlay (instant only) + regions (Video/TimeSeries skipped with warning) ⚠️
 
 ### 13. Overlay coordinates use environment space
 
@@ -2349,4 +2405,80 @@ calib = VideoCalibration(transform, (640, 480))
 result = annotate_track_graph("maze.mp4", calibration=calib)
 print(result.node_positions)   # Transformed to cm
 print(result.pixel_positions)  # Original pixel positions preserved
+```
+
+### TimeSeriesOverlay not showing in HTML backend (v0.14.0+)
+
+**Cause**: HTML backend does not support TimeSeriesOverlay.
+
+**Solution**: TimeSeriesOverlay requires a separate panel with scrolling time series plots, which cannot be rendered in static HTML images. Use video or napari backend instead:
+
+```python
+# Wrong - HTML doesn't support TimeSeriesOverlay
+env.animate_fields(
+    fields,
+    overlays=[timeseries_overlay],
+    backend="html"  # Warning emitted, time series skipped
+)
+
+# Right - use video or napari backend
+env.animate_fields(
+    fields,
+    overlays=[timeseries_overlay],
+    frame_times=frame_times,  # Required for time series
+    backend="video",
+    save_path="animation.mp4"
+)
+
+# Or napari for interactive viewing
+env.animate_fields(
+    fields,
+    overlays=[timeseries_overlay],
+    frame_times=frame_times,
+    backend="napari"
+)
+```
+
+**Note**: Other overlays (position, bodypart, events, regions) still render in HTML. Only TimeSeriesOverlay and VideoOverlay are skipped with warning.
+
+### TimeSeriesOverlay requires `frame_times` parameter
+
+**Cause**: TimeSeriesOverlay needs timestamp information to synchronize with fields.
+
+**Solution**: Always provide `frame_times` when using TimeSeriesOverlay:
+
+```python
+# Wrong - missing frame_times
+env.animate_fields(
+    fields,
+    overlays=[timeseries_overlay],
+    backend="napari"  # May not sync correctly
+)
+
+# Right - provide frame_times
+frame_times = np.linspace(0, duration, len(fields))
+env.animate_fields(
+    fields,
+    overlays=[timeseries_overlay],
+    frame_times=frame_times,  # Required for time series sync
+    backend="napari"
+)
+```
+
+### Time series data and times must be same length
+
+**Cause**: TimeSeriesOverlay data and times arrays have different lengths.
+
+**Solution**: Ensure data and times arrays match:
+
+```python
+# Wrong - mismatched lengths
+data = np.linspace(0, 100, 1000)  # 1000 points
+times = np.linspace(0, 10, 500)   # 500 points
+overlay = TimeSeriesOverlay(data=data, times=times)  # ValueError!
+
+# Right - matched lengths
+data = np.linspace(0, 100, 1000)
+times = np.linspace(0, 10, 1000)  # Same length
+overlay = TimeSeriesOverlay(data=data, times=times)  # Works
 ```

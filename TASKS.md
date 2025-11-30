@@ -274,11 +274,24 @@
 
 ### 5.4 Documentation
 
-- [ ] Update `CLAUDE.md` Quick Reference with `TimeSeriesOverlay` examples
-- [ ] Add usage examples for single variable, stacked rows, overlaid groups
-- [ ] Document coordinate conventions (if any)
-- [ ] Add entry to "Backend capability matrix"
-- [ ] Add troubleshooting section for common issues
+- [x] Update `CLAUDE.md` Quick Reference with `TimeSeriesOverlay` examples
+  - Added after EventOverlay section (v0.14.0+)
+- [x] Add usage examples for single variable, stacked rows, overlaid groups
+  - Single: speed overlay with window and cursor
+  - Stacked: multiple ungrouped overlays in separate rows
+  - Overlaid: same group parameter for shared axes
+  - Normalized: scales to [0, 1] for comparison
+  - Fixed limits: vmin/vmax for manual control
+- [x] Document coordinate conventions (if any)
+  - N/A: TimeSeriesOverlay uses data values, not spatial coordinates
+- [x] Add entry to "Backend capability matrix"
+  - Updated both in Quick Reference and Common Gotchas sections
+  - Napari/Video/Widget: TimeSeriesOverlay ✓
+  - HTML: TimeSeriesOverlay skipped with warning ⚠️
+- [x] Add troubleshooting section for common issues
+  - HTML backend not supporting TimeSeriesOverlay
+  - frame_times parameter required
+  - Data and times must be same length
 
 ### 5.5 Final Integration Tests
 
