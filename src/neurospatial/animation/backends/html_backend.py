@@ -614,6 +614,31 @@ def render_html(
                 stacklevel=2,
             )
 
+        # Check for unsupported time series overlays
+        has_timeseries_overlays = len(overlay_data.timeseries) > 0
+        if has_timeseries_overlays:
+            warnings.warn(
+                "HTML backend does not support time series overlays.\n"
+                "\n"
+                "WHAT: Time series overlays require a separate panel with scrolling\n"
+                "      time series plots, which cannot be rendered in HTML.\n"
+                "WHY: HTML embeds frames as static base64 images. Time series display\n"
+                "     requires dynamic chart updates and multi-panel layout.\n"
+                "\n"
+                "HOW to fix:\n"
+                "  1. Use video backend for time series support:\n"
+                "     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+                "                        overlays=[timeseries_overlay], ...)\n"
+                "\n"
+                "  2. Use napari backend for interactive viewing:\n"
+                "     env.animate_fields(fields, backend='napari',\n"
+                "                        overlays=[timeseries_overlay])\n"
+                "\n"
+                "Time series overlays will be skipped. Other overlays will render.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     # Normalize image_format
     image_format = image_format.lower()
     if image_format not in ("png", "jpeg"):

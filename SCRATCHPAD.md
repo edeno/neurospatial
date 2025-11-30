@@ -2,10 +2,31 @@
 
 ## Current Status
 **Date**: 2025-11-30
-**Phase**: 4 - Widget Backend (COMPLETE)
-**Task**: Phase 4 COMPLETE - all widget backend tasks done. Ready for Phase 5 (Polish & Performance)
+**Phase**: 5.1 - HTML Backend Warning (COMPLETE)
+**Task**: Phase 5.1 COMPLETE - HTML backend time series warning. Moving to Phase 5.2 (Performance Testing).
 
 ## Progress Log
+
+### 2025-11-30 (Session 6)
+
+- **Phase 5.1 COMPLETE** - HTML backend time series warning
+- Design Decision: Implemented warning approach instead of full HTML support
+  - TimeSeriesOverlay requires separate panel with scrolling time series plots
+  - HTML backend embeds frames as static base64 images
+  - Dynamic chart updates and multi-panel layout not feasible in HTML
+  - Consistent with VideoOverlay warning pattern
+- Added time series overlay check in `render_html()`:
+  - Checks `overlay_data.timeseries` length
+  - Emits detailed warning with WHAT/WHY/HOW format
+  - Suggests video or napari backends as alternatives
+  - Overlay is skipped but other overlays still render
+- Added 4 new tests in `TestHTMLBackendTimeSeriesWarning` class:
+  - `test_html_backend_warns_on_timeseries_overlay`
+  - `test_html_backend_still_renders_with_timeseries_present`
+  - `test_html_backend_renders_other_overlays_with_timeseries_present`
+  - `test_html_backend_no_warning_without_timeseries`
+- Ruff and mypy: all passing
+- Total time series tests: 56
 
 ### 2025-11-30 (Session 5)
 

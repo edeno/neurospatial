@@ -2005,3 +2005,195 @@ class TestTimeSeriesWidgetBackend:
 
         finally:
             renderer.close()
+
+
+# =============================================================================
+# Phase 5.1: HTML Backend Time Series Warning Tests
+# =============================================================================
+
+
+class TestHTMLBackendTimeSeriesWarning:
+    """Test HTML backend emits warning for TimeSeriesOverlay (unsupported).
+
+    TimeSeriesOverlay requires a separate panel with time series plots,
+    which is not supported in HTML backend. A warning should be emitted
+    and the overlay should be skipped (other overlays still render).
+    """
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple 2D environment for testing."""
+        from neurospatial import Environment
+
+        positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        return Environment.from_samples(positions, bin_size=5.0)
+
+    @pytest.fixture
+    def simple_fields(self, simple_env):
+        """Create simple fields for testing."""
+        rng = np.random.default_rng(42)
+        return [rng.random(simple_env.n_bins) for _ in range(10)]
+
+    @pytest.fixture
+    def sample_timeseries_data(self):
+        """Create sample TimeSeriesData for testing."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        return TimeSeriesData(
+            data=np.linspace(0, 100, 100),
+            times=np.linspace(0, 1, 100),
+            start_indices=np.arange(10),
+            end_indices=np.arange(10) + 10,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=100.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+    def test_html_backend_warns_on_timeseries_overlay(
+        self, simple_env, simple_fields, sample_timeseries_data, tmp_path
+    ):
+        """Test HTML backend emits warning when time series overlay is present."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData(timeseries=[sample_timeseries_data])
+
+        save_path = tmp_path / "test.html"
+
+        # Should emit warning about time series not being supported
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            render_html(
+                simple_env,
+                simple_fields,
+                str(save_path),
+                overlay_data=overlay_data,
+            )
+
+            # Check for warning about time series
+            assert len(w) >= 1
+            warning_messages = [str(warning.message) for warning in w]
+            warning_text = " ".join(warning_messages).lower()
+
+            # Warning should mention time series not being supported
+            assert "time series" in warning_text or "timeseries" in warning_text, (
+                f"Expected warning about time series, got: {warning_messages}"
+            )
+
+            # Warning should suggest alternatives (video or napari)
+            assert "video" in warning_text or "napari" in warning_text, (
+                f"Expected suggestion to use video or napari, got: {warning_messages}"
+            )
+
+    def test_html_backend_still_renders_with_timeseries_present(
+        self, simple_env, simple_fields, sample_timeseries_data, tmp_path
+    ):
+        """Test HTML backend still renders successfully when time series is skipped."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData(timeseries=[sample_timeseries_data])
+
+        save_path = tmp_path / "test.html"
+
+        # Suppress warnings for this test
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_path = render_html(
+                simple_env,
+                simple_fields,
+                str(save_path),
+                overlay_data=overlay_data,
+            )
+
+        # File should be created successfully
+        assert result_path.exists()
+        assert result_path.stat().st_size > 0
+
+    def test_html_backend_renders_other_overlays_with_timeseries_present(
+        self, simple_env, simple_fields, sample_timeseries_data, tmp_path
+    ):
+        """Test HTML renders position overlays even when time series is skipped."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import OverlayData, PositionData
+
+        rng = np.random.default_rng(42)
+        positions = rng.random((10, 2)) * 10.0
+
+        # Mixed overlay data (timeseries + position)
+        overlay_data = OverlayData(
+            timeseries=[sample_timeseries_data],
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=5)
+            ],
+        )
+
+        save_path = tmp_path / "test.html"
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_path = render_html(
+                simple_env,
+                simple_fields,
+                str(save_path),
+                overlay_data=overlay_data,
+            )
+
+        # File should be created with content
+        assert result_path.exists()
+        # Should have substantial content (includes position overlay baked in)
+        assert result_path.stat().st_size > 1000
+
+    def test_html_backend_no_warning_without_timeseries(
+        self, simple_env, simple_fields, tmp_path
+    ):
+        """Test no time series warning when no time series overlay is present."""
+        import warnings
+
+        from neurospatial.animation.backends.html_backend import render_html
+        from neurospatial.animation.overlays import OverlayData, PositionData
+
+        rng = np.random.default_rng(42)
+        positions = rng.random((10, 2)) * 10.0
+
+        # Position overlay only (no time series)
+        overlay_data = OverlayData(
+            positions=[
+                PositionData(data=positions, color="red", size=10.0, trail_length=5)
+            ],
+        )
+
+        save_path = tmp_path / "test.html"
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            render_html(
+                simple_env,
+                simple_fields,
+                str(save_path),
+                overlay_data=overlay_data,
+                dpi=50,  # Low DPI to avoid file size warnings
+            )
+
+            # Check that no time series warning was emitted
+            warning_messages = [str(warning.message).lower() for warning in w]
+            for msg in warning_messages:
+                assert "time series" not in msg and "timeseries" not in msg, (
+                    f"Unexpected time series warning: {msg}"
+                )

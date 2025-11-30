@@ -238,10 +238,12 @@
 
 ### 5.1 HTML Backend (Optional)
 
-- [ ] Add `TimeSeriesDataJSON` TypedDict to HTML backend
-- [ ] Include precomputed indices in serialized data
-- [ ] Implement JavaScript time series renderer (if feasible)
-- [ ] Or: Add warning that HTML backend doesn't support TimeSeriesOverlay
+- [x] ~~Add `TimeSeriesDataJSON` TypedDict to HTML backend~~ (not needed - using warning approach)
+- [x] ~~Include precomputed indices in serialized data~~ (not needed - using warning approach)
+- [x] ~~Implement JavaScript time series renderer (if feasible)~~ (not needed - using warning approach)
+- [x] Or: Add warning that HTML backend doesn't support TimeSeriesOverlay
+  - Implemented warning similar to VideoOverlay pattern
+  - Tests: `TestHTMLBackendTimeSeriesWarning` class (4 tests)
 
 ### 5.2 Performance Testing
 
