@@ -87,20 +87,20 @@
 
 ### 2.1 TimeSeriesArtistManager
 
-- [ ] Create `src/neurospatial/animation/_timeseries.py`
-- [ ] Implement `TimeSeriesArtistManager` dataclass:
+- [x] Create `src/neurospatial/animation/_timeseries.py`
+- [x] Implement `TimeSeriesArtistManager` dataclass:
   - Fields: `axes`, `lines`, `cursors`, `value_texts`, `frame_times`, `group_window_seconds`
   - `create()` classmethod that builds matplotlib figure and artists once
   - `update(frame_idx, timeseries_data)` method for efficient per-frame updates
-- [ ] Implement `_group_timeseries()` helper to organize overlays by group
-- [ ] Implement `_get_group_index()` helper
-- [ ] Style for napari dark theme (background #262930, white text)
+- [x] Implement `_group_timeseries()` helper to organize overlays by group
+- [x] Implement `_get_group_index()` helper
+- [x] Style for napari dark theme (background #262930, white text)
 
 ### 2.2 Group Conflict Detection
 
-- [ ] Add warning when same group has different `window_seconds`
-- [ ] Add warning when same group has mixed `normalize` settings
-- [ ] Use "first wins" strategy for conflicting parameters
+- [x] Add warning when same group has different `window_seconds`
+- [x] Add warning when same group has mixed `normalize` settings
+- [x] Use "first wins" strategy for conflicting parameters
 
 ### 2.3 Napari Dock Widget
 
@@ -120,11 +120,11 @@
 
 ### 2.5 Tests for Phase 2
 
-- [ ] Test: `test_timeseries_artist_manager_create` - manager creation with mock figure
-- [ ] Test: `test_timeseries_artist_manager_update` - update changes line data
-- [ ] Test: `test_timeseries_grouping_stacked` - ungrouped overlays create separate rows
-- [ ] Test: `test_timeseries_grouping_overlaid` - same-group overlays share axes
-- [ ] Test: `test_timeseries_group_conflict_warning` - warnings emitted for conflicts
+- [x] Test: `test_timeseries_artist_manager_create` - manager creation with mock figure
+- [x] Test: `test_timeseries_artist_manager_update` - update changes line data
+- [x] Test: `test_timeseries_grouping_stacked` - ungrouped overlays create separate rows
+- [x] Test: `test_timeseries_grouping_overlaid` - same-group overlays share axes
+- [x] Test: `test_timeseries_group_conflict_warning` - warnings emitted for conflicts
 - [ ] Test: `test_timeseries_napari_dock` (integration) - dock widget created in viewer
 
 **Success criteria for Phase 2**:

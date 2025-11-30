@@ -545,3 +545,541 @@ class TestTimeSeriesDataInOverlayData:
         assert len(result.timeseries) == 1
         assert isinstance(result.timeseries[0], TimeSeriesData)
         assert result.timeseries[0].label == "Speed"
+
+
+class TestTimeSeriesGroupingHelpers:
+    """Test helper functions for grouping time series overlays."""
+
+    def test_group_timeseries_single_no_group(self):
+        """Test grouping a single overlay without explicit group."""
+        from neurospatial.animation._timeseries import _group_timeseries
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        ts_data = TimeSeriesData(
+            data=np.array([1.0, 2.0, 3.0]),
+            times=np.array([0.0, 0.5, 1.0]),
+            start_indices=np.array([0]),
+            end_indices=np.array([3]),
+            label="Speed",
+            color="cyan",
+            window_seconds=2.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,  # No group
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=1.0,
+            global_vmax=3.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        groups = _group_timeseries([ts_data])
+
+        # Single overlay without group should be in its own group
+        assert len(groups) == 1
+        assert len(groups[0]) == 1
+        assert groups[0][0] is ts_data
+
+    def test_group_timeseries_multiple_no_groups(self):
+        """Test that overlays without groups create separate rows."""
+        from neurospatial.animation._timeseries import _group_timeseries
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0]),
+                end_indices=np.array([3]),
+                label=label,
+                color="cyan",
+                window_seconds=2.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,  # No group
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        ts_data1 = make_ts_data("Speed")
+        ts_data2 = make_ts_data("Accel")
+
+        groups = _group_timeseries([ts_data1, ts_data2])
+
+        # Two overlays without groups should be in separate groups
+        assert len(groups) == 2
+        assert len(groups[0]) == 1
+        assert len(groups[1]) == 1
+
+    def test_group_timeseries_same_group_overlaid(self):
+        """Test that overlays with same group are placed together."""
+        from neurospatial.animation._timeseries import _group_timeseries
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, group):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0]),
+                end_indices=np.array([3]),
+                label=label,
+                color="cyan",
+                window_seconds=2.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=group,
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        ts_data1 = make_ts_data("Speed", "kinematics")
+        ts_data2 = make_ts_data("Accel", "kinematics")
+
+        groups = _group_timeseries([ts_data1, ts_data2])
+
+        # Two overlays with same group should be in single group
+        assert len(groups) == 1
+        assert len(groups[0]) == 2
+        # Use identity check (any with is) instead of 'in' for numpy array members
+        assert any(item is ts_data1 for item in groups[0])
+        assert any(item is ts_data2 for item in groups[0])
+
+    def test_group_timeseries_mixed_groups(self):
+        """Test mixed grouping: some overlaid, some stacked."""
+        from neurospatial.animation._timeseries import _group_timeseries
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, group):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0]),
+                end_indices=np.array([3]),
+                label=label,
+                color="cyan",
+                window_seconds=2.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=group,
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        ts_data1 = make_ts_data("Speed", "kinematics")
+        ts_data2 = make_ts_data("Accel", "kinematics")
+        ts_data3 = make_ts_data("LFP", None)  # Separate
+
+        groups = _group_timeseries([ts_data1, ts_data2, ts_data3])
+
+        # Should have 2 groups: kinematics (2 items), None (1 item)
+        assert len(groups) == 2
+
+    def test_get_group_index(self):
+        """Test _get_group_index returns correct index."""
+        from neurospatial.animation._timeseries import (
+            _get_group_index,
+            _group_timeseries,
+        )
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, group):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0]),
+                end_indices=np.array([3]),
+                label=label,
+                color="cyan",
+                window_seconds=2.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=group,
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        ts_data1 = make_ts_data("Speed", "kinematics")
+        ts_data2 = make_ts_data("Accel", "kinematics")
+        ts_data3 = make_ts_data("LFP", None)
+
+        groups = _group_timeseries([ts_data1, ts_data2, ts_data3])
+
+        # Items in same group should have same index
+        idx1 = _get_group_index(ts_data1, groups)
+        idx2 = _get_group_index(ts_data2, groups)
+        idx3 = _get_group_index(ts_data3, groups)
+
+        assert idx1 == idx2
+        assert idx1 != idx3
+
+
+class TestTimeSeriesArtistManager:
+    """Test TimeSeriesArtistManager for matplotlib rendering."""
+
+    @pytest.fixture
+    def sample_timeseries_data(self):
+        """Create sample TimeSeriesData for testing."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        return TimeSeriesData(
+            data=np.array([0.0, 10.0, 20.0, 30.0, 40.0]),
+            times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+            start_indices=np.array([0, 1, 2]),
+            end_indices=np.array([3, 4, 5]),
+            label="Speed",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.5,
+            alpha=0.8,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=40.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+    def test_artist_manager_create(self, sample_timeseries_data):
+        """Test TimeSeriesArtistManager.create() creates figure and artists."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Check manager was created with correct structure
+        assert len(manager.axes) == 1  # One group = one axes
+        assert len(manager.lines) == 1  # One line per overlay
+        assert len(manager.cursors) == 1  # One cursor per axes
+        assert "Speed" in manager.lines or 0 in manager.lines
+
+        plt.close(fig)
+
+    def test_artist_manager_create_multiple_rows(self):
+        """Test manager creates multiple axes for ungrouped overlays."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0, 1, 2]),
+                end_indices=np.array([1, 2, 3]),
+                label=label,
+                color="cyan",
+                window_seconds=1.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,  # Separate groups
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        fig = plt.figure(figsize=(4, 6))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[make_ts_data("Speed"), make_ts_data("Accel")],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Two ungrouped overlays should create 2 axes
+        assert len(manager.axes) == 2
+        assert len(manager.cursors) == 2
+
+        plt.close(fig)
+
+    def test_artist_manager_create_overlaid(self):
+        """Test overlays with same group share axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, color):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0, 1, 2]),
+                end_indices=np.array([1, 2, 3]),
+                label=label,
+                color=color,
+                window_seconds=1.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group="kinematics",  # Same group
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[
+                make_ts_data("Speed", "cyan"),
+                make_ts_data("Accel", "orange"),
+            ],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Two overlays in same group should create only 1 axes
+        assert len(manager.axes) == 1
+        # But two lines
+        assert len(manager.lines) == 2
+        assert len(manager.cursors) == 1
+
+        plt.close(fig)
+
+    def test_artist_manager_update(self, sample_timeseries_data):
+        """Test update() changes line data."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Update to frame 0
+        manager.update(0, [sample_timeseries_data])
+
+        # Get line data
+        line_key = (
+            "Speed" if "Speed" in manager.lines else next(iter(manager.lines.keys()))
+        )
+        line = manager.lines[line_key]
+        x_data, y_data = line.get_data()
+
+        # Should have data from window slice
+        assert len(x_data) > 0
+        assert len(y_data) > 0
+
+        # Update to frame 1
+        manager.update(1, [sample_timeseries_data])
+        x_data2, y_data2 = line.get_data()
+
+        # Data should have changed
+        assert not np.array_equal(x_data, x_data2) or not np.array_equal(
+            y_data, y_data2
+        )
+
+        plt.close(fig)
+
+    def test_artist_manager_cursor_update(self, sample_timeseries_data):
+        """Test that cursor position updates with frame."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Update to frame 0 (time=0.0)
+        manager.update(0, [sample_timeseries_data])
+        cursor_x0 = manager.cursors[0].get_xdata()
+
+        # Update to frame 2 (time=1.0)
+        manager.update(2, [sample_timeseries_data])
+        cursor_x2 = manager.cursors[0].get_xdata()
+
+        # Cursor should be at different x positions
+        assert not np.allclose(cursor_x0, cursor_x2)
+
+        plt.close(fig)
+
+    def test_artist_manager_dark_theme(self, sample_timeseries_data):
+        """Test dark theme styling is applied."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create(
+            fig=fig,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dark_theme=True,
+        )
+
+        # Check figure background is dark
+        assert fig.get_facecolor()[:3] != (1.0, 1.0, 1.0)  # Not white
+
+        # Check axes background
+        ax = manager.axes[0]
+        ax_facecolor = ax.get_facecolor()[:3]
+        assert ax_facecolor != (1.0, 1.0, 1.0)  # Not white
+
+        plt.close(fig)
+
+
+class TestTimeSeriesGroupConflictWarnings:
+    """Test warnings for conflicting parameters in same group."""
+
+    def test_conflicting_window_seconds_warning(self):
+        """Test warning when same group has different window_seconds."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, window_seconds):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0, 1, 2]),
+                end_indices=np.array([1, 2, 3]),
+                label=label,
+                color="cyan",
+                window_seconds=window_seconds,
+                linewidth=1.0,
+                alpha=1.0,
+                group="kinematics",  # Same group
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            TimeSeriesArtistManager.create(
+                fig=fig,
+                timeseries_data=[
+                    make_ts_data("Speed", 2.0),
+                    make_ts_data("Accel", 5.0),
+                ],
+                frame_times=frame_times,
+                dark_theme=True,
+            )
+
+            # Should warn about conflicting window_seconds
+            assert len(w) >= 1
+            assert any(
+                "window_seconds" in str(warning.message).lower() for warning in w
+            )
+
+        plt.close(fig)
+
+    def test_mixed_normalize_warning(self):
+        """Test warning when same group has mixed normalize settings."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label, normalize):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0, 1, 2]),
+                end_indices=np.array([1, 2, 3]),
+                label=label,
+                color="cyan",
+                window_seconds=2.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group="kinematics",  # Same group
+                normalize=normalize,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        fig = plt.figure(figsize=(4, 3))
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            TimeSeriesArtistManager.create(
+                fig=fig,
+                timeseries_data=[
+                    make_ts_data("Speed", True),
+                    make_ts_data("Accel", False),
+                ],
+                frame_times=frame_times,
+                dark_theme=True,
+            )
+
+            # Should warn about mixed normalize
+            assert len(w) >= 1
+            assert any("normalize" in str(warning.message).lower() for warning in w)
+
+        plt.close(fig)

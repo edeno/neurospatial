@@ -2,12 +2,31 @@
 
 ## Current Status
 **Date**: 2025-11-30
-**Phase**: 1 - Core Infrastructure (COMPLETE)
-**Task**: Phase 1 all tasks completed
+**Phase**: 2 - Napari Backend (IN PROGRESS)
+**Task**: Phase 2.1 and 2.2 completed, next is 2.3 Napari Dock Widget
 
 ## Progress Log
 
-### 2025-11-30
+### 2025-11-30 (Session 2)
+- **Phase 2.1 and 2.2 COMPLETE**
+- Created `src/neurospatial/animation/_timeseries.py`:
+  - `_group_timeseries()` - Groups overlays by their `group` parameter
+  - `_get_group_index()` - Returns group index for a TimeSeriesData
+  - `TimeSeriesArtistManager` dataclass with `create()` and `update()` methods
+- Key implementation decisions:
+  - Used identity check (`is`) instead of `in` for numpy array membership
+  - Cached groups in manager to avoid recomputing on each `update()` call
+  - Cursor is `None` if all overlays in group have `show_cursor=False`
+  - Used walrus operator for safe label type checking (mypy fix)
+- Added 13 new tests (all passing, 37 total timeseries tests)
+- Code review: addressed 4 of 7 issues:
+  - Removed dead fallback code in `update()`
+  - Used `enumerate()` instead of `axes.index(ax)` for O(n) improvement
+  - Respect `show_cursor=False` setting per group
+  - Cache groups in manager (O(1) instead of O(n) per frame)
+- Ruff and mypy: all passing
+
+### 2025-11-30 (Session 1)
 - **Phase 1 COMPLETE**
 - Created `TimeSeriesOverlay` dataclass with full validation:
   - 1D data/times validation
