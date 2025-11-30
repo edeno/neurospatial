@@ -345,10 +345,11 @@ def simulate_trajectory_ou(
             proposed_position = position + velocity * dt
 
             # Check if proposed position would be outside environment
-            if not env.contains(proposed_position):
+            # Note: contains() returns ndarray, so use [None, :] for single point
+            if not env.contains(proposed_position[None, :])[0]:
                 # Find nearest valid bin to current position (not proposed)
                 try:
-                    nearest_bin = int(env.bin_at(position)[0])
+                    nearest_bin = int(env.bin_at(position[None, :])[0])
                 except Exception:
                     # If bin_at fails, use nearest bin center
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
@@ -385,10 +386,11 @@ def simulate_trajectory_ou(
 
         # Ensure position stays within environment after update
         if boundary_mode == "reflect":
-            if not env.contains(position):
+            # Note: contains() returns ndarray, so use [None, :] for single point
+            if not env.contains(position[None, :])[0]:
                 # Clamp to nearest valid bin
                 try:
-                    nearest_bin = int(env.bin_at(position)[0])
+                    nearest_bin = int(env.bin_at(position[None, :])[0])
                 except Exception:
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
                     nearest_bin = int(np.argmin(distances))
@@ -402,10 +404,11 @@ def simulate_trajectory_ou(
                 range_size = range_max - range_min
                 position[dim] = range_min + (position[dim] - range_min) % range_size
 
-        elif boundary_mode == "stop" and not env.contains(position):
+        # Note: contains() returns ndarray, so use [None, :] for single point
+        elif boundary_mode == "stop" and not env.contains(position[None, :])[0]:
             # Clamp to environment bounds - find nearest valid bin
             try:
-                nearest_bin = int(env.bin_at(position)[0])
+                nearest_bin = int(env.bin_at(position[None, :])[0])
             except Exception:
                 distances = np.linalg.norm(env.bin_centers - position, axis=1)
                 nearest_bin = int(np.argmin(distances))

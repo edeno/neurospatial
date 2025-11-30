@@ -249,18 +249,24 @@ class BoundaryCellModel:
 
         # Compute distances to boundary
         if self.distance_metric == "geodesic":
-            # Map positions to bins and lookup distances
-            bin_indices = np.array(
-                [
-                    int(self.env.bin_at(pos)[0])
-                    if self.env.contains(pos)
-                    else int(
-                        np.argmin(np.linalg.norm(self.env.bin_centers - pos, axis=1))
-                    )
-                    for pos in positions
-                ],
-                dtype=np.int_,
-            )
+            # Map positions to bins and lookup distances - vectorized for efficiency
+            # contains() returns ndarray, so we can use it directly for batch check
+            inside_mask = self.env.contains(positions)
+            bin_indices = np.empty(len(positions), dtype=np.int_)
+
+            # For points inside environment, use bin_at
+            if inside_mask.any():
+                bin_indices[inside_mask] = self.env.bin_at(positions[inside_mask])
+
+            # For points outside, use vectorized nearest neighbor
+            if not inside_mask.all():
+                outside_positions = positions[~inside_mask]
+                # Vectorized distance computation: (n_outside, n_bins)
+                distances_to_bins = np.linalg.norm(
+                    self.env.bin_centers[None, :, :] - outside_positions[:, None, :],
+                    axis=2,
+                )
+                bin_indices[~inside_mask] = np.argmin(distances_to_bins, axis=1)
 
             # Lookup distances from precomputed field
             assert self._distance_field is not None

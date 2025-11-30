@@ -184,18 +184,19 @@ def simulate_session(
 
         **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
 
-        - distance : float - Preferred distance from boundary (default: random)
-        - width : float - Distance tolerance (default: 5.0)
-        - max_rate : float - Peak firing rate in Hz (default: 10.0)
+        - distance : float - Preferred distance from boundary (maps to preferred_distance)
+        - width : float - Distance tolerance (maps to distance_tolerance, boundary cells only)
+        - boundary_width : float - Alias for width (unambiguous for mixed cell types)
+        - max_rate : float - Peak firing rate in Hz (default: 15.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
         - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
-        - spacing : float - Grid spacing in environment units (default: 30.0)
-        - orientation : float - Grid orientation angle in radians (default: 0.0)
-        - max_rate : float - Peak firing rate in Hz (default: 15.0)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - spacing : float - Grid spacing in environment units (maps to grid_spacing)
+        - orientation : float - Grid orientation angle in radians (maps to grid_orientation)
+        - max_rate : float - Peak firing rate in Hz (default: 20.0)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.1)
 
     Returns
     -------
@@ -319,23 +320,33 @@ def simulate_session(
         if param in kwargs:
             place_cell_params[param] = kwargs.pop(param)
 
-    # BoundaryCellModel parameters
+    # BoundaryCellModel parameters - remap convenience names to actual parameter names
     boundary_cell_params = {}
-    for param in [
-        "distance",
-        "width",
-        "max_rate",
-        "baseline_rate",
-        "distance_metric",
-    ]:
+    # Direct parameters
+    for param in ["max_rate", "baseline_rate", "distance_metric"]:
         if param in kwargs:
             boundary_cell_params[param] = kwargs.pop(param)
+    # Remapped parameters: distance -> preferred_distance, width -> distance_tolerance
+    # Note: only remap width for boundary cells (place cells use width differently)
+    if "distance" in kwargs:
+        boundary_cell_params["preferred_distance"] = kwargs.pop("distance")
+    if "boundary_width" in kwargs:
+        boundary_cell_params["distance_tolerance"] = kwargs.pop("boundary_width")
+    elif "width" in kwargs and cell_type == "boundary":
+        # Only remap 'width' to distance_tolerance for pure boundary cell mode
+        boundary_cell_params["distance_tolerance"] = kwargs.pop("width")
 
-    # GridCellModel parameters
+    # GridCellModel parameters - remap convenience names to actual parameter names
     grid_cell_params = {}
-    for param in ["spacing", "orientation", "max_rate", "baseline_rate"]:
+    # Direct parameters
+    for param in ["max_rate", "baseline_rate"]:
         if param in kwargs:
             grid_cell_params[param] = kwargs.pop(param)
+    # Remapped parameters: spacing -> grid_spacing, orientation -> grid_orientation
+    if "spacing" in kwargs:
+        grid_cell_params["grid_spacing"] = kwargs.pop("spacing")
+    if "orientation" in kwargs:
+        grid_cell_params["grid_orientation"] = kwargs.pop("orientation")
 
     # Generate trajectory (use seed directly for reproducibility)
     if trajectory_method == "ou":
@@ -371,6 +382,18 @@ def simulate_session(
         # Evenly space centers across environment
         step = max(1, len(env.bin_centers) // n_cells)
         field_centers = env.bin_centers[::step][:n_cells]
+        # Warn if we can't provide enough centers
+        if len(field_centers) < n_cells:
+            import warnings
+
+            warnings.warn(
+                f"Requested n_cells={n_cells} but only {len(field_centers)} unique "
+                f"bin centers available for uniform coverage (env has {len(env.bin_centers)} bins). "
+                f"Using {len(field_centers)} cells. Consider using coverage='random' for "
+                f"more cells (with potential overlap).",
+                UserWarning,
+                stacklevel=2,
+            )
     elif coverage == "random":
         # Randomly sample centers (with replacement if needed)
         indices = rng.choice(len(env.bin_centers), size=n_cells, replace=True)

@@ -213,8 +213,9 @@ class PlaceCellModel:
         if distance_metric == "geodesic":
             # Find bin containing the center
             # Always use contains check first to avoid errors
-            if env.contains(self.center):
-                center_bin = int(env.bin_at(self.center)[0])
+            # Note: contains() returns ndarray, so we need [0] for single point
+            if env.contains(self.center[None, :])[0]:
+                center_bin = int(env.bin_at(self.center[None, :])[0])
             else:
                 # If center is outside environment, use nearest bin
                 distances = np.linalg.norm(env.bin_centers - self.center, axis=1)
@@ -277,16 +278,24 @@ class PlaceCellModel:
 
         elif self.distance_metric == "geodesic":
             # Graph-based distance (path through connectivity)
-            # Map positions to bins
-            bin_indices = np.array(
-                [
-                    self.env.bin_at(pos)
-                    if self.env.contains(pos)
-                    else np.argmin(np.linalg.norm(self.env.bin_centers - pos, axis=1))
-                    for pos in positions
-                ],
-                dtype=np.int_,
-            )
+            # Map positions to bins - vectorized for efficiency
+            # contains() returns ndarray, so we can use it directly for batch check
+            inside_mask = self.env.contains(positions)
+            bin_indices = np.empty(len(positions), dtype=np.int_)
+
+            # For points inside environment, use bin_at
+            if inside_mask.any():
+                bin_indices[inside_mask] = self.env.bin_at(positions[inside_mask])
+
+            # For points outside, use vectorized nearest neighbor
+            if not inside_mask.all():
+                outside_positions = positions[~inside_mask]
+                # Vectorized distance computation: (n_outside, n_bins)
+                distances = np.linalg.norm(
+                    self.env.bin_centers[None, :, :] - outside_positions[:, None, :],
+                    axis=2,
+                )
+                bin_indices[~inside_mask] = np.argmin(distances, axis=1)
 
             # Lookup distances from precomputed field
             assert (
