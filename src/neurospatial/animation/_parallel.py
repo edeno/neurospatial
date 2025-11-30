@@ -1232,6 +1232,7 @@ def parallel_render_frames(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    frame_times: NDArray[np.float64] | None = None,
 ) -> str:
     """Render frames in parallel across worker processes.
 
@@ -1378,6 +1379,7 @@ def parallel_render_frames(
                 "show_regions": show_regions,
                 "region_alpha": region_alpha,
                 "scale_bar": scale_bar,
+                "frame_times": frame_times,  # For time series rendering
             }
         )
 
@@ -1487,6 +1489,8 @@ def _render_worker_frames(task: dict) -> None:
     show_regions = task.get("show_regions", False)
     region_alpha = task.get("region_alpha", 0.3)
     scale_bar = task.get("scale_bar", False)
+    # Time series parameters
+    frame_times = task.get("frame_times")
 
     # Lean rcParams for bulk rasterization
     import matplotlib
@@ -1503,9 +1507,27 @@ def _render_worker_frames(task: dict) -> None:
         }
     )
 
-    # Create figure once for this worker
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-    ax.set_axis_off()
+    # Check if we have time series data to render
+    timeseries_data = overlay_data.timeseries if overlay_data is not None else []
+    has_timeseries = len(timeseries_data) > 0 and frame_times is not None
+
+    # Create figure - use GridSpec layout if time series present
+    ts_manager: Any = None  # TimeSeriesArtistManager or None
+    if has_timeseries and frame_times is not None:
+        from neurospatial.animation._timeseries import (
+            _setup_video_figure_with_timeseries,
+        )
+
+        fig, ax, ts_manager = _setup_video_figure_with_timeseries(
+            env=env,
+            timeseries_data=timeseries_data,
+            frame_times=frame_times,  # Type narrowing: frame_times is not None here
+            dpi=dpi,
+            figsize=(12, 6),  # Wider to accommodate time series column
+        )
+    else:
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+        ax.set_axis_off()
 
     # Render first frame normally to establish artists and limits
     env.plot_field(
@@ -1549,6 +1571,10 @@ def _render_worker_frames(task: dict) -> None:
     if reuse_artists:
         ax.set_autoscale_on(False)
 
+    # Initialize time series for frame 0
+    if ts_manager is not None:
+        ts_manager.update(0, timeseries_data)
+
     try:
         # Save frame 0
         frame_number = start_idx
@@ -1586,6 +1612,10 @@ def _render_worker_frames(task: dict) -> None:
                         ax, env, local_idx, overlay_data, show_regions, region_alpha
                     )
 
+                # Update time series artists if present
+                if ts_manager is not None:
+                    ts_manager.update(local_idx, timeseries_data)
+
                 # No need to clear or re-layout. Draw and save.
                 frame_number = start_idx + local_idx
                 filename = f"frame_{frame_number:0{digits}d}.png"
@@ -1614,6 +1644,10 @@ def _render_worker_frames(task: dict) -> None:
                 _render_all_overlays(
                     ax, env, local_idx, overlay_data, show_regions, region_alpha
                 )
+
+                # Update time series artists if present
+                if ts_manager is not None:
+                    ts_manager.update(local_idx, timeseries_data)
 
                 frame_number = start_idx + local_idx
                 filename = f"frame_{frame_number:0{digits}d}.png"

@@ -81,6 +81,7 @@ def render_video(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    frame_times: NDArray[np.float64] | None = None,
     **kwargs,
 ) -> Path | None:
     """Export animation as video using parallel frame rendering.
@@ -337,6 +338,7 @@ def render_video(
             show_regions=show_regions,
             region_alpha=region_alpha,
             scale_bar=scale_bar,
+            frame_times=frame_times,
         )
 
         # Encode video with ffmpeg

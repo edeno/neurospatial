@@ -39,6 +39,7 @@ def render_field_to_png_bytes_with_overlays(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     image_format: str = "png",
+    frame_times: NDArray[np.float64] | None = None,
 ) -> bytes:
     """Render field with overlays to image bytes (PNG or JPEG).
 
@@ -73,6 +74,10 @@ def render_field_to_png_bytes_with_overlays(
         fully transparent and 1.0 is fully opaque.
     image_format : {"png", "jpeg"}, default="png"
         Image format. PNG is lossless, JPEG is smaller but lossy.
+    frame_times : ndarray of shape (n_frames,), dtype float64, optional
+        Timestamps for each animation frame. Required when overlay_data
+        contains time series overlays, for synchronizing the time series
+        display with the spatial field animation.
 
     Returns
     -------
@@ -147,25 +152,65 @@ def render_field_to_png_bytes_with_overlays(
         # Import overlay rendering function from video backend
         from neurospatial.animation._parallel import _render_all_overlays
 
-        # Create figure and axes
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-        ax.set_axis_off()
-
-        # Render field using environment's plot method
-        env.plot_field(
-            field,
-            ax=ax,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            colorbar=False,
+        # Check if we have time series overlays
+        has_timeseries = (
+            overlay_data is not None
+            and hasattr(overlay_data, "timeseries")
+            and overlay_data.timeseries
         )
 
-        # Render overlays if provided
-        if overlay_data is not None:
+        if has_timeseries and frame_times is not None and overlay_data is not None:
+            # Use GridSpec layout for time series
+            # Type narrowing: overlay_data is confirmed not None by condition above
+            from neurospatial.animation._timeseries import (
+                _setup_video_figure_with_timeseries,
+            )
+
+            fig, ax, ts_manager = _setup_video_figure_with_timeseries(
+                env=env,
+                timeseries_data=overlay_data.timeseries,
+                frame_times=frame_times,
+                dpi=dpi,
+                figsize=(12, 6),  # Wider for time series column
+            )
+
+            # Render field using environment's plot method
+            env.plot_field(
+                field,
+                ax=ax,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                colorbar=False,
+            )
+
+            # Render overlays
             _render_all_overlays(
                 ax, env, frame_idx, overlay_data, show_regions, region_alpha
             )
+
+            # Update time series for this frame
+            ts_manager.update(frame_idx, overlay_data.timeseries)
+        else:
+            # Standard layout without time series
+            fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
+            ax.set_axis_off()
+
+            # Render field using environment's plot method
+            env.plot_field(
+                field,
+                ax=ax,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                colorbar=False,
+            )
+
+            # Render overlays if provided
+            if overlay_data is not None:
+                _render_all_overlays(
+                    ax, env, frame_idx, overlay_data, show_regions, region_alpha
+                )
 
         # Save to image bytes (removed bbox_inches="tight" for consistent dimensions)
         buf = io.BytesIO()
@@ -281,6 +326,7 @@ class PersistentFigureRenderer:
         dpi: int = 100,
         raise_on_fallback: bool = False,
         image_format: str = "png",
+        frame_times: NDArray[np.float64] | None = None,
     ) -> None:
         """Initialize the persistent figure renderer.
 
@@ -303,6 +349,8 @@ class PersistentFigureRenderer:
             continues.
         image_format : {"png", "jpeg"}, default="png"
             Image format. PNG is lossless, JPEG is smaller but lossy.
+        frame_times : ndarray of shape (n_frames,), dtype float64, optional
+            Timestamps for animation frames. Required for time series overlays.
         """
         # Validate format early
         image_format = image_format.lower()
@@ -334,13 +382,19 @@ class PersistentFigureRenderer:
         self._image_format = image_format
         self._plt = plt  # Store reference to prevent issues with lazy imports
         self._QuadMesh = QuadMesh  # Store class reference for isinstance checks
+        self._frame_times = frame_times  # Store for time series rendering
 
-        # Create persistent figure
-        self._fig, self._ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-        self._ax.set_axis_off()
+        # Figure, axes, and managers - created lazily on first render
+        # This allows us to detect time series overlays and use GridSpec layout
+        self._fig: Any = None
+        self._ax: Any = None
         self._mesh: QuadMesh | None = None  # Will hold QuadMesh after first render
         self._is_first_render = True
         self._overlay_manager: Any = None  # Initialized on first render with overlays
+        self._ts_manager: Any = (
+            None  # Time series manager (if overlays have timeseries)
+        )
+        self._has_timeseries: bool = False  # Whether we have time series overlays
 
     def render(
         self,
@@ -374,6 +428,39 @@ class PersistentFigureRenderer:
         from neurospatial.animation._parallel import OverlayArtistManager
 
         if self._is_first_render:
+            # Check if we have time series overlays
+            self._has_timeseries = (
+                overlay_data is not None
+                and hasattr(overlay_data, "timeseries")
+                and overlay_data.timeseries
+                and self._frame_times is not None
+            )
+
+            if (
+                self._has_timeseries
+                and overlay_data is not None
+                and self._frame_times is not None
+            ):
+                # Use GridSpec layout for time series
+                # Type narrowing: overlay_data and frame_times confirmed not None above
+                from neurospatial.animation._timeseries import (
+                    _setup_video_figure_with_timeseries,
+                )
+
+                self._fig, self._ax, self._ts_manager = (
+                    _setup_video_figure_with_timeseries(
+                        env=self._env,
+                        timeseries_data=overlay_data.timeseries,
+                        frame_times=self._frame_times,
+                        dpi=self._dpi,
+                        figsize=(12, 6),  # Wider for time series column
+                    )
+                )
+            else:
+                # Standard layout without time series
+                self._fig, self._ax = self._plt.subplots(figsize=(8, 6), dpi=self._dpi)
+                self._ax.set_axis_off()
+
             # First render: create image using environment's plot method
             self._env.plot_field(
                 field,
@@ -400,6 +487,14 @@ class PersistentFigureRenderer:
                     region_alpha=region_alpha,
                 )
                 self._overlay_manager.initialize(frame_idx=frame_idx)
+
+            # Update time series for first frame
+            if (
+                self._has_timeseries
+                and self._ts_manager is not None
+                and overlay_data is not None
+            ):
+                self._ts_manager.update(frame_idx, overlay_data.timeseries)
 
             self._is_first_render = False
         else:
@@ -432,6 +527,14 @@ class PersistentFigureRenderer:
             if self._overlay_manager is not None:
                 self._overlay_manager.update_frame(frame_idx)
 
+            # Update time series for subsequent frames
+            if (
+                self._has_timeseries
+                and self._ts_manager is not None
+                and overlay_data is not None
+            ):
+                self._ts_manager.update(frame_idx, overlay_data.timeseries)
+
         # Capture to image bytes (removed bbox_inches="tight" for consistent dimensions)
         with timing("PersistentFigureRenderer.render_savefig"):
             buf = io.BytesIO()
@@ -439,7 +542,7 @@ class PersistentFigureRenderer:
             if self._image_format == "jpeg":
                 # For JPEG, render to RGB array then save with PIL
                 self._fig.canvas.draw()
-                rgba = np.asarray(self._fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+                rgba = np.asarray(self._fig.canvas.buffer_rgba())
                 rgb = rgba[:, :, :3]  # Drop alpha channel
 
                 # Use PIL for JPEG compression
@@ -661,6 +764,7 @@ def render_widget(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     image_format: str = "png",
+    frame_times: NDArray[np.float64] | None = None,
     **kwargs: Any,  # Accept other parameters gracefully
 ) -> None:
     """Create interactive Jupyter widget with slider control.
@@ -715,6 +819,10 @@ def render_widget(
         Image format. PNG is lossless, JPEG is smaller but lossy. JPEG can
         reduce memory usage significantly for large animations at the cost
         of some image quality.
+    frame_times : ndarray of shape (n_frames,), dtype float64, optional
+        Timestamps for each animation frame. Required when overlay_data
+        contains time series overlays, for synchronizing the time series
+        display with the spatial field animation.
     **kwargs : dict
         Additional parameters (accepted for backend compatibility, ignored).
 
@@ -831,6 +939,7 @@ def render_widget(
                 show_regions=show_regions,
                 region_alpha=region_alpha,
                 image_format=image_format,
+                frame_times=frame_times,
             )
         else:
             # Render without overlays (backward compatibility)
@@ -852,6 +961,7 @@ def render_widget(
             vmax=vmax,
             dpi=dpi,
             image_format=image_format,
+            frame_times=frame_times,
         )
 
     # On-demand rendering with LRU cache

@@ -417,3 +417,352 @@ class TimeSeriesArtistManager:
         for cursor in self.cursors:
             if cursor is not None:
                 cursor.set_xdata([current_time, current_time])
+
+    @classmethod
+    def create_from_axes(
+        cls,
+        axes: list[Axes],
+        timeseries_data: list[TimeSeriesData],
+        frame_times: NDArray[np.float64],
+        dark_theme: bool = False,
+    ) -> TimeSeriesArtistManager:
+        """Create artist manager using pre-created axes.
+
+        Unlike create(), this method uses externally provided Axes rather than
+        creating them. This enables GridSpec layouts where the time series axes
+        are positioned alongside a spatial field.
+
+        Parameters
+        ----------
+        axes : list[Axes]
+            Pre-created matplotlib axes, one per group.
+        timeseries_data : list[TimeSeriesData]
+            Time series data containers from conversion pipeline.
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps.
+        dark_theme : bool, default=False
+            Apply dark theme styling. Default is False for video backend
+            (which uses light theme).
+
+        Returns
+        -------
+        TimeSeriesArtistManager
+            Initialized manager ready for per-frame updates.
+
+        Notes
+        -----
+        The caller is responsible for creating the correct number of axes
+        (one per group). Use _group_timeseries() to determine the number
+        of groups before creating axes.
+
+        Examples
+        --------
+        >>> from matplotlib.gridspec import GridSpec
+        >>> import matplotlib.pyplot as plt
+        >>> fig = plt.figure()
+        >>> gs = GridSpec(2, 2, width_ratios=[3, 1])
+        >>> ax_field = fig.add_subplot(gs[:, 0])
+        >>> ax_ts1 = fig.add_subplot(gs[0, 1])
+        >>> ax_ts2 = fig.add_subplot(gs[1, 1])
+        >>> manager = TimeSeriesArtistManager.create_from_axes(
+        ...     axes=[ax_ts1, ax_ts2],
+        ...     timeseries_data=[ts_data1, ts_data2],
+        ...     frame_times=frame_times,
+        ... )
+        """
+        if not timeseries_data:
+            # Empty manager for no time series
+            return cls(
+                axes=[],
+                lines={},
+                cursors=[],
+                value_texts={},
+                frame_times=frame_times,
+                group_window_seconds={},
+                _ts_data_keys={},
+                _groups=[],
+            )
+
+        groups = _group_timeseries(timeseries_data)
+        n_groups = len(groups)
+
+        if len(axes) != n_groups:
+            raise ValueError(
+                f"Number of axes ({len(axes)}) must match number of groups "
+                f"({n_groups}). Use _group_timeseries() to determine group count."
+            )
+
+        # Build per-group settings and check for conflicts
+        group_window_seconds: dict[int, float] = {}
+        group_normalize: dict[int, bool] = {}
+
+        for ts_data in timeseries_data:
+            group_idx = _get_group_index(ts_data, groups)
+
+            if group_idx not in group_window_seconds:
+                group_window_seconds[group_idx] = ts_data.window_seconds
+                group_normalize[group_idx] = ts_data.normalize
+            else:
+                # Check for conflicts and warn
+                existing_window = group_window_seconds[group_idx]
+                if ts_data.window_seconds != existing_window:
+                    warnings.warn(
+                        f"Group has conflicting window_seconds "
+                        f"({existing_window} vs {ts_data.window_seconds}). "
+                        f"Using first value: {existing_window}",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+
+                existing_normalize = group_normalize[group_idx]
+                if ts_data.normalize != existing_normalize:
+                    warnings.warn(
+                        f"Group has mixed normalize settings "
+                        f"({existing_normalize} vs {ts_data.normalize}). "
+                        f"This produces confusing y-axis semantics. "
+                        f"Consider using normalize=True for all or none.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+
+        # Apply theme styling to provided axes
+        for ax in axes:
+            if dark_theme:
+                napari_bg = "#262930"
+                ax.set_facecolor(napari_bg)
+                ax.tick_params(colors="white", labelsize=8)
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
+                ax.yaxis.label.set_color("white")
+                ax.xaxis.label.set_color("white")
+            else:
+                # Light theme (video backend)
+                ax.set_facecolor("white")
+                ax.tick_params(colors="black", labelsize=8)
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                ax.yaxis.label.set_color("black")
+                ax.xaxis.label.set_color("black")
+
+        # Create Line2D artists and value text annotations
+        lines: dict[str, Line2D] = {}
+        value_texts: dict[str, Text] = {}
+        ts_data_keys: dict[int, str] = {}
+
+        for ts_data in timeseries_data:
+            group_idx = _get_group_index(ts_data, groups)
+            ax = axes[group_idx]
+
+            # Create line artist (empty initially)
+            (line,) = ax.plot(
+                [],
+                [],
+                color=ts_data.color,
+                linewidth=ts_data.linewidth,
+                alpha=ts_data.alpha,
+                label=ts_data.label if ts_data.label else None,
+            )
+
+            # Use label as key, or generate unique key from id
+            key = ts_data.label if ts_data.label else str(id(ts_data))
+            lines[key] = line
+            ts_data_keys[id(ts_data)] = key
+
+            # Create text annotation for cursor value display
+            text_color = ts_data.color if dark_theme else "black"
+            bbox_props = {
+                "boxstyle": "round,pad=0.2",
+                "facecolor": "#262930" if dark_theme else "white",
+                "alpha": 0.7,
+                "edgecolor": "none",
+            }
+            value_text = ax.text(
+                0.98,
+                0.95,
+                "",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8,
+                color=text_color,
+                bbox=bbox_props,
+            )
+            value_texts[key] = value_text
+
+            # Set stable y-limits from global values
+            if ts_data.use_global_limits:
+                y_range = ts_data.global_vmax - ts_data.global_vmin
+                margin = y_range * 0.05 if y_range > 0 else 0.5
+                ax.set_ylim(
+                    ts_data.global_vmin - margin,
+                    ts_data.global_vmax + margin,
+                )
+
+            # Add y-label from first overlay in group
+            if ts_data.label and not ax.get_ylabel():
+                ax.set_ylabel(
+                    ts_data.label, fontsize=9, color="white" if dark_theme else "black"
+                )
+
+        # Create cursor lines (one per axes, None if disabled)
+        cursors: list[Line2D | None] = []
+        for group_idx, ax in enumerate(axes):
+            # Check if any overlay in this group wants cursor
+            show_cursor_in_group = False
+            cursor_color = "red"  # Default
+
+            for ts_data in timeseries_data:
+                if (
+                    _get_group_index(ts_data, groups) == group_idx
+                    and ts_data.show_cursor
+                ):
+                    show_cursor_in_group = True
+                    cursor_color = ts_data.cursor_color
+                    break
+
+            # Only create cursor if requested by any overlay in group
+            if show_cursor_in_group:
+                cursor = ax.axvline(x=0, color=cursor_color, linewidth=1, alpha=0.8)
+            else:
+                cursor = None
+            cursors.append(cursor)
+
+        # Configure x-axis labels (only on bottom axes)
+        for ax in axes[:-1]:
+            ax.tick_params(labelbottom=False)
+        if axes:
+            label_color = "white" if dark_theme else "black"
+            axes[-1].set_xlabel("Time (s)", fontsize=9, color=label_color)
+
+        # Add legends for axes with multiple lines
+        for ax in axes:
+            ax_lines = [
+                line
+                for line in ax.get_lines()
+                if (label := line.get_label())
+                and isinstance(label, str)
+                and not label.startswith("_")
+            ]
+            if len(ax_lines) > 1:
+                ax.legend(loc="upper left", fontsize=7, framealpha=0.5)
+
+        return cls(
+            axes=axes,
+            lines=lines,
+            cursors=cursors,
+            value_texts=value_texts,
+            frame_times=frame_times,
+            group_window_seconds=group_window_seconds,
+            _ts_data_keys=ts_data_keys,
+            _groups=groups,
+        )
+
+
+def _setup_video_figure_with_timeseries(
+    env: Any,
+    timeseries_data: list[TimeSeriesData],
+    frame_times: NDArray[np.float64],
+    dpi: int = 100,
+    figsize: tuple[float, float] = (12, 6),
+) -> tuple[Figure, Axes, TimeSeriesArtistManager]:
+    """Create video figure with GridSpec layout for spatial field + time series.
+
+    Creates a matplotlib figure with a 2-column layout:
+    - Left column (wider): Spatial field visualization
+    - Right column (narrower): Stacked time series plots
+
+    Parameters
+    ----------
+    env : Environment
+        Environment for spatial context (used for aspect ratio).
+    timeseries_data : list[TimeSeriesData]
+        Time series data containers from conversion pipeline.
+    frame_times : NDArray[np.float64]
+        Animation frame timestamps.
+    dpi : int, default=100
+        Figure resolution in dots per inch.
+    figsize : tuple[float, float], default=(12, 6)
+        Figure size in inches (width, height).
+
+    Returns
+    -------
+    fig : Figure
+        Matplotlib figure with GridSpec layout.
+    ax_field : Axes
+        Axes for spatial field rendering.
+    ts_manager : TimeSeriesArtistManager
+        Manager for time series artists.
+
+    Notes
+    -----
+    The GridSpec uses width_ratios=[3, 1] to give the spatial field 3/4 of
+    the width and time series 1/4. Time series are stacked vertically in the
+    right column.
+
+    Examples
+    --------
+    >>> fig, ax_field, ts_manager = _setup_video_figure_with_timeseries(
+    ...     env=env,
+    ...     timeseries_data=[ts_data1, ts_data2],
+    ...     frame_times=frame_times,
+    ... )
+    >>> # Render field to ax_field
+    >>> env.plot_field(field, ax=ax_field)
+    >>> # Update time series
+    >>> ts_manager.update(frame_idx, [ts_data1, ts_data2])
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+
+    if not timeseries_data:
+        # No time series - just create a simple figure
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        empty_manager = TimeSeriesArtistManager(
+            axes=[],
+            lines={},
+            cursors=[],
+            value_texts={},
+            frame_times=frame_times,
+            group_window_seconds={},
+            _ts_data_keys={},
+            _groups=[],
+        )
+        return fig, ax, empty_manager
+
+    # Determine number of time series rows (groups)
+    groups = _group_timeseries(timeseries_data)
+    n_rows = len(groups)
+
+    # Create figure with GridSpec layout
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = GridSpec(
+        n_rows,
+        2,
+        figure=fig,
+        width_ratios=[3, 1],  # Spatial field gets 75%, time series 25%
+        hspace=0.1,  # Small vertical spacing between time series rows
+        wspace=0.15,  # Spacing between columns
+    )
+
+    # Create spatial field axes (spans all rows on left)
+    ax_field: Axes = fig.add_subplot(gs[:, 0])
+    ax_field.set_axis_off()  # Will be styled by plot_field
+
+    # Create time series axes (one per group/row on right)
+    ts_axes: list[Axes] = []
+    for row in range(n_rows):
+        ax = fig.add_subplot(gs[row, 1])
+        ts_axes.append(ax)
+
+    # Create manager using the pre-created axes
+    ts_manager = TimeSeriesArtistManager.create_from_axes(
+        axes=ts_axes,
+        timeseries_data=timeseries_data,
+        frame_times=frame_times,
+        dark_theme=False,  # Video uses light theme
+    )
+
+    # Adjust layout to prevent overlap
+    fig.tight_layout()
+
+    return fig, ax_field, ts_manager

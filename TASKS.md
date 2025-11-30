@@ -143,10 +143,11 @@
 **Files to modify**:
 - `src/neurospatial/animation/backends/video_backend.py`
 - `src/neurospatial/animation/_timeseries.py`
+- `src/neurospatial/animation/_parallel.py`
 
 ### 3.1 GridSpec Layout
 
-- [ ] Implement `_setup_video_figure_with_timeseries()` function
+- [x] Implement `_setup_video_figure_with_timeseries()` function
   - Use `GridSpec` with width_ratios=[3, 1] (spatial:timeseries)
   - Spatial field spans all rows on left
   - Time series axes stacked on right
@@ -154,32 +155,40 @@
 
 ### 3.2 create_from_axes Method
 
-- [ ] Add `create_from_axes()` classmethod to `TimeSeriesArtistManager`
+- [x] Add `create_from_axes()` classmethod to `TimeSeriesArtistManager`
   - Accept existing axes instead of creating new figure
   - Reuse same artist creation logic
   - Support light theme (video exports)
 
 ### 3.3 Video Render Integration
 
-- [ ] Update `_render_frame()` to call `manager.update()` when time series present
-- [ ] Update `_setup_figure()` to handle time series layout
-- [ ] Ensure aspect ratio accounts for added column
+- [x] Update `_render_worker_frames()` to call `manager.update()` when time series present
+- [x] Update figure creation to use GridSpec layout when time series present
+- [x] Ensure aspect ratio accounts for added column (wider figsize: 12x6)
+- [x] Pass `frame_times` parameter through rendering pipeline
 
 ### 3.4 Parallel Rendering Support
 
-- [ ] Ensure `TimeSeriesArtistManager` is pickle-safe
-- [ ] Test with `n_workers > 1`
+- [x] Ensure `TimeSeriesData` is pickle-safe (dataclass with numpy arrays)
+- [x] Ensure `OverlayData.timeseries` is pickle-safe
+- [x] Test with `n_workers > 1`
 
 ### 3.5 Tests for Phase 3
 
-- [ ] Test: `test_timeseries_video_layout` - GridSpec creates correct layout
-- [ ] Test: `test_timeseries_video_render` - video export includes time series
-- [ ] Test: `test_timeseries_video_parallel` - parallel rendering works
+- [x] Test: `test_setup_video_figure_with_timeseries_creates_gridspec` - GridSpec creates correct layout
+- [x] Test: `test_setup_video_figure_with_multiple_timeseries` - multiple time series rows
+- [x] Test: `test_setup_video_figure_light_theme` - light theme for video backend
+- [x] Test: `test_create_from_axes_basic` - create_from_axes with pre-created axes
+- [x] Test: `test_create_from_axes_multiple_groups` - multiple groups with pre-created axes
+- [x] Test: `test_video_render_includes_timeseries_column` - video export works
+- [x] Test: `test_video_render_parallel_with_timeseries` - parallel rendering works
+- [x] Test: `test_timeseries_data_is_pickle_safe` - TimeSeriesData is pickle-safe
+- [x] Test: `test_overlay_data_with_timeseries_is_pickle_safe` - OverlayData is pickle-safe
 
 **Success criteria for Phase 3**:
-- [ ] Video export includes time series column on right
-- [ ] Time series updates correctly per frame
-- [ ] Parallel rendering works without errors
+- [x] Video export includes time series column on right
+- [x] Time series updates correctly per frame
+- [x] Parallel rendering works without errors
 
 ---
 
@@ -192,21 +201,29 @@
 
 ### 4.1 Widget Layout
 
-- [ ] Update widget figure creation to include time series subplot
-- [ ] Use similar GridSpec approach as video backend
+- [x] Update widget figure creation to include time series subplot
+- [x] Use similar GridSpec approach as video backend
 
 ### 4.2 Widget Render Integration
 
-- [ ] Update rendering loop to call `manager.update()`
-- [ ] Ensure smooth playback with time series
+- [x] Update rendering loop to call `manager.update()`
+- [x] Ensure smooth playback with time series
+- [x] Add `frame_times` parameter to `render_widget()`
+- [x] Add `frame_times` parameter to `render_field_to_png_bytes_with_overlays()`
+- [x] Add `frame_times` parameter to `PersistentFigureRenderer`
 
 ### 4.3 Tests for Phase 4
 
-- [ ] Test: `test_timeseries_widget_render` - widget includes time series
+- [x] Test: `test_render_field_to_png_bytes_with_timeseries` - function includes time series
+- [x] Test: `test_persistent_figure_renderer_with_timeseries` - persistent renderer handles time series
+- [x] Test: `test_persistent_figure_renderer_timeseries_updates` - updates work across frames
+- [x] Test: `test_persistent_figure_renderer_multiple_timeseries` - multiple stacked time series
+- [x] Test: `test_render_widget_with_timeseries` - widget integration test
+- [x] Test: `test_widget_backend_no_timeseries_still_works` - backward compatibility
 
 **Success criteria for Phase 4**:
-- [ ] Widget displays time series alongside spatial field
-- [ ] Animation playback updates both spatial field and time series
+- [x] Widget displays time series alongside spatial field
+- [x] Animation playback updates both spatial field and time series
 
 ---
 
@@ -266,13 +283,13 @@
 
 Copy from PLAN.md for tracking:
 
-- [ ] `TimeSeriesOverlay` works with napari backend
-- [ ] Multiple time series can be stacked as rows
-- [ ] Multiple time series can be overlaid with `group` parameter
-- [ ] Scrolling window centered on current frame
-- [ ] No downsampling - full resolution preserved
-- [ ] Video export includes time series column
-- [ ] Widget backend includes time series
+- [x] `TimeSeriesOverlay` works with napari backend
+- [x] Multiple time series can be stacked as rows
+- [x] Multiple time series can be overlaid with `group` parameter
+- [x] Scrolling window centered on current frame
+- [x] No downsampling - full resolution preserved
+- [x] Video export includes time series column
+- [x] Widget backend includes time series
 - [ ] Performance acceptable for 1 kHz data over 1-hour sessions
 
 ---

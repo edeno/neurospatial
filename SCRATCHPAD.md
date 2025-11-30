@@ -2,10 +2,67 @@
 
 ## Current Status
 **Date**: 2025-11-30
-**Phase**: 2 - Napari Backend (COMPLETE)
-**Task**: Phase 2 COMPLETE - all napari backend tasks done. Ready for Phase 3 (Video Backend)
+**Phase**: 4 - Widget Backend (COMPLETE)
+**Task**: Phase 4 COMPLETE - all widget backend tasks done. Ready for Phase 5 (Polish & Performance)
 
 ## Progress Log
+
+### 2025-11-30 (Session 5)
+
+- **Phase 4 COMPLETE** - Widget backend time series integration
+- Updated `render_field_to_png_bytes_with_overlays()`:
+  - Added `frame_times` parameter for time series synchronization
+  - Uses GridSpec layout when time series present via `_setup_video_figure_with_timeseries()`
+  - Calls `ts_manager.update()` for time series rendering per frame
+- Updated `PersistentFigureRenderer`:
+  - Added `frame_times` parameter to constructor
+  - Lazy figure creation: detects time series on first render
+  - Uses GridSpec layout when time series present
+  - Updates time series manager on first and subsequent renders
+- Updated `render_widget()`:
+  - Added `frame_times` parameter with docstring documentation
+  - Passes `frame_times` to pre-rendering loop
+  - Passes `frame_times` to `PersistentFigureRenderer` constructor
+- Fixed mypy errors:
+  - Added explicit type narrowing for `overlay_data is not None` checks
+  - Added type narrowing for `frame_times is not None` checks
+  - Removed unused `type: ignore` comment
+- Added 6 new tests (all passing, 52 total timeseries tests):
+  - `test_render_field_to_png_bytes_with_timeseries`
+  - `test_persistent_figure_renderer_with_timeseries`
+  - `test_persistent_figure_renderer_timeseries_updates`
+  - `test_persistent_figure_renderer_multiple_timeseries`
+  - `test_render_widget_with_timeseries`
+  - `test_widget_backend_no_timeseries_still_works`
+- Ruff and mypy: all passing
+- Code review: addressed all critical issues identified by code-reviewer agent
+
+### 2025-11-30 (Session 4)
+
+- **Phase 3 COMPLETE** - Video backend time series integration
+- Implemented `_setup_video_figure_with_timeseries()` in `_timeseries.py`:
+  - Uses `GridSpec` with width_ratios=[3, 1] (spatial field 75%, time series 25%)
+  - Spatial field spans all rows on left
+  - Time series axes stacked vertically on right
+  - Returns `(fig, ax_field, ts_manager)` tuple
+- Added `create_from_axes()` classmethod to `TimeSeriesArtistManager`:
+  - Accepts pre-created axes for GridSpec layout integration
+  - Reuses same artist creation logic as `create()`
+  - Supports light theme (video backend uses white background)
+- Updated `_render_worker_frames()` in `_parallel.py`:
+  - Detects time series data in `overlay_data.timeseries`
+  - Uses GridSpec layout when time series present
+  - Updates time series manager per frame alongside overlay manager
+  - Uses wider figure (12x6) to accommodate time series column
+- Updated `parallel_render_frames()` to accept `frame_times` parameter
+- Updated `render_video()` to accept and pass `frame_times` parameter
+- Added 9 new tests (all passing):
+  - `TestTimeSeriesVideoBackendLayout` (3 tests)
+  - `TestTimeSeriesArtistManagerFromAxes` (2 tests)
+  - `TestTimeSeriesVideoRender` (2 tests)
+  - `TestTimeSeriesArtistManagerPickleSafe` (2 tests)
+- Pickle safety verified: `TimeSeriesData` and `OverlayData.timeseries` are pickle-safe
+- Ruff and mypy: all passing
 
 ### 2025-11-30 (Session 3)
 
@@ -84,4 +141,5 @@
 - Feature adds continuous variable visualization (speed, LFP, etc.) to animations
 - Time series displayed in right column with scrolling window
 - Follows existing overlay pattern (PositionOverlay, BodypartOverlay, etc.)
-- Ready for Phase 2: Napari Backend integration
+- Phase 1-4 complete: Core infrastructure, Napari, Video, and Widget backends all working
+- Ready for Phase 5: Polish & Performance (HTML backend, edge cases, documentation)

@@ -1282,3 +1282,726 @@ class TestTimeSeriesNapariDockWidget:
 
         finally:
             viewer.close()
+
+
+# =============================================================================
+# Phase 3: Video Backend Tests
+# =============================================================================
+
+
+class TestTimeSeriesVideoBackendLayout:
+    """Test video backend layout with time series column."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple environment for testing."""
+        from neurospatial import Environment
+
+        positions = np.random.rand(50, 2) * 100
+        env = Environment.from_samples(positions, bin_size=10.0)
+        return env
+
+    @pytest.fixture
+    def sample_fields(self, simple_env):
+        """Create sample field data for testing."""
+        n_frames = 5
+        n_bins = simple_env.n_bins
+        return [np.random.rand(n_bins) for _ in range(n_frames)]
+
+    @pytest.fixture
+    def sample_timeseries_data(self):
+        """Create sample TimeSeriesData for testing."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        return TimeSeriesData(
+            data=np.array([0.0, 10.0, 20.0, 30.0, 40.0]),
+            times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+            start_indices=np.array([0, 1, 2, 3, 4]),
+            end_indices=np.array([2, 3, 4, 5, 5]),
+            label="Speed",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.5,
+            alpha=0.8,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=40.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+    def test_setup_video_figure_with_timeseries_creates_gridspec(
+        self, simple_env, sample_timeseries_data
+    ):
+        """Test _setup_video_figure_with_timeseries creates correct GridSpec layout."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import (
+            _setup_video_figure_with_timeseries,
+        )
+
+        frame_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+
+        fig, ax_field, ts_manager = _setup_video_figure_with_timeseries(
+            env=simple_env,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dpi=100,
+        )
+
+        # Check figure was created
+        assert fig is not None
+        # Check spatial field axes was created
+        assert ax_field is not None
+        # Check time series manager was created
+        assert ts_manager is not None
+        # Manager should have one axes (one ungrouped timeseries)
+        assert len(ts_manager.axes) == 1
+
+        plt.close(fig)
+
+    def test_setup_video_figure_with_multiple_timeseries(self, simple_env):
+        """Test layout with multiple stacked time series rows."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import (
+            _setup_video_figure_with_timeseries,
+        )
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        def make_ts_data(label):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+                times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+                start_indices=np.array([0, 1, 2, 3, 4]),
+                end_indices=np.array([2, 3, 4, 5, 5]),
+                label=label,
+                color="cyan",
+                window_seconds=0.5,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,  # Separate rows
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=5.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        frame_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+
+        fig, _ax_field, ts_manager = _setup_video_figure_with_timeseries(
+            env=simple_env,
+            timeseries_data=[make_ts_data("Speed"), make_ts_data("Accel")],
+            frame_times=frame_times,
+            dpi=100,
+        )
+
+        # Should have 2 rows of time series (ungrouped)
+        assert len(ts_manager.axes) == 2
+
+        plt.close(fig)
+
+    def test_setup_video_figure_light_theme(self, simple_env, sample_timeseries_data):
+        """Test video backend uses light theme (not dark like napari)."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import (
+            _setup_video_figure_with_timeseries,
+        )
+
+        frame_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+
+        fig, _ax_field, ts_manager = _setup_video_figure_with_timeseries(
+            env=simple_env,
+            timeseries_data=[sample_timeseries_data],
+            frame_times=frame_times,
+            dpi=100,
+        )
+
+        # Video backend should use light theme (white background)
+        ax_ts = ts_manager.axes[0]
+        # Check background is light (R > 0.5 typically indicates light theme)
+        facecolor = ax_ts.get_facecolor()
+        # White background has values close to 1.0
+        assert facecolor[0] > 0.5  # R channel > 0.5 indicates light
+
+        plt.close(fig)
+
+
+class TestTimeSeriesArtistManagerFromAxes:
+    """Test create_from_axes classmethod for video backend."""
+
+    def test_create_from_axes_basic(self):
+        """Test TimeSeriesArtistManager.create_from_axes() with pre-created axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Create figure with pre-existing axes
+        fig, axes = plt.subplots(1, 1, squeeze=False)
+        ax_list = list(axes[:, 0])
+
+        ts_data = TimeSeriesData(
+            data=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+            times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+            start_indices=np.array([0, 1, 2]),
+            end_indices=np.array([2, 3, 5]),
+            label="Speed",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=1.0,
+            global_vmax=5.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create_from_axes(
+            axes=ax_list,
+            timeseries_data=[ts_data],
+            frame_times=frame_times,
+            dark_theme=False,  # Light theme for video
+        )
+
+        # Check manager uses provided axes
+        assert manager.axes is ax_list
+        assert len(manager.lines) == 1
+        assert len(manager.cursors) == 1
+
+        plt.close(fig)
+
+    def test_create_from_axes_multiple_groups(self):
+        """Test create_from_axes with multiple pre-created axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._timeseries import TimeSeriesArtistManager
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        # Create figure with 2 axes (for 2 ungrouped time series)
+        fig, axes = plt.subplots(2, 1, squeeze=False)
+        ax_list = list(axes[:, 0])
+
+        def make_ts_data(label):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0]),
+                times=np.array([0.0, 0.5, 1.0]),
+                start_indices=np.array([0, 1, 2]),
+                end_indices=np.array([1, 2, 3]),
+                label=label,
+                color="cyan",
+                window_seconds=1.0,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,  # Each gets own row
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=3.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        frame_times = np.array([0.0, 0.5, 1.0])
+
+        manager = TimeSeriesArtistManager.create_from_axes(
+            axes=ax_list,
+            timeseries_data=[make_ts_data("Speed"), make_ts_data("Accel")],
+            frame_times=frame_times,
+            dark_theme=False,
+        )
+
+        # Should use both provided axes
+        assert len(manager.axes) == 2
+        assert len(manager.lines) == 2
+
+        plt.close(fig)
+
+
+class TestTimeSeriesVideoRender:
+    """Test video export with time series column."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple environment for testing."""
+        from neurospatial import Environment
+
+        np.random.seed(42)
+        positions = np.random.rand(50, 2) * 100
+        env = Environment.from_samples(positions, bin_size=10.0)
+        env.clear_cache()  # Ensure pickle-able
+        return env
+
+    @pytest.fixture
+    def sample_fields(self, simple_env):
+        """Create sample field data for testing."""
+        np.random.seed(42)
+        n_frames = 5
+        n_bins = simple_env.n_bins
+        return [np.random.rand(n_bins) for _ in range(n_frames)]
+
+    @pytest.fixture
+    def sample_timeseries_overlay(self):
+        """Create sample time series overlay for testing."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        data = np.linspace(0, 100, 50)
+        times = np.linspace(0, 1, 50)
+        return TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=0.5,
+        )
+
+    def test_video_render_includes_timeseries_column(
+        self, simple_env, sample_fields, sample_timeseries_overlay, tmp_path
+    ):
+        """Test that video export includes time series column."""
+        pytest.importorskip("subprocess")
+        import shutil
+
+        # Skip if ffmpeg not available
+        if shutil.which("ffmpeg") is None:
+            pytest.skip("ffmpeg not installed")
+
+        from neurospatial.animation.backends.video_backend import render_video
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        output_path = tmp_path / "test_with_timeseries.mp4"
+
+        # Render video with time series
+        result = render_video(
+            env=simple_env,
+            fields=sample_fields,
+            save_path=str(output_path),
+            fps=10,
+            n_workers=1,  # Serial for test reliability
+            overlay_data=overlay_data,
+            frame_times=frame_times,  # Required for time series rendering
+        )
+
+        # Check video was created
+        assert result is not None
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+
+    def test_video_render_parallel_with_timeseries(
+        self, simple_env, sample_fields, sample_timeseries_overlay, tmp_path
+    ):
+        """Test parallel video rendering with time series (pickle-safe)."""
+        pytest.importorskip("subprocess")
+        import shutil
+
+        if shutil.which("ffmpeg") is None:
+            pytest.skip("ffmpeg not installed")
+
+        from neurospatial.animation.backends.video_backend import render_video
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        output_path = tmp_path / "test_parallel_timeseries.mp4"
+
+        # Render with 2 workers (tests pickling)
+        result = render_video(
+            env=simple_env,
+            fields=sample_fields,
+            save_path=str(output_path),
+            fps=10,
+            n_workers=2,
+            overlay_data=overlay_data,
+            frame_times=frame_times,  # Required for time series rendering
+        )
+
+        assert result is not None
+        assert output_path.exists()
+
+
+class TestTimeSeriesArtistManagerPickleSafe:
+    """Test TimeSeriesArtistManager pickle safety for parallel rendering."""
+
+    def test_timeseries_data_is_pickle_safe(self):
+        """Test that TimeSeriesData can be pickled for parallel workers."""
+        import pickle
+
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        ts_data = TimeSeriesData(
+            data=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+            times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+            start_indices=np.array([0, 1, 2, 3, 4]),
+            end_indices=np.array([2, 3, 4, 5, 5]),
+            label="Speed",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=1.0,
+            global_vmax=5.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        # Test pickling round-trip
+        pickled = pickle.dumps(ts_data)
+        restored = pickle.loads(pickled)
+
+        # Verify data was preserved
+        assert_array_equal(restored.data, ts_data.data)
+        assert_array_equal(restored.times, ts_data.times)
+        assert restored.label == ts_data.label
+        assert restored.color == ts_data.color
+
+    def test_overlay_data_with_timeseries_is_pickle_safe(self):
+        """Test that OverlayData with timeseries can be pickled."""
+        import pickle
+
+        from neurospatial.animation.overlays import OverlayData, TimeSeriesData
+
+        ts_data = TimeSeriesData(
+            data=np.array([1.0, 2.0, 3.0]),
+            times=np.array([0.0, 0.5, 1.0]),
+            start_indices=np.array([0]),
+            end_indices=np.array([3]),
+            label="Speed",
+            color="cyan",
+            window_seconds=1.0,
+            linewidth=1.0,
+            alpha=1.0,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=1.0,
+            global_vmax=3.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+        overlay_data = OverlayData(timeseries=[ts_data])
+
+        # Test pickling round-trip
+        pickled = pickle.dumps(overlay_data)
+        restored = pickle.loads(pickled)
+
+        # Verify timeseries was preserved
+        assert len(restored.timeseries) == 1
+        assert restored.timeseries[0].label == "Speed"
+
+
+# =============================================================================
+# Phase 4: Widget Backend Tests
+# =============================================================================
+
+
+class TestTimeSeriesWidgetBackend:
+    """Test widget backend time series integration."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple environment for testing."""
+        from neurospatial import Environment
+
+        np.random.seed(42)
+        positions = np.random.rand(50, 2) * 100
+        env = Environment.from_samples(positions, bin_size=10.0)
+        return env
+
+    @pytest.fixture
+    def sample_fields(self, simple_env):
+        """Create sample field data for testing."""
+        np.random.seed(42)
+        n_frames = 5
+        n_bins = simple_env.n_bins
+        return [np.random.rand(n_bins) for _ in range(n_frames)]
+
+    @pytest.fixture
+    def sample_timeseries_data(self):
+        """Create sample TimeSeriesData for testing."""
+        from neurospatial.animation.overlays import TimeSeriesData
+
+        return TimeSeriesData(
+            data=np.array([0.0, 10.0, 20.0, 30.0, 40.0]),
+            times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+            start_indices=np.array([0, 1, 2, 3, 4]),
+            end_indices=np.array([2, 3, 4, 5, 5]),
+            label="Speed",
+            color="cyan",
+            window_seconds=0.5,
+            linewidth=1.5,
+            alpha=0.8,
+            group=None,
+            normalize=False,
+            show_cursor=True,
+            cursor_color="red",
+            global_vmin=0.0,
+            global_vmax=40.0,
+            use_global_limits=True,
+            interp="linear",
+        )
+
+    @pytest.fixture
+    def sample_timeseries_overlay(self):
+        """Create sample TimeSeriesOverlay for testing."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        data = np.linspace(0, 100, 50)
+        times = np.linspace(0, 1, 50)
+        return TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=0.5,
+        )
+
+    def test_render_field_to_png_bytes_with_timeseries(
+        self, simple_env, sample_fields, sample_timeseries_data
+    ):
+        """Test render_field_to_png_bytes_with_overlays includes time series column."""
+        from neurospatial.animation.backends.widget_backend import (
+            render_field_to_png_bytes_with_overlays,
+        )
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData(timeseries=[sample_timeseries_data])
+        frame_times = np.linspace(0, 1, len(sample_fields))
+
+        # Render frame with time series
+        png_bytes = render_field_to_png_bytes_with_overlays(
+            env=simple_env,
+            field=sample_fields[0],
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=100,
+            frame_idx=0,
+            overlay_data=overlay_data,
+            frame_times=frame_times,
+        )
+
+        # Check PNG bytes were created
+        assert png_bytes is not None
+        assert len(png_bytes) > 0
+        # PNG magic bytes
+        assert png_bytes[:4] == b"\x89PNG"
+
+    def test_persistent_figure_renderer_with_timeseries(
+        self, simple_env, sample_fields, sample_timeseries_data
+    ):
+        """Test PersistentFigureRenderer handles time series overlays."""
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData(timeseries=[sample_timeseries_data])
+        frame_times = np.linspace(0, 1, len(sample_fields))
+
+        renderer = PersistentFigureRenderer(
+            env=simple_env,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=100,
+            frame_times=frame_times,
+        )
+
+        try:
+            # First render
+            png_bytes = renderer.render(
+                field=sample_fields[0],
+                frame_idx=0,
+                overlay_data=overlay_data,
+            )
+            assert len(png_bytes) > 0
+
+            # Second render (should reuse figure)
+            png_bytes2 = renderer.render(
+                field=sample_fields[1],
+                frame_idx=1,
+                overlay_data=overlay_data,
+            )
+            assert len(png_bytes2) > 0
+
+        finally:
+            renderer.close()
+
+    def test_persistent_figure_renderer_timeseries_updates(
+        self, simple_env, sample_fields, sample_timeseries_data
+    ):
+        """Test that time series updates correctly across frames."""
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+        from neurospatial.animation.overlays import OverlayData
+
+        overlay_data = OverlayData(timeseries=[sample_timeseries_data])
+        frame_times = np.linspace(0, 1, len(sample_fields))
+
+        renderer = PersistentFigureRenderer(
+            env=simple_env,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=100,
+            frame_times=frame_times,
+        )
+
+        try:
+            # Render multiple frames
+            bytes_frames = []
+            for i in range(len(sample_fields)):
+                png_bytes = renderer.render(
+                    field=sample_fields[i],
+                    frame_idx=i,
+                    overlay_data=overlay_data,
+                )
+                bytes_frames.append(png_bytes)
+
+            # Each frame should render successfully
+            assert all(len(b) > 0 for b in bytes_frames)
+
+        finally:
+            renderer.close()
+
+    def test_persistent_figure_renderer_multiple_timeseries(
+        self, simple_env, sample_fields
+    ):
+        """Test PersistentFigureRenderer with multiple stacked time series."""
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+        from neurospatial.animation.overlays import OverlayData, TimeSeriesData
+
+        def make_ts_data(label, color):
+            return TimeSeriesData(
+                data=np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+                times=np.array([0.0, 0.25, 0.5, 0.75, 1.0]),
+                start_indices=np.array([0, 1, 2, 3, 4]),
+                end_indices=np.array([2, 3, 4, 5, 5]),
+                label=label,
+                color=color,
+                window_seconds=0.5,
+                linewidth=1.0,
+                alpha=1.0,
+                group=None,  # Separate rows
+                normalize=False,
+                show_cursor=True,
+                cursor_color="red",
+                global_vmin=1.0,
+                global_vmax=5.0,
+                use_global_limits=True,
+                interp="linear",
+            )
+
+        overlay_data = OverlayData(
+            timeseries=[make_ts_data("Speed", "cyan"), make_ts_data("Accel", "orange")]
+        )
+        frame_times = np.linspace(0, 1, len(sample_fields))
+
+        renderer = PersistentFigureRenderer(
+            env=simple_env,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=100,
+            frame_times=frame_times,
+        )
+
+        try:
+            png_bytes = renderer.render(
+                field=sample_fields[0],
+                frame_idx=0,
+                overlay_data=overlay_data,
+            )
+            # Should render with 2 time series rows
+            assert len(png_bytes) > 0
+
+        finally:
+            renderer.close()
+
+    def test_render_widget_with_timeseries(
+        self, simple_env, sample_fields, sample_timeseries_overlay
+    ):
+        """Test render_widget with time series overlay."""
+        pytest.importorskip("ipywidgets")
+
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        frame_times = np.linspace(0, 1, len(sample_fields))
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay],
+            frame_times=frame_times,
+            n_frames=len(sample_fields),
+            env=simple_env,
+        )
+
+        # We can't fully test widget display without Jupyter environment,
+        # but we can test the conversion and that no errors are raised
+        # during overlay data preparation
+        assert len(overlay_data.timeseries) == 1
+        assert overlay_data.timeseries[0].label == "Speed (cm/s)"
+
+    def test_widget_backend_no_timeseries_still_works(self, simple_env, sample_fields):
+        """Test widget backend without time series still works normally."""
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+        from neurospatial.animation.overlays import OverlayData
+
+        # Empty overlay data (no time series)
+        overlay_data = OverlayData()
+
+        renderer = PersistentFigureRenderer(
+            env=simple_env,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            dpi=100,
+        )
+
+        try:
+            png_bytes = renderer.render(
+                field=sample_fields[0],
+                frame_idx=0,
+                overlay_data=overlay_data,
+            )
+            assert len(png_bytes) > 0
+
+        finally:
+            renderer.close()
