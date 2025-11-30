@@ -2929,12 +2929,87 @@ def _validate_video_env(env: Any) -> None:
 # =============================================================================
 
 
+def _validate_frame_times(
+    frame_times: NDArray[np.float64],
+    n_frames: int,
+) -> NDArray[np.float64]:
+    """Validate frame times array for animation.
+
+    Validates that frame_times has the correct length and is strictly
+    monotonically increasing. This function only validates - it does NOT
+    synthesize frame_times from fps.
+
+    Parameters
+    ----------
+    frame_times : NDArray[np.float64]
+        Frame times array with shape (n_frames,). Must be strictly
+        monotonically increasing.
+    n_frames : int
+        Expected number of frames. Used to validate frame_times length.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Validated frame times array (same as input).
+
+    Raises
+    ------
+    ValueError
+        If frame_times length does not match n_frames.
+    ValueError
+        If frame_times is not strictly monotonically increasing.
+
+    Notes
+    -----
+    Frame times define the temporal sampling of the animation. They are used
+    to align overlay data (which may have different sampling rates) to animation
+    frames via interpolation.
+
+    Examples
+    --------
+    Validate provided frame times:
+
+    >>> custom_times = np.array([0.0, 0.5, 1.0, 1.5])
+    >>> times = _validate_frame_times(custom_times, n_frames=4)
+    >>> times[0], times[-1]
+    (0.0, 1.5)
+
+    Single frame passes validation:
+
+    >>> single = np.array([5.0])
+    >>> _validate_frame_times(single, n_frames=1)
+    array([5.])
+    """
+    # Validate length
+    if len(frame_times) != n_frames:
+        raise ValueError(
+            f"frame_times length ({len(frame_times)}) must match n_frames ({n_frames})"
+        )
+
+    # Check strict monotonicity (only if more than one frame)
+    if len(frame_times) > 1:
+        diffs = np.diff(frame_times)
+        if not np.all(diffs > 0):
+            n_bad = int(np.sum(diffs <= 0))
+            raise ValueError(
+                "frame_times must be strictly monotonically increasing. "
+                f"Found {n_bad} non-increasing intervals."
+            )
+
+    return frame_times
+
+
 def _build_frame_times(
     frame_times: NDArray[np.float64] | None,
     fps: int | None,
     n_frames: int,
 ) -> NDArray[np.float64]:
     """Build or validate frame times array for animation.
+
+    .. deprecated::
+        This function is deprecated. Use _validate_frame_times() instead.
+        The fps synthesis functionality is being removed as part of the
+        animation API refactoring.
 
     Creates frame times either from provided array or by synthesizing from fps.
     Validates that times are monotonically increasing.
@@ -2964,52 +3039,12 @@ def _build_frame_times(
         If frame_times length does not match n_frames.
     ValueError
         If frame_times is not monotonically increasing.
-
-    Notes
-    -----
-    Frame times define the temporal sampling of the animation. They are used
-    to align overlay data (which may have different sampling rates) to animation
-    frames via interpolation.
-
-    When both frame_times and fps are provided, frame_times takes precedence.
-
-    Examples
-    --------
-    Synthesize from fps:
-
-    >>> times = _build_frame_times(frame_times=None, fps=30, n_frames=90)
-    >>> times.shape
-    (90,)
-    >>> times[0], times[1]
-    (0.0, 0.03333333333333333)
-
-    Use provided frame times:
-
-    >>> custom_times = np.array([0.0, 0.5, 1.0, 1.5])
-    >>> times = _build_frame_times(frame_times=custom_times, fps=None, n_frames=4)
-    >>> times[0], times[-1]
-    (0.0, 1.5)
     """
     if frame_times is not None:
-        # Validate provided frame_times
-        if len(frame_times) != n_frames:
-            raise ValueError(
-                f"frame_times length ({len(frame_times)}) does not match "
-                f"n_frames ({n_frames})"
-            )
-
-        # Check monotonicity
-        if not np.all(np.diff(frame_times) > 0):
-            raise ValueError(
-                "frame_times must be monotonically increasing. "
-                "Found non-increasing values. "
-                "HOW: Sort frame_times or check for duplicate values."
-            )
-
-        return frame_times
+        return _validate_frame_times(frame_times, n_frames)
 
     if fps is not None:
-        # Synthesize from fps
+        # Synthesize from fps (deprecated functionality)
         return np.arange(n_frames, dtype=np.float64) / fps
 
     raise ValueError(
