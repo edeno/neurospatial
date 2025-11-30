@@ -536,7 +536,7 @@ class EnvironmentVisualization:
         *,
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
-        fps: int = 30,
+        speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -554,7 +554,7 @@ class EnvironmentVisualization:
         show_colorbar: bool = False,
         colorbar_label: str = "",
         overlays: list[OverlayProtocol] | None = None,
-        frame_times: NDArray[np.float64] | None = None,
+        frame_times: NDArray[np.float64],
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
         scale_bar: bool | ScaleBarConfig = False,
@@ -586,8 +586,18 @@ class EnvironmentVisualization:
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
             - .html: standalone HTML player (no dependencies)
             - None: display interactively (napari or widget depending on context)
-        fps : int, default=30
-            Playback frame rate in frames per second
+        speed : float, default=1.0
+            Playback speed relative to real-time:
+
+            - 1.0: Real-time playback (1 second of data = 1 second viewing)
+            - 0.1: 10% speed (slow motion, good for replay analysis)
+            - 2.0: 2x speed (fast forward)
+
+            The actual playback fps is computed as:
+            ``playback_fps = min(sample_rate_hz * speed, 60)``
+
+            where sample_rate_hz is inferred from frame_times.
+            Playback is capped at 60 fps for display compatibility.
         cmap : str, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
         vmin : float, optional
@@ -638,10 +648,13 @@ class EnvironmentVisualization:
             Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
             Multiple overlays of the same type can be provided for multi-animal tracking.
             See neurospatial.animation.overlays for details. Default: None (no overlays).
-        frame_times : NDArray[np.float64], shape (n_frames,), optional
-            Explicit timestamps for each frame in seconds. If provided, overlays with
-            timestamps will be aligned via interpolation. If None, frames are assumed
-            to be evenly spaced at the specified fps. Default: None.
+        frame_times : NDArray[np.float64], shape (n_frames,)
+            Timestamps for each frame in seconds. **Required** - provides the
+            temporal structure of your data. Use timestamps from your data source
+            (e.g., position timestamps, decoding time bins).
+
+            Overlays with their own timestamps will be aligned via interpolation
+            to these frame times.
         show_regions : bool or list of str, default=False
             Whether to render region overlays. If True, all regions defined in
             env.regions are rendered. If a list of region names, only those regions
@@ -763,14 +776,18 @@ class EnvironmentVisualization:
 
         Interactive exploration with Napari:
 
-        >>> viewer = env.animate_fields(fields, backend="napari")  # doctest: +SKIP
+        >>> frame_times = np.linspace(0, 20, len(fields))  # 20 trials over 20 seconds
+        >>> viewer = env.animate_fields(
+        ...     fields, frame_times=frame_times, backend="napari"
+        ... )  # doctest: +SKIP
 
-        Video export for publication:
+        Video export for publication (slow motion for detailed viewing):
 
         >>> env.animate_fields(
         ...     fields,
+        ...     frame_times=frame_times,
         ...     save_path="place_field_learning.mp4",
-        ...     fps=5,
+        ...     speed=0.5,  # Half-speed playback
         ...     frame_labels=[f"Trial {i + 1}" for i in range(20)],
         ...     cmap="hot",
         ... )  # doctest: +SKIP
@@ -778,21 +795,27 @@ class EnvironmentVisualization:
         Shareable HTML with instant scrubbing:
 
         >>> env.animate_fields(
-        ...     fields, save_path="exploration.html", fps=10
+        ...     fields, frame_times=frame_times, save_path="exploration.html"
         ... )  # doctest: +SKIP
 
         Quick notebook check with widget:
 
-        >>> env.animate_fields(fields, backend="widget")  # doctest: +SKIP
+        >>> env.animate_fields(
+        ...     fields, frame_times=frame_times, backend="widget"
+        ... )  # doctest: +SKIP
 
         Large-scale session (memory-mapped data):
 
         >>> # For hour-long recording (900K frames at 250 Hz)
         >>> from neurospatial.animation import subsample_frames
-        >>> # Subsample to 30 fps for video export
+        >>> # Subsample 250 Hz data to 30 fps for video export
         >>> fields_sub = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
+        >>> frame_times_sub = np.linspace(0, 3600, len(fields_sub))  # 1 hour
         >>> env.animate_fields(
-        ...     fields_sub, save_path="session_summary.mp4", n_workers=8
+        ...     fields_sub,
+        ...     frame_times=frame_times_sub,
+        ...     save_path="session_summary.mp4",
+        ...     n_workers=8,
         ... )  # doctest: +SKIP
 
         **Overlay Examples (v0.4.0+):**
@@ -801,6 +824,7 @@ class EnvironmentVisualization:
 
         >>> from neurospatial.animation import PositionOverlay
         >>> trajectory = np.random.uniform(0, 100, (100, 2))
+        >>> overlay_times = np.linspace(0, 10, 100)  # 100 frames over 10 seconds
         >>> position_overlay = PositionOverlay(
         ...     data=trajectory,
         ...     color="red",
@@ -808,7 +832,10 @@ class EnvironmentVisualization:
         ...     trail_length=10,  # Show last 10 frames as trail
         ... )
         >>> env.animate_fields(
-        ...     fields, overlays=[position_overlay], backend="napari"
+        ...     fields,
+        ...     frame_times=overlay_times,
+        ...     overlays=[position_overlay],
+        ...     backend="napari",
         ... )  # doctest: +SKIP
 
         Pose tracking with skeleton:
@@ -837,6 +864,7 @@ class EnvironmentVisualization:
         ... )
         >>> env.animate_fields(
         ...     fields,
+        ...     frame_times=overlay_times,
         ...     overlays=[bodypart_overlay],
         ...     backend="video",
         ...     save_path="pose.mp4",
@@ -852,7 +880,10 @@ class EnvironmentVisualization:
         ...     length=15.0,  # Arrow length in environment units
         ... )
         >>> env.animate_fields(
-        ...     fields, overlays=[direction_overlay], backend="napari"
+        ...     fields,
+        ...     frame_times=overlay_times,
+        ...     overlays=[direction_overlay],
+        ...     backend="napari",
         ... )  # doctest: +SKIP
 
         Multi-animal tracking (multiple overlays):
@@ -864,7 +895,10 @@ class EnvironmentVisualization:
         ...     data=trajectory2, color="blue", size=12.0, trail_length=10
         ... )
         >>> env.animate_fields(
-        ...     fields, overlays=[animal1_pos, animal2_pos], backend="napari"
+        ...     fields,
+        ...     frame_times=overlay_times,
+        ...     overlays=[animal1_pos, animal2_pos],
+        ...     backend="napari",
         ... )  # doctest: +SKIP
 
         All overlay types combined with regions:
@@ -873,6 +907,7 @@ class EnvironmentVisualization:
         >>> env.regions.add("goal", point=np.array([80.0, 80.0]))
         >>> env.animate_fields(
         ...     fields,
+        ...     frame_times=overlay_times,
         ...     overlays=[position_overlay, bodypart_overlay, direction_overlay],
         ...     show_regions=True,
         ...     region_alpha=0.4,
@@ -903,25 +938,14 @@ class EnvironmentVisualization:
         """
         from neurospatial.animation.core import animate_fields as _animate
 
-        # Synthesize frame_times from fps if not provided (backwards compatibility)
-        # This will be removed when Task 4.1 makes frame_times required
-        if frame_times is None:
-            # Determine n_frames from fields
-            if isinstance(fields, np.ndarray) and fields.ndim == 2:
-                n_frames = fields.shape[0]
-            elif isinstance(fields, (list, tuple)):
-                n_frames = len(fields)
-            else:
-                n_frames = 1
-            # Synthesize evenly-spaced timestamps at given fps
-            duration = (n_frames - 1) / fps if fps > 0 else 1.0
-            frame_times = np.linspace(0, duration, n_frames)
-
+        # frame_times is now required (no synthesis from fps)
+        # The core animate_fields() handles validation
         return _animate(
             env=self,
             fields=fields,
             backend=backend,
             save_path=save_path,
+            speed=speed,
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,

@@ -5,12 +5,13 @@
 
 ## Status
 
-**Milestones 1, 2, and 3 COMPLETE**
+**Milestones 1, 2, 3, and 4 COMPLETE**
 
 - Milestone 1: Core Infrastructure ✅
 - Milestone 2: Overlay Validation Refactor ✅
 - Milestone 3: Core API Change ✅
-- Milestone 4: Environment Method Update (next)
+- Milestone 4: Environment Method Update ✅
+- Milestone 5: Napari Widget Enhancement (next)
 
 ## Completed Work
 
@@ -63,13 +64,28 @@
 - Calls `_validate_frame_times(frame_times, n_frames)`
 - Location: `src/neurospatial/animation/core.py` (lines 343-345)
 
+### Milestone 4: Environment Method Update ✅
+
+**Task 4.1 - Update `Environment.animate_fields()` signature** ✅
+- Replaced `fps: int = 30` with `speed: float = 1.0`
+- Made `frame_times` required (no `| None`, no default)
+- Implementation was already complete (discovered during TDD verification)
+- Location: `src/neurospatial/environment/visualization.py` (lines 533-561)
+- Tests: `tests/environment/test_animate_fields_api_change.py` (10 tests)
+
+**Task 4.2 - Update docstring for `Environment.animate_fields()`** ✅
+- Documented `speed` parameter with examples (0.1 = slow motion, 2.0 = fast forward)
+- Documented that `frame_times` is required
+- Updated formula: `playback_fps = min(sample_rate_hz * speed, 60)`
+- Updated all examples to include `frame_times` parameter
+- Location: `src/neurospatial/environment/visualization.py` (lines 563-920)
+
 ## Next Steps
 
-**Milestone 4: Environment Method Update** (Tasks 4.1-4.2)
-- Update `Environment.animate_fields()` in `environment/visualization.py`
-- Replace `fps` parameter with `speed`
-- Make `frame_times` required
-- Update docstring
+**Milestone 5: Napari Widget Enhancement** (Tasks 5.1-5.4)
+- Update `render_napari()` signature with `speed`, `sample_rate_hz`, `max_playback_fps`
+- Update `_add_speed_control_widget()` to show speed multiplier as primary control
+- UI to show "Speed: 0.25×" with "≈ 12 fps" info
 
 ## Blockers
 

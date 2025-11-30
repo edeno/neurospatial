@@ -85,13 +85,13 @@
 
 ### Tasks
 
-- [ ] **4.1 Update `Environment.animate_fields()` in `environment/visualization.py`**
+- [x] **4.1 Update `Environment.animate_fields()` in `environment/visualization.py`**
   - Replace `fps: int = 30` with `speed: float = 1.0`
   - Make `frame_times` required parameter (remove `Optional`)
   - Pass through to core `animate_fields()`
   - Success: Method signature matches core function
 
-- [ ] **4.2 Update docstring for `Environment.animate_fields()`**
+- [x] **4.2 Update docstring for `Environment.animate_fields()`**
   - Document `speed` parameter with examples (0.1 = slow motion, 2.0 = fast forward)
   - Document that `frame_times` is required
   - Explain playback fps is computed as `sample_rate_hz * speed`

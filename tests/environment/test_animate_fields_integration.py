@@ -3,6 +3,8 @@
 This module tests that the animate_fields() method is properly integrated into
 the Environment class and correctly delegates to the animation.core module.
 Tests cover different layout types to ensure animation works across all layouts.
+
+Updated for new API (Task 4.1): frame_times is required, speed replaces fps.
 """
 
 from __future__ import annotations
@@ -38,10 +40,14 @@ class TestAnimateFieldsIntegration:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Create simple field data
-        fields = [rng.random(env.n_bins) for _ in range(5)]
+        n_frames = 5
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
 
         # Call method
-        env.animate_fields(fields, backend="html", save_path="test.html")
+        env.animate_fields(
+            fields, frame_times=frame_times, backend="html", save_path="test.html"
+        )
 
         # Verify delegation
         mock_animate.assert_called_once()
@@ -55,6 +61,8 @@ class TestAnimateFieldsIntegration:
         assert call_args.kwargs["backend"] == "html"
         # Check that save_path was passed
         assert call_args.kwargs["save_path"] == "test.html"
+        # Check that frame_times was passed
+        np.testing.assert_array_equal(call_args.kwargs["frame_times"], frame_times)
 
     @patch("neurospatial.animation.core.animate_fields")
     def test_forwards_all_parameters(self, mock_animate):
@@ -62,14 +70,17 @@ class TestAnimateFieldsIntegration:
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [rng.random(env.n_bins) for _ in range(3)]
+        n_frames = 3
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
 
-        # Call with many parameters
+        # Call with many parameters (using speed instead of fps)
         env.animate_fields(
             fields,
+            frame_times=frame_times,
             backend="video",
             save_path="test.mp4",
-            fps=30,
+            speed=0.5,
             cmap="hot",
             vmin=0.0,
             vmax=1.0,
@@ -83,7 +94,7 @@ class TestAnimateFieldsIntegration:
         call_kwargs = mock_animate.call_args.kwargs
         assert call_kwargs["backend"] == "video"
         assert call_kwargs["save_path"] == "test.mp4"
-        assert call_kwargs["fps"] == 30
+        assert call_kwargs["speed"] == 0.5
         assert call_kwargs["cmap"] == "hot"
         assert call_kwargs["vmin"] == 0.0
         assert call_kwargs["vmax"] == 1.0
@@ -99,12 +110,13 @@ class TestAnimateFieldsIntegration:
         positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins)]
+        frame_times = np.array([0.0])
 
         # Mock return value
         mock_return = Mock()
         mock_animate.return_value = mock_return
 
-        result = env.animate_fields(fields)
+        result = env.animate_fields(fields, frame_times=frame_times)
 
         assert result is mock_return
 
@@ -114,9 +126,11 @@ class TestAnimateFieldsIntegration:
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (200, 2))
         env = Environment.from_samples(positions, bin_size=5.0)
-        fields = [rng.random(env.n_bins) for _ in range(3)]
+        n_frames = 3
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
 
-        env.animate_fields(fields, backend="html")
+        env.animate_fields(fields, frame_times=frame_times, backend="html")
 
         # Should have been called successfully
         mock_animate.assert_called_once()
@@ -139,9 +153,11 @@ class TestAnimateFieldsIntegration:
             infer_active_bins=True,
         )
         env = Environment(layout=layout, layout_type_used="hexagonal")
-        fields = [rng.random(env.n_bins) for _ in range(3)]
+        n_frames = 3
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
 
-        env.animate_fields(fields, backend="html")
+        env.animate_fields(fields, frame_times=frame_times, backend="html")
 
         # Should have been called successfully
         mock_animate.assert_called_once()
@@ -177,8 +193,11 @@ class TestAnimateFieldsIntegration:
         # 1D environment should work
         assert env.is_1d
 
-        fields = [rng.random(env.n_bins) for _ in range(3)]
-        env.animate_fields(fields, backend="html")
+        n_frames = 3
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
+
+        env.animate_fields(fields, frame_times=frame_times, backend="html")
 
         # Should have been called successfully
         mock_animate.assert_called_once()
@@ -195,9 +214,11 @@ class TestAnimateFieldsIntegration:
             infer_active_bins=True,
             bin_count_threshold=2,
         )
-        fields = [rng.random(env.n_bins) for _ in range(3)]
+        n_frames = 3
+        fields = [rng.random(env.n_bins) for _ in range(n_frames)]
+        frame_times = np.linspace(0, 1.0, n_frames)
 
-        env.animate_fields(fields, backend="html")
+        env.animate_fields(fields, frame_times=frame_times, backend="html")
 
         # Should have been called successfully
         mock_animate.assert_called_once()
@@ -226,9 +247,11 @@ class TestAnimateFieldsIntegration:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Pass ndarray instead of list
-        fields = rng.random((5, env.n_bins))
+        n_frames = 5
+        fields = rng.random((n_frames, env.n_bins))
+        frame_times = np.linspace(0, 1.0, n_frames)
 
-        env.animate_fields(fields, backend="html")
+        env.animate_fields(fields, frame_times=frame_times, backend="html")
 
         # Should have been called successfully
         mock_animate.assert_called_once()
@@ -236,7 +259,7 @@ class TestAnimateFieldsIntegration:
         # Verify fields were passed (core handles conversion to list)
         passed_fields = mock_animate.call_args.kwargs["fields"]
         assert isinstance(passed_fields, np.ndarray)
-        assert passed_fields.shape == (5, env.n_bins)
+        assert passed_fields.shape == (n_frames, env.n_bins)
 
     @patch("neurospatial.animation.core.animate_fields")
     def test_default_backend_auto(self, mock_animate):
@@ -245,9 +268,10 @@ class TestAnimateFieldsIntegration:
         positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins)]
+        frame_times = np.array([0.0])
 
         # Call without specifying backend
-        env.animate_fields(fields)
+        env.animate_fields(fields, frame_times=frame_times)
 
         # Should default to 'auto'
         assert mock_animate.call_args.kwargs["backend"] == "auto"
@@ -259,11 +283,14 @@ class TestAnimateFieldsIntegration:
         positions = rng.uniform(0, 100, (100, 2))
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins)]
+        frame_times = np.array([0.0])
 
         # Create trajectory
         trajectory = rng.uniform(0, 100, (50, 2))
 
-        env.animate_fields(fields, overlay_trajectory=trajectory)
+        env.animate_fields(
+            fields, frame_times=frame_times, overlay_trajectory=trajectory
+        )
 
         # Verify trajectory forwarded
         assert np.array_equal(
