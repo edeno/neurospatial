@@ -48,9 +48,13 @@ def test_hexagonal_layout_with_video_backend(tmp_path):
 
     output_path = tmp_path / "test_hexagonal.mp4"
 
+    # Create frame_times (required parameter)
+    frame_times = np.linspace(0, 1.0, n_frames)
+
     # Render to MP4 with video backend
     env.animate_fields(
         fields,
+        frame_times=frame_times,
         backend="video",
         save_path=str(output_path),
         fps=10,
@@ -133,9 +137,13 @@ def test_1d_graph_layout_with_html_backend(tmp_path):
 
     output_path = tmp_path / "test_1d_track.html"
 
+    # Create frame_times (required parameter)
+    frame_times = np.linspace(0, 1.0, n_frames)
+
     # Render to HTML with HTML backend
     env.animate_fields(
         fields,
+        frame_times=frame_times,
         backend="html",
         save_path=str(output_path),
         fps=10,
@@ -185,7 +193,7 @@ def test_triangular_mesh_layout_with_napari_backend(tmp_path):
     n_frames = 10
     fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
-    # Render with napari backend
+    # Render with napari backend (render_napari doesn't take frame_times)
     viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
 
     # Verify viewer created
@@ -238,7 +246,7 @@ def test_masked_grid_layout_with_napari_backend():
     n_frames = 10
     fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
-    # Render with napari backend (GPU acceleration)
+    # Render with napari backend (GPU acceleration, render_napari doesn't take frame_times)
     viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
 
     # Verify viewer created

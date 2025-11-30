@@ -7,6 +7,7 @@ for working with large-scale time series data.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -124,7 +125,9 @@ def animate_fields(
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
     overlays: list[OverlayProtocol] | None = None,
-    frame_times: NDArray[np.float64] | None = None,
+    frame_times: NDArray[np.float64],  # REQUIRED - no default
+    speed: float = DEFAULT_SPEED,  # NEW: replaces fps in public API
+    max_playback_fps: int = MAX_PLAYBACK_FPS,  # NEW: advanced knob with strong default
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
@@ -165,11 +168,26 @@ def animate_fields(
         trajectories, multi-animal pose tracking, head direction visualization,
         and video background/overlay. Multiple overlays can be provided for
         multi-animal tracking. Default is None (no overlays).
-    frame_times : ndarray of shape (n_frames,), optional
-        Explicit timestamps for each frame, dtype float64, in seconds.
-        If provided, overlays with times will be aligned via linear
-        interpolation. If None, frames assumed evenly spaced at fps rate.
-        Must be monotonically increasing if provided. Default is None.
+    frame_times : ndarray of shape (n_frames,)
+        Timestamps for each frame in seconds, dtype float64. **Required** -
+        provides the temporal structure of your data. Use timestamps from
+        your data source (e.g., position timestamps, decoding time bins).
+        Must be monotonically increasing.
+    speed : float, default=1.0
+        Playback speed relative to real-time:
+        - 1.0: Real-time playback (1 second of data = 1 second viewing)
+        - 0.1: 10% speed (slow motion, good for replay analysis)
+        - 2.0: 2x speed (fast forward)
+
+        The actual playback fps is computed as:
+        ``playback_fps = sample_rate_hz * speed``
+
+        where sample_rate_hz is inferred from frame_times.
+        Playback is capped at max_playback_fps for display compatibility.
+    max_playback_fps : int, default=60
+        Maximum allowed playback frame rate. If the computed fps
+        (sample_rate * speed) exceeds this value, it will be capped.
+        Use higher values (e.g., 120) for high-refresh displays.
     show_regions : bool or list of str, default=False
         Whether to render region overlays. If True, all regions defined in env.regions
         are rendered. If list of strings, only those region names are rendered.
@@ -322,15 +340,46 @@ def animate_fields(
     if is_multi_field:
         n_frames = len(fields[0])
 
-    # Build or verify frame_times for overlay alignment
-    if overlays is not None or frame_times is not None:
-        from neurospatial.animation.overlays import _build_frame_times
+    # Validate frame_times (required parameter)
+    from neurospatial.animation.overlays import _validate_frame_times
 
-        # Get fps from kwargs (default 30)
-        fps = kwargs.get("fps", 30)
-        frame_times = _build_frame_times(
-            n_frames=n_frames, fps=fps, frame_times=frame_times
+    frame_times = _validate_frame_times(frame_times, n_frames)
+
+    # Compute sample_rate_hz for backends and warning logic
+    duration = float(frame_times[-1] - frame_times[0])
+    if duration > 0 and len(frame_times) > 1:
+        sample_rate_hz = (len(frame_times) - 1) / duration
+    else:
+        sample_rate_hz = 30.0  # Fallback for edge cases
+
+    # Compute playback fps from frame_times and speed
+    playback_fps, actual_speed = _compute_playback_fps(
+        frame_times, speed, max_fps=max_playback_fps
+    )
+
+    # Emit warning only if fps was actually capped by max/min limits
+    # (not just due to integer truncation rounding)
+    requested_fps = sample_rate_hz * speed
+    was_capped_at_max = requested_fps > max_playback_fps
+    was_capped_at_min = requested_fps < MIN_PLAYBACK_FPS
+    if was_capped_at_max or was_capped_at_min:
+        cap_description = (
+            f"Capped to {max_playback_fps} fps"
+            if was_capped_at_max
+            else f"Capped to {MIN_PLAYBACK_FPS} fps"
         )
+        warnings.warn(
+            f"Requested speed={speed:.2f}x would require {requested_fps:.0f} fps. "
+            f"{cap_description} (effective speed={actual_speed:.2f}x).",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Pass computed values and playback parameters to backends via kwargs
+    kwargs["fps"] = playback_fps
+    kwargs["sample_rate_hz"] = sample_rate_hz
+    kwargs["speed"] = speed
+    kwargs["max_playback_fps"] = max_playback_fps
 
     # Convert overlays to internal OverlayData if provided
     overlay_data = None

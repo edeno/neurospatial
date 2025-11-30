@@ -387,10 +387,13 @@ class TestDispatcherMultiFieldIntegration:
     def test_multi_field_via_dispatcher(self, simple_env, multi_field_sequences):
         """Multi-field should work through Environment.animate_fields()."""
         # Call via dispatcher (not render_napari directly)
+        n_frames = 10  # Same as multi_field_sequences
+        frame_times = np.linspace(0, 1.0, n_frames)
         viewer = simple_env.animate_fields(
             multi_field_sequences,
             backend="napari",
             layout="horizontal",
+            frame_times=frame_times,
         )
 
         # Should create 3 image layers (one per sequence)
@@ -418,12 +421,16 @@ class TestDispatcherMultiFieldIntegration:
         trajectory = rng.uniform(-50, 50, (n_frames, 2))
         overlay = PositionOverlay(data=trajectory, color="red", size=10.0)
 
+        # Create frame_times for fields
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         # Call via dispatcher with overlay
         viewer = simple_env.animate_fields(
             multi_field_sequences,
             backend="napari",
             layout="horizontal",
             overlays=[overlay],
+            frame_times=frame_times,
         )
 
         # Should create 3 image layers + overlay layers
@@ -492,10 +499,14 @@ class TestDispatcherMultiFieldIntegration:
         seq2 = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
         fields = [seq1, seq2]
 
+        # Create frame_times for fields
+        frame_times = np.linspace(0, 1.5, n_frames)
+
         viewer = simple_env.animate_fields(
             fields,
             backend="napari",
             layout="horizontal",
+            frame_times=frame_times,
         )
 
         # Verify correct n_frames detected (should be 15, not 2)

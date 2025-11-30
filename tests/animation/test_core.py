@@ -399,9 +399,16 @@ class TestAnimateFieldsValidation:
         env._is_fitted = False
 
         fields = [rng.random(100) for _ in range(10)]
+        frame_times = np.linspace(0, 1, 10)
 
         with pytest.raises(RuntimeError, match="Environment must be fitted"):
-            animate_fields(env, fields, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
     def test_animate_fields_empty(self):
         """Test error when fields is empty."""
@@ -410,9 +417,12 @@ class TestAnimateFieldsValidation:
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
+        frame_times = np.linspace(0, 1, 1)  # Need at least one frame_time
 
         with pytest.raises(ValueError, match="fields cannot be empty"):
-            animate_fields(env, [], backend="html", save_path="test.html")
+            animate_fields(
+                env, [], backend="html", save_path="test.html", frame_times=frame_times
+            )
 
     def test_animate_fields_shape_mismatch(self):
         """Test error when field shape doesn't match environment."""
@@ -425,9 +435,16 @@ class TestAnimateFieldsValidation:
         # Create fields with wrong size
         wrong_size = env.n_bins + 10
         fields = [rng.random(wrong_size) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         with pytest.raises(ValueError, match=r"Field 0 has.*but environment has.*bins"):
-            animate_fields(env, fields, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
     def test_animate_fields_normalizes_ndarray(self):
         """Test that ndarray input is normalized to list of arrays."""
@@ -439,12 +456,19 @@ class TestAnimateFieldsValidation:
 
         # Pass ndarray (n_frames, n_bins)
         fields_ndarray = rng.random((10, env.n_bins))
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock HTML backend to check what it receives
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            animate_fields(env, fields_ndarray, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields_ndarray,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
             # Check that backend received list of arrays
             call_args = mock.call_args
@@ -462,9 +486,16 @@ class TestAnimateFieldsValidation:
 
         # 1D array (invalid)
         fields = rng.random(env.n_bins)
+        frame_times = np.linspace(0, 1, 1)
 
         with pytest.raises(ValueError, match="must be at least 2D"):
-            animate_fields(env, fields, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
 
 class TestAnimateFieldsBackendRouting:
@@ -478,12 +509,19 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock HTML backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            result = animate_fields(env, fields, backend="html", save_path="test.html")
+            result = animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
             # Check backend was called
             mock.assert_called_once()
@@ -497,6 +535,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock Napari backend
         with patch(
@@ -504,7 +543,7 @@ class TestAnimateFieldsBackendRouting:
         ) as mock:
             mock.return_value = MagicMock()  # Mock viewer
 
-            animate_fields(env, fields, backend="napari")
+            animate_fields(env, fields, backend="napari", frame_times=frame_times)
 
             # Check backend was called
             mock.assert_called_once()
@@ -517,6 +556,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock ffmpeg as unavailable
         with (
@@ -526,7 +566,13 @@ class TestAnimateFieldsBackendRouting:
             ),
             pytest.raises(RuntimeError, match="Video export requires ffmpeg"),
         ):
-            animate_fields(env, fields, backend="video", save_path="test.mp4")
+            animate_fields(
+                env,
+                fields,
+                backend="video",
+                save_path="test.mp4",
+                frame_times=frame_times,
+            )
 
     def test_route_to_video_backend_requires_save_path(self):
         """Test video backend requires save_path."""
@@ -536,6 +582,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock ffmpeg as available but no save_path
         with (
@@ -545,7 +592,7 @@ class TestAnimateFieldsBackendRouting:
             ),
             pytest.raises(ValueError, match="save_path required for video"),
         ):
-            animate_fields(env, fields, backend="video")
+            animate_fields(env, fields, backend="video", frame_times=frame_times)
 
     def test_route_to_video_backend_pickle_validation(self):
         """Test video backend validates environment pickle-ability."""
@@ -555,6 +602,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock ffmpeg as available and mock pickle to fail
         with (
@@ -571,6 +619,7 @@ class TestAnimateFieldsBackendRouting:
                 backend="video",
                 save_path="test.mp4",
                 n_workers=2,
+                frame_times=frame_times,
             )
 
     def test_route_to_video_backend_no_pickle_single_worker(self):
@@ -581,6 +630,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock backends
         with (
@@ -600,6 +650,7 @@ class TestAnimateFieldsBackendRouting:
                     backend="video",
                     save_path="test.mp4",
                     n_workers=1,
+                    frame_times=frame_times,
                 )
 
             mock.assert_called_once()
@@ -612,6 +663,7 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Mock widget backend
         with patch(
@@ -619,7 +671,7 @@ class TestAnimateFieldsBackendRouting:
         ) as mock:
             mock.return_value = MagicMock()  # Mock widget
 
-            animate_fields(env, fields, backend="widget")
+            animate_fields(env, fields, backend="widget", frame_times=frame_times)
 
             # Check backend was called
             mock.assert_called_once()
@@ -632,9 +684,10 @@ class TestAnimateFieldsBackendRouting:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         with pytest.raises(ValueError, match="Unknown backend: invalid"):
-            animate_fields(env, fields, backend="invalid")
+            animate_fields(env, fields, backend="invalid", frame_times=frame_times)
 
 
 class TestAnimateFieldsIntegration:
@@ -648,12 +701,19 @@ class TestAnimateFieldsIntegration:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Auto-select HTML for .html extension
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            animate_fields(env, fields, backend="auto", save_path="test.html")
+            animate_fields(
+                env,
+                fields,
+                backend="auto",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
             mock.assert_called_once()
 
@@ -665,6 +725,7 @@ class TestAnimateFieldsIntegration:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         # Pass custom kwargs
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -675,14 +736,13 @@ class TestAnimateFieldsIntegration:
                 fields,
                 backend="html",
                 save_path="test.html",
-                fps=60,
+                frame_times=frame_times,
                 cmap="hot",
                 dpi=200,
             )
 
-            # Check kwargs were passed
+            # Check kwargs were passed (fps is computed, cmap and dpi are passed through)
             call_kwargs = mock.call_args[1]
-            assert call_kwargs["fps"] == 60
             assert call_kwargs["cmap"] == "hot"
             assert call_kwargs["dpi"] == 200
 
@@ -736,6 +796,7 @@ class TestDispatcherOverlayIntegration:
         # Create test overlays
         overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos)
+        frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion funnel and backend
         with (
@@ -757,6 +818,7 @@ class TestDispatcherOverlayIntegration:
                 backend="html",
                 save_path="test.html",
                 overlays=[position_overlay],
+                frame_times=frame_times,
             )
 
             # Check conversion was called
@@ -772,6 +834,7 @@ class TestDispatcherOverlayIntegration:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion funnel and backend
         with (
@@ -790,6 +853,7 @@ class TestDispatcherOverlayIntegration:
                 backend="html",
                 save_path="test.html",
                 overlays=None,
+                frame_times=frame_times,
             )
 
             # Check conversion was NOT called
@@ -807,6 +871,7 @@ class TestDispatcherOverlayIntegration:
         # Create test overlay
         overlay_pos = rng.standard_normal((10, 2)) * 50
         position_overlay = PositionOverlay(data=overlay_pos)
+        frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion and backend
         with (
@@ -829,55 +894,13 @@ class TestDispatcherOverlayIntegration:
                 backend="html",
                 save_path="test.html",
                 overlays=[position_overlay],
+                frame_times=frame_times,
             )
 
             # Check backend received overlay_data
             call_kwargs = mock_backend.call_args[1]
             assert "overlay_data" in call_kwargs
             assert call_kwargs["overlay_data"] is mock_overlay_data
-
-    def test_dispatcher_builds_frame_times_from_fps_when_not_provided(self):
-        """Test that dispatcher synthesizes frame_times from fps when not provided."""
-        from neurospatial.animation.core import animate_fields
-
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((100, 2)) * 50
-        env = Environment.from_samples(positions, bin_size=10.0)
-        fields = [rng.random(env.n_bins) for _ in range(10)]
-
-        # Create overlay with times (requires frame_times alignment)
-        overlay_times = np.linspace(0, 10, 10)
-        overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos, times=overlay_times)
-
-        # Mock conversion and backend
-        with (
-            patch(
-                "neurospatial.animation.overlays._convert_overlays_to_data"
-            ) as mock_convert,
-            patch(
-                "neurospatial.animation.backends.html_backend.render_html"
-            ) as mock_backend,
-        ):
-            from neurospatial.animation.overlays import OverlayData
-
-            mock_convert.return_value = OverlayData()
-            mock_backend.return_value = Path("test.html")
-
-            animate_fields(
-                env,
-                fields,
-                backend="html",
-                save_path="test.html",
-                overlays=[position_overlay],
-                fps=30,  # No frame_times provided, should be synthesized
-            )
-
-            # Check conversion was called with synthesized frame_times
-            call_kwargs = mock_convert.call_args.kwargs
-            frame_times_arg = call_kwargs["frame_times"]
-            assert frame_times_arg is not None
-            assert len(frame_times_arg) == 10  # n_frames
 
     def test_dispatcher_uses_provided_frame_times(self):
         """Test that dispatcher uses explicitly provided frame_times."""
@@ -929,6 +952,7 @@ class TestDispatcherOverlayIntegration:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 10, 10)
 
         # Mock backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
@@ -941,6 +965,7 @@ class TestDispatcherOverlayIntegration:
                 save_path="test.html",
                 show_regions=["region1", "region2"],
                 region_alpha=0.4,
+                frame_times=frame_times,
             )
 
             # Check backend received parameters
@@ -972,6 +997,7 @@ class TestArrayPreservation:
 
         # Pass 2D ndarray
         fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock napari backend
         with patch(
@@ -979,7 +1005,7 @@ class TestArrayPreservation:
         ) as mock:
             mock.return_value = MagicMock()
 
-            animate_fields(env, fields_array, backend="napari")
+            animate_fields(env, fields_array, backend="napari", frame_times=frame_times)
 
             # Check backend received array, NOT list
             call_args = mock.call_args
@@ -1002,12 +1028,19 @@ class TestArrayPreservation:
 
         # Pass 2D ndarray
         fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock HTML backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            animate_fields(env, fields_array, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields_array,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
             # Check backend received list, NOT array
             call_args = mock.call_args
@@ -1027,6 +1060,7 @@ class TestArrayPreservation:
 
         # Pass 2D ndarray
         fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock video backend
         with (
@@ -1038,7 +1072,13 @@ class TestArrayPreservation:
         ):
             mock.return_value = Path("test.mp4")
 
-            animate_fields(env, fields_array, backend="video", save_path="test.mp4")
+            animate_fields(
+                env,
+                fields_array,
+                backend="video",
+                save_path="test.mp4",
+                frame_times=frame_times,
+            )
 
             # Check backend received list
             call_args = mock.call_args
@@ -1057,6 +1097,7 @@ class TestArrayPreservation:
 
         # Pass 2D ndarray
         fields_array = rng.random((10, env.n_bins)).astype(np.float64)
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock widget backend
         with patch(
@@ -1064,7 +1105,7 @@ class TestArrayPreservation:
         ) as mock:
             mock.return_value = MagicMock()
 
-            animate_fields(env, fields_array, backend="widget")
+            animate_fields(env, fields_array, backend="widget", frame_times=frame_times)
 
             # Check backend received list
             call_args = mock.call_args
@@ -1083,6 +1124,7 @@ class TestArrayPreservation:
 
         # Pass list of arrays
         fields_list = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock napari backend
         with patch(
@@ -1090,7 +1132,7 @@ class TestArrayPreservation:
         ) as mock:
             mock.return_value = MagicMock()
 
-            animate_fields(env, fields_list, backend="napari")
+            animate_fields(env, fields_list, backend="napari", frame_times=frame_times)
 
             # Check backend received list
             call_args = mock.call_args
@@ -1108,12 +1150,19 @@ class TestArrayPreservation:
 
         # Pass list of arrays
         fields_list = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 1, 10)
 
         # Mock HTML backend
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            animate_fields(env, fields_list, backend="html", save_path="test.html")
+            animate_fields(
+                env,
+                fields_list,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
 
             # Check backend received list
             call_args = mock.call_args
@@ -1144,6 +1193,7 @@ class TestArrayPreservation:
             )
             fields_mmap[:] = rng.random((100, env.n_bins))
             fields_mmap.flush()
+            frame_times = np.linspace(0, 1, 100)
 
             # Mock napari backend
             with patch(
@@ -1151,7 +1201,9 @@ class TestArrayPreservation:
             ) as mock:
                 mock.return_value = MagicMock()
 
-                animate_fields(env, fields_mmap, backend="napari")
+                animate_fields(
+                    env, fields_mmap, backend="napari", frame_times=frame_times
+                )
 
                 # Check backend received memmap (or at least ndarray)
                 call_args = mock.call_args
@@ -1282,6 +1334,365 @@ class TestEstimateColormapRangeFromSubset:
         # Should complete in under 0.5s
         assert elapsed < 0.5
         assert vmin < vmax
+
+
+class TestAnimateFieldsSpeedBasedPlayback:
+    """Test animate_fields() speed-based playback API (Milestone 3).
+
+    These tests verify:
+    - frame_times is required (defines temporal structure)
+    - speed parameter controls playback speed relative to real-time
+    - max_playback_fps parameter caps playback frame rate
+    - fps is computed from frame_times and speed, overriding any user-provided fps
+    """
+
+    def test_frame_times_is_required(self):
+        """Test that frame_times is required (no default value).
+
+        Calling animate_fields without frame_times should raise TypeError.
+        """
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(10)]
+
+        # Mock backend to avoid actual rendering
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Should raise TypeError because frame_times is required
+            with pytest.raises(TypeError, match="frame_times"):
+                animate_fields(env, fields, backend="html", save_path="test.html")
+
+    def test_speed_parameter_exists(self):
+        """Test that speed parameter exists and is accepted."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 10, 10)
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Should accept speed parameter without error
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                speed=0.5,
+            )
+
+            mock.assert_called_once()
+
+    def test_speed_parameter_default_is_1(self):
+        """Test that speed parameter defaults to 1.0."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 10, 10)
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Call without speed parameter
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
+
+            # Check that computed fps reflects speed=1.0
+            # With 10 frames over 10 seconds = 0.9 Hz sample rate
+            # speed=1.0 means fps = 0.9 → clamped to MIN_PLAYBACK_FPS=1
+            call_kwargs = mock.call_args[1]
+            assert call_kwargs.get("fps") == 1  # MIN_PLAYBACK_FPS
+
+    def test_max_playback_fps_parameter_exists(self):
+        """Test that max_playback_fps parameter exists and is accepted."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 10, 10)
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Should accept max_playback_fps parameter without error
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                max_playback_fps=30,
+            )
+
+            mock.assert_called_once()
+
+    def test_max_playback_fps_parameter_default_is_60(self):
+        """Test that max_playback_fps parameter defaults to 60."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create high sample rate data: 100 Hz
+        fields = [rng.random(env.n_bins) for _ in range(100)]
+        frame_times = np.linspace(0, 1, 100)  # 99 Hz sample rate
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Call without max_playback_fps - should use default 60
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                speed=1.0,
+            )
+
+            # Check that fps is capped at 60 (default max)
+            call_kwargs = mock.call_args[1]
+            assert call_kwargs.get("fps") <= 60
+
+    def test_speed_affects_computed_fps(self):
+        """Test that speed parameter affects computed fps."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create 30 Hz data (31 frames over 1 second)
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)  # 30 Hz sample rate
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # speed=0.5 should give fps = 30 * 0.5 = 15
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                speed=0.5,
+            )
+
+            call_kwargs = mock.call_args[1]
+            assert call_kwargs.get("fps") == 15
+
+    def test_fps_kwarg_is_ignored(self):
+        """Test that fps in kwargs is overwritten by computed fps.
+
+        The new API computes fps from frame_times and speed, so any
+        user-provided fps should be ignored/overwritten.
+        """
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create 30 Hz data
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)  # 30 Hz
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Pass fps=100 in kwargs - should be ignored/overwritten
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                speed=1.0,
+                fps=100,
+            )
+
+            call_kwargs = mock.call_args[1]
+            # fps should be 30 (computed from data), not 100
+            assert call_kwargs.get("fps") == 30
+
+    def test_warning_emitted_when_speed_capped(self):
+        """Test that UserWarning is emitted when speed is capped.
+
+        When the requested speed would require fps > max_playback_fps,
+        a warning should be emitted informing the user of the effective speed.
+        """
+        import warnings
+
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create 500 Hz data - at speed=1.0 would require 500 fps
+        fields = [rng.random(env.n_bins) for _ in range(501)]
+        frame_times = np.linspace(0, 1, 501)  # 500 Hz sample rate
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Capture warnings
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+
+                animate_fields(
+                    env,
+                    fields,
+                    backend="html",
+                    save_path="test.html",
+                    frame_times=frame_times,
+                    speed=1.0,  # Would require 500 fps
+                )
+
+                # Should have emitted a warning about capping
+                assert len(w) == 1
+                assert issubclass(w[0].category, UserWarning)
+                assert "Capped to 60 fps" in str(w[0].message)
+                assert "effective speed" in str(w[0].message).lower()
+
+    def test_no_warning_when_speed_not_capped(self):
+        """Test that no warning is emitted when speed is not capped.
+
+        When the requested speed results in fps <= max_playback_fps,
+        no warning should be emitted.
+        """
+        import warnings
+
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create 30 Hz data - at speed=1.0 would require 30 fps (within limit)
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)  # 30 Hz sample rate
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            # Capture warnings
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+
+                animate_fields(
+                    env,
+                    fields,
+                    backend="html",
+                    save_path="test.html",
+                    frame_times=frame_times,
+                    speed=1.0,  # Results in 30 fps (within limit)
+                )
+
+                # Should not have emitted any warnings
+                assert len(w) == 0
+
+    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
+    def test_sample_rate_hz_passed_to_backend(self):
+        """Test that sample_rate_hz is passed to backend via kwargs (Task 3.2)."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        # Create 30 Hz data
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)  # 30 Hz sample rate
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+            )
+
+            call_kwargs = mock.call_args[1]
+            assert "sample_rate_hz" in call_kwargs
+            assert call_kwargs["sample_rate_hz"] == pytest.approx(30.0, rel=0.01)
+
+    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
+    def test_speed_passed_to_backend(self):
+        """Test that speed is passed to backend via kwargs (Task 3.2)."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                speed=0.5,
+            )
+
+            call_kwargs = mock.call_args[1]
+            assert "speed" in call_kwargs
+            assert call_kwargs["speed"] == 0.5
+
+    @pytest.mark.skip(reason="Task 3.2 - not yet implemented")
+    def test_max_playback_fps_passed_to_backend(self):
+        """Test that max_playback_fps is passed to backend via kwargs (Task 3.2)."""
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(31)]
+        frame_times = np.linspace(0, 1, 31)
+
+        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
+            mock.return_value = Path("test.html")
+
+            animate_fields(
+                env,
+                fields,
+                backend="html",
+                save_path="test.html",
+                frame_times=frame_times,
+                max_playback_fps=120,
+            )
+
+            call_kwargs = mock.call_args[1]
+            assert "max_playback_fps" in call_kwargs
+            assert call_kwargs["max_playback_fps"] == 120
 
 
 class TestLargeSessionNapariConfig:

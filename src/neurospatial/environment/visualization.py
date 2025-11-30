@@ -903,12 +903,25 @@ class EnvironmentVisualization:
         """
         from neurospatial.animation.core import animate_fields as _animate
 
+        # Synthesize frame_times from fps if not provided (backwards compatibility)
+        # This will be removed when Task 4.1 makes frame_times required
+        if frame_times is None:
+            # Determine n_frames from fields
+            if isinstance(fields, np.ndarray) and fields.ndim == 2:
+                n_frames = fields.shape[0]
+            elif isinstance(fields, (list, tuple)):
+                n_frames = len(fields)
+            else:
+                n_frames = 1
+            # Synthesize evenly-spaced timestamps at given fps
+            duration = (n_frames - 1) / fps if fps > 0 else 1.0
+            frame_times = np.linspace(0, duration, n_frames)
+
         return _animate(
             env=self,
             fields=fields,
             backend=backend,
             save_path=save_path,
-            fps=fps,
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,

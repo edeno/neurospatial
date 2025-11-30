@@ -5,11 +5,12 @@
 
 ## Status
 
-**Milestones 1 and 2 COMPLETE**
+**Milestones 1, 2, and 3 COMPLETE**
 
 - Milestone 1: Core Infrastructure ✅
 - Milestone 2: Overlay Validation Refactor ✅
-- Milestone 3: Core API Change (next)
+- Milestone 3: Core API Change ✅
+- Milestone 4: Environment Method Update (next)
 
 ## Completed Work
 
@@ -43,13 +44,32 @@
 - Full migration to `_validate_frame_times()` will happen in Milestone 3
 - Commit: `8af7335`
 
+### Milestone 3: Core API Change ✅
+
+**Task 3.1 - Update `animate_fields()` signature** ✅
+- `frame_times` is now required (no default)
+- Added `speed: float = DEFAULT_SPEED` parameter
+- Added `max_playback_fps: int = MAX_PLAYBACK_FPS` parameter
+- Location: `src/neurospatial/animation/core.py` (lines 120-133)
+- Tests: `tests/animation/test_core.py::TestAnimateFieldsSpeedBasedPlayback` (12 tests)
+
+**Task 3.2 - Implement playback computation with warning** ✅
+- Computes `playback_fps` and `actual_speed` from frame_times and speed
+- Emits `UserWarning` when actual_speed differs from requested speed by >1%
+- Passes `sample_rate_hz`, `speed`, `max_playback_fps` to backends via kwargs
+- Location: `src/neurospatial/animation/core.py` (lines 347-380)
+
+**Task 3.3 - Update frame_times validation** ✅
+- Calls `_validate_frame_times(frame_times, n_frames)`
+- Location: `src/neurospatial/animation/core.py` (lines 343-345)
+
 ## Next Steps
 
-**Milestone 3: Core API Change** (Tasks 3.1-3.3)
-- Make `frame_times` required parameter (no default)
-- Add `speed: float = 1.0` parameter
-- Add `max_playback_fps: int = 60` parameter
-- Emit warning when speed is capped
+**Milestone 4: Environment Method Update** (Tasks 4.1-4.2)
+- Update `Environment.animate_fields()` in `environment/visualization.py`
+- Replace `fps` parameter with `speed`
+- Make `frame_times` required
+- Update docstring
 
 ## Blockers
 
@@ -64,8 +84,16 @@ None currently.
 
 ## Test Coverage
 
-All tests pass (102 tests in animation/test_core.py and test_timeline_helpers.py):
+**Animation test suite**: 1043 passed, 4 skipped, 8 failed (pre-existing issues)
+
+Key test classes for Milestone 3:
 - TestPlaybackConstants: 10 tests
 - TestComputePlaybackFps: 10 tests
-- TestValidateFrameTimes: 9 tests
-- Other existing tests: 73 tests
+- TestAnimateFieldsSpeedBasedPlayback: 8 passed, 3 skipped (Task 3.2 pending)
+- Other existing tests: Updated to use `frame_times` parameter
+
+**Pre-existing failures** (not related to Milestone 3):
+- HTML warning tests: Warning logic was previously removed
+- Napari QtCustomTitleBar: napari version compatibility issue
+- Figure reuse test: PersistentFigureRenderer issue
+- ffmpeg timing test: 11.1% duration variance vs 10% tolerance

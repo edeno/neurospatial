@@ -126,9 +126,12 @@ class TestMismatchedShapeErrors:
         rng = np.random.default_rng(42)
         wrong_n_bins = simple_env.n_bins + 10
         fields = [rng.random(wrong_n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, len(fields))
 
         with pytest.raises(ValueError, match=r"values but environment has"):
-            animate_fields(simple_env, fields, backend="napari")
+            animate_fields(
+                simple_env, fields, frame_times=frame_times, backend="napari"
+            )
 
     def test_multi_field_sequences_different_lengths(self, simple_env):
         """Multi-field sequences with different lengths should raise error."""

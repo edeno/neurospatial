@@ -158,12 +158,14 @@ class TestNapariBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with position overlay
         result = simple_env.animate_fields(
             fields,
             backend="napari",
             overlays=[position_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -188,12 +190,14 @@ class TestNapariBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with bodypart overlay
         result = simple_env.animate_fields(
             fields,
             backend="napari",
             overlays=[bodypart_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -218,12 +222,14 @@ class TestNapariBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with head direction overlay
         result = simple_env.animate_fields(
             fields,
             backend="napari",
             overlays=[head_direction_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -258,6 +264,7 @@ class TestNapariBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with all overlay types
         result = simple_env.animate_fields(
@@ -268,6 +275,7 @@ class TestNapariBackendIntegration:
                 bodypart_overlay_data,
                 head_direction_overlay_data,
             ],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -300,6 +308,7 @@ class TestNapariBackendIntegration:
 
         # Create fields
         fields = spatial_fields(env_with_regions.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with show_regions=True
         result = env_with_regions.animate_fields(
@@ -307,6 +316,7 @@ class TestNapariBackendIntegration:
             backend="napari",
             show_regions=True,
             region_alpha=0.3,
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -343,6 +353,7 @@ class TestVideoBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_video.mp4"
@@ -353,6 +364,7 @@ class TestVideoBackendIntegration:
                 backend="video",
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,  # Serial for pickle safety in tests
             )
@@ -381,6 +393,7 @@ class TestVideoBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_video.mp4"
@@ -391,6 +404,7 @@ class TestVideoBackendIntegration:
                 backend="video",
                 overlays=[bodypart_overlay_data],
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,
             )
@@ -423,6 +437,7 @@ class TestVideoBackendIntegration:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_video.mp4"
@@ -437,6 +452,7 @@ class TestVideoBackendIntegration:
                     head_direction_overlay_data,
                 ],
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,
             )
@@ -463,6 +479,7 @@ class TestVideoBackendIntegration:
 
         # Create fields
         fields = spatial_fields(env_with_regions.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_video.mp4"
@@ -474,6 +491,7 @@ class TestVideoBackendIntegration:
                 show_regions=True,
                 region_alpha=0.3,
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,
             )
@@ -501,6 +519,7 @@ class TestHTMLBackendIntegration:
         """Test HTML backend renders position overlay correctly."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_animation.html"
@@ -511,6 +530,7 @@ class TestHTMLBackendIntegration:
                 backend="html",
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
             )
 
@@ -527,6 +547,7 @@ class TestHTMLBackendIntegration:
         """Test HTML backend renders regions."""
         # Create fields
         fields = spatial_fields(env_with_regions.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_animation.html"
@@ -538,6 +559,7 @@ class TestHTMLBackendIntegration:
                 show_regions=True,
                 region_alpha=0.3,
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
             )
 
@@ -554,19 +576,21 @@ class TestHTMLBackendIntegration:
         """Test HTML backend warns when bodypart/head direction overlays provided."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_animation.html"
 
             # Call animate_fields with bodypart overlay (unsupported)
             with pytest.warns(
-                UserWarning, match=r"HTML backend.*supports.*position.*region"
+                UserWarning, match="HTML backend supports positions and regions only"
             ):
                 _ = simple_env.animate_fields(
                     fields,
                     backend="html",
                     overlays=[bodypart_overlay_data],
                     save_path=str(save_path),
+                    frame_times=frame_times,
                     fps=10,
                 )
 
@@ -589,12 +613,14 @@ class TestWidgetBackendIntegration:
         """Test widget backend renders position overlay correctly."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with position overlay - should execute without error
         _ = simple_env.animate_fields(
             fields,
             backend="widget",
             overlays=[position_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -613,6 +639,7 @@ class TestWidgetBackendIntegration:
         """Test widget backend with all overlay types."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with all overlay types - should execute without error
         _ = simple_env.animate_fields(
@@ -623,6 +650,7 @@ class TestWidgetBackendIntegration:
                 bodypart_overlay_data,
                 head_direction_overlay_data,
             ],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -652,6 +680,7 @@ class TestMultiAnimalScenarios:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Create multiple position overlays (3 animals)
         rng = np.random.default_rng(42)
@@ -671,6 +700,7 @@ class TestMultiAnimalScenarios:
             fields,
             backend="napari",
             overlays=overlays,
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -692,6 +722,7 @@ class TestMultiAnimalScenarios:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Create multiple bodypart overlays (2 animals)
         rng = np.random.default_rng(42)
@@ -732,6 +763,7 @@ class TestMultiAnimalScenarios:
             fields,
             backend="napari",
             overlays=overlays,
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -818,10 +850,12 @@ class TestCrossBackendConsistency:
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
 
         # Test with Napari
+        frame_times = np.linspace(0, 2.0, 20)
         result_napari = simple_env.animate_fields(
             fields,
             backend="napari",
             overlays=[position_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
         assert result_napari is mock_viewer
@@ -835,6 +869,7 @@ class TestCrossBackendConsistency:
                 backend="video",
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,
             )
@@ -873,12 +908,14 @@ class TestMixedOverlayTypes:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with mixed overlays
         result = simple_env.animate_fields(
             fields,
             backend="napari",
             overlays=[position_overlay_data, bodypart_overlay_data],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -909,6 +946,7 @@ class TestMixedOverlayTypes:
 
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Call animate_fields with all overlay types
         result = simple_env.animate_fields(
@@ -919,6 +957,7 @@ class TestMixedOverlayTypes:
                 bodypart_overlay_data,
                 head_direction_overlay_data,
             ],
+            frame_times=frame_times,
             fps=10,
         )
 
@@ -955,6 +994,7 @@ class TestMixedOverlayTypes:
 
         # Create fields
         fields = spatial_fields(env_with_regions.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_video.mp4"
@@ -967,6 +1007,7 @@ class TestMixedOverlayTypes:
                 show_regions=True,
                 region_alpha=0.3,
                 save_path=str(save_path),
+                frame_times=frame_times,
                 fps=10,
                 n_workers=1,
             )
@@ -991,6 +1032,7 @@ class TestErrorHandling:
         """Test that overlay with wrong dimensions raises error."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
+        frame_times = np.linspace(0, 2.0, 20)
 
         # Create 3D position overlay for 2D environment
         rng = np.random.default_rng(42)
@@ -1006,5 +1048,6 @@ class TestErrorHandling:
                 fields,
                 backend="napari",
                 overlays=[invalid_overlay],
+                frame_times=frame_times,
                 fps=10,
             )

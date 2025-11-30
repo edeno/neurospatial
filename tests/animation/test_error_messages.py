@@ -46,7 +46,10 @@ def test_napari_missing_error_message(test_env, test_fields):
         "neurospatial.animation.backends.napari_backend.NAPARI_AVAILABLE", False
     ):
         with pytest.raises(ImportError) as exc_info:
-            animate_fields(test_env, test_fields, backend="napari")
+            frame_times = np.linspace(0, 1, len(test_fields))
+            animate_fields(
+                test_env, test_fields, backend="napari", frame_times=frame_times
+            )
 
         error_msg = str(exc_info.value)
         # Check for key elements
@@ -62,7 +65,10 @@ def test_ipywidgets_missing_error_message(test_env, test_fields):
         "neurospatial.animation.backends.widget_backend.IPYWIDGETS_AVAILABLE", False
     ):
         with pytest.raises(ImportError) as exc_info:
-            animate_fields(test_env, test_fields, backend="widget")
+            frame_times = np.linspace(0, 1, len(test_fields))
+            animate_fields(
+                test_env, test_fields, backend="widget", frame_times=frame_times
+            )
 
         error_msg = str(exc_info.value)
         # Check for key elements
@@ -79,8 +85,13 @@ def test_ffmpeg_missing_error_message(test_env, test_fields, tmp_path):
         return_value=False,
     ):
         with pytest.raises(RuntimeError) as exc_info:
+            frame_times = np.linspace(0, 1, len(test_fields))
             animate_fields(
-                test_env, test_fields, backend="video", save_path=tmp_path / "out.mp4"
+                test_env,
+                test_fields,
+                backend="video",
+                save_path=tmp_path / "out.mp4",
+                frame_times=frame_times,
             )
 
         error_msg = str(exc_info.value)
@@ -127,7 +138,8 @@ def test_environment_not_fitted_error_message():
     env._is_fitted = False
 
     with pytest.raises(RuntimeError) as exc_info:
-        animate_fields(env, [np.array([1, 2, 3])])
+        frame_times = np.array([0.0])
+        animate_fields(env, [np.array([1, 2, 3])], frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     # Check for key elements
@@ -141,7 +153,8 @@ def test_field_shape_mismatch_error_message(test_env):
     wrong_fields = [rng.random(test_env.n_bins + 10)]
 
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, wrong_fields)
+        frame_times = np.array([0.0])
+        animate_fields(test_env, wrong_fields, frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     # Check for diagnostic info
@@ -153,7 +166,8 @@ def test_field_shape_mismatch_error_message(test_env):
 def test_empty_fields_error_message(test_env):
     """Verify empty fields error is clear."""
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, [])
+        frame_times = np.array([])
+        animate_fields(test_env, [], frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     assert "empty" in error_msg.lower()
@@ -166,7 +180,8 @@ def test_fields_dimension_error_message(test_env):
     fields_1d = rng.random(test_env.n_bins)
 
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, fields_1d)
+        frame_times = np.array([0.0])
+        animate_fields(test_env, fields_1d, frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     assert "2D" in error_msg
@@ -185,12 +200,14 @@ def test_pickle_failure_error_message(test_env, test_fields, tmp_path, monkeypat
     )
 
     with pytest.raises(ValueError) as exc_info:
+        frame_times = np.linspace(0, 1, len(test_fields))
         animate_fields(
             test_env,
             test_fields,
             backend="video",
             save_path=tmp_path / "out.mp4",
             n_workers=2,
+            frame_times=frame_times,
         )
 
     error_msg = str(exc_info.value)
@@ -204,7 +221,8 @@ def test_pickle_failure_error_message(test_env, test_fields, tmp_path, monkeypat
 def test_save_path_required_error_message(test_env, test_fields):
     """Verify video backend save_path requirement is clear."""
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, test_fields, backend="video")
+        frame_times = np.linspace(0, 1, len(test_fields))
+        animate_fields(test_env, test_fields, backend="video", frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     assert "save_path" in error_msg.lower()
@@ -214,7 +232,10 @@ def test_save_path_required_error_message(test_env, test_fields):
 def test_unknown_backend_error_message(test_env, test_fields):
     """Verify unknown backend error is clear."""
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, test_fields, backend="invalid_backend")  # type: ignore[arg-type]
+        frame_times = np.linspace(0, 1, len(test_fields))
+        animate_fields(
+            test_env, test_fields, backend="invalid_backend", frame_times=frame_times
+        )  # type: ignore[arg-type]
 
     error_msg = str(exc_info.value)
     assert "backend" in error_msg.lower()
@@ -228,7 +249,8 @@ def test_html_max_frames_error_message(test_env):
     large_fields = [rng.random(test_env.n_bins) for _ in range(2000)]
 
     with pytest.raises(ValueError) as exc_info:
-        animate_fields(test_env, large_fields, backend="html")
+        frame_times = np.linspace(0, 200, len(large_fields))
+        animate_fields(test_env, large_fields, backend="html", frame_times=frame_times)
 
     error_msg = str(exc_info.value)
     # Check for diagnostic info
@@ -302,7 +324,10 @@ def test_large_dataset_no_napari_error_message(test_env):
         "neurospatial.animation.backends.napari_backend.NAPARI_AVAILABLE", False
     ):
         with pytest.raises(RuntimeError) as exc_info:
-            animate_fields(test_env, large_fields, backend="auto")
+            frame_times = np.linspace(0, 5000, len(large_fields))
+            animate_fields(
+                test_env, large_fields, backend="auto", frame_times=frame_times
+            )
 
         error_msg = str(exc_info.value)
         # Check for diagnostic info
@@ -330,7 +355,10 @@ def test_no_backend_available_error_message(test_env, test_fields):
         patch.dict(sys.modules, {"IPython": mock_ipython}),
     ):
         with pytest.raises(RuntimeError) as exc_info:
-            animate_fields(test_env, test_fields, backend="auto")
+            frame_times = np.linspace(0, 1, len(test_fields))
+            animate_fields(
+                test_env, test_fields, backend="auto", frame_times=frame_times
+            )
 
         error_msg = str(exc_info.value)
         # Check for installation options

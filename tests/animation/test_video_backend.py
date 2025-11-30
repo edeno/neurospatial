@@ -112,6 +112,7 @@ class TestVideoDryRun:
 
         # Create simple field sequence
         fields = [rng.random(env.n_bins) for _ in range(20)]
+        frame_times = np.linspace(0, 1, 20)
 
         output_path = tmp_path / "test.mp4"
 
@@ -126,7 +127,7 @@ class TestVideoDryRun:
                 fields,
                 backend="video",
                 save_path=str(output_path),
-                fps=30,
+                frame_times=frame_times,
                 n_workers=2,
                 dry_run=True,
             )
@@ -151,6 +152,7 @@ class TestVideoDryRun:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 1, 10)
 
         output_path = tmp_path / "test.mp4"
 
@@ -168,6 +170,7 @@ class TestVideoDryRun:
                 fields,
                 backend="video",
                 save_path=str(output_path),
+                frame_times=frame_times,
                 dry_run=True,
                 n_workers=4,
             )
@@ -195,6 +198,7 @@ class TestVideoExportSerial:
         for i in range(5):
             field = np.sin(np.linspace(0, 2 * np.pi, env.n_bins) + i * 0.5)
             fields.append(field)
+        frame_times = np.linspace(0, 1, 5)
 
         # Export video
         output_path = tmp_path / "test_serial.mp4"
@@ -204,7 +208,7 @@ class TestVideoExportSerial:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=5,
+            frame_times=frame_times,
             n_workers=1,  # Serial rendering
         )
 
@@ -227,6 +231,7 @@ class TestVideoExportSerial:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
         labels = [f"Trial {i + 1}" for i in range(5)]
 
         output_path = tmp_path / "labeled.mp4"
@@ -236,7 +241,7 @@ class TestVideoExportSerial:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=5,
+            frame_times=frame_times,
             frame_labels=labels,
             n_workers=1,
         )
@@ -254,6 +259,7 @@ class TestVideoExportSerial:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "custom.mp4"
 
@@ -262,7 +268,7 @@ class TestVideoExportSerial:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=10,
+            frame_times=frame_times,
             codec="h264",
             dpi=50,  # Lower resolution for speed
             bitrate=3000,
@@ -288,6 +294,7 @@ class TestVideoExportParallel:
 
         # 20 frames for parallel test
         fields = [rng.random(env.n_bins) for _ in range(20)]
+        frame_times = np.linspace(0, 2, 20)
 
         output_path = tmp_path / "parallel.mp4"
 
@@ -296,7 +303,7 @@ class TestVideoExportParallel:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=10,
+            frame_times=frame_times,
             n_workers=2,  # Parallel rendering
         )
 
@@ -316,6 +323,7 @@ class TestVideoExportParallel:
         env = Environment.from_samples(positions, bin_size=10.0)
 
         fields = [rng.random(env.n_bins) for _ in range(10)]
+        frame_times = np.linspace(0, 1, 10)
 
         output_path = tmp_path / "auto_workers.mp4"
 
@@ -325,7 +333,7 @@ class TestVideoExportParallel:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=10,
+            frame_times=frame_times,
             n_workers=None,  # Auto-select
         )
 
@@ -341,6 +349,7 @@ class TestVideoErrors:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "test.mp4"
 
@@ -353,7 +362,11 @@ class TestVideoErrors:
             pytest.raises(RuntimeError, match="ffmpeg"),
         ):
             animate_fields(
-                env, fields, backend="video", save_path=str(output_path), fps=10
+                env,
+                fields,
+                backend="video",
+                save_path=str(output_path),
+                frame_times=frame_times,
             )
 
     def test_video_pickle_failure(self, tmp_path):
@@ -362,6 +375,7 @@ class TestVideoErrors:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "test.mp4"
 
@@ -379,7 +393,7 @@ class TestVideoErrors:
                 fields,
                 backend="video",
                 save_path=str(output_path),
-                fps=10,
+                frame_times=frame_times,
                 n_workers=2,  # Parallel requires pickle
             )
 
@@ -389,6 +403,7 @@ class TestVideoErrors:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "test.mp4"
 
@@ -409,7 +424,7 @@ class TestVideoErrors:
                 fields,
                 backend="video",
                 save_path=str(output_path),
-                fps=10,
+                frame_times=frame_times,
                 n_workers=1,  # Serial - no pickle check
             )
 
@@ -448,6 +463,7 @@ class TestVideoErrors:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "test.mp4"
 
@@ -464,7 +480,7 @@ class TestVideoErrors:
                 fields,
                 backend="video",
                 save_path=str(output_path),
-                fps=10,
+                frame_times=frame_times,
                 n_workers=-1,
             )
 
@@ -762,6 +778,7 @@ class TestCodecSelection:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "h264.mp4"
 
@@ -770,7 +787,7 @@ class TestCodecSelection:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=5,
+            frame_times=frame_times,
             codec="h264",
             n_workers=1,
         )
@@ -787,6 +804,7 @@ class TestCodecSelection:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0, 1, 5)
 
         output_path = tmp_path / "mpeg4.mp4"
 
@@ -795,7 +813,7 @@ class TestCodecSelection:
             fields,
             backend="video",
             save_path=str(output_path),
-            fps=5,
+            frame_times=frame_times,
             codec="mpeg4",
             n_workers=1,
         )

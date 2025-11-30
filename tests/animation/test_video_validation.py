@@ -86,6 +86,9 @@ class TestNonGridEnvironmentSupport:
         rng = np.random.default_rng(42)
         fields = rng.random((n_frames, polygon_env.n_bins))
 
+        # Create frame_times array
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         # Create calibration for 100x80 env
         from neurospatial.transforms import (
             VideoCalibration,
@@ -115,6 +118,7 @@ class TestNonGridEnvironmentSupport:
         # This should work (may emit fallback warning for non-grid)
         polygon_env.animate_fields(
             fields,
+            frame_times=frame_times,
             overlays=[video_overlay],
             backend="video",
             save_path=str(output_path),
@@ -169,6 +173,9 @@ class TestNapariFreeOperation:
         rng = np.random.default_rng(42)
         fields = rng.random((n_frames, masked_env.n_bins))
 
+        # Create frame_times array
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         video_overlay = VideoOverlay(
             source=sample_video_array,
             calibration=sample_calibration,
@@ -186,6 +193,7 @@ class TestNapariFreeOperation:
             # Video export should work without napari
             masked_env.animate_fields(
                 fields,
+                frame_times=frame_times,
                 overlays=[video_overlay],
                 backend="video",
                 save_path=str(output_path),

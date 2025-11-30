@@ -125,12 +125,17 @@ class TestNapariVideoOverlay:
 
         viewer = napari.Viewer(show=False)
         try:
+            # Create frame times
+            n_frames = len(video_test_fields)
+            frame_times = np.linspace(0, 1.0, n_frames)
+
             # Add field with video overlay
             video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
                 viewer=viewer,
+                frame_times=frame_times,
             )
 
             # Check video layer exists
@@ -163,11 +168,16 @@ class TestNapariVideoOverlay:
 
         viewer = napari.Viewer(show=False)
         try:
+            # Create frame times
+            n_frames = len(video_test_fields)
+            frame_times = np.linspace(0, 1.0, n_frames)
+
             video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
                 viewer=viewer,
+                frame_times=frame_times,
             )
 
             # Find video layer
@@ -213,11 +223,16 @@ class TestNapariVideoOverlay:
 
         viewer = napari.Viewer(show=False)
         try:
+            # Create frame times
+            n_frames = len(video_test_fields)
+            frame_times = np.linspace(0, 1.0, n_frames)
+
             video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
                 viewer=viewer,
+                frame_times=frame_times,
             )
 
             # Find video layer
@@ -279,6 +294,10 @@ class TestVideoExportIntegration:
         # Clear cache for pickle safety
         video_test_env.clear_cache()
 
+        # Create frame times
+        n_frames = len(video_test_fields)
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         # Export with video overlay
         video_test_env.animate_fields(
             video_test_fields,
@@ -287,6 +306,7 @@ class TestVideoExportIntegration:
             save_path=str(output_path),
             fps=10,
             n_workers=1,  # Serial for reliability
+            frame_times=frame_times,
         )
 
         # Verify output exists
@@ -323,6 +343,10 @@ class TestVideoExportIntegration:
         # Clear cache for pickle safety
         video_test_env.clear_cache()
 
+        # Create frame times
+        n_frames = len(video_test_fields)
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         # Serial rendering
         video_test_env.animate_fields(
             video_test_fields,
@@ -331,6 +355,7 @@ class TestVideoExportIntegration:
             save_path=str(serial_path),
             fps=10,
             n_workers=1,
+            frame_times=frame_times,
         )
 
         # Clear cache again before parallel
@@ -344,6 +369,7 @@ class TestVideoExportIntegration:
             save_path=str(parallel_path),
             fps=10,
             n_workers=2,
+            frame_times=frame_times,
         )
 
         # Both outputs should exist
@@ -400,6 +426,10 @@ class TestVideoExportIntegration:
         # Clear cache
         video_test_env.clear_cache()
 
+        # Create frame times
+        n_frames = len(video_test_fields)
+        frame_times = np.linspace(0, 1.0, n_frames)
+
         # Render with z_order="below"
         video_test_env.animate_fields(
             video_test_fields,
@@ -408,6 +438,7 @@ class TestVideoExportIntegration:
             save_path=str(below_path),
             fps=10,
             n_workers=1,
+            frame_times=frame_times,
         )
 
         # Clear cache
@@ -421,6 +452,7 @@ class TestVideoExportIntegration:
             save_path=str(above_path),
             fps=10,
             n_workers=1,
+            frame_times=frame_times,
         )
 
         # Both should exist
