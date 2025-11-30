@@ -631,16 +631,19 @@ def render_html(
                 stacklevel=2,
             )
 
-        # Check for event overlays with decay_frames > 0
-        has_event_decay = any(
-            event_data.decay_frames > 0 for event_data in overlay_data.events
+        # Check for event overlays with non-instant decay_frames
+        # (None = cumulative, >0 = decay window - both unsupported in HTML)
+        has_non_instant_events = any(
+            event_data.decay_frames is None or event_data.decay_frames > 0
+            for event_data in overlay_data.events
         )
-        if has_event_decay:
+        if has_non_instant_events:
             warnings.warn(
-                "HTML backend does not support event decay (decay_frames > 0).\n"
-                "Events will render in instant mode (visible only on their exact frame).\n"
+                "HTML backend only supports instant mode (decay_frames=0) for events.\n"
+                "Cumulative mode (decay_frames=None) and decay mode (decay_frames > 0)\n"
+                "are not supported. Events will render in instant mode only.\n"
                 "\n"
-                "For decay animation, use video or napari backend:\n"
+                "For cumulative or decay animation, use video or napari backend:\n"
                 "  env.animate_fields(fields, backend='video', save_path='output.mp4', ...)\n"
                 "  env.animate_fields(fields, backend='napari', ...)",
                 UserWarning,

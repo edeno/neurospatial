@@ -216,9 +216,7 @@ class TestHTMLEventOverlayDecayWarning:
         save_path = tmp_path / "test.html"
         overlay_data = OverlayData(events=[event_data_with_decay])
 
-        with pytest.warns(
-            UserWarning, match="HTML backend does not support event decay"
-        ):
+        with pytest.warns(UserWarning, match="HTML backend only supports instant mode"):
             render_html(
                 simple_env,
                 simple_fields,
@@ -267,7 +265,7 @@ class TestHTMLEventOverlayDecayWarning:
 
         with warnings.catch_warnings():
             warnings.filterwarnings(
-                "error", message="HTML backend does not support event decay"
+                "error", message="HTML backend only supports instant mode"
             )
             # Should not raise warning about decay
             render_html(

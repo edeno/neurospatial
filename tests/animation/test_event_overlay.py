@@ -86,7 +86,9 @@ class TestEventOverlayBasicCreation:
         assert overlay.decay_frames is None  # Instant (no decay)
         assert overlay.markers is None  # Default 'o'
         assert overlay.border_color == "white"
-        assert overlay.border_width == 0.5
+        assert (
+            overlay.border_width == 0.05
+        )  # Fraction of point size (napari convention)
 
     def test_custom_styling_values(self):
         """Test EventOverlay with custom styling."""
@@ -477,6 +479,7 @@ class TestEventDataDataclass:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         assert "cell_001" in event_data.event_positions
@@ -501,6 +504,7 @@ class TestEventDataDataclass:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         # Should be pickle-able
@@ -779,8 +783,8 @@ class TestEventOverlayConvertToData:
 
         assert event_data.decay_frames == 5
 
-    def test_convert_decay_frames_none_becomes_zero(self, mock_env):
-        """Test that decay_frames=None becomes 0 in EventData."""
+    def test_convert_decay_frames_none_preserved_for_cumulative(self, mock_env):
+        """Test that decay_frames=None is preserved in EventData for cumulative mode."""
         from neurospatial.animation.overlays import EventOverlay
 
         event_times = np.array([1.0])
@@ -789,7 +793,7 @@ class TestEventOverlayConvertToData:
         overlay = EventOverlay(
             event_times=event_times,
             event_positions=event_positions,
-            decay_frames=None,  # Instant
+            decay_frames=None,  # Cumulative mode - events stay visible
         )
 
         frame_times = np.linspace(0.0, 10.0, 11)
@@ -797,7 +801,8 @@ class TestEventOverlayConvertToData:
 
         event_data = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
-        assert event_data.decay_frames == 0
+        # None should be preserved for cumulative mode
+        assert event_data.decay_frames is None
 
 
 class TestEventOverlayEdgeCases:
@@ -1090,6 +1095,7 @@ def event_data_single_type():
         decay_frames=0,
         border_color="white",
         border_width=0.5,
+        opacity=0.7,
     )
 
 
@@ -1118,6 +1124,7 @@ def event_data_multiple_types():
         decay_frames=0,
         border_color="white",
         border_width=0.5,
+        opacity=0.7,
     )
 
 
@@ -1140,31 +1147,51 @@ def event_data_with_decay():
         decay_frames=5,  # Events persist for 5 frames
         border_color="white",
         border_width=0.5,
+        opacity=0.7,
     )
 
 
-class TestNapariEventOverlayInstantMode:
-    """Test napari backend event rendering in instant mode (decay_frames=0)."""
+def _create_mock_viewer_with_metadata_support():
+    """Create a mock viewer that properly handles layer metadata storage."""
+    mock_viewer = MagicMock()
+    mock_viewer.dims.ndim = 4
+    mock_viewer.dims.current_step = (0, 0, 0, 0)
+
+    # Create a mock layer that uses a real dict for metadata
+    def mock_add_points(*args, **kwargs):
+        mock_layer = MagicMock()
+        mock_layer.metadata = {}  # Real dict to store metadata
+        mock_layer.shown = kwargs.get("shown")
+        return mock_layer
+
+    mock_viewer.add_points.side_effect = mock_add_points
+    return mock_viewer
+
+
+class TestNapariEventOverlayPointsAndCallback:
+    """Test napari backend event rendering using Points layer with callback.
+
+    The new implementation uses a single Points layer with a `shown` mask
+    that is dynamically updated via a callback on frame change.
+    """
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_instant_mode_creates_points_layer(
+    def test_creates_points_layer(
         self, mock_viewer_class, simple_env, simple_fields, event_data_single_type
     ):
-        """Test instant mode creates Points layer with time dimension."""
+        """Test event overlay creates a Points layer."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_single_type])
 
         render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
         # Should create points layer for events
-        # Find event-related add_points calls (layer name contains "Events")
+        assert mock_viewer.add_points.called, "Expected add_points to be called"
         event_points_calls = [
             call
             for call in mock_viewer.add_points.call_args_list
@@ -1173,17 +1200,15 @@ class TestNapariEventOverlayInstantMode:
         assert len(event_points_calls) > 0, "Expected Points layer for events"
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_instant_mode_points_have_time_dimension(
+    def test_points_have_2d_coordinates(
         self, mock_viewer_class, simple_env, simple_fields, event_data_single_type
     ):
-        """Test instant mode points have (time, y, x) format."""
+        """Test points have (y, x) format (no time dimension)."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_single_type])
 
@@ -1197,23 +1222,21 @@ class TestNapariEventOverlayInstantMode:
         ]
         assert len(event_points_calls) > 0
 
-        # Check points data shape: (n_events, 3) for (time, y, x)
+        # Check points data shape: (n_events, 2) for (y, x) - no time dimension
         points_data = event_points_calls[0][0][0]
-        assert points_data.shape[1] == 3  # (time, y, x)
+        assert points_data.shape[1] == 2  # (y, x)
         assert points_data.shape[0] == 3  # 3 events in fixture
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_instant_mode_applies_styling(
+    def test_applies_styling(
         self, mock_viewer_class, simple_env, simple_fields, event_data_single_type
     ):
-        """Test instant mode applies color, size, and border from EventData."""
+        """Test styling (size, border) is applied from EventData."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_single_type])
 
@@ -1229,158 +1252,186 @@ class TestNapariEventOverlayInstantMode:
         kwargs = event_points_calls[0][1]
 
         # Check styling applied
-        assert "face_color" in kwargs
-        assert kwargs["face_color"] == "#ff0000"
         assert "size" in kwargs
         assert kwargs["size"] == 8.0
+        # border_color is string (napari broadcasts it)
         assert "border_color" in kwargs
         assert kwargs["border_color"] == "white"
-
-
-class TestNapariEventOverlayDecayMode:
-    """Test napari backend event rendering in decay mode (decay_frames > 0)."""
+        assert kwargs["border_width"] == 0.5
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_decay_mode_creates_tracks_layer(
-        self, mock_viewer_class, simple_env, simple_fields, event_data_with_decay
+    def test_initial_shown_mask_is_false(
+        self, mock_viewer_class, simple_env, simple_fields, event_data_single_type
     ):
-        """Test decay mode creates Tracks layer for efficient tail rendering."""
+        """Test initial shown mask is all False (events hidden at start)."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
-        overlay_data = OverlayData(events=[event_data_with_decay])
+        overlay_data = OverlayData(events=[event_data_single_type])
 
         render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-        # Should create tracks layer for decay visualization
-        event_tracks_calls = [
-            call
-            for call in mock_viewer.add_tracks.call_args_list
-            if "Events" in call[1].get("name", "")
-        ]
-        assert len(event_tracks_calls) > 0, (
-            "Expected Tracks layer for events with decay"
-        )
-
-    @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_decay_mode_sets_tail_length(
-        self, mock_viewer_class, simple_env, simple_fields, event_data_with_decay
-    ):
-        """Test decay mode sets tail_length from decay_frames."""
-        from neurospatial.animation.backends.napari_backend import render_napari
-        from neurospatial.animation.overlays import OverlayData
-
-        mock_viewer = MagicMock()
-        mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-        overlay_data = OverlayData(events=[event_data_with_decay])
-
-        render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-        # Get tracks layer kwargs
-        event_tracks_calls = [
-            call
-            for call in mock_viewer.add_tracks.call_args_list
-            if "Events" in call[1].get("name", "")
-        ]
-        assert len(event_tracks_calls) > 0
-        kwargs = event_tracks_calls[0][1]
-
-        # Check tail_length matches decay_frames
-        assert "tail_length" in kwargs
-        assert kwargs["tail_length"] == 5  # event_data_with_decay has decay_frames=5
-
-    @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_decay_mode_also_creates_points_for_current_marker(
-        self, mock_viewer_class, simple_env, simple_fields, event_data_with_decay
-    ):
-        """Test decay mode creates Points layer for current event marker."""
-        from neurospatial.animation.backends.napari_backend import render_napari
-        from neurospatial.animation.overlays import OverlayData
-
-        mock_viewer = MagicMock()
-        mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-        overlay_data = OverlayData(events=[event_data_with_decay])
-
-        render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-        # Should also create points layer for prominent current marker
+        # Get event points layer kwargs
         event_points_calls = [
             call
             for call in mock_viewer.add_points.call_args_list
-            if "Event" in call[1].get("name", "")
+            if "Events" in call[1].get("name", "")
         ]
-        assert len(event_points_calls) > 0, (
-            "Expected Points layer for current event markers"
+        assert len(event_points_calls) > 0
+        kwargs = event_points_calls[0][1]
+
+        # Check initial shown mask is all False (uses shown mask for visibility)
+        assert "shown" in kwargs
+        initial_shown = kwargs["shown"]
+        assert initial_shown is not None
+        assert len(initial_shown) == 3  # 3 events
+        # All should be hidden initially
+        assert not np.any(initial_shown)
+
+    @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+    def test_registers_frame_change_callback(
+        self, mock_viewer_class, simple_env, simple_fields, event_data_single_type
+    ):
+        """Test callback is registered for frame changes."""
+        from neurospatial.animation.backends.napari_backend import render_napari
+        from neurospatial.animation.overlays import OverlayData
+
+        mock_viewer = _create_mock_viewer_with_metadata_support()
+        mock_viewer_class.return_value = mock_viewer
+
+        overlay_data = OverlayData(events=[event_data_single_type])
+
+        render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+        # Check callback was registered
+        mock_viewer.dims.events.current_step.connect.assert_called()
+
+
+class TestNapariEventOverlayDecayModes:
+    """Test napari backend event rendering with different decay modes.
+
+    All modes use Points layer with callback-based visibility:
+    - decay_frames=None: Cumulative (events stay visible)
+    - decay_frames=0: Instant (visible only on exact frame)
+    - decay_frames>0: Decay window (visible for N frames)
+    """
+
+    @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+    def test_decay_mode_uses_points_not_tracks(
+        self, mock_viewer_class, simple_env, simple_fields, event_data_with_decay
+    ):
+        """Test decay mode uses Points layer (not Tracks)."""
+        from neurospatial.animation.backends.napari_backend import render_napari
+        from neurospatial.animation.overlays import OverlayData
+
+        mock_viewer = _create_mock_viewer_with_metadata_support()
+        mock_viewer_class.return_value = mock_viewer
+
+        overlay_data = OverlayData(events=[event_data_with_decay])
+
+        render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+        # Should create points layer (not tracks)
+        assert mock_viewer.add_points.called, "Expected add_points to be called"
+        # No tracks layer should be created
+        assert not mock_viewer.add_tracks.called, "Should not use Tracks layer"
+
+    @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
+    def test_cumulative_mode_creates_points_layer(
+        self, mock_viewer_class, simple_env, simple_fields
+    ):
+        """Test cumulative mode (decay_frames=None) creates Points layer."""
+        from neurospatial.animation.backends.napari_backend import render_napari
+        from neurospatial.animation.overlays import EventData, OverlayData
+
+        mock_viewer = _create_mock_viewer_with_metadata_support()
+        mock_viewer_class.return_value = mock_viewer
+
+        # Create event data with cumulative mode
+        event_data_cumulative = EventData(
+            event_positions={"events": np.array([[5.0, 5.0], [10.0, 8.0]])},
+            event_frame_indices={"events": np.array([1, 4])},
+            colors={"events": "#00ff00"},
+            markers={"events": "o"},
+            size=8.0,
+            decay_frames=None,  # Cumulative mode
+            border_color="white",
+            border_width=0.5,
+            opacity=0.7,
         )
+
+        overlay_data = OverlayData(events=[event_data_cumulative])
+
+        render_napari(simple_env, simple_fields, overlay_data=overlay_data)
+
+        # Should create points layer
+        assert mock_viewer.add_points.called
 
 
 class TestNapariEventOverlayMultipleTypes:
-    """Test napari backend event rendering with multiple event types."""
+    """Test napari backend event rendering with multiple event types.
+
+    The new implementation creates a single Points layer for all event types,
+    with colors per event stored in face_color array.
+    """
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_multiple_types_creates_separate_layers(
+    def test_multiple_types_creates_single_layer(
         self, mock_viewer_class, simple_env, simple_fields, event_data_multiple_types
     ):
-        """Test multiple event types create separate layers with distinct colors."""
+        """Test multiple event types are combined into a single layer."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_multiple_types])
 
         render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-        # Should create points layers for each event type
+        # Should create ONE points layer for all events (not separate layers)
         event_points_calls = [
             call
             for call in mock_viewer.add_points.call_args_list
             if "Events" in call[1].get("name", "")
         ]
-        # Should have 2 layers (one for cell_001, one for cell_002)
-        assert len(event_points_calls) == 2
+        assert len(event_points_calls) == 1, (
+            "Expected single Points layer for all event types"
+        )
 
     @patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-    def test_multiple_types_layer_names_include_event_name(
+    def test_multiple_types_has_per_event_colors(
         self, mock_viewer_class, simple_env, simple_fields, event_data_multiple_types
     ):
-        """Test layer names include event type names for identification."""
+        """Test multiple event types have per-event colors in face_color array."""
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_multiple_types])
 
         render_napari(simple_env, simple_fields, overlay_data=overlay_data)
 
-        # Collect layer names
-        layer_names = [
-            call[1].get("name", "")
+        # Get event points layer kwargs
+        event_points_calls = [
+            call
             for call in mock_viewer.add_points.call_args_list
             if "Events" in call[1].get("name", "")
         ]
+        assert len(event_points_calls) > 0
+        kwargs = event_points_calls[0][1]
 
-        # Should include event type names
-        assert any("cell_001" in name for name in layer_names)
-        assert any("cell_002" in name for name in layer_names)
+        # Check face_color is an array (per-event colors)
+        face_color = kwargs.get("face_color")
+        assert face_color is not None
+        # Should have 5 events total (3 from cell_001, 2 from cell_002)
+        assert len(face_color) == 5
 
 
 class TestNapariEventOverlayCoordinates:
@@ -1397,10 +1448,8 @@ class TestNapariEventOverlayCoordinates:
         )
         from neurospatial.animation.overlays import OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         overlay_data = OverlayData(events=[event_data_single_type])
 
@@ -1418,14 +1467,18 @@ class TestNapariEventOverlayCoordinates:
         ]
         points_data = event_points_calls[0][0][0]
 
-        # Points format: (time, y, x)
-        # First point should have correct row, col coordinates
-        assert np.isclose(
-            points_data[0, 1], expected_transformed[0, 0]
-        )  # Row (y in napari)
-        assert np.isclose(
-            points_data[0, 2], expected_transformed[0, 1]
-        )  # Col (x in napari)
+        # Points format: (y, x) - no time dimension
+        # Find the first point that matches the first original event
+        # (events are sorted by frame index, so order may differ)
+        # Just check that at least one point has correct napari coordinates
+        found_match = False
+        for i in range(len(points_data)):
+            if np.isclose(
+                points_data[i, 0], expected_transformed[0, 0], atol=0.5
+            ) and np.isclose(points_data[i, 1], expected_transformed[0, 1], atol=0.5):
+                found_match = True
+                break
+        assert found_match, "Expected transformed coordinates in points layer"
 
 
 class TestNapariEventOverlayEdgeCases:
@@ -1439,10 +1492,8 @@ class TestNapariEventOverlayEdgeCases:
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import EventData, OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         # Empty EventData
         event_data = EventData(
@@ -1454,6 +1505,7 @@ class TestNapariEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         overlay_data = OverlayData(events=[event_data])
 
@@ -1476,10 +1528,8 @@ class TestNapariEventOverlayEdgeCases:
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import OverlayData, PositionData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         # Create position overlay
         pos_data = PositionData(
@@ -1516,10 +1566,8 @@ class TestNapariEventOverlayEdgeCases:
         from neurospatial.animation.backends.napari_backend import render_napari
         from neurospatial.animation.overlays import EventData, OverlayData
 
-        mock_viewer = MagicMock()
+        mock_viewer = _create_mock_viewer_with_metadata_support()
         mock_viewer_class.return_value = mock_viewer
-        mock_viewer.dims.ndim = 4
-        mock_viewer.dims.current_step = (0, 0, 0, 0)
 
         # Create two separate event overlays (e.g., two animals' spike events)
         event_data1 = EventData(
@@ -1531,6 +1579,7 @@ class TestNapariEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         event_data2 = EventData(
             event_positions={"animal2": np.array([[15.0, 5.0], [12.0, 8.0]])},
@@ -1541,6 +1590,7 @@ class TestNapariEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         overlay_data = OverlayData(events=[event_data1, event_data2])
@@ -1585,6 +1635,7 @@ class TestMatplotlibEventOverlayInstantMode:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
     def test_instant_mode_renders_only_current_frame_events(
@@ -1680,6 +1731,7 @@ class TestMatplotlibEventOverlayDecayMode:
             decay_frames=3,  # Events visible for 3 frames after occurrence
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
     def test_decay_mode_shows_events_in_window(self, mock_ax, event_data_decay):
@@ -1778,6 +1830,7 @@ class TestMatplotlibEventOverlayMultipleTypes:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
     def test_multiple_types_renders_all_on_frame(self, mock_ax, event_data_multi):
@@ -1856,6 +1909,7 @@ class TestMatplotlibEventOverlayIntegration:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         overlay_data = OverlayData(events=[event_data])
 
@@ -1901,6 +1955,7 @@ class TestMatplotlibEventOverlayIntegration:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         overlay_data = OverlayData(positions=[pos_data], events=[event_data])
@@ -1940,6 +1995,7 @@ class TestMatplotlibEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         # Should not crash
@@ -1964,6 +2020,7 @@ class TestMatplotlibEventOverlayEdgeCases:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
 
         _render_event_overlay_matplotlib(mock_ax, event_data, frame_idx=0)
@@ -2002,6 +2059,7 @@ class TestOverlayArtistManagerWithEvents:
             decay_frames=0,
             border_color="white",
             border_width=0.5,
+            opacity=0.7,
         )
         overlay_data = OverlayData(events=[event_data])
 

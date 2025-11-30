@@ -626,6 +626,7 @@ def _render_position_overlay(
     position_data: PositionData,
     env: Environment,
     name_suffix: str = "",
+    scale: tuple[float, float] | None = None,
 ) -> list[Layer]:
     """Render a single position overlay with optional trail.
 
@@ -639,6 +640,9 @@ def _render_position_overlay(
         Environment instance for coordinate transformation
     name_suffix : str
         Suffix for layer names (e.g., for multi-animal)
+    scale : tuple of (y_scale, x_scale), optional
+        Physical units scale to match the Image layer. If provided, overlay
+        coordinates will be scaled to match the field visualization.
 
     Returns
     -------
@@ -671,6 +675,11 @@ def _render_position_overlay(
             ]
         )
 
+        # Filter out NaN values - napari Tracks layer requires finite data
+        valid_mask = np.all(np.isfinite(track_data), axis=1)
+        if not np.all(valid_mask):
+            track_data = track_data[valid_mask]
+
         # Napari tracks layer uniform color workaround (REQUIRED - no simpler alternative):
         #
         # Unlike add_points (which accepts face_color directly), the Tracks layer
@@ -690,7 +699,9 @@ def _render_position_overlay(
         # See: https://napari.org/stable/api/napari.layers.Tracks.html
         from napari.utils.colormaps import Colormap
 
-        features = {"color": np.zeros(n_frames)}
+        # Features must match filtered track data length
+        n_valid = len(track_data)
+        features = {"color": np.zeros(n_valid)}
         custom_colormap = Colormap(
             colors=[position_data.color, position_data.color],
             name=f"trail_color{name_suffix}",
@@ -701,15 +712,20 @@ def _render_position_overlay(
         # During __init__, napari's data setter resets features to {} before our
         # features are applied. If color_by is passed at init time, the check runs
         # against empty features and warns. Setting color_by after creation avoids this.
-        layer = viewer.add_tracks(
-            track_data,
-            name=f"Position Trail{name_suffix}",
-            tail_length=position_data.trail_length,
-            features=features,
-            colormaps_dict=colormaps_dict,
-        )
-        layer.color_by = "color"  # Set after features are applied
-        layers.append(layer)
+        if n_valid > 0:
+            # Tracks data format is [track_id, time, y, x] but track_id is an identifier,
+            # not a dimension. Layer ndim is 3 (time, y, x), so scale is (time, y, x)
+            tracks_scale = (1.0, scale[0], scale[1]) if scale else None
+            layer = viewer.add_tracks(
+                track_data,
+                name=f"Position Trail{name_suffix}",
+                tail_length=position_data.trail_length,
+                features=features,
+                colormaps_dict=colormaps_dict,
+                scale=tracks_scale,
+            )
+            layer.color_by = "color"  # Set after features are applied
+            layers.append(layer)
 
     # Add points layer for current position marker
     # Create points with time dimension: (time, y, x)
@@ -721,15 +737,24 @@ def _render_position_overlay(
         ]
     )
 
-    layer = viewer.add_points(
-        points_data,
-        name=f"Position{name_suffix}",
-        size=position_data.size,
-        face_color=position_data.color,
-        border_color="white",
-        border_width=POINT_BORDER_WIDTH,
-    )
-    layers.append(layer)
+    # Filter out NaN values for points layer as well
+    valid_points_mask = np.all(np.isfinite(points_data), axis=1)
+    if not np.all(valid_points_mask):
+        points_data = points_data[valid_points_mask]
+
+    if len(points_data) > 0:
+        # Points data is (time, y, x) - scale dimensions 1, 2 (y, x)
+        points_scale = (1.0, scale[0], scale[1]) if scale else None
+        layer = viewer.add_points(
+            points_data,
+            name=f"Position{name_suffix}",
+            size=position_data.size,
+            face_color=position_data.color,
+            border_color="white",
+            border_width=POINT_BORDER_WIDTH,
+            scale=points_scale,
+        )
+        layers.append(layer)
 
     return layers
 
@@ -739,6 +764,7 @@ def _render_bodypart_overlay(
     bodypart_data: BodypartData,
     env: Environment,
     name_suffix: str = "",
+    scale: tuple[float, float] | None = None,
 ) -> list[Layer]:
     """Render a single bodypart overlay with skeleton.
 
@@ -802,6 +828,8 @@ def _render_bodypart_overlay(
     else:
         face_colors = "white"
 
+    # Points data is (time, y, x) - scale dimensions 1, 2 (y, x)
+    points_scale = (1.0, scale[0], scale[1]) if scale else None
     layer = viewer.add_points(
         points_array,
         name=f"Bodyparts{name_suffix}",
@@ -810,6 +838,7 @@ def _render_bodypart_overlay(
         border_color="black",
         border_width=POINT_BORDER_WIDTH,
         features={"bodypart": all_features},
+        scale=points_scale,
     )
     layers.append(layer)
 
@@ -825,6 +854,8 @@ def _render_bodypart_overlay(
         if vectors_data.size > 0:
             # Get styling from Skeleton object
             skeleton = bodypart_data.skeleton
+            # Vectors data is (time, y, x, dy, dx) - scale dimensions 1, 2 (y, x)
+            vectors_scale = (1.0, scale[0], scale[1]) if scale else None
             skeleton_layer = viewer.add_vectors(
                 vectors_data,
                 name=f"Skeleton{name_suffix}",
@@ -832,6 +863,7 @@ def _render_bodypart_overlay(
                 edge_width=skeleton.edge_width,
                 vector_style="line",  # Hide arrow heads for skeleton lines
                 features=vector_features,
+                scale=vectors_scale,
             )
             layers.append(skeleton_layer)
 
@@ -947,6 +979,7 @@ def _render_head_direction_overlay(
     env: Environment,
     name_suffix: str = "",
     position_data: PositionData | None = None,
+    scale: tuple[float, float] | None = None,
 ) -> list[Layer]:
     """Render head direction as a line from head position to direction indicator.
 
@@ -968,6 +1001,10 @@ def _render_head_direction_overlay(
         If provided, lines start from position coordinates.
         If None, lines start from environment centroid.
         Default is None.
+    scale : tuple of float, optional
+        Scale factors (y_scale, x_scale) to map pixel coordinates to physical
+        coordinates. If provided, applied to the layer for alignment with
+        the field image layer.
 
     Returns
     -------
@@ -985,6 +1022,9 @@ def _render_head_direction_overlay(
         head_dir_data, env, position_data, dtype=np.float32
     )
     if tracks.size > 0:
+        # Tracks data format is [track_id, time, y, x] but track_id is an identifier,
+        # not a dimension. Layer ndim is 3 (time, y, x), so scale is (time, y, x)
+        tracks_scale = (1.0, scale[0], scale[1]) if scale else None
         layer = viewer.add_tracks(
             tracks,
             name=f"Head Direction{name_suffix}",
@@ -992,6 +1032,7 @@ def _render_head_direction_overlay(
             head_length=1,  # Show current track (origin→indicator)
             tail_width=head_dir_data.width,
             blending="opaque",  # Better visibility against dark backgrounds
+            scale=tracks_scale,
         )
         layer.colormap = head_dir_data.color
         layers.append(layer)
@@ -1004,14 +1045,15 @@ def _render_event_overlay(
     event_data: EventData,
     env: Environment,
     name_suffix: str = "",
+    scale: tuple[float, float] | None = None,
 ) -> list[Layer]:
-    """Render event overlay (spike events, region crossings, etc.).
+    """Render event overlay using Points layer with dynamic visibility.
 
-    Supports two rendering modes based on decay_frames:
+    Supports three rendering modes based on decay_frames:
+    - **Cumulative mode** (decay_frames=None): Events appear and stay permanently.
+      All events up to current frame are visible (spikes accumulate over time).
     - **Instant mode** (decay_frames=0): Events appear only on their exact frame.
-      Rendered as a Points layer with time dimension.
-    - **Decay mode** (decay_frames > 0): Events persist and fade over time.
-      Rendered as a Tracks layer with tail_length for efficient GPU rendering.
+    - **Decay mode** (decay_frames > 0): Events visible for N frames then hidden.
 
     Parameters
     ----------
@@ -1027,6 +1069,8 @@ def _render_event_overlay(
         Environment instance for coordinate transformation.
     name_suffix : str
         Suffix for layer names (e.g., for multiple event overlays).
+    scale : tuple of (y_scale, x_scale), optional
+        Physical units scale to match the Image layer.
 
     Returns
     -------
@@ -1035,106 +1079,161 @@ def _render_event_overlay(
 
     Notes
     -----
-    Each event type creates its own layer for clarity and independent visibility
-    toggling in the napari layer list.
+    Uses a single Points layer with dynamic visibility via the ``shown`` mask,
+    which is updated on each frame change via a callback. This approach handles
+    millions of events efficiently (O(1) per frame for cumulative mode using
+    searchsorted on pre-sorted indices).
 
-    For decay mode, we use napari's Tracks layer which provides efficient
-    GPU-accelerated tail rendering. Each event becomes a short track that
-    persists for decay_frames frames.
+    Performance characteristics:
+    - Cumulative mode: O(log N) per frame update (searchsorted)
+    - Instant mode: O(N) per frame update (equality comparison)
+    - Decay mode: O(N) per frame update (range comparison)
     """
     layers: list[Layer] = []
 
-    use_decay = event_data.decay_frames > 0
+    # Collect ALL events across all event types into single arrays
+    all_positions: list[NDArray[np.float64]] = []
+    all_frame_indices: list[NDArray[np.int_]] = []
+    all_colors: list[str] = []
 
-    # Process each event type
     for event_type, positions in event_data.event_positions.items():
         frame_indices = event_data.event_frame_indices[event_type]
         color = event_data.colors.get(event_type, "#ffffff")
-        n_events = len(positions)
 
-        if n_events == 0:
+        if len(positions) == 0:
             continue
 
         # Transform coordinates to napari (y, x) with Y-axis inversion
-        transformed_positions = _transform_coords_for_napari(positions, env)
+        transformed = _transform_coords_for_napari(positions, env)
 
-        layer_name = f"Events {event_type}{name_suffix}"
+        all_positions.append(transformed)
+        all_frame_indices.append(frame_indices)
+        all_colors.extend([color] * len(positions))
 
-        if use_decay:
-            # Decay mode: Create Tracks layer with tail_length
-            # Tracks format: (track_id, t, y, x)
-            # Each event becomes a short track from frame to frame + decay_frames
-            track_data = np.column_stack(
-                [
-                    np.arange(n_events),  # track_id (one track per event)
-                    frame_indices.astype(np.float64),  # time (event onset frame)
-                    transformed_positions[:, 0],  # y
-                    transformed_positions[:, 1],  # x
-                ]
-            )
+    if not all_positions:
+        return layers
 
-            # Create colormap for uniform color
-            from napari.utils.colormaps import Colormap
+    # Concatenate into single arrays
+    positions_array = np.vstack(all_positions)  # (N_total, 2)
+    frame_indices_array = np.concatenate(all_frame_indices)  # (N_total,)
+    colors_array = np.array(all_colors)  # (N_total,) strings
 
-            features = {"color": np.zeros(n_events)}
-            custom_colormap = Colormap(
-                colors=[color, color],
-                name=f"event_color_{event_type}{name_suffix}",
-            )
-            colormaps_dict = {"color": custom_colormap}
+    # Sort by frame index for efficient cumulative updates (O(log N) via searchsorted)
+    sort_idx = np.argsort(frame_indices_array)
+    positions_array = positions_array[sort_idx]
+    frame_indices_array = frame_indices_array[sort_idx]
+    colors_array = colors_array[sort_idx]
 
-            layer = viewer.add_tracks(
-                track_data,
-                name=layer_name,
-                tail_length=event_data.decay_frames,
-                head_length=0,  # No future visibility
-                features=features,
-                colormaps_dict=colormaps_dict,
-            )
-            layer.color_by = "color"  # Set after features applied
-            layers.append(layer)
+    n_events = len(positions_array)
 
-            # Also add a points layer for prominent current-frame marker
-            points_data = np.column_stack(
-                [
-                    frame_indices.astype(np.float64),  # time
-                    transformed_positions[:, 0],  # y
-                    transformed_positions[:, 1],  # x
-                ]
-            )
+    # Convert string colors to RGBA arrays with user-specified opacity
+    import matplotlib.colors as mcolors
 
-            marker_layer = viewer.add_points(
-                points_data,
-                name=f"Event Markers {event_type}{name_suffix}",
-                size=event_data.size,
-                face_color=color,
-                border_color=event_data.border_color,
-                border_width=event_data.border_width,
-            )
-            layers.append(marker_layer)
+    opacity = event_data.opacity
+    face_colors = np.array([mcolors.to_rgba(c, alpha=opacity) for c in colors_array])
 
-        else:
-            # Instant mode: Simple Points layer with time dimension
-            # Points format: (time, y, x)
-            points_data = np.column_stack(
-                [
-                    frame_indices.astype(np.float64),  # time
-                    transformed_positions[:, 0],  # y
-                    transformed_positions[:, 1],  # x
-                ]
-            )
+    # Border color: napari needs string or (N, 4) array, not a single RGBA tuple
+    # Use string for simplicity - napari will broadcast it
+    border_color = event_data.border_color
 
-            layer = viewer.add_points(
-                points_data,
-                name=layer_name,
-                size=event_data.size,
-                face_color=color,
-                border_color=event_data.border_color,
-                border_width=event_data.border_width,
-            )
-            layers.append(layer)
+    # Create Points layer with all events initially hidden via shown mask
+    # Using shown mask is ~30x faster than alpha-based visibility (O(N) bool vs O(N*4) float)
+    initial_shown = np.zeros(n_events, dtype=bool)
 
+    # Event positions are 2D (y, x) - scale directly matches Image layer's (y, x) scale
+    points_scale = scale  # Already (y_scale, x_scale) or None
+
+    points_layer = viewer.add_points(
+        positions_array,  # (N, 2) - just y, x (no time dimension)
+        name=f"Events{name_suffix}",
+        size=event_data.size,
+        face_color=face_colors,
+        border_color=border_color,
+        border_width=event_data.border_width,
+        shown=initial_shown,
+        scale=points_scale,
+    )
+
+    # Store metadata for callback
+    points_layer.metadata["event_frame_indices"] = frame_indices_array
+    points_layer.metadata["event_decay_frames"] = event_data.decay_frames
+    points_layer.metadata["event_n_events"] = n_events
+
+    # Register frame-change callback
+    _register_event_visibility_callback(viewer, points_layer)
+
+    layers.append(points_layer)
     return layers
+
+
+def _register_event_visibility_callback(
+    viewer: napari.Viewer,
+    points_layer: napari.layers.Points,
+) -> None:
+    """Register callback to update event visibility on frame change.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    points_layer : napari.layers.Points
+        Points layer containing event markers with metadata:
+        - event_frame_indices: Sorted array of frame indices for each event
+        - event_decay_frames: None (cumulative), 0 (instant), or >0 (decay window)
+        - event_n_events: Total number of events
+
+    Notes
+    -----
+    Uses the ``shown`` mask for visibility control, which is ~30x faster than
+    alpha-based visibility (O(N) boolean operations vs O(N*4) float operations
+    plus napari color array processing).
+
+    Visibility modes:
+    - Cumulative (decay_frames=None): visible = frame_idx <= current_frame
+    - Instant (decay_frames=0): visible = frame_idx == current_frame
+    - Decay (decay_frames>0): visible = (current - decay) <= frame_idx <= current
+
+    For cumulative mode, uses searchsorted for O(log N) index lookup since
+    frame_indices are pre-sorted.
+    """
+
+    def on_frame_change(event: Any) -> None:
+        # Get current frame from dims slider
+        current_frame = int(viewer.dims.current_step[0])
+
+        # Retrieve metadata
+        frame_indices = points_layer.metadata["event_frame_indices"]
+        decay_frames = points_layer.metadata["event_decay_frames"]
+        n_events = points_layer.metadata["event_n_events"]
+
+        # Compute visibility mask based on mode
+        if decay_frames is None:
+            # Cumulative mode: all events up to current frame
+            # Use searchsorted for O(log N) instead of O(N) comparison
+            # frame_indices is sorted, so we find cutoff index
+            cutoff_idx = np.searchsorted(frame_indices, current_frame, side="right")
+            shown = np.zeros(n_events, dtype=bool)
+            shown[:cutoff_idx] = True
+        elif decay_frames == 0:
+            # Instant mode: only events on exact frame
+            shown = frame_indices == current_frame
+        else:
+            # Decay mode: events within window [current - decay, current]
+            start_frame = current_frame - decay_frames
+            shown = (frame_indices >= start_frame) & (frame_indices <= current_frame)
+
+        # Update visibility via shown mask (fast O(N) boolean operation)
+        # Block events during update to prevent race condition with status checker
+        with points_layer.events.blocker():
+            points_layer.shown = shown
+        # Force refresh to ensure _view_data and _view_size are consistent
+        points_layer.refresh()
+
+    # Connect to dims change event
+    viewer.dims.events.current_step.connect(on_frame_change)
+
+    # Trigger initial update
+    on_frame_change(None)
 
 
 def _render_regions(
@@ -1900,6 +1999,10 @@ def render_napari(
 
     # Render overlay data if provided
     if overlay_data is not None:
+        # Extract overlay scale from layer_scale (y_scale, x_scale)
+        # This aligns overlays with the scaled field image layer
+        overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
+
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         n_frames = len(fields)
         video_layers: list[Layer] = []
@@ -1928,12 +2031,16 @@ def render_napari(
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(viewer, pos_data, env, name_suffix=suffix)
+            _render_position_overlay(
+                viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
         # Render bodypart overlays (points + skeleton)
         for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
             suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
+            _render_bodypart_overlay(
+                viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
         # Render head direction overlays (vectors)
         # Auto-pair with position overlay when there's exactly one position
@@ -1948,12 +2055,15 @@ def render_napari(
                 env,
                 name_suffix=suffix,
                 position_data=paired_position,
+                scale=overlay_scale,
             )
 
         # Render event overlays (spike events, region crossings, etc.)
         for idx, event_data in enumerate(overlay_data.events):
             suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(viewer, event_data, env, name_suffix=suffix)
+            _render_event_overlay(
+                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
     # Render regions if requested
     if show_regions:
@@ -2182,6 +2292,10 @@ def _render_multi_field_napari(
 
     # Render overlay data if provided
     if overlay_data is not None:
+        # Extract overlay scale from layer_scale (y_scale, x_scale)
+        # This aligns overlays with the scaled field image layer
+        overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
+
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         n_frames = len(field_sequences[0]) if field_sequences else 0
         video_layers: list[Layer] = []
@@ -2209,12 +2323,16 @@ def _render_multi_field_napari(
         # Render position overlays (tracks + points)
         for idx, pos_data in enumerate(overlay_data.positions):
             suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(viewer, pos_data, env, name_suffix=suffix)
+            _render_position_overlay(
+                viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
         # Render bodypart overlays (points + skeleton)
         for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
             suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(viewer, bodypart_data, env, name_suffix=suffix)
+            _render_bodypart_overlay(
+                viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
         # Render head direction overlays (vectors)
         # Auto-pair with position overlay when there's exactly one position
@@ -2229,12 +2347,15 @@ def _render_multi_field_napari(
                 env,
                 name_suffix=suffix,
                 position_data=paired_position,
+                scale=overlay_scale,
             )
 
         # Render event overlays (spike events, region crossings, etc.)
         for idx, event_data in enumerate(overlay_data.events):
             suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(viewer, event_data, env, name_suffix=suffix)
+            _render_event_overlay(
+                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+            )
 
     # Render regions if requested
     if show_regions:

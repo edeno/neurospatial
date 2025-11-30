@@ -880,10 +880,11 @@ class EventOverlay:
     # Appearance
     colors: str | dict[str, str] | None = None
     size: float = 8.0
+    opacity: float = 0.7  # Base opacity for visible events (0.0-1.0)
     decay_frames: int | None = None
     markers: str | dict[str, str] | None = None
     border_color: str = "white"
-    border_width: float = 0.5
+    border_width: float = 0.05  # Fraction of point size (napari convention)
 
     # Protocol attributes (set to None - not used by EventOverlay directly)
     times: NDArray[np.float64] | None = field(default=None, repr=False)
@@ -1141,18 +1142,16 @@ class EventOverlay:
         # Resolve markers
         markers_out = self._resolve_markers(list(self.event_times.keys()))
 
-        # Resolve decay_frames (None -> 0)
-        decay = 0 if self.decay_frames is None else self.decay_frames
-
         return EventData(
             event_positions=event_positions_out,
             event_frame_indices=event_frame_indices_out,
             colors=colors_out,
             markers=markers_out,
             size=self.size,
-            decay_frames=decay,
+            decay_frames=self.decay_frames,  # Preserve None for cumulative mode
             border_color=self.border_color,
             border_width=self.border_width,
+            opacity=self.opacity,
         )
 
     def _resolve_colors(self, event_names: list[str]) -> dict[str, str]:
@@ -1688,12 +1687,18 @@ class EventData:
         Dict mapping event type names to marker style strings.
     size : float
         Marker size in points.
-    decay_frames : int
-        Number of frames over which events persist (0 = instant).
+    decay_frames : int | None
+        Number of frames over which events persist:
+
+        - None: Cumulative mode - events stay visible permanently once they appear
+        - 0: Instant mode - events visible only on their exact frame
+        - >0: Decay mode - events visible for N frames then hidden
     border_color : str
         Border color for markers.
     border_width : float
         Border width in pixels.
+    opacity : float
+        Base opacity for visible events (0.0-1.0).
 
     Attributes
     ----------
@@ -1707,12 +1712,14 @@ class EventData:
         Markers by type.
     size : float
         Marker size.
-    decay_frames : int
-        Decay frame count (0 = instant).
+    decay_frames : int | None
+        Decay frame count (None = cumulative, 0 = instant).
     border_color : str
         Border color.
     border_width : float
         Border width.
+    opacity : float
+        Base opacity for visible events.
 
     See Also
     --------
@@ -1724,9 +1731,10 @@ class EventData:
     colors: dict[str, str]
     markers: dict[str, str]
     size: float
-    decay_frames: int
+    decay_frames: int | None
     border_color: str
     border_width: float
+    opacity: float
 
 
 @dataclass

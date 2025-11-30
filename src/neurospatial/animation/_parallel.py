@@ -53,9 +53,13 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
 
     Notes
     -----
-    For instant mode (decay_frames=0): Only events on exactly this frame are shown.
-    For decay mode (decay_frames > 0): Events within the decay window are shown
-    with alpha decaying based on age (newest = alpha 1.0, oldest = faded).
+    Supports three rendering modes based on decay_frames:
+
+    - Cumulative mode (decay_frames=None): All events up to current frame are shown.
+      Events accumulate over time and persist permanently.
+    - Instant mode (decay_frames=0): Only events on exactly this frame are shown.
+    - Decay mode (decay_frames > 0): Events within the decay window are shown
+      with alpha decaying based on age (newest = alpha 1.0, oldest = faded).
 
     Events render at zorder=104, above head direction overlays (103).
     """
@@ -67,12 +71,17 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
         if len(positions) == 0:
             continue
 
-        if event_data.decay_frames <= 0:
+        # Determine visibility mask based on mode
+        decay = event_data.decay_frames
+        if decay is None:
+            # Cumulative mode: all events up to current frame
+            mask = frame_indices <= frame_idx
+        elif decay == 0:
             # Instant mode: only show events on their exact frame
             mask = frame_indices == frame_idx
         else:
             # Decay mode: show events within decay window
-            min_frame = frame_idx - event_data.decay_frames
+            min_frame = frame_idx - decay
             mask = (frame_indices >= max(0, min_frame)) & (frame_indices <= frame_idx)
 
         active_positions = positions[mask]
@@ -82,12 +91,13 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
             continue
 
         # Compute per-event alpha based on recency
-        if event_data.decay_frames > 0:
+        if decay is not None and decay > 0:
             # Alpha = 1.0 for current frame, decays to lower for oldest
             ages = frame_idx - active_frames  # 0 = newest, decay_frames = oldest
             # +1 prevents alpha from reaching exactly 0 for oldest events
-            alphas = 1.0 - (ages / (event_data.decay_frames + 1))
+            alphas = 1.0 - (ages / (decay + 1))
         else:
+            # Cumulative and instant modes: full opacity
             alphas = np.ones(len(active_positions))
 
         # Render each event with its computed alpha
