@@ -295,15 +295,19 @@
 
 ### 5.5 Final Integration Tests
 
-- [ ] Test: `test_timeseries_with_position_overlay` - multiple overlay types together
-- [ ] Test: `test_timeseries_with_video_overlay` - time series + video overlay
-- [ ] Test: `test_timeseries_full_workflow` - end-to-end with real-ish data
+- [x] Test: `test_timeseries_with_position_overlay` - multiple overlay types together
+- [x] Test: `test_timeseries_with_event_overlay` - time series + event overlay
+- [x] Test: `test_timeseries_full_workflow` - end-to-end with real-ish data
+  - `test_timeseries_full_workflow_video_backend`
+  - `test_timeseries_full_workflow_multiple_stacked`
+  - `test_timeseries_full_workflow_grouped`
+  - `test_timeseries_full_workflow_normalized`
 
 **Success criteria for Phase 5**:
-- [ ] Performance acceptable for 1 kHz data over 1-hour sessions
-- [ ] All edge cases handled gracefully
-- [ ] Documentation complete
-- [ ] All tests pass
+- [x] Performance acceptable for 1 kHz data over 1-hour sessions
+- [x] All edge cases handled gracefully
+- [x] Documentation complete
+- [x] All tests pass
 
 ---
 
@@ -318,7 +322,10 @@ Copy from PLAN.md for tracking:
 - [x] No downsampling - full resolution preserved
 - [x] Video export includes time series column
 - [x] Widget backend includes time series
-- [ ] Performance acceptable for 1 kHz data over 1-hour sessions
+- [x] Performance acceptable for 1 kHz data over 1-hour sessions
+- [x] HTML backend emits warning (TimeSeriesOverlay not supported)
+- [x] All edge cases handled gracefully
+- [x] Documentation complete in CLAUDE.md
 
 ---
 

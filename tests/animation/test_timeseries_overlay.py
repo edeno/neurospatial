@@ -2727,3 +2727,333 @@ class TestTimeSeriesEdgeCases:
 
         assert len(overlay_data.timeseries) == 0
         assert len(overlay_data.positions) == 0
+
+
+# =============================================================================
+# Phase 5.5: Final Integration Tests
+# =============================================================================
+
+
+class TestTimeSeriesIntegration:
+    """Final integration tests for time series overlay with other overlay types."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple 2D environment for testing."""
+        from neurospatial import Environment
+
+        positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        return Environment.from_samples(positions, bin_size=5.0)
+
+    @pytest.fixture
+    def sample_fields(self, simple_env):
+        """Create sample fields for testing."""
+        rng = np.random.default_rng(42)
+        return [rng.random(simple_env.n_bins) for _ in range(20)]
+
+    @pytest.fixture
+    def sample_timeseries_overlay(self):
+        """Create sample TimeSeriesOverlay."""
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        data = np.linspace(0, 100, 200)
+        times = np.linspace(0, 10, 200)
+
+        return TimeSeriesOverlay(
+            data=data,
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=2.0,
+        )
+
+    def test_timeseries_with_position_overlay(
+        self, simple_env, sample_fields, sample_timeseries_overlay
+    ):
+        """Test TimeSeriesOverlay works with PositionOverlay."""
+        from neurospatial.animation.overlays import (
+            PositionOverlay,
+            _convert_overlays_to_data,
+        )
+
+        rng = np.random.default_rng(42)
+        positions = rng.random((20, 2)) * 10.0
+
+        position_overlay = PositionOverlay(
+            data=positions,
+            color="red",
+            size=10.0,
+            trail_length=5,
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[sample_timeseries_overlay, position_overlay],
+            frame_times=frame_times,
+            n_frames=20,
+            env=simple_env,
+        )
+
+        # Both overlay types should be converted
+        assert len(overlay_data.timeseries) == 1
+        assert len(overlay_data.positions) == 1
+
+        # Time series data should have correct structure
+        ts_data = overlay_data.timeseries[0]
+        assert ts_data.label == "Speed (cm/s)"
+        assert len(ts_data.start_indices) == 20
+        assert len(ts_data.end_indices) == 20
+
+        # Position data should have correct structure
+        pos_data = overlay_data.positions[0]
+        assert pos_data.data.shape == (20, 2)
+
+    def test_timeseries_with_event_overlay(self, simple_env, sample_fields):
+        """Test TimeSeriesOverlay works with EventOverlay."""
+        from neurospatial.animation.overlays import (
+            EventOverlay,
+            TimeSeriesOverlay,
+            _convert_overlays_to_data,
+        )
+
+        # Create time series overlay
+        ts_data = np.linspace(0, 100, 200)
+        ts_times = np.linspace(0, 10, 200)
+        timeseries_overlay = TimeSeriesOverlay(
+            data=ts_data,
+            times=ts_times,
+            label="LFP",
+            color="blue",
+            window_seconds=1.0,
+        )
+
+        # Create event overlay (spikes)
+        rng = np.random.default_rng(42)
+        trajectory = rng.random((200, 2)) * 10.0
+        spike_times = rng.uniform(0, 10, 50)
+
+        event_overlay = EventOverlay(
+            event_times=spike_times,
+            positions=trajectory,
+            position_times=ts_times,
+            colors="red",
+            size=8.0,
+            decay_frames=3,
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+
+        overlay_data = _convert_overlays_to_data(
+            overlays=[timeseries_overlay, event_overlay],
+            frame_times=frame_times,
+            n_frames=20,
+            env=simple_env,
+        )
+
+        # Both overlay types should be converted
+        assert len(overlay_data.timeseries) == 1
+        assert len(overlay_data.events) == 1
+
+    def test_timeseries_full_workflow_video_backend(
+        self, simple_env, sample_fields, sample_timeseries_overlay, tmp_path
+    ):
+        """Test end-to-end workflow with video backend and time series."""
+        import warnings
+
+        from neurospatial.animation.overlays import PositionOverlay
+
+        rng = np.random.default_rng(42)
+        positions = rng.random((20, 2)) * 10.0
+
+        position_overlay = PositionOverlay(
+            data=positions,
+            color="red",
+            size=10.0,
+            trail_length=5,
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+        save_path = tmp_path / "test_integration.mp4"
+
+        # Clear cache for parallel rendering
+        simple_env.clear_cache()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simple_env.animate_fields(
+                sample_fields,
+                overlays=[sample_timeseries_overlay, position_overlay],
+                frame_times=frame_times,
+                backend="video",
+                save_path=str(save_path),
+                fps=10,
+                n_workers=1,  # Sequential for test stability
+                progress=False,
+            )
+
+        # Video should be created
+        assert result.exists()
+        assert result.stat().st_size > 0
+
+    def test_timeseries_full_workflow_multiple_stacked(
+        self, simple_env, sample_fields, tmp_path
+    ):
+        """Test end-to-end workflow with multiple stacked time series."""
+        import warnings
+
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Create multiple time series (stacked, different variables)
+        n_samples = 200
+        times = np.linspace(0, 10, n_samples)
+
+        speed_overlay = TimeSeriesOverlay(
+            data=np.sin(times * 2) * 50 + 50,
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=2.0,
+        )
+
+        accel_overlay = TimeSeriesOverlay(
+            data=np.cos(times * 2) * 10,
+            times=times,
+            label="Acceleration",
+            color="orange",
+            window_seconds=2.0,
+        )
+
+        head_dir_overlay = TimeSeriesOverlay(
+            data=np.sin(times) * np.pi,
+            times=times,
+            label="Head Direction",
+            color="green",
+            window_seconds=2.0,
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+        save_path = tmp_path / "test_stacked.mp4"
+
+        simple_env.clear_cache()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simple_env.animate_fields(
+                sample_fields,
+                overlays=[speed_overlay, accel_overlay, head_dir_overlay],
+                frame_times=frame_times,
+                backend="video",
+                save_path=str(save_path),
+                fps=10,
+                n_workers=1,
+                progress=False,
+            )
+
+        assert result.exists()
+        assert result.stat().st_size > 0
+
+    def test_timeseries_full_workflow_grouped(
+        self, simple_env, sample_fields, tmp_path
+    ):
+        """Test end-to-end workflow with grouped (overlaid) time series."""
+        import warnings
+
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Create grouped time series (overlaid on same axes)
+        n_samples = 200
+        times = np.linspace(0, 10, n_samples)
+
+        left_lfp = TimeSeriesOverlay(
+            data=np.sin(times * 5) * 100,
+            times=times,
+            label="Left LFP",
+            color="blue",
+            window_seconds=1.0,
+            group="lfp",
+        )
+
+        right_lfp = TimeSeriesOverlay(
+            data=np.sin(times * 5 + 0.5) * 80,
+            times=times,
+            label="Right LFP",
+            color="red",
+            window_seconds=1.0,
+            group="lfp",
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+        save_path = tmp_path / "test_grouped.mp4"
+
+        simple_env.clear_cache()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simple_env.animate_fields(
+                sample_fields,
+                overlays=[left_lfp, right_lfp],
+                frame_times=frame_times,
+                backend="video",
+                save_path=str(save_path),
+                fps=10,
+                n_workers=1,
+                progress=False,
+            )
+
+        assert result.exists()
+        assert result.stat().st_size > 0
+
+    def test_timeseries_full_workflow_normalized(
+        self, simple_env, sample_fields, tmp_path
+    ):
+        """Test end-to-end workflow with normalized time series."""
+        import warnings
+
+        from neurospatial.animation.overlays import TimeSeriesOverlay
+
+        # Create normalized time series (different scales, same group)
+        n_samples = 200
+        times = np.linspace(0, 10, n_samples)
+
+        # Very different scales
+        speed = TimeSeriesOverlay(
+            data=np.sin(times) * 100 + 100,  # 0-200 range
+            times=times,
+            label="Speed (cm/s)",
+            color="cyan",
+            window_seconds=2.0,
+            normalize=True,
+            group="kinematics",
+        )
+
+        accel = TimeSeriesOverlay(
+            data=np.cos(times) * 0.5 + 0.5,  # 0-1 range
+            times=times,
+            label="Accel (g)",
+            color="orange",
+            window_seconds=2.0,
+            normalize=True,
+            group="kinematics",
+        )
+
+        frame_times = np.linspace(0, 10, 20)
+        save_path = tmp_path / "test_normalized.mp4"
+
+        simple_env.clear_cache()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simple_env.animate_fields(
+                sample_fields,
+                overlays=[speed, accel],
+                frame_times=frame_times,
+                backend="video",
+                save_path=str(save_path),
+                fps=10,
+                n_workers=1,
+                progress=False,
+            )
+
+        assert result.exists()
+        assert result.stat().st_size > 0
