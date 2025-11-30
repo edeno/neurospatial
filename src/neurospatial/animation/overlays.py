@@ -120,7 +120,14 @@ class OverlayProtocol(Protocol):
         frame_times: NDArray[np.float64],
         n_frames: int,
         env: Any,
-    ) -> PositionData | BodypartData | HeadDirectionData | VideoData | EventData:
+    ) -> (
+        PositionData
+        | BodypartData
+        | HeadDirectionData
+        | VideoData
+        | EventData
+        | TimeSeriesData
+    ):
         """Convert overlay to internal data representation.
 
         Parameters
@@ -134,7 +141,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData | EventData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData
             Internal data container aligned to frame times.
 
         Notes
@@ -1211,6 +1218,365 @@ See EventOverlay for full documentation.
 
 
 @dataclass
+class TimeSeriesOverlay:
+    """Time series visualization in right column during animation.
+
+    Displays continuous variables (speed, acceleration, LFP, etc.) as scrolling
+    time series plots alongside spatial field animations. Multiple overlays can be
+    stacked as rows or overlaid on the same plot using the ``group`` parameter.
+
+    Parameters
+    ----------
+    data : ndarray of shape (n_samples,), dtype float64
+        Time series values. No downsampling is applied - full resolution is
+        preserved. NaN values create gaps in the line. Inf values are not allowed.
+    times : ndarray of shape (n_samples,), dtype float64
+        Timestamps for each sample, in seconds. Must be monotonically increasing.
+        Required (no default).
+    label : str, optional
+        Label for Y-axis or legend. Default is "".
+    color : str, optional
+        Line color (matplotlib color string). Default is "white".
+    window_seconds : float, optional
+        Total time window to display, centered on current frame.
+        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0.
+    linewidth : float, optional
+        Line width in points. Default is 1.0.
+    alpha : float, optional
+        Line opacity (0.0-1.0). Default is 1.0.
+    group : str | None, optional
+        Group name for overlaying multiple variables on same plot.
+        Variables with the same group share axes and are overlaid.
+        Variables with different groups (or None) get separate rows.
+        Default is None (separate row for each).
+    normalize : bool, optional
+        If True, normalize to 0-1 range for overlaying variables with
+        different scales. Only meaningful when group is set.
+        **Note**: Constant data (min == max) is normalized to all zeros.
+        Default is False.
+    show_cursor : bool, optional
+        Show vertical line at current time. Default is True.
+    cursor_color : str, optional
+        Color for cursor line. Default is "red".
+    vmin : float | None, optional
+        Minimum Y-axis value. If None, auto-computed from data.
+        Default is None.
+    vmax : float | None, optional
+        Maximum Y-axis value. If None, auto-computed from data.
+        Default is None.
+    interp : {"linear", "nearest"}, optional
+        Interpolation method for computing the value at the current cursor time.
+        Used when displaying cursor value (e.g., "Speed: 45.3 cm/s" tooltip).
+
+        - "linear": Linearly interpolate between neighboring samples
+        - "nearest": Use nearest sample value
+
+        Default is "linear".
+
+    Attributes
+    ----------
+    data : NDArray[np.float64]
+        Time series values.
+    times : NDArray[np.float64]
+        Sample timestamps.
+    label : str
+        Y-axis or legend label.
+    color : str
+        Line color.
+    window_seconds : float
+        Time window width in seconds.
+    linewidth : float
+        Line width in points.
+    alpha : float
+        Line opacity.
+    group : str | None
+        Grouping key for overlay layout.
+    normalize : bool
+        Whether to normalize data to [0, 1].
+    show_cursor : bool
+        Whether to show cursor line.
+    cursor_color : str
+        Cursor line color.
+    vmin : float | None
+        Explicit Y-axis minimum.
+    vmax : float | None
+        Explicit Y-axis maximum.
+    interp : {"linear", "nearest"}
+        Interpolation method for cursor value.
+
+    See Also
+    --------
+    PositionOverlay : Trajectory visualization
+    EventOverlay : Discrete event visualization
+
+    Notes
+    -----
+    **NaN handling**: NaN values in ``data`` create gaps in the plotted line.
+    This is useful for handling periods of missing data.
+
+    **Inf handling**: Inf values are NOT allowed and will raise an error.
+    Use NaN for missing data instead.
+
+    **Group conflicts**: When multiple overlays share the same ``group`` but have
+    different ``window_seconds``, ``vmin``, or ``vmax``, a warning is emitted and
+    the first overlay's values are used ("first wins" strategy).
+
+    **Y-axis limits**: By default, global limits (min/max across all data) are
+    used for stable scales during animation. Use ``vmin``/``vmax`` to override.
+
+    Examples
+    --------
+    Single time series (speed):
+
+    >>> import numpy as np
+    >>> from neurospatial.animation import TimeSeriesOverlay
+    >>> speed = np.random.rand(1000) * 100  # cm/s
+    >>> times = np.linspace(0, 100, 1000)  # 100 seconds at 10 Hz
+    >>> overlay = TimeSeriesOverlay(
+    ...     data=speed,
+    ...     times=times,
+    ...     label="Speed (cm/s)",
+    ...     color="cyan",
+    ...     window_seconds=3.0,
+    ... )
+    >>> overlay.label
+    'Speed (cm/s)'
+
+    Multiple stacked rows (different groups):
+
+    >>> speed_overlay = TimeSeriesOverlay(data=speed, times=times, label="Speed")
+    >>> lfp = np.random.randn(10000)  # 1 kHz LFP
+    >>> lfp_times = np.linspace(0, 100, 10000)
+    >>> lfp_overlay = TimeSeriesOverlay(
+    ...     data=lfp, times=lfp_times, label="LFP", color="yellow"
+    ... )
+    >>> overlays = [speed_overlay, lfp_overlay]
+    >>> len(overlays)
+    2
+
+    Overlaid variables (same group, normalized):
+
+    >>> accel = np.random.randn(1000) * 50  # cm/s^2
+    >>> speed_overlay = TimeSeriesOverlay(
+    ...     data=speed,
+    ...     times=times,
+    ...     label="Speed",
+    ...     group="kinematics",
+    ...     normalize=True,
+    ...     color="cyan",
+    ... )
+    >>> accel_overlay = TimeSeriesOverlay(
+    ...     data=accel,
+    ...     times=times,
+    ...     label="Accel",
+    ...     group="kinematics",
+    ...     normalize=True,
+    ...     color="orange",
+    ... )
+    >>> speed_overlay.group == accel_overlay.group
+    True
+    """
+
+    # Required fields
+    data: NDArray[np.float64]
+    times: NDArray[np.float64]
+
+    # Display settings
+    label: str = ""
+    color: str = "white"
+    window_seconds: float = 2.0
+    linewidth: float = 1.0
+    alpha: float = 1.0
+
+    # Grouping
+    group: str | None = None
+    normalize: bool = False
+
+    # Cursor settings
+    show_cursor: bool = True
+    cursor_color: str = "red"
+
+    # Y-axis limits
+    vmin: float | None = None
+    vmax: float | None = None
+
+    # Interpolation for cursor value
+    interp: Literal["linear", "nearest"] = "linear"
+
+    def __post_init__(self) -> None:
+        """Validate inputs after initialization."""
+        # Validate data is 1D
+        if self.data.ndim != 1:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.data must be 1D "
+                f"(got shape {self.data.shape}).\n\n"
+                "WHY: Time series visualization expects a single variable over time.\n\n"
+                "HOW: Flatten the array or select a single column/variable."
+            )
+
+        # Validate times is 1D
+        if self.times.ndim != 1:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.times must be 1D "
+                f"(got shape {self.times.shape}).\n\n"
+                "WHY: Timestamps must be a 1D array of time values.\n\n"
+                "HOW: Flatten the times array or ensure shape is (n_samples,)."
+            )
+
+        # Validate data and times have same length
+        if len(self.data) != len(self.times):
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.data and times have different lengths "
+                f"({len(self.data)} vs {len(self.times)}).\n\n"
+                "WHY: Each data point must have a corresponding timestamp.\n\n"
+                "HOW: Ensure both arrays have the same number of elements."
+            )
+
+        # Validate data has at least one sample
+        if len(self.data) == 0:
+            raise ValueError(
+                "WHAT: TimeSeriesOverlay.data must have at least 1 sample (got 0).\n\n"
+                "WHY: Time series visualization requires at least one data point.\n\n"
+                "HOW: Provide non-empty data array."
+            )
+
+        # Validate times are finite (no NaN or Inf)
+        if not np.all(np.isfinite(self.times)):
+            n_invalid = np.sum(~np.isfinite(self.times))
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.times contains {n_invalid} "
+                "non-finite values (NaN or Inf).\n\n"
+                "WHY: Timestamps must be finite numbers for window extraction.\n\n"
+                "HOW: Remove or fix NaN/Inf values in times array."
+            )
+
+        # Validate times are monotonically increasing
+        if len(self.times) > 1 and not np.all(np.diff(self.times) > 0):
+            diffs = np.diff(self.times)
+            first_bad_idx = np.where(diffs <= 0)[0][0] + 1
+            raise ValueError(
+                f"WHAT: Non-monotonic timestamps in TimeSeriesOverlay.times.\n"
+                f"  First violation at index {first_bad_idx}: "
+                f"times[{first_bad_idx - 1}]={self.times[first_bad_idx - 1]:.6f}, "
+                f"times[{first_bad_idx}]={self.times[first_bad_idx]:.6f}\n\n"
+                "WHY: Window extraction requires strictly increasing timestamps.\n\n"
+                "HOW: Sort the times array or remove duplicates."
+            )
+
+        # Validate window_seconds is positive
+        if self.window_seconds <= 0:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.window_seconds must be positive "
+                f"(got {self.window_seconds}).\n\n"
+                "WHY: The time window must have a positive duration.\n\n"
+                "HOW: Use a positive value like window_seconds=2.0."
+            )
+
+        # Validate alpha in [0, 1]
+        if not (0.0 <= self.alpha <= 1.0):
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.alpha must be in [0, 1] "
+                f"(got {self.alpha}).\n\n"
+                "WHY: Alpha is an opacity value between fully transparent (0) "
+                "and fully opaque (1).\n\n"
+                "HOW: Use a value between 0.0 and 1.0."
+            )
+
+        # Validate linewidth is positive
+        if self.linewidth <= 0:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.linewidth must be positive "
+                f"(got {self.linewidth}).\n\n"
+                "WHY: Line width must be a positive value for rendering.\n\n"
+                "HOW: Use a positive value like linewidth=1.0."
+            )
+
+        # Validate no Inf in data (NaN is allowed for gaps)
+        if np.any(np.isinf(self.data)):
+            n_inf = np.sum(np.isinf(self.data))
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.data contains {n_inf} Inf values.\n\n"
+                "WHY: Inf values cannot be rendered. NaN is allowed for gaps, "
+                "but Inf is not supported.\n\n"
+                "HOW: Replace Inf values with NaN or finite values."
+            )
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> TimeSeriesData:
+        """Convert overlay to internal data representation.
+
+        Precomputes window indices for O(1) per-frame extraction during rendering.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object (not used for time series, but required by protocol).
+
+        Returns
+        -------
+        TimeSeriesData
+            Internal data container with precomputed window indices.
+        """
+        # Vectorized precomputation of window indices for all frames
+        half_window = self.window_seconds / 2
+        start_indices = np.searchsorted(self.times, frame_times - half_window)
+        end_indices = np.searchsorted(self.times, frame_times + half_window)
+
+        # Compute global limits for stable y-axis (default behavior)
+        finite_mask = np.isfinite(self.data)
+        if finite_mask.any():
+            global_vmin = float(np.min(self.data[finite_mask]))
+            global_vmax = float(np.max(self.data[finite_mask]))
+        else:
+            global_vmin, global_vmax = 0.0, 1.0
+
+        # Override with explicit limits if provided
+        if self.vmin is not None:
+            global_vmin = self.vmin
+        if self.vmax is not None:
+            global_vmax = self.vmax
+
+        # Apply normalization if requested
+        output_data = self.data.copy()
+        if self.normalize:
+            range_val = global_vmax - global_vmin
+            if range_val > 0:
+                output_data = (self.data - global_vmin) / range_val
+            else:
+                output_data = np.zeros_like(self.data)  # Constant data -> 0
+            # After normalization, limits become [0, 1]
+            global_vmin, global_vmax = 0.0, 1.0
+
+        return TimeSeriesData(
+            data=output_data,
+            times=self.times,
+            start_indices=start_indices,
+            end_indices=end_indices,
+            label=self.label,
+            color=self.color,
+            window_seconds=self.window_seconds,
+            linewidth=self.linewidth,
+            alpha=self.alpha,
+            group=self.group,
+            normalize=self.normalize,
+            show_cursor=self.show_cursor,
+            cursor_color=self.cursor_color,
+            global_vmin=global_vmin,
+            global_vmax=global_vmax,
+            use_global_limits=True,
+            interp=self.interp,
+        )
+
+
+@dataclass
 class VideoOverlay:
     """Video background overlay for displaying recorded footage behind or above fields.
 
@@ -1838,6 +2204,170 @@ class VideoData:
 
 
 @dataclass
+class TimeSeriesData:
+    """Internal container for time series overlay data aligned to animation frames.
+
+    This is used internally by backends and should not be instantiated by users.
+    Created by the conversion pipeline from TimeSeriesOverlay instances.
+
+    Parameters
+    ----------
+    data : ndarray of shape (n_samples,), dtype float64
+        Full-resolution time series values (no downsampling). NaN values
+        create gaps in the rendered line.
+    times : ndarray of shape (n_samples,), dtype float64
+        Timestamps for each sample, in seconds.
+    start_indices : ndarray of shape (n_frames,), dtype int64
+        Precomputed start index for each animation frame's window.
+    end_indices : ndarray of shape (n_frames,), dtype int64
+        Precomputed end index for each animation frame's window.
+    label : str
+        Label for Y-axis or legend.
+    color : str
+        Line color (matplotlib color string).
+    window_seconds : float
+        Time window width in seconds.
+    linewidth : float
+        Line width in points.
+    alpha : float
+        Line opacity (0.0-1.0).
+    group : str | None
+        Group name for overlaying multiple variables.
+    normalize : bool
+        Whether data was normalized to [0, 1].
+    show_cursor : bool
+        Whether to show cursor line.
+    cursor_color : str
+        Cursor line color.
+    global_vmin : float
+        Minimum Y-axis value (global across all data).
+    global_vmax : float
+        Maximum Y-axis value (global across all data).
+    use_global_limits : bool
+        If True, use global limits for stable Y-axis. Default is True.
+    interp : {"linear", "nearest"}
+        Interpolation method for cursor value computation.
+
+    Attributes
+    ----------
+    data : NDArray[np.float64]
+        Time series values.
+    times : NDArray[np.float64]
+        Sample timestamps.
+    start_indices : NDArray[np.int64]
+        Window start indices per frame.
+    end_indices : NDArray[np.int64]
+        Window end indices per frame.
+    label : str
+        Display label.
+    color : str
+        Line color.
+    window_seconds : float
+        Window width.
+    linewidth : float
+        Line width.
+    alpha : float
+        Line opacity.
+    group : str | None
+        Grouping key.
+    normalize : bool
+        Normalization flag.
+    show_cursor : bool
+        Cursor visibility.
+    cursor_color : str
+        Cursor color.
+    global_vmin : float
+        Y-axis minimum.
+    global_vmax : float
+        Y-axis maximum.
+    use_global_limits : bool
+        Use global limits flag.
+    interp : str
+        Interpolation method.
+
+    See Also
+    --------
+    TimeSeriesOverlay : User-facing overlay configuration
+    """
+
+    # Full resolution data (no downsampling)
+    data: NDArray[np.float64]
+    times: NDArray[np.float64]
+
+    # Precomputed window indices per frame
+    start_indices: NDArray[np.int64]
+    end_indices: NDArray[np.int64]
+
+    # Display settings
+    label: str
+    color: str
+    window_seconds: float
+    linewidth: float
+    alpha: float
+    group: str | None
+    normalize: bool
+    show_cursor: bool
+    cursor_color: str
+
+    # Y-axis limits
+    global_vmin: float
+    global_vmax: float
+    use_global_limits: bool = True
+
+    # Interpolation for cursor value
+    interp: Literal["linear", "nearest"] = "linear"
+
+    def get_window_slice(self, frame_idx: int) -> tuple[NDArray, NDArray]:
+        """O(1) window extraction using precomputed indices.
+
+        Parameters
+        ----------
+        frame_idx : int
+            Animation frame index (0-based).
+
+        Returns
+        -------
+        tuple[NDArray, NDArray]
+            Tuple of (data_slice, times_slice) for the window at this frame.
+        """
+        start = self.start_indices[frame_idx]
+        end = self.end_indices[frame_idx]
+        return self.data[start:end], self.times[start:end]
+
+    def get_cursor_value(self, current_time: float) -> float | None:
+        """Get interpolated value at cursor time for tooltip display.
+
+        Parameters
+        ----------
+        current_time : float
+            Current animation time in seconds.
+
+        Returns
+        -------
+        float | None
+            Interpolated value at cursor time, or None if current_time
+            is outside data range or data is empty.
+        """
+        if len(self.times) == 0:
+            return None
+        if current_time < self.times[0] or current_time > self.times[-1]:
+            return None
+
+        if self.interp == "nearest":
+            idx = np.searchsorted(self.times, current_time)
+            # Choose closer of idx-1 or idx
+            if idx == 0:
+                return float(self.data[0])
+            if idx >= len(self.times):
+                return float(self.data[-1])
+            if current_time - self.times[idx - 1] < self.times[idx] - current_time:
+                return float(self.data[idx - 1])
+            return float(self.data[idx])
+        else:  # linear
+            return float(np.interp(current_time, self.times, self.data))
+
+
+@dataclass
 class OverlayData:
     """Container for all overlay data passed to animation backends.
 
@@ -1858,6 +2388,8 @@ class OverlayData:
         List of video overlays. Default is empty list.
     events : list[EventData], optional
         List of event overlays. Default is empty list.
+    timeseries : list[TimeSeriesData], optional
+        List of time series overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
         Region names in normalized format. Key is frame index (0 = all frames),
         value is list of region names. Populated by _convert_overlays_to_data()
@@ -1875,6 +2407,8 @@ class OverlayData:
         List of video overlays.
     events : list[EventData]
         List of event overlays.
+    timeseries : list[TimeSeriesData]
+        List of time series overlays.
     regions : dict[int, list[str]] | None
         Region names in normalized format (key 0 = all frames).
 
@@ -1902,6 +2436,7 @@ class OverlayData:
     head_directions: list[HeadDirectionData] = field(default_factory=list)
     videos: list[VideoData] = field(default_factory=list)
     events: list[EventData] = field(default_factory=list)
+    timeseries: list[TimeSeriesData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
 
     def __post_init__(self) -> None:
@@ -2914,6 +3449,7 @@ def _convert_overlays_to_data(
     head_direction_data_list: list[HeadDirectionData] = []
     video_data_list: list[VideoData] = []
     event_data_list: list[EventData] = []
+    timeseries_data_list: list[TimeSeriesData] = []
 
     # Process each overlay using protocol dispatch
     for overlay in overlays:
@@ -2939,10 +3475,12 @@ def _convert_overlays_to_data(
             video_data_list.append(internal_data)
         elif isinstance(internal_data, EventData):
             event_data_list.append(internal_data)
+        elif isinstance(internal_data, TimeSeriesData):
+            timeseries_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
-                f"HeadDirectionData, VideoData, or EventData, "
+                f"HeadDirectionData, VideoData, EventData, or TimeSeriesData, "
                 f"got {type(internal_data).__name__}."
             )
 
@@ -2964,6 +3502,7 @@ def _convert_overlays_to_data(
         head_directions=head_direction_data_list,
         videos=video_data_list,
         events=event_data_list,
+        timeseries=timeseries_data_list,
         regions=normalized_regions,
     )
 

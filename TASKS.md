@@ -15,7 +15,7 @@
 
 ### 1.1 TimeSeriesOverlay Dataclass
 
-- [ ] Add `TimeSeriesOverlay` dataclass to `overlays.py` (after other overlay classes ~line 280)
+- [x] Add `TimeSeriesOverlay` dataclass to `overlays.py` (after other overlay classes ~line 280)
   - Fields: `data`, `times`, `label`, `color`, `window_seconds`, `linewidth`, `alpha`, `group`, `normalize`, `show_cursor`, `cursor_color`, `vmin`, `vmax`, `interp`
   - Include comprehensive NumPy-style docstring with examples
   - Add `__post_init__` validation:
@@ -23,17 +23,19 @@
     - `times` must be monotonically increasing
     - `window_seconds` must be positive
     - `alpha` must be in [0, 1]
+    - `linewidth` must be positive (added per code review)
+    - `data` must have at least 1 sample (added per code review)
 
 ### 1.2 TimeSeriesData Internal Container
 
-- [ ] Add `TimeSeriesData` dataclass to `overlays.py` (after `TimeSeriesOverlay`)
+- [x] Add `TimeSeriesData` dataclass to `overlays.py` (after `TimeSeriesOverlay`)
   - Fields: `data`, `times`, `start_indices`, `end_indices`, `label`, `color`, `window_seconds`, `linewidth`, `alpha`, `group`, `normalize`, `show_cursor`, `cursor_color`, `global_vmin`, `global_vmax`, `use_global_limits`, `interp`
   - Include `get_window_slice(frame_idx)` method for O(1) extraction
   - Include `get_cursor_value(current_time)` method with linear/nearest interpolation
 
 ### 1.3 convert_to_data Implementation
 
-- [ ] Implement `convert_to_data()` method on `TimeSeriesOverlay`
+- [x] Implement `convert_to_data()` method on `TimeSeriesOverlay`
   - Validate `times` are finite (NaN not allowed in times)
   - Validate no Inf values in `data` (NaN allowed for gaps)
   - Precompute `start_indices` and `end_indices` using `np.searchsorted`
@@ -43,35 +45,35 @@
 
 ### 1.4 OverlayData Extension
 
-- [ ] Add `timeseries: list[TimeSeriesData] = field(default_factory=list)` to `OverlayData`
+- [x] Add `timeseries: list[TimeSeriesData] = field(default_factory=list)` to `OverlayData`
 
 ### 1.5 Update _convert_overlays_to_data
 
-- [ ] Add `timeseries_data_list: list[TimeSeriesData] = []` initialization
-- [ ] Add dispatch branch: `elif isinstance(internal_data, TimeSeriesData): timeseries_data_list.append(internal_data)`
-- [ ] Update error message to include `TimeSeriesData`
-- [ ] Add `timeseries=timeseries_data_list` to `OverlayData` constructor
+- [x] Add `timeseries_data_list: list[TimeSeriesData] = []` initialization
+- [x] Add dispatch branch: `elif isinstance(internal_data, TimeSeriesData): timeseries_data_list.append(internal_data)`
+- [x] Update error message to include `TimeSeriesData`
+- [x] Add `timeseries=timeseries_data_list` to `OverlayData` constructor
 
 ### 1.6 Export
 
-- [ ] Add `TimeSeriesOverlay` to `src/neurospatial/animation/__init__.py` exports
+- [x] Add `TimeSeriesOverlay` and `TimeSeriesData` to `src/neurospatial/animation/__init__.py` exports
 
 ### 1.7 Tests for Phase 1
 
-- [ ] Create `tests/animation/test_timeseries_overlay.py`
-- [ ] Test: `test_timeseries_overlay_creation` - valid construction with all parameters
-- [ ] Test: `test_timeseries_overlay_validation` - parameter validation errors
-- [ ] Test: `test_timeseries_convert_to_data` - conversion produces correct indices
-- [ ] Test: `test_timeseries_window_extraction` - `get_window_slice()` returns correct data
-- [ ] Test: `test_timeseries_cursor_value_linear` - linear interpolation works
-- [ ] Test: `test_timeseries_cursor_value_nearest` - nearest interpolation works
-- [ ] Test: `test_timeseries_nan_handling` - NaN in data creates gaps
-- [ ] Test: `test_timeseries_normalization` - normalize scales to [0, 1]
+- [x] Create `tests/animation/test_timeseries_overlay.py` (24 tests total)
+- [x] Test: `test_timeseries_overlay_creation` - valid construction with all parameters
+- [x] Test: `test_timeseries_overlay_validation` - parameter validation errors
+- [x] Test: `test_timeseries_convert_to_data` - conversion produces correct indices
+- [x] Test: `test_timeseries_window_extraction` - `get_window_slice()` returns correct data
+- [x] Test: `test_timeseries_cursor_value_linear` - linear interpolation works
+- [x] Test: `test_timeseries_cursor_value_nearest` - nearest interpolation works
+- [x] Test: `test_timeseries_nan_handling` - NaN in data creates gaps
+- [x] Test: `test_timeseries_normalization` - normalize scales to [0, 1]
 
 **Success criteria for Phase 1**:
-- [ ] `TimeSeriesOverlay` can be instantiated and validated
-- [ ] `convert_to_data()` produces `TimeSeriesData` with correct precomputed indices
-- [ ] All Phase 1 tests pass
+- [x] `TimeSeriesOverlay` can be instantiated and validated
+- [x] `convert_to_data()` produces `TimeSeriesData` with correct precomputed indices
+- [x] All Phase 1 tests pass (24 tests passing)
 
 ---
 

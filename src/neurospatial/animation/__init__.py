@@ -28,6 +28,8 @@ EventOverlay : class
     Overlay for discrete timestamped events (spikes, rewards, zone entries)
 SpikeOverlay : class
     Convenience alias for EventOverlay for neural spike visualization
+TimeSeriesOverlay : class
+    Time series visualization in right column (speed, LFP, etc.)
 VideoCalibration : class
     Coordinate transform from video pixels to environment cm
 VideoReaderProtocol : Protocol
@@ -40,7 +42,7 @@ Extensibility
 OverlayProtocol : Protocol
     Protocol for creating custom overlays. Implement ``times``, ``interp``,
     and ``convert_to_data()`` to create custom overlay types.
-PositionData, BodypartData, HeadDirectionData, VideoData, EventData : dataclass
+PositionData, BodypartData, HeadDirectionData, VideoData, EventData, TimeSeriesData : dataclass
     Internal data containers returned by ``convert_to_data()``. Custom overlays
     should return one of these types.
 """
@@ -60,6 +62,8 @@ from neurospatial.animation.overlays import (
     OverlayProtocol,
     PositionData,
     SpikeOverlay,
+    TimeSeriesData,
+    TimeSeriesOverlay,
     VideoData,
     VideoOverlay,
 )
@@ -83,6 +87,8 @@ __all__: list[str] = [
     "PositionData",
     "Skeleton",
     "SpikeOverlay",
+    "TimeSeriesData",
+    "TimeSeriesOverlay",
     "VideoCalibration",
     "VideoData",
     "VideoOverlay",
