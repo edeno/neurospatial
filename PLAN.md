@@ -373,11 +373,13 @@ overlays = [
 ```
 
 **Affected parameters** (per-group, not per-overlay):
+
 - `window_seconds` - shared X-axis range
 - `vmin`, `vmax` - shared Y-axis range (unless `normalize=True`)
 - `show_cursor`, `cursor_color` - shared cursor
 
 **Per-overlay parameters** (allowed to differ within group):
+
 - `color`, `linewidth`, `alpha` - each line can have different styling
 - `label` - used for legend
 - `normalize` - can mix normalized and non-normalized (though unusual)
@@ -453,6 +455,7 @@ Result:         Empty plot (no data in window)
 ```
 
 **Rationale:**
+
 - No artificial clamping that could mislead users
 - Naturally handles sessions where different signals have different time ranges
 - Empty regions clearly indicate "no data here"
@@ -887,6 +890,7 @@ Following Heer-style guidance for effective time series visualization:
 ### Default Configuration (Task-Optimized)
 
 **Primary tasks** the design optimizes for:
+
 - "How does speed/acceleration relate to field activity at this moment?"
 - "Are LFP events time-locked to spatial features?"
 - "When did behavioral state changes occur?"
@@ -935,6 +939,7 @@ TIMESERIES_PALETTE = [
 ### Future Enhancements (v2)
 
 1. **Focus+Context Overview Strip**:
+
    ```
    +---------------------------+------------------+
    |                           |  Speed (detail)  |
@@ -943,6 +948,7 @@ TIMESERIES_PALETTE = [
    |                           |  [===|===]       |  <- overview (full session)
    +---------------------------+------------------+
    ```
+
    - Small strip showing entire session timeline
    - Brushed window indicates current animated region
    - Enables "focus+context" navigation

@@ -1,6 +1,7 @@
 # TimeSeriesOverlay Implementation - Scratchpad
 
 ## Current Status
+
 **Date**: 2025-11-30
 **Phase**: 5 - COMPLETE 🎉
 **Task**: ALL PHASES COMPLETE. TimeSeriesOverlay implementation finished.
@@ -106,6 +107,7 @@
 - Ruff and mypy: all passing
 
 ### 2025-11-30 (Session 2)
+
 - **Phase 2.1 and 2.2 COMPLETE**
 - Created `src/neurospatial/animation/_timeseries.py`:
   - `_group_timeseries()` - Groups overlays by their `group` parameter
@@ -125,6 +127,7 @@
 - Ruff and mypy: all passing
 
 ### 2025-11-30 (Session 1)
+
 - **Phase 1 COMPLETE**
 - Created `TimeSeriesOverlay` dataclass with full validation:
   - 1D data/times validation

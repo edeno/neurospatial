@@ -10,6 +10,7 @@
 **Goal**: Define data structures and conversion pipeline for time series overlays.
 
 **Files to modify**:
+
 - `src/neurospatial/animation/overlays.py`
 - `src/neurospatial/animation/__init__.py`
 
@@ -71,6 +72,7 @@
 - [x] Test: `test_timeseries_normalization` - normalize scales to [0, 1]
 
 **Success criteria for Phase 1**:
+
 - [x] `TimeSeriesOverlay` can be instantiated and validated
 - [x] `convert_to_data()` produces `TimeSeriesData` with correct precomputed indices
 - [x] All Phase 1 tests pass (24 tests passing)
@@ -82,6 +84,7 @@
 **Goal**: Display time series in a dock widget that updates with frame slider.
 
 **Files to modify/create**:
+
 - `src/neurospatial/animation/_timeseries.py` (NEW)
 - `src/neurospatial/animation/backends/napari_backend.py`
 
@@ -128,6 +131,7 @@
 - [x] Test: `test_timeseries_napari_dock` (integration) - dock widget created in viewer
 
 **Success criteria for Phase 2**:
+
 - [x] `TimeSeriesOverlay` displays in napari dock widget
 - [x] Plot updates when scrubbing through frames
 - [x] Multiple time series can be stacked or overlaid
@@ -141,6 +145,7 @@
 **Goal**: Include time series column in exported video files.
 
 **Files to modify**:
+
 - `src/neurospatial/animation/backends/video_backend.py`
 - `src/neurospatial/animation/_timeseries.py`
 - `src/neurospatial/animation/_parallel.py`
@@ -186,6 +191,7 @@
 - [x] Test: `test_overlay_data_with_timeseries_is_pickle_safe` - OverlayData is pickle-safe
 
 **Success criteria for Phase 3**:
+
 - [x] Video export includes time series column on right
 - [x] Time series updates correctly per frame
 - [x] Parallel rendering works without errors
@@ -197,6 +203,7 @@
 **Goal**: Display time series in Jupyter notebook widget.
 
 **Files to modify**:
+
 - `src/neurospatial/animation/backends/widget_backend.py`
 
 ### 4.1 Widget Layout
@@ -222,6 +229,7 @@
 - [x] Test: `test_widget_backend_no_timeseries_still_works` - backward compatibility
 
 **Success criteria for Phase 4**:
+
 - [x] Widget displays time series alongside spatial field
 - [x] Animation playback updates both spatial field and time series
 
@@ -232,6 +240,7 @@
 **Goal**: Edge cases, performance optimization, documentation.
 
 **Files to modify**:
+
 - `src/neurospatial/animation/backends/html_backend.py`
 - `CLAUDE.md`
 - Various test files
@@ -304,6 +313,7 @@
   - `test_timeseries_full_workflow_normalized`
 
 **Success criteria for Phase 5**:
+
 - [x] Performance acceptable for 1 kHz data over 1-hour sessions
 - [x] All edge cases handled gracefully
 - [x] Documentation complete
@@ -332,10 +342,12 @@ Copy from PLAN.md for tracking:
 ## Dependencies & Notes
 
 ### External Dependencies
+
 - `matplotlib` (already a dependency) - for time series rendering
 - `qtpy` (napari dependency) - for dock widget
 
 ### Code Location References
+
 - Existing overlay classes: `src/neurospatial/animation/overlays.py:1-280`
 - `_convert_overlays_to_data()`: `src/neurospatial/animation/overlays.py:2900-2970`
 - `OverlayData`: `src/neurospatial/animation/overlays.py:~2770`
@@ -344,6 +356,7 @@ Copy from PLAN.md for tracking:
 - Widget backend: `src/neurospatial/animation/backends/widget_backend.py`
 
 ### Design Decisions (from PLAN.md)
+
 - **NaN handling**: Creates gaps in line (matplotlib default behavior)
 - **Group conflicts**: Warning + first wins (not strict errors)
 - **Y-axis limits**: Global by default for stable scales
