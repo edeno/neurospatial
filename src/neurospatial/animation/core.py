@@ -83,18 +83,17 @@ def animate_fields(
         quantities. Each field length must match env.n_bins.
 
         **Multi-field mode** (napari backend only): ``fields`` can also be a
-        list of sequences where each sequence contains multiple spatial fields
-        per frame. This enables side-by-side comparison of different analyses::
+        list of field sequences for side-by-side comparison. Each sequence
+        contains frames for one field (e.g., one neuron's place field over time)::
 
             # Single field per frame (standard mode)
             fields = [field_frame0, field_frame1, ...]
 
-            # Multiple fields per frame (napari only)
-            fields = [
-                [posterior_frame0, likelihood_frame0],  # Frame 0: 2 fields
-                [posterior_frame1, likelihood_frame1],  # Frame 1: 2 fields
-                ...
-            ]
+            # Multiple field sequences (napari only)
+            # Each sequence is a list of frames for that field
+            posterior_seq = [posterior_t0, posterior_t1, ...]  # N frames
+            likelihood_seq = [likelihood_t0, likelihood_t1, ...]  # N frames
+            fields = [posterior_seq, likelihood_seq]  # 2 sequences of N frames
     backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
         Animation backend to use.
     save_path : str, optional

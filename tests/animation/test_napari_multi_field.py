@@ -371,3 +371,136 @@ class TestColorScaleSharing:
             layer for layer in viewer.layers if layer.__class__.__name__ == "Image"
         ]
         assert len(image_layers) == 2
+
+
+class TestDispatcherMultiFieldIntegration:
+    """Test multi-field mode via Environment.animate_fields() dispatcher.
+
+    These tests verify the full integration path through the dispatcher,
+    not just the render_napari backend directly.
+    """
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("napari", reason="napari not installed"),
+        reason="Requires napari",
+    )
+    def test_multi_field_via_dispatcher(self, simple_env, multi_field_sequences):
+        """Multi-field should work through Environment.animate_fields()."""
+        # Call via dispatcher (not render_napari directly)
+        viewer = simple_env.animate_fields(
+            multi_field_sequences,
+            backend="napari",
+            layout="horizontal",
+        )
+
+        # Should create 3 image layers (one per sequence)
+        image_layers = [
+            layer for layer in viewer.layers if layer.__class__.__name__ == "Image"
+        ]
+        assert len(image_layers) == 3
+
+        # Each layer should have 10 frames
+        for layer in image_layers:
+            assert layer.data.shape[0] == 10
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("napari", reason="napari not installed"),
+        reason="Requires napari",
+    )
+    def test_multi_field_with_overlays(self, simple_env, multi_field_sequences):
+        """Multi-field with overlays should work through dispatcher."""
+        from neurospatial import PositionOverlay
+
+        n_frames = 10  # Same as multi_field_sequences
+        rng = np.random.default_rng(42)
+
+        # Create position overlay matching field frame count
+        trajectory = rng.uniform(-50, 50, (n_frames, 2))
+        overlay = PositionOverlay(data=trajectory, color="red", size=10.0)
+
+        # Call via dispatcher with overlay
+        viewer = simple_env.animate_fields(
+            multi_field_sequences,
+            backend="napari",
+            layout="horizontal",
+            overlays=[overlay],
+        )
+
+        # Should create 3 image layers + overlay layers
+        image_layers = [
+            layer for layer in viewer.layers if layer.__class__.__name__ == "Image"
+        ]
+        assert len(image_layers) == 3
+
+        # Overlay should have created Points layer
+        points_layers = [
+            layer for layer in viewer.layers if layer.__class__.__name__ == "Points"
+        ]
+        assert len(points_layers) >= 1
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("napari", reason="napari not installed"),
+        reason="Requires napari",
+    )
+    def test_multi_field_with_frame_times(self, simple_env, multi_field_sequences):
+        """Multi-field with frame_times should align overlays correctly."""
+        from neurospatial import PositionOverlay
+
+        n_frames = 10  # Same as multi_field_sequences
+
+        # Create frame_times for fields (10 Hz sampling)
+        frame_times = np.arange(n_frames) * 0.1  # 0.0, 0.1, ..., 0.9 seconds
+
+        # Create overlay at higher rate (50 Hz) with explicit times
+        overlay_times = np.linspace(0, 0.9, 50)
+        rng = np.random.default_rng(42)
+        trajectory = rng.uniform(-50, 50, (50, 2))
+        overlay = PositionOverlay(
+            data=trajectory, times=overlay_times, color="red", size=10.0
+        )
+
+        # Call via dispatcher with frame_times for alignment
+        viewer = simple_env.animate_fields(
+            multi_field_sequences,
+            backend="napari",
+            layout="horizontal",
+            overlays=[overlay],
+            frame_times=frame_times,
+        )
+
+        # Should work without error
+        image_layers = [
+            layer for layer in viewer.layers if layer.__class__.__name__ == "Image"
+        ]
+        assert len(image_layers) == 3
+
+        # Each layer should have n_frames
+        for layer in image_layers:
+            assert layer.data.shape[0] == n_frames
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("napari", reason="napari not installed"),
+        reason="Requires napari",
+    )
+    def test_multi_field_n_frames_detection(self, simple_env):
+        """Dispatcher should correctly detect n_frames from multi-field input."""
+        rng = np.random.default_rng(42)
+
+        # Create 2 sequences with 15 frames each
+        n_frames = 15
+        seq1 = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
+        seq2 = [rng.random(simple_env.n_bins) for _ in range(n_frames)]
+        fields = [seq1, seq2]
+
+        viewer = simple_env.animate_fields(
+            fields,
+            backend="napari",
+            layout="horizontal",
+        )
+
+        # Verify correct n_frames detected (should be 15, not 2)
+        image_layers = [
+            layer for layer in viewer.layers if layer.__class__.__name__ == "Image"
+        ]
+        for layer in image_layers:
+            assert layer.data.shape[0] == n_frames
