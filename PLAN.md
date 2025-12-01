@@ -1,710 +1,489 @@
-# Plan: Separate Data Sample Rate from Playback Speed
+# Napari Playback Performance Optimization Plan
 
-## Problem Statement
+**Goal**: Get napari playback smooth while using all overlays (position, bodyparts+skeleton, head direction, events/spikes, time series, video).
 
-Currently, the animation API conflates two distinct concepts:
-
-1. **Data sample rate**: How frequently the data was recorded (e.g., 500 Hz for replay decoding, 30 Hz for position tracking)
-2. **Playback speed**: How fast the viewer displays frames
-
-The current API uses a single `fps` parameter that callers often misuse to control both data resolution AND playback speed (as seen in the demo script).
-
-### Use Cases
-
-| Analysis Type | Data Sample Rate | Desired Viewing | Notes |
-|---------------|------------------|-----------------|-------|
-| Replay decoding | 500 Hz | Slow motion (see trajectory unfold) | All frames preserved |
-| Theta sequences | ~30 Hz | Real-time | Natural dynamics |
-| Place fields | ~30 Hz | Real-time or 2x | Quick preview |
-
-### Key Insight
-
-The **playback fps should be derived from the data's temporal structure**, not specified independently. If you have 500 Hz data and want to view at 10% speed, the system should compute `playback_fps = 500 * 0.1 = 50 fps`. If that exceeds display limits, cap it.
+**Last Updated**: 2025-12-01
 
 ---
 
-## Proposed API Change
+## Pre-Work: Current State Analysis
 
-### Current API (to be replaced)
+### Already Optimized (No Changes Needed)
 
-```python
-def animate_fields(
-    fields,
-    fps: int = 30,                    # Ambiguous: data rate or playback?
-    frame_times: NDArray | None = None,  # Optional
-    ...
-)
-```
+Based on codebase analysis, these components are already optimized for napari's native rendering:
 
-### New API
+| Component | Current Implementation | Status |
+|-----------|----------------------|--------|
+| **Position overlay** | Tracks layer with time axis | Native napari handling |
+| **Bodypart overlay** | Points layer with time axis | Native napari handling |
+| **Skeleton overlay** | Pre-computed Vectors layer (`_build_skeleton_vectors()`) | No per-frame callbacks |
+| **Head direction** | Tracks layer (2-point lines per frame) | Native napari handling |
+| **Events (instant)** | 3D Points layer `(time, y, x)` format | No callbacks |
+| **Events (cumulative/decay)** | Boolean `shown` mask with `O(log N)` searchsorted | Efficient updates |
+| **Field rendering** | LRU cache with lazy loading | On-demand rendering |
+| **Widget updates** | Throttled to 10 Hz | Reduced Qt overhead |
 
-```python
-def animate_fields(
-    fields,
-    frame_times: NDArray[np.float64],  # REQUIRED - defines temporal structure
-    speed: float = 1.0,                 # 1.0 = real-time, 0.1 = 10% speed
-    ...
-)
-```
+### Needs Optimization
 
-### Semantics
-
-```python
-# Infer sample rate from timestamps
-duration = frame_times[-1] - frame_times[0]
-sample_rate_hz = (len(frame_times) - 1) / duration
-
-# Compute playback fps, capped to reasonable display rate
-MAX_PLAYBACK_FPS = 60
-requested_fps = sample_rate_hz * speed
-playback_fps = min(requested_fps, MAX_PLAYBACK_FPS)
-
-# Warn if capping affects requested speed
-if playback_fps < requested_fps:
-    actual_speed = playback_fps / sample_rate_hz
-    warnings.warn(
-        f"Requested speed={speed}x would require {requested_fps:.0f} fps. "
-        f"Capped to {MAX_PLAYBACK_FPS} fps (effective speed={actual_speed:.2f}x)."
-    )
-```
-
-### Usage Examples
-
-```python
-# Replay: 500 Hz data, view at 10% speed
-# playback_fps = 500 * 0.1 = 50 fps (within limit)
-env.animate_fields(fields, frame_times=decode_times, speed=0.1)
-
-# Theta: 30 Hz data, view at real-time
-# playback_fps = 30 * 1.0 = 30 fps
-env.animate_fields(fields, frame_times=position_times, speed=1.0)
-
-# Replay at real-time (not practical, but requested)
-# playback_fps = min(500 * 1.0, 60) = 60 fps
-# Warning: "effective speed=0.12x"
-env.animate_fields(fields, frame_times=decode_times, speed=1.0)
-
-# Quick preview: 2x speed
-# playback_fps = min(30 * 2.0, 60) = 60 fps
-env.animate_fields(fields, frame_times=position_times, speed=2.0)
-```
+| Component | Current Issue | Impact |
+|-----------|--------------|--------|
+| **Video overlay** | Per-frame `layer.data = frame` assignment | ~2-3ms per frame |
+| **Time series dock** | Matplotlib drawing even with blitting | ~5-15ms per frame |
+| **No central playback controller** | Scattered `dims.events.current_step` callbacks | Hard to implement frame skipping |
+| **No frame skipping** | Must render every frame even if behind schedule | Stutters at high fps |
 
 ---
 
-## Implementation Plan
-
-### Phase 1: Core Module Changes
-
-#### 1.1 Add constants to `animation/core.py`
-
-```python
-# Playback speed limits
-MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
-MIN_PLAYBACK_FPS: int = 1   # Minimum usable playback
-DEFAULT_SPEED: float = 1.0  # Real-time by default
-```
-
-#### 1.2 Add helper function to `animation/core.py`
-
-```python
-def _compute_playback_fps(
-    frame_times: NDArray[np.float64],
-    speed: float,
-    max_fps: int = MAX_PLAYBACK_FPS,
-) -> tuple[int, float]:
-    """Compute playback fps from frame timestamps and speed multiplier.
-
-    Parameters
-    ----------
-    frame_times : ndarray of shape (n_frames,)
-        Timestamps for each frame in seconds.
-    speed : float
-        Playback speed multiplier (1.0 = real-time).
-    max_fps : int
-        Maximum allowed playback fps.
-
-    Returns
-    -------
-    playback_fps : int
-        Computed playback fps (capped to max_fps).
-    actual_speed : float
-        Actual speed after capping (may differ from requested).
-    """
-    if len(frame_times) < 2:
-        return max_fps, speed
-
-    duration = frame_times[-1] - frame_times[0]
-    if duration <= 0:
-        return max_fps, speed
-
-    sample_rate_hz = (len(frame_times) - 1) / duration
-    requested_fps = sample_rate_hz * speed
-    playback_fps = int(min(max(requested_fps, MIN_PLAYBACK_FPS), max_fps))
-    actual_speed = playback_fps / sample_rate_hz
-
-    return playback_fps, actual_speed
-```
-
-#### 1.3 Update `animate_fields()` in `animation/core.py`
-
-**Changes:**
-
-- Remove `fps` from `**kwargs` extraction (line 268)
-- Add `speed: float = 1.0` parameter
-- Add `max_playback_fps: int = 60` parameter (advanced knob)
-- Make `frame_times` **strictly required** (ValueError if None)
-- Compute `playback_fps` using helper
-- Emit warning if speed was capped
-- Pass computed `playback_fps` to backends via kwargs
-
-```python
-def animate_fields(
-    env: EnvironmentProtocol,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    *,
-    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
-    save_path: str | None = None,
-    overlays: list[OverlayProtocol] | None = None,
-    frame_times: NDArray[np.float64],  # REQUIRED - no default
-    speed: float = 1.0,  # NEW: replaces fps in public API
-    max_playback_fps: int = 60,  # Advanced knob with strong default
-    show_regions: bool | list[str] = False,
-    region_alpha: float = 0.3,
-    scale_bar: bool | Any = False,
-    **kwargs: Any,
-) -> Any:
-```
-
-**Implementation logic:**
-
-```python
-# frame_times is required - no fallback
-# Validation happens via type system (no default) and length check
-if len(frame_times) != n_frames:
-    raise ValueError(
-        f"frame_times length ({len(frame_times)}) must match number of fields ({n_frames}). "
-        f"Provide timestamps from your data source."
-    )
-
-# Compute playback fps
-playback_fps, actual_speed = _compute_playback_fps(
-    frame_times, speed, max_fps=max_playback_fps
-)
-
-if abs(actual_speed - speed) > 0.01:  # Significant difference
-    sample_rate = (len(frame_times) - 1) / (frame_times[-1] - frame_times[0])
-    warnings.warn(
-        f"Requested speed={speed:.2f}x would require {sample_rate * speed:.0f} fps. "
-        f"Capped to {max_playback_fps} fps (effective speed={actual_speed:.2f}x).",
-        UserWarning,
-        stacklevel=2,
-    )
-
-# Compute sample_rate_hz for backends that need it (napari widget)
-duration = frame_times[-1] - frame_times[0]
-if duration > 0 and len(frame_times) > 1:
-    sample_rate_hz = (len(frame_times) - 1) / duration
-else:
-    sample_rate_hz = 30.0  # Fallback for edge cases
-
-# Pass to backends
-kwargs['fps'] = playback_fps  # Backends still use fps internally
-kwargs['sample_rate_hz'] = sample_rate_hz  # For napari interactive widget
-kwargs['speed'] = speed  # For napari interactive widget
-kwargs['max_playback_fps'] = max_playback_fps  # For napari interactive widget
-```
-
-#### 1.4 Update `_build_frame_times()` in `animation/overlays.py`
-
-**Current behavior:** Builds frame_times from `fps` if not provided, or validates if provided.
-
-**New behavior:** Simply validate the provided `frame_times`. No synthesis from fps.
-
-**Changes:**
-
-- Remove `fps` parameter entirely
-- Remove synthesis logic (the `np.linspace` branch)
-- Keep validation logic (length check, monotonicity check)
-- Rename to `_validate_frame_times()` for clarity
-
-```python
-def _validate_frame_times(
-    frame_times: NDArray[np.float64],
-    n_frames: int,
-) -> NDArray[np.float64]:
-    """Validate frame times array for animation.
-
-    Parameters
-    ----------
-    frame_times : NDArray[np.float64]
-        Frame times array with shape (n_frames,). Must be monotonically increasing.
-    n_frames : int
-        Expected number of frames.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Validated frame times array.
-
-    Raises
-    ------
-    ValueError
-        If frame_times length does not match n_frames.
-    ValueError
-        If frame_times is not monotonically increasing.
-    """
-    if len(frame_times) != n_frames:
-        raise ValueError(
-            f"frame_times length ({len(frame_times)}) must match n_frames ({n_frames})"
-        )
-
-    # Check monotonicity
-    if len(frame_times) > 1:
-        diffs = np.diff(frame_times)
-        if not np.all(diffs > 0):
-            raise ValueError(
-                "frame_times must be strictly monotonically increasing. "
-                f"Found {np.sum(diffs <= 0)} non-increasing intervals."
-            )
-
-    return frame_times
-```
-
-**Update call sites in `animation/core.py`:**
-
-```python
-# Old (line 269-271):
-frame_times = _build_frame_times(
-    n_frames=n_frames, fps=fps, frame_times=frame_times
-)
-
-# New:
-frame_times = _validate_frame_times(frame_times, n_frames)
-```
-
-### Phase 2: Environment Method Update
-
-#### 2.1 Update `Environment.animate_fields()` in `environment/visualization.py`
-
-**Changes:**
-
-- Replace `fps: int = 30` with `speed: float = 1.0`
-- Update docstring
-- Pass through to core `animate_fields()`
-
-```python
-def animate_fields(
-    self: SelfEnv,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    *,
-    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
-    save_path: str | None = None,
-    speed: float = 1.0,  # CHANGED from fps
-    cmap: str = "viridis",
-    ...
-    frame_times: NDArray[np.float64],  # CHANGED: now required (was Optional)
-    ...
-) -> Any:
-    """...
-
-    Parameters
-    ----------
-    ...
-    speed : float, default=1.0
-        Playback speed relative to real-time:
-        - 1.0: Real-time playback (1 second of data = 1 second viewing)
-        - 0.1: 10% speed (slow motion, good for replay analysis)
-        - 2.0: 2x speed (fast forward)
-
-        The actual playback fps is computed as:
-        ``playback_fps = sample_rate_hz * speed``
-
-        where sample_rate_hz is inferred from frame_times.
-        Playback is capped at 60 fps for display compatibility.
-    frame_times : NDArray[np.float64], shape (n_frames,)
-        Timestamps for each frame in seconds. **Required** - provides the
-        temporal structure of your data. Use timestamps from your data source
-        (e.g., position timestamps, decoding time bins).
-    ...
-    """
-```
-
-### Phase 3: Backend Updates (Internal Only)
-
-Most backends (`render_video`, `render_html`, `render_widget`) continue to accept `fps` as an internal parameter. **No changes needed to their signatures** - they just receive the computed `fps` value from the dispatcher.
-
-**Exception: Napari backend** requires additional changes for the interactive speed control widget (see Phase 4). The napari widget needs `sample_rate_hz` to convert between speed multiplier and fps in real-time as the user adjusts the slider.
-
-The backends are internal implementation details; the public API change is only at the `animate_fields()` level.
-
-### Phase 4: Napari Widget Enhancement
-
-#### 4.1 Update speed control widget in `napari_backend.py`
-
-**Current:** Shows "Speed (FPS)" slider with raw fps values.
-
-**New:** Show speed multiplier as primary control, fps as secondary info.
-
-**UI Design:**
-
-- Primary label: "Speed: 0.25×" (matches scientist mental model)
-- Secondary info: "≈ 12 fps" (in smaller text or tooltip for debugging)
-- Slider controls speed multiplier, not raw fps
-- Internally still drives napari with fps
-
-**Changes to `_add_speed_control_widget()`:**
-
-```python
-# New parameters needed from caller
-initial_speed: float = 1.0
-sample_rate_hz: float = 30.0  # Inferred from frame_times
-
-# Widget shows speed, computes fps internally
-@magicgui(
-    auto_call=True,
-    play={"widget_type": "PushButton", "text": "▶ Play"},
-    speed={
-        "widget_type": "FloatSlider",
-        "min": 0.01,
-        "max": 4.0,
-        "step": 0.01,
-        "value": initial_speed,
-        "label": "Speed",
-    },
-    speed_info={"widget_type": "Label", "label": ""},
-)
-def playback_widget(
-    play: bool = False,
-    speed: float = initial_speed,
-    speed_info: str = "",
-) -> None:
-    # Compute fps from speed
-    fps = int(min(sample_rate_hz * speed, max_playback_fps))
-    actual_speed = fps / sample_rate_hz
-
-    # Update napari playback
-    settings = get_settings()
-    settings.application.playback_fps = fps
-
-    # Update info label
-    playback_widget.speed_info.value = f"{actual_speed:.2f}× (≈{fps} fps)"
-```
-
-**Signature change for `render_napari()`:**
-
-```python
-def render_napari(
-    env: Environment,
-    fields: ...,
-    *,
-    speed: float = 1.0,  # NEW: replaces fps
-    sample_rate_hz: float | None = None,  # NEW: inferred from frame_times if None
-    max_playback_fps: int = 60,  # NEW: advanced knob
-    # ... rest unchanged
-)
-```
-
-**Note:** The napari backend needs `sample_rate_hz` to convert speed ↔ fps. This is computed in `animate_fields()` and passed via kwargs.
-
-#### 4.2 Update `_add_speed_control_widget()` signature
-
-**Current signature:**
-
-```python
-def _add_speed_control_widget(
-    viewer: napari.Viewer,
-    initial_fps: int = DEFAULT_FPS,
-    frame_labels: list[str] | None = None,
-) -> None:
-```
-
-**New signature:**
-
-```python
-def _add_speed_control_widget(
-    viewer: napari.Viewer,
-    initial_speed: float = 1.0,
-    sample_rate_hz: float = 30.0,
-    max_playback_fps: int = 60,
-    frame_labels: list[str] | None = None,
-) -> None:
-```
-
-#### 4.3 Update call site in `render_napari()`
-
-**Current call (around line 2050):**
-
-```python
-_add_speed_control_widget(viewer, initial_fps=fps, frame_labels=frame_labels)
-```
-
-**New call:**
-
-```python
-_add_speed_control_widget(
-    viewer,
-    initial_speed=speed,
-    sample_rate_hz=sample_rate_hz,
-    max_playback_fps=max_playback_fps,
-    frame_labels=frame_labels,
-)
-```
-
-### Phase 5: Demo Script Updates
-
-#### 5.1 Update `data/demo_spike_overlay_napari.py`
-
-The demo currently generates synthetic `frame_times` from `fps`:
-
-```python
-# CURRENT (wrong - fps controls both data resolution AND playback)
-n_frames = int(duration_s * fps)
-frame_times = np.linspace(start_time, end_time, n_frames)
-fields = np.tile(combined_field, (n_frames, 1))
-```
-
-**New approach:** Build `frame_times` from the underlying data's timestamps.
-
-```python
-# NEW: frame_times come from data, not from arbitrary fps
-frame_times = times_window  # Actual position timestamps from data
-n_frames = len(frame_times)
-
-# Fields: one per data timestamp (static field repeated)
-fields = np.tile(combined_field, (n_frames, 1))
-```
-
-**CLI argument changes:**
-
-```python
-# REMOVE:
-parser.add_argument(
-    "--fps",
-    type=int,
-    default=33,
-    help="Frames per second (default: 33)",
-)
-
-# ADD:
-parser.add_argument(
-    "--speed",
-    type=float,
-    default=1.0,
-    help="Playback speed relative to real-time (default: 1.0 = real-time)",
-)
-```
-
-**Update animate_fields call:**
-
-```python
-# BEFORE:
-env.animate_fields(
-    fields,
-    backend="napari",
-    fps=fps,
-    frame_times=frame_times,
-    ...
-)
-
-# AFTER:
-env.animate_fields(
-    fields,
-    backend="napari",
-    speed=args.speed,  # 1.0 = real-time, 0.5 = half speed
-    frame_times=frame_times,  # From data timestamps
-    ...
-)
-```
-
-**Update trail_length calculation:**
-
-```python
-# BEFORE: trail based on fps (wrong - conflates concepts)
-trail_length=int(fps * 0.5)
-
-# AFTER: trail based on data sample rate
-sample_rate = (len(frame_times) - 1) / (frame_times[-1] - frame_times[0])
-trail_length=int(sample_rate * 0.5)  # 0.5 seconds of trail
-```
-
-**Update print statements:**
-
-```python
-# BEFORE:
-print(f"\nAnimation: {n_frames} frames at {fps} fps")
-
-# AFTER:
-sample_rate = (len(frame_times) - 1) / (frame_times[-1] - frame_times[0])
-print(f"\nAnimation: {n_frames} frames (data at {sample_rate:.1f} Hz)")
-print(f"  Playback speed: {args.speed}x")
-```
-
-#### 5.2 Update other demo scripts
-
-Search for other scripts using `animate_fields` with `fps` parameter and update them similarly:
+## Phase 0: Establish Performance Baseline
+
+### 0.1: Set Up Performance Monitoring
+
+Before any changes, measure baseline performance using napari's perfmon.
+
+**Tasks**
+
+- [ ] Create benchmark script `scripts/benchmark_napari_playback.py`
+- [ ] Test with each overlay individually:
+  - Position only
+  - Bodyparts + skeleton
+  - Head direction
+  - Events (instant vs cumulative)
+  - Video
+  - Time series
+- [ ] Test with all overlays combined
+- [ ] Record metrics for each test:
+  - Frame render time (target: <10ms)
+  - Qt paint time (target: <15-20ms)
+  - Callback overhead per frame
+
+**Implementation**
 
 ```bash
-grep -r "animate_fields.*fps" data/ scripts/ examples/
+# Enable perfmon before running
+NAPARI_PERFMON=1 uv run python scripts/benchmark_napari_playback.py
+
+# Or with config file for detailed tracing
+NAPARI_PERFMON=/path/to/perfmon_config.json uv run python scripts/benchmark_napari_playback.py
 ```
 
-### Phase 6: Test Updates
+**perfmon_config.json**:
+```json
+{
+    "trace_qt_events": true,
+    "trace_file_on_start": "/tmp/napari_trace_baseline.json",
+    "trace_callables": ["napari_callbacks"],
+    "callable_lists": {
+        "napari_callbacks": [
+            "neurospatial.animation.backends.napari_backend._make_video_frame_callback",
+            "neurospatial.animation.backends.napari_backend._render_timeseries_dock"
+        ]
+    }
+}
+```
 
-#### 6.1 Update existing tests
+**Viewing Results**:
+- Open Chrome: `chrome://tracing`
+- Load `/tmp/napari_trace_baseline.json`
+- Look for:
+  - `MetaCall:QObject` (Qt event processing)
+  - `Paint:CanvasBackendDesktop` (GPU rendering)
+  - Any custom events from trace_callables
 
-- Replace `fps=X` with `speed=X` where appropriate
-- Add `frame_times` to test calls
-- Update mocks/assertions
+---
 
-#### 6.2 Add new tests
+## Phase 1: Introduce PlaybackController (Central Control Point)
 
+### 1.1: Create PlaybackController Class
+
+Currently `render_napari` passes `fps` to napari's built-in playback, and overlays attach their own `dims.events.current_step` callbacks. This makes frame skipping impossible.
+
+**Goal**: Centralize playback into one controller that:
+- Owns the `QTimer` and playback rate
+- Owns the mapping `frame_idx -> frame_time`
+- Is the *only* place that calls `viewer.dims.set_current_step(...)`
+- Can skip frames if falling behind
+
+**Tasks**
+
+- [ ] Create `PlaybackController` class in `napari_backend.py`:
+  ```python
+  class PlaybackController:
+      """Central playback controller for frame-skipping-aware animation."""
+
+      def __init__(
+          self,
+          viewer: napari.Viewer,
+          n_frames: int,
+          fps: float,
+          frame_times: NDArray[np.float64] | None = None,
+      ):
+          self.viewer = viewer
+          self.n_frames = n_frames
+          self.fps = fps
+          self.frame_times = frame_times
+          self._current_frame = 0
+          self._playing = False
+          self._start_time: float | None = None
+          self._start_frame: int = 0
+          self._timer: QTimer | None = None
+          self._callbacks: list[Callable[[int], None]] = []
+
+      def go_to_frame(self, frame_idx: int) -> None:
+          """Jump to specific frame, updating viewer dims."""
+          self._current_frame = max(0, min(frame_idx, self.n_frames - 1))
+          self.viewer.dims.set_current_step(0, self._current_frame)
+          # Notify registered callbacks
+          for callback in self._callbacks:
+              callback(self._current_frame)
+
+      def step(self) -> None:
+          """Advance to next frame with skipping if behind schedule."""
+          if not self._playing or self._start_time is None:
+              return
+
+          # Calculate target frame based on elapsed time
+          elapsed = time.perf_counter() - self._start_time
+          target_frame = self._start_frame + int(elapsed * self.fps)
+
+          # Skip directly to target (frame dropping)
+          if target_frame > self._current_frame:
+              self.go_to_frame(target_frame)
+
+          # Check for end
+          if self._current_frame >= self.n_frames - 1:
+              self.pause()
+
+      def play(self) -> None:
+          """Start playback."""
+          self._playing = True
+          self._start_time = time.perf_counter()
+          self._start_frame = self._current_frame
+          # Start timer at target fps
+          if self._timer is None:
+              from qtpy.QtCore import QTimer
+              self._timer = QTimer()
+              self._timer.timeout.connect(self.step)
+          self._timer.start(int(1000 / self.fps))
+
+      def pause(self) -> None:
+          """Pause playback."""
+          self._playing = False
+          if self._timer:
+              self._timer.stop()
+
+      def register_callback(self, callback: Callable[[int], None]) -> None:
+          """Register callback to be notified on frame changes."""
+          self._callbacks.append(callback)
+  ```
+
+- [ ] Integrate `PlaybackController` into `render_napari()`:
+  - Create controller after viewer setup
+  - Store in `viewer.metadata["playback_controller"]`
+  - Wire custom play/pause widget to controller instead of napari's built-in
+
+- [ ] Keep existing `dims.events.current_step` callbacks for now (Phase 2 will migrate them)
+
+**Why This Helps**:
+- Frame skipping happens in `step()` when falling behind
+- All frame changes go through `go_to_frame()` which can throttle/batch updates
+- Callbacks registered here can be managed/throttled centrally
+
+---
+
+## Phase 2: Optimize Video Overlay
+
+### 2.1: Use Time-Indexed Image Layer (If In-Memory)
+
+Currently video updates via `layer.data = frame` on every frame change. For in-memory arrays, napari can handle time dimension natively.
+
+**Tasks**
+
+- [ ] In `_add_video_layer()`, detect if source is in-memory ndarray
+- [ ] If in-memory with shape `(n_video_frames, H, W, 3)`:
+  - Create Image layer with full array and time dimension
+  - Set `viewer.dims.ndim` to include video time axis
+  - Let napari handle frame selection natively (no callback)
+- [ ] If file-based or streaming:
+  - Keep current callback approach but add frame caching ring buffer
+
+**Implementation for in-memory**:
 ```python
-def test_speed_computation():
-    """Test playback fps computation from speed."""
-    # 30 Hz data, real-time
-    frame_times = np.linspace(0, 10, 301)  # 30 Hz, 10 seconds
-    fps, actual = _compute_playback_fps(frame_times, speed=1.0)
-    assert fps == 30
-    assert actual == pytest.approx(1.0)
-
-def test_speed_capping():
-    """Test that high speed is capped."""
-    # 500 Hz data, real-time would be 500 fps
-    frame_times = np.linspace(0, 1, 501)  # 500 Hz, 1 second
-    fps, actual = _compute_playback_fps(frame_times, speed=1.0)
-    assert fps == 60  # Capped
-    assert actual == pytest.approx(0.12, rel=0.01)  # 60/500
-
-def test_speed_warning(recwarn):
-    """Test warning emitted when speed is capped."""
-    frame_times = np.linspace(0, 1, 501)  # 500 Hz
-    env.animate_fields(fields, frame_times=frame_times, speed=1.0)
-    assert len(recwarn) == 1
-    assert "Capped to 60 fps" in str(recwarn[0].message)
-
-def test_single_frame_edge_case():
-    """Test edge case: single frame returns defaults."""
-    frame_times = np.array([0.0])  # Single frame
-    fps, actual = _compute_playback_fps(frame_times, speed=1.0)
-    assert fps == 60  # Returns max_fps
-    assert actual == 1.0  # Returns requested speed
-
-def test_zero_duration_edge_case():
-    """Test edge case: zero duration (all same timestamp)."""
-    frame_times = np.array([5.0, 5.0, 5.0])  # Zero duration
-    fps, actual = _compute_playback_fps(frame_times, speed=1.0)
-    assert fps == 60  # Returns max_fps
-    assert actual == 1.0  # Returns requested speed
-
-def test_slow_motion():
-    """Test slow motion playback."""
-    # 30 Hz data, 10% speed
-    frame_times = np.linspace(0, 10, 301)  # 30 Hz, 10 seconds
-    fps, actual = _compute_playback_fps(frame_times, speed=0.1)
-    assert fps == 3  # 30 * 0.1 = 3 fps
-    assert actual == pytest.approx(0.1)
-
-def test_minimum_fps_clamping():
-    """Test that fps is clamped to minimum (1 fps)."""
-    # 10 Hz data, 1% speed would be 0.1 fps
-    frame_times = np.linspace(0, 10, 101)  # 10 Hz
-    fps, actual = _compute_playback_fps(frame_times, speed=0.01)
-    assert fps == 1  # Clamped to MIN_PLAYBACK_FPS
-    assert actual == pytest.approx(0.1)  # 1/10 = 0.1
+if isinstance(video_data.reader, np.ndarray):
+    # Full array available - use napari's native time handling
+    video_array = video_data.reader  # (n_frames, H, W, 3)
+    layer = viewer.add_image(
+        video_array,
+        name=name,
+        rgb=True,
+        opacity=video_data.alpha,
+        affine=affine,
+        blending="translucent",
+    )
+    # No callback needed - napari handles dims[0] time axis
 ```
 
-### Phase 7: Documentation Updates
+### 2.2: Add Ring Buffer for File-Based Video
 
-#### 7.1 Update CLAUDE.md
+**Tasks**
 
-- Update Quick Reference examples
-- Update animate_fields documentation
-- Add note about speed vs fps
-- Update demo script examples
+- [ ] Create `VideoFrameCache` class with LRU ring buffer:
+  ```python
+  class VideoFrameCache:
+      def __init__(self, reader, cache_size: int = 100):
+          self.reader = reader
+          self.cache: OrderedDict[int, np.ndarray] = OrderedDict()
+          self.cache_size = cache_size
 
-#### 7.2 Update docstrings
+      def get_frame(self, idx: int) -> np.ndarray:
+          if idx in self.cache:
+              self.cache.move_to_end(idx)
+              return self.cache[idx]
 
-All updated in Phase 2 (Environment method) and Phase 1 (core function).
+          frame = self.reader[idx]
+          if len(self.cache) >= self.cache_size:
+              self.cache.popitem(last=False)  # Remove oldest
+          self.cache[idx] = frame
+          return frame
+  ```
 
----
-
-## Migration Notes
-
-### Breaking Changes
-
-1. **`fps` parameter removed from public API**
-   - Old: `env.animate_fields(fields, fps=30)`
-   - New: `env.animate_fields(fields, frame_times=times, speed=1.0)`
-
-2. **`frame_times` is now required (no default)**
-   - Old: Optional, would synthesize from fps if missing
-   - New: Required parameter, ValueError if not provided
-   - Rationale: Time comes from data, not arbitrary fps
-
-3. **`speed` replaces `fps` for playback control**
-   - Old: `fps=30` (raw frames per second)
-   - New: `speed=1.0` (multiplier relative to real-time)
-   - `speed=0.1` means 10% of real-time (slow motion)
-   - `speed=2.0` means 2x real-time (fast forward)
-
-### Backwards Compatibility Strategy
-
-We are **not** maintaining backwards compatibility (per user request). The old `fps` parameter will be removed entirely.
-
-If `fps` is passed in `**kwargs`, it will be ignored (backends receive computed fps, not user-provided).
+- [ ] Use cache in video callback to avoid redundant seeks
 
 ---
 
-## File Change Summary
+## Phase 3: Optimize Time Series Dock
 
-| File | Changes |
-|------|---------|
-| `src/neurospatial/animation/core.py` | Add constants, `_compute_playback_fps()` helper, update `animate_fields()` signature (require `frame_times`, add `speed`), pass `sample_rate_hz`/`speed`/`max_playback_fps` to backends via kwargs |
-| `src/neurospatial/animation/overlays.py` | Rename `_build_frame_times()` → `_validate_frame_times()`, remove `fps` parameter, remove synthesis logic |
-| `src/neurospatial/animation/backends/napari_backend.py` | Update `render_napari()` signature (add `speed`, `sample_rate_hz`, `max_playback_fps`), update `_add_speed_control_widget()` signature and implementation, update call site |
-| `src/neurospatial/environment/visualization.py` | Replace `fps` with `speed`, make `frame_times` required, update docstring |
-| `data/demo_spike_overlay_napari.py` | Remove `--fps`, add `--speed`, use data timestamps for `frame_times`, update trail_length calculation |
-| `tests/animation/test_*.py` | Update existing tests (add `frame_times`, replace `fps` with `speed`), add `_compute_playback_fps()` unit tests including edge cases |
-| `CLAUDE.md` | Update Quick Reference, animate_fields docs, demo examples |
+### 3.1: Add Update Mode Option
+
+Currently time series updates on every frame with blitting. Even blitting costs ~5-15ms.
+
+**Tasks**
+
+- [ ] Add `update_mode` parameter to `TimeSeriesOverlay`:
+  - `"live"` (default): Update every N frames (already throttled to 20 Hz max)
+  - `"on_pause"`: Only update when playback pauses
+  - `"manual"`: Only update via explicit call
+
+- [ ] In `_render_timeseries_dock()`, respect update mode:
+  ```python
+  def on_frame_change(event):
+      if update_mode == "on_pause" and controller.is_playing:
+          return  # Skip during playback
+      # ... existing update logic
+  ```
+
+- [ ] Wire to `PlaybackController` play/pause events for `on_pause` mode
+
+### 3.2: Reduce Matplotlib Draw Calls
+
+**Tasks**
+
+- [ ] Increase throttle frequency during playback (currently 20 Hz, consider 10 Hz)
+- [ ] Use `ax.set_xlim()` only when window actually changes (cache last window bounds)
+- [ ] Consider using pyqtgraph instead of matplotlib for <1ms updates (optional, major change)
 
 ---
 
-## Design Decisions (Resolved)
+## Phase 4: Playback Scheduling and Frame Skipping
 
-1. **`frame_times` is strictly required**
+### 4.1: Integrate Frame Skipping
 
-   For correct temporal semantics and overlay alignment, `frame_times` is the canonical way to express time. No fallback or warning-with-default.
+With `PlaybackController` from Phase 1, enable automatic frame skipping.
 
-   - Rationale: The whole point of this change is that time comes from data, not from arbitrary fps.
-   - Error message guides users: "Provide timestamps from your data source."
+**Tasks**
 
-2. **`max_playback_fps` is configurable with strong default**
+- [ ] `PlaybackController.step()` already calculates `target_frame` based on elapsed time
+- [ ] Add metrics tracking:
+  ```python
+  self._frames_rendered = 0
+  self._frames_skipped = 0
+  ```
+- [ ] Add option to disable skipping for testing:
+  ```python
+  def __init__(..., allow_frame_skip: bool = True):
+      self.allow_frame_skip = allow_frame_skip
+  ```
 
-   Exposed as `max_playback_fps: int = 60` parameter for advanced users.
+### 4.2: Handle Rapid Scrubbing
 
-   - Default 60 fps works for most displays
-   - Advanced users can increase for high-refresh displays (120/144 Hz)
-   - Or decrease for slower systems
+When user drags slider quickly, process only the latest requested frame.
 
-3. **Napari widget shows speed multiplier as primary control**
+**Tasks**
 
-   Speed multiplier is the right mental model: "0.1×", "1.0×", "2.0×" matches how scientists think about time scaling.
+- [ ] In `go_to_frame()`, if called rapidly (within 16ms), debounce:
+  ```python
+  def go_to_frame(self, frame_idx: int) -> None:
+      self._pending_frame = frame_idx
+      if not self._debounce_timer.isActive():
+          self._debounce_timer.start(16)  # ~60 Hz max update rate
 
-   - Primary label: "Speed: 0.25×"
-   - Secondary info: "≈ 12 fps" (for debugging)
-   - Slider controls speed, internally converts to fps for napari
+  def _apply_pending_frame(self) -> None:
+      if self._pending_frame is not None:
+          self._current_frame = self._pending_frame
+          self.viewer.dims.set_current_step(0, self._current_frame)
+          self._pending_frame = None
+  ```
+
+---
+
+## Phase 5: Clean Up Event Wiring
+
+### 5.1: Audit and Remove Redundant Callbacks
+
+**Tasks**
+
+- [ ] Search for all `viewer.dims.events.current_step.connect(...)` calls
+- [ ] For each callback, determine if it can be:
+  - Removed (already using native time dimension)
+  - Migrated to `PlaybackController.register_callback()`
+  - Throttled via central controller
+
+**Current callbacks to audit**:
+| Location | Callback | Action |
+|----------|----------|--------|
+| `_make_video_frame_callback` | `update_video_frames` | Keep for file-based, remove for in-memory |
+| `_render_event_overlay` | `on_frame_change` (cumulative/decay) | Keep (already efficient) |
+| `_render_timeseries_dock` | `on_frame_change` | Migrate to controller for `on_pause` mode |
+
+### 5.2: Remove Deprecated layer.data Assignments
+
+**Tasks**
+
+- [ ] Ensure no overlay does `layer.data = large_array` in callbacks
+- [ ] Current audit:
+  - Video: `layer.data = frame` (optimize in Phase 2)
+  - Events (cumulative): `layer.shown = mask` (efficient, keep)
+  - Others: Use native time dimension (no data reassignment)
+
+---
+
+## Phase 6: Verification and Profiling
+
+### 6.1: Create Automated Benchmark Suite
+
+**Tasks**
+
+- [ ] Create `tests/benchmarks/test_napari_playback.py` with pytest-benchmark:
+  ```python
+  @pytest.mark.benchmark
+  def test_playback_position_only(benchmark, env, fields, positions):
+      """Benchmark playback with position overlay."""
+      overlay = PositionOverlay(data=positions, color="red")
+      viewer = env.animate_fields(
+          fields, frame_times=frame_times,
+          backend="napari", overlays=[overlay]
+      )
+      benchmark(lambda: advance_n_frames(viewer, 100))
+  ```
+
+- [ ] Test configurations:
+  - Each overlay type individually
+  - All overlays combined
+  - Different field sizes (100x100, 500x500, 1000x1000)
+  - Different frame counts (100, 1000, 10000)
+
+### 6.2: Performance Targets
+
+| Metric | Target | Acceptable |
+|--------|--------|------------|
+| Per-frame callback total | <5ms | <10ms |
+| Canvas paint time | <10ms | <15ms |
+| Total frame latency | <16ms (60 fps) | <40ms (25 fps) |
+| Frame skip rate at 25 fps | <5% | <15% |
+
+### 6.3: Manual Testing Checklist
+
+- [ ] Playback smooth at 25 fps with all overlays
+- [ ] Scrubbing responsive (no lag when dragging slider)
+- [ ] No memory growth during extended playback
+- [ ] Frame counter updates correctly (not missing frames)
+- [ ] Time series plot updates smoothly (or correctly pauses during playback)
 
 ---
 
 ## Implementation Order
 
-1. **Phase 1.1-1.2**: Add constants and `_compute_playback_fps()` helper to `core.py`
-2. **Phase 1.4**: Update `_build_frame_times()` → `_validate_frame_times()` in `overlays.py`
-3. **Phase 1.3**: Update `animate_fields()` in `core.py` (requires steps 1-2)
-4. **Phase 2**: Update `Environment.animate_fields()` in `visualization.py`
-5. **Phase 4.1-4.3**: Update napari backend:
-   - 4.1: Update `_add_speed_control_widget()` implementation (speed slider)
-   - 4.2: Update `_add_speed_control_widget()` signature
-   - 4.3: Update `render_napari()` signature and call site
-6. **Phase 6**: Update tests (existing tests + new edge case tests)
-7. **Phase 5**: Update demo scripts
-8. **Phase 7**: Update CLAUDE.md
+**Recommended sequence**:
+
+1. **Phase 0.1**: Baseline measurement (1-2 hours)
+2. **Phase 1.1**: PlaybackController (2-3 hours)
+3. **Phase 4.1-4.2**: Frame skipping (1-2 hours)
+4. **Phase 2.1-2.2**: Video optimization (2-3 hours)
+5. **Phase 3.1-3.2**: Time series optimization (1-2 hours)
+6. **Phase 5.1-5.2**: Cleanup (1 hour)
+7. **Phase 6.1-6.3**: Verification (1-2 hours)
+
+**Total estimated effort**: 10-15 hours
+
+---
+
+## Appendix: perfmon Usage Reference
+
+### Enable perfmon
+
+```bash
+# Simple enable
+NAPARI_PERFMON=1 uv run python script.py
+
+# With config file
+NAPARI_PERFMON=perfmon_config.json uv run python script.py
+```
+
+### Create perfmon config
+
+```json
+{
+    "trace_qt_events": true,
+    "trace_file_on_start": "/tmp/trace.json",
+    "trace_callables": ["my_functions"],
+    "callable_lists": {
+        "my_functions": [
+            "module.Class.method"
+        ]
+    }
+}
+```
+
+### View traces
+
+1. Open Chrome
+2. Navigate to `chrome://tracing`
+3. Click "Load" and select trace JSON file
+4. Use WASD keys to navigate timeline
+
+### Key metrics to watch
+
+- `MetaCall:QObject`: Qt event processing overhead
+- `Paint:CanvasBackendDesktop`: GPU rendering time
+- Custom traced functions: Callback execution time
+
+### Add custom timing in code
+
+```python
+from napari.utils.perf import perf_timer, add_instant_event
+
+# Time a code block
+with perf_timer("my_operation"):
+    do_something()
+
+# Mark an event
+add_instant_event("frame_rendered")
+```
+
+---
+
+## Notes
+
+### What NOT to Change
+
+The following are already optimized and should not be modified:
+
+1. **Skeleton precomputation** (`_build_skeleton_vectors`): Already builds full Vectors layer at init
+2. **Event instant mode**: Already uses native 3D Points format
+3. **Position/Head direction overlays**: Already use Tracks with time dimension
+4. **Field caching**: LRU cache with lazy loading is appropriate for large datasets
+
+### Future Considerations (Out of Scope)
+
+- Replace matplotlib with pyqtgraph for time series (major change, minimal benefit vs Phase 3)
+- WebGL-based playback for web deployment
+- Multi-GPU rendering for very large environments
