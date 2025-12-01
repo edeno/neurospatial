@@ -1,200 +1,371 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-30 (Modular documentation structure)
-
----
-
-## 📚 Documentation Index
-
-This documentation is organized into focused modules. **Start with QUICKSTART.md**, then reference other guides as needed.
-
-### Start Here
-
-- **[QUICKSTART.md](.claude/QUICKSTART.md)** - Essential patterns and your first environment (~200 lines)
-  - Critical rules (always use `uv run`, factory methods, bin_size)
-  - Common patterns (create environment, neural analysis, animation)
-  - Quick command reference
-
-### Reference Guides
-
-- **[ARCHITECTURE.md](.claude/ARCHITECTURE.md)** - Core architecture and design (~300 lines)
-  - Three-layer design (Layout → Environment → Regions)
-  - Mixin pattern for Environment
-  - Animation system architecture
-  - Testing structure
-
-- **[API_REFERENCE.md](.claude/API_REFERENCE.md)** - Import patterns organized by feature (~150 lines)
-  - Spatial analysis, neural analysis, decoding
-  - Behavioral analysis, animation, visualization
-  - NWB integration, serialization
-
-- **[DEVELOPMENT.md](.claude/DEVELOPMENT.md)** - Development commands and workflow (~250 lines)
-  - Testing, code quality, type checking
-  - Git workflow, commit messages
-  - NumPy docstring format (required)
-  - Performance profiling
-
-### Implementation Guides
-
-- **[PATTERNS.md](.claude/PATTERNS.md)** - Design patterns you must follow (~400 lines)
-  - Graph metadata requirements
-  - Mixin pattern for Environment
-  - Mypy type checking requirements
-  - Protocol-based design
-  - Fitted state pattern
-  - Regions are immutable
-
-### Problem Solving
-
-- **[TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)** - Common errors and fixes (~400 lines)
-  - 13 common gotchas with ✅/❌ examples
-  - Error messages and solutions
-  - Performance issues
-  - NWB-specific issues
-
-### Advanced Topics
-
-- **[ADVANCED.md](.claude/ADVANCED.md)** - Advanced features and integrations (~400 lines)
-  - NWB integration (full reference)
-  - Video overlay and calibration
-  - Video annotation workflow
-  - Track graph annotation (1D environments)
-  - Large session optimization
-  - Coordinate system details
+**Last Updated**: 2025-11-30 (v0.9.0 - Track graph annotation for 1D environments)
 
 ---
 
-## 🚀 Quick Start (30 seconds)
+## 🎯 Critical Rules (MUST Follow)
 
-**If you just want to get started immediately:**
+When working with this codebase, you MUST follow these rules:
 
-### Critical Rules
+1. **ALWAYS use `uv run`** before Python commands - never use bare `python`, `pip`, or `pytest`
+2. **NEVER create bare `Environment()`** - always use factory methods like `Environment.from_samples()`
+3. **bin_size is REQUIRED** - all Environment creation needs explicit bin_size parameter
+4. **NumPy docstring format** - all docstrings must follow NumPy style (not Google or reST)
+5. **Check `is_1d` before linearization** - only 1D environments have `to_linear()` method
+6. **Regions are immutable** - use `env.regions.update_region()`, never modify in place
+7. **Use `@check_fitted` decorator** - methods requiring fitted state must use this decorator
 
-1. **ALWAYS use `uv run`** before Python commands
-2. **NEVER modify bare `Environment()`** - use factory methods
-3. **bin_size is required** for all Environment creation
-4. **NumPy docstring format** for all documentation
+---
+
+## 📦 Package Management
+
+**This project uses `uv` (not pip or conda).**
+
+- Python version: 3.13 (specified in `.python-version`)
+- Virtual environment: Automatically managed by `uv`
+- Dependencies: Defined in `pyproject.toml`
 
 ### Essential Commands
 
 ```bash
-uv run pytest                           # Run tests
-uv run ruff check . && uv run ruff format .  # Lint and format
-uv run mypy src/neurospatial/          # Type check
+# Run all tests (most common)
+uv run pytest
+
+# Run specific test
+uv run pytest tests/test_environment.py::test_function_name -v
+
+# Lint and format
+uv run ruff check . && uv run ruff format .
+
+# Type checking
+uv run mypy src/neurospatial/
+
+# Add dependency
+uv add package-name
+
+# Add dev dependency
+uv add --dev package-name
 ```
 
-### Your First Environment
+**Why uv?** Automatically manages virtual environment without manual activation.
+
+---
+
+## 🚀 Most Common Patterns (90% of tasks)
+
+### 1. Create Environment from Data
 
 ```python
 from neurospatial import Environment
 import numpy as np
 
-# Generate sample data
-positions = np.random.rand(100, 2) * 100
+# Generate sample position data
+positions = np.random.rand(100, 2) * 100  # 100 points in 2D
 
 # Create environment (bin_size is REQUIRED)
 env = Environment.from_samples(positions, bin_size=2.0)
+
+# Set metadata (recommended)
 env.units = "cm"
 env.frame = "session1"
 
-# Query
+# Query the environment
 bin_idx = env.bin_at([50.0, 50.0])
 neighbors = env.neighbors(bin_idx)
 ```
 
-**👉 For more examples, see [QUICKSTART.md](.claude/QUICKSTART.md)**
+**Need different layout?** See [QUICKSTART.md - Environment Creation](.claude/QUICKSTART.md#environment-creation)
+
+### 2. Compute Place Fields
+
+```python
+from neurospatial import compute_place_field
+
+# Compute place field for one neuron
+firing_rate = compute_place_field(
+    env, spike_times, times, positions,
+    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    bandwidth=5.0  # Smoothing bandwidth (cm)
+)
+# Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
+```
+
+**Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
+
+### 3. Animate Spatial Fields
+
+```python
+# IMPORTANT: frame_times is REQUIRED
+frame_times = np.arange(len(fields)) / 30.0  # 30 Hz timestamps
+
+# Interactive napari viewer
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
+
+# Video export with parallel rendering (requires ffmpeg)
+env.clear_cache()  # Required before parallel rendering
+env.animate_fields(
+    fields, frame_times=frame_times, speed=1.0,
+    backend="video", save_path="animation.mp4", n_workers=4
+)
+```
+
+**Need overlays?** See [QUICKSTART.md - Animation](.claude/QUICKSTART.md#visualization--animation)
+
+### 4. Add Trajectory Overlays
+
+```python
+from neurospatial import PositionOverlay
+
+# Position overlay with trail
+position_overlay = PositionOverlay(
+    data=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
+    color="red",
+    size=12.0,
+    trail_length=10  # Show last 10 frames as decaying trail
+)
+env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
+```
+
+**Need pose tracking or events?** See [QUICKSTART.md - Overlays](.claude/QUICKSTART.md#visualization--animation)
+
+### 5. Save and Load Environments
+
+```python
+# Save environment (creates .json + .npz files)
+env.to_file("my_environment")
+
+# Load environment
+from neurospatial import Environment
+loaded_env = Environment.from_file("my_environment")
+```
+
+**Need NWB integration?** See [ADVANCED.md - NWB Integration](.claude/ADVANCED.md#nwb-integration-v070)
 
 ---
 
-## 📖 Project Overview
+## ⚠️ Common Gotchas (Fix These First)
 
-**neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs.
+### Gotcha 1: Always use `uv run`
 
-### Key Features
+❌ **Wrong:**
 
-- **Flexible discretization**: Regular grids, hexagonal, triangular, masked, polygon-bounded
-- **1D linearization**: Track-based environments (T-maze, linear track)
-- **Neural analysis**: Place fields, Bayesian decoding, trajectory analysis
-- **Visualization**: Interactive animation with napari, video export
-- **NWB integration**: Read/write NeurodataWithoutBorders files (optional)
+```bash
+python script.py
+pytest
+pip install package
+```
 
-### Package Management
+✅ **Right:**
 
-**CRITICAL: This project uses `uv` for package management.**
+```bash
+uv run python script.py
+uv run pytest
+uv add package
+```
 
-- Python version: 3.13
-- **ALWAYS** use `uv run` to execute Python commands
-- **NEVER** use bare `python`, `pip`, or `pytest` commands
+### Gotcha 2: Check `_is_fitted` state
 
-**Why uv?** Automatically manages the virtual environment without manual activation.
+❌ **Wrong:**
+
+```python
+env = Environment()  # Not fitted!
+env.bin_at([10.0, 5.0])  # RuntimeError
+```
+
+✅ **Right:**
+
+```python
+env = Environment.from_samples(positions, bin_size=2.0)
+env.bin_at([10.0, 5.0])  # Works
+```
+
+### Gotcha 3: bin_size is required
+
+❌ **Wrong:**
+
+```python
+env = Environment.from_samples(data)  # TypeError
+```
+
+✅ **Right:**
+
+```python
+env = Environment.from_samples(positions, bin_size=2.0)
+```
+
+### Gotcha 4: Regions are immutable
+
+❌ **Wrong:**
+
+```python
+env.regions['goal'].point = new_point  # AttributeError
+```
+
+✅ **Right:**
+
+```python
+env.regions.update_region('goal', point=new_point)  # No warning
+```
+
+### Gotcha 5: Check `is_1d` before linearization
+
+❌ **Wrong:**
+
+```python
+env = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
+linear_pos = env.to_linear(position)  # AttributeError
+```
+
+✅ **Right:**
+
+```python
+if env.is_1d:
+    linear_pos = env.to_linear(position)
+else:
+    bin_idx = env.bin_at(position)
+```
+
+**More gotchas?** See [TROUBLESHOOTING.md - Common Gotchas](.claude/TROUBLESHOOTING.md#common-gotchas)
 
 ---
 
-## 🗺️ Navigation Guide
+## 🔧 When Things Break
 
-### I want to
+### Error: `ModuleNotFoundError: No module named 'neurospatial'`
 
-**Get started quickly**
-→ [QUICKSTART.md](.claude/QUICKSTART.md)
+```bash
+uv sync  # From project root
+uv run python -c "import neurospatial; print(neurospatial.__file__)"
+```
 
-**Understand the codebase architecture**
-→ [ARCHITECTURE.md](.claude/ARCHITECTURE.md)
+### Error: `RuntimeError: Environment must be fitted before calling this method`
 
-**Find import statements for a feature**
-→ [API_REFERENCE.md](.claude/API_REFERENCE.md)
+Use factory methods:
 
-**Run tests or commit code**
-→ [DEVELOPMENT.md](.claude/DEVELOPMENT.md)
+```python
+env = Environment.from_samples(positions, bin_size=2.0)  # Not: Environment()
+```
 
-**Extend the codebase (new layout engines, mixins)**
-→ [PATTERNS.md](.claude/PATTERNS.md)
+### Error: `ValueError: No active bins found`
 
-**Fix an error or warning**
-→ [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)
+Read the detailed error message - it provides diagnostics. Common fixes:
 
-**Work with NWB files or video overlays**
-→ [ADVANCED.md](.claude/ADVANCED.md)
+```python
+# Reduce bin_size
+env = Environment.from_samples(positions, bin_size=1.0)  # Was 10.0
 
----
+# Lower threshold
+env = Environment.from_samples(positions, bin_size=2.0, bin_count_threshold=1)
 
-## 🎯 Common Tasks Quick Links
+# Enable morphological operations
+env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=True)
+```
 
-### Neural Analysis
-
-- **Place fields**: [QUICKSTART.md - Place fields](. claude/QUICKSTART.md#neural-analysis)
-- **Bayesian decoding**: [QUICKSTART.md - Bayesian decoding](.claude/QUICKSTART.md#neural-analysis)
-- **Trajectory analysis**: [QUICKSTART.md - Trajectory analysis](.claude/QUICKSTART.md#neural-analysis)
-
-### Visualization
-
-- **Animate fields**: [QUICKSTART.md - Animate spatial fields](.claude/QUICKSTART.md#visualization--animation)
-- **Add overlays**: [QUICKSTART.md - Add trajectory overlays](.claude/QUICKSTART.md#visualization--animation)
-- **Video overlay**: [ADVANCED.md - Video Overlay](.claude/ADVANCED.md#video-overlay-v050)
-
-### Data Integration
-
-- **NWB read/write**: [ADVANCED.md - NWB Integration](.claude/ADVANCED.md#nwb-integration-v070)
-- **Video annotation**: [ADVANCED.md - Video Annotation](.claude/ADVANCED.md#video-annotation-v060)
-- **Track graphs**: [ADVANCED.md - Track Graph Annotation](.claude/ADVANCED.md#track-graph-annotation-v090)
-
-### Development
-
-- **Run tests**: [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
-- **Type checking**: [DEVELOPMENT.md - Type Checking](.claude/DEVELOPMENT.md#type-checking-with-mypy)
-- **Create layout engines**: [PATTERNS.md - Protocol-Based Design](.claude/PATTERNS.md#protocol-based-design)
-- **Mixin pattern**: [PATTERNS.md - Mixin Pattern](.claude/PATTERNS.md#mixin-pattern-for-environment)
-
-### Troubleshooting
-
-- **Common gotchas**: [TROUBLESHOOTING.md - Common Gotchas](.claude/TROUBLESHOOTING.md#common-gotchas)
-- **Error messages**: [TROUBLESHOOTING.md - Error Messages](.claude/TROUBLESHOOTING.md#error-messages)
-- **Performance issues**: [TROUBLESHOOTING.md - Performance Issues](.claude/TROUBLESHOOTING.md#performance-issues)
+**More errors?** See [TROUBLESHOOTING.md - Error Messages](.claude/TROUBLESHOOTING.md#error-messages)
 
 ---
 
-## 📝 Commit Message Format
+## 🏗️ Architecture Overview
+
+**neurospatial** uses a three-layer architecture:
+
+1. **Layout Engines** (`src/neurospatial/layout/`)
+   - Protocol-based design with `LayoutEngine` interface
+   - Available engines: RegularGrid, Hexagonal, Graph (1D), Masked, ImageMask, ShapelyPolygon, TriangularMesh
+   - All engines produce: `bin_centers`, `connectivity` graph, `dimension_ranges`
+
+2. **Environment** (`src/neurospatial/environment/`)
+   - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
+   - Mixins: core, factories, queries, trajectory, transforms, fields, metrics, regions, serialization, visualization
+   - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`
+
+3. **Regions** (`src/neurospatial/regions/`)
+   - Immutable `Region` dataclass (points or polygons)
+   - `Regions` container with dict-like interface
+   - JSON serialization with versioned schema
+
+**Need architecture details?** See [ARCHITECTURE.md](.claude/ARCHITECTURE.md)
+
+---
+
+## 📚 Documentation Structure
+
+This documentation is organized into focused modules:
+
+| Document | Purpose | When to Read |
+|----------|---------|--------------|
+| **[QUICKSTART.md](.claude/QUICKSTART.md)** | Essential patterns | Start here - copy-paste examples |
+| **[API_REFERENCE.md](.claude/API_REFERENCE.md)** | Import patterns | When you need an import statement |
+| **[DEVELOPMENT.md](.claude/DEVELOPMENT.md)** | Commands & workflow | When running tests or committing |
+| **[PATTERNS.md](.claude/PATTERNS.md)** | Design patterns | When extending the codebase |
+| **[TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)** | Errors & fixes | When something breaks |
+| **[ADVANCED.md](.claude/ADVANCED.md)** | NWB, video overlays | When using advanced features |
+| **[ARCHITECTURE.md](.claude/ARCHITECTURE.md)** | Core design | When understanding internals |
+
+**Total documentation:** ~2,100 lines across 7 files
+**Token reduction:** ~60-70% per conversation (only load what's needed)
+
+---
+
+## 🎓 Learning Path
+
+### Beginner (first time using neurospatial)
+
+1. Read "Most Common Patterns" above
+2. Try [QUICKSTART.md - Your First Environment](.claude/QUICKSTART.md#your-first-environment)
+3. Reference [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) when stuck
+
+### Intermediate (extending or modifying code)
+
+1. Understand [ARCHITECTURE.md - Three-Layer Design](.claude/ARCHITECTURE.md#three-layer-design)
+2. Learn [PATTERNS.md - Mixin Pattern](.claude/PATTERNS.md#mixin-pattern-for-environment)
+3. Follow [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
+
+### Advanced (architecting features)
+
+1. Master [PATTERNS.md - All Patterns](.claude/PATTERNS.md)
+2. Read [ADVANCED.md - NWB Integration](.claude/ADVANCED.md#nwb-integration-v070)
+3. Study [DEVELOPMENT.md - Full Workflow](.claude/DEVELOPMENT.md)
+
+---
+
+## 🔍 Quick Navigation
+
+### By Task Type
+
+| I want to... | Go to... |
+|--------------|----------|
+| Create first environment | "Most Common Patterns" above |
+| Compute place fields | "Most Common Patterns" above |
+| Animate fields | "Most Common Patterns" above |
+| Find import statement | [API_REFERENCE.md](.claude/API_REFERENCE.md) |
+| Run tests | "Essential Commands" above |
+| Fix error | "When Things Break" above |
+| Understand mixins | [PATTERNS.md - Mixin Pattern](.claude/PATTERNS.md#mixin-pattern-for-environment) |
+| Work with NWB files | [ADVANCED.md - NWB](.claude/ADVANCED.md#nwb-integration-v070) |
+| Add video overlay | [ADVANCED.md - Video Overlay](.claude/ADVANCED.md#video-overlay-v050) |
+| Annotate track graphs | [ADVANCED.md - Track Graph](.claude/ADVANCED.md#track-graph-annotation-v090) |
+
+### By Problem Type
+
+| Problem | Solution |
+|---------|----------|
+| Import error | "When Things Break" above |
+| RuntimeError: not fitted | "When Things Break" above |
+| ValueError: no active bins | "When Things Break" above |
+| Tests fail | [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing) |
+| Pre-commit hooks fail | [TROUBLESHOOTING.md - Pre-commit](.claude/TROUBLESHOOTING.md#pre-commit-hooks-fail-on-commit) |
+| Memory warning | [TROUBLESHOOTING.md - ResourceWarning](.claude/TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) |
+| Type errors | [PATTERNS.md - Mypy](.claude/PATTERNS.md#mypy-type-checking-requirements) |
+
+---
+
+## 📝 Development Quick Reference
+
+### Git Commit Format
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
@@ -212,69 +383,86 @@ chore(scope): description
 - `fix: correct version reference`
 - `docs(M8): update CLAUDE.md with speed-based animation API`
 
----
+### NumPy Docstring Format (Required)
 
-## 🔍 Finding What You Need
+```python
+def function_name(param1, param2):
+    """
+    Short one-line summary ending with a period.
 
-### By Task Type
+    Parameters
+    ----------
+    param1 : type
+        Description of param1.
+    param2 : type, optional
+        Description of param2. Default is None.
 
-| Task | Document |
-|------|----------|
-| Create first environment | [QUICKSTART.md](.claude/QUICKSTART.md) |
-| Find import statement | [API_REFERENCE.md](.claude/API_REFERENCE.md) |
-| Run tests | [DEVELOPMENT.md](.claude/DEVELOPMENT.md#testing) |
-| Fix error | [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) |
-| Understand mixins | [PATTERNS.md](.claude/PATTERNS.md#mixin-pattern-for-environment) |
-| NWB integration | [ADVANCED.md](.claude/ADVANCED.md#nwb-integration-v070) |
+    Returns
+    -------
+    return_type
+        Description of return value.
 
-### By Expertise Level
-
-**Beginner** (first time using neurospatial):
-
-1. [QUICKSTART.md](.claude/QUICKSTART.md) - Read "Your First Environment"
-2. [QUICKSTART.md](.claude/QUICKSTART.md) - Try common patterns
-3. [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md) - Reference when stuck
-
-**Intermediate** (extending or modifying code):
-
-1. [ARCHITECTURE.md](.claude/ARCHITECTURE.md) - Understand design
-2. [PATTERNS.md](.claude/PATTERNS.md) - Learn constraints
-3. [DEVELOPMENT.md](.claude/DEVELOPMENT.md) - Development workflow
-
-**Advanced** (architecting features):
-
-1. [PATTERNS.md](.claude/PATTERNS.md) - Master all patterns
-2. [ADVANCED.md](.claude/ADVANCED.md) - Advanced integrations
-3. [DEVELOPMENT.md](.claude/DEVELOPMENT.md) - Full dev workflow
-
----
-
-## 📦 File Structure Summary
-
-```
-.claude/
-├── QUICKSTART.md         # Start here - essential patterns
-├── ARCHITECTURE.md       # Core design and architecture
-├── API_REFERENCE.md      # Import patterns by feature
-├── DEVELOPMENT.md        # Commands and workflow
-├── PATTERNS.md           # Design patterns (must follow)
-├── TROUBLESHOOTING.md    # Errors and fixes
-└── ADVANCED.md           # NWB, video overlays, advanced topics
+    Examples
+    --------
+    >>> result = function_name(arg1, arg2)
+    >>> print(result)
+    expected_output
+    """
 ```
 
-**Total documentation:** ~2,100 lines (down from 1,750 in single file)
-**Main entry point:** ~300 lines (this file)
-**Average file size:** ~300 lines per topic
+**More details:** [DEVELOPMENT.md - Documentation Style](.claude/DEVELOPMENT.md#documentation-style)
 
 ---
 
-## ❓ Still Can't Find It?
+## 🧪 Testing Quick Reference
 
-1. **Search across files**: Use Ctrl+F in your editor across `.claude/` directory
-2. **Check table of contents**: Each file has detailed TOC at top
-3. **Follow cross-references**: Documents link to related sections
-4. **Ask specific questions**: The modular structure helps Claude Code load only relevant context
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific test
+uv run pytest tests/test_environment.py::test_function_name -v
+
+# Run with coverage
+uv run pytest --cov=src/neurospatial
+
+# Run doctests
+uv run pytest --doctest-modules src/neurospatial/
+
+# Skip slow tests
+uv run pytest -m "not slow"
+```
+
+**More testing options:** [DEVELOPMENT.md - Testing](.claude/DEVELOPMENT.md#testing)
 
 ---
 
-**For questions or issues**: <https://github.com/anthropics/claude-code/issues>
+## 📖 Project Context
+
+**neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs. It provides tools for spatial analysis, particularly for neuroscience applications involving place fields, position tracking, and spatial navigation.
+
+**Key Features:**
+
+- Flexible discretization (regular grids, hexagonal, triangular, masked, polygon-bounded)
+- 1D linearization (track-based environments like T-maze, linear track)
+- Neural analysis (place fields, Bayesian decoding, trajectory analysis)
+- Visualization (interactive animation with napari, video export, HTML players)
+- NWB integration (read/write NeurodataWithoutBorders files - optional)
+
+**Current Version:** v0.9.0 (Track graph annotation for 1D environments)
+
+---
+
+## ❓ Can't Find What You Need?
+
+1. **Check "Most Common Patterns" above** - covers 90% of tasks
+2. **Search "Quick Navigation" tables** - organized by task and problem type
+3. **Read the relevant guide**:
+   - Patterns/examples → [QUICKSTART.md](.claude/QUICKSTART.md)
+   - Imports → [API_REFERENCE.md](.claude/API_REFERENCE.md)
+   - Errors → [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)
+   - Design → [PATTERNS.md](.claude/PATTERNS.md)
+   - Advanced → [ADVANCED.md](.claude/ADVANCED.md)
+4. **Search across files** - Use Ctrl+F in editor across `.claude/` directory
+
+**For questions or issues:** <https://github.com/anthropics/claude-code/issues>
