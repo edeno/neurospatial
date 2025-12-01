@@ -1523,16 +1523,21 @@ def _validate_field_types_consistent(fields: list) -> None:
 
 def _add_speed_control_widget(
     viewer: napari.Viewer,
-    initial_fps: int = DEFAULT_FPS,
+    initial_fps: int | None = None,
     frame_labels: list[str] | None = None,
+    *,
+    initial_speed: float = 1.0,
+    sample_rate_hz: float = 30.0,
+    max_playback_fps: int = 60,
 ) -> None:
     """Add enhanced playback control widget to napari viewer.
 
     Creates a comprehensive docked widget with:
     - Play/Pause button (large, prominent)
-    - FPS slider (1-120 range, 200px wide)
+    - Speed slider (0.01-4.0× range, shows speed multiplier)
     - Frame counter ("Frame: 15 / 30")
     - Frame label (if provided: "Trial 15")
+    - FPS info label ("≈ 12 fps")
 
     Inspired by nwb_data_viewer playback widget pattern.
 
@@ -1540,11 +1545,24 @@ def _add_speed_control_widget(
     ----------
     viewer : napari.Viewer
         Napari viewer instance to add widget to
-    initial_fps : int, default=30
-        Initial playback speed in frames per second
+    initial_fps : int, optional
+        **Deprecated.** Use ``initial_speed`` instead.
+        If provided, overrides computed fps from speed/sample_rate_hz.
     frame_labels : list of str, optional
         Labels for each frame (e.g., ["Trial 1", "Trial 2", ...])
         If provided, displays current frame's label in widget
+    initial_speed : float, default=1.0
+        Initial playback speed multiplier:
+
+        - 1.0: Real-time playback
+        - 0.1: 10% speed (slow motion)
+        - 2.0: 2× speed (fast forward)
+    sample_rate_hz : float, default=30.0
+        Data sample rate in Hz. Used to compute actual fps from speed.
+        For example, 30 Hz data at speed=0.5 gives 15 fps playback.
+    max_playback_fps : int, default=60
+        Maximum playback fps. Speed slider is capped so that
+        ``sample_rate_hz * speed <= max_playback_fps``.
 
     Notes
     -----
@@ -1562,46 +1580,67 @@ def _add_speed_control_widget(
         # magicgui or napari.settings not available - skip widget
         return
 
+    # Compute fps from speed and sample_rate_hz (unless initial_fps is explicitly provided)
+    if initial_fps is None:
+        computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)  # Clamp to minimum
+        fps_value: int = computed_fps
+    else:
+        fps_value = initial_fps
+
     # Track playback state for button updates
     playback_state = {"is_playing": False, "last_frame": -1}
 
-    # Create enhanced playback widget using magicgui
-    # Set slider max to at least initial_fps (but minimum FPS_SLIDER_DEFAULT_MAX)
-    slider_max = max(FPS_SLIDER_DEFAULT_MAX, initial_fps)
+    # Compute max speed that doesn't exceed max_playback_fps
+    max_speed = max_playback_fps / sample_rate_hz if sample_rate_hz > 0 else 4.0
+    max_speed = min(max_speed, 4.0)  # Cap at 4× for UX
 
     # Throttle widget updates for high FPS (WIDGET_UPDATE_TARGET_HZ max to avoid Qt overhead)
     # At 250 FPS, updating 250x/sec causes stalling; throttle to target Hz
     update_interval = (
-        max(1, initial_fps // WIDGET_UPDATE_TARGET_HZ)
-        if initial_fps >= WIDGET_UPDATE_TARGET_HZ
+        max(1, fps_value // WIDGET_UPDATE_TARGET_HZ)
+        if fps_value >= WIDGET_UPDATE_TARGET_HZ
         else 1
     )
+
+    # Initial speed info string (Unicode × and ≈ are intentional for better UX)
+    initial_speed_info = f"{initial_speed:.2f}× (≈{fps_value} fps)"  # noqa: RUF001
 
     @magicgui(
         auto_call=True,
         play={"widget_type": "PushButton", "text": "▶ Play"},
-        fps={
-            "widget_type": "Slider",
-            "min": FPS_SLIDER_MIN,
-            "max": slider_max,
-            "value": initial_fps,
-            "label": "Speed (FPS)",
+        speed={
+            "widget_type": "FloatSlider",
+            "min": 0.01,
+            "max": max_speed,
+            "step": 0.01,
+            "value": initial_speed,
+            "label": "Speed",
         },
+        speed_info={"widget_type": "Label", "label": "", "value": initial_speed_info},
         frame_info={"widget_type": "Label", "label": ""},
     )
     def playback_widget(
         play: bool = False,
-        fps: int = initial_fps,
+        speed: float = initial_speed,
+        speed_info: str = initial_speed_info,
         frame_info: str = "",
     ) -> None:
-        """Enhanced playback control widget."""
-        # Update FPS setting when slider changes
+        """Enhanced playback control widget with speed multiplier."""
+        # Compute fps from speed and sample_rate_hz
+        computed_fps = int(min(sample_rate_hz * speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
+
+        # Update napari settings with computed fps
         settings = get_settings()
-        settings.application.playback_fps = fps
+        settings.application.playback_fps = computed_fps
+
+        # Update speed info label (Unicode × and ≈ are intentional for better UX)
+        playback_widget.speed_info.value = f"{speed:.2f}× (≈{computed_fps} fps)"  # noqa: RUF001
 
     # Make slider larger and easier to interact with
     with contextlib.suppress(Exception):
-        playback_widget.fps.native.setMinimumWidth(200)
+        playback_widget.speed.native.setMinimumWidth(200)
 
     # Connect play button to toggle playback
     def toggle_playback(event: Any | None = None) -> None:
@@ -1860,6 +1899,9 @@ def render_napari(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    speed: float = 1.0,
+    sample_rate_hz: float | None = None,
+    max_playback_fps: int = 60,
     **kwargs: Any,
 ) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -1934,6 +1976,28 @@ def render_napari(
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only applies when show_regions
         is True or a non-empty list.
+    scale_bar : bool or ScaleBarConfig, default=False
+        If True, enable napari's native scale bar. If ScaleBarConfig object,
+        configure scale bar appearance. Requires environment to have units set.
+    speed : float, default=1.0
+        Playback speed multiplier relative to real-time:
+
+        - 1.0: Real-time playback (1 second of data = 1 second viewing)
+        - 0.1: 10% speed (slow motion, good for replay analysis)
+        - 2.0: 2× speed (fast forward)
+
+        This parameter is passed from ``animate_fields()`` along with
+        ``sample_rate_hz`` to enable the interactive speed control widget
+        to show speed multipliers instead of raw fps values.
+    sample_rate_hz : float, optional
+        Data sample rate in Hz (e.g., 30.0 for 30 Hz position tracking, 500.0
+        for replay decoding). Computed from ``frame_times`` by ``animate_fields()``
+        and used by the speed control widget to convert between speed multiplier
+        and playback fps. If None, defaults to computing from fps.
+    max_playback_fps : int, default=60
+        Maximum playback fps for the speed control widget. Higher values may
+        exceed display refresh rate. Passed from ``animate_fields()`` to ensure
+        consistent speed capping across the API.
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -2131,6 +2195,9 @@ def render_napari(
             show_regions=show_regions,
             region_alpha=region_alpha,
             scale_bar=scale_bar,
+            speed=speed,
+            sample_rate_hz=sample_rate_hz,
+            max_playback_fps=max_playback_fps,
         )
 
     # Single-field viewer (original behavior)
@@ -2244,7 +2311,13 @@ def render_napari(
 
         # 4. Add interactive speed control widget (if magicgui available)
         # The widget also adds spacebar keyboard shortcut (synced with button)
-        _add_speed_control_widget(viewer, initial_fps=fps, frame_labels=frame_labels)
+        _add_speed_control_widget(
+            viewer,
+            frame_labels=frame_labels,
+            initial_speed=speed,
+            sample_rate_hz=sample_rate_hz if sample_rate_hz is not None else 30.0,
+            max_playback_fps=max_playback_fps,
+        )
     except ImportError:
         # Fallback: Add spacebar shortcut without widget (magicgui not available)
         @viewer.bind_key("Space")
@@ -2365,6 +2438,9 @@ def _render_multi_field_napari(
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    speed: float = 1.0,
+    sample_rate_hz: float | None = None,
+    max_playback_fps: int = 60,
 ) -> napari.Viewer:
     """Render multiple field sequences in a single napari viewer.
 
@@ -2546,7 +2622,13 @@ def _render_multi_field_napari(
         settings = get_settings()
         settings.application.playback_fps = fps
 
-        _add_speed_control_widget(viewer, initial_fps=fps, frame_labels=frame_labels)
+        _add_speed_control_widget(
+            viewer,
+            frame_labels=frame_labels,
+            initial_speed=speed,
+            sample_rate_hz=sample_rate_hz if sample_rate_hz is not None else 30.0,
+            max_playback_fps=max_playback_fps,
+        )
     except ImportError:
 
         @viewer.bind_key("Space")

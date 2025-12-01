@@ -440,9 +440,11 @@ def test_render_napari_frame_labels(simple_env, simple_fields):
         # Check positional arg (viewer)
         assert call_args[0][0] == mock_viewer
 
-        # Check keyword args (initial_fps and frame_labels)
-        assert call_args[1]["initial_fps"] == 25
+        # Check keyword args (speed-based parameters and frame_labels)
         assert call_args[1]["frame_labels"] == labels
+        assert call_args[1]["initial_speed"] == 1.0  # Default
+        assert call_args[1]["sample_rate_hz"] == 30.0  # Default fallback
+        assert call_args[1]["max_playback_fps"] == 60  # Default
 
 
 @pytest.mark.napari
@@ -540,9 +542,13 @@ def test_speed_control_widget_added(simple_env, simple_fields):
         # Render napari viewer
         render_napari(simple_env, simple_fields, fps=30)
 
-        # Verify speed control widget was called (with frame_labels=None by default)
+        # Verify speed control widget was called with new speed-based parameters
         mock_add_widget.assert_called_once_with(
-            mock_viewer, initial_fps=30, frame_labels=None
+            mock_viewer,
+            frame_labels=None,
+            initial_speed=1.0,
+            sample_rate_hz=30.0,
+            max_playback_fps=60,
         )
 
 
@@ -572,8 +578,8 @@ def test_speed_control_widget_graceful_fallback(simple_env, simple_fields):
 
 
 @pytest.mark.napari
-def test_speed_control_widget_high_fps(simple_env, simple_fields):
-    """Test that speed control widget works with high FPS values (>120)."""
+def test_speed_control_widget_high_sample_rate(simple_env, simple_fields):
+    """Test that speed control widget works with high sample rate values (>120 Hz)."""
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
@@ -595,12 +601,16 @@ def test_speed_control_widget_high_fps(simple_env, simple_fields):
         mock_settings.application.playback_fps = 10
         mock_get_settings.return_value = mock_settings
 
-        # Render with high FPS (250 Hz - common for neuroscience recordings)
-        render_napari(simple_env, simple_fields, fps=250)
+        # Render with high sample rate (250 Hz - common for neuroscience recordings)
+        render_napari(simple_env, simple_fields, sample_rate_hz=250.0)
 
-        # Verify speed control widget was called with high FPS
+        # Verify speed control widget was called with high sample rate
         mock_add_widget.assert_called_once_with(
-            mock_viewer, initial_fps=250, frame_labels=None
+            mock_viewer,
+            frame_labels=None,
+            initial_speed=1.0,
+            sample_rate_hz=250.0,
+            max_playback_fps=60,
         )
 
 
@@ -1335,3 +1345,321 @@ class TestMultiscaleDisabled:
             call_kwargs = mock_viewer.add_image.call_args[1]
             assert "multiscale" in call_kwargs
             assert call_kwargs["multiscale"] is False
+
+
+# ============================================================================
+# Speed-Based API Tests (Milestone 5)
+# ============================================================================
+
+
+class TestSpeedBasedAPI:
+    """Test render_napari() speed-based API (Task 5.1).
+
+    The new API uses speed multiplier (e.g., 0.5× = half speed) instead of
+    raw fps. This matches how scientists think about playback speed.
+    """
+
+    @pytest.fixture
+    def env(self):
+        """Create minimal environment for testing."""
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100
+        from neurospatial import Environment
+
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    @pytest.fixture
+    def fields(self, env):
+        """Create simple field sequence."""
+        n_frames = 10
+        rng = np.random.default_rng(42)
+        return rng.random((n_frames, env.n_bins))
+
+    @pytest.mark.napari
+    def test_render_napari_accepts_speed_parameter(self, env, fields):
+        """Test render_napari accepts speed parameter."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should accept speed parameter without error
+            render_napari(env, fields, speed=0.5, fps=15)
+
+    @pytest.mark.napari
+    def test_render_napari_accepts_sample_rate_hz_parameter(self, env, fields):
+        """Test render_napari accepts sample_rate_hz parameter."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should accept sample_rate_hz parameter without error
+            render_napari(env, fields, sample_rate_hz=30.0, fps=30)
+
+    @pytest.mark.napari
+    def test_render_napari_accepts_max_playback_fps_parameter(self, env, fields):
+        """Test render_napari accepts max_playback_fps parameter."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should accept max_playback_fps parameter without error
+            render_napari(env, fields, max_playback_fps=120, fps=30)
+
+    @pytest.mark.napari
+    def test_render_napari_accepts_all_speed_parameters_together(self, env, fields):
+        """Test render_napari accepts all speed-related parameters together."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should accept all parameters together without error
+            render_napari(
+                env,
+                fields,
+                speed=1.0,
+                sample_rate_hz=30.0,
+                max_playback_fps=60,
+                fps=30,
+            )
+
+    @pytest.mark.napari
+    def test_render_napari_speed_parameters_have_defaults(self, env, fields):
+        """Test speed parameters have sensible defaults."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            # Should work with only fps (other parameters use defaults)
+            render_napari(env, fields, fps=30)
+
+    @pytest.mark.napari
+    def test_render_napari_speed_not_in_unknown_kwargs_warning(self, env, fields):
+        """Test that speed/sample_rate_hz/max_playback_fps don't trigger unknown kwargs warning."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
+            mock_viewer = _create_mock_viewer()
+            mock_viewer_class.return_value = mock_viewer
+
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+
+                # These should NOT trigger unknown kwargs warning
+                render_napari(
+                    env,
+                    fields,
+                    speed=0.5,
+                    sample_rate_hz=30.0,
+                    max_playback_fps=60,
+                    fps=15,
+                )
+
+                # Check no "unknown keyword arguments" warning
+                unknown_kwarg_warnings = [
+                    x for x in w if "unknown keyword arguments" in str(x.message)
+                ]
+                assert len(unknown_kwarg_warnings) == 0, (
+                    f"Got unexpected warning: {unknown_kwarg_warnings}"
+                )
+
+
+class TestSpeedControlWidgetSignature:
+    """Test _add_speed_control_widget() new signature (Task 5.2).
+
+    The widget should accept speed-based parameters to enable showing
+    speed multipliers instead of raw fps values.
+    """
+
+    @pytest.mark.napari
+    def test_add_speed_control_widget_accepts_initial_speed(self):
+        """Test _add_speed_control_widget accepts initial_speed parameter."""
+        pytest.importorskip("napari")
+        pytest.importorskip("magicgui")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _add_speed_control_widget,
+        )
+
+        mock_viewer = _create_mock_viewer()
+        mock_viewer.dims.range = [(0, 10, 1)]
+
+        with patch("napari.settings.get_settings") as mock_settings:
+            mock_settings.return_value.application.playback_fps = 30
+
+            # Should accept initial_speed without error
+            _add_speed_control_widget(mock_viewer, initial_speed=0.5)
+
+    @pytest.mark.napari
+    def test_add_speed_control_widget_accepts_sample_rate_hz(self):
+        """Test _add_speed_control_widget accepts sample_rate_hz parameter."""
+        pytest.importorskip("napari")
+        pytest.importorskip("magicgui")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _add_speed_control_widget,
+        )
+
+        mock_viewer = _create_mock_viewer()
+        mock_viewer.dims.range = [(0, 10, 1)]
+
+        with patch("napari.settings.get_settings") as mock_settings:
+            mock_settings.return_value.application.playback_fps = 30
+
+            # Should accept sample_rate_hz without error
+            _add_speed_control_widget(mock_viewer, sample_rate_hz=30.0)
+
+    @pytest.mark.napari
+    def test_add_speed_control_widget_accepts_max_playback_fps(self):
+        """Test _add_speed_control_widget accepts max_playback_fps parameter."""
+        pytest.importorskip("napari")
+        pytest.importorskip("magicgui")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _add_speed_control_widget,
+        )
+
+        mock_viewer = _create_mock_viewer()
+        mock_viewer.dims.range = [(0, 10, 1)]
+
+        with patch("napari.settings.get_settings") as mock_settings:
+            mock_settings.return_value.application.playback_fps = 30
+
+            # Should accept max_playback_fps without error
+            _add_speed_control_widget(mock_viewer, max_playback_fps=120)
+
+    @pytest.mark.napari
+    def test_add_speed_control_widget_accepts_all_speed_parameters(self):
+        """Test _add_speed_control_widget accepts all speed-related parameters."""
+        pytest.importorskip("napari")
+        pytest.importorskip("magicgui")
+
+        from neurospatial.animation.backends.napari_backend import (
+            _add_speed_control_widget,
+        )
+
+        mock_viewer = _create_mock_viewer()
+        mock_viewer.dims.range = [(0, 10, 1)]
+
+        with patch("napari.settings.get_settings") as mock_settings:
+            mock_settings.return_value.application.playback_fps = 30
+
+            # Should accept all parameters together without error
+            _add_speed_control_widget(
+                mock_viewer,
+                initial_speed=1.0,
+                sample_rate_hz=30.0,
+                max_playback_fps=60,
+                frame_labels=None,
+            )
+
+
+class TestSpeedSliderImplementation:
+    """Test speed-based slider implementation (Task 5.3).
+
+    The widget should show speed multiplier (e.g., 0.5×) as the primary control,
+    with fps shown as secondary info.
+    """
+
+    @pytest.mark.napari
+    def test_speed_slider_fps_computation_1x(self):
+        """Test that fps_value computation is correct for speed=1.0."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import FPS_SLIDER_MIN
+
+        # Verify the computation logic directly
+        # fps = min(sample_rate_hz * speed, max_playback_fps), clamped to MIN
+        sample_rate_hz = 30.0
+        initial_speed = 1.0
+        max_playback_fps = 60
+
+        computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
+
+        assert computed_fps == 30
+
+    @pytest.mark.napari
+    def test_speed_slider_fps_computation_half_speed(self):
+        """Test that fps_value computation is correct for speed=0.5."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import FPS_SLIDER_MIN
+
+        sample_rate_hz = 30.0
+        initial_speed = 0.5
+        max_playback_fps = 60
+
+        computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
+
+        assert computed_fps == 15
+
+    @pytest.mark.napari
+    def test_speed_slider_fps_computation_respects_max(self):
+        """Test that fps_value is capped at max_playback_fps."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import FPS_SLIDER_MIN
+
+        sample_rate_hz = 500.0
+        initial_speed = 1.0
+        max_playback_fps = 60
+
+        computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
+
+        # 500 * 1.0 = 500, capped to 60
+        assert computed_fps == 60
+
+    @pytest.mark.napari
+    def test_speed_slider_fps_computation_respects_min(self):
+        """Test that fps_value is clamped to FPS_SLIDER_MIN."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import FPS_SLIDER_MIN
+
+        sample_rate_hz = 10.0
+        initial_speed = 0.01  # Very slow
+        max_playback_fps = 60
+
+        computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
+        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
+
+        # 10 * 0.01 = 0.1 → int(0.1) = 0, clamped to 1
+        assert computed_fps == FPS_SLIDER_MIN

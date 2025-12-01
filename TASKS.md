@@ -108,14 +108,14 @@
 
 ### Tasks
 
-- [ ] **5.1 Update `render_napari()` signature in `napari_backend.py`**
+- [x] **5.1 Update `render_napari()` signature in `napari_backend.py`**
   - Add `speed: float = 1.0` parameter
   - Add `sample_rate_hz: float | None = None` parameter
   - Add `max_playback_fps: int = 60` parameter
   - Remove direct `fps` parameter usage (receive via kwargs)
   - Success: Function accepts new parameters
 
-- [ ] **5.2 Update `_add_speed_control_widget()` signature**
+- [x] **5.2 Update `_add_speed_control_widget()` signature**
   - Change from `initial_fps: int` to:
     - `initial_speed: float = 1.0`
     - `sample_rate_hz: float = 30.0`
@@ -123,14 +123,14 @@
   - Keep `frame_labels` parameter
   - Success: New signature matches plan
 
-- [ ] **5.3 Implement speed-based slider in `_add_speed_control_widget()`**
+- [x] **5.3 Implement speed-based slider in `_add_speed_control_widget()`**
   - Replace fps slider with speed multiplier slider (0.01 to 4.0)
   - Add secondary info label showing "≈ X fps"
   - Internally compute fps = min(sample_rate_hz * speed, max_playback_fps)
   - Update napari settings with computed fps
   - Success: UI shows "Speed: 0.25×" with "≈ 12 fps" info
 
-- [ ] **5.4 Update call site in `render_napari()`**
+- [x] **5.4 Update call site in `render_napari()`**
   - Pass `initial_speed`, `sample_rate_hz`, `max_playback_fps` to widget
   - Remove `initial_fps` usage
   - Success: Widget initializes with correct speed
@@ -186,17 +186,19 @@
 
 ### Tasks
 
-- [ ] **7.1 Update `data/demo_spike_overlay_napari.py`**
+- [x] **7.1 Update `data/demo_spike_overlay_napari.py`**
   - Remove `--fps` CLI argument
   - Add `--speed` CLI argument (default=1.0)
   - Use data timestamps for `frame_times` instead of synthesizing
   - Update `trail_length` calculation to use sample_rate
   - Update print statements to show sample rate and speed
-  - Success: Demo runs with new API, shows "data at X Hz, playback speed: Y×"
+  - Fixed variable name collision: `speed` (playback) vs `animal_speed` (movement)
+  - Success: Demo runs with new API, shows "data at X Hz, playback speed: Yx"
 
-- [ ] **7.2 Search and update other demo scripts**
+- [x] **7.2 Search and update other demo scripts**
   - Run: `grep -r "animate_fields.*fps" data/ scripts/ examples/`
-  - Update each script to use `speed` and explicit `frame_times`
+  - Updated `examples/16_field_animation.py` (and synced .ipynb via jupytext)
+  - Created appropriate `frame_times` for trial-based and large-session examples
   - Success: No scripts use old `fps` parameter
 
 ---

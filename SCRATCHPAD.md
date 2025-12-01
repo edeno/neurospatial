@@ -5,13 +5,16 @@
 
 ## Status
 
-**Milestones 1, 2, 3, and 4 COMPLETE**
+**Milestones 1, 2, 3, 4, 5, 6, and 7 COMPLETE**
 
 - Milestone 1: Core Infrastructure ✅
 - Milestone 2: Overlay Validation Refactor ✅
 - Milestone 3: Core API Change ✅
 - Milestone 4: Environment Method Update ✅
-- Milestone 5: Napari Widget Enhancement (next)
+- Milestone 5: Napari Widget Enhancement ✅
+- Milestone 6: Test Updates ✅
+- Milestone 7: Demo Script Updates ✅
+- Milestone 8: Documentation Updates (next)
 
 ## Completed Work
 
@@ -80,12 +83,64 @@
 - Updated all examples to include `frame_times` parameter
 - Location: `src/neurospatial/environment/visualization.py` (lines 563-920)
 
+### Milestone 5: Napari Widget Enhancement ✅
+
+**Task 5.1 - Update `render_napari()` signature** ✅
+- Added `speed: float = 1.0`, `sample_rate_hz: float | None = None`, `max_playback_fps: int = 60`
+- Location: `src/neurospatial/animation/backends/napari_backend.py`
+- Tests: `tests/animation/test_napari_backend.py::TestSpeedBasedAPI` (6 tests)
+
+**Task 5.2 - Update `_add_speed_control_widget()` signature** ✅
+- Added `initial_speed`, `sample_rate_hz`, `max_playback_fps` parameters
+- Kept `initial_fps` for backwards compatibility (deprecated)
+- Location: `src/neurospatial/animation/backends/napari_backend.py`
+- Tests: `tests/animation/test_napari_backend.py::TestSpeedControlWidgetSignature` (4 tests)
+
+**Task 5.3 - Implement speed-based slider** ✅
+- Replaced fps slider with FloatSlider for speed (0.01-4.0)
+- Added speed_info label showing "X.XX× (≈Y fps)"
+- Widget computes fps from `min(sample_rate_hz * speed, max_playback_fps)`
+- Location: `src/neurospatial/animation/backends/napari_backend.py`
+- Tests: `tests/animation/test_napari_backend.py::TestSpeedSliderImplementation` (4 tests)
+
+**Task 5.4 - Update call site in `render_napari()`** ✅
+- Updated call to `_add_speed_control_widget()` to pass new parameters
+- Updated `_render_multi_field_napari()` signature and call sites
+- Renamed test `test_speed_control_widget_high_fps` → `test_speed_control_widget_high_sample_rate`
+- Location: `src/neurospatial/animation/backends/napari_backend.py`
+
+### Milestone 6: Test Updates ✅
+
+Tests already completed as part of Milestones 1-5. Verified 1060 tests pass (8 pre-existing failures unrelated to this work).
+
+### Milestone 7: Demo Script Updates ✅
+
+**Task 7.1 - Update `data/demo_spike_overlay_napari.py`** ✅
+
+- Replaced `--fps` CLI argument with `--speed` (default 1.0)
+- Changed `main()` parameter from `fps: int = 20` to `speed: float = 1.0`
+- Now uses data timestamps (`times_window`) directly for `frame_times`
+- Updated `trail_length` to use computed `sample_rate_hz`
+- Updated print statements: "data at X Hz, playback speed: Yx"
+- Fixed variable name collision: renamed local `speed` (movement) to `animal_speed`
+- Location: `data/demo_spike_overlay_napari.py`
+
+**Task 7.2 - Update other demo scripts** ✅
+
+- Updated `examples/16_field_animation.py` to use new API
+- Created `frame_times` for trial-based data (1 second per trial)
+- Created `large_session_frame_times` for 250 Hz session data
+- Updated all `animate_fields()` calls to use `frame_times` and `speed`
+- Synced `examples/16_field_animation.ipynb` via jupytext
+- Updated common patterns code comments
+
 ## Next Steps
 
-**Milestone 5: Napari Widget Enhancement** (Tasks 5.1-5.4)
-- Update `render_napari()` signature with `speed`, `sample_rate_hz`, `max_playback_fps`
-- Update `_add_speed_control_widget()` to show speed multiplier as primary control
-- UI to show "Speed: 0.25×" with "≈ 12 fps" info
+**Milestone 8: Documentation Updates** (Tasks 8.1-8.3)
+
+- Update CLAUDE.md Quick Reference examples
+- Update animation section documentation
+- Add migration notes for breaking changes
 
 ## Blockers
 

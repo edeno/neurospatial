@@ -153,6 +153,14 @@ for trial in range(n_trials):
 
 print(f"Generated {len(fields)} trial fields (remapping at trial {remap_trial})")
 
+# Create frame_times for animation (1 second per trial)
+# This defines the temporal structure - speed parameter controls playback rate
+trial_duration = 1.0  # seconds per trial
+frame_times = np.arange(n_trials) * trial_duration
+print(
+    f"Frame times: {frame_times[0]:.1f}s to {frame_times[-1]:.1f}s ({trial_duration}s/trial)"
+)
+
 # %% [markdown]
 # ## Example 1: Interactive Napari Viewer
 #
@@ -182,7 +190,7 @@ try:
     print("")
     print("Enhanced Widget (left sidebar - auto-added):")
     print("  ⏯ Large Play/Pause button - Toggle animation (synced with spacebar)")
-    print("  📊 Speed (FPS) slider - 200px wide, 1-120 FPS range")
+    print("  📊 Speed slider - Control playback relative to real-time")
     print("  📋 Frame counter - 'Frame: 15 / 30' with trial label")
     print("  ✓ Updates in real-time during playback")
     print("")
@@ -200,7 +208,8 @@ try:
     viewer = env.animate_fields(
         fields,
         backend="napari",
-        fps=10,
+        frame_times=frame_times,
+        speed=10.0,  # 10x real-time (1 trial/second → 10 trials/second)
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         title="Place Field Remapping",
         scale_bar=True,  # Shows scale bar with units (env.units = "cm")
@@ -312,7 +321,8 @@ try:
             "Neuron B (Remap A→B)",
             "Neuron C (Stable B)",
         ],
-        fps=10,
+        frame_times=frame_times,
+        speed=10.0,  # 10x real-time
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         title="Multi-Neuron Comparison",
         scale_bar=True,  # Shows scale bar with units (env.units = "cm")
@@ -357,7 +367,8 @@ if check_ffmpeg_available():
         fields,
         backend="video",
         save_path=output_dir / "16_place_field_remapping.mp4",
-        fps=5,
+        frame_times=frame_times,
+        speed=5.0,  # 5x real-time
         cmap="hot",
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         n_workers=4,  # Parallel rendering
@@ -390,7 +401,8 @@ html_path = env.animate_fields(
     fields,
     backend="html",
     save_path=output_dir / "16_place_field_remapping.html",
-    fps=10,
+    frame_times=frame_times,
+    speed=10.0,  # 10x real-time
     cmap="viridis",
     frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
 )
@@ -424,7 +436,8 @@ try:
         widget = env.animate_fields(
             fields,
             backend="widget",
-            fps=10,
+            frame_times=frame_times,
+            speed=10.0,  # 10x real-time
             frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
         )
 
@@ -511,8 +524,16 @@ for i in range(0, n_frames_large, chunk_size):
 
 fields_mmap.flush()
 
+# Create frame_times for the large session (250 Hz sampling rate)
+large_session_sample_rate = 250.0  # Hz
+large_session_duration = n_frames_large / large_session_sample_rate
+large_session_frame_times = np.linspace(0, large_session_duration, n_frames_large)
+
 print(f"\n✓ Created memory-mapped dataset: {n_frames_large:,} frames")
 print(f"  File size: {n_frames_large * env.n_bins * 4 / 1e9:.2f} GB")
+print(
+    f"  Duration: {large_session_duration:.1f}s at {large_session_sample_rate:.0f} Hz"
+)
 print("  RAM usage: ~0 MB (memory-mapped, not loaded)")
 
 # %% [markdown]
@@ -546,13 +567,14 @@ try:
     print("PLAYBACK CONTROLS:")
     print("  Bottom-left: ▶ Play button, time slider")
     print("  Keyboard: Spacebar (play/pause), ← → (step frames)")
-    print("  Left sidebar: 📊 'Playback Speed' widget (large slider, 1-120 FPS)")
+    print("  Left sidebar: 📊 'Playback Speed' widget")
     print("")
 
     viewer = env.animate_fields(
         fields_mmap,
         backend="napari",
-        fps=250,  # Match recording rate
+        frame_times=large_session_frame_times,
+        speed=1.0,  # Real-time playback
         title="Large Session Demo (1000 frames)",
         scale_bar=True,  # Shows scale bar with units (env.units = "cm")
         # cache_chunk_size=100,  # Auto-detected (default for >10K frames)
@@ -583,6 +605,7 @@ print("  For large sessions: 250 Hz → 30 fps requires subsampling")
 # For 900K frames, this would produce 108K subsampled frames (1 hour video)
 # For our 1000 frame demo, this produces ~120 frames
 fields_subsampled = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
+subsampled_frame_times = np.linspace(0, large_session_duration, len(fields_subsampled))
 print(f"  Subsampled: {len(fields_subsampled):,} frames (every {250 // 30}th frame)")
 print(f"  Video duration: {len(fields_subsampled) / 30:.1f} seconds")
 print("  (For 900K frames, would produce ~1 hour video)")
@@ -599,7 +622,8 @@ if check_ffmpeg_available():
         fields_subsampled,
         backend="video",
         save_path=output_dir / "16_large_session_summary.mp4",
-        fps=30,
+        frame_times=subsampled_frame_times,
+        speed=1.0,  # Real-time playback
         n_workers=8,
         dry_run=True,  # Estimate first
     )
@@ -646,24 +670,26 @@ if mmap_path.exists():
 #
 # ```python
 # # Auto backend selection
-# env.animate_fields(fields, backend='auto')
+# env.animate_fields(fields, frame_times=times, backend='auto')
 #
-# # Quick Napari check
-# env.animate_fields(fields, backend='napari')
+# # Quick Napari check with 10x speed
+# env.animate_fields(fields, frame_times=times, speed=10.0, backend='napari')
 #
 # # Compare multiple neurons side-by-side (multi-field viewer)
 # env.animate_fields(
 #     fields=[neuron1_fields, neuron2_fields, neuron3_fields],
+#     frame_times=times,
+#     speed=10.0,
 #     backend='napari',
 #     layout='horizontal',  # or 'vertical', 'grid'
 #     layer_names=['Neuron A', 'Neuron B', 'Neuron C']
 # )
 #
-# # Publication video
-# env.animate_fields(fields, save_path='video.mp4', fps=5, n_workers=8)
+# # Publication video (5x speed)
+# env.animate_fields(fields, frame_times=times, speed=5.0, save_path='video.mp4', n_workers=8)
 #
 # # Shareable HTML
-# env.animate_fields(fields, save_path='animation.html')
+# env.animate_fields(fields, frame_times=times, save_path='animation.html')
 #
 # # Subsample high-frequency data
 # from neurospatial.animation import subsample_frames
