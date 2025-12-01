@@ -145,32 +145,35 @@
 
 ### Tasks
 
-- [ ] **6.1 Add unit tests for `_compute_playback_fps()`**
+- [x] **6.1 Add unit tests for `_compute_playback_fps()`**
   - Test normal case: 30 Hz data at speed=1.0 → 30 fps
   - Test capping: 500 Hz data at speed=1.0 → 60 fps, actual_speed≈0.12
   - Test slow motion: 30 Hz at speed=0.1 → 3 fps
   - Test minimum clamping: 10 Hz at speed=0.01 → 1 fps
   - Test edge case: single frame → returns max_fps
   - Test edge case: zero duration → returns max_fps
-  - Location: `tests/animation/test_core.py` or new file
+  - Location: `tests/animation/test_core.py::TestComputePlaybackFps`
   - Success: All edge cases covered
 
-- [ ] **6.2 Update existing `animate_fields` tests**
+- [x] **6.2 Update existing `animate_fields` tests**
   - Replace `fps=X` with `speed=X` where applicable
   - Add `frame_times` parameter to all test calls
   - Update mock assertions to check for speed-related kwargs
+  - Verified: 26 test calls use frame_times=, none use fps= with animate_fields
   - Success: All existing tests pass
 
-- [ ] **6.3 Add warning emission test**
+- [x] **6.3 Add warning emission test**
   - Test that warning is emitted when speed is capped
   - Use `pytest.warns(UserWarning, match="Capped to 60 fps")`
   - Test with 500 Hz data at speed=1.0
+  - Location: `tests/animation/test_core.py::test_warning_emitted_when_speed_capped`
   - Success: Warning message matches expected format
 
-- [ ] **6.4 Add frame_times validation tests**
+- [x] **6.4 Add frame_times validation tests**
   - Test ValueError on length mismatch
   - Test ValueError on non-monotonic timestamps
   - Test that valid timestamps pass through
+  - Location: `tests/animation/test_timeline_helpers.py::TestValidateFrameTimes`
   - Success: Clear error messages for invalid input
 
 ---
