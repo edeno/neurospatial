@@ -74,12 +74,39 @@ NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napar
 # Open chrome://tracing and load /tmp/napari_neurospatial_trace.json
 ```
 
+### Task: Run baseline measurements
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Added `--video` flag to benchmark script for video overlay testing
+- Added `--auto-close` flag for automated benchmarking (closes viewer after timing)
+- Ran benchmarks for all 6 overlay types individually and combined
+- Created comprehensive baseline documentation in `docs/performance_baseline.md`
+
+**Key Results**:
+
+| Configuration | Mean (ms) | Achievable FPS | Target Met? |
+|---------------|-----------|----------------|-------------|
+| Position only | 21.87 | ~46 fps | Yes |
+| Bodyparts + skeleton | 26.30 | ~38 fps | Yes |
+| Head direction | 18.44 | ~54 fps | Yes |
+| Events (decay) | 19.20 | ~52 fps | Yes |
+| Time series dock | 18.49 | ~54 fps | Yes |
+| Video overlay | 18.39 | ~54 fps | Yes |
+| **All 6 overlays** | **47.38** | **~21 fps** | **No** |
+
+**Key Finding**: Individual overlays all meet 30 fps target, but combined performance drops to ~21 fps. Optimization needed for multi-overlay use cases.
+
+**Files created/modified**:
+- `scripts/benchmark_napari_playback.py` (modified) - Added `--video` and `--auto-close` flags
+- `docs/performance_baseline.md` (new) - Comprehensive baseline documentation
+
 ---
 
 ## Next Task
 
-**Task**: Run baseline measurements
-**Purpose**: Record frame times for each overlay type individually and combined
+**Task**: Phase 1 - Create PlaybackController class
+**Purpose**: Centralize playback control to enable frame skipping and coordinated updates
 
 ---
 

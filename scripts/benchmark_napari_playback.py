@@ -184,10 +184,15 @@ Examples:
         help="Include time series dock widget",
     )
     overlay_group.add_argument(
+        "--video",
+        action="store_true",
+        help="Include video overlay (synthetic noise video)",
+    )
+    overlay_group.add_argument(
         "--all-overlays",
         action="store_true",
         help="Enable all overlays (equivalent to --position --bodyparts "
-        "--head-direction --events --timeseries)",
+        "--head-direction --events --timeseries --video)",
     )
 
     # Execution mode
@@ -201,6 +206,11 @@ Examples:
         "--no-playback",
         action="store_true",
         help="Skip playback timing (only measure setup time)",
+    )
+    mode_group.add_argument(
+        "--auto-close",
+        action="store_true",
+        help="Automatically close viewer after timing (for automated benchmarks)",
     )
 
     return parser
@@ -330,6 +340,7 @@ def create_selected_overlays(
     head_direction: bool = False,
     events: bool = False,
     timeseries: bool = False,
+    video: bool = False,
 ) -> list[Any]:
     """Create overlays based on selection flags.
 
@@ -351,12 +362,14 @@ def create_selected_overlays(
         Include event overlay.
     timeseries : bool, default=False
         Include time series overlay.
+    video : bool, default=False
+        Include video overlay (synthetic noise video).
 
     Returns
     -------
     list[Any]
         List of overlay objects. Possible types: PositionOverlay, BodypartOverlay,
-        HeadDirectionOverlay, EventOverlay, TimeSeriesOverlay.
+        HeadDirectionOverlay, EventOverlay, TimeSeriesOverlay, VideoOverlay.
     """
     from neurospatial.animation.overlays import (
         BodypartOverlay,
@@ -364,6 +377,7 @@ def create_selected_overlays(
         HeadDirectionOverlay,
         PositionOverlay,
         TimeSeriesOverlay,
+        VideoOverlay,
     )
     from neurospatial.animation.skeleton import Skeleton
 
@@ -491,6 +505,30 @@ def create_selected_overlays(
         )
         overlays.append(timeseries_overlay)
 
+    # Video overlay (synthetic noise video)
+    if video:
+        # Create synthetic video matching environment dimensions
+        # Use 100x100 pixel video for reasonable performance
+        video_height, video_width = 100, 100
+
+        # Generate noisy grayscale video, convert to RGB
+        video_frames = rng.integers(
+            50, 200, size=(n_frames, video_height, video_width), dtype=np.uint8
+        )
+        # Convert to RGB by stacking the grayscale channel
+        video_rgb = np.stack([video_frames] * 3, axis=-1)
+
+        # Create timestamps for video frames
+        video_times = np.arange(n_frames) / DEFAULT_FPS
+
+        video_overlay = VideoOverlay(
+            source=video_rgb,
+            times=video_times,
+            alpha=0.3,  # Lower opacity so field is visible
+            z_order="below",  # Video behind field
+        )
+        overlays.append(video_overlay)
+
     return overlays
 
 
@@ -573,6 +611,7 @@ def run_benchmark(
     playback_frames: int,
     headless: bool = False,
     no_playback: bool = False,
+    auto_close: bool = False,
 ) -> TimingMetrics:
     """Run the benchmark and collect timing metrics.
 
@@ -592,6 +631,8 @@ def run_benchmark(
         If True, close viewer without display.
     no_playback : bool
         If True, skip playback timing.
+    auto_close : bool
+        If True, close viewer automatically after timing.
 
     Returns
     -------
@@ -616,6 +657,8 @@ def run_benchmark(
             overlay_names.append("events")
         elif "TimeSeries" in class_name:
             overlay_names.append("timeseries")
+        elif "Video" in class_name:
+            overlay_names.append("video")
 
     # Time setup
     with timer() as setup_timer:
@@ -666,8 +709,13 @@ def run_benchmark(
         frame_times_ms.append(elapsed_ms)
 
     print("[INFO] Frame stepping completed")
-    print("[INFO] Viewer open - close window to finish")
-    napari.run()
+
+    if auto_close:
+        print("[INFO] Auto-closing viewer")
+        viewer.close()
+    else:
+        print("[INFO] Viewer open - close window to finish")
+        napari.run()
 
     return TimingMetrics(
         setup_time_s=setup_time,
@@ -693,6 +741,7 @@ def main() -> None:
     include_head_direction = args.head_direction or args.all_overlays
     include_events = args.events or args.all_overlays
     include_timeseries = args.timeseries or args.all_overlays
+    include_video = args.video or args.all_overlays
 
     # If no overlays specified and not --all-overlays, default to position only
     if not any(
@@ -702,6 +751,7 @@ def main() -> None:
             args.head_direction,
             args.events,
             args.timeseries,
+            args.video,
             args.all_overlays,
         ]
     ):
@@ -717,7 +767,7 @@ def main() -> None:
     print(
         f"  Overlays: position={include_position}, bodyparts={include_bodyparts}, "
         f"head_direction={include_head_direction}, events={include_events}, "
-        f"timeseries={include_timeseries}"
+        f"timeseries={include_timeseries}, video={include_video}"
     )
 
     # Generate data
@@ -745,6 +795,7 @@ def main() -> None:
             head_direction=include_head_direction,
             events=include_events,
             timeseries=include_timeseries,
+            video=include_video,
         )
 
     print(f"[INFO] Overlay creation: {overlay_timer['elapsed']:.3f}s")
@@ -760,6 +811,7 @@ def main() -> None:
         playback_frames=args.playback_frames,
         headless=args.headless,
         no_playback=args.no_playback,
+        auto_close=args.auto_close,
     )
 
     # Print results

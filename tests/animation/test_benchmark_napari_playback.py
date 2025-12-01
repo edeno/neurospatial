@@ -114,6 +114,24 @@ class TestBenchmarkArgumentParsing:
         else:
             pytest.skip("create_argument_parser not found")
 
+    def test_video_flag(self, benchmark_module):
+        """Parser should support --video flag."""
+        if hasattr(benchmark_module, "create_argument_parser"):
+            parser = benchmark_module.create_argument_parser()
+            args = parser.parse_args(["--video"])
+            assert args.video is True
+        else:
+            pytest.skip("create_argument_parser not found")
+
+    def test_auto_close_flag(self, benchmark_module):
+        """Parser should support --auto-close flag."""
+        if hasattr(benchmark_module, "create_argument_parser"):
+            parser = benchmark_module.create_argument_parser()
+            args = parser.parse_args(["--auto-close"])
+            assert args.auto_close is True
+        else:
+            pytest.skip("create_argument_parser not found")
+
 
 class TestBenchmarkDataGeneration:
     """Tests for synthetic data generation."""
@@ -273,6 +291,33 @@ class TestOverlayCreation:
         ts_overlays = [o for o in overlays if isinstance(o, TimeSeriesOverlay)]
         assert len(ts_overlays) == 1
 
+    def test_video_overlay_creation(self, benchmark_module):
+        """Should create VideoOverlay when video=True."""
+        if not hasattr(benchmark_module, "create_selected_overlays"):
+            pytest.skip("create_selected_overlays not found")
+
+        from neurospatial import Environment
+        from neurospatial.animation.overlays import VideoOverlay
+
+        # Create a simple environment
+        positions = np.random.rand(100, 2) * 20
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        overlays = benchmark_module.create_selected_overlays(
+            env=env,
+            n_frames=50,
+            seed=42,
+            position=False,
+            bodyparts=False,
+            head_direction=False,
+            events=False,
+            timeseries=False,
+            video=True,
+        )
+
+        video_overlays = [o for o in overlays if isinstance(o, VideoOverlay)]
+        assert len(video_overlays) == 1
+
 
 class TestTimingMetricsOutput:
     """Tests for timing metrics output."""
@@ -385,6 +430,7 @@ class TestEdgeCases:
             head_direction=False,
             events=False,
             timeseries=False,
+            video=False,
         )
 
         # Should return empty list (main() adds position, not this function)
