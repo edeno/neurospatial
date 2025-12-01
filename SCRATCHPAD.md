@@ -1,7 +1,7 @@
 # SCRATCHPAD.md - Napari Performance Optimization
 
 **Started**: 2025-12-01
-**Current Phase**: Phase 2.1 Complete - Time-Indexed Video Layer for In-Memory Video
+**Current Phase**: Phase 2 Complete - Ready for Phase 3 (Time Series Dock Optimization)
 
 ---
 
@@ -169,12 +169,55 @@ NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napar
 - For 30 fps playback, this saves ~60-90ms/second of playback time
 - One-time setup cost for frame reordering is amortized over playback duration
 
+### Task: Phase 2.2 - Enhance Video Cache for File-Based Video
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- **Discovery**: `VideoReader` already had LRU caching (functools.lru_cache with cache_size=100)
+- **Problem**: The cache_size was hardcoded in `VideoOverlay.convert_to_data()`, not configurable
+- **Solution**: Made cache configurable + added async prefetching
+
+**Changes**:
+1. Added `cache_size` parameter to `VideoOverlay` (default 100, was hardcoded)
+2. Added `prefetch_ahead` parameter for async frame prefetching (default 0 = disabled)
+3. Implemented background thread prefetching in `VideoReader`:
+   - Uses `ThreadPoolExecutor` with single worker thread
+   - Prefetches frames [current+1, current+prefetch_ahead] after each access
+   - Thread-safe via lru_cache's internal synchronization
+   - Graceful cleanup in `__del__` method
+4. Full validation for both parameters (positive int for cache_size, non-negative for prefetch_ahead)
+
+**Files created/modified**:
+- `src/neurospatial/animation/_video_io.py` (modified) - Added prefetching to VideoReader
+- `src/neurospatial/animation/overlays.py` (modified) - Added cache_size and prefetch_ahead to VideoOverlay
+- `tests/animation/test_video_cache.py` (new) - 24 unit tests
+
+**Code review findings** (fixed):
+- Removed unused `_prefetch_lock` field (dead code)
+
+**API additions**:
+```python
+# VideoOverlay now accepts:
+VideoOverlay(
+    source="video.mp4",
+    cache_size=200,      # Frames to cache (default 100)
+    prefetch_ahead=5,    # Frames to prefetch in background (default 0)
+)
+
+# VideoReader now accepts:
+VideoReader(
+    "video.mp4",
+    cache_size=200,
+    prefetch_ahead=5,
+)
+```
+
 ---
 
 ## Next Task
 
-**Task**: Phase 2.2 - Add Ring Buffer for File-Based Video
-**Purpose**: Add frame caching for file-based video to reduce seek overhead
+**Task**: Phase 3.1 - Add Update Mode Option to TimeSeriesOverlay
+**Purpose**: Reduce matplotlib drawing overhead during playback
 
 ---
 

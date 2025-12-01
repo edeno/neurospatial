@@ -93,11 +93,11 @@
 
 ### 2.2: Add Ring Buffer for File-Based Video
 
-- [ ] Create `VideoFrameCache` class
-  - LRU OrderedDict with configurable cache size (default 100 frames)
-  - `get_frame(idx)` method with cache hit/miss logic
-- [ ] Use cache in video frame callback
-- [ ] Consider async prefetching for sequential playback (optional enhancement)
+- [x] ~~Create `VideoFrameCache` class~~ **SKIPPED**: `VideoReader` already has LRU cache
+- [x] Add configurable `cache_size` parameter to `VideoOverlay` (was hardcoded to 100)
+- [x] Add `prefetch_ahead` parameter for async frame prefetching
+- [x] Implement background thread prefetching in `VideoReader`
+- [x] Tests: 24 tests in `tests/animation/test_video_cache.py`
 
 **Success Criteria**: In-memory video uses native time dimension; file-based video cached
 

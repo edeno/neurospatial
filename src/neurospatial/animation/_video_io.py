@@ -7,6 +7,8 @@ rendering.
 
 from __future__ import annotations
 
+import contextlib
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple, Protocol, runtime_checkable
@@ -115,6 +117,11 @@ class VideoReader:
     crop : tuple of (x, y, width, height), optional
         Region to crop from each frame in pixel coordinates.
         Applied before downsampling.
+    prefetch_ahead : int, default=0
+        Number of frames to prefetch in background when a frame is accessed.
+        Set to 0 (default) to disable prefetching. A value of 5 will load
+        frames [current+1, current+5] in a background thread after each access.
+        This can improve playback smoothness by hiding disk I/O latency.
 
     Attributes
     ----------
@@ -130,6 +137,8 @@ class VideoReader:
         Total video duration in seconds.
     crop_offset_px : tuple of (x, y)
         Offset of crop region from top-left corner.
+    prefetch_ahead : int
+        Number of frames to prefetch ahead.
 
     Notes
     -----
@@ -160,6 +169,7 @@ class VideoReader:
         cache_size: int = 100,
         downsample: int = 1,
         crop: tuple[int, int, int, int] | None = None,
+        prefetch_ahead: int = 0,
     ) -> None:
         import cv2
 
@@ -173,6 +183,13 @@ class VideoReader:
             raise ValueError(f"downsample must be a positive integer, got {downsample}")
         self._downsample = downsample
         self._cache_size = cache_size
+
+        # Validate prefetch_ahead
+        if prefetch_ahead < 0:
+            raise ValueError(
+                f"prefetch_ahead must be non-negative, got {prefetch_ahead}"
+            )
+        self._prefetch_ahead = prefetch_ahead
 
         # Open video to read metadata
         cap = cv2.VideoCapture(str(self._path))
@@ -211,6 +228,12 @@ class VideoReader:
 
         # Create the cached frame reader
         self._setup_cache()
+
+        # Set up prefetching infrastructure
+        self._prefetch_executor: ThreadPoolExecutor | None = None
+        if self._prefetch_ahead > 0:
+            # Create a single-thread executor for prefetching
+            self._prefetch_executor = ThreadPoolExecutor(max_workers=1)
 
     def _setup_cache(self) -> None:
         """Set up the LRU-cached frame reader."""
@@ -286,7 +309,42 @@ class VideoReader:
             raise IndexError(
                 f"Frame index {frame_idx} out of range [0, {self._n_frames})"
             )
+
+        # Trigger prefetching for upcoming frames
+        if self._prefetch_ahead > 0 and self._prefetch_executor is not None:
+            self._trigger_prefetch(frame_idx)
+
         return self._cached_read_frame(frame_idx)
+
+    def _trigger_prefetch(self, current_frame: int) -> None:
+        """Trigger prefetching of upcoming frames in background thread.
+
+        Parameters
+        ----------
+        current_frame : int
+            The frame that was just accessed.
+        """
+        if self._prefetch_executor is None:
+            return
+
+        # Calculate frames to prefetch (current+1 to current+prefetch_ahead)
+        start_frame = current_frame + 1
+        end_frame = min(current_frame + self._prefetch_ahead + 1, self._n_frames)
+
+        if start_frame >= end_frame:
+            return
+
+        # Submit prefetch task (non-blocking)
+        def prefetch_frames() -> None:
+            for idx in range(start_frame, end_frame):
+                # Ignore errors in prefetching - they'll be caught on actual access
+                with contextlib.suppress(Exception):
+                    # This will cache the frame via lru_cache
+                    self._cached_read_frame(idx)
+
+        # Executor might be shut down
+        with contextlib.suppress(RuntimeError):
+            self._prefetch_executor.submit(prefetch_frames)
 
     def cache_info(self) -> CacheInfo:
         """Return cache statistics.
@@ -347,10 +405,16 @@ class VideoReader:
         """Total video duration in seconds."""
         return float(self._n_frames) / self._fps
 
+    @property
+    def prefetch_ahead(self) -> int:
+        """Number of frames to prefetch ahead during sequential access."""
+        return self._prefetch_ahead
+
     def __reduce__(self) -> tuple:
         """Support pickle serialization.
 
-        Cache is dropped during pickling for safety in parallel workflows.
+        Cache and prefetch executor are dropped during pickling for safety
+        in parallel workflows.
 
         Returns
         -------
@@ -359,5 +423,17 @@ class VideoReader:
         """
         return (
             self.__class__,
-            (self._path, self._cache_size, self._downsample, self._crop),
+            (
+                self._path,
+                self._cache_size,
+                self._downsample,
+                self._crop,
+                self._prefetch_ahead,
+            ),
         )
+
+    def __del__(self) -> None:
+        """Clean up prefetch executor on deletion."""
+        if hasattr(self, "_prefetch_executor") and self._prefetch_executor is not None:
+            self._prefetch_executor.shutdown(wait=False)
+            self._prefetch_executor = None

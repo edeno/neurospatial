@@ -1630,6 +1630,18 @@ class VideoOverlay:
         Currently only "nearest" is supported. Linear interpolation for video
         would require blending adjacent frames, which is expensive. A warning
         is emitted if "linear" is requested. Default is "nearest".
+    cache_size : int, optional
+        Number of video frames to keep in memory cache for file-based video.
+        Larger values reduce disk I/O but use more memory. Only applies to
+        file-based video sources (ignored for pre-loaded arrays).
+        Default is 100.
+    prefetch_ahead : int, optional
+        Number of frames to prefetch in background when a frame is accessed.
+        Set to 0 (default) to disable prefetching. A value of 5 will load
+        frames [current+1, current+5] in a background thread after each access.
+        This can improve playback smoothness for file-based video by hiding
+        disk I/O latency. Only applies to file-based video sources.
+        Default is 0.
 
     Attributes
     ----------
@@ -1649,6 +1661,10 @@ class VideoOverlay:
         Spatial downsampling factor.
     interp : {"linear", "nearest"}
         Temporal interpolation method (currently only "nearest" is implemented).
+    cache_size : int
+        Frame cache size for file-based video.
+    prefetch_ahead : int
+        Number of frames to prefetch ahead.
 
     See Also
     --------
@@ -1718,6 +1734,8 @@ class VideoOverlay:
     crop: tuple[int, int, int, int] | None = None
     downsample: int = 1
     interp: Literal["linear", "nearest"] = "nearest"
+    cache_size: int = 100
+    prefetch_ahead: int = 0
 
     def __post_init__(self) -> None:
         """Validate VideoOverlay parameters.
@@ -1743,6 +1761,25 @@ class VideoOverlay:
                 f"WHAT: downsample must be a positive integer >= 1, got {self.downsample}.\n"
                 f"WHY: Downsample factor controls spatial resolution reduction.\n"
                 f"HOW: Use downsample=1 (full resolution) or downsample=2 (half resolution)."
+            )
+
+        # Validate cache_size
+        if not isinstance(self.cache_size, int) or self.cache_size < 1:
+            raise ValueError(
+                f"WHAT: cache_size must be a positive integer >= 1, got {self.cache_size}.\n"
+                f"WHY: cache_size controls how many video frames are kept in memory.\n"
+                f"HOW: Use cache_size=100 (default) or increase for faster playback "
+                f"with more memory usage."
+            )
+
+        # Validate prefetch_ahead
+        if not isinstance(self.prefetch_ahead, int) or self.prefetch_ahead < 0:
+            raise ValueError(
+                f"WHAT: prefetch_ahead must be a non-negative integer, "
+                f"got {self.prefetch_ahead}.\n"
+                f"WHY: prefetch_ahead controls how many frames to load in background.\n"
+                f"HOW: Use prefetch_ahead=0 (default) to disable, or e.g. 5 to preload "
+                f"5 upcoming frames during playback."
             )
 
         # Validate source array if it's a numpy array
@@ -1850,9 +1887,10 @@ class VideoOverlay:
 
             reader = VideoReader(
                 self.source,
-                cache_size=100,
+                cache_size=self.cache_size,
                 downsample=self.downsample,
                 crop=self.crop,
+                prefetch_ahead=self.prefetch_ahead,
             )
             n_video_frames = reader.n_frames
 
