@@ -1,7 +1,7 @@
 # SCRATCHPAD.md - Napari Performance Optimization
 
 **Started**: 2025-12-01
-**Current Phase**: Phase 2 Complete - Ready for Phase 3 (Time Series Dock Optimization)
+**Current Phase**: Phase 4 Complete - Ready for Phase 5 (Clean Up Event Wiring)
 
 ---
 
@@ -246,12 +246,97 @@ TimeSeriesOverlay(
 )
 ```
 
+### Task: Phase 3.2 - Reduce Matplotlib Draw Calls
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Added `playback_throttle_hz` parameter to `TimeSeriesOverlay` (default 10 Hz)
+- Added `scrub_throttle_hz` parameter to `TimeSeriesOverlay` (default 20 Hz)
+- Added corresponding fields to `TimeSeriesData` with pass-through in `convert_to_data()`
+- Added `_last_xlim_bounds` cache to `TimeSeriesArtistManager`:
+  - Caches (xmin, xmax) per axes group
+  - Uses 1e-6 second tolerance for floating point comparison
+  - Skips `ax.set_xlim()` call when bounds haven't changed significantly
+- Full validation with WHAT/WHY/HOW error messages
+
+**Files created/modified**:
+- `src/neurospatial/animation/overlays.py` (modified) - Added throttle parameters
+- `src/neurospatial/animation/_timeseries.py` (modified) - Added xlim caching
+- `tests/animation/test_timeseries_optimization.py` (new) - 18 tests
+
+**Code review findings** (addressed):
+- Fixed tolerance test to be more specific (was `<= 1`, now `== 0`)
+- Added better documentation for xlim_tolerance constant
+
+**API additions**:
+```python
+# TimeSeriesOverlay now accepts:
+TimeSeriesOverlay(
+    data=speed,
+    times=times,
+    label="Speed",
+    playback_throttle_hz=10,  # Throttle during playback (default 10)
+    scrub_throttle_hz=20,     # Throttle when scrubbing (default 20)
+)
+```
+
+**Note**: Throttle parameters are plumbed through data structures. Full integration with dock widget callback for dynamic throttle switching is a follow-up task.
+
+### Task: Phase 4.1 - Integrate Frame Skipping
+**Status**: ALREADY COMPLETED (implemented during Phase 1.1)
+
+**What was already implemented**:
+- `allow_frame_skip` parameter with default `True`
+- `_frames_rendered` and `_frames_skipped` counters
+- `frames_rendered` and `frames_skipped` properties
+- 4 tests in `tests/animation/test_playback_controller.py` for metrics
+
+**Note**: TASKS.md was out of sync - Phase 4.1 was completed as part of Phase 1.1.
+
+### Task: Phase 4.2 - Handle Rapid Scrubbing
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Added `scrub_debounce_ms` parameter to `PlaybackController` (default 16ms = ~60 Hz max)
+- Added `_pending_frame`, `_last_update_time`, and `_debounce_lock` state
+- Modified `go_to_frame()` with debounce logic:
+  - First call after quiet period is immediate (responsiveness)
+  - Subsequent calls within debounce window store pending frame
+- Added `flush_pending_frame()` method to apply pending immediately
+- Added `has_pending_frame` property
+- Thread-safe implementation using `Lock` for debounce state
+- Comprehensive test suite: 15 tests
+
+**Files created/modified**:
+- `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added debounce feature
+- `tests/animation/test_playback_scrubbing.py` (new) - 15 unit tests
+- `tests/animation/test_playback_controller.py` (modified) - Updated fixtures to disable debounce
+
+**Code review findings** (addressed):
+- Added thread safety with `_debounce_lock` protecting debounce state
+- Clarified `flush_pending_frame()` docstring about debounce reset behavior
+
+**API additions**:
+```python
+# PlaybackController now accepts:
+PlaybackController(
+    viewer=viewer,
+    n_frames=100,
+    fps=30.0,
+    scrub_debounce_ms=16,  # Default 16ms (~60 Hz max), 0 to disable
+)
+
+# New methods/properties:
+controller.has_pending_frame  # bool: True if frame change pending
+controller.flush_pending_frame()  # Apply pending frame immediately
+```
+
 ---
 
 ## Next Task
 
-**Task**: Phase 3.2 - Reduce Matplotlib Draw Calls
-**Purpose**: Further optimize time series dock performance
+**Task**: Phase 5.1 - Audit and Migrate Callbacks
+**Purpose**: Remove redundant callbacks and centralize through PlaybackController
 
 ---
 

@@ -209,13 +209,14 @@ class TestPlaybackControllerStep:
 
     @pytest.fixture
     def controller(self, mock_viewer: MagicMock):
-        """Create a PlaybackController instance."""
+        """Create a PlaybackController instance with debounce disabled."""
         from neurospatial.animation.backends.napari_backend import PlaybackController
 
         return PlaybackController(
             viewer=mock_viewer,
             n_frames=100,
             fps=30.0,
+            scrub_debounce_ms=0,  # Disable debounce for step tests
         )
 
     def test_step_does_nothing_when_not_playing(
@@ -332,13 +333,14 @@ class TestPlaybackControllerMetrics:
 
     @pytest.fixture
     def controller(self, mock_viewer: MagicMock):
-        """Create a PlaybackController instance."""
+        """Create a PlaybackController instance with debounce disabled."""
         from neurospatial.animation.backends.napari_backend import PlaybackController
 
         return PlaybackController(
             viewer=mock_viewer,
             n_frames=100,
             fps=30.0,
+            scrub_debounce_ms=0,  # Disable debounce for metrics tests
         )
 
     def test_frames_rendered_initial_zero(self, controller):

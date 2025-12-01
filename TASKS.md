@@ -124,9 +124,15 @@
 
 ### 3.2: Reduce Matplotlib Draw Calls
 
-- [ ] Increase throttle frequency during playback (consider 10 Hz instead of 20 Hz)
-- [ ] Cache last window bounds; only call `ax.set_xlim()` when window changes
-- [ ] Profile matplotlib blitting overhead to identify further optimizations
+- [x] Add `playback_throttle_hz` parameter to `TimeSeriesOverlay` (default 10 Hz)
+- [x] Add `scrub_throttle_hz` parameter to `TimeSeriesOverlay` (default 20 Hz)
+- [x] Add fields to `TimeSeriesData` and pass through `convert_to_data()`
+- [x] Cache last window bounds; only call `ax.set_xlim()` when window changes
+  - Added `_last_xlim_bounds` cache to `TimeSeriesArtistManager`
+  - Uses 1e-6 second tolerance for floating point comparison
+- [x] Tests: 18 tests in `tests/animation/test_timeseries_optimization.py`
+
+**Note**: Throttle parameters are plumbed through data structures. Integration with dock widget update callback for dynamic switching between playback/scrub throttle can be done in Phase 4 or 5.
 
 **Success Criteria**: Time series updates configurable; overhead reduced during playback
 
@@ -140,18 +146,22 @@
 
 ### 4.1: Integrate Frame Skipping
 
-- [ ] Add metrics tracking to PlaybackController:
+- [x] Add metrics tracking to PlaybackController:
   - `_frames_rendered` counter
   - `_frames_skipped` counter
-- [ ] Add `allow_frame_skip: bool = True` parameter to `__init__()`
-- [ ] Expose metrics via properties: `frames_rendered`, `frames_skipped`
+- [x] Add `allow_frame_skip: bool = True` parameter to `__init__()`
+- [x] Expose metrics via properties: `frames_rendered`, `frames_skipped`
+- [x] Tests: Included in `tests/animation/test_playback_controller.py` (4 tests for metrics)
 
 ### 4.2: Handle Rapid Scrubbing
 
-- [ ] Add debounce timer to `go_to_frame()` (16ms = ~60 Hz max)
-- [ ] Store `_pending_frame` instead of immediate update
-- [ ] Apply pending frame when debounce timer fires
-- [ ] Ensure manual seek still feels responsive
+- [x] Add `scrub_debounce_ms` parameter to `PlaybackController.__init__()` (default 16ms = ~60 Hz max)
+- [x] Store `_pending_frame` and `_last_update_time` state with thread-safe `_debounce_lock`
+- [x] Add debounce logic to `go_to_frame()`: first call is immediate, subsequent calls within window are pending
+- [x] Add `flush_pending_frame()` method to apply pending frame immediately
+- [x] Add `has_pending_frame` property
+- [x] Ensure manual seek still feels responsive (first-call-immediate behavior)
+- [x] Tests: 15 tests in `tests/animation/test_playback_scrubbing.py`
 
 **Success Criteria**: Frame skipping works; scrubbing is responsive without stutters
 

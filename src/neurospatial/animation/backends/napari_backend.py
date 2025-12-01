@@ -153,6 +153,11 @@ class PlaybackController:
     allow_frame_skip : bool, default=True
         If True, skip frames when falling behind schedule to maintain
         real-time playback. If False, always advance by exactly 1 frame.
+    scrub_debounce_ms : int, default=16
+        Debounce interval in milliseconds for rapid scrubbing. When multiple
+        ``go_to_frame()`` calls occur within this interval, only the latest
+        frame is applied. Set to 0 to disable debouncing. Default is 16ms
+        (~60 Hz max update rate).
 
     Attributes
     ----------
@@ -166,6 +171,8 @@ class PlaybackController:
         Frame timestamps.
     allow_frame_skip : bool
         Whether frame skipping is enabled.
+    scrub_debounce_ms : int
+        Debounce interval in milliseconds for scrubbing.
     current_frame : int
         Current frame index (0-based).
     is_playing : bool
@@ -174,6 +181,8 @@ class PlaybackController:
         Total frames rendered since creation.
     frames_skipped : int
         Total frames skipped since creation.
+    has_pending_frame : bool
+        Whether a frame change is pending due to debounce.
 
     Examples
     --------
@@ -215,13 +224,24 @@ class PlaybackController:
         fps: float,
         frame_times: NDArray[np.float64] | None = None,
         allow_frame_skip: bool = True,
+        scrub_debounce_ms: int = 16,
     ) -> None:
         """Initialize PlaybackController."""
+        # Validate scrub_debounce_ms
+        if scrub_debounce_ms < 0:
+            msg = (
+                "WHAT: scrub_debounce_ms must be non-negative.\n"
+                f"WHY: Received {scrub_debounce_ms}, which is invalid.\n"
+                "HOW: Use 0 to disable debouncing, or a positive value in milliseconds."
+            )
+            raise ValueError(msg)
+
         self.viewer = viewer
         self.n_frames = n_frames
         self.fps = fps
         self.frame_times = frame_times
         self.allow_frame_skip = allow_frame_skip
+        self.scrub_debounce_ms = scrub_debounce_ms
 
         # Internal state
         self._current_frame: int = 0
@@ -229,6 +249,11 @@ class PlaybackController:
         self._start_time: float | None = None
         self._start_frame: int = 0
         self._callbacks: list[Callable[[int], None]] = []
+
+        # Debounce state (protected by lock for thread safety)
+        self._pending_frame: int | None = None
+        self._last_update_time: float = 0.0
+        self._debounce_lock = Lock()
 
         # Metrics
         self._frames_rendered: int = 0
@@ -254,21 +279,66 @@ class PlaybackController:
         """Total number of frames skipped since creation."""
         return self._frames_skipped
 
+    @property
+    def has_pending_frame(self) -> bool:
+        """Whether a frame change is pending due to debounce."""
+        with self._debounce_lock:
+            return self._pending_frame is not None
+
     def go_to_frame(self, frame_idx: int) -> None:
         """Jump to a specific frame.
 
         Clamps frame index to valid range [0, n_frames-1], updates the
         viewer dims, and notifies all registered callbacks.
 
+        When debouncing is enabled (``scrub_debounce_ms > 0``), rapid calls
+        within the debounce interval are coalesced. The first call after a
+        quiet period is applied immediately for responsiveness, while
+        subsequent calls within the debounce window update a pending frame
+        that is applied later.
+
         Parameters
         ----------
         frame_idx : int
             Target frame index (0-based). Will be clamped to valid range.
         """
+        import time
 
         # Clamp to valid range
+        clamped_frame = max(0, min(frame_idx, self.n_frames - 1))
+
+        # No debouncing - apply immediately
+        if self.scrub_debounce_ms == 0:
+            self._apply_frame(clamped_frame)
+            return
+
+        # Debouncing enabled - use lock for thread safety
+        with self._debounce_lock:
+            current_time = time.perf_counter()
+            debounce_sec = self.scrub_debounce_ms / 1000.0
+
+            # First call after quiet period - apply immediately
+            if current_time - self._last_update_time >= debounce_sec:
+                self._apply_frame(clamped_frame)
+                self._last_update_time = current_time
+                self._pending_frame = None
+            else:
+                # Within debounce window - store as pending
+                self._pending_frame = clamped_frame
+
+    def _apply_frame(self, frame_idx: int) -> None:
+        """Apply a frame change to the viewer.
+
+        Internal method that performs the actual frame update.
+        Called by ``go_to_frame()`` and ``flush_pending_frame()``.
+
+        Parameters
+        ----------
+        frame_idx : int
+            Frame index to apply (already clamped to valid range).
+        """
         old_frame = self._current_frame
-        self._current_frame = max(0, min(frame_idx, self.n_frames - 1))
+        self._current_frame = frame_idx
 
         # Update viewer
         self.viewer.dims.set_current_step(0, self._current_frame)
@@ -282,6 +352,26 @@ class PlaybackController:
         # Notify callbacks
         for callback in self._callbacks:
             callback(self._current_frame)
+
+    def flush_pending_frame(self) -> None:
+        """Immediately apply any pending frame change.
+
+        If a frame change is pending due to debounce, this method applies it
+        immediately without waiting for the debounce timer. This is useful
+        when scrubbing ends and you want to ensure the final frame is shown.
+
+        After flushing, the debounce timer is reset, so subsequent calls within
+        the debounce window will be queued as pending (not applied immediately).
+
+        Does nothing if no frame is pending.
+        """
+        import time
+
+        with self._debounce_lock:
+            if self._pending_frame is not None:
+                self._apply_frame(self._pending_frame)
+                self._pending_frame = None
+                self._last_update_time = time.perf_counter()
 
     def step(self) -> None:
         """Advance to the next frame, with optional skipping if behind schedule.
