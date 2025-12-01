@@ -2071,10 +2071,18 @@ def _add_timeseries_dock(
 
     Notes
     -----
-    The widget updates are throttled to TIMESERIES_MAX_UPDATE_HZ (20 Hz) to
-    prevent matplotlib from becoming a performance bottleneck when napari's
-    FPS is higher. This throttling only applies during playback; manual
-    scrubbing triggers immediate updates for responsive feedback.
+    **Update modes**: The dock widget respects the ``update_mode`` setting
+    from TimeSeriesData. When multiple overlays have different modes, the
+    most restrictive mode is used (priority: manual > on_pause > live).
+
+    - ``"live"`` (default): Updates on every frame change, throttled to 20 Hz.
+    - ``"on_pause"``: Only updates when PlaybackController is paused.
+      If no controller is available, falls back to live behavior.
+    - ``"manual"``: Never auto-updates. Updates only via explicit API call.
+
+    **Throttling**: Widget updates are throttled to TIMESERIES_MAX_UPDATE_HZ
+    (20 Hz) in all auto-update modes to prevent matplotlib from becoming
+    a performance bottleneck when napari's FPS is higher.
 
     The matplotlib figure is styled to match napari's dark theme (background
     color #262930, white text/ticks).
@@ -2126,6 +2134,14 @@ def _add_timeseries_dock(
     # Add dock widget to viewer's right area
     viewer.window.add_dock_widget(widget, name="Time Series", area="right")
 
+    # Determine effective update_mode from overlays
+    # Priority: manual > on_pause > live (use most restrictive if mixed)
+    mode_priority = {"manual": 2, "on_pause": 1, "live": 0}
+    effective_mode = "live"
+    for ts in timeseries_data:
+        if mode_priority.get(ts.update_mode, 0) > mode_priority.get(effective_mode, 0):
+            effective_mode = ts.update_mode
+
     # Throttle updates to prevent matplotlib bottleneck at high FPS
     import time
 
@@ -2163,7 +2179,22 @@ def _add_timeseries_dock(
 
         Throttled and skips updates if previous draw is pending.
         Uses blitting when available for faster updates.
+        Respects update_mode setting:
+        - 'live': Update on every frame change (throttled to 20 Hz)
+        - 'on_pause': Only update when playback is paused
+        - 'manual': Never auto-update
         """
+        # Manual mode: never auto-update
+        if effective_mode == "manual":
+            return
+
+        # on_pause mode: only update when playback is paused
+        if effective_mode == "on_pause":
+            # Try to get PlaybackController from viewer
+            controller = getattr(viewer, "playback_controller", None)
+            if controller is not None and controller.is_playing:
+                return  # Skip updates during playback
+
         current_time = time.time()
 
         # Throttle updates during playback (but allow immediate scrubbing response)

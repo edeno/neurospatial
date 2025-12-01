@@ -1272,6 +1272,17 @@ class TimeSeriesOverlay:
         - "nearest": Use nearest sample value
 
         Default is "linear".
+    update_mode : {"live", "on_pause", "manual"}, optional
+        Controls when the time series dock widget updates during playback.
+
+        - "live" (default): Update on every frame change, throttled to 20 Hz max.
+          Best for real-time visualization during playback.
+        - "on_pause": Only update when playback pauses. Best for performance
+          when the time series isn't needed during playback.
+        - "manual": Never auto-update. Updates only via explicit API call.
+          Useful for custom update logic or debugging.
+
+        Default is "live".
 
     Attributes
     ----------
@@ -1303,6 +1314,8 @@ class TimeSeriesOverlay:
         Explicit Y-axis maximum.
     interp : {"linear", "nearest"}
         Interpolation method for cursor value.
+    update_mode : {"live", "on_pause", "manual"}
+        Update mode for dock widget during playback.
 
     See Also
     --------
@@ -1403,6 +1416,9 @@ class TimeSeriesOverlay:
     # Interpolation for cursor value
     interp: Literal["linear", "nearest"] = "linear"
 
+    # Update mode for dock widget during playback
+    update_mode: Literal["live", "on_pause", "manual"] = "live"
+
     def __post_init__(self) -> None:
         """Validate inputs after initialization."""
         # Validate data is 1D
@@ -1501,6 +1517,19 @@ class TimeSeriesOverlay:
                 "HOW: Replace Inf values with NaN or finite values."
             )
 
+        # Validate update_mode
+        valid_modes = ("live", "on_pause", "manual")
+        if self.update_mode not in valid_modes:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.update_mode must be one of "
+                f"{valid_modes} (got '{self.update_mode}').\n\n"
+                "WHY: update_mode controls when the time series dock updates:\n"
+                "  - 'live': Update on every frame change (throttled to 20 Hz)\n"
+                "  - 'on_pause': Only update when playback pauses\n"
+                "  - 'manual': Never auto-update, only via explicit API call\n\n"
+                "HOW: Use one of: 'live', 'on_pause', or 'manual'."
+            )
+
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -1573,6 +1602,7 @@ class TimeSeriesOverlay:
             global_vmax=global_vmax,
             use_global_limits=True,
             interp=self.interp,
+            update_mode=self.update_mode,
         )
 
 
@@ -2285,6 +2315,8 @@ class TimeSeriesData:
         If True, use global limits for stable Y-axis. Default is True.
     interp : {"linear", "nearest"}
         Interpolation method for cursor value computation.
+    update_mode : {"live", "on_pause", "manual"}
+        Update mode for dock widget during playback.
 
     Attributes
     ----------
@@ -2322,6 +2354,8 @@ class TimeSeriesData:
         Use global limits flag.
     interp : str
         Interpolation method.
+    update_mode : str
+        Update mode for dock widget.
 
     See Also
     --------
@@ -2354,6 +2388,9 @@ class TimeSeriesData:
 
     # Interpolation for cursor value
     interp: Literal["linear", "nearest"] = "linear"
+
+    # Update mode for dock widget during playback
+    update_mode: Literal["live", "on_pause", "manual"] = "live"
 
     def get_window_slice(self, frame_idx: int) -> tuple[NDArray, NDArray]:
         """O(1) window extraction using precomputed indices.

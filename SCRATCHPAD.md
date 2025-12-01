@@ -212,12 +212,46 @@ VideoReader(
 )
 ```
 
+### Task: Phase 3.1 - Add Update Mode Option to TimeSeriesOverlay
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Added `update_mode` parameter to `TimeSeriesOverlay` with three options:
+  - `"live"` (default): Update on every frame change, throttled to 20 Hz
+  - `"on_pause"`: Only update when PlaybackController is paused
+  - `"manual"`: Never auto-update (for custom update logic)
+- Added `update_mode` field to `TimeSeriesData` container (preserves setting through conversion)
+- Implemented mode handling in `_add_timeseries_dock()`:
+  - Priority system: manual > on_pause > live (uses most restrictive when mixed)
+  - Graceful fallback: `on_pause` falls back to live if no PlaybackController
+- Comprehensive validation with clear WHAT/WHY/HOW error messages
+- Full NumPy-style documentation for both classes
+
+**Files created/modified**:
+- `src/neurospatial/animation/overlays.py` (modified) - Added update_mode to TimeSeriesOverlay and TimeSeriesData
+- `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added mode handling in _add_timeseries_dock()
+- `tests/animation/test_timeseries_update_mode.py` (new) - 16 tests (11 pass, 5 skipped integration tests)
+
+**Code review findings** (addressed):
+- Fixed docstring to clarify throttling applies to all auto-update modes
+
+**API additions**:
+```python
+# TimeSeriesOverlay now accepts:
+TimeSeriesOverlay(
+    data=speed,
+    times=times,
+    label="Speed",
+    update_mode="on_pause",  # Skip updates during playback
+)
+```
+
 ---
 
 ## Next Task
 
-**Task**: Phase 3.1 - Add Update Mode Option to TimeSeriesOverlay
-**Purpose**: Reduce matplotlib drawing overhead during playback
+**Task**: Phase 3.2 - Reduce Matplotlib Draw Calls
+**Purpose**: Further optimize time series dock performance
 
 ---
 

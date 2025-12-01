@@ -111,13 +111,16 @@
 
 ### 3.1: Add Update Mode Option
 
-- [ ] Add `update_mode` parameter to `TimeSeriesOverlay`
+- [x] Add `update_mode` parameter to `TimeSeriesOverlay`
   - `"live"` (default): Update every N frames (20 Hz max, already throttled)
   - `"on_pause"`: Only update when playback pauses
   - `"manual"`: Only update via explicit API call
-- [ ] Implement mode handling in `_render_timeseries_dock()`:
+- [x] Add `update_mode` field to `TimeSeriesData` container
+- [x] Implement mode handling in `_add_timeseries_dock()`:
   - Skip updates during playback if `mode == "on_pause"`
-- [ ] Wire to PlaybackController play/pause events
+  - Mode priority: manual > on_pause > live (uses most restrictive when mixed)
+- [x] Wire to PlaybackController.is_playing property for on_pause checks
+- [x] Tests: 16 tests in `tests/animation/test_timeseries_update_mode.py`
 
 ### 3.2: Reduce Matplotlib Draw Calls
 
