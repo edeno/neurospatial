@@ -12,7 +12,7 @@
 
 ### 0.1: Set Up Performance Monitoring
 
-- [ ] Create `scripts/benchmark_napari_playback.py`
+- [x] Create `scripts/benchmark_napari_playback.py`
   - Generate synthetic test data (environment, fields, positions)
   - Support command-line args for overlay selection
   - Print timing metrics to stdout
