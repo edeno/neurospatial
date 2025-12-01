@@ -99,7 +99,7 @@ Create `scripts/perfmon_config.json` for detailed tracing:
     "callable_lists": {
         "napari_callbacks": [
             "neurospatial.animation.backends.napari_backend._make_video_frame_callback",
-            "neurospatial.animation.backends.napari_backend._render_timeseries_dock"
+            "neurospatial.animation.backends.napari_backend._add_timeseries_dock"
         ]
     }
 }

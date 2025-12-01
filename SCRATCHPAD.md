@@ -43,12 +43,43 @@ uv run python scripts/benchmark_napari_playback.py --all-overlays --frames 500 -
 NAPARI_PERFMON=/tmp/trace.json uv run python scripts/benchmark_napari_playback.py --all-overlays
 ```
 
+### Task: Update `scripts/perfmon_config.json` with video/timeseries tracing
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Added missing callables to `scripts/perfmon_config.json`:
+  - `_make_video_frame_callback` - Video overlay per-frame callback
+  - `_add_video_layer` - Video layer setup
+  - `_add_timeseries_dock` - Time series dock widget setup
+  - `_render_event_overlay` - Event overlay rendering
+- Created comprehensive test suite (`tests/animation/test_perfmon_config.py`):
+  - 13 tests validating config structure and contents
+  - Tests for required fields (trace_qt_events, trace_file_on_start, etc.)
+  - Tests ensuring critical functions are traced (video, timeseries, rendering, overlays)
+  - Consistency tests (fully qualified names, non-empty lists, etc.)
+- Fixed documentation error in `.claude/PROFILING.md`:
+  - Corrected `_render_timeseries_dock` to `_add_timeseries_dock`
+
+**Files created/modified**:
+- `scripts/perfmon_config.json` (modified) - Added video/timeseries/event callables
+- `tests/animation/test_perfmon_config.py` (new) - 13 validation tests
+- `.claude/PROFILING.md` (modified) - Fixed function name in example
+
+**Usage**:
+```bash
+# Run with detailed tracing using config file
+NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napari_playback.py --all-overlays
+
+# View trace in Chrome
+# Open chrome://tracing and load /tmp/napari_neurospatial_trace.json
+```
+
 ---
 
 ## Next Task
 
-**Task**: Create `scripts/perfmon_config.json` for detailed tracing
-**Purpose**: Enable trace_qt_events and trace video/time series callbacks
+**Task**: Run baseline measurements
+**Purpose**: Record frame times for each overlay type individually and combined
 
 ---
 

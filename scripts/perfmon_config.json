@@ -15,7 +15,11 @@
             "neurospatial.animation.backends.napari_backend._build_skeleton_vectors",
             "neurospatial.animation.backends.napari_backend._render_bodypart_overlay",
             "neurospatial.animation.backends.napari_backend._render_head_direction_overlay",
-            "neurospatial.animation.backends.napari_backend._render_position_overlay"
+            "neurospatial.animation.backends.napari_backend._render_position_overlay",
+            "neurospatial.animation.backends.napari_backend._render_event_overlay",
+            "neurospatial.animation.backends.napari_backend._make_video_frame_callback",
+            "neurospatial.animation.backends.napari_backend._add_video_layer",
+            "neurospatial.animation.backends.napari_backend._add_timeseries_dock"
         ]
     }
 }

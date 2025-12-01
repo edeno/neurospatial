@@ -16,7 +16,7 @@
   - Generate synthetic test data (environment, fields, positions)
   - Support command-line args for overlay selection
   - Print timing metrics to stdout
-- [ ] Create `scripts/perfmon_config.json` for detailed tracing
+- [x] Create `scripts/perfmon_config.json` for detailed tracing
   - Enable `trace_qt_events: true`
   - Trace video callback and time series dock functions
 - [ ] Run baseline measurements:
