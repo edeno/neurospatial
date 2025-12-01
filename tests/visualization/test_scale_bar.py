@@ -327,6 +327,7 @@ class TestAnimateFieldsWithScaleBar:
     def test_animate_fields_accepts_scale_bar_bool(self, small_2d_env):
         """Test animate_fields() accepts scale_bar=True parameter."""
         fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         # Should not raise - parameter is accepted
         # Use html backend since it doesn't require external deps
@@ -334,7 +335,11 @@ class TestAnimateFieldsWithScaleBar:
 
         with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
             small_2d_env.animate_fields(
-                fields, backend="html", save_path=f.name, scale_bar=True
+                fields,
+                frame_times=frame_times,
+                backend="html",
+                save_path=f.name,
+                scale_bar=True,
             )
 
     def test_animate_fields_accepts_scale_bar_config(self, small_2d_env):
@@ -342,6 +347,7 @@ class TestAnimateFieldsWithScaleBar:
         from neurospatial.visualization.scale_bar import ScaleBarConfig
 
         fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
         config = ScaleBarConfig(length=5.0, position="upper left", color="white")
 
         # Should not raise - parameter is accepted
@@ -349,7 +355,11 @@ class TestAnimateFieldsWithScaleBar:
 
         with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
             small_2d_env.animate_fields(
-                fields, backend="html", save_path=f.name, scale_bar=config
+                fields,
+                frame_times=frame_times,
+                backend="html",
+                save_path=f.name,
+                scale_bar=config,
             )
 
     def test_video_backend_with_scale_bar(self, small_2d_env):
@@ -363,12 +373,17 @@ class TestAnimateFieldsWithScaleBar:
             pytest.skip("ffmpeg not available")
 
         fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             small_2d_env.animate_fields(
-                fields, backend="video", save_path=f.name, scale_bar=True, fps=10
+                fields,
+                frame_times=frame_times,
+                backend="video",
+                save_path=f.name,
+                scale_bar=True,
             )
             # Video should be created (validates parameter flows through)
             from pathlib import Path
@@ -382,10 +397,15 @@ class TestAnimateFieldsWithScaleBar:
     def test_napari_backend_with_scale_bar(self, small_2d_env):
         """Test napari backend configures native scale bar."""
         fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         # This should configure napari's native scale bar
         viewer = small_2d_env.animate_fields(
-            fields, backend="napari", scale_bar=True, show=False
+            fields,
+            frame_times=frame_times,
+            backend="napari",
+            scale_bar=True,
+            show=False,
         )
 
         try:

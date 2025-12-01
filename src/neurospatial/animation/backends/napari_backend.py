@@ -1595,6 +1595,10 @@ def _add_speed_control_widget(
     max_speed = max_playback_fps / sample_rate_hz if sample_rate_hz > 0 else 4.0
     max_speed = min(max_speed, 4.0)  # Cap at 4× for UX
 
+    # Clamp initial_speed to valid slider range (fixes ValueError when speed > max_speed)
+    # This can happen when speed=1.0 is requested but max_speed < 1.0 due to fps capping
+    clamped_initial_speed = max(0.01, min(initial_speed, max_speed))
+
     # Throttle widget updates for high FPS (WIDGET_UPDATE_TARGET_HZ max to avoid Qt overhead)
     # At 250 FPS, updating 250x/sec causes stalling; throttle to target Hz
     update_interval = (
@@ -1604,7 +1608,8 @@ def _add_speed_control_widget(
     )
 
     # Initial speed info string (Unicode × and ≈ are intentional for better UX)
-    initial_speed_info = f"{initial_speed:.2f}× (≈{fps_value} fps)"  # noqa: RUF001
+    # Use clamped speed so display matches actual slider value
+    initial_speed_info = f"{clamped_initial_speed:.2f}× (≈{fps_value} fps)"  # noqa: RUF001
 
     @magicgui(
         auto_call=True,
@@ -1614,7 +1619,7 @@ def _add_speed_control_widget(
             "min": 0.01,
             "max": max_speed,
             "step": 0.01,
-            "value": initial_speed,
+            "value": clamped_initial_speed,
             "label": "Speed",
         },
         speed_info={"widget_type": "Label", "label": "", "value": initial_speed_info},
@@ -1622,7 +1627,7 @@ def _add_speed_control_widget(
     )
     def playback_widget(
         play: bool = False,
-        speed: float = initial_speed,
+        speed: float = clamped_initial_speed,
         speed_info: str = initial_speed_info,
         frame_info: str = "",
     ) -> None:

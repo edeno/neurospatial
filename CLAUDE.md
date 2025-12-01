@@ -264,27 +264,42 @@ result = compute_directional_place_fields(
 # Animate spatial fields over time (v0.3.0+)
 from neurospatial.animation import subsample_frames
 
+# IMPORTANT: frame_times is REQUIRED - provides temporal structure from your data
+# speed controls playback: 1.0 = real-time, 0.1 = slow motion, 2.0 = fast forward
+
 # Interactive Napari viewer (best for 100K+ frames)
-env.animate_fields(fields, backend="napari")
+# Example: 30 Hz position tracking data
+frame_times = np.arange(len(fields)) / 30.0  # 30 Hz timestamps
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
+
+# Replay decoding: 500 Hz data, view at 10% speed (slow motion)
+# playback_fps = 500 * 0.1 = 50 fps (within 60 fps limit)
+decode_times = np.arange(len(posterior_fields)) / 500.0  # 500 Hz timestamps
+env.animate_fields(posterior_fields, frame_times=decode_times, speed=0.1, backend="napari")
 
 # Video export with parallel rendering (requires ffmpeg)
-env.animate_fields(fields, backend="video", save_path="animation.mp4", fps=30, n_workers=4)
+env.animate_fields(
+    fields, frame_times=frame_times, speed=1.0,
+    backend="video", save_path="animation.mp4", n_workers=4
+)
 
 # HTML standalone player (max 500 frames)
-env.animate_fields(fields, backend="html", save_path="animation.html")
+env.animate_fields(fields, frame_times=frame_times, backend="html", save_path="animation.html")
 
 # Jupyter widget (notebook integration)
-env.animate_fields(fields, backend="widget")
+env.animate_fields(fields, frame_times=frame_times, backend="widget")
 
 # Auto-select backend based on save_path or context
-env.animate_fields(fields, save_path="animation.mp4")  # Detects .mp4 → video backend
+env.animate_fields(fields, frame_times=frame_times, save_path="animation.mp4")
 
 # Subsample large datasets for video export (e.g., 250 Hz → 30 fps)
 subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
 
 # IMPORTANT: Clear caches before parallel rendering (pickle-ability requirement)
 env.clear_cache()  # Makes environment pickle-able for multiprocessing
-env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
+env.animate_fields(
+    fields, frame_times=frame_times, backend="video", n_workers=4, save_path="output.mp4"
+)
 
 # Large session helpers (v0.x.x+)
 from neurospatial.animation import (
@@ -298,15 +313,17 @@ vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
 
 # Get recommended napari settings based on session size
 napari_config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
-# Returns: {'fps': 30, 'chunk_size': 1000, 'max_chunks': 50}
+# Returns: {'speed': 1.0, 'chunk_size': 1000, 'max_chunks': 50}
 
 # Combine for large session workflow
+session_times = np.arange(500_000) / 250.0  # 250 Hz, ~33 minutes
 env.animate_fields(
     fields,
+    frame_times=session_times,
     backend="napari",
     vmin=vmin,       # Pre-computed from subset (fast)
     vmax=vmax,       # Pre-computed from subset (fast)
-    **napari_config, # Optimized fps, chunk_size, max_chunks
+    **napari_config, # Optimized speed, chunk_size, max_chunks
 )
 
 # Scale bars on visualizations (v0.11.0+)
@@ -321,8 +338,8 @@ config = ScaleBarConfig(length=20, position="lower left", color="white")
 ax = env.plot_field(field, scale_bar=config)
 
 # Scale bars in animations
-env.animate_fields(fields, scale_bar=True, backend="napari")  # Native napari scale bar
-env.animate_fields(fields, scale_bar=True, save_path="video.mp4")  # Matplotlib scale bar
+env.animate_fields(fields, frame_times=frame_times, scale_bar=True, backend="napari")
+env.animate_fields(fields, frame_times=frame_times, scale_bar=True, save_path="video.mp4")
 
 # Note: scale_bar is different from calibrate_video(scale_bar=...) which is for
 # calibrating video coordinates. This scale_bar adds visual scale bars to plots.
@@ -338,7 +355,7 @@ position_overlay = PositionOverlay(
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
 )
-env.animate_fields(fields, overlays=[position_overlay], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay], backend="napari")
 
 # Pose tracking with skeleton
 bodypart_overlay = BodypartOverlay(
@@ -348,7 +365,7 @@ bodypart_overlay = BodypartOverlay(
     skeleton_color="white",
     skeleton_width=2.0
 )
-env.animate_fields(fields, overlays=[bodypart_overlay], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[bodypart_overlay], backend="napari")
 
 # Head direction arrows
 head_direction_overlay = HeadDirectionOverlay(
@@ -356,12 +373,12 @@ head_direction_overlay = HeadDirectionOverlay(
     color="yellow",
     length=15.0  # Arrow length in environment units
 )
-env.animate_fields(fields, overlays=[head_direction_overlay], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[head_direction_overlay], backend="napari")
 
 # Multi-animal tracking (multiple overlays)
 animal1 = PositionOverlay(data=traj1, color="red", trail_length=10)
 animal2 = PositionOverlay(data=traj2, color="blue", trail_length=10)
-env.animate_fields(fields, overlays=[animal1, animal2], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[animal1, animal2], backend="napari")
 
 # Event overlays (v0.13.0+) - visualize spikes, licks, rewards at spatial positions
 from neurospatial import EventOverlay, SpikeOverlay  # SpikeOverlay is alias
@@ -428,6 +445,7 @@ env.animate_fields(
 # Show regions with overlays
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[position_overlay],
     show_regions=True,  # Show all regions, or ["region1", "region2"] for specific
     region_alpha=0.3,   # 30% transparent
@@ -511,7 +529,7 @@ video_overlay = VideoOverlay(
     alpha=0.5,                   # 50% blend (default) - equal video/field visibility
     z_order="above",             # Render on top of field (default)
 )
-env.animate_fields(fields, overlays=[video_overlay], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[video_overlay], backend="napari")
 
 # Adjust alpha to control video/field balance:
 # - alpha=0.3: 30% video, 70% field (field dominant)
@@ -550,7 +568,7 @@ calibration = calibrate_video("session.mp4", env, cm_per_px=0.25, flip_y=False)
 
 # Use calibration with VideoOverlay
 video = VideoOverlay(source="session.mp4", calibration=calibration)
-env.animate_fields(fields, overlays=[video], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[video], backend="napari")
 ```
 
 **Video Overlay Best Practices:**
@@ -593,7 +611,7 @@ positions = np.array([[10.0, 20.0], [15.0, 25.0]])  # (x, y) format
 
 # Pass directly - transformation happens internally
 overlay = PositionOverlay(data=positions)
-env.animate_fields(fields, overlays=[overlay])
+env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 # Napari displays correctly with Y-axis increasing upward
 ```
 
@@ -1521,6 +1539,62 @@ Optional trajectory analysis dependencies (v0.12.0+):
 
 Install with: `pip install neurospatial[trajectory]` or `uv add neurospatial[trajectory]`
 
+### Animation Playback Control (v0.15.0+)
+
+The animation system uses a speed-based API that separates data sample rate from playback speed:
+
+**Core Concepts:**
+
+- **`frame_times`** (required): Timestamps for each frame in seconds, defining the temporal structure of your data. Use timestamps from your data source (e.g., position timestamps, decoding time bins).
+
+- **`speed`** (default 1.0): Playback speed multiplier relative to real-time:
+  - `speed=1.0`: Real-time (1 second of data = 1 second viewing)
+  - `speed=0.1`: 10% speed (slow motion, good for replay analysis)
+  - `speed=2.0`: 2× speed (fast forward)
+
+**How playback fps is computed:**
+
+```python
+# System computes sample rate from frame_times
+sample_rate_hz = (len(frame_times) - 1) / (frame_times[-1] - frame_times[0])
+
+# Playback fps is derived from speed
+playback_fps = min(sample_rate_hz * speed, MAX_PLAYBACK_FPS)  # Capped at 60 fps
+```
+
+**Use Case Examples:**
+
+| Analysis Type | Data Rate | Speed | Playback fps | Notes |
+|---------------|-----------|-------|--------------|-------|
+| Replay decoding | 500 Hz | 0.1 | 50 fps | See trajectory unfold |
+| Theta sequences | 30 Hz | 1.0 | 30 fps | Natural dynamics |
+| Place fields | 30 Hz | 2.0 | 60 fps | Quick preview |
+| High-speed replay | 500 Hz | 1.0 | 60 fps (capped) | Warning emitted |
+
+**Speed Capping Warning:**
+
+When requested speed exceeds display limits, a `UserWarning` is emitted:
+
+```python
+# 500 Hz data at real-time would need 500 fps (impossible)
+env.animate_fields(posterior_fields, frame_times=decode_times, speed=1.0)
+# UserWarning: Requested speed=1.00x would require 500 fps.
+#              Capped to 60 fps (effective speed=0.12x).
+```
+
+**Advanced: Override max fps:**
+
+For high-refresh displays (120/144 Hz), use `max_playback_fps`:
+
+```python
+env.animate_fields(
+    fields,
+    frame_times=frame_times,
+    speed=2.0,
+    max_playback_fps=120  # For 120 Hz displays
+)
+```
+
 ### Animation Overlay Architecture (v0.4.0+)
 
 The overlay system provides three public dataclasses for visualizing animal behavior alongside spatial fields:
@@ -1906,12 +1980,13 @@ env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float(
 
 **Problem**: Overlays and fields at different sampling rates need explicit timestamps.
 
-❌ Wrong (no timestamps for mixed-rate data):
+❌ Wrong (missing frame_times or overlay times for mixed-rate data):
 
 ```python
-# Position tracked at 120 Hz, fields at 10 Hz - without timestamps
+# Position tracked at 120 Hz, fields at 10 Hz - without proper timestamps
 position_overlay = PositionOverlay(data=trajectory_120hz)  # No times!
-env.animate_fields(fields_10hz, overlays=[position_overlay])  # Mismatch!
+# frame_times is required - this would raise TypeError
+# env.animate_fields(fields_10hz, overlays=[position_overlay])
 ```
 
 ✅ Right (provide timestamps for alignment):
@@ -1924,8 +1999,8 @@ position_overlay = PositionOverlay(
 )
 env.animate_fields(
     fields_10hz,
-    overlays=[position_overlay],
-    frame_times=timestamps_10hz  # Field timestamps - auto interpolation
+    frame_times=timestamps_10hz,  # Field timestamps - REQUIRED
+    overlays=[position_overlay],  # Auto-interpolated to frame_times
 )
 ```
 
@@ -1940,6 +2015,7 @@ env.animate_fields(
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[bodypart_overlay, head_direction_overlay],  # Not supported in HTML!
     backend="html"
 )
@@ -1952,6 +2028,7 @@ env.animate_fields(
 # Option 1: Use only position + regions with HTML
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[position_overlay],
     show_regions=True,
     backend="html"
@@ -1960,6 +2037,7 @@ env.animate_fields(
 # Option 2: Use video/napari for full overlay support
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[bodypart_overlay, head_direction_overlay],
     backend="napari"  # or "video" or "widget"
 )
@@ -2004,7 +2082,8 @@ overlay = PositionOverlay(data=positions)  # System transforms internally
 # 1D linearized track environments don't support video overlay
 env_1d = Environment.from_graph(track_graph, ...)  # Creates 1D environment
 video = VideoOverlay(source="session.mp4", calibration=calib)
-env_1d.animate_fields(fields, overlays=[video])  # ValueError!
+# frame_times is required, and 1D environment raises ValueError
+# env_1d.animate_fields(fields, frame_times=frame_times, overlays=[video])  # ValueError!
 ```
 
 ✅ Right (2D environment):
@@ -2013,11 +2092,15 @@ env_1d.animate_fields(fields, overlays=[video])  # ValueError!
 # VideoOverlay works with any 2D environment
 env_2d = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
 video = VideoOverlay(source="session.mp4", calibration=calib)
-env_2d.animate_fields(fields, overlays=[video], backend="napari")  # ✓ Works
+env_2d.animate_fields(
+    fields, frame_times=frame_times, overlays=[video], backend="napari"
+)  # ✓ Works
 
 # Also works with polygon and masked environments
 env_polygon = Environment.from_polygon(arena_boundary, bin_size=2.0)
-env_polygon.animate_fields(fields, overlays=[video])  # ✓ Works with fallback warning
+env_polygon.animate_fields(
+    fields, frame_times=frame_times, overlays=[video]
+)  # ✓ Works with fallback warning
 ```
 
 **Why**: Video frames are 2D images that map to 2D spatial coordinates. 1D linearized tracks have no meaningful 2D extent for video alignment.
@@ -2027,6 +2110,44 @@ env_polygon.animate_fields(fields, overlays=[video])  # ✓ Works with fallback 
 - 2D grid environments: Full support ✓
 - 2D polygon/masked environments: Works with fallback warning ⚠️
 - 1D linearized tracks: Not supported ✗
+
+### 15. Animation API migration (v0.15.0+)
+
+**Breaking changes**: The animation API now uses speed-based playback control.
+
+**Changes:**
+
+| Old API | New API | Notes |
+|---------|---------|-------|
+| `fps=30` | `speed=1.0` | Speed is relative to real-time |
+| `frame_times=None` | `frame_times=timestamps` | Now **required** |
+
+❌ Old code (v0.14.x and earlier):
+
+```python
+# Old: fps parameter controlled playback directly
+env.animate_fields(fields, fps=30)
+env.animate_fields(fields, fps=30, frame_times=times)  # frame_times was optional
+```
+
+✅ New code (v0.15.0+):
+
+```python
+# New: frame_times is required, speed controls playback relative to data rate
+frame_times = np.arange(len(fields)) / 30.0  # Create timestamps from data
+env.animate_fields(fields, frame_times=frame_times)  # speed=1.0 (real-time)
+env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed (slow motion)
+env.animate_fields(fields, frame_times=frame_times, speed=2.0)  # 2× speed (fast forward)
+```
+
+**Migration steps:**
+
+1. Add `frame_times` parameter - use timestamps from your data source
+2. Replace `fps=X` with `speed=Y` where `speed = X / sample_rate_hz`
+3. For slow motion: use `speed < 1.0` (e.g., `speed=0.1` for 10%)
+4. For fast forward: use `speed > 1.0` (e.g., `speed=2.0` for 2×)
+
+**Why this change?** The old API conflated data sample rate with playback speed. The new API lets you view 500 Hz replay data in slow motion (`speed=0.1`) while preserving all frames, rather than dropping frames to achieve a display-compatible fps.
 
 ## Troubleshooting
 
@@ -2414,9 +2535,10 @@ print(result.pixel_positions)  # Original pixel positions preserved
 **Solution**: TimeSeriesOverlay requires a separate panel with scrolling time series plots, which cannot be rendered in static HTML images. Use video or napari backend instead:
 
 ```python
-# Wrong - HTML doesn't support TimeSeriesOverlay
+# Will warn - HTML doesn't support TimeSeriesOverlay
 env.animate_fields(
     fields,
+    frame_times=frame_times,  # Required
     overlays=[timeseries_overlay],
     backend="html"  # Warning emitted, time series skipped
 )
@@ -2424,8 +2546,8 @@ env.animate_fields(
 # Right - use video or napari backend
 env.animate_fields(
     fields,
-    overlays=[timeseries_overlay],
     frame_times=frame_times,  # Required for time series
+    overlays=[timeseries_overlay],
     backend="video",
     save_path="animation.mp4"
 )
@@ -2433,34 +2555,25 @@ env.animate_fields(
 # Or napari for interactive viewing
 env.animate_fields(
     fields,
-    overlays=[timeseries_overlay],
     frame_times=frame_times,
+    overlays=[timeseries_overlay],
     backend="napari"
 )
 ```
 
 **Note**: Other overlays (position, bodypart, events, regions) still render in HTML. Only TimeSeriesOverlay and VideoOverlay are skipped with warning.
 
-### TimeSeriesOverlay requires `frame_times` parameter
+### TimeSeriesOverlay synchronization
 
-**Cause**: TimeSeriesOverlay needs timestamp information to synchronize with fields.
-
-**Solution**: Always provide `frame_times` when using TimeSeriesOverlay:
+**Note**: `frame_times` is required for `animate_fields()`. For TimeSeriesOverlay, this enables proper synchronization:
 
 ```python
-# Wrong - missing frame_times
-env.animate_fields(
-    fields,
-    overlays=[timeseries_overlay],
-    backend="napari"  # May not sync correctly
-)
-
-# Right - provide frame_times
+# frame_times is required - provides temporal structure for synchronization
 frame_times = np.linspace(0, duration, len(fields))
 env.animate_fields(
     fields,
+    frame_times=frame_times,  # Required for all animate_fields calls
     overlays=[timeseries_overlay],
-    frame_times=frame_times,  # Required for time series sync
     backend="napari"
 )
 ```

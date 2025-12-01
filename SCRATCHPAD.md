@@ -5,7 +5,7 @@
 
 ## Status
 
-**Milestones 1, 2, 3, 4, 5, 6, and 7 COMPLETE**
+**ALL MILESTONES COMPLETE** ✅
 
 - Milestone 1: Core Infrastructure ✅
 - Milestone 2: Overlay Validation Refactor ✅
@@ -14,7 +14,7 @@
 - Milestone 5: Napari Widget Enhancement ✅
 - Milestone 6: Test Updates ✅
 - Milestone 7: Demo Script Updates ✅
-- Milestone 8: Documentation Updates (next)
+- Milestone 8: Documentation Updates ✅
 
 ## Completed Work
 
@@ -134,13 +134,30 @@ Tests already completed as part of Milestones 1-5. Verified 1060 tests pass (8 p
 - Synced `examples/16_field_animation.ipynb` via jupytext
 - Updated common patterns code comments
 
+### Milestone 8: Documentation Updates ✅
+
+**Task 8.1 - Update CLAUDE.md Quick Reference** ✅
+- Updated all animate_fields examples to use `frame_times` (required)
+- Added examples for different use cases (30 Hz position, 500 Hz replay)
+- Showed speed=0.1 for slow motion, speed=2.0 for fast forward
+- Updated troubleshooting section examples
+- Fixed tests missing `frame_times`: scale_bar tests, layout_integration test
+
+**Task 8.2 - Update CLAUDE.md animation section** ✅
+- Added "Animation Playback Control (v0.15.0+)" section
+- Documented speed parameter semantics with use case table
+- Explained playback_fps = sample_rate_hz * speed formula
+- Documented 60 fps cap and max_playback_fps override
+
+**Task 8.3 - Add migration notes** ✅
+- Added Gotcha #15: "Animation API migration (v0.15.0+)"
+- Documented breaking changes in table format
+- Showed before/after code examples
+- Added migration steps and rationale
+
 ## Next Steps
 
-**Milestone 8: Documentation Updates** (Tasks 8.1-8.3)
-
-- Update CLAUDE.md Quick Reference examples
-- Update animation section documentation
-- Add migration notes for breaking changes
+All milestones complete! Animation API refactoring is done.
 
 ## Blockers
 
