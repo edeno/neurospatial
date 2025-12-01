@@ -159,6 +159,9 @@ class TimeSeriesArtistManager:
     group_window_seconds: dict[int, float]
     _ts_data_keys: dict[int, str] = field(default_factory=dict, repr=False)
     _groups: list[list[Any]] = field(default_factory=list, repr=False)  # Cached groups
+    _last_xlim_bounds: dict[int, tuple[float, float]] = field(
+        default_factory=dict, repr=False
+    )  # Cache to avoid redundant set_xlim calls
 
     @classmethod
     def create(
@@ -411,11 +414,30 @@ class TimeSeriesArtistManager:
                 else:
                     value_text.set_text("")  # Clear when no value available
 
-        # Update x-axis limits per group
+        # Update x-axis limits per group (with caching to avoid redundant calls)
+        # Tolerance for floating point comparison (in seconds).
+        # 1e-6 seconds = 1 microsecond, well below human perception (~16ms).
+        # This prevents redundant set_xlim() calls from floating point rounding.
+        xlim_tolerance = 1e-6
         for group_idx, ax in enumerate(self.axes):
             window_seconds = self.group_window_seconds.get(group_idx, 2.0)
             half_window = window_seconds / 2
-            ax.set_xlim(current_time - half_window, current_time + half_window)
+            new_xmin = current_time - half_window
+            new_xmax = current_time + half_window
+
+            # Check if bounds have changed significantly
+            cached_bounds = self._last_xlim_bounds.get(group_idx)
+            if cached_bounds is not None:
+                old_xmin, old_xmax = cached_bounds
+                if (
+                    abs(new_xmin - old_xmin) < xlim_tolerance
+                    and abs(new_xmax - old_xmax) < xlim_tolerance
+                ):
+                    continue  # Skip set_xlim - bounds haven't changed
+
+            # Bounds changed or first call - update and cache
+            ax.set_xlim(new_xmin, new_xmax)
+            self._last_xlim_bounds[group_idx] = (new_xmin, new_xmax)
 
         # Update cursor positions (skip if cursor disabled)
         for cursor in self.cursors:

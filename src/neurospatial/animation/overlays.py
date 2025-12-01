@@ -1283,6 +1283,12 @@ class TimeSeriesOverlay:
           Useful for custom update logic or debugging.
 
         Default is "live".
+    playback_throttle_hz : float, optional
+        Maximum update frequency (Hz) during playback. Lower values improve
+        performance but reduce visual responsiveness. Default is 10.0.
+    scrub_throttle_hz : float, optional
+        Maximum update frequency (Hz) when scrubbing (paused). Higher values
+        make scrubbing feel more responsive. Default is 20.0.
 
     Attributes
     ----------
@@ -1316,6 +1322,10 @@ class TimeSeriesOverlay:
         Interpolation method for cursor value.
     update_mode : {"live", "on_pause", "manual"}
         Update mode for dock widget during playback.
+    playback_throttle_hz : float
+        Maximum update frequency during playback.
+    scrub_throttle_hz : float
+        Maximum update frequency when scrubbing.
 
     See Also
     --------
@@ -1418,6 +1428,10 @@ class TimeSeriesOverlay:
 
     # Update mode for dock widget during playback
     update_mode: Literal["live", "on_pause", "manual"] = "live"
+
+    # Throttle settings for performance optimization
+    playback_throttle_hz: float = 10.0
+    scrub_throttle_hz: float = 20.0
 
     def __post_init__(self) -> None:
         """Validate inputs after initialization."""
@@ -1530,6 +1544,26 @@ class TimeSeriesOverlay:
                 "HOW: Use one of: 'live', 'on_pause', or 'manual'."
             )
 
+        # Validate playback_throttle_hz is positive
+        if self.playback_throttle_hz <= 0:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.playback_throttle_hz must be positive "
+                f"(got {self.playback_throttle_hz}).\n\n"
+                "WHY: The throttle frequency controls how often the time series "
+                "updates during playback. A positive value is required.\n\n"
+                "HOW: Use a positive value like playback_throttle_hz=10.0."
+            )
+
+        # Validate scrub_throttle_hz is positive
+        if self.scrub_throttle_hz <= 0:
+            raise ValueError(
+                f"WHAT: TimeSeriesOverlay.scrub_throttle_hz must be positive "
+                f"(got {self.scrub_throttle_hz}).\n\n"
+                "WHY: The throttle frequency controls how often the time series "
+                "updates during scrubbing. A positive value is required.\n\n"
+                "HOW: Use a positive value like scrub_throttle_hz=20.0."
+            )
+
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -1603,6 +1637,8 @@ class TimeSeriesOverlay:
             use_global_limits=True,
             interp=self.interp,
             update_mode=self.update_mode,
+            playback_throttle_hz=self.playback_throttle_hz,
+            scrub_throttle_hz=self.scrub_throttle_hz,
         )
 
 
@@ -2317,6 +2353,10 @@ class TimeSeriesData:
         Interpolation method for cursor value computation.
     update_mode : {"live", "on_pause", "manual"}
         Update mode for dock widget during playback.
+    playback_throttle_hz : float
+        Maximum update frequency during playback. Default is 10.0.
+    scrub_throttle_hz : float
+        Maximum update frequency when scrubbing. Default is 20.0.
 
     Attributes
     ----------
@@ -2356,6 +2396,10 @@ class TimeSeriesData:
         Interpolation method.
     update_mode : str
         Update mode for dock widget.
+    playback_throttle_hz : float
+        Maximum update frequency during playback.
+    scrub_throttle_hz : float
+        Maximum update frequency when scrubbing.
 
     See Also
     --------
@@ -2391,6 +2435,10 @@ class TimeSeriesData:
 
     # Update mode for dock widget during playback
     update_mode: Literal["live", "on_pause", "manual"] = "live"
+
+    # Throttle settings for performance optimization
+    playback_throttle_hz: float = 10.0
+    scrub_throttle_hz: float = 20.0
 
     def get_window_slice(self, frame_idx: int) -> tuple[NDArray, NDArray]:
         """O(1) window extraction using precomputed indices.
