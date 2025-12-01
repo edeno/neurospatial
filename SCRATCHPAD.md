@@ -1,7 +1,7 @@
 # SCRATCHPAD.md - Napari Performance Optimization
 
 **Started**: 2025-12-01
-**Current Phase**: Phase 4 Complete - Ready for Phase 5 (Clean Up Event Wiring)
+**Current Phase**: Phase 5 Complete - Ready for Phase 6 (Verification and Profiling)
 
 ---
 
@@ -366,12 +366,47 @@ controller.flush_pending_frame()  # Apply pending frame immediately
 - Already efficient (events use shown mask)
 - Already integrated (timeseries checks `is_playing`)
 
+### Task: Phase 5.2 - Remove Deprecated layer.data Assignments
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Conducted comprehensive audit of all `layer.data = ` assignments in callbacks
+- Created 17 tests documenting the audit findings in `tests/animation/test_layer_data_audit.py`
+- Verified no deprecated patterns exist - all assignments are either removed or necessary
+
+**Layer Data Assignment Audit Summary**:
+
+| Overlay Type    | Update Pattern           | layer.data Assignment? | Status       |
+|-----------------|--------------------------|------------------------|--------------|
+| Video (memory)  | Native 4D time dimension | NO                     | Optimized    |
+| Video (file)    | Callback: layer.data=fr  | YES (necessary)        | Cached       |
+| Events (decay)  | Callback: layer.shown=m  | NO                     | Efficient    |
+| Events (instant)| Native 3D Points         | NO                     | Optimized    |
+| Position        | Native Tracks layer      | NO                     | Native       |
+| Bodypart        | Native Points layer      | NO                     | Native       |
+| Head Direction  | Native Tracks layer      | NO                     | Native       |
+| Skeleton        | Pre-computed Vectors     | NO                     | Pre-computed |
+
+**Key Findings**:
+1. Only file-based video uses `layer.data = frame` (necessary for streaming)
+2. File-based video is cached via LRU cache (configurable `cache_size`)
+3. Events use efficient `layer.shown` mask updates (boolean array)
+4. All other overlays use native time dimension or pre-computation
+5. **No deprecated `layer.data = large_array` patterns found**
+
+**Files created**:
+- `tests/animation/test_layer_data_audit.py` (new) - 17 tests documenting findings
+
+**Conclusion**: Phase 5 (Clean Up Event Wiring) is now complete. All layer.data
+assignments are either removed (in-memory video), necessary (file-based streaming),
+or efficient (events use shown mask instead).
+
 ---
 
 ## Next Task
 
-**Task**: Phase 5.2 - Remove Deprecated layer.data Assignments
-**Purpose**: Ensure no overlay does `layer.data = large_array` in callbacks
+**Task**: Phase 6.1 - Create Automated Benchmark Suite
+**Purpose**: Confirm optimizations meet performance targets
 
 ---
 

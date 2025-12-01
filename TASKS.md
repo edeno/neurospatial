@@ -193,11 +193,19 @@
 
 ### 5.2: Remove Deprecated layer.data Assignments
 
-- [ ] Audit all overlays for `layer.data = large_array` in callbacks
-- [ ] Ensure only efficient updates remain:
-  - Video: Native time dimension or cached read
-  - Events (cumulative): `layer.shown = mask` (efficient, keep)
-  - Others: Native time dimension (no reassignment)
+- [x] Audit all overlays for `layer.data = large_array` in callbacks
+- [x] Ensure only efficient updates remain:
+  - Video (in-memory): Native 4D time dimension (no layer.data assignment)
+  - Video (file-based): `layer.data = frame` (necessary for streaming, with LRU cache)
+  - Events (cumulative/decay): `layer.shown = mask` (efficient boolean mask)
+  - Events (instant): Native 3D Points layer (no callback)
+  - Position/Bodypart/HeadDirection: Native time dimension (no reassignment)
+  - Skeleton: Pre-computed Vectors layer (no callback)
+- [x] Tests: 17 tests in `tests/animation/test_layer_data_audit.py` documenting findings
+
+**Key Finding**: No deprecated `layer.data = large_array` patterns found. All layer.data
+assignments are either removed (in-memory video), necessary (file-based streaming),
+or efficient (events use shown mask instead).
 
 **Success Criteria**: All callbacks audited; redundant ones removed
 
