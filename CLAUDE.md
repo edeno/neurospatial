@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-11-30 (v0.9.0 - Track graph annotation for 1D environments)
+**Last Updated**: 2025-12-01 (v0.9.0 - Added performance profiling guide)
 
 ---
 
@@ -304,8 +304,9 @@ This documentation is organized into focused modules:
 | **[TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)** | Errors & fixes | When something breaks |
 | **[ADVANCED.md](.claude/ADVANCED.md)** | NWB, video overlays | When using advanced features |
 | **[ARCHITECTURE.md](.claude/ARCHITECTURE.md)** | Core design | When understanding internals |
+| **[PROFILING.md](.claude/PROFILING.md)** | Performance profiling | When optimizing napari animations |
 
-**Total documentation:** ~2,100 lines across 7 files
+**Total documentation:** ~2,400 lines across 8 files
 **Token reduction:** ~60-70% per conversation (only load what's needed)
 
 ---
@@ -348,6 +349,7 @@ This documentation is organized into focused modules:
 | Work with NWB files | [ADVANCED.md - NWB](.claude/ADVANCED.md#nwb-integration-v070) |
 | Add video overlay | [ADVANCED.md - Video Overlay](.claude/ADVANCED.md#video-overlay-v050) |
 | Annotate track graphs | [ADVANCED.md - Track Graph](.claude/ADVANCED.md#track-graph-annotation-v090) |
+| Profile napari performance | [PROFILING.md](.claude/PROFILING.md) |
 
 ### By Problem Type
 
@@ -360,6 +362,7 @@ This documentation is organized into focused modules:
 | Pre-commit hooks fail | [TROUBLESHOOTING.md - Pre-commit](.claude/TROUBLESHOOTING.md#pre-commit-hooks-fail-on-commit) |
 | Memory warning | [TROUBLESHOOTING.md - ResourceWarning](.claude/TROUBLESHOOTING.md#resourcewarning-creating-large-grid-v021) |
 | Type errors | [PATTERNS.md - Mypy](.claude/PATTERNS.md#mypy-type-checking-requirements) |
+| Slow napari animations | [PROFILING.md - Common Performance Issues](.claude/PROFILING.md#common-performance-issues) |
 
 ---
 
@@ -463,6 +466,7 @@ uv run pytest -m "not slow"
    - Errors → [TROUBLESHOOTING.md](.claude/TROUBLESHOOTING.md)
    - Design → [PATTERNS.md](.claude/PATTERNS.md)
    - Advanced → [ADVANCED.md](.claude/ADVANCED.md)
+   - Performance → [PROFILING.md](.claude/PROFILING.md)
 4. **Search across files** - Use Ctrl+F in editor across `.claude/` directory
 
 **For questions or issues:** <https://github.com/anthropics/claude-code/issues>
