@@ -255,6 +255,16 @@ class PlaybackController:
         self._last_update_time: float = 0.0
         self._debounce_lock = Lock()
 
+        # Trailing-edge timer for auto-flush
+        # Uses QTimer to flush pending frame after debounce window expires
+        self._debounce_timer: Any = None
+        if scrub_debounce_ms > 0:
+            from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
+
+            self._debounce_timer = QTimer()
+            self._debounce_timer.setSingleShot(True)
+            self._debounce_timer.timeout.connect(self._on_debounce_timer)
+
         # Metrics
         self._frames_rendered: int = 0
         self._frames_skipped: int = 0
@@ -322,9 +332,15 @@ class PlaybackController:
                 self._apply_frame(clamped_frame)
                 self._last_update_time = current_time
                 self._pending_frame = None
+                # Cancel any pending timer since we applied immediately
+                if self._debounce_timer is not None:
+                    self._debounce_timer.stop()
             else:
-                # Within debounce window - store as pending
+                # Within debounce window - store as pending and start timer
                 self._pending_frame = clamped_frame
+                # Start/restart the trailing-edge timer
+                if self._debounce_timer is not None:
+                    self._debounce_timer.start(self.scrub_debounce_ms)
 
     def _apply_frame(self, frame_idx: int) -> None:
         """Apply a frame change to the viewer.
@@ -353,6 +369,14 @@ class PlaybackController:
         for callback in self._callbacks:
             callback(self._current_frame)
 
+    def _on_debounce_timer(self) -> None:
+        """Handle debounce timer timeout.
+
+        Called automatically when the trailing-edge timer fires. Flushes
+        any pending frame to ensure the final scrub position is applied.
+        """
+        self.flush_pending_frame()
+
     def flush_pending_frame(self) -> None:
         """Immediately apply any pending frame change.
 
@@ -372,6 +396,9 @@ class PlaybackController:
                 self._apply_frame(self._pending_frame)
                 self._pending_frame = None
                 self._last_update_time = time.perf_counter()
+                # Stop timer since we've flushed
+                if self._debounce_timer is not None:
+                    self._debounce_timer.stop()
 
     def step(self) -> None:
         """Advance to the next frame, with optional skipping if behind schedule.

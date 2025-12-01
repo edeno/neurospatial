@@ -352,6 +352,12 @@ module = "neurospatial.*"
 warn_return_any = true
 warn_unused_ignores = true
 
+# napari_backend: Disable warn_unused_ignores due to qtpy stubs inconsistency
+# Pre-commit mypy doesn't have qtpy stubs, local mypy does
+[[tool.mypy.overrides]]
+module = "neurospatial.animation.backends.napari_backend"
+warn_unused_ignores = false
+
 # Test files can be less strict
 # Note: Type errors in tests are often false positives from the Protocol/TypeVar
 # mixin pattern. Tests verify correctness at runtime.

@@ -350,6 +350,67 @@ class TestFlushPendingFrame:
         assert count_after <= count_before + 1
 
 
+class TestAutomaticPendingFlush:
+    """Tests for automatic trailing-edge flush of pending frames."""
+
+    @pytest.fixture
+    def mock_viewer(self) -> MagicMock:
+        """Create a mock napari viewer."""
+        viewer = MagicMock()
+        viewer.dims.set_current_step = MagicMock()
+        viewer.dims.current_step = [0]
+        return viewer
+
+    def test_pending_frame_auto_flushed_after_debounce(self, mock_viewer: MagicMock):
+        """Pending frame should be automatically flushed after debounce interval.
+
+        This test verifies the trailing-edge behavior: when rapid frame
+        changes occur, the last pending frame should be applied automatically
+        after the debounce window expires, without requiring manual flush.
+
+        Note: This test requires a Qt event loop. It will skip if Qt is not
+        available or not properly initialized.
+        """
+        pytest.importorskip("napari")
+
+        from napari._qt.qt_main_window import get_qapp
+
+        # Ensure Qt app exists (may already be running from napari import)
+        app = get_qapp()
+
+        from neurospatial.animation.backends.napari_backend import PlaybackController
+
+        controller = PlaybackController(
+            viewer=mock_viewer,
+            n_frames=100,
+            fps=30.0,
+            scrub_debounce_ms=16,
+        )
+
+        # First call applies immediately (frame 10)
+        controller.go_to_frame(10)
+        assert controller.current_frame == 10
+
+        # Rapid calls within debounce window queue pending
+        controller.go_to_frame(20)
+        controller.go_to_frame(30)
+        controller.go_to_frame(40)
+
+        # Immediately after rapid calls, should have pending but not applied
+        assert controller.has_pending_frame is True
+        assert controller.current_frame == 10  # Still at first applied frame
+
+        # Wait for debounce timer to fire (2x debounce interval to be safe)
+        time.sleep(0.040)  # 40ms > 16ms
+
+        # Process Qt events so timer can fire
+        app.processEvents()
+
+        # Pending frame should now be auto-flushed
+        assert controller.has_pending_frame is False
+        assert controller.current_frame == 40  # Final pending frame applied
+
+
 class TestHasPendingFrame:
     """Tests for has_pending_frame property."""
 
