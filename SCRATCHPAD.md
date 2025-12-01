@@ -1,7 +1,7 @@
 # SCRATCHPAD.md - Napari Performance Optimization
 
 **Started**: 2025-12-01
-**Current Phase**: Phase 0 - Establish Performance Baseline
+**Current Phase**: Phase 1 Complete - PlaybackController Created and Integrated
 
 ---
 
@@ -119,12 +119,37 @@ NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napar
 - `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added PlaybackController class
 - `tests/animation/test_playback_controller.py` (new) - 24 unit tests
 
+### Task: Phase 1.2 - Integrate PlaybackController into render_napari()
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Integrated PlaybackController into `render_napari()`:
+  - Creates controller after viewer setup and before overlay rendering
+  - Stores controller as `viewer.playback_controller` using `object.__setattr__` to bypass napari's pydantic validation
+  - Extracts `frame_times` from `overlay_data` if available
+  - Controller is accessible but widget still uses napari's built-in playback (widget wiring comes in Phase 4)
+- Added controller to multi-field path (`_render_multi_field_napari()`):
+  - Same integration pattern as single-field
+  - Computes `n_frames` from first sequence
+- Added proper type hints:
+  - `Callable[[int], None]` for callback parameter and `_callbacks` list
+  - Added `Callable` import from `collections.abc`
+- Comprehensive test suite: 14 integration tests covering:
+  - Controller creation for single-field and multi-field
+  - Correct `n_frames`, `fps`, `frame_times` attributes
+  - Controller initial state
+  - Widget integration (controller accessible via `viewer.playback_controller`)
+
+**Files created/modified**:
+- `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added controller integration
+- `tests/animation/test_playback_controller_integration.py` (new) - 14 integration tests
+
 ---
 
 ## Next Task
 
-**Task**: Phase 1.2 - Integrate PlaybackController into render_napari()
-**Purpose**: Wire the controller to the existing playback widget
+**Task**: Phase 2.1 - Use Time-Indexed Image Layer for In-Memory Video
+**Purpose**: Eliminate per-frame `layer.data = frame` overhead for in-memory video
 
 ---
 

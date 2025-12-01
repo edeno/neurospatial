@@ -6,6 +6,7 @@ import contextlib
 import os
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -227,7 +228,7 @@ class PlaybackController:
         self._playing: bool = False
         self._start_time: float | None = None
         self._start_frame: int = 0
-        self._callbacks: list = []
+        self._callbacks: list[Callable[[int], None]] = []
 
         # Metrics
         self._frames_rendered: int = 0
@@ -329,12 +330,12 @@ class PlaybackController:
         """Pause playback."""
         self._playing = False
 
-    def register_callback(self, callback) -> None:
+    def register_callback(self, callback: Callable[[int], None]) -> None:
         """Register a callback to be notified on frame changes.
 
         Parameters
         ----------
-        callback : callable
+        callback : Callable[[int], None]
             Function that accepts a single int argument (the new frame index).
             Called whenever ``go_to_frame()`` is invoked.
 
@@ -2625,6 +2626,29 @@ def render_napari(
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
+    # Create PlaybackController for centralized playback control
+    # Compute n_frames from fields (type ignore needed for union-attr on shape)
+    n_frames = (
+        fields.shape[0]  # type: ignore[union-attr]
+        if fields_is_array
+        else len(fields)
+    )
+
+    # Extract frame_times from overlay_data if available
+    frame_times = overlay_data.frame_times if overlay_data is not None else None
+
+    # Create controller and store as viewer attribute
+    # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
+    # which doesn't allow arbitrary attribute assignment
+    controller = PlaybackController(
+        viewer=viewer,
+        n_frames=n_frames,
+        fps=float(fps),
+        frame_times=frame_times,
+        allow_frame_skip=True,  # Enable frame skipping by default
+    )
+    object.__setattr__(viewer, "playback_controller", controller)
+
     # Render overlay data if provided
     if overlay_data is not None:
         # Extract overlay scale from layer_scale (y_scale, x_scale)
@@ -2936,6 +2960,25 @@ def _render_multi_field_napari(
             """Toggle animation playback with spacebar."""
             viewer.window._toggle_play()
 
+    # Create PlaybackController for centralized playback control
+    # Compute n_frames from field sequences
+    n_frames = len(field_sequences[0]) if field_sequences else 0
+
+    # Extract frame_times from overlay_data if available
+    frame_times = overlay_data.frame_times if overlay_data is not None else None
+
+    # Create controller and store as viewer attribute
+    # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
+    # which doesn't allow arbitrary attribute assignment
+    controller = PlaybackController(
+        viewer=viewer,
+        n_frames=n_frames,
+        fps=float(fps),
+        frame_times=frame_times,
+        allow_frame_skip=True,  # Enable frame skipping by default
+    )
+    object.__setattr__(viewer, "playback_controller", controller)
+
     # Render overlay data if provided
     if overlay_data is not None:
         # Extract overlay scale from layer_scale (y_scale, x_scale)
@@ -2943,7 +2986,7 @@ def _render_multi_field_napari(
         overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
 
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
-        n_frames = len(field_sequences[0]) if field_sequences else 0
+        # n_frames already computed above
         video_layers: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
             suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
