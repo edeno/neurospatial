@@ -605,12 +605,16 @@ def _add_video_layer(
     env: Environment,
     n_frames: int,
     name: str = "Video",
-) -> Layer:
-    """Add video overlay as a streaming Image layer.
+) -> tuple[Layer, bool]:
+    """Add video overlay as an Image layer.
 
     Creates a napari Image layer that displays video frames synchronized with
     the animation. Supports affine transforms to position the video in
     environment coordinates.
+
+    For in-memory video arrays, uses napari's native time dimension for
+    efficient playback without per-frame callbacks. For file-based video
+    readers, uses the traditional callback approach for streaming.
 
     Parameters
     ----------
@@ -629,14 +633,34 @@ def _add_video_layer(
     -------
     layer : Layer
         The created napari Image layer.
+    uses_native_time : bool
+        True if the layer uses napari's native time dimension (4D array)
+        and does NOT require a frame update callback.
+        False if the layer is 3D (single frame) and REQUIRES a callback
+        to update ``layer.data`` on each frame change during playback.
 
     Notes
     -----
-    The video layer uses napari's affine parameter to position the video
-    in environment coordinates. Frame updates are handled by the callback
-    registered via viewer.dims.events.current_step.
+    **In-Memory Video Optimization (Phase 2.1)**:
 
-    Z-ordering is controlled by the `z_order` attribute:
+    When the video source is an in-memory np.ndarray, we create a 4D Image
+    layer with shape (n_animation_frames, height, width, 3). This allows
+    napari to handle frame selection natively via dims[0], eliminating
+    per-frame ``layer.data = frame`` overhead (~2-3ms saved per frame).
+
+    The frame_indices mapping is pre-applied by reordering the video array
+    to match animation frame order. Missing frames (frame_indices == -1)
+    are filled with black/zeros.
+
+    **File-Based Video (Streaming)**:
+
+    When the video source is a VideoReaderProtocol (file-based), we create
+    a 3D single-frame layer and use the callback approach for streaming.
+    This is necessary because loading all frames into memory may not be
+    feasible for large video files.
+
+    **Z-ordering**:
+
     - "below": Video layer is added before field layer (lower in stack)
     - "above": Video layer is added after field layer (higher in stack)
 
@@ -653,55 +677,80 @@ def _add_video_layer(
                  │
                  └── video_data.transform_to_env
                      (y-flip + scale from calibration)
-
-    **Frame Index Mapping**:
-
-    ``video_data.frame_indices[anim_frame]`` maps animation frames to video frames:
-    - >= 0: Valid video frame index to display
-    - -1: No video frame available (animation time outside video range)
-
-    The callback ``_make_video_frame_callback()`` uses this mapping to update
-    ``layer.data`` when the animation frame changes.
     """
-
     # Build affine transform matrix
     # Chains: video_px → env_cm → napari_px (see COORDINATES.md for details)
     affine = _build_video_napari_affine(video_data, env)
 
-    # Get initial frame
-    initial_frame_idx = (
-        video_data.frame_indices[0] if len(video_data.frame_indices) > 0 else 0
-    )
-    if initial_frame_idx >= 0:
-        if isinstance(video_data.reader, np.ndarray):
-            initial_frame = video_data.reader[initial_frame_idx]
-        else:
-            # VideoReader interface
-            initial_frame = video_data.reader[initial_frame_idx]
+    # Check if video source is in-memory array
+    if isinstance(video_data.reader, np.ndarray):
+        # In-memory optimization: create 4D array with time dimension
+        # Reorder video frames according to frame_indices
+        video_array: NDArray[np.uint8] = video_data.reader
+        n_anim_frames = len(video_data.frame_indices)
+        n_video_frames = len(video_array)
+        h, w = video_array.shape[1:3]
+
+        # Pre-allocate 4D array for all animation frames (zeros = black for missing)
+        time_indexed_array = np.zeros((n_anim_frames, h, w, 3), dtype=np.uint8)
+
+        # Use vectorized assignment for valid frame indices (faster than loop)
+        frame_indices = video_data.frame_indices
+        valid_mask = (frame_indices >= 0) & (frame_indices < n_video_frames)
+        valid_anim_indices = np.where(valid_mask)[0]
+        valid_video_indices = frame_indices[valid_mask]
+        time_indexed_array[valid_anim_indices] = video_array[valid_video_indices]
+
+        # Add 4D image layer - napari handles time dimension natively
+        layer = viewer.add_image(
+            time_indexed_array,
+            name=name,
+            rgb=True,
+            opacity=video_data.alpha,
+            affine=affine,
+            blending="translucent",
+        )
+
+        # Store metadata (for compatibility, though not needed for callbacks)
+        layer.metadata["video_data"] = video_data
+        layer.metadata["video_frame_indices"] = video_data.frame_indices
+        layer.metadata["uses_native_time"] = True
+
+        return layer, True
+
     else:
-        # No valid frame - create blank
-        if isinstance(video_data.reader, np.ndarray):
-            h, w = video_data.reader.shape[1:3]
+        # File-based video: use single-frame layer with callback approach
+        # Get initial frame
+        initial_frame_idx = (
+            video_data.frame_indices[0] if len(video_data.frame_indices) > 0 else 0
+        )
+        if initial_frame_idx >= 0:
+            initial_frame = video_data.reader[initial_frame_idx]
         else:
-            # Estimate from env_bounds
-            h, w = 64, 64  # fallback
-        initial_frame = np.zeros((h, w, 3), dtype=np.uint8)
+            # No valid frame - create blank (estimate size from reader)
+            try:
+                first_frame = video_data.reader[0]
+                h, w = first_frame.shape[:2]
+            except (IndexError, KeyError):
+                h, w = 64, 64  # fallback
+            initial_frame = np.zeros((h, w, 3), dtype=np.uint8)
 
-    # Add the image layer
-    layer = viewer.add_image(
-        initial_frame,
-        name=name,
-        rgb=True,
-        opacity=video_data.alpha,
-        affine=affine,
-        blending="translucent",
-    )
+        # Add 3D image layer (single frame)
+        layer = viewer.add_image(
+            initial_frame,
+            name=name,
+            rgb=True,
+            opacity=video_data.alpha,
+            affine=affine,
+            blending="translucent",
+        )
 
-    # Store video data for frame updates
-    layer.metadata["video_data"] = video_data
-    layer.metadata["video_frame_indices"] = video_data.frame_indices
+        # Store video data for frame updates (needed for callback)
+        layer.metadata["video_data"] = video_data
+        layer.metadata["video_frame_indices"] = video_data.frame_indices
+        layer.metadata["uses_native_time"] = False
 
-    return layer
+        return layer, False
 
 
 def _make_video_frame_callback(
@@ -2657,28 +2706,30 @@ def render_napari(
 
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         n_frames = len(fields)
-        video_layers: list[Layer] = []
+        video_layers_needing_callback: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
             suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
             name = f"Video{suffix}"
             if video_data.z_order == "below":
                 # Add video layer below field - it will appear under the field
                 # We need to reorder layers after adding
-                video_layer = _add_video_layer(
+                video_layer, uses_native_time = _add_video_layer(
                     viewer, video_data, env, n_frames, name=name
                 )
                 # Move video layer to bottom of stack (index 0)
                 viewer.layers.move(viewer.layers.index(video_layer), 0)
-                video_layers.append(video_layer)
+                if not uses_native_time:
+                    video_layers_needing_callback.append(video_layer)
             else:
                 # Add video layer above field (default position - on top)
-                video_layer = _add_video_layer(
+                video_layer, uses_native_time = _add_video_layer(
                     viewer, video_data, env, n_frames, name=name
                 )
-                video_layers.append(video_layer)
+                if not uses_native_time:
+                    video_layers_needing_callback.append(video_layer)
 
-        # Register callback to update video frames when animation frame changes
-        _make_video_frame_callback(viewer, video_layers)
+        # Register callback only for file-based videos (not in-memory with native time)
+        _make_video_frame_callback(viewer, video_layers_needing_callback)
 
         # Render event overlays FIRST (spike events, region crossings, etc.)
         # Events are background context, rendered below position/bodypart overlays
@@ -2987,27 +3038,29 @@ def _render_multi_field_napari(
 
         # Render video overlays (z_order="below" first, then field layer exists, then "above")
         # n_frames already computed above
-        video_layers: list[Layer] = []
+        video_layers_needing_callback: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
             suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
             name = f"Video{suffix}"
             if video_data.z_order == "below":
                 # Add video layer below field - it will appear under the field
-                video_layer = _add_video_layer(
+                video_layer, uses_native_time = _add_video_layer(
                     viewer, video_data, env, n_frames, name=name
                 )
                 # Move video layer to bottom of stack (index 0)
                 viewer.layers.move(viewer.layers.index(video_layer), 0)
-                video_layers.append(video_layer)
+                if not uses_native_time:
+                    video_layers_needing_callback.append(video_layer)
             else:
                 # Add video layer above field (default position - on top)
-                video_layer = _add_video_layer(
+                video_layer, uses_native_time = _add_video_layer(
                     viewer, video_data, env, n_frames, name=name
                 )
-                video_layers.append(video_layer)
+                if not uses_native_time:
+                    video_layers_needing_callback.append(video_layer)
 
-        # Register callback to update video frames when animation frame changes
-        _make_video_frame_callback(viewer, video_layers)
+        # Register callback only for file-based videos (not in-memory with native time)
+        _make_video_frame_callback(viewer, video_layers_needing_callback)
 
         # Render event overlays FIRST (spike events, region crossings, etc.)
         # Events are background context, rendered below position/bodypart overlays

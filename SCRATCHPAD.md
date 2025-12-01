@@ -1,7 +1,7 @@
 # SCRATCHPAD.md - Napari Performance Optimization
 
 **Started**: 2025-12-01
-**Current Phase**: Phase 1 Complete - PlaybackController Created and Integrated
+**Current Phase**: Phase 2.1 Complete - Time-Indexed Video Layer for In-Memory Video
 
 ---
 
@@ -144,12 +144,37 @@ NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napar
 - `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added controller integration
 - `tests/animation/test_playback_controller_integration.py` (new) - 14 integration tests
 
+### Task: Phase 2.1 - Time-Indexed Image Layer for In-Memory Video
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Modified `_add_video_layer()` to detect in-memory vs file-based video sources
+- For in-memory np.ndarray:
+  - Creates 4D Image layer with shape `(n_animation_frames, H, W, 3)`
+  - Pre-orders frames according to `frame_indices` mapping
+  - Uses vectorized NumPy assignment for performance
+  - napari handles frame selection natively via dims[0] (no callback)
+- For file-based VideoReaderProtocol:
+  - Keeps existing callback approach (layer.data = frame on each change)
+- Changed `_add_video_layer()` return type to `tuple[Layer, bool]` (layer, uses_native_time)
+- Updated both calling sites (single-field and multi-field paths) to only register callbacks for file-based videos
+- Comprehensive test suite: 12 tests covering all scenarios
+
+**Files created/modified**:
+- `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added time-indexed optimization
+- `tests/animation/test_video_time_indexed.py` (new) - 12 unit tests
+
+**Performance benefit**:
+- Eliminates per-frame `layer.data = frame` overhead (~2-3ms per frame)
+- For 30 fps playback, this saves ~60-90ms/second of playback time
+- One-time setup cost for frame reordering is amortized over playback duration
+
 ---
 
 ## Next Task
 
-**Task**: Phase 2.1 - Use Time-Indexed Image Layer for In-Memory Video
-**Purpose**: Eliminate per-frame `layer.data = frame` overhead for in-memory video
+**Task**: Phase 2.2 - Add Ring Buffer for File-Based Video
+**Purpose**: Add frame caching for file-based video to reduce seek overhead
 
 ---
 

@@ -83,12 +83,13 @@
 
 ### 2.1: Use Time-Indexed Image Layer for In-Memory Video
 
-- [ ] In `_add_video_layer()`, detect if source is in-memory ndarray
-- [ ] If in-memory `(n_frames, H, W, 3)`:
+- [x] In `_add_video_layer()`, detect if source is in-memory ndarray
+- [x] If in-memory `(n_frames, H, W, 3)`:
   - Create Image layer with full array and time dimension
   - Let napari handle frame selection natively (no callback needed)
-- [ ] If file-based:
+- [x] If file-based:
   - Keep current callback approach (optimize in 2.2)
+- [x] Tests: 12 tests in `tests/animation/test_video_time_indexed.py`
 
 ### 2.2: Add Ring Buffer for File-Based Video
 
