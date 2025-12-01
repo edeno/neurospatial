@@ -175,16 +175,21 @@
 
 ### 5.1: Audit and Migrate Callbacks
 
-- [ ] Search for all `viewer.dims.events.current_step.connect(...)` calls
-- [ ] Audit each callback:
+- [x] Search for all `viewer.dims.events.current_step.connect(...)` calls
+- [x] Audit each callback:
 
-  | Location | Action |
-  |----------|--------|
-  | `_make_video_frame_callback` | Remove for in-memory; keep for file-based |
-  | `_render_event_overlay` (cumulative/decay) | Keep (already efficient) |
-  | `_render_timeseries_dock` | Migrate to controller for `on_pause` mode |
+  | Location | Current State | Action Taken |
+  |----------|---------------|--------------|
+  | `_make_video_frame_callback` | File-based only (Phase 2.1 removed in-memory) | Kept for file-based |
+  | `_render_event_overlay` | Efficient `layer.shown` mask | Kept (already optimized) |
+  | `_render_playback_widget` | Lightweight UI update | Kept (negligible overhead) |
+  | `_add_timeseries_dock` | Already checks `controller.is_playing` | Kept (already integrated) |
 
-- [ ] Migrate appropriate callbacks to `PlaybackController.register_callback()`
+- [x] Assess migration to `PlaybackController.register_callback()`:
+  - **Finding**: Cannot fully migrate because `register_callback` only fires on programmatic `go_to_frame()` calls
+  - **Reason**: User slider interactions go directly through napari's dims, not our controller
+  - **Decision**: Keep callbacks on `dims.events.current_step` for responsive UI
+- [x] Tests: 14 tests in `tests/animation/test_callback_audit.py` documenting audit findings
 
 ### 5.2: Remove Deprecated layer.data Assignments
 

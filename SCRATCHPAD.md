@@ -331,12 +331,47 @@ controller.has_pending_frame  # bool: True if frame change pending
 controller.flush_pending_frame()  # Apply pending frame immediately
 ```
 
+### Task: Phase 5.1 - Audit and Migrate Callbacks
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Conducted comprehensive audit of all `viewer.dims.events.current_step.connect()` callbacks
+- Created 14 tests documenting the audit findings in `tests/animation/test_callback_audit.py`
+- Verified existing optimizations are in place and working correctly
+
+**Callback Audit Summary**:
+
+| Location | Callback | Current State | Action Taken |
+|----------|----------|---------------|--------------|
+| `_make_video_frame_callback` | `update_video_frames` | File-based only (Phase 2.1) | Kept (no changes needed) |
+| `_render_event_overlay` | `on_frame_change` | Efficient `layer.shown` mask | Kept (already optimized) |
+| `_render_playback_widget` | `update_frame_info` | Lightweight UI update | Kept (negligible overhead) |
+| `_add_timeseries_dock` | `on_frame_change` | Already checks `controller.is_playing` | Kept (already integrated) |
+
+**Key Findings**:
+1. **In-memory videos** (Phase 2.1): Already use napari's native time dimension - no callback needed
+2. **File-based videos**: Callback kept for per-frame data updates (necessary for streaming)
+3. **Event overlays**: Already efficient with `layer.shown` mask updates
+4. **Timeseries dock**: Already integrated with PlaybackController via `is_playing` check for `on_pause` mode
+5. **All callbacks remain connected via `dims.events.current_step`** - this is required because:
+   - `PlaybackController.register_callback()` only fires on programmatic `go_to_frame()` calls
+   - User slider interactions go directly through napari's dims, not our controller
+   - Both need to work for responsive UI
+
+**Files created**:
+- `tests/animation/test_callback_audit.py` (new) - 14 tests documenting audit findings
+
+**Conclusion**: No callback migration needed. All callbacks are either:
+- Already removed (in-memory video uses native time)
+- Already efficient (events use shown mask)
+- Already integrated (timeseries checks `is_playing`)
+
 ---
 
 ## Next Task
 
-**Task**: Phase 5.1 - Audit and Migrate Callbacks
-**Purpose**: Remove redundant callbacks and centralize through PlaybackController
+**Task**: Phase 5.2 - Remove Deprecated layer.data Assignments
+**Purpose**: Ensure no overlay does `layer.data = large_array` in callbacks
 
 ---
 
