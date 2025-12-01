@@ -1597,7 +1597,9 @@ def _add_speed_control_widget(
 
     # Clamp initial_speed to valid slider range (fixes ValueError when speed > max_speed)
     # This can happen when speed=1.0 is requested but max_speed < 1.0 due to fps capping
-    clamped_initial_speed = max(0.01, min(initial_speed, max_speed))
+    # Subtract small epsilon to avoid Qt/magicgui float precision issues where max gets
+    # truncated but value doesn't, causing "value > max" errors (e.g., 0.119996.. > 0.119996)
+    clamped_initial_speed = max(0.01, min(initial_speed, max_speed - 1e-6))
 
     # Throttle widget updates for high FPS (WIDGET_UPDATE_TARGET_HZ max to avoid Qt overhead)
     # At 250 FPS, updating 250x/sec causes stalling; throttle to target Hz
@@ -1740,7 +1742,13 @@ def _add_speed_control_widget(
 # Prevents matplotlib from becoming bottleneck at high napari FPS.
 # Lower values reduce update frequency but improve playback smoothness.
 # Combined with draw-pending check, this prevents queue buildup.
-TIMESERIES_MAX_UPDATE_HZ: int = 30
+# Reduced from 30 to 20 Hz to give more headroom for Qt event loop
+# and reduce impact of matplotlib draw spikes (profiled at ~12-15ms per draw).
+TIMESERIES_MAX_UPDATE_HZ: int = 20
+
+# Time series figure DPI - lower values render faster
+# 72 DPI is sufficient for screen display and reduces rendering workload
+TIMESERIES_FIGURE_DPI: int = 72
 
 
 def _add_timeseries_dock(
@@ -1765,7 +1773,7 @@ def _add_timeseries_dock(
 
     Notes
     -----
-    The widget updates are throttled to TIMESERIES_MAX_UPDATE_HZ (40 Hz) to
+    The widget updates are throttled to TIMESERIES_MAX_UPDATE_HZ (20 Hz) to
     prevent matplotlib from becoming a performance bottleneck when napari's
     FPS is higher. This throttling only applies during playback; manual
     scrubbing triggers immediate updates for responsive feedback.
@@ -1799,8 +1807,8 @@ def _add_timeseries_dock(
     n_rows = len(groups)
     fig_height = max(1.5, 1.2 * n_rows)  # Minimum 1.5 inches, scale with rows
 
-    # Create matplotlib figure ONCE
-    fig = Figure(figsize=(3.5, fig_height), dpi=100)
+    # Create matplotlib figure ONCE with reduced DPI for faster rendering
+    fig = Figure(figsize=(3.5, fig_height), dpi=TIMESERIES_FIGURE_DPI)
 
     # Create artist manager ONCE (handles all matplotlib setup)
     manager = TimeSeriesArtistManager.create(
@@ -1832,9 +1840,22 @@ def _add_timeseries_dock(
     # By skipping updates when a draw is pending, we prevent this backlog.
     draw_pending = [False]
 
+    # Blitting support: cache background for fast updates
+    # When blitting is enabled, we only redraw the changed artists (lines, cursors)
+    # instead of the full figure, which is significantly faster.
+    blit_background: list[Any] = [None]
+    use_blitting = [True]  # Will be disabled if blitting fails
+
     def on_draw_complete(event: Any) -> None:
-        """Reset draw_pending flag when canvas finishes drawing."""
+        """Reset draw_pending flag and capture background for blitting."""
         draw_pending[0] = False
+        # Capture background after full draw for subsequent blitting
+        if use_blitting[0]:
+            try:
+                blit_background[0] = canvas.copy_from_bbox(fig.bbox)
+            except Exception:
+                # Blitting not supported, fall back to full redraws
+                use_blitting[0] = False
 
     # Connect to matplotlib's draw_event to know when rendering is complete
     canvas.mpl_connect("draw_event", on_draw_complete)
@@ -1843,6 +1864,7 @@ def _add_timeseries_dock(
         """Update time series plot when frame changes.
 
         Throttled and skips updates if previous draw is pending.
+        Uses blitting when available for faster updates.
         """
         current_time = time.time()
 
@@ -1869,13 +1891,38 @@ def _add_timeseries_dock(
         # Mark draw as pending before scheduling
         draw_pending[0] = True
 
-        # Redraw canvas (draw_idle is non-blocking)
+        # Use blitting if available for faster updates
+        if use_blitting[0] and blit_background[0] is not None:
+            try:
+                # Restore background
+                canvas.restore_region(blit_background[0])
+                # Redraw only the changed artists
+                for line in manager.lines.values():
+                    if line.axes is not None:
+                        line.axes.draw_artist(line)
+                for cursor in manager.cursors:
+                    if cursor is not None and cursor.axes is not None:
+                        cursor.axes.draw_artist(cursor)
+                for text in manager.value_texts.values():
+                    if text.axes is not None:
+                        text.axes.draw_artist(text)
+                # Blit the updated region
+                canvas.blit(fig.bbox)
+                # Manual flush to display immediately
+                canvas.flush_events()
+                draw_pending[0] = False  # Blitting is synchronous
+                return
+            except Exception:
+                # Fall back to full redraw
+                use_blitting[0] = False
+
+        # Fallback: full redraw (draw_idle is non-blocking)
         canvas.draw_idle()
 
     # Connect to dims events
     viewer.dims.events.current_step.connect(on_frame_change)
 
-    # Initial render at frame 0
+    # Initial render at frame 0 (also captures blit background)
     if len(frame_times) > 0:
         manager.update(0, timeseries_data)
         canvas.draw()

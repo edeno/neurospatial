@@ -20,6 +20,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
+from matplotlib.ticker import MaxNLocator
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
@@ -238,7 +239,7 @@ class TimeSeriesArtistManager:
                         stacklevel=2,
                     )
 
-        # Apply dark theme styling
+        # Apply dark theme styling with optimizations for fast rendering
         if dark_theme:
             napari_bg = "#262930"
             fig.patch.set_facecolor(napari_bg)
@@ -249,6 +250,9 @@ class TimeSeriesArtistManager:
                     spine.set_visible(False)
                 ax.yaxis.label.set_color("white")
                 ax.xaxis.label.set_color("white")
+                # Reduce number of ticks for faster rendering
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
 
         # Create Line2D artists and value text annotations
         lines: dict[str, Line2D] = {}
@@ -525,7 +529,7 @@ class TimeSeriesArtistManager:
                         stacklevel=2,
                     )
 
-        # Apply theme styling to provided axes
+        # Apply theme styling to provided axes with optimizations for fast rendering
         for ax in axes:
             if dark_theme:
                 napari_bg = "#262930"
@@ -535,6 +539,9 @@ class TimeSeriesArtistManager:
                     spine.set_visible(False)
                 ax.yaxis.label.set_color("white")
                 ax.xaxis.label.set_color("white")
+                # Reduce number of ticks for faster rendering
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
             else:
                 # Light theme (video backend)
                 ax.set_facecolor("white")
@@ -543,6 +550,9 @@ class TimeSeriesArtistManager:
                 ax.spines["right"].set_visible(False)
                 ax.yaxis.label.set_color("black")
                 ax.xaxis.label.set_color("black")
+                # Reduce number of ticks for faster rendering
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
 
         # Create Line2D artists and value text annotations
         lines: dict[str, Line2D] = {}
