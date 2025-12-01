@@ -29,7 +29,7 @@ class TestPlaybackConstants:
         """Test that MAX_PLAYBACK_FPS has correct value."""
         from neurospatial.animation.core import MAX_PLAYBACK_FPS
 
-        assert MAX_PLAYBACK_FPS == 60
+        assert MAX_PLAYBACK_FPS == 25
 
     def test_max_playback_fps_is_int(self):
         """Test that MAX_PLAYBACK_FPS is an integer."""
@@ -96,15 +96,16 @@ class TestComputePlaybackFps:
         assert isinstance(result[1], float)
 
     def test_normal_case_30hz_realtime(self):
-        """Test 30 Hz data at real-time speed."""
+        """Test 30 Hz data at real-time speed (capped to MAX_PLAYBACK_FPS)."""
         from neurospatial.animation.core import _compute_playback_fps
 
         # 30 Hz data, 10 seconds (301 frames)
+        # Since MAX_PLAYBACK_FPS=25, 30 Hz data will be capped
         frame_times = np.linspace(0, 10, 301)
         fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
 
-        assert fps == 30
-        assert actual_speed == pytest.approx(1.0, rel=0.01)
+        assert fps == 25  # Capped to MAX_PLAYBACK_FPS
+        assert actual_speed == pytest.approx(25 / 30, rel=0.01)  # 25/30 ≈ 0.83
 
     def test_capping_500hz_data(self):
         """Test that 500 Hz data at speed=1.0 is capped to 60 fps."""
@@ -114,8 +115,8 @@ class TestComputePlaybackFps:
         frame_times = np.linspace(0, 1, 501)
         fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
 
-        assert fps == 60  # Capped to MAX_PLAYBACK_FPS
-        assert actual_speed == pytest.approx(0.12, rel=0.01)  # 60/500 = 0.12
+        assert fps == 25  # Capped to MAX_PLAYBACK_FPS
+        assert actual_speed == pytest.approx(0.05, rel=0.01)  # 25/500 = 0.05
 
     def test_slow_motion(self):
         """Test slow motion playback (10% speed)."""
@@ -146,7 +147,7 @@ class TestComputePlaybackFps:
         frame_times = np.array([0.0])  # Single frame
         fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
 
-        assert fps == 60  # Returns max_fps
+        assert fps == 25  # Returns max_fps
         assert actual_speed == 1.0  # Returns requested speed
 
     def test_zero_duration_edge_case(self):
@@ -156,7 +157,7 @@ class TestComputePlaybackFps:
         frame_times = np.array([5.0, 5.0, 5.0])  # Zero duration
         fps, actual_speed = _compute_playback_fps(frame_times, speed=1.0)
 
-        assert fps == 60  # Returns max_fps
+        assert fps == 25  # Returns max_fps
         assert actual_speed == 1.0  # Returns requested speed
 
     def test_custom_max_fps(self):
@@ -171,15 +172,16 @@ class TestComputePlaybackFps:
         assert actual_speed == pytest.approx(0.24, rel=0.01)  # 120/500 = 0.24
 
     def test_fast_forward_2x(self):
-        """Test 2x fast forward playback."""
+        """Test 2x fast forward playback (capped to max fps)."""
         from neurospatial.animation.core import _compute_playback_fps
 
         # 30 Hz data at 2x speed
         frame_times = np.linspace(0, 10, 301)  # 30 Hz
         fps, actual_speed = _compute_playback_fps(frame_times, speed=2.0)
 
-        assert fps == 60  # 30 * 2 = 60 fps (within limit)
-        assert actual_speed == pytest.approx(2.0, rel=0.01)
+        # 30 Hz * 2x = 60 fps requested, but capped to MAX_PLAYBACK_FPS=25
+        assert fps == 25  # Capped to MAX_PLAYBACK_FPS
+        assert actual_speed == pytest.approx(25 / 30, rel=0.01)  # 25/30 ≈ 0.83
 
     def test_uses_constants(self):
         """Test that function uses MAX_PLAYBACK_FPS and MIN_PLAYBACK_FPS constants."""
@@ -1444,8 +1446,8 @@ class TestAnimateFieldsSpeedBasedPlayback:
 
             mock.assert_called_once()
 
-    def test_max_playback_fps_parameter_default_is_60(self):
-        """Test that max_playback_fps parameter defaults to 60."""
+    def test_max_playback_fps_parameter_default_is_25(self):
+        """Test that max_playback_fps parameter defaults to 25."""
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
@@ -1459,7 +1461,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
 
-            # Call without max_playback_fps - should use default 60
+            # Call without max_playback_fps - should use default 25
             animate_fields(
                 env,
                 fields,
@@ -1469,9 +1471,9 @@ class TestAnimateFieldsSpeedBasedPlayback:
                 speed=1.0,
             )
 
-            # Check that fps is capped at 60 (default max)
+            # Check that fps is capped at 25 (default max)
             call_kwargs = mock.call_args[1]
-            assert call_kwargs.get("fps") <= 60
+            assert call_kwargs.get("fps") <= 25
 
     def test_speed_affects_computed_fps(self):
         """Test that speed parameter affects computed fps."""
@@ -1532,8 +1534,9 @@ class TestAnimateFieldsSpeedBasedPlayback:
             )
 
             call_kwargs = mock.call_args[1]
-            # fps should be 30 (computed from data), not 100
-            assert call_kwargs.get("fps") == 30
+            # fps should be 25 (capped from 30 Hz data), not 100
+            # Since MAX_PLAYBACK_FPS=25, 30 Hz data is capped to 25 fps
+            assert call_kwargs.get("fps") == 25
 
     def test_warning_emitted_when_speed_capped(self):
         """Test that UserWarning is emitted when speed is capped.
@@ -1572,7 +1575,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
                 # Should have emitted a warning about capping
                 assert len(w) == 1
                 assert issubclass(w[0].category, UserWarning)
-                assert "Capped to 60 fps" in str(w[0].message)
+                assert "Capped to 25 fps" in str(w[0].message)
                 assert "effective speed" in str(w[0].message).lower()
 
     def test_no_warning_when_speed_not_capped(self):
@@ -1589,9 +1592,9 @@ class TestAnimateFieldsSpeedBasedPlayback:
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        # Create 30 Hz data - at speed=1.0 would require 30 fps (within limit)
-        fields = [rng.random(env.n_bins) for _ in range(31)]
-        frame_times = np.linspace(0, 1, 31)  # 30 Hz sample rate
+        # Create 20 Hz data - at speed=1.0 would require 20 fps (within MAX=25 limit)
+        fields = [rng.random(env.n_bins) for _ in range(21)]
+        frame_times = np.linspace(0, 1, 21)  # 20 Hz sample rate
 
         with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
             mock.return_value = Path("test.html")
@@ -1606,7 +1609,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
                     backend="html",
                     save_path="test.html",
                     frame_times=frame_times,
-                    speed=1.0,  # Results in 30 fps (within limit)
+                    speed=1.0,  # Results in 20 fps (within limit)
                 )
 
                 # Should not have emitted any warnings

@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 # Import shared coordinate transforms
+from neurospatial.animation.core import MAX_PLAYBACK_FPS
 from neurospatial.animation.transforms import EnvScale as _EnvScale
 from neurospatial.animation.transforms import make_env_scale as _make_env_scale
 from neurospatial.animation.transforms import (
@@ -107,8 +108,14 @@ FPS_SLIDER_MIN: int = 1
 FPS_SLIDER_DEFAULT_MAX: int = 120
 """Default maximum FPS value for playback slider."""
 
-WIDGET_UPDATE_TARGET_HZ: int = 30
-"""Target update rate for playback widget to avoid Qt overhead at high FPS."""
+WIDGET_UPDATE_TARGET_HZ: int = 10
+"""Target update rate for playback widget to avoid Qt overhead at high FPS.
+
+This should be low enough that users can read the frame counter (10 Hz = 100ms
+between updates is easily readable), and high enough to feel responsive.
+Setting this to 10 Hz instead of 30 Hz significantly reduces Qt overhead from
+label updates during playback.
+"""
 
 # Per-viewer warning state metadata key
 _TRANSFORM_WARNED_KEY: str = "_transform_fallback_warned"
@@ -1054,6 +1061,7 @@ def _render_event_overlay(
     - **Cumulative mode** (decay_frames=None): Events appear and stay permanently.
       All events up to current frame are visible (spikes accumulate over time).
     - **Instant mode** (decay_frames=0): Events appear only on their exact frame.
+      Uses napari's native 3D points format for optimal performance.
     - **Decay mode** (decay_frames > 0): Events visible for N frames then hidden.
 
     Parameters
@@ -1080,14 +1088,20 @@ def _render_event_overlay(
 
     Notes
     -----
+    **Instant mode optimization (decay_frames=0):**
+    Uses napari's native 3D time-dimensional points format (time, y, x). This is
+    much faster than callback-based visibility because napari handles time filtering
+    internally without per-frame callback overhead.
+
+    **Cumulative/Decay modes:**
     Uses a single Points layer with dynamic visibility via the ``shown`` mask,
     which is updated on each frame change via a callback. This approach handles
     millions of events efficiently (O(1) per frame for cumulative mode using
     searchsorted on pre-sorted indices).
 
     Performance characteristics:
+    - Instant mode: No callback (native napari handling)
     - Cumulative mode: O(log N) per frame update (searchsorted)
-    - Instant mode: O(N) per frame update (equality comparison)
     - Decay mode: O(N) per frame update (range comparison)
     """
     layers: list[Layer] = []
@@ -1127,6 +1141,45 @@ def _render_event_overlay(
 
     n_events = len(positions_array)
 
+    # Convert string colors to RGBA arrays with user-specified opacity
+    import matplotlib.colors as mcolors
+
+    opacity = event_data.opacity
+    face_colors = np.array([mcolors.to_rgba(c, alpha=opacity) for c in colors_array])
+
+    # Border color: napari needs string or (N, 4) array, not a single RGBA tuple
+    # Use string for simplicity - napari will broadcast it
+    border_color = event_data.border_color
+
+    # OPTIMIZATION: For instant mode (decay_frames=0), use napari's native 3D
+    # time-dimensional points format instead of callback-based visibility.
+    # This eliminates per-frame callback overhead entirely.
+    if event_data.decay_frames == 0:
+        # Create 3D points (time, y, x) - napari handles visibility natively
+        points_3d = np.column_stack(
+            [
+                frame_indices_array,  # Time dimension
+                positions_array[:, 0],  # Y
+                positions_array[:, 1],  # X
+            ]
+        )
+
+        # Scale for 3D points: (time_scale, y_scale, x_scale)
+        points_scale_3d = (1.0, scale[0], scale[1]) if scale else None
+
+        points_layer = viewer.add_points(
+            points_3d,
+            name=f"Events{name_suffix}",
+            size=event_data.size,
+            face_color=face_colors,
+            border_color=border_color,
+            border_width=event_data.border_width,
+            scale=points_scale_3d,
+        )
+        layers.append(points_layer)
+        return layers
+
+    # For cumulative/decay modes, use callback-based visibility
     # Precompute per-frame index ranges for O(events_per_frame) updates
     # frame_starts[f] and frame_stops[f] give the slice of events for frame f
     if n_events > 0:
@@ -1142,16 +1195,6 @@ def _render_event_overlay(
     else:
         frame_starts = np.array([], dtype=np.int64)
         frame_stops = np.array([], dtype=np.int64)
-
-    # Convert string colors to RGBA arrays with user-specified opacity
-    import matplotlib.colors as mcolors
-
-    opacity = event_data.opacity
-    face_colors = np.array([mcolors.to_rgba(c, alpha=opacity) for c in colors_array])
-
-    # Border color: napari needs string or (N, 4) array, not a single RGBA tuple
-    # Use string for simplicity - napari will broadcast it
-    border_color = event_data.border_color
 
     # Create Points layer with all events initially hidden via shown mask
     # Using shown mask is ~30x faster than alpha-based visibility (O(N) bool vs O(N*4) float)
@@ -1331,9 +1374,10 @@ def _register_event_visibility_callback(
             if mask_changed:
                 with perf_timer("event_shown_update"), points_layer.events.blocker():
                     points_layer.shown = shown
-                # Force refresh to ensure _view_data and _view_size are consistent
-                with perf_timer("event_layer_refresh"):
-                    points_layer.refresh()
+                # Note: refresh() was removed for performance. Setting points_layer.shown
+                # triggers napari's internal refresh via EventedList. Explicit refresh()
+                # was causing redundant Qt/OpenGL updates during playback (~18ms overhead).
+                # If visual glitches occur, uncomment: points_layer.refresh()
 
     # Connect to dims change event
     viewer.dims.events.current_step.connect(on_frame_change)
@@ -1528,7 +1572,7 @@ def _add_speed_control_widget(
     *,
     initial_speed: float = 1.0,
     sample_rate_hz: float = 30.0,
-    max_playback_fps: int = 60,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
 ) -> None:
     """Add enhanced playback control widget to napari viewer.
 
@@ -1560,7 +1604,7 @@ def _add_speed_control_widget(
     sample_rate_hz : float, default=30.0
         Data sample rate in Hz. Used to compute actual fps from speed.
         For example, 30 Hz data at speed=0.5 gives 15 fps playback.
-    max_playback_fps : int, default=60
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS (25)
         Maximum playback fps. Speed slider is capped so that
         ``sample_rate_hz * speed <= max_playback_fps``.
 
@@ -1591,63 +1635,42 @@ def _add_speed_control_widget(
     # Track playback state for button updates
     playback_state = {"is_playing": False, "last_frame": -1}
 
-    # Compute max speed that doesn't exceed max_playback_fps
-    max_speed = max_playback_fps / sample_rate_hz if sample_rate_hz > 0 else 4.0
-    max_speed = min(max_speed, 4.0)  # Cap at 4× for UX
+    # Throttle widget updates to WIDGET_UPDATE_TARGET_HZ to avoid Qt overhead.
+    # At 25 fps with 10 Hz target, this updates every 2-3 frames (readable speed).
+    # The previous logic only throttled when fps >= target, which was backwards
+    # and resulted in NO throttling at typical playback speeds (fps=25, target=30).
+    update_interval = max(1, fps_value // WIDGET_UPDATE_TARGET_HZ)
 
-    # Clamp initial_speed to valid slider range (fixes ValueError when speed > max_speed)
-    # This can happen when speed=1.0 is requested but max_speed < 1.0 due to fps capping
-    # Subtract small epsilon to avoid Qt/magicgui float precision issues where max gets
-    # truncated but value doesn't, causing "value > max" errors (e.g., 0.119996.. > 0.119996)
-    clamped_initial_speed = max(0.01, min(initial_speed, max_speed - 1e-6))
-
-    # Throttle widget updates for high FPS (WIDGET_UPDATE_TARGET_HZ max to avoid Qt overhead)
-    # At 250 FPS, updating 250x/sec causes stalling; throttle to target Hz
-    update_interval = (
-        max(1, fps_value // WIDGET_UPDATE_TARGET_HZ)
-        if fps_value >= WIDGET_UPDATE_TARGET_HZ
-        else 1
-    )
-
-    # Initial speed info string (Unicode × and ≈ are intentional for better UX)
-    # Use clamped speed so display matches actual slider value
-    initial_speed_info = f"{clamped_initial_speed:.2f}× (≈{fps_value} fps)"  # noqa: RUF001
+    # Use simple FPS slider (like old working code) instead of speed slider.
+    # The FloatSlider with tiny range (0.01-0.12 for 500Hz data) appears to cause
+    # Qt event loop issues that stall napari playback. The FPS slider works reliably.
+    slider_max = max(FPS_SLIDER_DEFAULT_MAX, fps_value)
 
     @magicgui(
         auto_call=True,
         play={"widget_type": "PushButton", "text": "▶ Play"},
-        speed={
-            "widget_type": "FloatSlider",
-            "min": 0.01,
-            "max": max_speed,
-            "step": 0.01,
-            "value": clamped_initial_speed,
-            "label": "Speed",
+        fps={
+            "widget_type": "Slider",
+            "min": FPS_SLIDER_MIN,
+            "max": slider_max,
+            "value": fps_value,
+            "label": "Speed (FPS)",
         },
-        speed_info={"widget_type": "Label", "label": "", "value": initial_speed_info},
         frame_info={"widget_type": "Label", "label": ""},
     )
     def playback_widget(
         play: bool = False,
-        speed: float = clamped_initial_speed,
-        speed_info: str = initial_speed_info,
+        fps: int = fps_value,
         frame_info: str = "",
     ) -> None:
-        """Enhanced playback control widget with speed multiplier."""
-        # Compute fps from speed and sample_rate_hz
-        computed_fps = int(min(sample_rate_hz * speed, max_playback_fps))
-        computed_fps = max(FPS_SLIDER_MIN, computed_fps)
-
-        # Update napari settings with computed fps
+        """Enhanced playback control widget."""
+        # Update FPS setting when slider changes
         settings = get_settings()
-        settings.application.playback_fps = computed_fps
-
-        # Update speed info label (Unicode × and ≈ are intentional for better UX)
-        playback_widget.speed_info.value = f"{speed:.2f}× (≈{computed_fps} fps)"  # noqa: RUF001
+        settings.application.playback_fps = fps
 
     # Make slider larger and easier to interact with
     with contextlib.suppress(Exception):
-        playback_widget.speed.native.setMinimumWidth(200)
+        playback_widget.fps.native.setMinimumWidth(200)
 
     # Connect play button to toggle playback
     def toggle_playback(event: Any | None = None) -> None:
@@ -1953,7 +1976,7 @@ def render_napari(
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     speed: float = 1.0,
     sample_rate_hz: float | None = None,
-    max_playback_fps: int = 60,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
     **kwargs: Any,
 ) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -2046,7 +2069,7 @@ def render_napari(
         for replay decoding). Computed from ``frame_times`` by ``animate_fields()``
         and used by the speed control widget to convert between speed multiplier
         and playback fps. If None, defaults to computing from fps.
-    max_playback_fps : int, default=60
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS (25)
         Maximum playback fps for the speed control widget. Higher values may
         exceed display refresh rate. Passed from ``animate_fields()`` to ensure
         consistent speed capping across the API.
@@ -2492,7 +2515,7 @@ def _render_multi_field_napari(
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     speed: float = 1.0,
     sample_rate_hz: float | None = None,
-    max_playback_fps: int = 60,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
 ) -> napari.Viewer:
     """Render multiple field sequences in a single napari viewer.
 
