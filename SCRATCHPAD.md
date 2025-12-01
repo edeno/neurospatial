@@ -101,12 +101,30 @@ NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/benchmark_napar
 - `scripts/benchmark_napari_playback.py` (modified) - Added `--video` and `--auto-close` flags
 - `docs/performance_baseline.md` (new) - Comprehensive baseline documentation
 
+### Task: Phase 1.1 - Create PlaybackController class
+**Status**: COMPLETED (2025-12-01)
+
+**What was implemented**:
+- Created `PlaybackController` class in `napari_backend.py` with:
+  - `go_to_frame(frame_idx)` - Jump to frame with clamping and callback notification
+  - `step()` - Advance with elapsed-time-based frame skipping
+  - `play()` / `pause()` - Playback control
+  - `register_callback(fn)` - Callback registration
+  - `allow_frame_skip` parameter for testing/video export use cases
+  - Metrics tracking: `frames_rendered`, `frames_skipped`
+- Comprehensive test suite: 24 tests covering all functionality
+- Follows TDD: tests written first, then implementation
+
+**Files created/modified**:
+- `src/neurospatial/animation/backends/napari_backend.py` (modified) - Added PlaybackController class
+- `tests/animation/test_playback_controller.py` (new) - 24 unit tests
+
 ---
 
 ## Next Task
 
-**Task**: Phase 1 - Create PlaybackController class
-**Purpose**: Centralize playback control to enable frame skipping and coordinated updates
+**Task**: Phase 1.2 - Integrate PlaybackController into render_napari()
+**Purpose**: Wire the controller to the existing playback widget
 
 ---
 

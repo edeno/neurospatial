@@ -43,18 +43,20 @@
 
 ### 1.1: Create PlaybackController Class
 
-- [ ] Create `PlaybackController` in `src/neurospatial/animation/backends/napari_backend.py`
+- [x] Create `PlaybackController` in `src/neurospatial/animation/backends/napari_backend.py`
   - Properties: `viewer`, `n_frames`, `fps`, `frame_times`, `_current_frame`
-  - Timer: Own QTimer instead of using napari's built-in
-- [ ] Implement core methods:
-  - [ ] `go_to_frame(frame_idx)` - jump to specific frame, update viewer dims
-  - [ ] `step()` - advance to next frame with elapsed-time-based skipping
-  - [ ] `play()` - start playback, record start time
-  - [ ] `pause()` - stop playback
-  - [ ] `register_callback(fn)` - register frame change callbacks
-- [ ] Add frame skip calculation in `step()`:
+  - Added `allow_frame_skip` parameter for testing/video export
+  - Added metrics: `frames_rendered`, `frames_skipped`
+- [x] Implement core methods:
+  - [x] `go_to_frame(frame_idx)` - jump to specific frame, update viewer dims
+  - [x] `step()` - advance to next frame with elapsed-time-based skipping
+  - [x] `play()` - start playback, record start time
+  - [x] `pause()` - stop playback
+  - [x] `register_callback(fn)` - register frame change callbacks
+- [x] Add frame skip calculation in `step()`:
   - Calculate target frame from elapsed time: `start_frame + int(elapsed * fps)`
   - Skip directly to target if behind schedule
+- [x] Tests: 24 tests in `tests/animation/test_playback_controller.py`
 
 ### 1.2: Integrate into render_napari()
 

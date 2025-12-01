@@ -121,6 +121,231 @@ label updates during playback.
 _TRANSFORM_WARNED_KEY: str = "_transform_fallback_warned"
 """Metadata key for tracking transform fallback warning per viewer."""
 
+# Playback controller metadata key
+_PLAYBACK_CONTROLLER_KEY: str = "playback_controller"
+"""Metadata key for storing PlaybackController in viewer."""
+
+
+# =============================================================================
+# PlaybackController - Central Playback Control
+# =============================================================================
+
+
+class PlaybackController:
+    """Central playback controller for frame-skipping-aware animation.
+
+    Centralizes playback control to enable frame skipping when the viewer
+    falls behind schedule. This is essential for maintaining smooth playback
+    with multiple overlays where frame rendering may exceed the target fps.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance to control.
+    n_frames : int
+        Total number of frames in the animation.
+    fps : float
+        Target frames per second for playback.
+    frame_times : ndarray of shape (n_frames,), optional
+        Timestamps for each frame in seconds. If None, frames are assumed
+        uniformly spaced at 1/fps intervals.
+    allow_frame_skip : bool, default=True
+        If True, skip frames when falling behind schedule to maintain
+        real-time playback. If False, always advance by exactly 1 frame.
+
+    Attributes
+    ----------
+    viewer : napari.Viewer
+        The napari viewer being controlled.
+    n_frames : int
+        Total number of frames.
+    fps : float
+        Target playback rate.
+    frame_times : ndarray or None
+        Frame timestamps.
+    allow_frame_skip : bool
+        Whether frame skipping is enabled.
+    current_frame : int
+        Current frame index (0-based).
+    is_playing : bool
+        Whether playback is active.
+    frames_rendered : int
+        Total frames rendered since creation.
+    frames_skipped : int
+        Total frames skipped since creation.
+
+    Examples
+    --------
+    >>> import napari
+    >>> viewer = napari.Viewer()
+    >>> controller = PlaybackController(viewer, n_frames=100, fps=30.0)
+    >>> controller.go_to_frame(50)  # Jump to frame 50
+    >>> controller.play()  # Start playback
+    >>> # ... playback runs via QTimer ...
+    >>> controller.pause()  # Stop playback
+
+    Notes
+    -----
+    The controller uses elapsed time to calculate target frames, enabling
+    automatic frame skipping when rendering falls behind. This prevents
+    the "slow-motion" effect that occurs when every frame must be rendered.
+
+    When ``allow_frame_skip=True`` (default):
+    - ``step()`` calculates target frame from elapsed time
+    - If behind schedule, skips directly to target frame
+    - Frames between current and target are counted as skipped
+
+    When ``allow_frame_skip=False``:
+    - ``step()`` always advances by exactly 1 frame
+    - May result in slow-motion playback if rendering is slow
+    - Useful for frame-accurate playback (e.g., video export)
+
+    See Also
+    --------
+    render_napari : Main rendering function that creates PlaybackController
+    """
+
+    import time
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        n_frames: int,
+        fps: float,
+        frame_times: NDArray[np.float64] | None = None,
+        allow_frame_skip: bool = True,
+    ) -> None:
+        """Initialize PlaybackController."""
+        self.viewer = viewer
+        self.n_frames = n_frames
+        self.fps = fps
+        self.frame_times = frame_times
+        self.allow_frame_skip = allow_frame_skip
+
+        # Internal state
+        self._current_frame: int = 0
+        self._playing: bool = False
+        self._start_time: float | None = None
+        self._start_frame: int = 0
+        self._callbacks: list = []
+
+        # Metrics
+        self._frames_rendered: int = 0
+        self._frames_skipped: int = 0
+
+    @property
+    def current_frame(self) -> int:
+        """Current frame index (0-based)."""
+        return self._current_frame
+
+    @property
+    def is_playing(self) -> bool:
+        """Whether playback is currently active."""
+        return self._playing
+
+    @property
+    def frames_rendered(self) -> int:
+        """Total number of frames rendered since creation."""
+        return self._frames_rendered
+
+    @property
+    def frames_skipped(self) -> int:
+        """Total number of frames skipped since creation."""
+        return self._frames_skipped
+
+    def go_to_frame(self, frame_idx: int) -> None:
+        """Jump to a specific frame.
+
+        Clamps frame index to valid range [0, n_frames-1], updates the
+        viewer dims, and notifies all registered callbacks.
+
+        Parameters
+        ----------
+        frame_idx : int
+            Target frame index (0-based). Will be clamped to valid range.
+        """
+
+        # Clamp to valid range
+        old_frame = self._current_frame
+        self._current_frame = max(0, min(frame_idx, self.n_frames - 1))
+
+        # Update viewer
+        self.viewer.dims.set_current_step(0, self._current_frame)
+
+        # Track metrics
+        self._frames_rendered += 1
+        if self._current_frame > old_frame + 1:
+            # Skipped frames (jumped more than 1)
+            self._frames_skipped += self._current_frame - old_frame - 1
+
+        # Notify callbacks
+        for callback in self._callbacks:
+            callback(self._current_frame)
+
+    def step(self) -> None:
+        """Advance to the next frame, with optional skipping if behind schedule.
+
+        When playing, calculates the target frame based on elapsed time since
+        ``play()`` was called. If ``allow_frame_skip`` is True and the target
+        frame is ahead of current, skips directly to target. Otherwise,
+        advances by exactly 1 frame.
+
+        Does nothing if not currently playing.
+        """
+        import time
+
+        if not self._playing or self._start_time is None:
+            return
+
+        if self.allow_frame_skip:
+            # Calculate target frame based on elapsed time
+            elapsed = time.perf_counter() - self._start_time
+            target_frame = self._start_frame + int(elapsed * self.fps)
+
+            # Skip to target if behind schedule
+            if target_frame > self._current_frame:
+                self.go_to_frame(target_frame)
+        else:
+            # No skipping - advance by exactly 1 frame
+            self.go_to_frame(self._current_frame + 1)
+
+        # Check for end of animation
+        if self._current_frame >= self.n_frames - 1:
+            self.pause()
+
+    def play(self) -> None:
+        """Start playback.
+
+        Records the current time and frame for elapsed-time-based
+        frame skipping calculations in ``step()``.
+        """
+        import time
+
+        self._playing = True
+        self._start_time = time.perf_counter()
+        self._start_frame = self._current_frame
+
+    def pause(self) -> None:
+        """Pause playback."""
+        self._playing = False
+
+    def register_callback(self, callback) -> None:
+        """Register a callback to be notified on frame changes.
+
+        Parameters
+        ----------
+        callback : callable
+            Function that accepts a single int argument (the new frame index).
+            Called whenever ``go_to_frame()`` is invoked.
+
+        Examples
+        --------
+        >>> def on_frame_change(frame_idx):
+        ...     print(f"Now at frame {frame_idx}")
+        >>> controller.register_callback(on_frame_change)
+        """
+        self._callbacks.append(callback)
+
 
 # =============================================================================
 # Per-Viewer Warning State Management
