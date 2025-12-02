@@ -381,20 +381,21 @@ class WindowedTracksManager:
         window_data = self.full_data[mask]
 
         # Update layer data and features together
-        with self.layer.events.blocker():
+        # Suppress napari's "color_by key not present" warning during transition
+        # The warning occurs because napari checks color_by against old features
+        # before we can update them. This is harmless - we restore color_by after.
+        with self.layer.events.blocker(), warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Previous color_by key",
+                category=UserWarning,
+            )
             if len(window_data) > 0:
                 self.layer.data = window_data
                 # Update features to match new data length
                 self.layer.features = {"color": np.zeros(len(window_data))}
                 # Re-apply color_by since napari may reset it
-                # Suppress napari's temporary fallback warning during transition
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message="Previous color_by key",
-                        category=UserWarning,
-                    )
-                    self.layer.color_by = "color"
+                self.layer.color_by = "color"
             else:
                 # Clear layer when window is empty (avoids stale data)
                 self.layer.data = np.empty((0, self.full_data.shape[1]))
