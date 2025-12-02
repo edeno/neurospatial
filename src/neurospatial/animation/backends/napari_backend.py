@@ -84,7 +84,7 @@ SKELETON_DEFAULT_WIDTH: float = 2.0
 
 # Region rendering constants
 REGION_CIRCLE_SEGMENTS: int = 9
-"""Number of line segments to approximate circles for point regions (octagon + close)."""
+"""Number of line segments for circle approximation (octagon + close)."""
 
 # Cache constants
 DEFAULT_CACHE_SIZE: int = 1000
@@ -125,6 +125,282 @@ _TRANSFORM_WARNED_KEY: str = "_transform_fallback_warned"
 # Playback controller metadata key
 _PLAYBACK_CONTROLLER_KEY: str = "playback_controller"
 """Metadata key for storing PlaybackController in viewer."""
+
+# Progressive loading constants
+WINDOWED_OVERLAY_THRESHOLD: int = 50_000
+"""Frame count threshold above which windowed overlay loading is used.
+
+For datasets with more frames than this threshold, overlay layers (Points, Tracks)
+are loaded progressively in a sliding window around the current frame. This prevents
+performance degradation from napari's O(n) layer processing with large point counts.
+"""
+
+OVERLAY_WINDOW_RADIUS: int = 1000
+"""Number of frames to load on each side of current frame for windowed overlays.
+
+Total window size is 2 * OVERLAY_WINDOW_RADIUS frames. This should be large enough
+to avoid frequent reloading during normal playback but small enough to maintain
+good performance. At 30fps, 1000 frames = ~33 seconds of lookahead.
+"""
+
+OVERLAY_WINDOW_UPDATE_THRESHOLD: int = 250
+"""Minimum frame distance to trigger window update.
+
+Window is only reloaded when current frame moves more than this distance from
+the window center. This prevents excessive updates during normal sequential playback.
+Set to ~1/4 of window radius for good balance between smoothness and efficiency.
+"""
+
+
+# =============================================================================
+# WindowedOverlayManager - Progressive Loading for Large Overlays
+# =============================================================================
+
+
+class WindowedOverlayManager:
+    """Manages progressive loading of overlay data for large datasets.
+
+    When the number of frames exceeds WINDOWED_OVERLAY_THRESHOLD, this manager
+    maintains a sliding window of data around the current frame, updating the
+    layer data as the user navigates through the animation.
+
+    This solves napari's O(n) performance issue with large Points/Tracks layers
+    by keeping only a small subset of points loaded at any time.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    layer : napari.layers.Points or napari.layers.Tracks
+        The layer to manage.
+    full_data : ndarray
+        Complete overlay data array. For Points: (n_frames, 3) with columns
+        [time, y, x]. For Tracks: (n_frames, 4) with columns [track_id, time, y, x].
+        Data should be pre-filtered to remove NaN values before passing.
+    window_radius : int, optional
+        Number of frames to load on each side of current frame.
+        Default is OVERLAY_WINDOW_RADIUS.
+    update_threshold : int, optional
+        Minimum frame distance to trigger window update.
+        Default is OVERLAY_WINDOW_UPDATE_THRESHOLD.
+    time_column : int, optional
+        Index of the time column in full_data. Default is 0 for Points layers
+        (format: [time, y, x]).
+
+    Attributes
+    ----------
+    n_frames : int
+        Total number of frames in the dataset.
+    window_center : int
+        Current center frame of the loaded window.
+
+    Notes
+    -----
+    The manager connects to viewer.dims.events.current_step to automatically
+    update the window when the user navigates. Window updates are debounced
+    to avoid excessive reloading during rapid scrubbing.
+
+    Event handlers run on Qt's main thread (single-threaded), so no
+    synchronization is needed for concurrent frame changes.
+
+    Call ``disconnect()`` when the layer is removed to prevent memory leaks.
+
+    Examples
+    --------
+    >>> # Used internally by _render_position_overlay for large datasets
+    >>> manager = WindowedOverlayManager(
+    ...     viewer,
+    ...     points_layer,
+    ...     full_points_data,
+    ...     window_radius=1000,
+    ...     update_threshold=250,
+    ... )
+    """
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        layer: Layer,
+        full_data: NDArray[np.float64],
+        window_radius: int = OVERLAY_WINDOW_RADIUS,
+        update_threshold: int = OVERLAY_WINDOW_UPDATE_THRESHOLD,
+        time_column: int = 0,
+    ) -> None:
+        """Initialize windowed overlay manager."""
+        self.viewer = viewer
+        self.layer = layer
+        self.full_data = full_data
+        self.window_radius = window_radius
+        self.update_threshold = update_threshold
+        self.time_column = time_column
+        self._connected = True
+
+        # Determine n_frames from the time column
+        self.n_frames = int(np.max(full_data[:, time_column])) + 1
+
+        # Initialize window at frame 0
+        self._update_window(0)
+
+        # Connect to dims events (runs on Qt main thread, no sync needed)
+        viewer.dims.events.current_step.connect(self._on_frame_change)
+
+    def disconnect(self) -> None:
+        """Disconnect event handlers to allow garbage collection.
+
+        Call this method when the layer is removed or the viewer is closed
+        to prevent memory leaks from orphaned event handlers.
+        """
+        if self._connected:
+            self.viewer.dims.events.current_step.disconnect(self._on_frame_change)
+            self._connected = False
+
+    def _on_frame_change(self, event: Any) -> None:
+        """Handle frame change events (runs on Qt main thread)."""
+        if not self._connected:
+            return
+        frame_idx = int(self.viewer.dims.current_step[0])
+
+        # Only update if moved beyond threshold
+        if abs(frame_idx - self.window_center) > self.update_threshold:
+            self._update_window(frame_idx)
+
+    def _update_window(self, center_frame: int) -> None:
+        """Update the layer data to show window around center_frame."""
+        # Calculate window bounds
+        start_frame = max(0, center_frame - self.window_radius)
+        end_frame = min(self.n_frames, center_frame + self.window_radius)
+
+        # Filter data to window based on time column
+        time_values = self.full_data[:, self.time_column]
+        mask = (time_values >= start_frame) & (time_values < end_frame)
+        window_data = self.full_data[mask]
+
+        # Update layer data (empty array if no data in window)
+        with self.layer.events.blocker():
+            if len(window_data) > 0:
+                self.layer.data = window_data
+            else:
+                # Clear layer when window is empty (avoids stale data)
+                self.layer.data = np.empty((0, self.full_data.shape[1]))
+
+        self.window_center = center_frame
+
+
+class WindowedTracksManager:
+    """Manages progressive loading of Tracks layer data for large datasets.
+
+    Similar to WindowedOverlayManager but specialized for napari Tracks layers,
+    which require features to be updated alongside data for proper coloring.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance.
+    layer : napari.layers.Tracks
+        The Tracks layer to manage.
+    full_data : ndarray
+        Complete track data array with shape (n_points, 4) and columns
+        [track_id, time, y, x]. Data should be pre-filtered to remove NaN values.
+    colormaps_dict : dict
+        Colormap dictionary for track coloring (passed to layer on update).
+    window_radius : int, optional
+        Number of frames to load on each side of current frame.
+        Default is OVERLAY_WINDOW_RADIUS.
+    update_threshold : int, optional
+        Minimum frame distance to trigger window update.
+        Default is OVERLAY_WINDOW_UPDATE_THRESHOLD.
+
+    Notes
+    -----
+    The Tracks layer requires features to match the number of data points.
+    When updating the window, both data and features must be updated together.
+
+    Event handlers run on Qt's main thread (single-threaded), so no
+    synchronization is needed for concurrent frame changes.
+
+    Call ``disconnect()`` when the layer is removed to prevent memory leaks.
+    """
+
+    def __init__(
+        self,
+        viewer: napari.Viewer,
+        layer: Layer,
+        full_data: NDArray[np.float64],
+        colormaps_dict: dict[str, Any],
+        window_radius: int = OVERLAY_WINDOW_RADIUS,
+        update_threshold: int = OVERLAY_WINDOW_UPDATE_THRESHOLD,
+    ) -> None:
+        """Initialize windowed tracks manager."""
+        self.viewer = viewer
+        self.layer = layer
+        self.full_data = full_data
+        self.colormaps_dict = colormaps_dict
+        self.window_radius = window_radius
+        self.update_threshold = update_threshold
+        self._connected = True
+
+        # Time column is 1 for tracks data [track_id, time, y, x]
+        self.time_column = 1
+        self.n_frames = int(np.max(full_data[:, self.time_column])) + 1
+
+        # Initialize window at frame 0
+        self._update_window(0)
+
+        # Connect to dims events (runs on Qt main thread, no sync needed)
+        viewer.dims.events.current_step.connect(self._on_frame_change)
+
+    def disconnect(self) -> None:
+        """Disconnect event handlers to allow garbage collection.
+
+        Call this method when the layer is removed or the viewer is closed
+        to prevent memory leaks from orphaned event handlers.
+        """
+        if self._connected:
+            self.viewer.dims.events.current_step.disconnect(self._on_frame_change)
+            self._connected = False
+
+    def _on_frame_change(self, event: Any) -> None:
+        """Handle frame change events (runs on Qt main thread)."""
+        if not self._connected:
+            return
+        frame_idx = int(self.viewer.dims.current_step[0])
+
+        # Only update if moved beyond threshold
+        if abs(frame_idx - self.window_center) > self.update_threshold:
+            self._update_window(frame_idx)
+
+    def _update_window(self, center_frame: int) -> None:
+        """Update the layer data to show window around center_frame."""
+        # Calculate window bounds
+        start_frame = max(0, center_frame - self.window_radius)
+        end_frame = min(self.n_frames, center_frame + self.window_radius)
+
+        # Filter data to window based on time column
+        time_values = self.full_data[:, self.time_column]
+        mask = (time_values >= start_frame) & (time_values < end_frame)
+        window_data = self.full_data[mask]
+
+        # Update layer data and features together
+        with self.layer.events.blocker():
+            if len(window_data) > 0:
+                self.layer.data = window_data
+                # Update features to match new data length
+                self.layer.features = {"color": np.zeros(len(window_data))}
+                # Re-apply color_by since napari may reset it
+                # Suppress napari's temporary fallback warning during transition
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message="Previous color_by key",
+                        category=UserWarning,
+                    )
+                    self.layer.color_by = "color"
+            else:
+                # Clear layer when window is empty (avoids stale data)
+                self.layer.data = np.empty((0, self.full_data.shape[1]))
+                self.layer.features = {"color": np.zeros(0)}
+
+        self.window_center = center_frame
 
 
 # =============================================================================
@@ -1080,7 +1356,7 @@ def _render_position_overlay(
         if not np.all(valid_mask):
             track_data = track_data[valid_mask]
 
-        # Napari tracks layer uniform color workaround (REQUIRED - no simpler alternative):
+        # Napari tracks layer uniform color workaround (REQUIRED - no alternative):
         #
         # Unlike add_points (which accepts face_color directly), the Tracks layer
         # has NO direct `color` parameter. Per napari docs and source code, track
@@ -1099,32 +1375,63 @@ def _render_position_overlay(
         # See: https://napari.org/stable/api/napari.layers.Tracks.html
         from napari.utils.colormaps import Colormap
 
-        # Features must match filtered track data length
-        n_valid = len(track_data)
-        features = {"color": np.zeros(n_valid)}
         custom_colormap = Colormap(
             colors=[position_data.color, position_data.color],
             name=f"trail_color{name_suffix}",
         )
         colormaps_dict = {"color": custom_colormap}
 
-        # Note: We set color_by AFTER layer creation to avoid napari warning.
-        # During __init__, napari's data setter resets features to {} before our
-        # features are applied. If color_by is passed at init time, the check runs
-        # against empty features and warns. Setting color_by after creation avoids this.
+        n_valid = len(track_data)
         if n_valid > 0:
-            # Tracks data format is [track_id, time, y, x] but track_id is an identifier,
-            # not a dimension. Layer ndim is 3 (time, y, x), so scale is (time, y, x)
+            # Tracks format: [track_id, time, y, x]. track_id is identifier, not dim.
+            # Layer ndim=3 (time, y, x), so scale is (time, y, x)
             tracks_scale = (1.0, scale[0], scale[1]) if scale else None
-            layer = viewer.add_tracks(
-                track_data,
-                name=f"Position Trail{name_suffix}",
-                tail_length=position_data.trail_length,
-                features=features,
-                colormaps_dict=colormaps_dict,
-                scale=tracks_scale,
-            )
-            layer.color_by = "color"  # Set after features are applied
+
+            # Use windowed loading for large datasets to avoid O(n) performance issues
+            use_windowed = n_frames > WINDOWED_OVERLAY_THRESHOLD
+
+            if use_windowed:
+                # Start with initial window around frame 0
+                # Time column is 1 in track_data (format: track_id, time, y, x)
+                initial_window_end = min(OVERLAY_WINDOW_RADIUS * 2, n_valid)
+                initial_data = track_data[:initial_window_end]
+                initial_features = {"color": np.zeros(len(initial_data))}
+
+                layer = viewer.add_tracks(
+                    initial_data,
+                    name=f"Position Trail{name_suffix}",
+                    tail_length=position_data.trail_length,
+                    features=initial_features,
+                    colormaps_dict=colormaps_dict,
+                    scale=tracks_scale,
+                )
+                layer.color_by = "color"  # Set after features are applied
+
+                # Create windowed manager for tracks
+                # Time column is 1 for tracks data [track_id, time, y, x]
+                tracks_manager = WindowedTracksManager(
+                    viewer=viewer,
+                    layer=layer,
+                    full_data=track_data,
+                    colormaps_dict=colormaps_dict,
+                    window_radius=OVERLAY_WINDOW_RADIUS,
+                    update_threshold=OVERLAY_WINDOW_UPDATE_THRESHOLD,
+                )
+                # Store manager in metadata to prevent garbage collection
+                layer.metadata["windowed_manager"] = tracks_manager
+            else:
+                # Standard approach for smaller datasets
+                features = {"color": np.zeros(n_valid)}
+                layer = viewer.add_tracks(
+                    track_data,
+                    name=f"Position Trail{name_suffix}",
+                    tail_length=position_data.trail_length,
+                    features=features,
+                    colormaps_dict=colormaps_dict,
+                    scale=tracks_scale,
+                )
+                layer.color_by = "color"  # Set after features are applied
+
             layers.append(layer)
 
     # Add points layer for current position marker
@@ -1145,15 +1452,49 @@ def _render_position_overlay(
     if len(points_data) > 0:
         # Points data is (time, y, x) - scale dimensions 1, 2 (y, x)
         points_scale = (1.0, scale[0], scale[1]) if scale else None
-        layer = viewer.add_points(
-            points_data,
-            name=f"Position{name_suffix}",
-            size=position_data.size,
-            face_color=position_data.color,
-            border_color="white",
-            border_width=POINT_BORDER_WIDTH,
-            scale=points_scale,
-        )
+
+        # Use windowed loading for large datasets to avoid O(n) performance issues
+        use_windowed = n_frames > WINDOWED_OVERLAY_THRESHOLD
+
+        if use_windowed:
+            # Start with initial window around frame 0
+            initial_window_end = min(OVERLAY_WINDOW_RADIUS * 2, len(points_data))
+            initial_data = points_data[:initial_window_end]
+
+            layer = viewer.add_points(
+                initial_data,
+                name=f"Position{name_suffix}",
+                size=position_data.size,
+                face_color=position_data.color,
+                border_color="white",
+                border_width=POINT_BORDER_WIDTH,
+                scale=points_scale,
+            )
+
+            # Create windowed manager to progressively load data
+            # Time column is 0 (first column of points_data)
+            points_manager = WindowedOverlayManager(
+                viewer=viewer,
+                layer=layer,
+                full_data=points_data,
+                window_radius=OVERLAY_WINDOW_RADIUS,
+                update_threshold=OVERLAY_WINDOW_UPDATE_THRESHOLD,
+                time_column=0,
+            )
+            # Store manager reference in layer metadata to prevent garbage collection
+            layer.metadata["windowed_manager"] = points_manager
+        else:
+            # Standard approach for smaller datasets
+            layer = viewer.add_points(
+                points_data,
+                name=f"Position{name_suffix}",
+                size=position_data.size,
+                face_color=position_data.color,
+                border_color="white",
+                border_width=POINT_BORDER_WIDTH,
+                scale=points_scale,
+            )
+
         layers.append(layer)
 
     return layers
@@ -1589,7 +1930,7 @@ def _render_event_overlay(
         frame_stops = np.array([], dtype=np.int64)
 
     # Create Points layer with all events initially hidden via shown mask
-    # Using shown mask is ~30x faster than alpha-based visibility (O(N) bool vs O(N*4) float)
+    # shown mask is ~30x faster than alpha (O(N) bool vs O(N*4) float)
     initial_shown = np.zeros(n_events, dtype=bool)
 
     # Event positions are 2D (y, x) - scale directly matches Image layer's (y, x) scale
@@ -1687,7 +2028,7 @@ def _register_event_visibility_callback(
             # Compute visibility mask based on mode using in-place updates
             if decay_frames is None:
                 # Cumulative mode: all events up to current frame
-                # Only set newly visible events (those between last_cutoff and new cutoff)
+                # Only set newly visible events (between last_cutoff and new cutoff)
                 # Use searchsorted for O(log N) cutoff lookup
                 cutoff_idx = np.searchsorted(frame_indices, current_frame, side="right")
                 if cutoff_idx > last_cutoff_idx:
@@ -1766,9 +2107,9 @@ def _register_event_visibility_callback(
             if mask_changed:
                 with perf_timer("event_shown_update"), points_layer.events.blocker():
                     points_layer.shown = shown
-                # Note: refresh() was removed for performance. Setting points_layer.shown
-                # triggers napari's internal refresh via EventedList. Explicit refresh()
-                # was causing redundant Qt/OpenGL updates during playback (~18ms overhead).
+                # Note: refresh() removed for performance. Setting shown triggers
+                # napari's internal refresh via EventedList. Explicit refresh()
+                # caused redundant Qt/OpenGL updates (~18ms overhead).
                 # If visual glitches occur, uncomment: points_layer.refresh()
 
     # Connect to dims change event
@@ -2016,7 +2357,7 @@ def _add_speed_control_widget(
         # magicgui or napari.settings not available - skip widget
         return
 
-    # Compute fps from speed and sample_rate_hz (unless initial_fps is explicitly provided)
+    # Compute fps from speed and sample_rate_hz (unless initial_fps provided)
     if initial_fps is None:
         computed_fps = int(min(sample_rate_hz * initial_speed, max_playback_fps))
         computed_fps = max(FPS_SLIDER_MIN, computed_fps)  # Clamp to minimum
@@ -2079,7 +2420,7 @@ def _add_speed_control_widget(
 
     # Update frame counter when dims change
     def update_frame_info(event: Any | None = None) -> None:
-        """Update frame counter and label display (throttled for high FPS during playback).
+        """Update frame counter and label display (throttled during playback).
 
         Throttling only applies during playback to prevent Qt overhead at high FPS.
         When scrubbing (not playing), updates are immediate for responsive feedback.
@@ -2413,7 +2754,7 @@ def render_napari(
     ----------
     env : Environment
         Environment defining spatial structure.
-    fields : ndarray of shape (n_frames, n_bins), or list of ndarray of shape (n_bins,), or list of list
+    fields : ndarray or list
         Field data to animate, dtype float64. Three input formats:
         - **Array mode (recommended for large datasets)**: 2D array with shape
           (n_frames, n_bins). Efficient for memory-mapped arrays (memmaps).
@@ -2548,7 +2889,7 @@ def render_napari(
     -----
     **Playback Controls:**
 
-    Napari provides built-in playback controls at the **bottom-left** of the viewer window:
+    Napari provides built-in playback controls at the **bottom-left** of the viewer:
 
     - **Frame slider** - Horizontal slider showing current frame position
     - **Play button (▶)** - Triangle icon to start/stop animation (next to slider)
@@ -2572,8 +2913,8 @@ def render_napari(
     If magicgui is not available, the speed can still be changed via
     File → Preferences → Application → "Playback frames per second".
 
-    **Note:** Only the time dimension slider is shown. Spatial dimensions (height, width)
-    are displayed in the 2D viewport, not as separate sliders.
+    **Note:** Only the time dimension slider is shown. Spatial dimensions (height,
+    width) are displayed in the 2D viewport, not as separate sliders.
 
     **Memory Efficiency:**
 
@@ -2719,8 +3060,8 @@ def render_napari(
             # Compute sample_stride to sample ~50K frames
             sample_stride = max(1, n_frames_for_range // 50_000)
             warnings.warn(
-                f"Estimating colormap range from {n_frames_for_range:,} frames using "
-                f"sample_stride={sample_stride} (sampling every {sample_stride}th frame). "
+                f"Estimating colormap range from {n_frames_for_range:,} frames "
+                f"using sample_stride={sample_stride} (every {sample_stride}th frame). "
                 f"For exact range, pass explicit vmin/vmax parameters.",
                 UserWarning,
                 stacklevel=2,
@@ -2852,7 +3193,7 @@ def render_napari(
         # This aligns overlays with the scaled field image layer
         overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
 
-        # Render video overlays (z_order="below" first, then field layer exists, then "above")
+        # Render video overlays (z_order="below" first, then field, then "above")
         n_frames = len(fields)
         video_layers_needing_callback: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
@@ -3023,7 +3364,7 @@ def _render_multi_field_napari(
             "WHAT: Multi-field input requires 'layout' parameter.\n"
             "  Current: layout=None\n"
             "  Available: 'horizontal', 'vertical', 'grid'\n\n"
-            "WHY: Multiple field sequences must be arranged spatially for comparison.\n\n"
+            "WHY: Multiple field sequences must be arranged spatially.\n\n"
             "HOW: Specify layout when animating multiple fields:\n"
             "  env.animate_fields(fields, layout='horizontal')  # Side-by-side\n"
             "  env.animate_fields(fields, layout='vertical')    # Stacked\n"
@@ -3184,7 +3525,7 @@ def _render_multi_field_napari(
         # This aligns overlays with the scaled field image layer
         overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
 
-        # Render video overlays (z_order="below" first, then field layer exists, then "above")
+        # Render video overlays (z_order="below" first, then field, then "above")
         # n_frames already computed above
         video_layers_needing_callback: list[Layer] = []
         for idx, video_data in enumerate(overlay_data.videos):
