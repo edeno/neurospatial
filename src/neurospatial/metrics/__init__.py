@@ -45,9 +45,11 @@ from neurospatial.metrics.place_fields import (
     spatial_coverage_single_cell,
 )
 from neurospatial.metrics.population import (
+    PopulationCoverageResult,
     count_place_cells,
     field_density_map,
     field_overlap,
+    plot_population_coverage,
     population_coverage,
     population_vector_correlation,
 )
@@ -59,6 +61,7 @@ from neurospatial.metrics.trajectory import (
 )
 
 __all__ = [
+    "PopulationCoverageResult",
     "border_score",
     "compute_field_emd",
     "compute_home_range",
@@ -80,6 +83,7 @@ __all__ = [
     "mean_square_displacement",
     "mutual_information",
     "periodicity_score",
+    "plot_population_coverage",
     "population_coverage",
     "population_vector_correlation",
     "rate_map_coherence",

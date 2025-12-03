@@ -13,77 +13,440 @@ References
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import matplotlib.axes
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
+
+from neurospatial.environment import Environment
+from neurospatial.metrics.place_fields import detect_place_fields
+
+
+@dataclass(frozen=True, slots=True)
+class PopulationCoverageResult:
+    """Results from population coverage analysis.
+
+    Attributes
+    ----------
+    coverage_fraction : float
+        Fraction of environment bins covered by at least one place field (0.0-1.0).
+    is_covered : NDArray[np.bool_]
+        Boolean mask of shape (n_bins,) indicating which bins are covered.
+    field_count : NDArray[np.int64]
+        Integer array of shape (n_bins,) counting place fields per bin.
+    covered_bins : NDArray[np.intp]
+        Indices of bins with at least one place field.
+    uncovered_bins : NDArray[np.intp]
+        Indices of bins lacking coverage (gaps).
+    uncovered_positions : NDArray[np.floating]
+        Coordinates of uncovered bins, shape (n_uncovered, n_dims).
+    n_neurons : int
+        Total number of neurons in the population.
+    n_place_cells : int
+        Number of neurons with at least one detected place field.
+    n_fields : int
+        Total number of place fields detected across all neurons.
+    place_fields : list[list[NDArray[np.int64]]]
+        Detected place fields for each neuron (output of detect_place_fields).
+    place_cell_fraction : float
+        Computed property: n_place_cells / n_neurons (typical CA1: 0.3-0.5).
+    fields_per_place_cell : float
+        Computed property: n_fields / n_place_cells (typical: 1.0-2.0).
+    mean_redundancy : float
+        Computed property: average field_count over covered bins.
+    """
+
+    coverage_fraction: float
+    is_covered: NDArray[np.bool_]
+    field_count: NDArray[np.int64]
+    covered_bins: NDArray[np.intp]
+    uncovered_bins: NDArray[np.intp]
+    uncovered_positions: NDArray[np.floating]
+    n_neurons: int
+    n_place_cells: int
+    n_fields: int
+    place_fields: list[list[NDArray[np.int64]]]
+
+    @property
+    def place_cell_fraction(self) -> float:
+        """Fraction of neurons that are place cells.
+
+        Typical values in hippocampal CA1: 0.3-0.5 (30-50%).
+
+        References
+        ----------
+        .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the
+               hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
+        """
+        if self.n_neurons == 0:
+            return 0.0
+        return self.n_place_cells / self.n_neurons
+
+    @property
+    def fields_per_place_cell(self) -> float:
+        """Average number of place fields per place cell.
+
+        Typical values: 1.0-2.0 in familiar environments.
+        Higher values (>2) may indicate multifield cells or novel environments.
+
+        References
+        ----------
+        .. [1] Fenton, A. A., et al. (2008). Unmasking the CA1 ensemble place
+               code by exposures to small and large environments.
+               Journal of Neuroscience, 28(50), 13566-13577.
+        """
+        if self.n_place_cells == 0:
+            return 0.0
+        return self.n_fields / self.n_place_cells
+
+    @property
+    def mean_redundancy(self) -> float:
+        """Average number of place fields per covered bin.
+
+        Measures the degree of overlapping representation. Higher values
+        indicate more robust population coding with multiple cells
+        representing each location.
+
+        References
+        ----------
+        .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the
+               hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
+        """
+        n_covered = len(self.covered_bins)
+        if n_covered == 0:
+            return 0.0
+        return float(self.field_count[self.covered_bins].mean())
+
+    def __str__(self) -> str:
+        """Return human-readable summary for notebook inspection."""
+        return (
+            f"PopulationCoverageResult:\n"
+            f"  Coverage: {self.coverage_fraction:.1%}\n"
+            f"  Place cells: {self.n_place_cells}/{self.n_neurons} "
+            f"({self.place_cell_fraction:.1%})\n"
+            f"  Total fields: {self.n_fields} "
+            f"({self.fields_per_place_cell:.1f} per place cell)\n"
+            f"  Mean redundancy: {self.mean_redundancy:.2f} fields/bin\n"
+            f"  Gaps: {len(self.uncovered_bins)} bins"
+        )
 
 
 def population_coverage(
-    all_place_fields: list[list[NDArray[np.int64]]], n_bins: int
-) -> float:
-    """
-    Compute fraction of environment covered by place fields.
+    firing_rates: NDArray[np.floating],
+    env: Environment,
+    *,
+    threshold: float = 0.2,
+    min_size: int | None = None,
+    max_mean_rate: float = 10.0,
+    detect_subfields: bool = True,
+) -> PopulationCoverageResult:
+    """Compute spatial coverage of a place cell population.
 
-    Measures the spatial extent of place field representation across a
-    population of cells. Higher coverage indicates more complete spatial
-    mapping by the population.
+    Detects place fields for each neuron, then computes comprehensive
+    coverage statistics including gap locations.
 
     Parameters
     ----------
-    all_place_fields : list of list of array
-        Place fields for each cell. Outer list: cells, inner list: fields
-        per cell, arrays: bin indices in each field.
-        Format matches output of `detect_place_fields()` run on multiple cells.
-    n_bins : int
-        Total number of bins in the environment.
+    firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
+        Firing rate maps for each neuron.
+    env : Environment
+        Fitted environment defining the spatial bins.
+    threshold : float, default=0.2
+        Place field boundary threshold as fraction of peak firing rate (0-1).
+        Lower values (0.1-0.2) detect larger fields, higher values (0.3-0.5)
+        detect only core field regions. Passed to `detect_place_fields()`.
+    min_size : int, optional
+        Minimum number of bins for a valid field. Default is 9.
+        Passed to `detect_place_fields()`.
+    max_mean_rate : float, default=10.0
+        Maximum mean firing rate (Hz). Neurons exceeding this are
+        excluded as putative interneurons. Passed to `detect_place_fields()`.
+    detect_subfields : bool, default=True
+        If True, recursively detect subfields within large fields.
+        Passed to `detect_place_fields()`.
 
     Returns
     -------
-    coverage : float
-        Fraction of bins covered by at least one place field. Range [0, 1].
+    PopulationCoverageResult
+        Comprehensive coverage statistics including:
+        - coverage_fraction: fraction of bins covered (0.0-1.0)
+        - uncovered_bins: indices of gaps
+        - uncovered_positions: coordinates of gaps
+        - place_fields: detected fields for each neuron
+
+    Raises
+    ------
+    RuntimeError
+        If environment is not fitted.
+    ValueError
+        If firing_rates shape doesn't match environment bins.
+
+    See Also
+    --------
+    field_density_map : Field count per bin from detected fields
+    detect_place_fields : Place field detection algorithm
+    plot_population_coverage : Visualize coverage with gaps
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.population import population_coverage
-    >>> # Two cells with non-overlapping fields
-    >>> all_fields = [
-    ...     [np.array([0, 1, 2])],  # Cell 1
-    ...     [np.array([5, 6, 7])],  # Cell 2
-    ... ]
-    >>> coverage = population_coverage(all_fields, n_bins=10)
-    >>> print(f"{coverage:.2f}")  # 6 bins out of 10
-    0.60
+    >>> from neurospatial import Environment, compute_place_field
+    >>> from neurospatial.metrics import population_coverage, plot_population_coverage
 
-    >>> # Overlapping fields
-    >>> all_fields = [
-    ...     [np.array([0, 1, 2])],
-    ...     [np.array([2, 3, 4])],  # Overlaps at bin 2
-    ... ]
-    >>> coverage = population_coverage(all_fields, n_bins=10)
-    >>> print(f"{coverage:.2f}")  # 5 unique bins out of 10
-    0.50
+    >>> # 1. Create environment from position samples
+    >>> positions = np.random.rand(1000, 2) * 100  # (n_samples, 2)
+    >>> times = np.arange(1000) * 0.033  # 30 Hz timestamps
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    See Also
-    --------
-    field_density_map : Count overlapping fields per bin
-    detect_place_fields : Detect place fields for individual cells
+    >>> # 2. Compute firing rates for each neuron from spike data
+    >>> spike_times = [...]  # List of spike time arrays, one per neuron
+    >>> firing_rates = np.array(
+    ...     [
+    ...         compute_place_field(env, spikes, times, positions)
+    ...         for spikes in spike_times
+    ...     ]
+    ... )  # Shape: (n_neurons, n_bins)
+
+    >>> # 3. Analyze coverage
+    >>> result = population_coverage(firing_rates, env)
+    >>> print(f"Coverage: {result.coverage_fraction:.1%}")
+    >>> print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")
+    >>> print(f"Gaps: {len(result.uncovered_bins)} bins")
+
+    >>> # 4. Visualize
+    >>> plot_population_coverage(env, result)
+
+    References
+    ----------
+    .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the hippocampal
+           ensemble code for space. Science, 261(5124), 1055-1058.
+    """
+    # Validate environment is fitted
+    if not getattr(env, "_is_fitted", False):
+        raise RuntimeError(
+            "Environment must be fitted before computing coverage. "
+            "Use a factory method like Environment.from_samples()."
+        )
+
+    if env.n_bins <= 0:
+        raise ValueError(f"Environment has no bins (n_bins={env.n_bins})")
+
+    # Validate firing_rates shape
+    if firing_rates.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
+        )
+
+    if firing_rates.shape[1] != env.n_bins:
+        raise ValueError(
+            f"firing_rates shape mismatch: expected (n_neurons, {env.n_bins}) bins, "
+            f"got (n_neurons, {firing_rates.shape[1]}) bins.\n\n"
+            f"This usually happens when:\n"
+            f"  - Firing rates were computed for a different environment\n"
+            f"  - The environment was modified after computing firing rates\n\n"
+            f"To fix: Recompute firing rates for each neuron:\n"
+            f"  from neurospatial import compute_place_field\n"
+            f"  firing_rate = compute_place_field(env, spike_times, times, positions)\n"
+            f"  firing_rates = np.stack([rate1, rate2, ...])"
+        )
+
+    # Validate detection parameters
+    if not 0.0 < threshold < 1.0:
+        raise ValueError(
+            f"threshold must be in range (0, 1), got {threshold}. "
+            f"This represents the fraction of peak firing rate for field boundaries."
+        )
+
+    if max_mean_rate <= 0:
+        raise ValueError(f"max_mean_rate must be positive, got {max_mean_rate}")
+
+    n_bins = env.n_bins
+    n_neurons = firing_rates.shape[0]
+
+    # Detect place fields for each neuron
+    all_fields: list[list[NDArray[np.int64]]] = []
+    for neuron_idx in range(n_neurons):
+        fields = detect_place_fields(
+            firing_rates[neuron_idx],
+            env,
+            threshold=threshold,
+            min_size=min_size,
+            max_mean_rate=max_mean_rate,
+            detect_subfields=detect_subfields,
+        )
+        all_fields.append(fields)
+
+    # Count fields and compute coverage
+    field_count = np.zeros(n_bins, dtype=np.int64)
+    n_fields = 0
+    n_place_cells = 0
+
+    for neuron_fields in all_fields:
+        if len(neuron_fields) > 0:
+            n_place_cells += 1
+        for field_bins in neuron_fields:
+            field_count[field_bins] += 1
+            n_fields += 1
+
+    # Compute coverage
+    is_covered = field_count > 0
+    coverage_fraction = float(is_covered.sum() / n_bins)
+
+    # Find covered and uncovered bins
+    covered_bins = np.where(is_covered)[0]
+    uncovered_bins = np.where(~is_covered)[0]
+    uncovered_positions = env.bin_centers[uncovered_bins]
+
+    return PopulationCoverageResult(
+        coverage_fraction=coverage_fraction,
+        is_covered=is_covered,
+        field_count=field_count,
+        covered_bins=covered_bins,
+        uncovered_bins=uncovered_bins,
+        uncovered_positions=uncovered_positions,
+        n_neurons=n_neurons,
+        n_place_cells=n_place_cells,
+        n_fields=n_fields,
+        place_fields=all_fields,
+    )
+
+
+def plot_population_coverage(
+    env: Environment,
+    result: PopulationCoverageResult,
+    *,
+    show_field_count: bool = False,
+    highlight_gaps: bool = True,
+    gap_color: str = "black",
+    covered_color: str = "#0173B2",  # Colorblind-safe blue
+    gap_marker: str = "x",
+    gap_marker_size: float = 50.0,
+    ax: matplotlib.axes.Axes | None = None,
+) -> matplotlib.axes.Axes:
+    """Visualize place cell coverage with optional gap highlighting.
+
+    Parameters
+    ----------
+    env : Environment
+        Fitted environment for plotting.
+    result : PopulationCoverageResult
+        Output from population_coverage.
+    show_field_count : bool, optional
+        If True, show number of place fields per bin (redundancy colormap).
+        Use this to identify over-represented regions.
+        If False, show binary covered/uncovered map (recommended for gap
+        detection). Default is False.
+    highlight_gaps : bool, optional
+        If True, overlay markers on uncovered bins. Default is True.
+    gap_color : str, optional
+        Color for uncovered bin markers. Default is "black".
+    covered_color : str, optional
+        Color for covered bins (only used when show_field_count=False).
+        Default is "#0173B2" (colorblind-safe blue).
+    gap_marker : str, optional
+        Marker style for gaps. Default is "x".
+    gap_marker_size : float, optional
+        Size of gap markers. Default is 50.0.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. Created if not provided.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The matplotlib axes containing the coverage plot.
+
+    Raises
+    ------
+    RuntimeError
+        If environment is not fitted.
 
     Notes
     -----
-    Population coverage is a measure of how completely the environment is
-    represented by the place cell population. In hippocampus, typical coverage
-    is 60-90% depending on environment size and cell sample size.
+    For 1D environments, uses `env.plot_1d()` with vertical lines for gaps.
 
-    Empty fields (no bins) are handled gracefully and contribute 0 to coverage.
+    Examples
+    --------
+    >>> # Basic binary coverage plot
+    >>> ax = plot_population_coverage(env, result)
+
+    >>> # Show field count per bin (redundancy)
+    >>> ax = plot_population_coverage(env, result, show_field_count=True)
     """
-    # Collect all unique bins across all cells and fields
-    covered_bins = set()
-    for cell_fields in all_place_fields:
-        for field_bins in cell_fields:
-            covered_bins.update(field_bins.tolist())
+    # Validate environment is fitted
+    if not getattr(env, "_is_fitted", False):
+        raise RuntimeError(
+            "Environment must be fitted before plotting coverage. "
+            "Use a factory method like Environment.from_samples()."
+        )
 
-    # Compute fraction
-    return len(covered_bins) / n_bins
+    # Validate result type
+    if not isinstance(result, PopulationCoverageResult):
+        raise TypeError(
+            f"result must be PopulationCoverageResult, got {type(result).__name__}. "
+            f"Use population_coverage() to compute the result first."
+        )
+
+    # Create axes if needed
+    if ax is None:
+        _, ax = plt.subplots()
+
+    # Handle 1D environments
+    if env.is_1d:
+        if show_field_count:
+            field_to_plot = result.field_count.astype(float)
+            env.plot_field(field_to_plot, ax=ax)
+            ax.set_ylabel("Field count")
+        else:
+            field_to_plot = result.is_covered.astype(float)
+            env.plot_field(field_to_plot, ax=ax)
+            ax.set_ylabel("Coverage")
+
+        # Highlight gaps as vertical lines with legend
+        if highlight_gaps and len(result.uncovered_bins) > 0:
+            gap_positions = result.uncovered_positions.ravel()
+            for i, pos in enumerate(gap_positions):
+                ax.axvline(
+                    float(pos),
+                    color=gap_color,
+                    linestyle="--",
+                    alpha=0.5,
+                    linewidth=0.5,
+                    label="Gap" if i == 0 else "",
+                )
+            ax.legend(loc="upper right")
+    else:
+        # 2D environment
+        if show_field_count:
+            env.plot_field(result.field_count.astype(float), ax=ax, cmap="viridis")
+        else:
+            binary_field = result.is_covered.astype(float)
+            cmap = ListedColormap(["white", covered_color])
+            env.plot_field(binary_field, ax=ax, cmap=cmap, vmin=0, vmax=1)
+
+        # Overlay gap markers
+        if highlight_gaps and len(result.uncovered_bins) > 0:
+            ax.scatter(
+                result.uncovered_positions[:, 0],
+                result.uncovered_positions[:, 1],
+                c=gap_color,
+                marker=gap_marker,
+                s=gap_marker_size,
+                label="Gaps",
+                zorder=10,
+            )
+            ax.legend(loc="upper right")
+
+    # Add informative title
+    ax.set_title(
+        f"Bin Coverage: {result.coverage_fraction:.1%} "
+        f"({result.n_place_cells}/{result.n_neurons} place cells, "
+        f"{result.n_fields} fields)"
+    )
+
+    return ax
 
 
 def field_density_map(

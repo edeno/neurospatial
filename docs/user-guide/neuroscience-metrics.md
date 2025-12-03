@@ -174,22 +174,49 @@ stability = field_stability(
 
 ### Population Coverage
 
-Fraction of environment covered by place fields across a population:
+Compute spatial coverage of a place cell population with comprehensive statistics:
 
 ```python
-from neurospatial.metrics import population_coverage
+from neurospatial.metrics import population_coverage, plot_population_coverage
+import numpy as np
 
-# Detect fields for all cells
-all_place_fields = [
-    detect_place_fields(rate_map_cell1, env),
-    detect_place_fields(rate_map_cell2, env),
-    detect_place_fields(rate_map_cell3, env),
-]
+# Stack firing rate maps from all neurons: shape (n_neurons, n_bins)
+firing_rates = np.array([rate_map_cell1, rate_map_cell2, rate_map_cell3])
 
-# Compute coverage
-coverage = population_coverage(all_place_fields, env.n_bins)
-# Returns: fraction in [0, 1]
+# Compute coverage (runs detect_place_fields internally)
+result = population_coverage(firing_rates, env)
+
+# Access results
+print(f"Coverage: {result.coverage_fraction:.1%}")
+print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")
+print(f"Total fields: {result.n_fields}")
+print(f"Uncovered bins: {len(result.uncovered_bins)}")
+
+# Get gap locations (bin indices and coordinates)
+gap_bins = result.uncovered_bins        # Array of bin indices
+gap_coords = result.uncovered_positions  # Array of (x, y) coordinates
+
+# Visualize coverage with gap highlighting
+ax = plot_population_coverage(env, result)
+
+# Show field count per bin (redundancy visualization)
+ax = plot_population_coverage(env, result, show_field_count=True)
 ```
+
+The `PopulationCoverageResult` object contains:
+
+- `coverage_fraction`: Fraction of bins covered (0.0-1.0)
+- `uncovered_bins`: Indices of gaps
+- `uncovered_positions`: Coordinates of gaps
+- `field_count`: Number of place fields per bin
+- `n_neurons`, `n_place_cells`, `n_fields`: Population statistics
+- `place_fields`: Detected fields for each neuron
+
+**Computed properties** (standard hippocampal metrics):
+
+- `place_cell_fraction`: n_place_cells / n_neurons (typical CA1: 0.3-0.5)
+- `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
+- `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
 
 Coverage is the fraction of bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
 
@@ -441,40 +468,41 @@ print(f"Place cell: {is_place_cell}")
 ```python
 from neurospatial.metrics import (
     population_coverage,
-    field_density_map,
-    count_place_cells,
+    plot_population_coverage,
+    skaggs_information,
 )
+import numpy as np
 
-# Analyze multiple cells
-all_fields = []
-spatial_info = []
-
+# Compute firing rate maps for all cells
+firing_rates = []
 for cell_spikes in all_spike_trains:
-    # Compute firing rate
     rate_map = spikes_to_field(env, cell_spikes, times, positions)
+    firing_rates.append(rate_map)
 
-    # Detect fields
-    fields = detect_place_fields(rate_map, env)
-    all_fields.append(fields)
+# Stack into array: shape (n_neurons, n_bins)
+firing_rates = np.array(firing_rates)
 
-    # Compute metrics
-    info = skaggs_information(rate_map, occupancy)
-    spatial_info.append(info)
+# Analyze population coverage (runs detect_place_fields internally)
+result = population_coverage(firing_rates, env)
 
-# Population metrics
-coverage = population_coverage(all_fields, env.n_bins)
-density = field_density_map(all_fields, env.n_bins)
-n_place_cells = count_place_cells(spatial_info, threshold=0.5)
+print(f"Population coverage: {result.coverage_fraction:.1%}")
+print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")
+print(f"Total fields detected: {result.n_fields}")
+print(f"Gap bins: {len(result.uncovered_bins)}")
 
-print(f"Population coverage: {coverage:.1%}")
-print(f"Place cells: {n_place_cells}/{len(all_spike_trains)}")
-
-# Visualize density
+# Visualize coverage with gap highlighting
 import matplotlib.pyplot as plt
-env.plot_field(density, cmap='viridis')
-plt.title("Place Field Density")
-plt.colorbar(label="Number of overlapping fields")
+ax = plot_population_coverage(env, result)
 plt.show()
+
+# Show field count per bin (redundancy)
+ax = plot_population_coverage(env, result, show_field_count=True)
+plt.show()
+
+# Access detected place fields for further analysis
+for i, neuron_fields in enumerate(result.place_fields):
+    if len(neuron_fields) > 0:
+        print(f"Neuron {i}: {len(neuron_fields)} field(s)")
 ```
 
 ### Border Cell Detection
