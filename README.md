@@ -561,7 +561,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built with [NetworkX](https://networkx.org/) for graph operations
 - Uses [Shapely](https://shapely.readthedocs.io/) for geometric operations
 - Leverages [track-linearization](https://github.com/Eden-Kramer-Lab/track_linearization) for 1D linearization
-- Inspired by spatial analysis needs in systems neuroscience research
 
 ## Contact
 
