@@ -1,297 +1,238 @@
-# TASKS.md - Napari Playback Performance Optimization
+# TASKS.md - Napari Playback Interface Enhancement
 
-**Goal**: Smooth napari playback with all overlays (position, bodyparts+skeleton, head direction, events/spikes, time series, video)
+**Goal**: Replace FPS slider with speed dropdown and add keyboard shortcuts for neural data exploration.
 
-**Reference**: [PLAN.md](./PLAN.md) for detailed implementation notes and code snippets
+**Branch**: `feat/napari-speed-dropdown`
 
----
-
-## Phase 0: Establish Performance Baseline
-
-**Purpose**: Measure current performance to identify bottlenecks and track improvements
-
-### 0.1: Set Up Performance Monitoring
-
-- [x] Create `scripts/benchmark_napari_playback.py`
-  - Generate synthetic test data (environment, fields, positions)
-  - Support command-line args for overlay selection
-  - Print timing metrics to stdout
-- [x] Create `scripts/perfmon_config.json` for detailed tracing
-  - Enable `trace_qt_events: true`
-  - Trace video callback and time series dock functions
-- [x] Run baseline measurements:
-  - [x] Position overlay only → record frame time (21.87 ms mean, ~46 fps)
-  - [x] Bodyparts + skeleton → record frame time (26.30 ms mean, ~38 fps)
-  - [x] Head direction → record frame time (18.44 ms mean, ~54 fps)
-  - [x] Events (instant vs cumulative) → record frame time (19.20 ms mean, ~52 fps)
-  - [x] Video overlay → record frame time (18.39 ms mean, ~54 fps)
-  - [x] Time series dock → record frame time (18.49 ms mean, ~54 fps)
-  - [x] **All overlays combined** → record frame time (47.38 ms mean, ~21 fps - BELOW TARGET)
-- [x] Document baseline in `docs/performance_baseline.md`
-  - Target: <33.3ms per frame (30 fps)
-  - Result: Individual overlays meet target; all combined at 47.38ms (~21 fps)
-
-**Success Criteria**: Documented baseline with per-overlay timing breakdown
+**Source**: [PLAN.md](PLAN.md)
 
 ---
 
-## Phase 1: Introduce PlaybackController
+## Milestone 1: Setup & Dependencies
 
-**Purpose**: Centralize playback control to enable frame skipping and coordinated updates
+### Task 0: Add pytest-qt Dependency
 
-**Depends on**: Phase 0 (for baseline comparison)
+- [ ] **Add dependency to pyproject.toml**
+  - File: `pyproject.toml`
+  - Location: `[project.optional-dependencies].dev` section (~line 49)
+  - Add: `"pytest-qt>=4.2.0",`
 
-### 1.1: Create PlaybackController Class
-
-- [x] Create `PlaybackController` in `src/neurospatial/animation/backends/napari_backend.py`
-  - Properties: `viewer`, `n_frames`, `fps`, `frame_times`, `_current_frame`
-  - Added `allow_frame_skip` parameter for testing/video export
-  - Added metrics: `frames_rendered`, `frames_skipped`
-- [x] Implement core methods:
-  - [x] `go_to_frame(frame_idx)` - jump to specific frame, update viewer dims
-  - [x] `step()` - advance to next frame with elapsed-time-based skipping
-  - [x] `play()` - start playback, record start time
-  - [x] `pause()` - stop playback
-  - [x] `register_callback(fn)` - register frame change callbacks
-- [x] Add frame skip calculation in `step()`:
-  - Calculate target frame from elapsed time: `start_frame + int(elapsed * fps)`
-  - Skip directly to target if behind schedule
-- [x] Tests: 24 tests in `tests/animation/test_playback_controller.py`
-
-### 1.2: Integrate into render_napari()
-
-- [x] Create `PlaybackController` after viewer setup in `render_napari()`
-- [x] Store controller as `viewer.playback_controller` (using `object.__setattr__` to bypass pydantic)
-- [x] Wire existing play/pause widget to controller (controller accessible; full widget wiring in Phase 4)
-- [x] Keep existing `dims.events.current_step` callbacks (migration in Phase 5)
-- [x] Add controller to multi-field path (`_render_multi_field_napari()`)
-- [x] Tests: 14 tests in `tests/animation/test_playback_controller_integration.py`
-  - Single-field creation and attributes
-  - Multi-field creation and attributes
-  - Frame times from overlay_data
-  - Widget integration
-
-**Success Criteria**: Controller created and wired; existing functionality unchanged
+- [ ] **Verify installation**
+  - Run: `uv sync --dev && uv run python -c "import pytestqt; print('pytest-qt available')"`
+  - Success: Output shows "pytest-qt available"
 
 ---
 
-## Phase 2: Optimize Video Overlay
+## Milestone 2: Core Implementation
 
-**Purpose**: Eliminate per-frame `layer.data = frame` overhead for in-memory video
+### Task 1: Add Speed Preset Constants
 
-**Depends on**: Phase 1 (for callback migration path)
+- [ ] **Add SPEED_PRESETS tuple**
+  - File: `src/neurospatial/animation/backends/napari_backend.py`
+  - Location: After `FPS_SLIDER_DEFAULT_MAX` (~line 110)
+  - Values: `(0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0)`
+  - Include docstring explaining multiplier semantics and FPS capping behavior
 
-### 2.1: Use Time-Indexed Image Layer for In-Memory Video
+- [ ] **Add SPEED_PRESET_LABELS dict**
+  - Maps float speed values to human-readable labels
+  - Example: `{0.0625: "1/16x", 0.125: "1/8x", ...}`
 
-- [x] In `_add_video_layer()`, detect if source is in-memory ndarray
-- [x] If in-memory `(n_frames, H, W, 3)`:
-  - Create Image layer with full array and time dimension
-  - Let napari handle frame selection natively (no callback needed)
-- [x] If file-based:
-  - Keep current callback approach (optimize in 2.2)
-- [x] Tests: 12 tests in `tests/animation/test_video_time_indexed.py`
-
-### 2.2: Add Ring Buffer for File-Based Video
-
-- [x] ~~Create `VideoFrameCache` class~~ **SKIPPED**: `VideoReader` already has LRU cache
-- [x] Add configurable `cache_size` parameter to `VideoOverlay` (was hardcoded to 100)
-- [x] Add `prefetch_ahead` parameter for async frame prefetching
-- [x] Implement background thread prefetching in `VideoReader`
-- [x] Tests: 24 tests in `tests/animation/test_video_cache.py`
-
-**Success Criteria**: In-memory video uses native time dimension; file-based video cached
+- [ ] **Verify constants import**
+  - Run: `uv run python -c "from neurospatial.animation.backends.napari_backend import SPEED_PRESETS, SPEED_PRESET_LABELS; print(SPEED_PRESETS)"`
+  - Success: Prints the tuple of speed values
 
 ---
 
-## Phase 3: Optimize Time Series Dock
+### Task 2: Create Helper Functions
 
-**Purpose**: Reduce matplotlib drawing overhead during playback
+- [ ] **Implement `_compute_fps_from_speed()`**
+  - File: `src/neurospatial/animation/backends/napari_backend.py`
+  - Location: Before `_add_speed_control_widget` (~line 2300)
+  - Parameters: `speed`, `sample_rate_hz`, `max_playback_fps`
+  - Returns: Clamped FPS in range [1, max_playback_fps]
+  - Must raise ValueError for non-positive inputs
 
-**Depends on**: Phase 1 (for PlaybackController integration)
+- [ ] **Implement `_format_speed_label()`**
+  - Parameters: `speed`, `fps`
+  - Returns: Formatted string like "1/4x (≈8 fps)"
+  - Uses SPEED_PRESET_LABELS for known presets, decimal notation otherwise
 
-### 3.1: Add Update Mode Option
-
-- [x] Add `update_mode` parameter to `TimeSeriesOverlay`
-  - `"live"` (default): Update every N frames (20 Hz max, already throttled)
-  - `"on_pause"`: Only update when playback pauses
-  - `"manual"`: Only update via explicit API call
-- [x] Add `update_mode` field to `TimeSeriesData` container
-- [x] Implement mode handling in `_add_timeseries_dock()`:
-  - Skip updates during playback if `mode == "on_pause"`
-  - Mode priority: manual > on_pause > live (uses most restrictive when mixed)
-- [x] Wire to PlaybackController.is_playing property for on_pause checks
-- [x] Tests: 16 tests in `tests/animation/test_timeseries_update_mode.py`
-
-### 3.2: Reduce Matplotlib Draw Calls
-
-- [x] Add `playback_throttle_hz` parameter to `TimeSeriesOverlay` (default 10 Hz)
-- [x] Add `scrub_throttle_hz` parameter to `TimeSeriesOverlay` (default 20 Hz)
-- [x] Add fields to `TimeSeriesData` and pass through `convert_to_data()`
-- [x] Cache last window bounds; only call `ax.set_xlim()` when window changes
-  - Added `_last_xlim_bounds` cache to `TimeSeriesArtistManager`
-  - Uses 1e-6 second tolerance for floating point comparison
-- [x] Tests: 18 tests in `tests/animation/test_timeseries_optimization.py`
-
-**Note**: Throttle parameters are plumbed through data structures. Integration with dock widget update callback for dynamic switching between playback/scrub throttle can be done in Phase 4 or 5.
-
-**Success Criteria**: Time series updates configurable; overhead reduced during playback
+- [ ] **Verify helper functions**
+  - Run verification script from PLAN.md
+  - Success: `_compute_fps_from_speed(1.0, 30.0)` returns 30
+  - Success: `_format_speed_label(0.25, 8)` returns "1/4x (≈8 fps)"
 
 ---
 
-## Phase 4: Playback Scheduling and Frame Skipping
+### Task 3: Rewrite Speed Control Widget
 
-**Purpose**: Enable automatic frame dropping when behind schedule
+**Dependencies**: Tasks 1, 2 must be complete
 
-**Depends on**: Phase 1 (PlaybackController must exist)
+- [ ] **Replace `_add_speed_control_widget` function**
+  - File: `src/neurospatial/animation/backends/napari_backend.py`
+  - Replace lines ~2302-2491 with new implementation
+  - New parameters: `initial_speed`, `sample_rate_hz`, `max_playback_fps`
 
-### 4.1: Integrate Frame Skipping
+- [ ] **Implement speed dropdown using magicgui ComboBox**
+  - Build choices dynamically from SPEED_PRESETS
+  - Include FPS info in labels: "1/4x (≈8 fps)"
+  - Set minimum width to 200px for readability
 
-- [x] Add metrics tracking to PlaybackController:
-  - `_frames_rendered` counter
-  - `_frames_skipped` counter
-- [x] Add `allow_frame_skip: bool = True` parameter to `__init__()`
-- [x] Expose metrics via properties: `frames_rendered`, `frames_skipped`
-- [x] Tests: Included in `tests/animation/test_playback_controller.py` (4 tests for metrics)
+- [ ] **Implement playback state tracking**
+  - Track: `is_playing`, `speed_index`, `last_frame`
+  - Sync speed_index when dropdown changes
 
-### 4.2: Handle Rapid Scrubbing
+- [ ] **Implement Play/Pause toggle**
+  - Button text toggles between "▶ Play" and "⏸ Pause"
+  - Calls `viewer.window._toggle_play()`
 
-- [x] Add `scrub_debounce_ms` parameter to `PlaybackController.__init__()` (default 16ms = ~60 Hz max)
-- [x] Store `_pending_frame` and `_last_update_time` state with thread-safe `_debounce_lock`
-- [x] Add debounce logic to `go_to_frame()`: first call is immediate, subsequent calls within window are pending
-- [x] Add `flush_pending_frame()` method to apply pending frame immediately
-- [x] Add `has_pending_frame` property
-- [x] Ensure manual seek still feels responsive (first-call-immediate behavior)
-- [x] Tests: 15 tests in `tests/animation/test_playback_scrubbing.py`
+- [ ] **Implement frame info updates**
+  - Display: "Frame: 15 / 30" format
+  - Include frame labels if provided: "Frame: 15 / 30 (Trial 15)"
+  - Throttle updates during playback
 
-**Success Criteria**: Frame skipping works; scrubbing is responsive without stutters
+- [ ] **Implement keyboard shortcuts**
+  - Space: Toggle play/pause
+  - Left/Right: Step one frame
+  - [ / ]: Decrease/increase speed (update dropdown)
+  - Home/End: Jump to first/last frame
+  - Show status message at speed boundaries
 
----
+- [ ] **Add dock widget to viewer**
+  - Name: "Playback Controls"
+  - Area: "left"
 
-## Phase 5: Clean Up Event Wiring
-
-**Purpose**: Remove redundant callbacks and centralize through PlaybackController
-
-**Depends on**: Phases 2, 3, 4 (all optimizations in place)
-
-### 5.1: Audit and Migrate Callbacks
-
-- [x] Search for all `viewer.dims.events.current_step.connect(...)` calls
-- [x] Audit each callback:
-
-  | Location | Current State | Action Taken |
-  |----------|---------------|--------------|
-  | `_make_video_frame_callback` | File-based only (Phase 2.1 removed in-memory) | Kept for file-based |
-  | `_render_event_overlay` | Efficient `layer.shown` mask | Kept (already optimized) |
-  | `_render_playback_widget` | Lightweight UI update | Kept (negligible overhead) |
-  | `_add_timeseries_dock` | Already checks `controller.is_playing` | Kept (already integrated) |
-
-- [x] Assess migration to `PlaybackController.register_callback()`:
-  - **Finding**: Cannot fully migrate because `register_callback` only fires on programmatic `go_to_frame()` calls
-  - **Reason**: User slider interactions go directly through napari's dims, not our controller
-  - **Decision**: Keep callbacks on `dims.events.current_step` for responsive UI
-- [x] Tests: 14 tests in `tests/animation/test_callback_audit.py` documenting audit findings
-
-### 5.2: Remove Deprecated layer.data Assignments
-
-- [x] Audit all overlays for `layer.data = large_array` in callbacks
-- [x] Ensure only efficient updates remain:
-  - Video (in-memory): Native 4D time dimension (no layer.data assignment)
-  - Video (file-based): `layer.data = frame` (necessary for streaming, with LRU cache)
-  - Events (cumulative/decay): `layer.shown = mask` (efficient boolean mask)
-  - Events (instant): Native 3D Points layer (no callback)
-  - Position/Bodypart/HeadDirection: Native time dimension (no reassignment)
-  - Skeleton: Pre-computed Vectors layer (no callback)
-- [x] Tests: 17 tests in `tests/animation/test_layer_data_audit.py` documenting findings
-
-**Key Finding**: No deprecated `layer.data = large_array` patterns found. All layer.data
-assignments are either removed (in-memory video), necessary (file-based streaming),
-or efficient (events use shown mask instead).
-
-**Success Criteria**: All callbacks audited; redundant ones removed
+- [ ] **Verify with existing napari tests**
+  - Run: `uv run pytest tests/test_animation.py -k "napari" -v --timeout=30`
+  - Success: All tests pass
 
 ---
 
-## Phase 6: Verification and Profiling
+### Task 4: Update Docstrings
 
-**Purpose**: Confirm optimizations meet performance targets
+- [ ] **Update `render_napari` docstring**
+  - File: `src/neurospatial/animation/backends/napari_backend.py`
+  - Location: "Enhanced Playback Controls" section (~line 2902)
+  - Replace keyboard shortcuts documentation with new shortcuts
 
-**Depends on**: All previous phases complete
-
-### 6.1: Create Automated Benchmark Suite
-
-- [x] Create `tests/benchmarks/test_napari_playback.py`
-- [x] Add pytest-benchmark fixtures:
-  - Each overlay type individually (7 tests)
-  - All overlays combined (1 test)
-  - Different field sizes (100x100) (1 test)
-  - Different frame counts (1000) (1 test)
-- [x] Run benchmarks and compare to Phase 0 baseline
-  - All individual overlays pass 30 fps target
-  - Combined overlays within acceptable range (~21-25 fps)
-
-### 6.2: Verify Performance Targets
-
-| Metric | Target | Acceptable |
-|--------|--------|------------|
-| Per-frame callback total | <5ms | <10ms |
-| Canvas paint time | <10ms | <15ms |
-| Total frame latency | <16ms (60 fps) | <40ms (25 fps) |
-| Frame skip rate at 25 fps | <5% | <15% |
-
-- [x] All metrics within "Acceptable" range
-  - Combined overlays: 37.36ms < 40ms (acceptable) ✓
-  - Individual overlays: 13-21ms < 33.3ms (target) ✓
-- [x] Most metrics within "Target" range
-  - All 6 individual overlay types exceed 30 fps target
-  - Combined overlays improved 21% (47.38ms → 37.36ms)
-
-### 6.3: Manual Testing Checklist
-
-- [x] Playback smooth at 25 fps with all overlays enabled
-  - Mean frame time: 36.92 ms (~27 fps) with all 6 overlays
-  - 24% of frames exceed 40ms (occasional spikes, but mean is acceptable)
-- [x] Scrubbing responsive (no perceptible lag when dragging slider)
-  - Mean scrub time: 35.57 ms (< 50ms threshold)
-  - Max scrub time: 50.72 ms (responsive)
-- [x] No memory growth during 5+ minute extended playback
-  - Memory stability test passed for 1000 frame steps
-  - No significant memory growth detected
-- [x] Frame counter updates correctly (accounting for skipped frames)
-  - `frames_rendered` and `frames_skipped` metrics verified
-  - `go_to_frame(50)` correctly shows 1 rendered, 49 skipped
-- [x] Time series plot updates smoothly (or pauses correctly during playback)
-  - Time Series dock widget properly created
-  - `update_mode` parameter supports "live", "on_pause", "manual" modes
-
-**Success Criteria**: All targets met; manual tests pass ✓
+- [ ] **Verify docstring update**
+  - Run: `uv run python -c "from neurospatial.animation.backends.napari_backend import render_napari; help(render_napari)" | head -100`
+  - Success: New keyboard shortcuts appear in help output
 
 ---
 
-## Implementation Order Summary
+## Milestone 3: Testing
 
-Recommended sequence (total: ~10-15 hours):
+### Task 5: Add Unit Tests for Speed Helpers
 
-1. **Phase 0.1**: Baseline measurement
-2. **Phase 1.1-1.2**: PlaybackController
-3. **Phase 4.1-4.2**: Frame skipping
-4. **Phase 2.1-2.2**: Video optimization
-5. **Phase 3.1-3.2**: Time series optimization
-6. **Phase 5.1-5.2**: Cleanup
-7. **Phase 6.1-6.3**: Verification
+**Dependencies**: Tasks 1, 2 must be complete
+
+- [ ] **Create test file**
+  - File: `tests/test_napari_speed_controls.py` (new)
+
+- [ ] **Implement `TestSpeedPresets` class**
+  - `test_presets_ordered_ascending`: Verify ascending order
+  - `test_presets_all_positive`: Verify all positive values
+  - `test_presets_include_realtime`: Verify 1.0 exists
+  - `test_labels_match_presets`: Verify all presets have labels
+
+- [ ] **Implement `TestComputeFpsFromSpeed` class**
+  - `test_realtime_30hz`: 1.0 speed, 30Hz -> 30 fps
+  - `test_half_speed_30hz`: 0.5 speed, 30Hz -> 15 fps
+  - `test_quarter_speed_30hz`: 0.25 speed, 30Hz -> 8 fps (rounded)
+  - `test_double_speed_capped`: 2.0 speed, 100Hz -> 60 fps (capped)
+  - `test_high_rate_data_not_capped`: 0.0625 speed, 500Hz -> 31 fps
+  - `test_high_rate_realtime_capped`: 1.0 speed, 500Hz -> 60 fps (capped)
+  - `test_minimum_fps_is_one`: Very slow speed -> 1 fps
+  - `test_custom_max_fps`: Custom max_playback_fps respected
+  - `test_zero_speed_raises`: ValueError for speed=0
+  - `test_negative_speed_raises`: ValueError for negative speed
+  - `test_zero_sample_rate_raises`: ValueError for sample_rate=0
+  - `test_negative_sample_rate_raises`: ValueError for negative sample_rate
+
+- [ ] **Implement `TestFormatSpeedLabel` class**
+  - `test_known_preset_format`: Known presets use fractional notation
+  - `test_unknown_speed_format`: Unknown speeds use decimal notation
+
+- [ ] **Verify unit tests pass**
+  - Run: `uv run pytest tests/test_napari_speed_controls.py::TestSpeedPresets tests/test_napari_speed_controls.py::TestComputeFpsFromSpeed tests/test_napari_speed_controls.py::TestFormatSpeedLabel -v`
+  - Success: All unit tests pass
 
 ---
 
-## Notes
+### Task 6: Add Integration Tests
 
-### Do Not Modify (Already Optimized)
+**Dependencies**: Tasks 0-4 must be complete
 
-- Skeleton precomputation (`_build_skeleton_vectors`)
-- Event instant mode (native 3D Points format)
-- Position/Head direction overlays (Tracks with time dimension)
-- Field caching (LRU with lazy loading)
+- [ ] **Add `sample_env_and_fields` fixture**
+  - Creates Environment with random positions
+  - Creates random fields array (20 frames)
 
-### Out of Scope
+- [ ] **Implement `TestSpeedControlIntegration` class** (marked `@pytest.mark.slow`)
+  - `test_speed_dropdown_changes_fps`: Verify fps setting updates
+  - `test_keyboard_shortcuts_bound`: Verify all shortcuts registered
+  - `test_arrow_keys_respect_boundaries`: Verify boundary checks
+  - `test_home_end_jump_to_boundaries`: Verify Home/End navigation
 
-- Replace matplotlib with pyqtgraph (major change)
-- WebGL-based playback
-- Multi-GPU rendering
+- [ ] **Verify integration tests pass**
+  - Run: `uv run pytest tests/test_napari_speed_controls.py -v --timeout=60`
+  - Success: All tests pass (may skip on headless CI)
+
+---
+
+## Milestone 4: Verification & Quality
+
+### Task 7: Run Full Test Suite
+
+- [ ] **Unit tests pass**
+  - Run: `uv run pytest tests/test_napari_speed_controls.py -v`
+
+- [ ] **Existing napari tests pass**
+  - Run: `uv run pytest tests/test_animation.py -k "napari" -v --timeout=60`
+
+- [ ] **Type checking passes**
+  - Run: `uv run mypy src/neurospatial/animation/backends/napari_backend.py`
+  - Success: No type errors
+
+- [ ] **Linting passes**
+  - Run: `uv run ruff check src/neurospatial/animation/backends/napari_backend.py && uv run ruff format --check src/neurospatial/animation/backends/napari_backend.py`
+  - Success: No linting errors
+
+---
+
+### Task 8: Manual Verification (Optional - Interactive)
+
+- [ ] **Standard 30Hz data test**
+  - Create test environment with 100 frames at 30Hz
+  - Verify: Speed dropdown appears with 1/16x to 4x options
+  - Verify: Dropdown label shows "Speed ([ ] keys)"
+  - Verify: Changing dropdown updates playback speed
+  - Verify: Space toggles play/pause
+  - Verify: Left/Right arrows step frames
+  - Verify: [ and ] change speed (dropdown updates)
+  - Verify: Boundary status messages at 1/16x and 4x
+  - Verify: Home/End jump to start/end
+  - Verify: Playback stops at last frame (no loop)
+  - Verify: Pause at frame 50, Space -> resumes at 51
+
+- [ ] **High sample rate test (500 Hz)**
+  - Create test data: 1000 frames at 500Hz (2 seconds)
+  - Verify: 1/16x shows "1/16x (≈31 fps)"
+  - Verify: 1x shows "1x (≈60 fps)" (capped)
+  - Verify: Playback is smooth (no Qt event loop stalls)
+  - Verify: Speed changes via dropdown and keyboard work smoothly
+
+---
+
+## Summary
+
+| Milestone | Tasks | Description |
+|-----------|-------|-------------|
+| 1 | 0 | Setup pytest-qt dependency |
+| 2 | 1-4 | Core implementation (constants, helpers, widget, docstrings) |
+| 3 | 5-6 | Unit and integration tests |
+| 4 | 7-8 | Verification and quality checks |
+
+**Estimated Total**: 8 tasks across 4 milestones
+
+**Rollback**: If issues arise, run `git checkout HEAD~1 -- src/neurospatial/animation/backends/napari_backend.py`

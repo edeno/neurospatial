@@ -1,489 +1,781 @@
-# Napari Playback Performance Optimization Plan
+# PLAN3: Napari Playback Interface Enhancement
 
-**Goal**: Get napari playback smooth while using all overlays (position, bodyparts+skeleton, head direction, events/spikes, time series, video).
+**Goal**: Replace the FPS slider with an intuitive speed dropdown and add keyboard shortcuts for efficient neural data exploration, particularly for millisecond-scale replay analysis.
 
-**Last Updated**: 2025-12-01
-
----
-
-## Pre-Work: Current State Analysis
-
-### Already Optimized (No Changes Needed)
-
-Based on codebase analysis, these components are already optimized for napari's native rendering:
-
-| Component | Current Implementation | Status |
-|-----------|----------------------|--------|
-| **Position overlay** | Tracks layer with time axis | Native napari handling |
-| **Bodypart overlay** | Points layer with time axis | Native napari handling |
-| **Skeleton overlay** | Pre-computed Vectors layer (`_build_skeleton_vectors()`) | No per-frame callbacks |
-| **Head direction** | Tracks layer (2-point lines per frame) | Native napari handling |
-| **Events (instant)** | 3D Points layer `(time, y, x)` format | No callbacks |
-| **Events (cumulative/decay)** | Boolean `shown` mask with `O(log N)` searchsorted | Efficient updates |
-| **Field rendering** | LRU cache with lazy loading | On-demand rendering |
-| **Widget updates** | Throttled to 10 Hz | Reduced Qt overhead |
-
-### Needs Optimization
-
-| Component | Current Issue | Impact |
-|-----------|--------------|--------|
-| **Video overlay** | Per-frame `layer.data = frame` assignment | ~2-3ms per frame |
-| **Time series dock** | Matplotlib drawing even with blitting | ~5-15ms per frame |
-| **No central playback controller** | Scattered `dims.events.current_step` callbacks | Hard to implement frame skipping |
-| **No frame skipping** | Must render every frame even if behind schedule | Stutters at high fps |
+**Branch**: `feat/napari-speed-dropdown`
 
 ---
 
-## Phase 0: Establish Performance Baseline
+## Context
 
-### 0.1: Set Up Performance Monitoring
+Users investigating hippocampal replay need to examine neural data at multiple timescales:
 
-Before any changes, measure baseline performance using napari's perfmon.
+- **Replay events**: 2-4ms bins requiring slow playback (1/16x to 1/4x speed)
+- **Behavior**: Real-time or faster playback (1x to 4x speed)
 
-**Tasks**
+The current FPS slider is unintuitive—users think in terms of speed multipliers relative to real-time, not raw frame rates.
 
-- [ ] Create benchmark script `scripts/benchmark_napari_playback.py`
-- [ ] Test with each overlay individually:
-  - Position only
-  - Bodyparts + skeleton
-  - Head direction
-  - Events (instant vs cumulative)
-  - Video
-  - Time series
-- [ ] Test with all overlays combined
-- [ ] Record metrics for each test:
-  - Frame render time (target: <10ms)
-  - Qt paint time (target: <15-20ms)
-  - Callback overhead per frame
+---
 
-**Implementation**
+## Tasks
+
+### Task 0: Add pytest-qt Dependency
+
+**File**: `pyproject.toml`
+
+**Location**: In `[project.optional-dependencies].dev` section (around line 49)
+
+**Add** after the existing test dependencies:
+
+```toml
+    "pytest-qt>=4.2.0",
+```
+
+**Verify**: `uv sync --dev && uv run python -c "import pytestqt; print('pytest-qt available')"`
+
+---
+
+### Task 1: Add Speed Preset Constants
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Location**: After line ~110 (after `FPS_SLIDER_DEFAULT_MAX`)
+
+**Add**:
+
+```python
+# Speed multiplier presets for dropdown (ordered slow to fast)
+SPEED_PRESETS: tuple[float, ...] = (
+    0.0625,  # 1/16x - frame-by-frame for high-rate data
+    0.125,   # 1/8x
+    0.25,    # 1/4x
+    0.5,     # 1/2x
+    1.0,     # 1x - real-time
+    2.0,     # 2x
+    4.0,     # 4x
+)
+"""Speed multiplier presets for playback dropdown.
+
+Values represent multipliers relative to real-time playback:
+- < 1.0: Slow motion (e.g., 0.25 = 1/4 speed)
+- 1.0: Real-time (1 second of data = 1 second viewing)
+- > 1.0: Fast forward (e.g., 2.0 = 2x speed)
+
+Note: For very high sample rates (>1000 Hz), multiple slow presets may produce
+identical playback FPS due to max_playback_fps capping (60 fps). For example,
+at 1000 Hz both 1/16x (62.5→60) and 1/8x (125→60) would cap at 60 fps.
+"""
+
+SPEED_PRESET_LABELS: dict[float, str] = {
+    0.0625: "1/16x",
+    0.125: "1/8x",
+    0.25: "1/4x",
+    0.5: "1/2x",
+    1.0: "1x",
+    2.0: "2x",
+    4.0: "4x",
+}
+"""Human-readable labels for speed presets."""
+```
+
+**Verify**: `uv run python -c "from neurospatial.animation.backends.napari_backend import SPEED_PRESETS, SPEED_PRESET_LABELS; print(SPEED_PRESETS)"`
+
+---
+
+### Task 2: Create Helper Functions
+
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
+
+**Location**: Before `_add_speed_control_widget` function (around line 2300)
+
+**Add**:
+
+```python
+def _compute_fps_from_speed(
+    speed: float,
+    sample_rate_hz: float,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
+) -> int:
+    """Compute playback FPS from speed multiplier and sample rate.
+
+    Parameters
+    ----------
+    speed : float
+        Speed multiplier (e.g., 0.5 for half-speed, 2.0 for 2x).
+        Must be positive.
+    sample_rate_hz : float
+        Data sample rate in Hz. Must be positive.
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS
+        Maximum allowed playback FPS.
+
+    Returns
+    -------
+    int
+        Clamped playback FPS in range [1, max_playback_fps].
+
+    Raises
+    ------
+    ValueError
+        If speed or sample_rate_hz is not positive.
+
+    Examples
+    --------
+    >>> _compute_fps_from_speed(1.0, 30.0)  # Real-time 30Hz data
+    30  # Not capped (30 < 60)
+    >>> _compute_fps_from_speed(0.5, 30.0)  # Half-speed 30Hz data
+    15
+    >>> _compute_fps_from_speed(1.0, 100.0)  # Real-time 100Hz data
+    60  # Capped at MAX_PLAYBACK_FPS
+    >>> _compute_fps_from_speed(0.0625, 500.0)  # 1/16x speed 500Hz data
+    31  # 500 * 0.0625 = 31.25 -> rounds to 31
+    """
+    if speed <= 0:
+        msg = f"speed must be positive, got {speed}"
+        raise ValueError(msg)
+    if sample_rate_hz <= 0:
+        msg = f"sample_rate_hz must be positive, got {sample_rate_hz}"
+        raise ValueError(msg)
+
+    computed = sample_rate_hz * speed
+    return max(1, min(round(computed), max_playback_fps))
+
+
+def _format_speed_label(speed: float, fps: int) -> str:
+    """Format speed dropdown label with FPS info.
+
+    Parameters
+    ----------
+    speed : float
+        Speed multiplier.
+    fps : int
+        Computed playback FPS.
+
+    Returns
+    -------
+    str
+        Formatted label like "1/4x (≈8 fps)" or "1x (≈25 fps)".
+    """
+    speed_str = SPEED_PRESET_LABELS.get(speed, f"{speed}x")
+    return f"{speed_str} (≈{fps} fps)"
+```
+
+**Verify**:
 
 ```bash
-# Enable perfmon before running
-NAPARI_PERFMON=1 uv run python scripts/benchmark_napari_playback.py
-
-# Or with config file for detailed tracing
-NAPARI_PERFMON=/path/to/perfmon_config.json uv run python scripts/benchmark_napari_playback.py
+uv run python -c "
+from neurospatial.animation.backends.napari_backend import _compute_fps_from_speed, _format_speed_label
+print(_compute_fps_from_speed(1.0, 30.0))  # Should print 30
+print(_compute_fps_from_speed(0.5, 30.0))  # Should print 15
+print(_format_speed_label(0.25, 8))  # Should print '1/4x (≈8 fps)'
+"
 ```
-
-**perfmon_config.json**:
-```json
-{
-    "trace_qt_events": true,
-    "trace_file_on_start": "/tmp/napari_trace_baseline.json",
-    "trace_callables": ["napari_callbacks"],
-    "callable_lists": {
-        "napari_callbacks": [
-            "neurospatial.animation.backends.napari_backend._make_video_frame_callback",
-            "neurospatial.animation.backends.napari_backend._render_timeseries_dock"
-        ]
-    }
-}
-```
-
-**Viewing Results**:
-- Open Chrome: `chrome://tracing`
-- Load `/tmp/napari_trace_baseline.json`
-- Look for:
-  - `MetaCall:QObject` (Qt event processing)
-  - `Paint:CanvasBackendDesktop` (GPU rendering)
-  - Any custom events from trace_callables
 
 ---
 
-## Phase 1: Introduce PlaybackController (Central Control Point)
+### Task 3: Rewrite `_add_speed_control_widget` with Dropdown
 
-### 1.1: Create PlaybackController Class
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
 
-Currently `render_napari` passes `fps` to napari's built-in playback, and overlays attach their own `dims.events.current_step` callbacks. This makes frame skipping impossible.
+**Replace**: The entire `_add_speed_control_widget` function (lines ~2302-2491)
 
-**Goal**: Centralize playback into one controller that:
-- Owns the `QTimer` and playback rate
-- Owns the mapping `frame_idx -> frame_time`
-- Is the *only* place that calls `viewer.dims.set_current_step(...)`
-- Can skip frames if falling behind
+**New implementation**:
 
-**Tasks**
-
-- [ ] Create `PlaybackController` class in `napari_backend.py`:
-  ```python
-  class PlaybackController:
-      """Central playback controller for frame-skipping-aware animation."""
-
-      def __init__(
-          self,
-          viewer: napari.Viewer,
-          n_frames: int,
-          fps: float,
-          frame_times: NDArray[np.float64] | None = None,
-      ):
-          self.viewer = viewer
-          self.n_frames = n_frames
-          self.fps = fps
-          self.frame_times = frame_times
-          self._current_frame = 0
-          self._playing = False
-          self._start_time: float | None = None
-          self._start_frame: int = 0
-          self._timer: QTimer | None = None
-          self._callbacks: list[Callable[[int], None]] = []
-
-      def go_to_frame(self, frame_idx: int) -> None:
-          """Jump to specific frame, updating viewer dims."""
-          self._current_frame = max(0, min(frame_idx, self.n_frames - 1))
-          self.viewer.dims.set_current_step(0, self._current_frame)
-          # Notify registered callbacks
-          for callback in self._callbacks:
-              callback(self._current_frame)
-
-      def step(self) -> None:
-          """Advance to next frame with skipping if behind schedule."""
-          if not self._playing or self._start_time is None:
-              return
-
-          # Calculate target frame based on elapsed time
-          elapsed = time.perf_counter() - self._start_time
-          target_frame = self._start_frame + int(elapsed * self.fps)
-
-          # Skip directly to target (frame dropping)
-          if target_frame > self._current_frame:
-              self.go_to_frame(target_frame)
-
-          # Check for end
-          if self._current_frame >= self.n_frames - 1:
-              self.pause()
-
-      def play(self) -> None:
-          """Start playback."""
-          self._playing = True
-          self._start_time = time.perf_counter()
-          self._start_frame = self._current_frame
-          # Start timer at target fps
-          if self._timer is None:
-              from qtpy.QtCore import QTimer
-              self._timer = QTimer()
-              self._timer.timeout.connect(self.step)
-          self._timer.start(int(1000 / self.fps))
-
-      def pause(self) -> None:
-          """Pause playback."""
-          self._playing = False
-          if self._timer:
-              self._timer.stop()
-
-      def register_callback(self, callback: Callable[[int], None]) -> None:
-          """Register callback to be notified on frame changes."""
-          self._callbacks.append(callback)
-  ```
-
-- [ ] Integrate `PlaybackController` into `render_napari()`:
-  - Create controller after viewer setup
-  - Store in `viewer.metadata["playback_controller"]`
-  - Wire custom play/pause widget to controller instead of napari's built-in
-
-- [ ] Keep existing `dims.events.current_step` callbacks for now (Phase 2 will migrate them)
-
-**Why This Helps**:
-- Frame skipping happens in `step()` when falling behind
-- All frame changes go through `go_to_frame()` which can throttle/batch updates
-- Callbacks registered here can be managed/throttled centrally
-
----
-
-## Phase 2: Optimize Video Overlay
-
-### 2.1: Use Time-Indexed Image Layer (If In-Memory)
-
-Currently video updates via `layer.data = frame` on every frame change. For in-memory arrays, napari can handle time dimension natively.
-
-**Tasks**
-
-- [ ] In `_add_video_layer()`, detect if source is in-memory ndarray
-- [ ] If in-memory with shape `(n_video_frames, H, W, 3)`:
-  - Create Image layer with full array and time dimension
-  - Set `viewer.dims.ndim` to include video time axis
-  - Let napari handle frame selection natively (no callback)
-- [ ] If file-based or streaming:
-  - Keep current callback approach but add frame caching ring buffer
-
-**Implementation for in-memory**:
 ```python
-if isinstance(video_data.reader, np.ndarray):
-    # Full array available - use napari's native time handling
-    video_array = video_data.reader  # (n_frames, H, W, 3)
-    layer = viewer.add_image(
-        video_array,
-        name=name,
-        rgb=True,
-        opacity=video_data.alpha,
-        affine=affine,
-        blending="translucent",
+def _add_speed_control_widget(
+    viewer: napari.Viewer,
+    frame_labels: list[str] | None = None,
+    *,
+    initial_speed: float = 1.0,
+    sample_rate_hz: float = 30.0,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
+) -> None:
+    """Add enhanced playback control widget with speed dropdown to napari viewer.
+
+    Creates a comprehensive docked widget with:
+    - Play/Pause button (large, prominent)
+    - Speed dropdown (1/16x to 4x range, shows speed multiplier and fps)
+    - Frame counter ("Frame: 15 / 30")
+    - Frame label (if provided: "Trial 15")
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        Napari viewer instance to add widget to.
+    frame_labels : list of str, optional
+        Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]).
+    initial_speed : float, default=1.0
+        Initial playback speed multiplier (1.0 = real-time).
+    sample_rate_hz : float, default=30.0
+        Data sample rate in Hz. For high sample rates (>400 Hz), multiple
+        slow presets may produce identical FPS due to max_playback_fps capping.
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS
+        Maximum playback FPS (speed capped accordingly).
+
+    Notes
+    -----
+    Keyboard shortcuts are bound to the viewer:
+
+    - Space: Play/Pause
+    - Left/Right arrows: Step 1 frame backward/forward
+    - [ / ]: Decrease/Increase speed
+    - Home/End: Jump to first/last frame
+    """
+    try:
+        from magicgui import magicgui
+        from napari.settings import get_settings
+    except ImportError:
+        return
+
+    # Build speed choices with fps info
+    speed_choices: list[tuple[str, float]] = []
+    for speed in SPEED_PRESETS:
+        fps = _compute_fps_from_speed(speed, sample_rate_hz, max_playback_fps)
+        label = _format_speed_label(speed, fps)
+        speed_choices.append((label, speed))
+
+    # Find initial speed index (default to 1x if not in presets)
+    initial_index = 4  # Default to 1x (index 4 in SPEED_PRESETS)
+    for i, speed in enumerate(SPEED_PRESETS):
+        if speed == initial_speed:
+            initial_index = i
+            break
+
+    # Track playback state
+    playback_state = {
+        "is_playing": False,
+        "speed_index": initial_index,
+        "last_frame": -1,
+    }
+
+    # Compute initial fps
+    initial_computed_fps = _compute_fps_from_speed(
+        initial_speed, sample_rate_hz, max_playback_fps
     )
-    # No callback needed - napari handles dims[0] time axis
+
+    # Throttle widget updates during playback
+    update_interval = max(1, initial_computed_fps // WIDGET_UPDATE_TARGET_HZ)
+
+    @magicgui(
+        auto_call=True,
+        play={"widget_type": "PushButton", "text": "▶ Play"},
+        speed={
+            "widget_type": "ComboBox",
+            "choices": speed_choices,
+            "value": SPEED_PRESETS[initial_index],
+            "label": "Speed ([ ] keys)",
+        },
+        frame_info={"widget_type": "Label", "label": ""},
+    )
+    def playback_widget(
+        play: bool = False,
+        speed: float = 1.0,
+        frame_info: str = "",
+    ) -> None:
+        """Enhanced playback control widget with speed dropdown."""
+        # Update FPS setting when speed changes
+        settings = get_settings()
+        new_fps = _compute_fps_from_speed(speed, sample_rate_hz, max_playback_fps)
+        settings.application.playback_fps = new_fps
+
+        # Update throttle interval
+        nonlocal update_interval
+        update_interval = max(1, new_fps // WIDGET_UPDATE_TARGET_HZ)
+
+    # Make dropdown wider for readability
+    with contextlib.suppress(Exception):
+        playback_widget.speed.native.setMinimumWidth(200)
+
+    # --- Sync speed_index when dropdown changes ---
+    def on_speed_changed(new_speed: float) -> None:
+        """Sync speed_index state when dropdown changes."""
+        for i, speed in enumerate(SPEED_PRESETS):
+            if speed == new_speed:
+                playback_state["speed_index"] = i
+                break
+
+    playback_widget.speed.changed.connect(on_speed_changed)
+
+    # --- Play/Pause toggle ---
+    def toggle_playback(event: Any | None = None) -> None:
+        """Toggle animation playback."""
+        playback_state["is_playing"] = not playback_state["is_playing"]
+        if playback_state["is_playing"]:
+            playback_widget.play.text = "⏸ Pause"
+        else:
+            playback_widget.play.text = "▶ Play"
+        viewer.window._toggle_play()
+
+    playback_widget.play.changed.connect(toggle_playback)
+
+    # --- Frame info updates ---
+    def update_frame_info(event: Any | None = None) -> None:
+        """Update frame counter (throttled during playback)."""
+        try:
+            current_frame = viewer.dims.current_step[0] if viewer.dims.ndim > 0 else 0
+
+            # Throttle during playback only
+            if (
+                playback_state["is_playing"]
+                and current_frame % update_interval != 0
+                and current_frame != playback_state["last_frame"]
+            ):
+                playback_state["last_frame"] = current_frame
+                return
+
+            playback_state["last_frame"] = current_frame
+
+            total_frames = (
+                viewer.dims.range[0][2]
+                if viewer.dims.ndim > 0 and viewer.dims.range
+                else 0
+            )
+
+            frame_text = f"Frame: {current_frame + 1} / {int(total_frames)}"
+            if frame_labels and 0 <= current_frame < len(frame_labels):
+                frame_text += f" ({frame_labels[current_frame]})"
+
+            playback_widget.frame_info.value = frame_text
+        except Exception:
+            playback_widget.frame_info.value = "Frame: -- / --"
+
+    viewer.dims.events.current_step.connect(update_frame_info)
+    update_frame_info()
+
+    # --- Keyboard shortcuts ---
+    @viewer.bind_key("Space")
+    def _spacebar_toggle(viewer_instance: napari.Viewer) -> None:
+        """Toggle playback with spacebar."""
+        toggle_playback()
+
+    @viewer.bind_key("Left")
+    def _step_backward(viewer_instance: napari.Viewer) -> None:
+        """Step one frame backward."""
+        current = viewer_instance.dims.current_step[0]
+        if current > 0:
+            viewer_instance.dims.set_current_step(0, current - 1)
+
+    @viewer.bind_key("Right")
+    def _step_forward(viewer_instance: napari.Viewer) -> None:
+        """Step one frame forward."""
+        current = viewer_instance.dims.current_step[0]
+        max_frame = int(viewer_instance.dims.range[0][2]) - 1
+        if current < max_frame:
+            viewer_instance.dims.set_current_step(0, current + 1)
+
+    @viewer.bind_key("[")
+    def _speed_slower(viewer_instance: napari.Viewer) -> None:
+        """Decrease playback speed."""
+        idx = playback_state["speed_index"]
+        if idx > 0:
+            playback_state["speed_index"] = idx - 1
+            playback_widget.speed.value = SPEED_PRESETS[idx - 1]
+        else:
+            viewer_instance.status = "Already at slowest speed (1/16x)"
+
+    @viewer.bind_key("]")
+    def _speed_faster(viewer_instance: napari.Viewer) -> None:
+        """Increase playback speed."""
+        idx = playback_state["speed_index"]
+        if idx < len(SPEED_PRESETS) - 1:
+            playback_state["speed_index"] = idx + 1
+            playback_widget.speed.value = SPEED_PRESETS[idx + 1]
+        else:
+            viewer_instance.status = "Already at fastest speed (4x)"
+
+    @viewer.bind_key("Home")
+    def _jump_start(viewer_instance: napari.Viewer) -> None:
+        """Jump to first frame."""
+        viewer_instance.dims.set_current_step(0, 0)
+
+    @viewer.bind_key("End")
+    def _jump_end(viewer_instance: napari.Viewer) -> None:
+        """Jump to last frame."""
+        max_frame = int(viewer_instance.dims.range[0][2]) - 1
+        viewer_instance.dims.set_current_step(0, max_frame)
+
+    # Add dock widget
+    with contextlib.suppress(Exception):
+        viewer.window.add_dock_widget(
+            playback_widget,
+            name="Playback Controls",
+            area="left",
+        )
 ```
 
-### 2.2: Add Ring Buffer for File-Based Video
-
-**Tasks**
-
-- [ ] Create `VideoFrameCache` class with LRU ring buffer:
-  ```python
-  class VideoFrameCache:
-      def __init__(self, reader, cache_size: int = 100):
-          self.reader = reader
-          self.cache: OrderedDict[int, np.ndarray] = OrderedDict()
-          self.cache_size = cache_size
-
-      def get_frame(self, idx: int) -> np.ndarray:
-          if idx in self.cache:
-              self.cache.move_to_end(idx)
-              return self.cache[idx]
-
-          frame = self.reader[idx]
-          if len(self.cache) >= self.cache_size:
-              self.cache.popitem(last=False)  # Remove oldest
-          self.cache[idx] = frame
-          return frame
-  ```
-
-- [ ] Use cache in video callback to avoid redundant seeks
-
----
-
-## Phase 3: Optimize Time Series Dock
-
-### 3.1: Add Update Mode Option
-
-Currently time series updates on every frame with blitting. Even blitting costs ~5-15ms.
-
-**Tasks**
-
-- [ ] Add `update_mode` parameter to `TimeSeriesOverlay`:
-  - `"live"` (default): Update every N frames (already throttled to 20 Hz max)
-  - `"on_pause"`: Only update when playback pauses
-  - `"manual"`: Only update via explicit call
-
-- [ ] In `_render_timeseries_dock()`, respect update mode:
-  ```python
-  def on_frame_change(event):
-      if update_mode == "on_pause" and controller.is_playing:
-          return  # Skip during playback
-      # ... existing update logic
-  ```
-
-- [ ] Wire to `PlaybackController` play/pause events for `on_pause` mode
-
-### 3.2: Reduce Matplotlib Draw Calls
-
-**Tasks**
-
-- [ ] Increase throttle frequency during playback (currently 20 Hz, consider 10 Hz)
-- [ ] Use `ax.set_xlim()` only when window actually changes (cache last window bounds)
-- [ ] Consider using pyqtgraph instead of matplotlib for <1ms updates (optional, major change)
-
----
-
-## Phase 4: Playback Scheduling and Frame Skipping
-
-### 4.1: Integrate Frame Skipping
-
-With `PlaybackController` from Phase 1, enable automatic frame skipping.
-
-**Tasks**
-
-- [ ] `PlaybackController.step()` already calculates `target_frame` based on elapsed time
-- [ ] Add metrics tracking:
-  ```python
-  self._frames_rendered = 0
-  self._frames_skipped = 0
-  ```
-- [ ] Add option to disable skipping for testing:
-  ```python
-  def __init__(..., allow_frame_skip: bool = True):
-      self.allow_frame_skip = allow_frame_skip
-  ```
-
-### 4.2: Handle Rapid Scrubbing
-
-When user drags slider quickly, process only the latest requested frame.
-
-**Tasks**
-
-- [ ] In `go_to_frame()`, if called rapidly (within 16ms), debounce:
-  ```python
-  def go_to_frame(self, frame_idx: int) -> None:
-      self._pending_frame = frame_idx
-      if not self._debounce_timer.isActive():
-          self._debounce_timer.start(16)  # ~60 Hz max update rate
-
-  def _apply_pending_frame(self) -> None:
-      if self._pending_frame is not None:
-          self._current_frame = self._pending_frame
-          self.viewer.dims.set_current_step(0, self._current_frame)
-          self._pending_frame = None
-  ```
-
----
-
-## Phase 5: Clean Up Event Wiring
-
-### 5.1: Audit and Remove Redundant Callbacks
-
-**Tasks**
-
-- [ ] Search for all `viewer.dims.events.current_step.connect(...)` calls
-- [ ] For each callback, determine if it can be:
-  - Removed (already using native time dimension)
-  - Migrated to `PlaybackController.register_callback()`
-  - Throttled via central controller
-
-**Current callbacks to audit**:
-| Location | Callback | Action |
-|----------|----------|--------|
-| `_make_video_frame_callback` | `update_video_frames` | Keep for file-based, remove for in-memory |
-| `_render_event_overlay` | `on_frame_change` (cumulative/decay) | Keep (already efficient) |
-| `_render_timeseries_dock` | `on_frame_change` | Migrate to controller for `on_pause` mode |
-
-### 5.2: Remove Deprecated layer.data Assignments
-
-**Tasks**
-
-- [ ] Ensure no overlay does `layer.data = large_array` in callbacks
-- [ ] Current audit:
-  - Video: `layer.data = frame` (optimize in Phase 2)
-  - Events (cumulative): `layer.shown = mask` (efficient, keep)
-  - Others: Use native time dimension (no data reassignment)
-
----
-
-## Phase 6: Verification and Profiling
-
-### 6.1: Create Automated Benchmark Suite
-
-**Tasks**
-
-- [ ] Create `tests/benchmarks/test_napari_playback.py` with pytest-benchmark:
-  ```python
-  @pytest.mark.benchmark
-  def test_playback_position_only(benchmark, env, fields, positions):
-      """Benchmark playback with position overlay."""
-      overlay = PositionOverlay(data=positions, color="red")
-      viewer = env.animate_fields(
-          fields, frame_times=frame_times,
-          backend="napari", overlays=[overlay]
-      )
-      benchmark(lambda: advance_n_frames(viewer, 100))
-  ```
-
-- [ ] Test configurations:
-  - Each overlay type individually
-  - All overlays combined
-  - Different field sizes (100x100, 500x500, 1000x1000)
-  - Different frame counts (100, 1000, 10000)
-
-### 6.2: Performance Targets
-
-| Metric | Target | Acceptable |
-|--------|--------|------------|
-| Per-frame callback total | <5ms | <10ms |
-| Canvas paint time | <10ms | <15ms |
-| Total frame latency | <16ms (60 fps) | <40ms (25 fps) |
-| Frame skip rate at 25 fps | <5% | <15% |
-
-### 6.3: Manual Testing Checklist
-
-- [ ] Playback smooth at 25 fps with all overlays
-- [ ] Scrubbing responsive (no lag when dragging slider)
-- [ ] No memory growth during extended playback
-- [ ] Frame counter updates correctly (not missing frames)
-- [ ] Time series plot updates smoothly (or correctly pauses during playback)
-
----
-
-## Implementation Order
-
-**Recommended sequence**:
-
-1. **Phase 0.1**: Baseline measurement (1-2 hours)
-2. **Phase 1.1**: PlaybackController (2-3 hours)
-3. **Phase 4.1-4.2**: Frame skipping (1-2 hours)
-4. **Phase 2.1-2.2**: Video optimization (2-3 hours)
-5. **Phase 3.1-3.2**: Time series optimization (1-2 hours)
-6. **Phase 5.1-5.2**: Cleanup (1 hour)
-7. **Phase 6.1-6.3**: Verification (1-2 hours)
-
-**Total estimated effort**: 10-15 hours
-
----
-
-## Appendix: perfmon Usage Reference
-
-### Enable perfmon
+**Verify**: Run existing napari animation test
 
 ```bash
-# Simple enable
-NAPARI_PERFMON=1 uv run python script.py
-
-# With config file
-NAPARI_PERFMON=perfmon_config.json uv run python script.py
-```
-
-### Create perfmon config
-
-```json
-{
-    "trace_qt_events": true,
-    "trace_file_on_start": "/tmp/trace.json",
-    "trace_callables": ["my_functions"],
-    "callable_lists": {
-        "my_functions": [
-            "module.Class.method"
-        ]
-    }
-}
-```
-
-### View traces
-
-1. Open Chrome
-2. Navigate to `chrome://tracing`
-3. Click "Load" and select trace JSON file
-4. Use WASD keys to navigate timeline
-
-### Key metrics to watch
-
-- `MetaCall:QObject`: Qt event processing overhead
-- `Paint:CanvasBackendDesktop`: GPU rendering time
-- Custom traced functions: Callback execution time
-
-### Add custom timing in code
-
-```python
-from napari.utils.perf import perf_timer, add_instant_event
-
-# Time a code block
-with perf_timer("my_operation"):
-    do_something()
-
-# Mark an event
-add_instant_event("frame_rendered")
+uv run pytest tests/test_animation.py -k "napari" -v --timeout=30
 ```
 
 ---
 
-## Notes
+### Task 4: Update `render_napari` Docstring
 
-### What NOT to Change
+**File**: `src/neurospatial/animation/backends/napari_backend.py`
 
-The following are already optimized and should not be modified:
+**Location**: In `render_napari` docstring, find the "Enhanced Playback Controls" section (around line 2902)
 
-1. **Skeleton precomputation** (`_build_skeleton_vectors`): Already builds full Vectors layer at init
-2. **Event instant mode**: Already uses native 3D Points format
-3. **Position/Head direction overlays**: Already use Tracks with time dimension
-4. **Field caching**: LRU cache with lazy loading is appropriate for large datasets
+**Replace** the keyboard shortcuts section:
 
-### Future Considerations (Out of Scope)
+```python
+    - **Keyboard shortcuts**:
+        - **Spacebar** - Play/pause animation (toggle)
+        - **← →** Arrow keys - Step forward/backward through frames
+```
 
-- Replace matplotlib with pyqtgraph for time series (major change, minimal benefit vs Phase 3)
-- WebGL-based playback for web deployment
-- Multi-GPU rendering for very large environments
+**With**:
+
+```python
+    - **Keyboard shortcuts**:
+        - **Space** - Play/pause animation
+        - **← / →** - Step one frame backward/forward
+        - **[ / ]** - Decrease/increase playback speed
+        - **Home / End** - Jump to first/last frame
+```
+
+**Verify**: `uv run python -c "from neurospatial.animation.backends.napari_backend import render_napari; help(render_napari)" | head -100`
+
+---
+
+### Task 5: Add Unit Tests for Speed Helpers
+
+**File**: `tests/test_napari_speed_controls.py` (new file)
+
+**Content**:
+
+```python
+"""Tests for napari speed control helpers."""
+
+import pytest
+
+from neurospatial.animation.backends.napari_backend import (
+    MAX_PLAYBACK_FPS,
+    SPEED_PRESET_LABELS,
+    SPEED_PRESETS,
+    _compute_fps_from_speed,
+    _format_speed_label,
+)
+
+
+class TestSpeedPresets:
+    """Tests for speed preset constants."""
+
+    def test_presets_ordered_ascending(self):
+        """Speed presets should be in ascending order."""
+        assert list(SPEED_PRESETS) == sorted(SPEED_PRESETS)
+
+    def test_presets_all_positive(self):
+        """All speed presets should be positive."""
+        assert all(s > 0 for s in SPEED_PRESETS)
+
+    def test_presets_include_realtime(self):
+        """Speed presets should include 1.0 (real-time)."""
+        assert 1.0 in SPEED_PRESETS
+
+    def test_labels_match_presets(self):
+        """All presets should have labels."""
+        for speed in SPEED_PRESETS:
+            assert speed in SPEED_PRESET_LABELS
+
+
+class TestComputeFpsFromSpeed:
+    """Tests for _compute_fps_from_speed function."""
+
+    def test_realtime_30hz(self):
+        """Real-time 30Hz data should give 30 fps (not capped)."""
+        assert _compute_fps_from_speed(1.0, 30.0) == 30
+
+    def test_half_speed_30hz(self):
+        """Half-speed 30Hz data should give 15 fps."""
+        assert _compute_fps_from_speed(0.5, 30.0) == 15
+
+    def test_quarter_speed_30hz(self):
+        """Quarter-speed 30Hz data should give 8 fps (rounded)."""
+        # 30 * 0.25 = 7.5 -> rounds to 8
+        assert _compute_fps_from_speed(0.25, 30.0) == 8
+
+    def test_double_speed_capped(self):
+        """2x speed at 100Hz should be capped at max_playback_fps (60)."""
+        # 100 * 2.0 = 200 -> capped to 60
+        assert _compute_fps_from_speed(2.0, 100.0) == MAX_PLAYBACK_FPS
+
+    def test_high_rate_data_not_capped(self):
+        """500Hz data at 1/16x should give 31 fps (not capped)."""
+        # 500 * 0.0625 = 31.25 -> rounds to 31 (< 60, not capped)
+        assert _compute_fps_from_speed(0.0625, 500.0) == 31
+
+    def test_high_rate_realtime_capped(self):
+        """500Hz data at 1x should be capped at 60 fps."""
+        # 500 * 1.0 = 500 -> capped to 60
+        assert _compute_fps_from_speed(1.0, 500.0) == MAX_PLAYBACK_FPS
+
+    def test_minimum_fps_is_one(self):
+        """Very slow speed should give minimum 1 fps."""
+        assert _compute_fps_from_speed(0.001, 10.0) == 1
+
+    def test_custom_max_fps(self):
+        """Custom max_playback_fps should be respected."""
+        assert _compute_fps_from_speed(1.0, 100.0, max_playback_fps=50) == 50
+
+    def test_zero_speed_raises(self):
+        """Zero speed should raise ValueError."""
+        with pytest.raises(ValueError, match="speed must be positive"):
+            _compute_fps_from_speed(0.0, 30.0)
+
+    def test_negative_speed_raises(self):
+        """Negative speed should raise ValueError."""
+        with pytest.raises(ValueError, match="speed must be positive"):
+            _compute_fps_from_speed(-1.0, 30.0)
+
+    def test_zero_sample_rate_raises(self):
+        """Zero sample rate should raise ValueError."""
+        with pytest.raises(ValueError, match="sample_rate_hz must be positive"):
+            _compute_fps_from_speed(1.0, 0.0)
+
+    def test_negative_sample_rate_raises(self):
+        """Negative sample rate should raise ValueError."""
+        with pytest.raises(ValueError, match="sample_rate_hz must be positive"):
+            _compute_fps_from_speed(1.0, -30.0)
+
+
+class TestFormatSpeedLabel:
+    """Tests for _format_speed_label function."""
+
+    def test_known_preset_format(self):
+        """Known presets should use fractional notation."""
+        assert _format_speed_label(0.25, 8) == "1/4x (≈8 fps)"
+        assert _format_speed_label(1.0, 25) == "1x (≈25 fps)"
+        assert _format_speed_label(2.0, 25) == "2x (≈25 fps)"
+
+    def test_unknown_speed_format(self):
+        """Unknown speeds should use decimal notation."""
+        assert _format_speed_label(0.33, 10) == "0.33x (≈10 fps)"
+```
+
+**Verify**: `uv run pytest tests/test_napari_speed_controls.py -v`
+
+---
+
+### Task 6: Add Integration Tests
+
+**File**: `tests/test_napari_speed_controls.py` (append to file)
+
+**Append**:
+
+```python
+@pytest.mark.slow
+class TestSpeedControlIntegration:
+    """Integration tests requiring napari viewer (marked slow)."""
+
+    @pytest.fixture
+    def sample_env_and_fields(self):
+        """Create sample environment and fields for testing."""
+        import numpy as np
+        from neurospatial import Environment
+
+        positions = np.random.rand(50, 2) * 100
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = np.random.rand(20, env.n_bins)
+        return env, fields
+
+    def test_speed_dropdown_changes_fps(self, sample_env_and_fields, qtbot):
+        """Changing speed dropdown should update napari playback fps."""
+        pytest.importorskip("napari")
+        from napari.settings import get_settings
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        env, fields = sample_env_and_fields
+
+        viewer = render_napari(
+            env,
+            fields,
+            speed=1.0,
+            sample_rate_hz=30.0,
+        )
+        qtbot.addWidget(viewer.window._qt_window)
+
+        try:
+            settings = get_settings()
+            initial_fps = settings.application.playback_fps
+
+            # At 1x speed with 30Hz data, expect 30 fps (not capped, 30 < 60)
+            assert initial_fps == 30
+        finally:
+            viewer.close()
+
+    def test_keyboard_shortcuts_bound(self, sample_env_and_fields, qtbot):
+        """Keyboard shortcuts should be bound to viewer."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        env, fields = sample_env_and_fields
+
+        viewer = render_napari(env, fields)
+        qtbot.addWidget(viewer.window._qt_window)
+
+        try:
+            # Check that our shortcuts are bound
+            # Note: viewer.keymap.keys() returns KeyBinding objects, convert to strings
+            bound_keys = {str(k) for k in viewer.keymap.keys()}
+            expected_keys = {"Space", "Left", "Right", "[", "]", "Home", "End"}
+            assert expected_keys.issubset(bound_keys)
+        finally:
+            viewer.close()
+
+    def test_arrow_keys_respect_boundaries(self, sample_env_and_fields, qtbot):
+        """Arrow keys should respect frame boundaries."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        env, fields = sample_env_and_fields
+
+        viewer = render_napari(env, fields)
+        qtbot.addWidget(viewer.window._qt_window)
+
+        try:
+            # Start at frame 0
+            assert viewer.dims.current_step[0] == 0
+
+            # Left at frame 0 should stay at 0 (boundary check)
+            current = viewer.dims.current_step[0]
+            if current > 0:
+                viewer.dims.set_current_step(0, current - 1)
+            assert viewer.dims.current_step[0] == 0
+
+            # Step forward works
+            viewer.dims.set_current_step(0, 5)
+            assert viewer.dims.current_step[0] == 5
+        finally:
+            viewer.close()
+
+    def test_home_end_jump_to_boundaries(self, sample_env_and_fields, qtbot):
+        """Home/End should jump to first/last frame."""
+        pytest.importorskip("napari")
+
+        from neurospatial.animation.backends.napari_backend import render_napari
+
+        env, fields = sample_env_and_fields
+
+        viewer = render_napari(env, fields)
+        qtbot.addWidget(viewer.window._qt_window)
+
+        try:
+            n_frames = fields.shape[0]
+
+            # Jump to middle
+            viewer.dims.set_current_step(0, 10)
+            assert viewer.dims.current_step[0] == 10
+
+            # Home jumps to start
+            viewer.dims.set_current_step(0, 0)
+            assert viewer.dims.current_step[0] == 0
+
+            # End jumps to last frame
+            max_frame = int(viewer.dims.range[0][2]) - 1
+            viewer.dims.set_current_step(0, max_frame)
+            assert viewer.dims.current_step[0] == n_frames - 1
+        finally:
+            viewer.close()
+
+```
+
+**Verify**: `uv run pytest tests/test_napari_speed_controls.py -v --timeout=60`
+
+---
+
+## Verification Checklist
+
+After all tasks complete:
+
+1. **Unit tests pass**:
+
+   ```bash
+   uv run pytest tests/test_napari_speed_controls.py -v
+   ```
+
+2. **Existing napari tests pass**:
+
+   ```bash
+   uv run pytest tests/test_animation.py -k "napari" -v --timeout=60
+   ```
+
+3. **Type checking passes**:
+
+   ```bash
+   uv run mypy src/neurospatial/animation/backends/napari_backend.py
+   ```
+
+4. **Linting passes**:
+
+   ```bash
+   uv run ruff check src/neurospatial/animation/backends/napari_backend.py
+   ```
+
+5. **Manual verification** (interactive):
+
+   ```python
+   import numpy as np
+   from neurospatial import Environment
+
+   # Create test data
+   positions = np.random.rand(100, 2) * 100
+   env = Environment.from_samples(positions, bin_size=5.0)
+   fields = np.random.rand(100, env.n_bins)
+   frame_times = np.arange(100) / 30.0  # 30 Hz
+
+   # Launch viewer
+   env.animate_fields(fields, frame_times=frame_times, backend="napari")
+
+   # Verify:
+   # - [ ] Speed dropdown appears with options 1/16x to 4x
+   # - [ ] Dropdown label shows "Speed ([ ] keys)" for discoverability
+   # - [ ] Changing dropdown updates playback speed
+   # - [ ] Space toggles play/pause
+   # - [ ] Left/Right arrows step frames
+   # - [ ] [ and ] change speed (dropdown updates)
+   # - [ ] Pressing [ at 1/16x shows status "Already at slowest speed"
+   # - [ ] Pressing ] at 4x shows status "Already at fastest speed"
+   # - [ ] Home/End jump to start/end
+   # - [ ] Playback stops at last frame (no loop)
+   # - [ ] Pause at frame 50, press Space -> resumes at 51
+   ```
+
+6. **High sample rate verification** (500 Hz data):
+
+   ```python
+   import numpy as np
+   from neurospatial import Environment
+
+   # Simulate 500 Hz replay data
+   positions = np.random.rand(100, 2) * 100
+   env = Environment.from_samples(positions, bin_size=5.0)
+   fields = np.random.rand(1000, env.n_bins)  # 2 seconds at 500 Hz
+   frame_times = np.arange(1000) / 500.0
+
+   env.animate_fields(fields, frame_times=frame_times, backend="napari")
+
+   # Verify:
+   # - [ ] 1/16x shows "1/16x (≈31 fps)" - 500 * 0.0625 = 31.25
+   # - [ ] 1x shows "1x (≈60 fps)" - capped at MAX_PLAYBACK_FPS
+   # - [ ] Playback is smooth (no Qt event loop stalls from ComboBox)
+   # - [ ] Changing speed via dropdown or [ ] keys works smoothly
+   ```
+
+   **Important**: The previous FPS slider was replaced due to Qt event loop
+   issues with FloatSlider at high sample rates. The ComboBox (dropdown)
+   with discrete values should not have this problem, but verify playback
+   doesn't stall when changing speeds.
+
+---
+
+## Rollback
+
+If issues arise, revert to the FPS slider implementation:
+
+```bash
+git checkout HEAD~1 -- src/neurospatial/animation/backends/napari_backend.py
+```
