@@ -621,20 +621,23 @@ def circular_circular_correlation(
     """
     Circular-circular correlation coefficient.
 
-    Computes the Fisher & Lee correlation coefficient between two
-    circular variables.
+    Computes the Fisher & Lee (1983) circular correlation coefficient
+    between two circular variables.
 
     Parameters
     ----------
     angles1, angles2 : array, shape (n,)
         Paired circular measurements.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of input angles.
+        Unit of input angles (applies to both arrays).
 
     Returns
     -------
     r : float
-        Correlation coefficient in [-1, 1].
+        Circular correlation coefficient in [-1, 1].
+        - r > 0: positive association (angles increase together)
+        - r < 0: negative association (angles move in opposite directions)
+        - r = 0: no circular correlation
     pval : float
         P-value from normal approximation.
 
@@ -649,7 +652,22 @@ def circular_circular_correlation(
 
     Notes
     -----
-    The correlation is symmetric: r(a1, a2) == r(a2, a1).
+    **Formula** (Fisher & Lee, 1983; Jammalamadaka & SenGupta, 2001, p. 176):
+
+        rho = sum(sin(a1 - mean1) * sin(a2 - mean2)) /
+              sqrt(sum(sin(a1 - mean1)^2) * sum(sin(a2 - mean2)^2))
+
+    **Interpretation**:
+
+    - |r| > 0.3: Moderate association
+    - |r| > 0.5: Strong association
+
+    **Important Properties**:
+
+    - Symmetric: r(a1, a2) == r(a2, a1)
+    - Invariant to constant offsets: r(a, a + c) = 1.0 for any constant c
+      (because deviations from circular means remain identical)
+    - Anticorrelation requires reflection: r(a, -a) approaches -1.0
 
     Examples
     --------
@@ -660,8 +678,76 @@ def circular_circular_correlation(
     >>> r, p = circular_circular_correlation(angles1, angles2)
     >>> r > 0.8
     True
+
+    References
+    ----------
+    Fisher, N.I. & Lee, A.J. (1983). A correlation coefficient for circular data.
+        Biometrika, 70(2), 327-332.
+    Jammalamadaka, S.R. & SenGupta, A. (2001). Topics in Circular Statistics.
+        World Scientific, p. 176.
     """
-    raise NotImplementedError("circular_circular_correlation not yet implemented")
+    from scipy import stats
+
+    # Convert to radians if needed
+    angles1 = np.asarray(angles1, dtype=np.float64)
+    angles2 = np.asarray(angles2, dtype=np.float64)
+    angles1 = _to_radians(angles1, angle_unit)
+    angles2 = _to_radians(angles2, angle_unit)
+
+    # Validate paired inputs (handles NaN removal and length check)
+    angles1, angles2 = _validate_paired_input(
+        angles1, angles2, "angles1", "angles2", min_samples=5
+    )
+
+    n = len(angles1)
+
+    # Compute circular means using scipy
+    alpha_bar = float(stats.circmean(angles1, high=2 * np.pi, low=0))
+    beta_bar = float(stats.circmean(angles2, high=2 * np.pi, low=0))
+
+    # Compute deviations from circular mean
+    sin_dev1 = np.sin(angles1 - alpha_bar)
+    sin_dev2 = np.sin(angles2 - beta_bar)
+
+    # Compute correlation coefficient (Fisher & Lee formula)
+    num = np.sum(sin_dev1 * sin_dev2)
+    den = np.sqrt(np.sum(sin_dev1**2) * np.sum(sin_dev2**2))
+
+    if den == 0:
+        # Degenerate case: no variation in one or both variables
+        warnings.warn(
+            "No variation in one or both circular variables. "
+            "This may indicate constant angles. Returning r=0.",
+            stacklevel=2,
+        )
+        return 0.0, 1.0
+
+    rho = num / den
+
+    # Clip to valid range (numerical stability)
+    rho = float(np.clip(rho, -1.0, 1.0))
+
+    # Significance test (normal approximation)
+    # From Jammalamadaka & SenGupta (2001), p. 177
+    l20 = np.mean(sin_dev1**2)
+    l02 = np.mean(sin_dev2**2)
+    l22 = np.mean(sin_dev1**2 * sin_dev2**2)
+
+    if l22 == 0:
+        warnings.warn(
+            "Cannot compute p-value: variance product is zero. Returning p=1.0.",
+            stacklevel=2,
+        )
+        return rho, 1.0
+
+    # Test statistic follows standard normal under null hypothesis
+    ts = np.sqrt((n * l20 * l02) / l22) * rho
+    pval = float(2 * (1 - stats.norm.cdf(np.abs(ts))))
+
+    # Ensure p-value is in valid range
+    pval = float(np.clip(pval, 0.0, 1.0))
+
+    return rho, pval
 
 
 @dataclass

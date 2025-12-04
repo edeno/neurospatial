@@ -472,3 +472,175 @@ class TestPhasePositionCorrelation:
         r, p = phase_position_correlation(phases_deg, positions, angle_unit="deg")
         assert 0 <= r <= 1
         assert 0 <= p <= 1
+
+
+class TestCircularCircularCorrelation:
+    """Tests for circular_circular_correlation() function."""
+
+    def test_perfect_correlation_identical_angles(self) -> None:
+        """Identical angles should give r close to 1.0."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles = rng.uniform(0, 2 * np.pi, 100)
+
+        r, p = circular_circular_correlation(angles, angles)
+        assert r > 0.99, f"Expected r > 0.99 for identical angles, got r={r}"
+        assert p < 0.001, f"Expected p < 0.001, got p={p}"
+
+    def test_perfect_correlation_with_small_noise(self) -> None:
+        """Nearly identical angles (with small noise) should give high r."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = rng.uniform(0, 2 * np.pi, 100)
+        # Add small noise
+        noise = rng.normal(0, 0.1, 100)
+        angles2 = angles1 + noise
+
+        r, p = circular_circular_correlation(angles1, angles2)
+        assert r > 0.8, f"Expected r > 0.8 for nearly identical angles, got r={r}"
+        assert p < 0.001, f"Expected p < 0.001, got p={p}"
+
+    def test_random_data_low_correlation(self) -> None:
+        """Random uncorrelated angles should give r near 0."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = rng.uniform(0, 2 * np.pi, 100)
+        angles2 = rng.uniform(0, 2 * np.pi, 100)
+
+        r, _p = circular_circular_correlation(angles1, angles2)
+        # Random data - expect low correlation
+        assert abs(r) < 0.3, f"Expected |r| < 0.3 for random data, got r={r}"
+
+    def test_anticorrelation(self) -> None:
+        """Opposite angles should give negative r."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = rng.uniform(0, 2 * np.pi, 100)
+        # Opposite direction: angles2 = -angles1 (mod 2pi)
+        angles2 = (2 * np.pi - angles1) % (2 * np.pi)
+
+        r, _p = circular_circular_correlation(angles1, angles2)
+        # Should be negative (anti-correlated)
+        assert r < -0.5, f"Expected r < -0.5 for opposite angles, got r={r}"
+
+    def test_symmetry(self) -> None:
+        """Correlation should be symmetric: r(a1, a2) == r(a2, a1)."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = rng.uniform(0, 2 * np.pi, 50)
+        angles2 = rng.uniform(0, 2 * np.pi, 50)
+
+        r12, p12 = circular_circular_correlation(angles1, angles2)
+        r21, p21 = circular_circular_correlation(angles2, angles1)
+
+        assert_allclose(r12, r21, rtol=1e-10)
+        assert_allclose(p12, p21, rtol=1e-10)
+
+    def test_correlation_in_valid_range(self) -> None:
+        """Correlation r should be in [-1, 1]."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            angles1 = rng.uniform(0, 2 * np.pi, 50)
+            angles2 = rng.uniform(0, 2 * np.pi, 50)
+            r, _p = circular_circular_correlation(angles1, angles2)
+            assert -1 <= r <= 1, f"Expected r in [-1, 1], got r={r}"
+
+    def test_pvalue_in_valid_range(self) -> None:
+        """P-value should be in [0, 1]."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            angles1 = rng.uniform(0, 2 * np.pi, 50)
+            angles2 = rng.uniform(0, 2 * np.pi, 50)
+            _r, p = circular_circular_correlation(angles1, angles2)
+            assert 0 <= p <= 1, f"Expected p in [0, 1], got p={p}"
+
+    def test_degrees_input(self) -> None:
+        """Should handle degree input correctly."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1_rad = rng.uniform(0, 2 * np.pi, 50)
+        angles2_rad = angles1_rad + rng.normal(0, 0.2, 50)
+        angles1_deg = np.degrees(angles1_rad)
+        angles2_deg = np.degrees(angles2_rad)
+
+        r_rad, p_rad = circular_circular_correlation(
+            angles1_rad, angles2_rad, angle_unit="rad"
+        )
+        r_deg, p_deg = circular_circular_correlation(
+            angles1_deg, angles2_deg, angle_unit="deg"
+        )
+
+        assert_allclose(r_rad, r_deg, rtol=1e-10)
+        assert_allclose(p_rad, p_deg, rtol=1e-10)
+
+    def test_mismatched_lengths_raises(self) -> None:
+        """Mismatched array lengths should raise ValueError."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        angles1 = np.array([0.0, 0.5, 1.0])
+        angles2 = np.array([0.0, 0.5])
+
+        with pytest.raises(ValueError, match="same length"):
+            circular_circular_correlation(angles1, angles2)
+
+    def test_insufficient_samples_raises(self) -> None:
+        """Too few samples should raise ValueError."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        angles1 = np.array([0.0, 0.5])
+        angles2 = np.array([0.0, 0.5])
+
+        with pytest.raises(ValueError, match="at least"):
+            circular_circular_correlation(angles1, angles2)
+
+    def test_degenerate_case_no_variation(self) -> None:
+        """No variation in angles should return r=0 with warning."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        # All angles the same
+        angles1 = np.ones(50) * np.pi
+        angles2 = np.ones(50) * np.pi
+
+        with pytest.warns(UserWarning, match="[Nn]o variation|constant"):
+            r, p = circular_circular_correlation(angles1, angles2)
+        assert r == 0.0
+        assert p == 1.0
+
+    def test_nan_handling(self) -> None:
+        """NaN values should be removed with warning."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = np.concatenate([rng.uniform(0, 2 * np.pi, 48), [np.nan, np.nan]])
+        angles2 = rng.uniform(0, 2 * np.pi, 50)
+
+        with pytest.warns(UserWarning, match="[Rr]emoved.*pairs"):
+            r, p = circular_circular_correlation(angles1, angles2)
+        # Should still work with remaining valid pairs
+        assert -1 <= r <= 1
+        assert 0 <= p <= 1
+
+    def test_constant_offset(self) -> None:
+        """Constant phase offset should still show high correlation."""
+        from neurospatial.metrics import circular_circular_correlation
+
+        rng = np.random.default_rng(42)
+        angles1 = rng.uniform(0, 2 * np.pi, 100)
+        # Add constant offset (pi/4)
+        angles2 = (angles1 + np.pi / 4) % (2 * np.pi)
+
+        r, p = circular_circular_correlation(angles1, angles2)
+        # Should still be highly correlated (just shifted)
+        # Fisher & Lee measures deviation correlation, not raw angle correlation
+        assert r > 0.9, f"Expected r > 0.9 for constant offset, got r={r}"
+        assert p < 0.001, f"Expected p < 0.001, got p={p}"

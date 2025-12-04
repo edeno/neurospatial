@@ -77,7 +77,7 @@
 
 ### 1.4 Circular-Circular Correlation
 
-- [ ] **Implement `circular_circular_correlation()`**
+- [x] **Implement `circular_circular_correlation()`**
   - Parameters: `angles1`, `angles2`, `angle_unit='rad'`
   - Validate paired inputs
   - Compute circular means using `scipy.stats.circmean`

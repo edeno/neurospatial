@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 1.1 complete
+**Current Status:** Milestone 1 complete (core circular statistics)
 
 ---
 
@@ -62,8 +62,26 @@
 3. Correlation is always non-negative (measures strength, not direction)
 
 **Next Steps:**
-- Implement `circular_circular_correlation()` (Milestone 1.4)
+- Implement `PhasePrecessionResult` dataclass (Milestone 2.1)
 - Write tests first (TDD)
+
+### 2025-12-03: Circular-Circular Correlation Implementation
+
+**Completed:**
+- Implemented `circular_circular_correlation()` using Fisher & Lee (1983) formula:
+  - rho = sum(sin(a1-mean1) * sin(a2-mean2)) / sqrt(sum(sin(a1-mean1)^2) * sum(sin(a2-mean2)^2))
+  - Uses scipy.stats.circmean for circular means
+  - P-value from normal approximation (Jammalamadaka & SenGupta, 2001, p. 177)
+- Added 13 tests for circular_circular_correlation
+- All 52 tests passing, ruff and mypy clean
+- Exported from `neurospatial.metrics`
+
+**Design Decisions:**
+1. Fisher & Lee formula is invariant to constant offsets (r(a, a+c) = 1.0)
+   This is mathematically correct since deviations from circular means are unchanged.
+2. Anticorrelation requires reflection (-angles), not just opposite direction.
+3. Minimum 5 samples required (same as circular_linear_correlation).
+4. Degenerate cases handled (no variation → r=0, p=1.0 with warning).
 
 ---
 
