@@ -109,8 +109,33 @@
    documented in comments.
 
 **Next Steps:**
-- Implement `plot_phase_precession()` (Milestone 2.3)
+
+- Implement head direction module (Milestone 3)
 - Write tests first (TDD)
+
+### 2025-12-04: Phase Precession Visualization Implementation
+
+**Completed:**
+
+- Implemented `plot_phase_precession()` with:
+  - Doubled phase axis (0-4π) following O'Keefe & Recce convention
+  - Each point appears twice (at phase and phase + 2π)
+  - Fitted lines drawn in both phase regions when result provided
+  - Y-axis with π labels (0, π, 2π, 3π, 4π)
+  - Optional annotation explaining doubled convention
+  - Customizable markers, colors, and kwargs
+  - Input validation for mismatched array lengths
+- Added 17 tests covering all functionality
+- Exported `plot_phase_precession` from `neurospatial.metrics`
+- All 94 circular statistics tests passing, ruff and mypy clean
+
+**Design Decisions:**
+
+1. Used scatter plot with doubled data rather than two separate scatter calls
+   for consistent styling and simpler code.
+2. Fitted lines also doubled (in both 0-2π and 2π-4π regions) to match data.
+3. Added length validation with clear error message (not just matplotlib's cryptic error).
+4. Default annotation explains the doubling convention to help new users.
 
 ---
 

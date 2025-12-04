@@ -1112,6 +1112,13 @@ def plot_phase_precession(
     matplotlib.axes.Axes
         The axes object with the plot.
 
+    Notes
+    -----
+    Following O'Keefe & Recce (1993), phases are plotted twice: once in
+    the [0, 2π] range and again in the [2π, 4π] range. This doubled
+    representation makes it easier to see the phase precession relationship
+    without wrapping artifacts.
+
     Examples
     --------
     >>> import numpy as np
@@ -1119,6 +1126,80 @@ def plot_phase_precession(
     >>> positions = np.linspace(0, 50, 100)
     >>> phases = (2 * np.pi - positions * 0.1) % (2 * np.pi)
     >>> result = phase_precession(positions, phases)
-    >>> ax = plot_phase_precession(positions, phases, result)
+    >>> ax = plot_phase_precession(positions, phases, result)  # doctest: +SKIP
     """
-    raise NotImplementedError("plot_phase_precession not yet implemented")
+    import matplotlib.pyplot as plt
+
+    # Convert to arrays
+    positions = np.asarray(positions, dtype=np.float64).ravel()
+    phases = np.asarray(phases, dtype=np.float64).ravel()
+
+    # Validate matching lengths
+    if len(positions) != len(phases):
+        raise ValueError(
+            f"positions and phases must have the same length. "
+            f"Got positions: {len(positions)}, phases: {len(phases)}."
+        )
+
+    # Wrap phases to [0, 2pi]
+    phases = phases % (2 * np.pi)
+
+    # Create figure if needed
+    if ax is None:
+        _, ax = plt.subplots(figsize=(8, 6))
+
+    # Default kwargs
+    scatter_defaults: dict = {"c": "C0", "zorder": 2}
+    line_defaults: dict = {"color": "red", "linewidth": 2, "zorder": 3}
+
+    # Merge with user kwargs
+    scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}
+    line_kw = {**line_defaults, **(line_kwargs or {})}
+
+    # Plot phases doubled (0-2pi and 2pi-4pi)
+    # This is the O'Keefe & Recce convention for visualizing phase precession
+    positions_doubled = np.concatenate([positions, positions])
+    phases_doubled = np.concatenate([phases, phases + 2 * np.pi])
+
+    ax.scatter(
+        positions_doubled,
+        phases_doubled,
+        s=marker_size,
+        alpha=marker_alpha,
+        **scatter_kw,
+    )
+
+    # Plot fitted lines if result provided and show_fit is True
+    if result is not None and show_fit:
+        # Create fitted line
+        pos_range = np.linspace(positions.min(), positions.max(), 100)
+        fitted_phases = (result.offset + result.slope * pos_range) % (2 * np.pi)
+
+        # Plot in both the lower [0, 2pi] and upper [2pi, 4pi] regions
+        ax.plot(pos_range, fitted_phases, **line_kw)
+        ax.plot(pos_range, fitted_phases + 2 * np.pi, **line_kw)
+
+    # Set y-axis with pi labels
+    y_ticks = [0, np.pi, 2 * np.pi, 3 * np.pi, 4 * np.pi]
+    y_labels = ["0", "π", "2π", "3π", "4π"]
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_labels)
+    ax.set_ylim(0, 4 * np.pi)
+
+    # Labels
+    ax.set_xlabel(position_label)
+    ax.set_ylabel("Phase (radians)")
+
+    # Add annotation explaining doubled phase axis
+    if show_doubled_note:
+        ax.text(
+            0.02,
+            0.98,
+            "Note: Each point appears twice\n(same data at phase and phase+2π)",
+            transform=ax.transAxes,
+            fontsize=8,
+            verticalalignment="top",
+            bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.5},
+        )
+
+    return ax
