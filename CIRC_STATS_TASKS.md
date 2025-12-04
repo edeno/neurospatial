@@ -150,7 +150,7 @@
 
 ### 3.2 Head Direction Tuning Curve
 
-- [ ] **Implement `head_direction_tuning_curve()`**
+- [x] **Implement `head_direction_tuning_curve()`**
   - Parameters: `head_directions`, `spike_times`, `position_times`, `bin_size=6.0`, `angle_unit='deg'`, `smoothing_window=5`
   - Convert to radians if needed
   - Validate: length match, minimum samples, spike count, monotonic timestamps

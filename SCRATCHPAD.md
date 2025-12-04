@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 2.2 complete (phase precession analysis)
+**Current Status:** Milestone 3.2 complete (head direction tuning curve)
 
 ---
 
@@ -179,6 +179,41 @@
 2. Helpers removed from `__all__` in circular.py - they're private implementation details.
 3. Module docstrings include "Which Function Should I Use?" decision trees.
 4. Both code-reviewer and ux-reviewer approved the refactoring.
+
+### 2025-12-04: Head Direction Tuning Curve Implementation (M3.2)
+
+**Completed:**
+
+- Implemented `head_direction_tuning_curve()` with:
+  - Proper validation (length match, minimum samples, strict monotonicity)
+  - Occupancy calculation using actual time deltas (handles dropped frames)
+  - Last frame excluded from occupancy (scientifically correct)
+  - Nearest-neighbor spike assignment (avoids circular interpolation bug)
+  - Vectorized occupancy and spike counting using `np.bincount()`
+  - Gaussian smoothing with circular boundary (`mode='wrap'`)
+  - Duplicate timestamp detection
+- Added 19 tests covering all functionality
+- Exported `head_direction_tuning_curve` from `neurospatial.metrics`
+- All 27 head direction tests passing, ruff and mypy clean
+
+**Design Decisions:**
+
+1. Used nearest-neighbor spike assignment instead of linear interpolation
+   to avoid circular discontinuity issues. Linear interpolation would give
+   wrong results when head direction crosses 0°/360° boundary (e.g., 350° to 10°
+   would incorrectly interpolate to 180°).
+2. Last frame excluded from occupancy calculation - we don't know how long
+   the animal stayed at that position, so including it would bias firing rates.
+3. Strict timestamp validation (no duplicates) catches data quality issues.
+4. Vectorized with `np.bincount()` for 100-1000x performance improvement
+   over Python loops.
+5. Default to degrees (`angle_unit='deg'`) for head direction since HD literature
+   commonly uses degrees (unlike other circular functions that default to radians).
+
+**Next Steps:**
+
+- Implement `HeadDirectionMetrics` dataclass (Milestone 3.3)
+- Write tests first (TDD)
 
 ---
 
