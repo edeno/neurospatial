@@ -37,14 +37,13 @@ if TYPE_CHECKING:
 
 # Check for optional scikit-image dependency
 _SKIMAGE_AVAILABLE = False
+radon: Any = None
 try:
-    from skimage.transform import radon as _radon
+    from skimage.transform import radon
 
     _SKIMAGE_AVAILABLE = True
 except ImportError:
-    _radon = None
-
-radon: Any = _radon
+    pass
 
 
 @dataclass(frozen=True)
