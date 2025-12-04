@@ -22,20 +22,13 @@ repos:
       - id: ruff-format
         exclude: '^docs/examples/.*\.(ipynb|py)$'
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - numpy
-          - pandas
-          - matplotlib
-          - networkx
-          - scipy
-          - scikit-learn
-          - shapely
-          - ipython
-          - magicgui
-          - qtpy
-        args: [--ignore-missing-imports, --warn-unused-ignores]
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
         exclude: '^(docs/examples/.*\.py|examples/.*\.py|tests/.*|src/neurospatial/annotation/.*|benchmarks/.*)$'
+        pass_filenames: false
+        args: [src/neurospatial]
