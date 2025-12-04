@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Completed**: M0, M1, M2, M3
-**Next**: M4 - Tests (remaining tests for M4.1-M4.3), M5 - Integration
+**Completed**: M0, M1, M2, M3, M4, M5
+**Status**: All milestones complete! Feature complete for circular basis functions.
 
 ## Completed Tasks
 
@@ -61,14 +61,25 @@
 - [x] Code review passed with approval
 - [x] All 101 circular tests pass, ruff and mypy clean
 
-## Next Steps
+### M4 & M5: Tests and Integration ✓
 
-1. Complete M4 (remaining tests for TestCircularBasis, TestCircularBasisMetrics, TestIsModulated - may already exist)
-2. Complete M5: Integration verification
+- [x] All test classes existed from M1/M2 (TestCircularBasis, TestCircularBasisMetrics, TestIsModulated)
+- [x] Added TestPlotCircularBasisTuning (12 tests) in M3
+- [x] All 101 circular tests passing
+- [x] All exports working from `neurospatial.metrics`
+- [x] mypy and ruff clean
+
+### Documentation Enhancement (M5.6) ✓
+
+- [x] Enhanced module docstring with "GLM-based circular regression" guidance
+- [x] Listed multi-domain use cases: head direction, theta phase, running direction, circadian
+- [x] Enhanced `circular_basis()` docstring with domain examples and GLM vs binned comparison
+- [x] Enhanced `plot_circular_basis_tuning()` docstring with domain examples
+- [x] Added cross-references between functions
 
 ## Blockers
 
-None currently.
+None - all milestones complete!
 
 ## Notes
 

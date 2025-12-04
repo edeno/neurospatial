@@ -22,6 +22,18 @@ Which Function Should I Use?
     ``phase_precession()``, ``has_phase_precession()``, and
     ``plot_phase_precession()``.
 
+**GLM-based circular regression?**
+    Use ``circular_basis()`` to create design matrix [cos(φ), sin(φ)].
+    Fit with statsmodels/scikit-learn, then interpret with ``circular_basis_metrics()``.
+    Visualize with ``plot_circular_basis_tuning()``.
+
+    Works for any circular variable:
+
+    - **Head direction** tuning (GLM alternative to binned tuning curves)
+    - **Theta phase** modulation (spike-field coherence, phase precession)
+    - **Running direction** preference
+    - **Time-of-day** effects (circadian rhythms)
+
 Angle Units
 -----------
 All functions accept an ``angle_unit`` parameter: ``'rad'`` (default) or ``'deg'``.
@@ -49,11 +61,42 @@ Common Use Cases
 
 >>> r, p = circular_circular_correlation(angles1, angles2)  # doctest: +SKIP
 
+**GLM circular tuning (head direction or theta phase)**:
+
+>>> # 1. Create design matrix from circular variable
+>>> result = circular_basis(head_directions)  # or: circular_basis(theta_phases)
+>>> X = result.design_matrix  # shape (n_spikes, 2): [cos, sin]
+>>>
+>>> # 2. Fit GLM (statsmodels example)
+>>> import statsmodels.api as sm  # doctest: +SKIP
+>>> X_with_intercept = sm.add_constant(X)  # doctest: +SKIP
+>>> model = sm.GLM(
+...     spike_counts, X_with_intercept, family=sm.families.Poisson()
+... ).fit()  # doctest: +SKIP
+>>>
+>>> # 3. Extract and interpret coefficients
+>>> beta_sin, beta_cos = model.params[1], model.params[2]  # doctest: +SKIP
+>>> cov = model.cov_params()[1:3, 1:3]  # doctest: +SKIP
+>>> amplitude, phase, pval = circular_basis_metrics(
+...     beta_sin, beta_cos, cov
+... )  # doctest: +SKIP
+>>>
+>>> # 4. Quick significance check
+>>> if is_modulated(beta_sin, beta_cos, cov):  # doctest: +SKIP
+...     print(f"Significant modulation: {amplitude:.2f} at {np.degrees(phase):.0f}°")
+>>>
+>>> # 5. Visualize
+>>> plot_circular_basis_tuning(
+...     beta_sin, beta_cos, intercept=model.params[0]
+... )  # doctest: +SKIP
+
 References
 ----------
 Mardia, K.V. & Jupp, P.E. (2000). Directional Statistics. Wiley.
 Jammalamadaka, S.R. & SenGupta, A. (2001). Topics in Circular Statistics.
     World Scientific.
+Kramer, M.A. & Eden, U.T. (2016). Case Studies in Neural Data Analysis. MIT Press.
+    Chapter 11: Point Process Models of Spike-Field Coherence.
 """
 
 from __future__ import annotations
@@ -398,14 +441,22 @@ def circular_basis(
     Parameters
     ----------
     angles : array, shape (n_samples,)
-        Circular variable (e.g., head direction, LFP phase).
+        Circular variable. Common use cases:
+
+        - **Head direction**: Animal's facing direction (typically in degrees)
+        - **Theta phase**: LFP phase at spike times (0 to 2π radians)
+        - **Running direction**: Direction of movement
+        - **Time of day**: Circadian phase
+
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of input angles.
+        Unit of input angles. Use ``'deg'`` for head direction data that
+        is typically recorded in degrees.
 
     Returns
     -------
     CircularBasisResult
         Result object containing:
+
         - sin_component: sin(angles)
         - cos_component: cos(angles)
         - angles: original angles (in radians)
@@ -414,40 +465,54 @@ def circular_basis(
     See Also
     --------
     circular_basis_metrics : Compute amplitude/phase from GLM coefficients.
+    is_modulated : Quick significance test for circular modulation.
+    plot_circular_basis_tuning : Visualize fitted tuning curve.
+    head_direction_tuning_curve : Non-parametric binned tuning curve.
 
     Notes
     -----
     **Why sin/cos basis?**
 
-    For a circular predictor theta, using sin(theta) and cos(theta) as separate
+    For a circular predictor θ, using sin(θ) and cos(θ) as separate
     predictors allows the model to capture any phase and amplitude of circular
-    modulation. The fitted coefficients (beta_sin, beta_cos) can be converted to:
+    modulation. The fitted coefficients (β_sin, β_cos) can be converted to:
 
-    - Amplitude: sqrt(beta_sin^2 + beta_cos^2)
-    - Phase: atan2(beta_sin, beta_cos)
+    - Amplitude: sqrt(β_sin² + β_cos²) — modulation strength
+    - Phase: atan2(β_sin, β_cos) — preferred direction/phase
+
+    **GLM vs. Binned Tuning Curves**:
+
+    - **Binned** (``head_direction_tuning_curve``): Non-parametric, intuitive,
+      good for visualization. Requires many spikes per bin.
+    - **GLM** (``circular_basis``): Parametric, statistically rigorous, can
+      include covariates. Better for low spike counts.
 
     **GLM Workflow**:
 
     1. Create design matrix: ``X = circular_basis(angles).design_matrix``
     2. Fit GLM: ``model.fit(X, y)``
-    3. Get metrics: ``amplitude, phase, pval = circular_basis_metrics(
-           beta_sin, beta_cos, cov_matrix)``
+    3. Get metrics: ``amplitude, phase, pval = circular_basis_metrics(...)``
+    4. Visualize: ``plot_circular_basis_tuning(beta_sin, beta_cos, ...)``
 
     Examples
     --------
+    **Head direction tuning (GLM approach)**:
+
     >>> import numpy as np
     >>> from neurospatial.metrics import circular_basis
-    >>> # Create basis for head direction
-    >>> angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
-    >>> result = circular_basis(angles)
+    >>> # Head direction at each spike (in degrees)
+    >>> hd_at_spikes = np.array([45, 50, 48, 52, 180, 185, 170])  # degrees
+    >>> result = circular_basis(hd_at_spikes, angle_unit="deg")
     >>> result.design_matrix.shape
-    (100, 2)
+    (7, 2)
 
-    >>> # Use with statsmodels GLM
-    >>> # X = result.design_matrix
-    >>> # model = sm.GLM(y, sm.add_constant(X), family=sm.families.Poisson())
-    >>> # fit = model.fit()
-    >>> # beta_sin, beta_cos = fit.params[1:3]
+    **Theta phase modulation**:
+
+    >>> # LFP phase at each spike (in radians)
+    >>> theta_phases = np.random.uniform(0, 2 * np.pi, 100)
+    >>> result = circular_basis(theta_phases)  # angle_unit='rad' is default
+    >>> X = result.design_matrix
+    >>> # Now fit GLM: model.fit(sm.add_constant(X), spike_counts)
     """
     # Convert to radians if needed
     angles = np.asarray(angles, dtype=np.float64).ravel()
@@ -742,6 +807,7 @@ def plot_circular_basis_tuning(
     --------
     circular_basis_metrics : Compute amplitude/phase from coefficients.
     circular_basis : Create design matrix for GLM.
+    plot_head_direction_tuning : Non-parametric binned tuning curve visualization.
 
     Notes
     -----
@@ -749,15 +815,23 @@ def plot_circular_basis_tuning(
 
     For a Poisson GLM with circular basis, the expected response is:
 
-        lambda(theta) = exp(intercept + beta_cos*cos(theta) + beta_sin*sin(theta))
+        λ(θ) = exp(intercept + β_cos*cos(θ) + β_sin*sin(θ))
 
     This can be rewritten as:
 
-        lambda(theta) = exp(intercept) * exp(R * cos(theta - phi))
+        λ(θ) = exp(intercept) * exp(R * cos(θ - φ))
 
     where:
-    - R = sqrt(beta_sin^2 + beta_cos^2) is the modulation amplitude
-    - phi = atan2(beta_sin, beta_cos) is the preferred angle
+
+    - R = sqrt(β_sin² + β_cos²) is the modulation amplitude
+    - φ = atan2(β_sin, β_cos) is the preferred angle
+
+    **When to use this vs. plot_head_direction_tuning**:
+
+    - **GLM fit** (this function): Parametric, smooth curve from regression.
+      Use when you've fit a GLM and want to show the model prediction.
+    - **Binned tuning** (``plot_head_direction_tuning``): Non-parametric,
+      shows actual data. Use for exploratory visualization.
 
     **Polar plot conventions**:
 
@@ -766,16 +840,32 @@ def plot_circular_basis_tuning(
 
     Examples
     --------
+    **Head direction GLM tuning curve**:
+
     >>> import numpy as np
     >>> from neurospatial.metrics import plot_circular_basis_tuning
-    >>> # After fitting GLM: beta_sin=0.5, beta_cos=1.0, intercept=2.0
-    >>> ax = plot_circular_basis_tuning(0.5, 1.0, intercept=2.0)  # doctest: +SKIP
-
-    >>> # With raw data overlay
-    >>> bin_centers = np.linspace(0, 2 * np.pi, 36, endpoint=False)
-    >>> rates = np.exp(2 + np.cos(bin_centers - 0.5))  # Simulated data
+    >>> # After fitting GLM to head direction data
+    >>> # Coefficients: preferred direction ~45° with strong modulation
+    >>> beta_sin, beta_cos = 0.7, 0.7  # atan2(0.7, 0.7) ≈ 45°
     >>> ax = plot_circular_basis_tuning(
-    ...     0.5, 1.0, angles=bin_centers, rates=rates, intercept=2.0, show_data=True
+    ...     beta_sin, beta_cos, intercept=2.0
+    ... )  # doctest: +SKIP
+
+    **Theta phase modulation**:
+
+    >>> # After fitting GLM to theta phase data
+    >>> # Coefficients: preferred phase near trough (π) with moderate modulation
+    >>> beta_sin, beta_cos = 0.0, -0.5  # atan2(0, -0.5) = π
+    >>> ax = plot_circular_basis_tuning(
+    ...     beta_sin, beta_cos, intercept=1.5, projection="linear"
+    ... )  # doctest: +SKIP
+
+    **With binned data overlay**:
+
+    >>> bin_centers = np.linspace(0, 2 * np.pi, 36, endpoint=False)
+    >>> rates = np.exp(2 + 0.7 * np.cos(bin_centers - np.pi / 4))  # Simulated
+    >>> ax = plot_circular_basis_tuning(
+    ...     0.7, 0.7, angles=bin_centers, rates=rates, intercept=2.0, show_data=True
     ... )  # doctest: +SKIP
     """
     import matplotlib.pyplot as plt
