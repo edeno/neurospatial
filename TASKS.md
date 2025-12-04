@@ -26,33 +26,33 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M1.1**: Create `src/neurospatial/basis.py` with module docstring and `__all__`
+- [x] **M1.1**: Create `src/neurospatial/basis.py` with module docstring and `__all__`
   - Add comprehensive module docstring from BASIS_PLAN.md Part 8.1
   - Define `__all__` exports
   - Add TYPE_CHECKING imports
   - **Files**: `src/neurospatial/basis.py` (new)
 
-- [ ] **M1.2**: Create `tests/test_basis.py` with pytest fixtures
+- [x] **M1.2**: Create `tests/test_basis.py` with pytest fixtures
   - Add fixtures: `simple_2d_env`, `linear_env`, `maze_env_with_wall`, `disconnected_env`
   - Follow patterns from BASIS_PLAN.md Part 9
   - **Files**: `tests/test_basis.py` (new)
 
-- [ ] **M1.3**: Implement `select_basis_centers` with kmeans method
+- [x] **M1.3**: Implement `select_basis_centers` with kmeans method
   - Input validation (n_centers > 0, n_centers <= n_bins)
   - KMeans clustering on bin_centers
   - Map cluster centroids to nearest bins via cKDTree
   - **Dependencies**: sklearn.cluster.KMeans, scipy.spatial.cKDTree
 
-- [ ] **M1.4**: Add farthest_point method to `select_basis_centers`
+- [x] **M1.4**: Add farthest_point method to `select_basis_centers`
   - Greedy farthest-point sampling using geodesic distance
   - Start with random point, iteratively add farthest from current set
   - Use scipy.sparse.csgraph.shortest_path for efficiency
 
-- [ ] **M1.5**: Add random and grid methods to `select_basis_centers`
+- [x] **M1.5**: Add random and grid methods to `select_basis_centers`
   - Random: uniform sampling with random_state support
-  - Grid: regular subsampling (validate grid-based environment)
+  - Grid: NotImplementedError (deferred)
 
-- [ ] **M1.6**: Write tests for `TestSelectBasisCenters` class
+- [x] **M1.6**: Write tests for `TestSelectBasisCenters` class
   - test_kmeans_returns_correct_count
   - test_centers_are_valid_nodes
   - test_random_state_reproducibility

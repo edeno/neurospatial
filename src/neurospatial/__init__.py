@@ -205,6 +205,16 @@ from neurospatial.annotation import (
     regions_from_cvat,
     regions_from_labelme,
 )
+
+# Basis functions for spatial regression (GLMs)
+from neurospatial.basis import (
+    chebyshev_filter_basis,
+    geodesic_rbf_basis,
+    heat_kernel_wavelet_basis,
+    plot_basis_functions,
+    select_basis_centers,
+    spatial_basis,
+)
 from neurospatial.behavioral import (
     compute_trajectory_curvature,
     cost_to_goal,
@@ -325,6 +335,13 @@ __all__ = [
     "selectivity",
     "skaggs_information",
     "sparsity",
+    # Basis functions for GLMs
+    "chebyshev_filter_basis",
+    "geodesic_rbf_basis",
+    "heat_kernel_wavelet_basis",
+    "plot_basis_functions",
+    "select_basis_centers",
+    "spatial_basis",
     # Behavioral segmentation
     "detect_goal_directed_runs",
     "detect_laps",
