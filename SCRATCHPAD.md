@@ -110,8 +110,27 @@
 
 **Next Steps:**
 
-- Implement head direction module (Milestone 3)
+- Implement `head_direction_tuning_curve()` (Milestone 3.2)
 - Write tests first (TDD)
+
+### 2025-12-04: Head Direction Module Setup (M3.1)
+
+**Completed:**
+
+- Created `src/neurospatial/metrics/head_direction.py` with:
+  - Module docstring with "Which Function Should I Use?" guide
+  - Typical workflow examples
+  - Scientific references (Taube et al. 1990, Sargolini et al. 2006)
+  - Empty `__all__` list (ready for exports)
+- Created `tests/metrics/test_head_direction.py` with 8 tests for module setup
+- All 8 tests passing, ruff and mypy clean
+
+**Design Decisions:**
+
+1. Module follows same pattern as `phase_precession.py` with decision tree docstring.
+2. Imports will be added when functions are implemented (ruff removes unused).
+3. Default to radians like other circular modules, but note that HD literature
+   commonly uses degrees (hence `angle_unit='deg'` in examples).
 
 ### 2025-12-04: Phase Precession Visualization Implementation
 

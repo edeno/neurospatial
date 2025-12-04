@@ -143,7 +143,7 @@
 
 ### 3.1 Module Setup
 
-- [ ] **Create `src/neurospatial/metrics/head_direction.py`**
+- [x] **Create `src/neurospatial/metrics/head_direction.py`**
   - Add module header with docstring (workflow, examples, references)
   - Add imports (import `rayleigh_test`, `_mean_resultant_length` from sibling)
   - Add `__all__`
