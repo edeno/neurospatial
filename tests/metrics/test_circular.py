@@ -1432,3 +1432,92 @@ class TestPlotCircularBasisTuning:
         from neurospatial.metrics import plot_circular_basis_tuning
 
         assert callable(plot_circular_basis_tuning)
+
+    def test_confidence_bands_require_cov_matrix(self) -> None:
+        """Test that show_ci=True requires cov_matrix."""
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # Missing cov_matrix when show_ci=True
+        with pytest.raises(ValueError, match="show_ci=True requires cov_matrix"):
+            plot_circular_basis_tuning(beta_sin, beta_cos, show_ci=True)
+
+    def test_confidence_bands_with_cov_matrix(self) -> None:
+        """Test that confidence bands work when cov_matrix provided."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        # 2x2 covariance matrix for [beta_sin, beta_cos]
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, cov_matrix=cov, show_ci=True
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_confidence_bands_custom_ci_level(self) -> None:
+        """Test that custom CI level (e.g., 99%) works."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        # 99% CI
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, cov_matrix=cov, show_ci=True, ci=0.99
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_confidence_bands_linear_projection(self) -> None:
+        """Test that confidence bands work with linear projection."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, cov_matrix=cov, show_ci=True, projection="linear"
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_cov_matrix_wrong_shape_raises(self) -> None:
+        """Test that wrong-shaped cov_matrix raises ValueError."""
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        # Wrong shape (3x3 instead of 2x2)
+        cov = np.eye(3)
+
+        with pytest.raises(ValueError, match=r"cov_matrix must be.*2x2"):
+            plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)
+
+    def test_ci_band_color_parameter(self) -> None:
+        """Test that ci_color parameter is accepted."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, cov_matrix=cov, show_ci=True, ci_alpha=0.2
+        )
+        assert ax is not None
+        plt.close("all")

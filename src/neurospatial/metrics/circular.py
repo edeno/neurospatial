@@ -741,13 +741,17 @@ def plot_circular_basis_tuning(
     ax: Axes | PolarAxes | None = None,
     *,
     intercept: float = 0.0,
+    cov_matrix: NDArray[np.float64] | None = None,
     projection: Literal["polar", "linear"] = "polar",
     n_points: int = 100,
     show_data: bool = False,
     show_fit: bool = True,
+    show_ci: bool = False,
+    ci: float = 0.95,
     color: str = "C0",
     data_color: str = "gray",
     data_alpha: float = 0.5,
+    ci_alpha: float = 0.3,
     line_kwargs: dict[str, Any] | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
 ) -> Axes | PolarAxes:
@@ -774,6 +778,9 @@ def plot_circular_basis_tuning(
     intercept : float, default=0.0
         Intercept (baseline) coefficient from GLM. For Poisson GLM, this
         controls the baseline firing rate: exp(intercept).
+    cov_matrix : ndarray, shape (2, 2), optional
+        Covariance matrix for [beta_sin, beta_cos] from GLM fit.
+        Required if ``show_ci=True`` to compute confidence bands.
     projection : {'polar', 'linear'}, default='polar'
         Plot projection type.
     n_points : int, default=100
@@ -782,12 +789,18 @@ def plot_circular_basis_tuning(
         If True, overlay raw data points. Requires ``angles`` and ``rates``.
     show_fit : bool, default=True
         If True, show smooth curve from GLM fit.
+    show_ci : bool, default=False
+        If True, show confidence band around fitted curve. Requires ``cov_matrix``.
+    ci : float, default=0.95
+        Confidence level for band (e.g., 0.95 for 95% CI).
     color : str, default='C0'
         Color for fitted curve.
     data_color : str, default='gray'
         Color for data points.
     data_alpha : float, default=0.5
         Alpha (transparency) for data points.
+    ci_alpha : float, default=0.3
+        Alpha (transparency) for confidence band fill.
     line_kwargs : dict, optional
         Additional kwargs for line plot (fitted curve).
     scatter_kwargs : dict, optional
@@ -802,6 +815,8 @@ def plot_circular_basis_tuning(
     ------
     ValueError
         If ``show_data=True`` but ``angles`` or ``rates`` not provided.
+        If ``show_ci=True`` but ``cov_matrix`` not provided.
+        If ``cov_matrix`` is not a 2x2 matrix.
 
     See Also
     --------
@@ -867,8 +882,19 @@ def plot_circular_basis_tuning(
     >>> ax = plot_circular_basis_tuning(
     ...     0.7, 0.7, angles=bin_centers, rates=rates, intercept=2.0, show_data=True
     ... )  # doctest: +SKIP
+
+    **With 95% confidence band (shows uncertainty)**:
+
+    >>> # Covariance matrix from GLM fit
+    >>> cov = np.array(
+    ...     [[0.01, 0.002], [0.002, 0.01]]
+    ... )  # From model.cov_params()[1:3, 1:3]
+    >>> ax = plot_circular_basis_tuning(
+    ...     0.7, 0.7, intercept=2.0, cov_matrix=cov, show_ci=True, ci=0.95
+    ... )  # doctest: +SKIP
     """
     import matplotlib.pyplot as plt
+    from scipy import stats
 
     # Validate show_data requirements
     if show_data and (angles is None or rates is None):
@@ -880,6 +906,26 @@ def plot_circular_basis_tuning(
             "To show only the fitted curve:\n"
             "  plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)"
         )
+
+    # Validate show_ci requirements
+    if show_ci and cov_matrix is None:
+        raise ValueError(
+            "show_ci=True requires cov_matrix argument.\n\n"
+            "To show confidence bands:\n"
+            "  cov = model.cov_params()[1:3, 1:3]  # Extract sin/cos covariance\n"
+            "  plot_circular_basis_tuning(beta_sin, beta_cos, cov_matrix=cov, show_ci=True)"
+        )
+
+    # Validate cov_matrix shape if provided
+    if cov_matrix is not None:
+        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
+        if cov_matrix.shape != (2, 2):
+            raise ValueError(
+                f"cov_matrix must be a 2x2 matrix for [beta_sin, beta_cos].\n"
+                f"Got shape: {cov_matrix.shape}\n\n"
+                f"Extract from GLM fit:\n"
+                f"  cov = model.cov_params()[1:3, 1:3]  # Rows/cols for sin, cos"
+            )
 
     # Create figure if needed
     if ax is None:
@@ -912,9 +958,45 @@ def plot_circular_basis_tuning(
     # Transform to response scale (Poisson GLM uses exp link)
     fitted_response = np.exp(linear_pred)
 
+    # Compute confidence bands if requested
+    ci_lower: NDArray[np.float64] | None = None
+    ci_upper: NDArray[np.float64] | None = None
+
+    if show_ci and cov_matrix is not None:
+        # Compute standard error of linear predictor using delta method
+        # linear_pred = intercept + beta_cos*cos(θ) + beta_sin*sin(θ)
+        # Gradient w.r.t. [beta_sin, beta_cos] is [sin(θ), cos(θ)]
+        # SE^2 = gradient.T @ cov @ gradient
+
+        # Design matrix for each angle: [sin(θ), cos(θ)]
+        design = np.column_stack([np.sin(theta_smooth), np.cos(theta_smooth)])
+
+        # Variance of linear predictor at each angle
+        var_linear = np.sum((design @ cov_matrix) * design, axis=1)
+        se_linear = np.sqrt(np.maximum(var_linear, 0))  # Ensure non-negative
+
+        # Z-score for confidence level
+        z = stats.norm.ppf((1 + ci) / 2)
+
+        # CI on linear scale, then transform
+        linear_lower = linear_pred - z * se_linear
+        linear_upper = linear_pred + z * se_linear
+
+        # Transform to response scale
+        ci_lower = np.exp(linear_lower)
+        ci_upper = np.exp(linear_upper)
+
     # Close the curve (append first point)
     theta_closed = np.concatenate([theta_smooth, [theta_smooth[0] + 2 * np.pi]])
     fitted_closed = np.concatenate([fitted_response, [fitted_response[0]]])
+
+    # Close CI bands if computed
+    if ci_lower is not None and ci_upper is not None:
+        ci_lower_closed = np.concatenate([ci_lower, [ci_lower[0]]])
+        ci_upper_closed = np.concatenate([ci_upper, [ci_upper[0]]])
+    else:
+        ci_lower_closed = None
+        ci_upper_closed = None
 
     if projection == "polar":
         # Import PolarAxes at runtime for cast
@@ -923,6 +1005,17 @@ def plot_circular_basis_tuning(
         # Configure polar plot: 0° at top (North), clockwise direction
         polar_ax.set_theta_zero_location("N")
         polar_ax.set_theta_direction(-1)
+
+        # Plot confidence band (behind curve)
+        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
+            polar_ax.fill_between(
+                theta_closed,
+                ci_lower_closed,
+                ci_upper_closed,
+                color=color,
+                alpha=ci_alpha,
+                zorder=0,
+            )
 
         # Plot fitted curve
         if show_fit:
@@ -936,6 +1029,17 @@ def plot_circular_basis_tuning(
 
     else:
         # Linear projection
+        # Plot confidence band (behind curve)
+        if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
+            ax.fill_between(
+                theta_closed,
+                ci_lower_closed,
+                ci_upper_closed,
+                color=color,
+                alpha=ci_alpha,
+                zorder=0,
+            )
+
         # Plot fitted curve
         if show_fit:
             ax.plot(theta_closed, fitted_closed, **line_kw)

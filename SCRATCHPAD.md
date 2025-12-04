@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Completed**: M0, M1, M2, M3, M4, M5
-**Status**: All milestones complete! Feature complete for circular basis functions.
+**Completed**: M0, M1, M2, M3, M4, M5, M6
+**Status**: All milestones complete! Feature complete for circular basis functions with uncertainty visualization.
 
 ## Completed Tasks
 
@@ -50,6 +50,7 @@
 5. Wald test uses `np.linalg.solve` instead of `inv` for numerical stability
 6. `is_modulated()` takes `beta_sin`, `beta_cos` separately (not packed array) - matches API of `circular_basis_metrics()`
 7. `is_modulated()` returns False for NaN p-values (singular covariance) due to NaN comparison semantics
+8. Confidence bands use delta method: Var(X @ beta) = X @ Cov @ X.T, then exp() link for Poisson GLM
 
 ### M3: Implement plot_circular_basis_tuning() Visualization ✓
 
@@ -76,6 +77,21 @@
 - [x] Enhanced `circular_basis()` docstring with domain examples and GLM vs binned comparison
 - [x] Enhanced `plot_circular_basis_tuning()` docstring with domain examples
 - [x] Added cross-references between functions
+
+### M6: Uncertainty Visualization ✓
+
+- [x] Added confidence band parameters to `plot_circular_basis_tuning()`:
+  - `cov_matrix`: 2x2 covariance matrix for beta_sin, beta_cos
+  - `show_ci`: bool to enable confidence bands (default False)
+  - `ci`: confidence level (default 0.95)
+  - `ci_alpha`: transparency for fill_between (default 0.3)
+- [x] Implemented delta method for computing standard errors of linear predictor
+- [x] Applied exp() link function to get confidence bands on rate scale
+- [x] Added validation: `show_ci=True` requires `cov_matrix`
+- [x] Added validation: `cov_matrix` must be shape (2, 2)
+- [x] Works with both polar and linear projections
+- [x] Added 6 new tests (18 total for TestPlotCircularBasisTuning)
+- [x] All 107 circular tests pass, ruff and mypy clean
 
 ## Blockers
 
