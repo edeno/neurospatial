@@ -87,6 +87,35 @@ compute_shuffle_zscore : Z-score from shuffle null distribution
 ShuffleTestResult : Container for shuffle test results
     Frozen dataclass with p-value, z-score, and plotting.
 
+Cell Assembly Detection
+-----------------------
+detect_assemblies : Detect cell assemblies from population spike counts
+    ICA/PCA/NMF-based detection of coordinated neural ensembles.
+
+assembly_activation : Compute activation strength of an assembly
+    Project spike counts onto assembly pattern.
+
+pairwise_correlations : Compute pairwise correlations between neurons
+    Extract upper triangle of correlation matrix.
+
+explained_variance_reactivation : Explained variance reactivation analysis
+    Measure how template correlations predict match correlations.
+
+reactivation_strength : Compare assembly activation between periods
+    Simple reactivation measure based on mean activation.
+
+marchenko_pastur_threshold : Random matrix theory significance threshold
+    Upper bound of eigenvalue distribution for random correlations.
+
+AssemblyPattern : Single assembly pattern with weights and members
+    Frozen dataclass with neuron weights and member indices.
+
+AssemblyDetectionResult : Results from assembly detection
+    Contains patterns, activations, eigenvalues, and metadata.
+
+ExplainedVarianceResult : Results from explained variance analysis
+    Contains EV, reversed EV, partial correlation, and n_pairs.
+
 Examples
 --------
 Basic decoding workflow::
@@ -125,6 +154,17 @@ with numerical stability considerations for log-domain computation.
 """
 
 from neurospatial.decoding._result import DecodingResult
+from neurospatial.decoding.assemblies import (
+    AssemblyDetectionResult,
+    AssemblyPattern,
+    ExplainedVarianceResult,
+    assembly_activation,
+    detect_assemblies,
+    explained_variance_reactivation,
+    marchenko_pastur_threshold,
+    pairwise_correlations,
+    reactivation_strength,
+)
 from neurospatial.decoding.estimates import (
     credible_region,
     entropy,
@@ -174,31 +214,50 @@ from neurospatial.decoding.trajectory import (
 # =============================================================================
 
 __all__ = [
+    # Result containers
+    "AssemblyDetectionResult",
+    "AssemblyPattern",
     "DecodingResult",
+    "ExplainedVarianceResult",
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
     "ShuffleTestResult",
+    # Cell assembly detection
+    "assembly_activation",
+    # Shuffle tests
     "compute_shuffle_pvalue",
     "compute_shuffle_zscore",
+    # Metrics
     "confusion_matrix",
     "credible_region",
+    # Core decoding
     "decode_position",
     "decoding_correlation",
     "decoding_error",
+    "detect_assemblies",
+    # Trajectory analysis
     "detect_trajectory_radon",
     "entropy",
+    "explained_variance_reactivation",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    # Surrogate generation
     "generate_inhomogeneous_poisson_surrogates",
     "generate_poisson_surrogates",
+    # Likelihood
     "log_poisson_likelihood",
+    # Estimates
     "map_estimate",
     "map_position",
+    "marchenko_pastur_threshold",
     "mean_position",
     "median_decoding_error",
     "normalize_to_posterior",
+    "pairwise_correlations",
     "poisson_likelihood",
+    "reactivation_strength",
+    # Shuffle methods
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",
     "shuffle_place_fields_circular_2d",
