@@ -336,3 +336,143 @@ def event_count_in_window(
     counts = right_indices - left_indices
 
     return counts.astype(np.int64)
+
+
+def event_indicator(
+    sample_times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    *,
+    window: float = 0.0,
+) -> NDArray[np.bool_]:
+    """
+    Binary indicator of whether an event occurs near each sample time.
+
+    For each sample, returns True if any event falls within the specified
+    window around that sample. Useful for creating indicator variables in
+    GLM design matrices.
+
+    Parameters
+    ----------
+    sample_times : NDArray[np.float64], shape (n_samples,)
+        Sample timestamps.
+    event_times : NDArray[np.float64], shape (n_events,)
+        Event timestamps.
+    window : float, default=0.0
+        Symmetric half-width of temporal window (seconds).
+        Creates a window [sample_time - window, sample_time + window].
+        If 0, only exact matches count (sample_time == event_time).
+        If > 0, events within the symmetric window are considered a match.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_samples,)
+        True if event occurs within window of sample, False otherwise.
+
+    Raises
+    ------
+    ValueError
+        If sample_times or event_times contain NaN or Inf values.
+        If window is negative.
+
+    Notes
+    -----
+    Common use cases:
+
+    - Binary event regressor: ``window=0.0`` for impulse at event time
+    - Smoothed indicator: ``window=bin_size/2`` for time-binned data
+    - Event presence detection: ``window=0.1`` for events within 100ms
+
+    Window boundaries are inclusive, so events exactly at ``sample_time ± window``
+    are included (returns True).
+
+    This function is semantically clearer than ``event_count_in_window() > 0``
+    for creating binary indicators and returns bool dtype directly.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.events import event_indicator
+
+    Check for exact event occurrence:
+
+    >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0])
+    >>> event_times = np.array([1.0, 3.0])
+    >>> event_indicator(sample_times, event_times)
+    array([False,  True, False,  True])
+
+    Check for events within window:
+
+    >>> event_indicator(sample_times, event_times, window=0.5)
+    array([False,  True, False,  True])
+
+    Create GLM design matrix column:
+
+    >>> indicator = event_indicator(sample_times, event_times, window=0.1)
+    >>> X = indicator.astype(float)  # Convert to float for design matrix
+    """
+    # Convert to numpy arrays and validate
+    sample_times = np.asarray(sample_times, dtype=np.float64)
+    event_times = np.asarray(event_times, dtype=np.float64)
+
+    # Input validation
+    if np.any(np.isnan(sample_times)):
+        raise ValueError(
+            "sample_times contains NaN values.\n"
+            "  WHY: Times must be valid numeric values.\n"
+            "  HOW: Remove or interpolate NaN values before calling."
+        )
+
+    if np.any(np.isinf(sample_times)):
+        raise ValueError(
+            "sample_times contains inf values.\n"
+            "  WHY: Times must be finite.\n"
+            "  HOW: Remove or clip infinite values before calling."
+        )
+
+    if len(event_times) > 0:
+        if np.any(np.isnan(event_times)):
+            raise ValueError(
+                "event_times contains NaN values.\n"
+                "  WHY: Event times must be valid numeric values.\n"
+                "  HOW: Remove NaN values from event times."
+            )
+
+        if np.any(np.isinf(event_times)):
+            raise ValueError(
+                "event_times contains inf values.\n"
+                "  WHY: Event times must be finite.\n"
+                "  HOW: Remove infinite values from event times."
+            )
+
+    if window < 0:
+        raise ValueError(
+            f"window must be non-negative, got {window}.\n"
+            "  WHY: window defines a symmetric half-width around each sample.\n"
+            "  HOW: Use window >= 0."
+        )
+
+    # Handle empty sample_times
+    if len(sample_times) == 0:
+        return np.array([], dtype=np.bool_)
+
+    # Handle empty events
+    if len(event_times) == 0:
+        return np.zeros(len(sample_times), dtype=np.bool_)
+
+    # Sort events for efficient searchsorted
+    sorted_events = np.sort(event_times)
+
+    # For each sample, check if any event falls within [sample - window, sample + window]
+    # Use searchsorted to find events at window boundaries
+    window_starts = sample_times - window
+    window_ends = sample_times + window
+
+    # left_indices: first event >= window_start
+    # right_indices: first event > window_end
+    left_indices = np.searchsorted(sorted_events, window_starts, side="left")
+    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
+
+    # If right > left, there's at least one event in the window
+    result = right_indices > left_indices
+
+    return result

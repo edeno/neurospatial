@@ -87,7 +87,7 @@ This task list breaks down the Events Module implementation into actionable step
   - Return type: `NDArray[np.int64]`
   - Handle: empty events → return zeros
 
-- [ ] **M2.3**: Implement `event_indicator()` in `regressors.py`
+- [x] **M2.3**: Implement `event_indicator()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `window`
   - Return type: `NDArray[np.bool_]`
   - Handle: empty events → return all False

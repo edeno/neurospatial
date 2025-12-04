@@ -113,6 +113,35 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 
 ---
 
+### 2025-12-04: M2.3 Complete - event_indicator()
+
+**Completed Tasks:**
+- M2.3: Implemented `event_indicator()` in `regressors.py`
+  - Parameters: `sample_times`, `event_times`, `window` (half-width, default 0.0)
+  - Returns `NDArray[np.bool_]` - True if event within window, False otherwise
+  - Uses efficient double `np.searchsorted()` for O(n log m) complexity
+  - Edge cases: empty arrays, validation, boundary inclusion
+
+- Created 20 tests in `tests/test_events_regressors.py::TestEventIndicator`
+  - Basic functionality: exact match, window-based matching
+  - Multiple events, single event, empty arrays
+  - Validation: NaN, Inf, negative window
+  - Boundary inclusion, typical use cases (time bins, GLM design matrix)
+
+- Code review passed with APPROVE
+- All ruff and mypy checks pass
+
+**Key Decisions:**
+1. **Symmetric window**: Half-width creates [sample - window, sample + window]
+2. **Inclusive boundaries**: Events at exact boundary are included
+3. **bool dtype**: Returns numpy bool_ array for direct use in filtering
+4. **Consistent pattern**: Follows same validation/algorithm as sibling functions
+
+**Next Steps:**
+- M2.4: Implement `exponential_kernel()`
+
+---
+
 ## Open Questions
 
 None currently.

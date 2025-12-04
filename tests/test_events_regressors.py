@@ -625,3 +625,308 @@ class TestEventCountInWindow:
         result = event_count_in_window(sample_times, event_times, window)
 
         assert np.all(result >= 0)
+
+
+# =============================================================================
+# Test event_indicator
+# =============================================================================
+
+
+class TestEventIndicator:
+    """Tests for event_indicator function."""
+
+    def test_basic_exact_match(self):
+        """Test event_indicator returns True only at exact event times (window=0)."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        event_times = np.array([1.0, 3.0])
+
+        result = event_indicator(sample_times, event_times)
+
+        # Only exact matches when window=0 (default)
+        assert result[0] is np.False_  # t=0.0, no event
+        assert result[1] is np.True_  # t=1.0, event here
+        assert result[2] is np.False_  # t=2.0, no event
+        assert result[3] is np.True_  # t=3.0, event here
+        assert result[4] is np.False_  # t=4.0, no event
+
+    def test_window_around_event(self):
+        """Test event_indicator with window parameter."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+        event_times = np.array([1.5])
+        window = 0.5  # +/- 0.5s around event
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # t=0.0: |0.0 - 1.5| = 1.5 > 0.5, False
+        assert not result[0]
+        # t=0.5: |0.5 - 1.5| = 1.0 > 0.5, False
+        assert not result[1]
+        # t=1.0: |1.0 - 1.5| = 0.5 <= 0.5, True
+        assert result[2]
+        # t=1.5: |1.5 - 1.5| = 0.0 <= 0.5, True
+        assert result[3]
+        # t=2.0: |2.0 - 1.5| = 0.5 <= 0.5, True
+        assert result[4]
+        # t=2.5: |2.5 - 1.5| = 1.0 > 0.5, False
+        assert not result[5]
+        # t=3.0: |3.0 - 1.5| = 1.5 > 0.5, False
+        assert not result[6]
+
+    def test_multiple_events(self):
+        """Test with multiple events."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+        event_times = np.array([1.0, 4.0])
+        window = 0.5
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # Near first event (1.0)
+        assert not result[0]  # t=0.0, too far
+        assert result[1]  # t=1.0, at event
+        assert not result[2]  # t=2.0, too far (|2.0-1.0|=1.0 > 0.5)
+        # Near second event (4.0)
+        assert not result[3]  # t=3.0, too far (|3.0-4.0|=1.0 > 0.5)
+        assert result[4]  # t=4.0, at event
+        assert not result[5]  # t=5.0, too far
+
+    def test_empty_events_returns_all_false(self):
+        """Test empty events array returns all False."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([])
+
+        result = event_indicator(sample_times, event_times)
+
+        assert np.all(~result)  # All False
+        assert len(result) == 3
+
+    def test_empty_sample_times(self):
+        """Test empty sample_times returns empty array."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([])
+        event_times = np.array([1.0, 2.0])
+
+        result = event_indicator(sample_times, event_times)
+
+        assert len(result) == 0
+        assert result.dtype == np.bool_
+
+    def test_single_event(self):
+        """Test with single event."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 0.5, 1.0, 1.5, 2.0])
+        event_times = np.array([1.0])
+        window = 0.3
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # t=0.0: |0.0-1.0|=1.0 > 0.3, False
+        assert not result[0]
+        # t=0.5: |0.5-1.0|=0.5 > 0.3, False
+        assert not result[1]
+        # t=1.0: |1.0-1.0|=0.0 <= 0.3, True
+        assert result[2]
+        # t=1.5: |1.5-1.0|=0.5 > 0.3, False
+        assert not result[3]
+        # t=2.0: |2.0-1.0|=1.0 > 0.3, False
+        assert not result[4]
+
+    def test_output_dtype_is_bool(self):
+        """Test output dtype is bool."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0])
+
+        result = event_indicator(sample_times, event_times)
+
+        assert result.dtype == np.bool_
+
+    def test_output_shape_matches_sample_times(self):
+        """Test output shape matches sample_times."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.linspace(0, 10, 100)
+        event_times = np.array([2.0, 5.0, 8.0])
+
+        result = event_indicator(sample_times, event_times)
+
+        assert result.shape == sample_times.shape
+
+    def test_unsorted_events_handled(self):
+        """Test unsorted event times are handled correctly."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0])
+        event_times = np.array([3.0, 1.0])  # Unsorted
+        window = 0.0
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # Should find exact matches regardless of event order
+        assert not result[0]  # t=0.0
+        assert result[1]  # t=1.0
+        assert not result[2]  # t=2.0
+        assert result[3]  # t=3.0
+
+    def test_multiple_events_same_time(self):
+        """Test multiple events at same timestamp."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, 1.0, 1.0])  # Three events at same time
+
+        result = event_indicator(sample_times, event_times)
+
+        # Should behave same as single event at 1.0
+        assert not result[0]
+        assert result[1]
+        assert not result[2]
+
+    def test_nan_in_sample_times_raises(self):
+        """Test NaN in sample_times raises ValueError."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, np.nan, 2.0])
+        event_times = np.array([1.0])
+
+        with pytest.raises(ValueError, match=r"sample_times.*NaN"):
+            event_indicator(sample_times, event_times)
+
+    def test_nan_in_event_times_raises(self):
+        """Test NaN in event_times raises ValueError."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, np.nan])
+
+        with pytest.raises(ValueError, match=r"event_times.*NaN"):
+            event_indicator(sample_times, event_times)
+
+    def test_inf_in_sample_times_raises(self):
+        """Test Inf in sample_times raises ValueError."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, np.inf, 2.0])
+        event_times = np.array([1.0])
+
+        with pytest.raises(ValueError, match=r"sample_times.*inf"):
+            event_indicator(sample_times, event_times)
+
+    def test_inf_in_event_times_raises(self):
+        """Test Inf in event_times raises ValueError."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, np.inf])
+
+        with pytest.raises(ValueError, match=r"event_times.*inf"):
+            event_indicator(sample_times, event_times)
+
+    def test_negative_window_raises(self):
+        """Test negative window raises ValueError."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0])
+
+        with pytest.raises(ValueError, match=r"window.*non-negative"):
+            event_indicator(sample_times, event_times, window=-0.5)
+
+    def test_zero_window_exact_match_only(self):
+        """Test window=0.0 requires exact match."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.9, 1.0, 1.1])
+        event_times = np.array([1.0])
+        window = 0.0
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        assert not result[0]  # 0.9 != 1.0
+        assert result[1]  # 1.0 == 1.0
+        assert not result[2]  # 1.1 != 1.0
+
+    def test_large_window_includes_all(self):
+        """Test large window includes all samples near any event."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        event_times = np.array([2.0])
+        window = 10.0  # Very large window
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # All samples within 10s of event at t=2.0
+        assert np.all(result)
+
+    def test_boundary_inclusion(self):
+        """Test samples exactly at window boundary are included."""
+        from neurospatial.events.regressors import event_indicator
+
+        sample_times = np.array([0.5, 1.0, 1.5])
+        event_times = np.array([1.0])
+        window = 0.5  # Boundary at 0.5 and 1.5
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # All samples are exactly within or at boundary
+        assert result[0]  # |0.5 - 1.0| = 0.5 <= 0.5, included
+        assert result[1]  # |1.0 - 1.0| = 0.0 <= 0.5, included
+        assert result[2]  # |1.5 - 1.0| = 0.5 <= 0.5, included
+
+    def test_typical_time_bin_use_case(self):
+        """Test typical use case: marking time bins with events."""
+        from neurospatial.events.regressors import event_indicator
+
+        # Time bins at 10ms resolution
+        sample_times = np.arange(0, 1.0, 0.01)
+        # Events at 200ms, 500ms, 800ms
+        event_times = np.array([0.2, 0.5, 0.8])
+        # Window of +/- 50ms (one time bin)
+        window = 0.05
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # Check around 200ms
+        assert not result[14]  # t=140ms, too far
+        assert result[15]  # t=150ms, within window of 200ms
+        assert result[20]  # t=200ms, at event
+        assert result[25]  # t=250ms, within window
+        assert not result[26]  # t=260ms, too far
+
+        # Total True values: ~6 per event * 3 events
+        # (150-250ms, 450-550ms, 750-850ms)
+        n_true = result.sum()
+        assert n_true > 0  # Some True values
+        assert n_true < len(sample_times)  # Not all True
+
+    def test_glm_design_matrix_use_case(self):
+        """Test use in GLM design matrix context."""
+        from neurospatial.events.regressors import event_indicator
+
+        # Typical neural data: 30Hz sampling over 100s
+        sample_times = np.linspace(0, 100, 3000)
+        # Reward events
+        event_times = np.array([10.0, 30.0, 50.0, 70.0, 90.0])
+        # Narrow window for impulse-like regressor
+        window = 0.1
+
+        result = event_indicator(sample_times, event_times, window=window)
+
+        # Result should be sparse (mostly False)
+        sparsity = result.sum() / len(result)
+        assert sparsity < 0.1  # Less than 10% True
+
+        # Can be used directly in design matrix
+        X = result.astype(float)
+        assert X.dtype == np.float64
