@@ -75,7 +75,7 @@ This task list breaks down the Events Module implementation into actionable step
 
 ### Tasks
 
-- [ ] **M2.1**: Implement `time_since_event()` in `regressors.py`
+- [x] **M2.1**: Implement `time_since_event()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `max_time`, `fill_before_first`, `nan_policy`
   - Use `np.searchsorted` for efficient lookup
   - Handle edge case: samples before first event → NaN or fill value

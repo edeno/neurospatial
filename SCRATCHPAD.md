@@ -1,7 +1,7 @@
 # Events Module Implementation - Scratchpad
 
 **Last Updated**: 2025-12-04
-**Current Status**: Milestone 1 Complete
+**Current Status**: Milestone 2 In Progress (M2.1 Complete)
 
 ---
 
@@ -40,7 +40,34 @@
 4. Sorted `__all__` alphabetically (required by ruff RUF022)
 
 **Next Steps:**
-- Milestone 2: Temporal GLM Regressors (`time_since_event`, `time_to_event`, etc.)
+- Continue Milestone 2: Implement remaining temporal GLM regressors
+
+---
+
+### 2025-12-04: M2.1 Complete - time_since_event()
+
+**Completed Tasks:**
+- M2.1: Implemented `time_since_event()` in `regressors.py`
+  - Uses `np.searchsorted()` for O(n log m) performance
+  - Parameters: `sample_times`, `event_times`, `max_time`, `fill_before_first`, `nan_policy`
+  - Handles edge cases: empty arrays, NaN/Inf validation, unsorted events
+  - Comprehensive error messages following WHAT/WHY/HOW pattern
+
+- Created `tests/test_events_regressors.py` with 25 tests
+  - Basic functionality, boundary conditions, parameter combinations
+  - Edge cases, validation, output properties
+
+- Code review passed with approval
+- All ruff and mypy checks pass
+
+**Key Decisions:**
+1. Use `np.searchsorted(side="right") - 1` to find most recent event
+2. Internally sort events (user doesn't need to pre-sort)
+3. NaN values before first event by default (configurable via `fill_before_first`)
+4. `nan_policy` parameter controls validation behavior
+
+**Next Steps:**
+- M2.2: Implement `time_to_event()` (mirror of `time_since_event()` looking forward)
 
 ---
 
