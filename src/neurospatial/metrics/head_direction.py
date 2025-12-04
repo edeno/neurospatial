@@ -62,20 +62,134 @@ Sargolini, F. et al. (2006). Conjunctive representation of position, direction,
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
-from neurospatial.metrics.circular import _to_radians
+from neurospatial.metrics.circular import (
+    _mean_resultant_length,
+    _to_radians,
+    rayleigh_test,
+)
 
 # Mark that circular imports are available for testing
 _has_circular_imports = True
 
 __all__: list[str] = [
+    "HeadDirectionMetrics",
+    "head_direction_metrics",
     "head_direction_tuning_curve",
+    "is_head_direction_cell",
 ]
+
+
+@dataclass
+class HeadDirectionMetrics:
+    """
+    Metrics for head direction cell analysis.
+
+    Attributes
+    ----------
+    preferred_direction : float
+        Peak direction in radians [0, 2pi].
+    preferred_direction_deg : float
+        Peak direction in degrees [0, 360].
+    mean_vector_length : float
+        Rayleigh vector length (0-1). Higher values indicate sharper tuning.
+        Typical HD cells have values > 0.4.
+    peak_firing_rate : float
+        Maximum firing rate (Hz).
+    tuning_width : float
+        Approximate half-width at half-maximum (HWHM) in radians.
+        Computed from bin counts, so accuracy depends on bin_size.
+    tuning_width_deg : float
+        Approximate HWHM in degrees.
+    is_hd_cell : bool
+        True if passes HD cell criteria.
+    rayleigh_pval : float
+        P-value from Rayleigh test.
+
+    Notes
+    -----
+    **Classification Criteria**:
+
+    A neuron is classified as an HD cell if:
+
+    - Mean vector length > min_vector_length (default 0.4)
+    - Rayleigh test p-value < 0.05
+
+    These criteria follow Taube et al. (1990) and subsequent literature.
+
+    Examples
+    --------
+    >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
+    >>> if metrics.is_hd_cell:  # doctest: +SKIP
+    ...     print(
+    ...         f"HD cell! Preferred direction: {metrics.preferred_direction_deg:.1f} deg"
+    ...     )
+    ...     print(f"Tuning width: {metrics.tuning_width_deg:.1f} deg")
+    """
+
+    preferred_direction: float
+    preferred_direction_deg: float
+    mean_vector_length: float
+    peak_firing_rate: float
+    tuning_width: float
+    tuning_width_deg: float
+    is_hd_cell: bool
+    rayleigh_pval: float
+
+    def interpretation(self) -> str:
+        """
+        Human-readable interpretation of head direction metrics.
+
+        Returns
+        -------
+        str
+            Multi-line interpretation.
+        """
+        lines = []
+
+        if self.is_hd_cell:
+            lines.append("*** HEAD DIRECTION CELL ***")
+            lines.append(f"Preferred direction: {self.preferred_direction_deg:.1f} deg")
+            lines.append(
+                f"Mean vector length: {self.mean_vector_length:.3f} (threshold = 0.4)"
+            )
+            lines.append(f"Peak firing rate: {self.peak_firing_rate:.1f} Hz")
+            lines.append(f"Tuning width (HWHM): {self.tuning_width_deg:.1f} deg")
+            lines.append(f"Rayleigh test: p = {self.rayleigh_pval:.4f}")
+        else:
+            lines.append("Not classified as HD cell")
+            if self.mean_vector_length < 0.4:
+                lines.append(
+                    f"  - Mean vector length too low: {self.mean_vector_length:.3f} < 0.4"
+                )
+                lines.append(
+                    "    How was 0.4 chosen? From Taube et al. (1990) analyzing"
+                )
+                lines.append("    postsubicular HD cells in rats. Empirically:")
+                lines.append("      Classic HD cells: 0.5-0.8")
+                lines.append("      Borderline HD cells: 0.3-0.5")
+                lines.append("      Non-HD cells: 0.1-0.3")
+                lines.append("    When to adjust:")
+                lines.append("      - Other brain regions: May need 0.3-0.5")
+                lines.append("      - Different species: Validate threshold first")
+                lines.append("      - Noisy recordings: Consider 0.3 (more permissive)")
+                lines.append("      - Publication quality: Use 0.5 (more conservative)")
+            if self.rayleigh_pval >= 0.05:
+                lines.append(
+                    f"  - Rayleigh test not significant: p = {self.rayleigh_pval:.3f} >= 0.05"
+                )
+
+        return "\n".join(lines)
+
+    def __str__(self) -> str:
+        """String representation with interpretation."""
+        return self.interpretation()
 
 
 def head_direction_tuning_curve(
@@ -272,3 +386,208 @@ def head_direction_tuning_curve(
         firing_rates = gaussian_filter1d(firing_rates, smoothing_window, mode="wrap")
 
     return bin_centers, firing_rates
+
+
+def head_direction_metrics(
+    bin_centers: NDArray[np.float64],
+    firing_rates: NDArray[np.float64],
+    *,
+    min_vector_length: float = 0.4,
+) -> HeadDirectionMetrics:
+    """
+    Compute head direction cell metrics from tuning curve.
+
+    Parameters
+    ----------
+    bin_centers : array, shape (n_bins,)
+        Center of each angular bin (radians).
+    firing_rates : array, shape (n_bins,)
+        Firing rate in each bin (Hz).
+    min_vector_length : float, default=0.4
+        Minimum Rayleigh vector length to classify as HD cell.
+
+        **How was 0.4 chosen?**
+
+        This threshold comes from Taube et al. (1990) analyzing postsubicular
+        HD cells in rats. Empirically:
+
+        - Classic HD cells: 0.5-0.8
+        - Borderline HD cells: 0.3-0.5
+        - Non-HD cells: 0.1-0.3
+
+        **When to adjust**:
+
+        - Other brain regions: May need 0.3-0.5
+        - Different species: Validate threshold first
+        - Noisy recordings: Consider 0.3 (more permissive)
+        - Publication quality: Use 0.5 (more conservative)
+
+    Returns
+    -------
+    HeadDirectionMetrics
+        Dataclass with preferred_direction, mean_vector_length,
+        peak_firing_rate, tuning_width, is_hd_cell, rayleigh_pval.
+
+    Raises
+    ------
+    ValueError
+        If bin_centers and firing_rates have different lengths.
+        If all firing rates are zero.
+        If all firing rates are constant.
+
+    See Also
+    --------
+    head_direction_tuning_curve : Compute tuning curve.
+    is_head_direction_cell : Quick boolean check.
+
+    Notes
+    -----
+    **Mean Vector Length** (Rayleigh vector):
+
+        R = |sum(rate_i * exp(i*theta_i))| / sum(rate_i)
+
+    **Preferred Direction**:
+
+        PFD = arg(sum(rate_i * exp(i*theta_i)))
+
+    **Tuning Width**: Approximate half-width at half-maximum (HWHM),
+    computed by counting bins above half-maximum. For more accurate
+    measurement, use smaller bin_size or fit a parametric model.
+
+    Examples
+    --------
+    >>> from neurospatial.metrics import (
+    ...     head_direction_tuning_curve,
+    ...     head_direction_metrics,
+    ... )
+    >>> bins, rates = head_direction_tuning_curve(hd, spikes, times)  # doctest: +SKIP
+    >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
+    >>> print(metrics)  # doctest: +SKIP
+
+    References
+    ----------
+    Taube, J.S., Muller, R.U., & Ranck, J.B. (1990). Head-direction cells.
+        J Neurosci, 10(2), 420-435.
+    """
+    bin_centers = np.asarray(bin_centers, dtype=np.float64).ravel()
+    firing_rates = np.asarray(firing_rates, dtype=np.float64).ravel()
+
+    if len(bin_centers) != len(firing_rates):
+        raise ValueError(
+            f"bin_centers and firing_rates must have same length. "
+            f"Got {len(bin_centers)} and {len(firing_rates)}."
+        )
+
+    if np.sum(firing_rates) == 0:
+        raise ValueError(
+            "All firing rates are zero. Cannot compute HD metrics.\n"
+            "Fix: Check if neuron has any spikes in this recording."
+        )
+
+    # Check for constant (non-zero) firing rates
+    if np.ptp(firing_rates) == 0:
+        raise ValueError(
+            "All firing rates are constant. Cannot compute HD metrics.\n"
+            "Fix: Neuron shows no directional tuning (uniform firing)."
+        )
+
+    # Compute mean resultant length using centralized helper (uses scipy if available)
+    mean_vector_length = _mean_resultant_length(bin_centers, weights=firing_rates)
+
+    # Compute preferred direction (circular mean weighted by firing rate)
+    total_rate = np.sum(firing_rates)
+    weights = firing_rates / total_rate
+    mean_cos = np.sum(weights * np.cos(bin_centers))
+    mean_sin = np.sum(weights * np.sin(bin_centers))
+    preferred_direction = np.arctan2(mean_sin, mean_cos) % (2 * np.pi)
+
+    # Peak firing rate
+    peak_firing_rate = float(np.max(firing_rates))
+
+    # Half-width at half-max (HWHM) approximation
+    half_max = peak_firing_rate / 2
+    above_half = firing_rates >= half_max
+
+    # Count bins above half-max (with circular wrapping)
+    # This is approximate; for exact HWHM, would need interpolation
+    if np.any(above_half):
+        # Find transitions
+        extended = np.concatenate([above_half, above_half[:1]])
+        transitions = np.diff(extended.astype(int))
+        rises = np.where(transitions == 1)[0]
+        falls = np.where(transitions == -1)[0]
+
+        if len(rises) > 0 and len(falls) > 0:
+            # Calculate width in bins
+            bin_width = (
+                bin_centers[1] - bin_centers[0] if len(bin_centers) > 1 else np.pi / 30
+            )
+            n_above = np.sum(above_half)
+            tuning_width = n_above * bin_width / 2  # HWHM = FWHM / 2
+        else:
+            tuning_width = np.pi / 2  # Default if can't compute
+    else:
+        tuning_width = np.nan
+
+    # Rayleigh test on weighted angles
+    _, pval = rayleigh_test(bin_centers, weights=firing_rates)
+
+    # Classification
+    is_hd_cell = (mean_vector_length > min_vector_length) and (pval < 0.05)
+
+    return HeadDirectionMetrics(
+        preferred_direction=float(preferred_direction),
+        preferred_direction_deg=float(np.degrees(preferred_direction)),
+        mean_vector_length=float(mean_vector_length),
+        peak_firing_rate=float(peak_firing_rate),
+        tuning_width=float(tuning_width),
+        tuning_width_deg=float(np.degrees(tuning_width)),
+        is_hd_cell=is_hd_cell,
+        rayleigh_pval=float(pval),
+    )
+
+
+def is_head_direction_cell(
+    head_directions: NDArray[np.float64],
+    spike_times: NDArray[np.float64],
+    position_times: NDArray[np.float64],
+    **kwargs: Any,
+) -> bool:
+    """
+    Quick check: Is this a head direction cell?
+
+    Convenience function for fast screening.
+    For detailed metrics, use ``head_direction_tuning_curve`` + ``head_direction_metrics``.
+
+    Parameters
+    ----------
+    head_directions : array, shape (n_frames,)
+        Head direction at each time point.
+    spike_times : array, shape (n_spikes,)
+        Times of spikes (same time units as position_times).
+    position_times : array, shape (n_frames,)
+        Timestamps corresponding to each head direction sample.
+    **kwargs
+        Additional arguments passed to ``head_direction_tuning_curve``.
+
+    Returns
+    -------
+    bool
+        True if neuron passes HD cell criteria.
+
+    Examples
+    --------
+    >>> from neurospatial.metrics import is_head_direction_cell
+    >>> # Screen many neurons
+    >>> for i, (hd, spikes, times) in enumerate(all_neurons):  # doctest: +SKIP
+    ...     if is_head_direction_cell(hd, spikes, times):
+    ...         print(f"Neuron {i} is an HD cell")
+    """
+    try:
+        bins, rates = head_direction_tuning_curve(
+            head_directions, spike_times, position_times, **kwargs
+        )
+        metrics = head_direction_metrics(bins, rates)
+        return metrics.is_hd_cell
+    except ValueError:
+        return False

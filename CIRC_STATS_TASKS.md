@@ -164,7 +164,7 @@
 
 ### 3.3 HeadDirectionMetrics Dataclass
 
-- [ ] **Implement `HeadDirectionMetrics`**
+- [x] **Implement `HeadDirectionMetrics`**
   - Fields: `preferred_direction`, `preferred_direction_deg`, `mean_vector_length`, `peak_firing_rate`, `tuning_width`, `tuning_width_deg`, `is_hd_cell`, `rayleigh_pval`
   - Method: `interpretation()` -> str explaining classification
   - Method: `__str__()` -> automatic interpretation
@@ -172,7 +172,7 @@
 
 ### 3.4 Head Direction Metrics Computation
 
-- [ ] **Implement `head_direction_metrics()`**
+- [x] **Implement `head_direction_metrics()`**
   - Parameters: `bin_centers`, `firing_rates`, `min_vector_length=0.4`
   - Validate: length match, non-zero rates, non-constant rates
   - Compute mean vector length using `_mean_resultant_length` with weights
@@ -185,7 +185,7 @@
     - Gaussian tuning: correct preferred direction
     - Uniform firing: not classified as HD cell
 
-- [ ] **Implement `is_head_direction_cell()`**
+- [x] **Implement `is_head_direction_cell()`**
   - Convenience function for fast screening
   - Calls `head_direction_tuning_curve` + `head_direction_metrics`
   - Catch ValueError -> return False

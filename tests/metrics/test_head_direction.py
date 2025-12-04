@@ -522,3 +522,465 @@ class TestHeadDirectionTuningCurve:
         bin_90_idx = 3
         assert firing_rates[bin_0_idx] == pytest.approx(1.0, rel=0.15)
         assert firing_rates[bin_90_idx] == pytest.approx(1.0, rel=0.15)
+
+
+class TestHeadDirectionMetricsDataclass:
+    """Tests for HeadDirectionMetrics dataclass (Milestone 3.3)."""
+
+    def test_dataclass_can_be_imported(self) -> None:
+        """Test that HeadDirectionMetrics can be imported."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        assert HeadDirectionMetrics is not None
+
+    def test_dataclass_has_all_fields(self) -> None:
+        """Test that HeadDirectionMetrics has all required fields."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        # Create an instance with all fields
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi / 2,  # 90 degrees
+            preferred_direction_deg=90.0,
+            mean_vector_length=0.6,
+            peak_firing_rate=15.0,
+            tuning_width=np.pi / 4,  # 45 degrees
+            tuning_width_deg=45.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.001,
+        )
+
+        assert metrics.preferred_direction == pytest.approx(np.pi / 2)
+        assert metrics.preferred_direction_deg == pytest.approx(90.0)
+        assert metrics.mean_vector_length == pytest.approx(0.6)
+        assert metrics.peak_firing_rate == pytest.approx(15.0)
+        assert metrics.tuning_width == pytest.approx(np.pi / 4)
+        assert metrics.tuning_width_deg == pytest.approx(45.0)
+        assert metrics.is_hd_cell is True
+        assert metrics.rayleigh_pval == pytest.approx(0.001)
+
+    def test_interpretation_hd_cell(self) -> None:
+        """Test interpretation() method for HD cell."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi / 2,
+            preferred_direction_deg=90.0,
+            mean_vector_length=0.65,
+            peak_firing_rate=20.0,
+            tuning_width=np.pi / 6,
+            tuning_width_deg=30.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.0001,
+        )
+
+        interp = metrics.interpretation()
+        assert "HEAD DIRECTION CELL" in interp
+        assert "90.0" in interp  # Preferred direction
+        assert "0.65" in interp  # Mean vector length
+        assert "20.0" in interp  # Peak firing rate
+        assert "30.0" in interp  # Tuning width
+
+    def test_interpretation_not_hd_cell_low_mvl(self) -> None:
+        """Test interpretation() method when MVL is too low."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=0.0,
+            preferred_direction_deg=0.0,
+            mean_vector_length=0.25,  # Below 0.4 threshold
+            peak_firing_rate=5.0,
+            tuning_width=np.pi,
+            tuning_width_deg=180.0,
+            is_hd_cell=False,
+            rayleigh_pval=0.01,  # Significant Rayleigh
+        )
+
+        interp = metrics.interpretation()
+        assert "Not classified" in interp
+        assert "vector length too low" in interp.lower() or "0.25" in interp
+
+    def test_interpretation_not_hd_cell_high_pval(self) -> None:
+        """Test interpretation() method when Rayleigh p-value is too high."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi,
+            preferred_direction_deg=180.0,
+            mean_vector_length=0.5,  # Above threshold
+            peak_firing_rate=10.0,
+            tuning_width=np.pi / 3,
+            tuning_width_deg=60.0,
+            is_hd_cell=False,
+            rayleigh_pval=0.15,  # Not significant
+        )
+
+        interp = metrics.interpretation()
+        assert "Not classified" in interp
+        assert "rayleigh" in interp.lower() or "0.15" in interp
+
+    def test_str_method_returns_interpretation(self) -> None:
+        """Test that __str__() returns interpretation()."""
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi / 4,
+            preferred_direction_deg=45.0,
+            mean_vector_length=0.7,
+            peak_firing_rate=25.0,
+            tuning_width=np.pi / 8,
+            tuning_width_deg=22.5,
+            is_hd_cell=True,
+            rayleigh_pval=0.0001,
+        )
+
+        assert str(metrics) == metrics.interpretation()
+
+    def test_print_produces_human_readable_output(self) -> None:
+        """Test that print(metrics) produces useful output."""
+        import io
+        import sys
+
+        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi,
+            preferred_direction_deg=180.0,
+            mean_vector_length=0.55,
+            peak_firing_rate=12.0,
+            tuning_width=np.pi / 5,
+            tuning_width_deg=36.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.001,
+        )
+
+        # Capture print output
+        captured = io.StringIO()
+        sys.stdout = captured
+        print(metrics)
+        sys.stdout = sys.__stdout__
+
+        output = captured.getvalue()
+        assert len(output) > 50  # Should be substantial
+        assert "180.0" in output  # Preferred direction
+
+    def test_exported_from_metrics_init(self) -> None:
+        """Test that HeadDirectionMetrics is exported from neurospatial.metrics."""
+        from neurospatial.metrics import HeadDirectionMetrics
+
+        assert HeadDirectionMetrics is not None
+
+
+class TestHeadDirectionMetricsFunction:
+    """Tests for head_direction_metrics() function (Milestone 3.4)."""
+
+    def test_function_exists(self) -> None:
+        """Test that head_direction_metrics can be imported."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        assert callable(head_direction_metrics)
+
+    def test_returns_head_direction_metrics_dataclass(self) -> None:
+        """Test that function returns HeadDirectionMetrics instance."""
+        from neurospatial.metrics.head_direction import (
+            HeadDirectionMetrics,
+            head_direction_metrics,
+        )
+
+        # Create simple tuning curve: sharp peak at 90 degrees
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False) + np.pi / 12
+        firing_rates = np.zeros(n_bins)
+        firing_rates[3] = 20.0  # Peak at 90 degrees
+
+        metrics = head_direction_metrics(bin_centers, firing_rates)
+        assert isinstance(metrics, HeadDirectionMetrics)
+
+    def test_preferred_direction_computation(self) -> None:
+        """Test that preferred direction is computed correctly."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Create Gaussian-like tuning curve centered at 90 degrees
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        center = np.pi / 2  # 90 degrees
+
+        # Von Mises-like distribution (Gaussian on circle)
+        kappa = 5.0
+        firing_rates = np.exp(kappa * np.cos(bin_centers - center))
+
+        metrics = head_direction_metrics(bin_centers, firing_rates)
+
+        # Preferred direction should be close to 90 degrees
+        assert metrics.preferred_direction == pytest.approx(np.pi / 2, abs=0.1)
+        assert metrics.preferred_direction_deg == pytest.approx(90.0, abs=6.0)
+
+    def test_mean_vector_length_computation(self) -> None:
+        """Test that mean vector length is computed correctly."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Sharp tuning = high MVL
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        center = 0.0
+
+        # Very sharp tuning (high kappa)
+        firing_rates_sharp = np.exp(10.0 * np.cos(bin_centers - center))
+        metrics_sharp = head_direction_metrics(bin_centers, firing_rates_sharp)
+
+        # Broad tuning (low kappa)
+        firing_rates_broad = np.exp(0.5 * np.cos(bin_centers - center))
+        metrics_broad = head_direction_metrics(bin_centers, firing_rates_broad)
+
+        # Sharp tuning should have higher MVL
+        assert metrics_sharp.mean_vector_length > metrics_broad.mean_vector_length
+        assert 0.0 <= metrics_sharp.mean_vector_length <= 1.0
+        assert 0.0 <= metrics_broad.mean_vector_length <= 1.0
+
+    def test_peak_firing_rate_computation(self) -> None:
+        """Test that peak firing rate is computed correctly."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.array(
+            [1.0, 2.0, 5.0, 15.0, 8.0, 3.0, 1.0, 0.5, 0.3, 0.5, 0.8, 1.0]
+        )
+
+        metrics = head_direction_metrics(bin_centers, firing_rates)
+        assert metrics.peak_firing_rate == pytest.approx(15.0)
+
+    def test_tuning_width_computation(self) -> None:
+        """Test that tuning width (HWHM) is approximately computed."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Create tuning curves with different widths
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        center = np.pi
+
+        # Narrow tuning
+        firing_rates_narrow = np.exp(10.0 * np.cos(bin_centers - center))
+        metrics_narrow = head_direction_metrics(bin_centers, firing_rates_narrow)
+
+        # Wide tuning
+        firing_rates_wide = np.exp(1.0 * np.cos(bin_centers - center))
+        metrics_wide = head_direction_metrics(bin_centers, firing_rates_wide)
+
+        # Narrow tuning should have smaller tuning width
+        assert metrics_narrow.tuning_width < metrics_wide.tuning_width
+        assert metrics_narrow.tuning_width > 0  # Should be positive
+        assert metrics_narrow.tuning_width_deg > 0
+
+    def test_rayleigh_pval_computation(self) -> None:
+        """Test that Rayleigh p-value is computed."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Strong directional tuning -> small p-value
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates_directional = np.exp(5.0 * np.cos(bin_centers))
+
+        metrics = head_direction_metrics(bin_centers, firing_rates_directional)
+        assert metrics.rayleigh_pval < 0.05  # Should be significant
+
+    def test_is_hd_cell_classification_true(self) -> None:
+        """Test that HD cell classification works for true HD cells."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Classic HD cell: sharp tuning, high MVL
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(5.0 * np.cos(bin_centers - np.pi / 4))
+
+        metrics = head_direction_metrics(bin_centers, firing_rates)
+        assert metrics.is_hd_cell is True
+        assert metrics.mean_vector_length > 0.4
+        assert metrics.rayleigh_pval < 0.05
+
+    def test_is_hd_cell_classification_false_uniform(self) -> None:
+        """Test that uniform firing is not classified as HD cell."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Uniform firing -> not HD cell
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        # Add small noise to avoid constant rate error
+        rng = np.random.default_rng(42)
+        firing_rates = 10.0 + rng.normal(0, 0.1, n_bins)
+        firing_rates = np.maximum(firing_rates, 0.1)  # Ensure positive
+
+        metrics = head_direction_metrics(bin_centers, firing_rates)
+        assert metrics.is_hd_cell is False
+
+    def test_custom_min_vector_length_threshold(self) -> None:
+        """Test that min_vector_length parameter works."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        # Moderate tuning (MVL around 0.5)
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))  # Moderate kappa
+
+        # With default threshold (0.4) - should be HD cell
+        metrics_default = head_direction_metrics(bin_centers, firing_rates)
+
+        # With higher threshold (0.7) - should not be HD cell
+        metrics_strict = head_direction_metrics(
+            bin_centers, firing_rates, min_vector_length=0.7
+        )
+
+        # MVL should be same, classification different
+        assert metrics_default.mean_vector_length == metrics_strict.mean_vector_length
+        # If MVL is between 0.4 and 0.7, we expect different classifications
+        if 0.4 < metrics_default.mean_vector_length < 0.7:
+            assert metrics_default.is_hd_cell is True
+            assert metrics_strict.is_hd_cell is False
+
+    def test_validation_length_mismatch(self) -> None:
+        """Test that function validates bin_centers and firing_rates match."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        bin_centers = np.linspace(0, 2 * np.pi, 12)
+        firing_rates = np.ones(10)  # Wrong length
+
+        with pytest.raises(ValueError, match=r"[Ll]ength|[Ss]ame"):
+            head_direction_metrics(bin_centers, firing_rates)
+
+    def test_validation_all_zero_rates(self) -> None:
+        """Test that function validates non-zero firing rates."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        bin_centers = np.linspace(0, 2 * np.pi, 12)
+        firing_rates = np.zeros(12)
+
+        with pytest.raises(ValueError, match=r"[Zz]ero"):
+            head_direction_metrics(bin_centers, firing_rates)
+
+    def test_validation_constant_rates(self) -> None:
+        """Test that function validates non-constant firing rates."""
+        from neurospatial.metrics.head_direction import head_direction_metrics
+
+        bin_centers = np.linspace(0, 2 * np.pi, 12)
+        firing_rates = np.full(12, 5.0)  # Constant (non-zero)
+
+        with pytest.raises(ValueError, match=r"[Cc]onstant"):
+            head_direction_metrics(bin_centers, firing_rates)
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import head_direction_metrics
+
+        assert callable(head_direction_metrics)
+
+
+class TestIsHeadDirectionCell:
+    """Tests for is_head_direction_cell() convenience function (Milestone 3.4)."""
+
+    def test_function_exists(self) -> None:
+        """Test that is_head_direction_cell can be imported."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        assert callable(is_head_direction_cell)
+
+    def test_returns_bool(self) -> None:
+        """Test that function returns boolean."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        # Create data for clear HD cell
+        n_samples = 1000
+        position_times = np.linspace(0, 100, n_samples)
+        # Animal always faces same direction
+        head_directions = np.full(n_samples, 90.0)
+        spike_times = np.linspace(1, 99, 200)
+
+        result = is_head_direction_cell(
+            head_directions, spike_times, position_times, angle_unit="deg"
+        )
+        assert isinstance(result, bool)
+
+    def test_detects_hd_cell(self) -> None:
+        """Test that function correctly identifies HD cells."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        # Create data simulating HD cell: fires when facing north (0/360 deg)
+        rng = np.random.default_rng(42)
+        n_samples = 5000
+        position_times = np.linspace(0, 100, n_samples)
+
+        # Animal rotates through all directions
+        head_directions = np.mod(position_times * 36, 360)  # Full rotation every 10s
+
+        # Spikes preferentially when facing 0 degrees (± 30 degrees)
+        spike_times_list = []
+        for t, hd in zip(position_times, head_directions, strict=False):
+            # Higher spike probability when facing north
+            if hd < 30 or hd > 330:
+                if rng.random() < 0.5:  # 50% spike probability
+                    spike_times_list.append(t)
+            else:
+                if rng.random() < 0.02:  # 2% background rate
+                    spike_times_list.append(t)
+
+        spike_times = np.array(spike_times_list)
+
+        result = is_head_direction_cell(
+            head_directions, spike_times, position_times, angle_unit="deg"
+        )
+        assert result is True
+
+    def test_rejects_non_hd_cell(self) -> None:
+        """Test that function correctly rejects non-HD cells."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        # Create data with uniform firing (not HD cell)
+        rng = np.random.default_rng(42)
+        n_samples = 3000
+        position_times = np.linspace(0, 100, n_samples)
+        head_directions = rng.uniform(0, 360, n_samples)
+        spike_times = rng.uniform(0, 100, 200)  # Random spikes
+
+        result = is_head_direction_cell(
+            head_directions, spike_times, position_times, angle_unit="deg"
+        )
+        assert result is False
+
+    def test_returns_false_on_error(self) -> None:
+        """Test that function returns False when an error occurs."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        # Invalid data that would cause ValueError
+        position_times = np.array([0.0, 0.1])  # Too few samples
+        head_directions = np.array([0.0, 90.0])
+        spike_times = np.array([0.05])
+
+        # Should return False, not raise
+        result = is_head_direction_cell(
+            head_directions, spike_times, position_times, angle_unit="deg"
+        )
+        assert result is False
+
+    def test_passes_kwargs_to_tuning_curve(self) -> None:
+        """Test that kwargs are passed to head_direction_tuning_curve."""
+        from neurospatial.metrics.head_direction import is_head_direction_cell
+
+        # Create simple data
+        n_samples = 500
+        position_times = np.linspace(0, 10, n_samples)
+        head_directions = np.full(n_samples, 90.0)
+        spike_times = np.linspace(0.1, 9.9, 100)
+
+        # Should work with different bin_size
+        result = is_head_direction_cell(
+            head_directions,
+            spike_times,
+            position_times,
+            bin_size=15.0,  # Different bin size
+            angle_unit="deg",
+        )
+        assert isinstance(result, bool)
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import is_head_direction_cell
+
+        assert callable(is_head_direction_cell)

@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 3.2 complete (head direction tuning curve)
+**Current Status:** Milestone 3.4 complete (HeadDirectionMetrics, head_direction_metrics, is_head_direction_cell)
 
 ---
 
@@ -210,9 +210,44 @@
 5. Default to degrees (`angle_unit='deg'`) for head direction since HD literature
    commonly uses degrees (unlike other circular functions that default to radians).
 
+### 2025-12-04: HeadDirectionMetrics and HD Cell Classification (M3.3-M3.4)
+
+**Completed:**
+
+- Implemented `HeadDirectionMetrics` dataclass with:
+  - All 8 required fields (preferred_direction, mean_vector_length, peak_firing_rate, etc.)
+  - `interpretation()` method with detailed explanation for both HD cells and non-HD cells
+  - Educational content about 0.4 threshold (from Taube et al. 1990)
+  - `__str__()` method that delegates to `interpretation()`
+- Implemented `head_direction_metrics()` with:
+  - Input validation (length match, all-zero rates, constant rates)
+  - Mean vector length computation using centralized `_mean_resultant_length()` helper
+  - Preferred direction as weighted circular mean via `arctan2()`
+  - Tuning width (HWHM) approximation via bin counting above half-max
+  - Rayleigh test for statistical significance
+  - HD cell classification: MVL > min_vector_length AND p < 0.05
+- Implemented `is_head_direction_cell()` convenience function:
+  - Combines `head_direction_tuning_curve()` + `head_direction_metrics()`
+  - Returns False on any ValueError (fast screening)
+  - Passes **kwargs to tuning curve computation
+- Added 29 new tests (8 for dataclass, 15 for metrics function, 6 for convenience function)
+- All 56 head direction tests passing, ruff and mypy clean
+- Exported `HeadDirectionMetrics`, `head_direction_metrics`, `is_head_direction_cell` from `neurospatial.metrics`
+
+**Design Decisions:**
+
+1. HWHM approximation uses bin counting rather than interpolation - documented as
+   approximate in docstring. For more accurate measurements, users should use
+   smaller bin_size or fit a parametric model.
+2. Classification criteria follow Taube et al. (1990): MVL > 0.4 AND p < 0.05.
+   The `min_vector_length` parameter allows adjustment for different brain regions
+   or species.
+3. Interpretation method provides educational content about threshold choices,
+   helping users understand why neurons are classified as they are.
+
 **Next Steps:**
 
-- Implement `HeadDirectionMetrics` dataclass (Milestone 3.3)
+- Implement `plot_head_direction_tuning()` (Milestone 3.5)
 - Write tests first (TDD)
 
 ---

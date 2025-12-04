@@ -37,7 +37,12 @@ from neurospatial.metrics.grid_cells import (
     periodicity_score,
     spatial_autocorrelation,
 )
-from neurospatial.metrics.head_direction import head_direction_tuning_curve
+from neurospatial.metrics.head_direction import (
+    HeadDirectionMetrics,
+    head_direction_metrics,
+    head_direction_tuning_curve,
+    is_head_direction_cell,
+)
 from neurospatial.metrics.phase_precession import (
     PhasePrecessionResult,
     has_phase_precession,
@@ -79,6 +84,7 @@ from neurospatial.metrics.trajectory import (
 
 __all__ = [
     "GridProperties",
+    "HeadDirectionMetrics",
     "PhasePrecessionResult",
     "PopulationCoverageResult",
     "border_score",
@@ -103,9 +109,11 @@ __all__ = [
     "grid_scale",
     "grid_score",
     "has_phase_precession",
+    "head_direction_metrics",
     "head_direction_tuning_curve",
     "in_out_field_ratio",
     "information_per_second",
+    "is_head_direction_cell",
     "mean_square_displacement",
     "mutual_information",
     "periodicity_score",
