@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Completed**: M0, M1
-**Next**: M2 - is_modulated() convenience function
+**Completed**: M0, M1, M2
+**Next**: M3 - Visualization (plot_circular_basis_tuning)
 
 ## Completed Tasks
 
@@ -29,6 +29,18 @@
 - [x] Added 20 new tests (all passing)
 - [x] All 79 circular tests pass, ruff and mypy clean
 
+### M2: Implement is_modulated() Convenience Function ✓
+
+- [x] Implemented `is_modulated(beta_sin, beta_cos, cov_matrix, *, alpha=0.05, min_magnitude=0.2)`
+- [x] Returns True if BOTH statistically significant (p < alpha) AND practically meaningful (amplitude >= min_magnitude)
+- [x] Added to `__all__` in circular.py and metrics/__init__.py
+- [x] Added 10 tests including edge cases:
+  - zero coefficients
+  - singular covariance matrix
+  - custom alpha/min_magnitude thresholds
+- [x] Code review passed with approval
+- [x] All 87 circular tests pass, ruff and mypy clean
+
 ## Decisions
 
 1. Implementation now matches documentation (radians default)
@@ -36,11 +48,13 @@
 3. Following TDD: red-green-refactor cycle
 4. CircularBasisResult stores angles in radians internally
 5. Wald test uses `np.linalg.solve` instead of `inv` for numerical stability
+6. `is_modulated()` takes `beta_sin`, `beta_cos` separately (not packed array) - matches API of `circular_basis_metrics()`
+7. `is_modulated()` returns False for NaN p-values (singular covariance) due to NaN comparison semantics
 
 ## Next Steps
 
-1. Commit M1 changes
-2. Start M2: Add is_modulated() convenience function
+1. Commit M2 changes
+2. Start M3: Add plot_circular_basis_tuning() visualization
 
 ## Blockers
 
@@ -51,3 +65,4 @@ None currently.
 - The module docstring already claimed radians was default, so fixing implementation aligned with docs
 - All tests in test_head_direction.py explicitly use `angle_unit="deg"`, so the default change doesn't affect them
 - CircularBasisResult follows same pattern as HeadDirectionMetrics and PhasePrecessionResult
+- `is_modulated()` follows pattern of `is_head_direction_cell()` for convenience boolean functions

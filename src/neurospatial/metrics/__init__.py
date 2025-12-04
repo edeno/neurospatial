@@ -28,6 +28,7 @@ from neurospatial.metrics.circular import (
     circular_basis_metrics,
     circular_circular_correlation,
     circular_linear_correlation,
+    is_modulated,
     phase_position_correlation,
     rayleigh_test,
 )
@@ -121,6 +122,7 @@ __all__ = [
     "in_out_field_ratio",
     "information_per_second",
     "is_head_direction_cell",
+    "is_modulated",
     "mean_square_displacement",
     "mutual_information",
     "periodicity_score",

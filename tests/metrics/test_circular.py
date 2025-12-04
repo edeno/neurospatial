@@ -1113,3 +1113,134 @@ class TestCircularBasisMetrics:
         from neurospatial.metrics import circular_basis_metrics
 
         assert callable(circular_basis_metrics)
+
+
+class TestIsModulated:
+    """Tests for is_modulated() convenience function (Milestone M2)."""
+
+    def test_function_exists(self) -> None:
+        """Test that is_modulated can be imported."""
+        from neurospatial.metrics.circular import is_modulated
+
+        assert callable(is_modulated)
+
+    def test_returns_bool(self) -> None:
+        """Test that is_modulated returns a boolean."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Strong modulation with low variance
+        beta_sin = 0.5
+        beta_cos = 0.5
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        result = is_modulated(beta_sin, beta_cos, cov)
+        assert isinstance(result, bool)
+
+    def test_significant_strong_modulation_returns_true(self) -> None:
+        """Test that significant strong modulation returns True."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Strong modulation (amplitude = sqrt(2^2 + 2^2) = 2.83) with low variance
+        beta_sin = 2.0
+        beta_cos = 2.0
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])  # Small variance
+
+        result = is_modulated(beta_sin, beta_cos, cov)
+        assert result is True
+
+    def test_not_significant_returns_false(self) -> None:
+        """Test that non-significant modulation returns False."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Weak modulation with large variance -> p > 0.05
+        beta_sin = 0.1
+        beta_cos = 0.1
+        cov = np.array([[1.0, 0.0], [0.0, 1.0]])  # Large variance
+
+        result = is_modulated(beta_sin, beta_cos, cov)
+        assert result is False
+
+    def test_weak_modulation_below_threshold_returns_false(self) -> None:
+        """Test that magnitude below threshold returns False even if significant."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Small but statistically significant (low variance)
+        # amplitude = sqrt(0.1^2 + 0.1^2) = 0.141 < 0.2 (default min_magnitude)
+        beta_sin = 0.1
+        beta_cos = 0.1
+        cov = np.array([[0.0001, 0.0], [0.0, 0.0001]])  # Very small variance
+
+        result = is_modulated(beta_sin, beta_cos, cov)
+        assert result is False
+
+    def test_custom_alpha(self) -> None:
+        """Test that custom alpha threshold works."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Moderate modulation with moderate variance
+        # This might be significant at alpha=0.1 but not at alpha=0.01
+        beta_sin = 0.5
+        beta_cos = 0.5
+        cov = np.array([[0.1, 0.0], [0.0, 0.1]])
+
+        # More lenient alpha
+        result_lenient = is_modulated(beta_sin, beta_cos, cov, alpha=0.1)
+        # Strict alpha
+        result_strict = is_modulated(beta_sin, beta_cos, cov, alpha=0.001)
+
+        # Lenient should be at least as permissive as strict
+        if result_strict:
+            assert result_lenient  # If strict passes, lenient must too
+
+    def test_custom_min_magnitude(self) -> None:
+        """Test that custom min_magnitude threshold works."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # Amplitude = sqrt(0.3^2 + 0.3^2) = 0.424
+        beta_sin = 0.3
+        beta_cos = 0.3
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        # Default min_magnitude=0.2 -> True (0.424 > 0.2)
+        result_default = is_modulated(beta_sin, beta_cos, cov)
+        assert result_default is True
+
+        # Higher threshold min_magnitude=0.5 -> False (0.424 < 0.5)
+        result_strict = is_modulated(beta_sin, beta_cos, cov, min_magnitude=0.5)
+        assert result_strict is False
+
+    def test_zero_coefficients_returns_false(self) -> None:
+        """Test that zero coefficients return False (no modulation)."""
+        from neurospatial.metrics.circular import is_modulated
+
+        # No modulation: amplitude = 0
+        beta_sin = 0.0
+        beta_cos = 0.0
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        result = is_modulated(beta_sin, beta_cos, cov)
+        assert result is False
+
+    def test_singular_covariance_returns_false(self) -> None:
+        """Test that singular covariance matrix returns False."""
+        import warnings
+
+        from neurospatial.metrics.circular import is_modulated
+
+        # Singular covariance matrix (determinant = 0)
+        beta_sin = 2.0
+        beta_cos = 2.0
+        cov = np.array([[1.0, 1.0], [1.0, 1.0]])  # Rank deficient
+
+        # Should warn and return False
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Suppress expected warning
+            result = is_modulated(beta_sin, beta_cos, cov)
+
+        assert result is False
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import is_modulated
+
+        assert callable(is_modulated)

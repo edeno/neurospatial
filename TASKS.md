@@ -105,17 +105,18 @@ This document breaks down CIRCULAR_BASIS_PLAN.md into actionable tasks for Claud
 
 ### Tasks
 
-- [ ] **M2.1**: Implement `is_modulated()` function
+- [x] **M2.1**: Implement `is_modulated()` function
   - File: `src/neurospatial/metrics/circular.py`
-  - Parameters: `coefficients`, `covariance_matrix` (required), `alpha=0.05`, `min_magnitude=0.2`, `include_intercept=True`, `n_harmonics=1`
+  - Parameters: `beta_sin`, `beta_cos`, `cov_matrix` (required), `alpha=0.05`, `min_magnitude=0.2`
   - Returns: `True` if p < alpha AND magnitude >= min_magnitude
   - Calls `circular_basis_metrics()` internally
+  - Added 10 tests including edge cases (zero coefficients, singular covariance)
 
-- [ ] **M2.2**: Add to `__all__` in circular.py
+- [x] **M2.2**: Add to `__all__` in circular.py and metrics/__init__.py
   - Add: `"is_modulated"`
 
 **Success Criteria**:
-- `is_modulated(coefs, cov)` returns boolean
+- `is_modulated(beta_sin, beta_cos, cov)` returns boolean
 - Returns `True` only when both statistically significant AND magnitude above threshold
 
 ---

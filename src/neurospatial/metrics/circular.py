@@ -72,6 +72,7 @@ __all__ = [
     "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
+    "is_modulated",
     "phase_position_correlation",
     "rayleigh_test",
 ]
@@ -585,6 +586,81 @@ def circular_basis_metrics(
         pvalue = _wald_test_magnitude(beta_sin, beta_cos, cov_matrix)
 
     return amplitude, phase, pvalue
+
+
+def is_modulated(
+    beta_sin: float,
+    beta_cos: float,
+    cov_matrix: NDArray[np.float64],
+    *,
+    alpha: float = 0.05,
+    min_magnitude: float = 0.2,
+) -> bool:
+    """
+    Quick check: Do GLM coefficients show significant circular modulation?
+
+    This is a convenience function that combines statistical significance
+    (Wald test p-value) with a practical magnitude threshold.
+
+    Parameters
+    ----------
+    beta_sin : float
+        Coefficient for sin(angle) from fitted GLM.
+    beta_cos : float
+        Coefficient for cos(angle) from fitted GLM.
+    cov_matrix : ndarray, shape (2, 2)
+        Covariance matrix for [beta_sin, beta_cos] from GLM fit.
+        Required for significance testing.
+    alpha : float, default=0.05
+        Significance level for Wald test.
+    min_magnitude : float, default=0.2
+        Minimum modulation magnitude (amplitude) required.
+        Amplitude = sqrt(beta_sin^2 + beta_cos^2).
+
+    Returns
+    -------
+    bool
+        True if BOTH:
+        - p-value < alpha (statistically significant)
+        - magnitude >= min_magnitude (practically meaningful)
+        False otherwise.
+
+    See Also
+    --------
+    circular_basis_metrics : For full analysis with all metrics.
+
+    Notes
+    -----
+    **Why both thresholds?**
+
+    Statistical significance alone can occur with very weak modulation
+    when sample sizes are large. Requiring both significance AND a
+    minimum magnitude ensures the modulation is both reliable and
+    biologically meaningful.
+
+    **Default thresholds**:
+
+    - alpha=0.05: Standard significance level
+    - min_magnitude=0.2: Weak but detectable modulation
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import is_modulated
+    >>> # Strong significant modulation
+    >>> is_modulated(2.0, 2.0, np.array([[0.01, 0], [0, 0.01]]))
+    True
+    >>> # Weak (non-significant) modulation
+    >>> is_modulated(0.1, 0.1, np.array([[1.0, 0], [0, 1.0]]))
+    False
+    """
+    amplitude, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix)
+
+    # pvalue should never be None since cov_matrix is required, but handle it
+    if pvalue is None:
+        return False
+
+    return pvalue < alpha and amplitude >= min_magnitude
 
 
 # =============================================================================
