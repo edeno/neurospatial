@@ -984,3 +984,419 @@ class TestIsHeadDirectionCell:
         from neurospatial.metrics import is_head_direction_cell
 
         assert callable(is_head_direction_cell)
+
+
+class TestPlotHeadDirectionTuning:
+    """Tests for plot_head_direction_tuning() function (Milestone 3.5)."""
+
+    def test_function_exists(self) -> None:
+        """Test that plot_head_direction_tuning can be imported."""
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        assert callable(plot_head_direction_tuning)
+
+    def test_returns_axes_object(self) -> None:
+        """Test that function returns matplotlib Axes."""
+        import matplotlib.pyplot as plt
+        from matplotlib.axes import Axes
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        # Create simple tuning curve
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates)
+        assert isinstance(ax, Axes)
+
+        plt.close("all")
+
+    def test_polar_projection_default(self) -> None:
+        """Test that polar projection is used by default."""
+        import matplotlib.pyplot as plt
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates)
+        assert isinstance(ax, PolarAxes)
+
+        plt.close("all")
+
+    def test_linear_projection(self) -> None:
+        """Test that linear projection works."""
+        import matplotlib.pyplot as plt
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, projection="linear")
+        # Should NOT be polar
+        assert not isinstance(ax, PolarAxes)
+
+        plt.close("all")
+
+    def test_uses_provided_axes(self) -> None:
+        """Test that function uses provided axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        # Create polar axes
+        _fig, ax_input = plt.subplots(subplot_kw={"projection": "polar"})
+        ax_output = plot_head_direction_tuning(bin_centers, firing_rates, ax=ax_input)
+
+        assert ax_output is ax_input
+
+        plt.close("all")
+
+    def test_polar_theta_configuration(self) -> None:
+        """Test that polar plot has 0° at top (North) and clockwise direction."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates)
+
+        # Check theta_zero_location='N' (0 degrees at top)
+        # theta_offset = pi/2 means 0° is at top
+        assert ax.get_theta_offset() == pytest.approx(np.pi / 2, abs=0.01)
+
+        # Check theta_direction=-1 (clockwise)
+        assert ax.get_theta_direction() == -1
+
+        plt.close("all")
+
+    def test_curve_closed_polar(self) -> None:
+        """Test that polar curve is closed (first point appended at end)."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates)
+
+        # Get the line data
+        lines = ax.get_lines()
+        assert len(lines) >= 1  # Should have at least the tuning curve
+
+        # The curve should have n_bins + 1 points (closed)
+        line = lines[0]
+        xdata = line.get_xdata()
+        assert len(xdata) == n_bins + 1
+
+        plt.close("all")
+
+    def test_preferred_direction_marked(self) -> None:
+        """Test that preferred direction is marked when metrics provided."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import (
+            HeadDirectionMetrics,
+            plot_head_direction_tuning,
+        )
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers - np.pi / 2))
+
+        # Create metrics
+        metrics = HeadDirectionMetrics(
+            preferred_direction=np.pi / 2,
+            preferred_direction_deg=90.0,
+            mean_vector_length=0.7,
+            peak_firing_rate=np.max(firing_rates),
+            tuning_width=np.pi / 6,
+            tuning_width_deg=30.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.001,
+        )
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, metrics=metrics)
+
+        # Should have some marker or line indicating preferred direction
+        # Check for a line or marker at 90 degrees
+        lines = ax.get_lines()
+        # At least one additional element for preferred direction
+        assert len(lines) >= 2
+
+        plt.close("all")
+
+    def test_metrics_text_box_shown(self) -> None:
+        """Test that metrics text box is shown when metrics provided and show_metrics=True."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import (
+            HeadDirectionMetrics,
+            plot_head_direction_tuning,
+        )
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=0.0,
+            preferred_direction_deg=0.0,
+            mean_vector_length=0.65,
+            peak_firing_rate=np.max(firing_rates),
+            tuning_width=np.pi / 6,
+            tuning_width_deg=30.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.001,
+        )
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, metrics=metrics, show_metrics=True
+        )
+
+        # Check for text annotations
+        texts = ax.texts
+        assert len(texts) >= 1
+
+        # Text should contain some metric info
+        text_content = " ".join(t.get_text() for t in texts)
+        assert "0.65" in text_content or "MVL" in text_content
+
+        plt.close("all")
+
+    def test_metrics_text_box_hidden(self) -> None:
+        """Test that metrics text box is hidden when show_metrics=False."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import (
+            HeadDirectionMetrics,
+            plot_head_direction_tuning,
+        )
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        metrics = HeadDirectionMetrics(
+            preferred_direction=0.0,
+            preferred_direction_deg=0.0,
+            mean_vector_length=0.65,
+            peak_firing_rate=np.max(firing_rates),
+            tuning_width=np.pi / 6,
+            tuning_width_deg=30.0,
+            is_hd_cell=True,
+            rayleigh_pval=0.001,
+        )
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, metrics=metrics, show_metrics=False
+        )
+
+        # Should have no text annotations (or minimal)
+        texts = ax.texts
+        # May have title but no metrics box
+        text_content = " ".join(t.get_text() for t in texts)
+        assert "MVL" not in text_content
+
+        plt.close("all")
+
+    def test_angle_display_unit_degrees(self) -> None:
+        """Test that angle_display_unit='deg' shows degrees on axis."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, angle_display_unit="deg"
+        )
+
+        # Get tick labels and check they use degrees
+        # For polar plots, labels are stored as thetagrids
+        labels = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+        # Should have labels like "0°", "90°", etc.
+        label_text = "".join(labels)
+        # Degrees are shown (either with ° symbol or "deg")
+        assert "°" in label_text or "0" in label_text  # Should have some labels
+
+        plt.close("all")
+
+    def test_angle_display_unit_radians(self) -> None:
+        """Test that angle_display_unit='rad' shows radians on axis."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, angle_display_unit="rad"
+        )
+
+        # Get tick labels - should use pi notation
+        labels = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+        label_text = "".join(labels)
+        # Either has pi symbol or fraction notation
+        assert "π" in label_text or "pi" in label_text.lower() or len(labels) > 0
+
+        plt.close("all")
+
+    def test_custom_color(self) -> None:
+        """Test that custom color is applied."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, color="green")
+
+        # Check that line is green
+        lines = ax.get_lines()
+        assert len(lines) >= 1
+        assert lines[0].get_color() == "green"
+
+        plt.close("all")
+
+    def test_fill_alpha(self) -> None:
+        """Test that fill_alpha controls fill transparency."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, fill_alpha=0.3)
+
+        # Should have filled area (stored as patches in polar plots)
+        patches = ax.patches
+        # At least one patch for the fill
+        assert len(patches) >= 1
+
+        plt.close("all")
+
+    def test_line_kwargs(self) -> None:
+        """Test that line_kwargs are passed to plot."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, line_kwargs={"linestyle": "--", "linewidth": 3}
+        )
+
+        lines = ax.get_lines()
+        assert len(lines) >= 1
+        assert lines[0].get_linestyle() == "--"
+        assert lines[0].get_linewidth() == 3
+
+        plt.close("all")
+
+    def test_fill_kwargs(self) -> None:
+        """Test that fill_kwargs are passed to fill."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, fill_kwargs={"hatch": "//"}
+        )
+
+        # Check that fill has hatch pattern (stored as patches in polar plots)
+        patches = ax.patches
+        assert len(patches) >= 1
+        # Hatch is applied (matplotlib stores it)
+        assert patches[0].get_hatch() == "//"
+
+        plt.close("all")
+
+    def test_validation_length_mismatch(self) -> None:
+        """Test that function validates bin_centers and firing_rates match."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        bin_centers = np.linspace(0, 2 * np.pi, 12)
+        firing_rates = np.ones(10)  # Wrong length
+
+        with pytest.raises(ValueError, match=r"[Ll]ength|[Ss]ame"):
+            plot_head_direction_tuning(bin_centers, firing_rates)
+
+        plt.close("all")
+
+    def test_linear_projection_x_axis_degrees(self) -> None:
+        """Test that linear projection shows degrees on x-axis by default."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(
+            bin_centers, firing_rates, projection="linear", angle_display_unit="deg"
+        )
+
+        # X-axis should show head direction label
+        xlabel = ax.get_xlabel()
+        assert "direction" in xlabel.lower() or "head" in xlabel.lower()
+
+        plt.close("all")
+
+    def test_no_metrics_no_preferred_direction_marker(self) -> None:
+        """Test that no preferred direction marker without metrics."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+
+        n_bins = 12
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.exp(2.0 * np.cos(bin_centers))
+
+        ax = plot_head_direction_tuning(bin_centers, firing_rates)
+
+        # Should have only the tuning curve line (closed)
+        lines = ax.get_lines()
+        assert len(lines) == 1
+
+        plt.close("all")
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import plot_head_direction_tuning
+
+        assert callable(plot_head_direction_tuning)

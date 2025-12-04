@@ -193,7 +193,7 @@
 
 ### 3.5 Head Direction Visualization
 
-- [ ] **Implement `plot_head_direction_tuning()`**
+- [x] **Implement `plot_head_direction_tuning()`**
   - Parameters: `bin_centers`, `firing_rates`, `metrics=None`, `ax=None`, `projection='polar'`, `angle_display_unit='deg'`, `show_metrics`, `color`, `fill_alpha`, `line_kwargs`, `fill_kwargs`
   - Support polar and linear projections
   - Close curve for polar plot (append first point)

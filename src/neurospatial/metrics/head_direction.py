@@ -63,7 +63,11 @@ Sargolini, F. et al. (2006). Conjunctive representation of position, direction,
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.projections.polar import PolarAxes
 
 import numpy as np
 from numpy.typing import NDArray
@@ -83,6 +87,7 @@ __all__: list[str] = [
     "head_direction_metrics",
     "head_direction_tuning_curve",
     "is_head_direction_cell",
+    "plot_head_direction_tuning",
 ]
 
 
@@ -591,3 +596,219 @@ def is_head_direction_cell(
         return metrics.is_hd_cell
     except ValueError:
         return False
+
+
+def plot_head_direction_tuning(
+    bin_centers: NDArray[np.float64],
+    firing_rates: NDArray[np.float64],
+    metrics: HeadDirectionMetrics | None = None,
+    ax: Axes | PolarAxes | None = None,
+    *,
+    projection: Literal["polar", "linear"] = "polar",
+    angle_display_unit: Literal["deg", "rad"] = "deg",
+    show_metrics: bool = True,
+    color: str = "C0",
+    fill_alpha: float = 0.3,
+    line_kwargs: dict[str, Any] | None = None,
+    fill_kwargs: dict[str, Any] | None = None,
+) -> Axes | PolarAxes:
+    """
+    Plot head direction tuning curve.
+
+    Creates standard head direction tuning visualization with optional polar
+    or linear projection. Polar plots show 0° at the top (North) with
+    clockwise direction following neuroscience convention.
+
+    Parameters
+    ----------
+    bin_centers : array, shape (n_bins,)
+        Center of each angular bin (radians).
+    firing_rates : array, shape (n_bins,)
+        Firing rate in each bin (Hz).
+    metrics : HeadDirectionMetrics, optional
+        If provided, mark preferred direction and optionally show metrics.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates new figure with appropriate projection.
+    projection : {'polar', 'linear'}, default='polar'
+        Plot projection type.
+    angle_display_unit : {'deg', 'rad'}, default='deg'
+        Unit for angle labels on axes.
+    show_metrics : bool, default=True
+        If True and metrics provided, show metrics text box.
+    color : str, default='C0'
+        Color for tuning curve line and fill.
+    fill_alpha : float, default=0.3
+        Alpha (transparency) for filled area under curve.
+    line_kwargs : dict, optional
+        Additional kwargs for line plot.
+    fill_kwargs : dict, optional
+        Additional kwargs for fill.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes object with the plot.
+
+    Raises
+    ------
+    ValueError
+        If bin_centers and firing_rates have different lengths.
+
+    Notes
+    -----
+    **Polar plot conventions**:
+
+    - 0° at top (North): Uses ``theta_zero_location='N'``
+    - Clockwise direction: Uses ``theta_direction=-1``
+    - Curve is closed (first point appended at end)
+
+    These conventions match standard neuroscience visualization where
+    0° = facing forward/north, 90° = facing right/east.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import (
+    ...     head_direction_tuning_curve,
+    ...     head_direction_metrics,
+    ...     plot_head_direction_tuning,
+    ... )
+    >>> bins, rates = head_direction_tuning_curve(hd, spikes, times)  # doctest: +SKIP
+    >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
+    >>> ax = plot_head_direction_tuning(bins, rates, metrics)  # doctest: +SKIP
+    """
+    import matplotlib.pyplot as plt
+
+    # Convert to arrays
+    bin_centers = np.asarray(bin_centers, dtype=np.float64).ravel()
+    firing_rates = np.asarray(firing_rates, dtype=np.float64).ravel()
+
+    # Validate matching lengths
+    if len(bin_centers) != len(firing_rates):
+        raise ValueError(
+            f"bin_centers and firing_rates must have the same length.\n"
+            f"Got bin_centers: {len(bin_centers)}, firing_rates: {len(firing_rates)}.\n\n"
+            f"This usually means:\n"
+            f"- You're using outputs from different analyses\n"
+            f"- One array was accidentally sliced or filtered\n\n"
+            f"Fix: Verify both came from same head_direction_tuning_curve() call."
+        )
+
+    # Validate non-empty
+    if len(bin_centers) == 0:
+        raise ValueError(
+            "bin_centers and firing_rates must not be empty. Got empty arrays."
+        )
+
+    # Validate firing rates are non-negative
+    if np.any(firing_rates < 0):
+        raise ValueError(
+            f"firing_rates cannot be negative. Found {np.sum(firing_rates < 0)} "
+            f"negative values. Check your spike count or time normalization."
+        )
+
+    # Create figure if needed
+    if ax is None:
+        if projection == "polar":
+            _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        else:
+            _, ax = plt.subplots()
+
+    # Default kwargs
+    line_defaults: dict[str, Any] = {"color": color, "linewidth": 2, "zorder": 2}
+    fill_defaults: dict[str, Any] = {"color": color, "alpha": fill_alpha, "zorder": 1}
+
+    # Merge with user kwargs
+    line_kw = {**line_defaults, **(line_kwargs or {})}
+    fill_kw = {**fill_defaults, **(fill_kwargs or {})}
+
+    # Close the curve (append first point at end)
+    angles_closed = np.concatenate([bin_centers, [bin_centers[0] + 2 * np.pi]])
+    rates_closed = np.concatenate([firing_rates, [firing_rates[0]]])
+
+    if projection == "polar":
+        # Import PolarAxes at runtime for cast
+
+        polar_ax = cast("PolarAxes", ax)
+
+        # Configure polar plot: 0° at top (North), clockwise direction
+        polar_ax.set_theta_zero_location("N")
+        polar_ax.set_theta_direction(-1)
+
+        # Plot tuning curve
+        polar_ax.plot(angles_closed, rates_closed, **line_kw)
+
+        # Fill under curve
+        polar_ax.fill(angles_closed, rates_closed, **fill_kw)
+
+        # Set angle labels
+        if angle_display_unit == "deg":
+            polar_ax.set_thetagrids(
+                [0, 45, 90, 135, 180, 225, 270, 315],
+                ["0°", "45°", "90°", "135°", "180°", "225°", "270°", "315°"],
+            )
+        else:
+            # Radians with pi notation
+            polar_ax.set_thetagrids(
+                [0, 45, 90, 135, 180, 225, 270, 315],
+                ["0", "π/4", "π/2", "3π/4", "π", "5π/4", "3π/2", "7π/4"],
+            )
+
+    else:
+        # Linear projection
+        # Convert to display unit for x-axis
+        if angle_display_unit == "deg":
+            x_closed = np.degrees(angles_closed)
+            x_closed[-1] = 360.0  # Ensure last point is at 360
+            ax.set_xlabel("Head Direction (deg)")
+            ax.set_xlim(0, 360)
+        else:
+            x_closed = angles_closed
+            ax.set_xlabel("Head Direction (rad)")
+            ax.set_xlim(0, 2 * np.pi)
+
+        # Plot tuning curve
+        ax.plot(x_closed, rates_closed, **line_kw)
+
+        # Fill under curve
+        ax.fill(x_closed, rates_closed, **fill_kw)
+
+        ax.set_ylabel("Firing Rate (Hz)")
+
+    # Mark preferred direction if metrics provided
+    if metrics is not None:
+        pfd = metrics.preferred_direction
+        peak_rate = metrics.peak_firing_rate
+
+        if projection == "polar":
+            # Draw line from origin to preferred direction (use polar_ax)
+            polar_ax.plot(
+                [pfd, pfd],
+                [0, peak_rate],
+                color="red",
+                linewidth=2,
+                linestyle="--",
+                zorder=3,
+            )
+        else:
+            pfd_display = np.degrees(pfd) if angle_display_unit == "deg" else pfd
+            ax.axvline(pfd_display, color="red", linewidth=2, linestyle="--", zorder=3)
+
+        # Show metrics text box if requested
+        if show_metrics:
+            metrics_text = (
+                f"PFD: {metrics.preferred_direction_deg:.1f}°\n"
+                f"MVL: {metrics.mean_vector_length:.3f}\n"
+                f"Peak: {metrics.peak_firing_rate:.1f} Hz"
+            )
+            ax.text(
+                0.02,
+                0.98,
+                metrics_text,
+                transform=ax.transAxes,
+                fontsize=9,
+                verticalalignment="top",
+                bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.8},
+            )
+
+    return ax

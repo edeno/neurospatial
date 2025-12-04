@@ -42,6 +42,7 @@ from neurospatial.metrics.head_direction import (
     head_direction_metrics,
     head_direction_tuning_curve,
     is_head_direction_cell,
+    plot_head_direction_tuning,
 )
 from neurospatial.metrics.phase_precession import (
     PhasePrecessionResult,
@@ -119,6 +120,7 @@ __all__ = [
     "periodicity_score",
     "phase_position_correlation",
     "phase_precession",
+    "plot_head_direction_tuning",
     "plot_phase_precession",
     "plot_population_coverage",
     "population_coverage",

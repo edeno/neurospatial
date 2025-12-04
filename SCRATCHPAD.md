@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 3.4 complete (HeadDirectionMetrics, head_direction_metrics, is_head_direction_cell)
+**Current Status:** Milestone 3.5 complete (plot_head_direction_tuning - head direction visualization)
 
 ---
 
@@ -247,8 +247,39 @@
 
 **Next Steps:**
 
-- Implement `plot_head_direction_tuning()` (Milestone 3.5)
-- Write tests first (TDD)
+- Milestone 3 complete! Head direction analysis module finished.
+- Next: Milestone 4 (Tests) and Milestone 5 (Integration and Documentation)
+
+### 2025-12-04: Head Direction Visualization Implementation (M3.5)
+
+**Completed:**
+
+- Implemented `plot_head_direction_tuning()` with:
+  - Polar projection (default) with 0° at North, clockwise direction
+  - Linear projection option for alternative visualization
+  - Curve closing for smooth polar plots (first point appended at end)
+  - Preferred direction marker (dashed red line from origin)
+  - Metrics text box showing PFD, MVL, and peak firing rate
+  - Configurable colors, fill alpha, and kwargs for line/fill
+  - Input validation (length match, empty arrays, negative rates)
+  - Proper type annotations with `TYPE_CHECKING` guard for mypy
+- Added 20 tests covering all functionality
+- Exported `plot_head_direction_tuning` from `neurospatial.metrics`
+- All 76 head direction tests passing, ruff and mypy clean
+
+**Design Decisions:**
+
+1. Used `cast("PolarAxes", ax)` with TYPE_CHECKING guard to satisfy mypy while
+   keeping matplotlib import lazy (inside function). This follows the pattern
+   from `plot_phase_precession()`.
+2. Default to degrees (`angle_display_unit='deg'`) for display since HD literature
+   commonly uses degrees, matching `head_direction_tuning_curve()` default.
+3. Fill stored as patches (not collections) in polar plots - tests updated to
+   check `ax.patches` rather than `ax.collections`.
+4. Validation includes: length mismatch with actionable error message, empty
+   arrays check, and negative firing rate validation.
+5. Text box positioning uses `ax.transAxes` for consistent placement regardless
+   of projection type.
 
 ---
 
