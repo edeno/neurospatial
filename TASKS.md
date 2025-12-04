@@ -92,47 +92,33 @@ This task list breaks down the Events Module implementation into actionable step
   - Return type: `NDArray[np.bool_]`
   - Handle: empty events → return all False
 
-- [ ] **M2.4**: Implement `exponential_kernel()` in `regressors.py`
-  - Parameters: `sample_times`, `event_times`, `tau`, `direction`, `normalize`
-  - Support `direction`: "causal", "acausal", "symmetric"
-  - Use efficient sorted-merge algorithm
-  - Handle: empty events → return zeros
+- [x] **M2.4**: ~~Implement `exponential_kernel()` in `regressors.py`~~ **DEFERRED**
+  - **Reason**: nemos/patsy provide superior GLM basis functions; avoid duplication
+  - **Alternative**: Users can combine `time_to_nearest_event()` with `np.exp()` directly
 
-- [ ] **M2.5**: Add tests for remaining regressors to `tests/test_events_regressors.py`
-  - Test each function with known inputs/outputs
-  - Test edge cases: empty events, single event, events outside range
-  - Test numerical precision (use `np.allclose`)
-
-- [ ] **M2.6**: Verify milestone completion
-  - Run `uv run pytest tests/test_events_regressors.py -v`
-  - Run `uv run mypy src/neurospatial/events/regressors.py`
+- [x] **M2.5**: Verify milestone completion
+  - Run `uv run pytest tests/test_events_regressors.py -v` ✓ (63 tests pass)
+  - Run `uv run mypy src/neurospatial/events/regressors.py` ✓
 
 ---
 
-## Milestone 3: Event Detection Functions
+## Milestone 3: Event Detection Functions **DEFERRED**
 
-**Goal**: Implement functions to detect events from trajectories and signals.
+**Status**: Deferred - detection functions can be implemented when needed
 
-**Dependencies**: Milestone 1
+**Reason**:
+- `extract_region_crossing_events()` wraps existing `segmentation.detect_region_crossings()`
+- `extract_threshold_crossing_events()` and `extract_movement_onset_events()` are general signal processing
+- Users can use scipy/numpy directly for threshold detection
+- Focus on spatial event utilities (M3.4-M3.6) which provide unique value
 
-### Tasks
+### Deferred Tasks
 
-- [ ] **M3.1**: Implement `extract_region_crossing_events()` in `detection.py`
-  - Wrap existing `segmentation.detect_region_crossings()`
-  - Convert result to DataFrame with standard columns
-  - Columns: `timestamp`, `direction`, `region`, `x`, `y`, `bin_index`
-  - Parameters: `env`, `trajectory_bins`, `times`, `region`, `direction`, `min_dwell_time`
+- [ ] **M3.1**: `extract_region_crossing_events()` - deferred
+- [ ] **M3.2**: `extract_threshold_crossing_events()` - deferred
+- [ ] **M3.3**: `extract_movement_onset_events()` - deferred
 
-- [ ] **M3.2**: Implement `extract_threshold_crossing_events()` in `detection.py`
-  - Parameters: `signal`, `times`, `threshold`, `direction`, `min_separation`, `refractory_period`
-  - Support `direction`: "rising", "falling", "both"
-  - Return DataFrame with: `timestamp`, `direction`, `value`
-
-- [ ] **M3.3**: Implement `extract_movement_onset_events()` in `detection.py`
-  - Parameters: `positions`, `times`, `speed_threshold`, `min_duration`, `smoothing_window`
-  - Compute speed from positions
-  - Detect sustained movement periods
-  - Return DataFrame with: `timestamp`, `duration`, `peak_speed`, `x`, `y`
+### Active Tasks (Spatial Event Utilities)
 
 - [ ] **M3.4**: Implement `add_positions()` in `detection.py`
   - Parameters: `events`, `positions`, `times`, `timestamp_column`
@@ -152,11 +138,10 @@ This task list breaks down the Events Module implementation into actionable step
   - Compute event rate per spatial bin
 
 - [ ] **M3.7**: Create `tests/test_events_detection.py`
-  - Test each detection function
+  - Test spatial utility functions
   - Test `add_positions()` only adds coordinates (no bin_index, region)
   - Test `events_in_region()` raises if missing x, y
   - Test with real Environment fixtures
-  - Test edge cases: no crossings, single crossing, continuous movement
 
 - [ ] **M3.8**: Verify milestone completion
   - Run `uv run pytest tests/test_events_detection.py -v`

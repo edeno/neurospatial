@@ -138,7 +138,29 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 4. **Consistent pattern**: Follows same validation/algorithm as sibling functions
 
 **Next Steps:**
-- M2.4: Implement `exponential_kernel()`
+- M3.4: Implement `add_positions()` (spatial event utilities)
+
+---
+
+### 2025-12-04: M2.4 and M3.1-M3.3 Deferred
+
+**Deferred Tasks:**
+
+- **M2.4 `exponential_kernel()`**: nemos/patsy provide superior GLM basis functions
+  - Alternative: Users combine `time_to_nearest_event()` with `np.exp()` directly
+
+- **M3.1-M3.3 Detection functions**: General signal processing, not unique to neurospatial
+  - `extract_region_crossing_events()` - wraps existing segmentation function
+  - `extract_threshold_crossing_events()` - scipy/numpy suffice
+  - `extract_movement_onset_events()` - scipy/numpy suffice
+
+**Rationale:**
+- Focus on unique spatial value (M3.4-M3.6: `add_positions`, `events_in_region`, `spatial_event_rate`)
+- Avoid duplicating functionality in nemos, patsy, scipy
+
+**Milestone 2 Status: COMPLETE**
+- 3 temporal GLM regressors implemented (63 tests)
+- All pass mypy, ruff, pytest
 
 ---
 
