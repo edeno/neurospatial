@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 1 complete (core circular statistics)
+**Current Status:** Milestone 2.2 complete (phase precession analysis)
 
 ---
 
@@ -82,6 +82,35 @@
 2. Anticorrelation requires reflection (-angles), not just opposite direction.
 3. Minimum 5 samples required (same as circular_linear_correlation).
 4. Degenerate cases handled (no variation → r=0, p=1.0 with warning).
+
+### 2025-12-04: Phase Precession Analysis Implementation
+
+**Completed:**
+- Discovered `PhasePrecessionResult` dataclass was already implemented (M2.1)
+- Exported `PhasePrecessionResult`, `phase_precession`, `has_phase_precession` from `neurospatial.metrics`
+- Implemented `phase_precession()` with:
+  - Maximum likelihood estimation via mean resultant length optimization
+  - Grid search (100 points) + fminbound refinement to find global optimum
+  - Position normalization with warning about slope unit changes
+  - Validation for invalid position_range (division by zero)
+- Added 20 tests:
+  - 6 for `PhasePrecessionResult` (is_significant, interpretation, str)
+  - 14 for `phase_precession()` (slope recovery, random data, validation)
+  - 5 for `has_phase_precession()` (precession/recession/random detection)
+- All 77 tests passing, ruff and mypy clean
+
+**Design Decisions:**
+1. Two-stage optimization (grid search + refinement) handles multiple local minima
+   due to circular nature of objective function. Without this, optimizer could find
+   equivalent positive slope for negative data due to circular wrapping.
+2. Added validation for position_range where pos_max <= pos_min to prevent
+   silent division by zero.
+3. Correlation computed after normalization if position_range is provided -
+   documented in comments.
+
+**Next Steps:**
+- Implement `plot_phase_precession()` (Milestone 2.3)
+- Write tests first (TDD)
 
 ---
 

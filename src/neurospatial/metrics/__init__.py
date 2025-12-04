@@ -23,9 +23,12 @@ from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.circular import (
+    PhasePrecessionResult,
     circular_circular_correlation,
     circular_linear_correlation,
+    has_phase_precession,
     phase_position_correlation,
+    phase_precession,
     rayleigh_test,
 )
 from neurospatial.metrics.grid_cells import (
@@ -72,6 +75,7 @@ from neurospatial.metrics.trajectory import (
 
 __all__ = [
     "GridProperties",
+    "PhasePrecessionResult",
     "PopulationCoverageResult",
     "border_score",
     "circular_circular_correlation",
@@ -94,12 +98,14 @@ __all__ = [
     "grid_properties",
     "grid_scale",
     "grid_score",
+    "has_phase_precession",
     "in_out_field_ratio",
     "information_per_second",
     "mean_square_displacement",
     "mutual_information",
     "periodicity_score",
     "phase_position_correlation",
+    "phase_precession",
     "plot_population_coverage",
     "population_coverage",
     "population_vector_correlation",

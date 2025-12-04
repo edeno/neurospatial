@@ -914,9 +914,97 @@ def phase_precession(
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
     >>> result = phase_precession(positions, phases)
-    >>> print(result)
+    >>> print(result)  # doctest: +SKIP
     """
-    raise NotImplementedError("phase_precession not yet implemented")
+    from scipy.optimize import fminbound
+    from scipy.stats import circmean
+
+    # Convert to arrays and radians if needed
+    positions = np.asarray(positions, dtype=np.float64)
+    phases = np.asarray(phases, dtype=np.float64)
+    phases = _to_radians(phases, angle_unit)
+
+    # Validate paired inputs (handles length mismatch, NaN removal)
+    positions, phases = _validate_paired_input(
+        positions, phases, "positions", "phases", min_samples=min_spikes
+    )
+
+    # Wrap phases to [0, 2*pi] to ensure consistent residual calculation
+    # during optimization. Input phases may be in any range after angle_unit
+    # conversion, but optimization assumes [0, 2*pi] range.
+    phases = phases % (2 * np.pi)
+
+    # Handle position normalization
+    # Note: If position_range is provided, the correlation is computed on
+    # normalized positions [0, 1], not the original position values.
+    slope_units = "rad/position_unit"
+    if position_range is not None:
+        pos_min, pos_max = position_range
+        if pos_max <= pos_min:
+            raise ValueError(
+                f"position_range must have pos_max > pos_min. "
+                f"Got pos_min={pos_min}, pos_max={pos_max}.\n"
+                f"Fix: Ensure position_range=(min, max) where max > min."
+            )
+        warnings.warn(
+            "Using position_range normalizes positions to [0, 1], which changes "
+            "slope units from rad/position_unit to rad/normalized_position. "
+            "The slope will represent phase change per normalized field position.",
+            stacklevel=2,
+        )
+        positions = (positions - pos_min) / (pos_max - pos_min)
+        slope_units = "rad/normalized_position (0-1)"
+
+    # Define objective function: negative mean resultant length of residuals
+    # We minimize this to find the slope that maximizes mean resultant length
+    def _neg_mean_resultant_length(slope: float) -> float:
+        residuals = (phases - slope * positions) % (2 * np.pi)
+        return -_mean_resultant_length(residuals)
+
+    # The objective function has multiple local minima due to circular nature
+    # Use grid search to find a good starting region, then refine
+    n_grid = 100
+    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], n_grid)
+    grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
+
+    # Find the best region from grid search
+    best_idx = np.argmin(grid_values)
+
+    # Define a narrow search window around the best grid point
+    window_width = (slope_bounds[1] - slope_bounds[0]) / n_grid * 2
+    local_bounds = (
+        max(slope_bounds[0], grid_slopes[best_idx] - window_width),
+        min(slope_bounds[1], grid_slopes[best_idx] + window_width),
+    )
+
+    # Refine using bounded minimization in the best region
+    optimal_slope, neg_mrl, _ierr, _numfunc = fminbound(
+        _neg_mean_resultant_length,
+        local_bounds[0],
+        local_bounds[1],
+        full_output=True,
+    )
+
+    # Compute mean resultant length at optimal slope
+    mean_resultant_length = -neg_mrl
+
+    # Compute residuals at optimal slope
+    residuals = (phases - optimal_slope * positions) % (2 * np.pi)
+
+    # Compute offset as circular mean of residuals
+    offset = float(circmean(residuals, high=2 * np.pi, low=0))
+
+    # Compute correlation using circular-linear correlation
+    correlation, pval = circular_linear_correlation(phases, positions)
+
+    return PhasePrecessionResult(
+        slope=float(optimal_slope),
+        slope_units=slope_units,
+        offset=offset,
+        correlation=correlation,
+        pval=pval,
+        mean_resultant_length=float(mean_resultant_length),
+    )
 
 
 def has_phase_precession(

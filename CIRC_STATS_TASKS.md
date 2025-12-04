@@ -96,7 +96,7 @@
 
 ### 2.1 PhasePrecessionResult Dataclass
 
-- [ ] **Implement `PhasePrecessionResult`**
+- [x] **Implement `PhasePrecessionResult`**
   - Fields: `slope`, `slope_units`, `offset`, `correlation`, `pval`, `mean_resultant_length`
   - Method: `is_significant(alpha=0.05)` -> bool
   - Method: `interpretation()` -> str with significance, direction, correlation strength, fit quality
@@ -105,7 +105,7 @@
 
 ### 2.2 Phase Precession Analysis
 
-- [ ] **Implement `phase_precession()`**
+- [x] **Implement `phase_precession()`**
   - Parameters: `positions`, `phases`, `slope_bounds=(-2pi, 2pi)`, `position_range=None`, `angle_unit='rad'`, `min_spikes=10`
   - Validate inputs, wrap phases to [0, 2pi]
   - Warn if `position_range` used (changes slope units!)
@@ -118,7 +118,7 @@
     - Synthetic data with known slope: recovered within 20%
     - Random phases: high p-value, low correlation
 
-- [ ] **Implement `has_phase_precession()`**
+- [x] **Implement `has_phase_precession()`**
   - Parameters: `positions`, `phases`, `alpha=0.05`, `min_correlation=0.2`
   - Quick boolean check using `phase_precession()`
   - Return True if: p < alpha, r >= min_correlation, slope < 0

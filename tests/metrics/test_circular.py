@@ -644,3 +644,389 @@ class TestCircularCircularCorrelation:
         # Fisher & Lee measures deviation correlation, not raw angle correlation
         assert r > 0.9, f"Expected r > 0.9 for constant offset, got r={r}"
         assert p < 0.001, f"Expected p < 0.001, got p={p}"
+
+
+class TestPhasePrecessionResult:
+    """Tests for PhasePrecessionResult dataclass."""
+
+    def test_is_significant_below_alpha(self) -> None:
+        """is_significant should return True when pval < alpha."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.5,
+            pval=0.01,
+            mean_resultant_length=0.6,
+        )
+        assert result.is_significant(alpha=0.05) is True
+        assert result.is_significant(alpha=0.001) is False
+
+    def test_is_significant_above_alpha(self) -> None:
+        """is_significant should return False when pval >= alpha."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.3,
+            pval=0.10,
+            mean_resultant_length=0.4,
+        )
+        assert result.is_significant(alpha=0.05) is False
+
+    def test_interpretation_significant_precession(self) -> None:
+        """interpretation should identify significant phase precession."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.15,
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.55,
+            pval=0.001,
+            mean_resultant_length=0.65,
+        )
+        interp = result.interpretation()
+        assert "SIGNIFICANT" in interp
+        assert "PRECESSION" in interp
+        assert "strong" in interp.lower()
+        assert "good" in interp.lower()
+
+    def test_interpretation_not_significant(self) -> None:
+        """interpretation should identify non-significant results."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.05,
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.15,
+            pval=0.20,
+            mean_resultant_length=0.25,
+        )
+        interp = result.interpretation()
+        assert "No significant" in interp or "not significant" in interp.lower()
+
+    def test_interpretation_recession(self) -> None:
+        """interpretation should identify phase recession (positive slope)."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=0.15,  # Positive slope = recession
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.55,
+            pval=0.001,
+            mean_resultant_length=0.65,
+        )
+        interp = result.interpretation()
+        assert "RECESSION" in interp
+
+    def test_str_returns_interpretation(self) -> None:
+        """__str__ should return the interpretation."""
+        from neurospatial.metrics import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            slope_units="rad/cm",
+            offset=np.pi,
+            correlation=0.5,
+            pval=0.01,
+            mean_resultant_length=0.6,
+        )
+        assert str(result) == result.interpretation()
+
+
+class TestPhasePrecession:
+    """Tests for phase_precession() function."""
+
+    def test_synthetic_known_slope_recovery(self) -> None:
+        """Synthetic data with known slope should be recovered within 20%."""
+        from neurospatial.metrics import phase_precession
+
+        # Create synthetic phase precession data
+        # Slope of -0.1 rad/cm, offset of pi
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 100)  # 0-50 cm
+        true_slope = -0.1  # rad/cm
+        true_offset = np.pi
+        # Add small noise
+        noise = rng.normal(0, 0.2, len(positions))
+        phases = (true_offset + true_slope * positions + noise) % (2 * np.pi)
+
+        result = phase_precession(positions, phases)
+
+        # Slope should be recovered within 20%
+        assert abs(result.slope - true_slope) < abs(true_slope) * 0.2, (
+            f"Expected slope ~{true_slope}, got {result.slope}"
+        )
+        # Offset should be recovered within 0.5 rad
+        # Handle wraparound
+        offset_diff = min(
+            abs(result.offset - true_offset),
+            abs(result.offset - true_offset + 2 * np.pi),
+            abs(result.offset - true_offset - 2 * np.pi),
+        )
+        assert offset_diff < 0.5, f"Expected offset ~{true_offset}, got {result.offset}"
+
+    def test_random_phases_high_pvalue(self) -> None:
+        """Random phases should have high p-value (no relationship)."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 100)
+        phases = rng.uniform(0, 2 * np.pi, 100)
+
+        result = phase_precession(positions, phases)
+
+        assert result.pval > 0.05, (
+            f"Expected p > 0.05 for random data, got p={result.pval}"
+        )
+        assert result.correlation < 0.3, (
+            f"Expected r < 0.3 for random data, got r={result.correlation}"
+        )
+
+    def test_returns_phase_precession_result(self) -> None:
+        """Should return PhasePrecessionResult dataclass."""
+        from neurospatial.metrics import PhasePrecessionResult, phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+
+        result = phase_precession(positions, phases)
+
+        assert isinstance(result, PhasePrecessionResult)
+        assert hasattr(result, "slope")
+        assert hasattr(result, "slope_units")
+        assert hasattr(result, "offset")
+        assert hasattr(result, "correlation")
+        assert hasattr(result, "pval")
+        assert hasattr(result, "mean_resultant_length")
+
+    def test_slope_units_default(self) -> None:
+        """slope_units should be 'rad/position_unit' by default."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+
+        result = phase_precession(positions, phases)
+
+        assert "rad" in result.slope_units.lower()
+
+    def test_position_range_changes_slope_units(self) -> None:
+        """Using position_range should normalize positions and warn."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+
+        with pytest.warns(UserWarning, match="position_range|normalized|slope units"):
+            result = phase_precession(positions, phases, position_range=(0.0, 50.0))
+
+        # Slope units should indicate normalized range
+        assert "normalized" in result.slope_units.lower() or "0-1" in result.slope_units
+
+    def test_degrees_input(self) -> None:
+        """Should handle degree input correctly."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        true_slope = -0.1
+        phases_rad = (np.pi + true_slope * positions + rng.normal(0, 0.2, 50)) % (
+            2 * np.pi
+        )
+        phases_deg = np.degrees(phases_rad)
+
+        result_rad = phase_precession(positions, phases_rad, angle_unit="rad")
+        result_deg = phase_precession(positions, phases_deg, angle_unit="deg")
+
+        # Slopes should be similar (both in rad/position)
+        assert_allclose(result_rad.slope, result_deg.slope, rtol=0.1)
+        assert_allclose(result_rad.correlation, result_deg.correlation, rtol=0.1)
+
+    def test_insufficient_spikes_raises(self) -> None:
+        """Too few spikes should raise ValueError."""
+        from neurospatial.metrics import phase_precession
+
+        positions = np.array([0.0, 10.0, 20.0])
+        phases = np.array([0.0, 0.5, 1.0])
+
+        with pytest.raises(ValueError, match=r"at least|minimum|spikes"):
+            phase_precession(positions, phases, min_spikes=10)
+
+    def test_mismatched_lengths_raises(self) -> None:
+        """Mismatched array lengths should raise ValueError."""
+        from neurospatial.metrics import phase_precession
+
+        positions = np.array([0.0, 10.0, 20.0, 30.0])
+        phases = np.array([0.0, 0.5, 1.0])
+
+        with pytest.raises(ValueError, match="same length"):
+            phase_precession(positions, phases)
+
+    def test_offset_in_valid_range(self) -> None:
+        """Offset should be in [0, 2*pi]."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        for _ in range(5):
+            positions = np.linspace(0, 50, 50)
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            result = phase_precession(positions, phases)
+            assert 0 <= result.offset <= 2 * np.pi, (
+                f"Expected offset in [0, 2pi], got {result.offset}"
+            )
+
+    def test_correlation_in_valid_range(self) -> None:
+        """Correlation should be in [0, 1]."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        for _ in range(5):
+            positions = np.linspace(0, 50, 50)
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            result = phase_precession(positions, phases)
+            assert 0 <= result.correlation <= 1, (
+                f"Expected correlation in [0, 1], got {result.correlation}"
+            )
+
+    def test_mean_resultant_length_in_valid_range(self) -> None:
+        """Mean resultant length should be in [0, 1]."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        for _ in range(5):
+            positions = np.linspace(0, 50, 50)
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            result = phase_precession(positions, phases)
+            assert 0 <= result.mean_resultant_length <= 1, (
+                f"Expected MRL in [0, 1], got {result.mean_resultant_length}"
+            )
+
+    def test_pvalue_in_valid_range(self) -> None:
+        """P-value should be in [0, 1]."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        for _ in range(5):
+            positions = np.linspace(0, 50, 50)
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            result = phase_precession(positions, phases)
+            assert 0 <= result.pval <= 1, f"Expected p in [0, 1], got {result.pval}"
+
+    def test_slope_bounds_respected(self) -> None:
+        """Slope should be within specified bounds."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+        slope_bounds = (-1.0, 1.0)
+
+        result = phase_precession(positions, phases, slope_bounds=slope_bounds)
+
+        assert slope_bounds[0] <= result.slope <= slope_bounds[1], (
+            f"Expected slope in {slope_bounds}, got {result.slope}"
+        )
+
+    def test_invalid_position_range_raises(self) -> None:
+        """position_range with pos_max <= pos_min should raise ValueError."""
+        from neurospatial.metrics import phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+
+        # Equal bounds
+        with pytest.raises(ValueError, match="pos_max > pos_min"):
+            phase_precession(positions, phases, position_range=(50.0, 50.0))
+
+        # Reversed bounds
+        with pytest.raises(ValueError, match="pos_max > pos_min"):
+            phase_precession(positions, phases, position_range=(50.0, 0.0))
+
+
+class TestHasPhasePrecession:
+    """Tests for has_phase_precession() function."""
+
+    def test_synthetic_precession_returns_true(self) -> None:
+        """Clear phase precession should return True."""
+        from neurospatial.metrics import has_phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 100)
+        # Strong negative slope with minimal noise
+        true_slope = -0.15
+        noise = rng.normal(0, 0.15, len(positions))
+        phases = (np.pi + true_slope * positions + noise) % (2 * np.pi)
+
+        assert has_phase_precession(positions, phases) is True
+
+    def test_random_data_returns_false(self) -> None:
+        """Random uncorrelated data should return False."""
+        from neurospatial.metrics import has_phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 100)
+        phases = rng.uniform(0, 2 * np.pi, 100)
+
+        assert has_phase_precession(positions, phases) is False
+
+    def test_positive_slope_returns_false(self) -> None:
+        """Positive slope (phase recession) should return False.
+
+        has_phase_precession specifically looks for PRECESSION (negative slope),
+        not just any significant phase-position relationship.
+        """
+        from neurospatial.metrics import has_phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 100)
+        # Positive slope = recession
+        true_slope = 0.15
+        noise = rng.normal(0, 0.15, len(positions))
+        phases = (np.pi + true_slope * positions + noise) % (2 * np.pi)
+
+        assert has_phase_precession(positions, phases) is False
+
+    def test_insufficient_spikes_returns_false(self) -> None:
+        """Insufficient spikes should return False (not raise)."""
+        from neurospatial.metrics import has_phase_precession
+
+        positions = np.array([0.0, 10.0, 20.0])
+        phases = np.array([0.0, 0.5, 1.0])
+
+        # Should return False, not raise
+        assert has_phase_precession(positions, phases) is False
+
+    def test_custom_thresholds(self) -> None:
+        """Should respect custom alpha and min_correlation."""
+        from neurospatial.metrics import has_phase_precession
+
+        rng = np.random.default_rng(42)
+        positions = np.linspace(0, 50, 50)
+        true_slope = -0.1
+        noise = rng.normal(0, 0.25, len(positions))
+        phases = (np.pi + true_slope * positions + noise) % (2 * np.pi)
+
+        # With strict thresholds, may not pass
+        result_strict = has_phase_precession(
+            positions, phases, alpha=0.001, min_correlation=0.5
+        )
+        # With lenient thresholds, more likely to pass
+        result_lenient = has_phase_precession(
+            positions, phases, alpha=0.1, min_correlation=0.1
+        )
+
+        # Lenient should be at least as permissive as strict
+        if result_strict:
+            assert result_lenient is True
