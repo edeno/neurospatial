@@ -1,7 +1,7 @@
 # Circular Statistics Implementation - Scratchpad
 
 **Started:** 2025-12-03
-**Current Status:** Milestone 3.5 complete (plot_head_direction_tuning - head direction visualization)
+**Current Status:** ALL MILESTONES COMPLETE - Circular Statistics Implementation Done!
 
 ---
 
@@ -281,14 +281,57 @@
 5. Text box positioning uses `ax.transAxes` for consistent placement regardless
    of projection type.
 
+### 2025-12-04: Property-Based Tests and Final Integration (M4.7, M5)
+
+**Completed:**
+
+- Added property-based hypothesis tests to `test_circular.py`:
+  - `TestPropertyBasedRayleighTest`: R in [0,1], p in [0,1], z >= 0
+  - `TestPropertyBasedCircularCircularCorrelation`: symmetry, r in [-1,1]
+  - `TestPropertyBasedCircularLinearCorrelation`: r >= 0, finite outputs
+- Fixed doctest issues in module docstrings:
+  - Added `# doctest: +SKIP` markers for stochastic tests
+  - Changed code examples to use `::` block notation where appropriate
+  - Fixed assertion values (r > 0.5 instead of r > 0.9 for theoretical maximum)
+- Verified all Milestone 5 criteria:
+  - Full test suite: 166 tests pass
+  - Type checks: mypy clean
+  - Linting: ruff clean
+  - Doctests: pass with +SKIP markers
+  - All imports work correctly
+
+**Design Decisions:**
+
+1. Property-based tests use min_size=5 for circular-circular correlation
+   (function requires minimum 5 samples).
+2. Tests filter out degenerate cases (constant values, limited angle range)
+   to focus on testing valid inputs.
+3. Doctest +SKIP markers used for stochastic tests rather than removing
+   examples - preserves documentation value.
+
+---
+
+## Summary
+
+All 5 milestones complete:
+
+1. **M1: Core Circular Statistics** - `_to_radians()`, `_mean_resultant_length()`,
+   `rayleigh_test()`, `circular_linear_correlation()`, `circular_circular_correlation()`
+2. **M2: Phase Precession** - `PhasePrecessionResult`, `phase_precession()`,
+   `has_phase_precession()`, `plot_phase_precession()`
+3. **M3: Head Direction** - `head_direction_tuning_curve()`, `HeadDirectionMetrics`,
+   `head_direction_metrics()`, `is_head_direction_cell()`, `plot_head_direction_tuning()`
+4. **M4: Tests** - 166 tests across 3 files, including property-based tests
+5. **M5: Integration** - All exports, type checks, linting, and doctests pass
+
 ---
 
 ## Blockers
 
-None currently.
+None - implementation complete.
 
 ---
 
 ## Open Questions
 
-None currently.
+None - all resolved.

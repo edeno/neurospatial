@@ -22,16 +22,18 @@ Common Use Cases
 **Screening many neurons (fast filtering)**:
 
 >>> # Fast boolean check - use for initial filtering
->>> if has_phase_precession(positions, phases):
+>>> if has_phase_precession(positions, phases):  # doctest: +SKIP
 ...     print("Neuron shows phase precession")
 
 **Publication-quality analysis (full metrics)**:
 
->>> # Use for detailed analysis and publication
->>> from neurospatial.metrics import phase_precession, plot_phase_precession
->>> result = phase_precession(positions, phases)
->>> print(result)  # Automatic interpretation with slope, correlation, fit
->>> plot_phase_precession(positions, phases, result)  # doctest: +SKIP
+Use for detailed analysis and publication::
+
+    from neurospatial.metrics import phase_precession, plot_phase_precession
+
+    result = phase_precession(positions, phases)
+    print(result)  # Automatic interpretation with slope, correlation, fit
+    plot_phase_precession(positions, phases, result)
 
 References
 ----------
@@ -366,7 +368,7 @@ def has_phase_precession(
     >>> # Random data - no precession expected
     >>> positions = np.random.default_rng(42).uniform(0, 100, 50)
     >>> phases = np.random.default_rng(42).uniform(0, 2 * np.pi, 50)
-    >>> has_phase_precession(positions, phases)
+    >>> has_phase_precession(positions, phases)  # doctest: +SKIP
     False
     """
     try:

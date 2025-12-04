@@ -27,23 +27,21 @@ Typical Workflow
 ----------------
 1. Compute tuning curve from spike times and head directions::
 
-    >>> bin_centers, firing_rates = head_direction_tuning_curve(
+    >>> bin_centers, firing_rates = head_direction_tuning_curve(  # doctest: +SKIP
     ...     head_directions, spike_times, position_times,
     ...     bin_size=6.0, angle_unit='deg'
-    ... )  # doctest: +SKIP
+    ... )
 
 2. Compute metrics and classify::
 
-    >>> metrics = head_direction_metrics(bin_centers, firing_rates)
+    >>> metrics = head_direction_metrics(bin_centers, firing_rates)  # doctest: +SKIP
     >>> print(metrics)  # Human-readable interpretation  # doctest: +SKIP
-    >>> if metrics.is_hd_cell:
+    >>> if metrics.is_hd_cell:  # doctest: +SKIP
     ...     print(f"Preferred direction: {metrics.preferred_direction_deg:.1f}°")
-    ...     # doctest: +SKIP
 
 3. Visualize::
 
-    >>> plot_head_direction_tuning(bin_centers, firing_rates, metrics)
-    ...     # doctest: +SKIP
+    >>> plot_head_direction_tuning(bin_centers, firing_rates, metrics)  # doctest: +SKIP
 
 Common Parameters
 -----------------

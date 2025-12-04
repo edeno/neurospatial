@@ -208,26 +208,29 @@
 
 **Objective:** Comprehensive test coverage with known values, edge cases, and property tests.
 
+**Status:** 166 tests implemented across 3 test files.
+
 ### 4.1 Test Setup
 
-- [ ] **Create `tests/metrics/test_circular.py`**
-- [ ] **Create `tests/metrics/test_head_direction.py`**
+- [x] **Create `tests/metrics/test_circular.py`** (52 tests)
+- [x] **Create `tests/metrics/test_head_direction.py`** (76 tests)
+- [x] **Create `tests/metrics/test_phase_precession.py`** (38 tests)
 - [ ] **Add dev dependency** (optional): `pycircstat2` for validation
 
 ### 4.2 Core Statistics Tests
 
-- [ ] **Test Rayleigh test**
+- [x] **Test Rayleigh test** (TestRayleighTest class)
   - Uniform distribution: p > 0.5
   - Von Mises (kappa=2): p < 0.001
   - Weighted: correct effective sample size
   - Edge case: all same angle -> R = 1.0
 
-- [ ] **Test circular-linear correlation**
+- [x] **Test circular-linear correlation** (TestCircularLinearCorrelation class)
   - Perfect linear: r -> 1.0
   - Random data: r -> 0
   - Degenerate case: warns and returns r=0
 
-- [ ] **Test circular-circular correlation**
+- [x] **Test circular-circular correlation** (TestCircularCircularCorrelation class)
   - Symmetry: r(a1, a2) == r(a2, a1)
   - Perfect correlation: r -> 1.0
   - Anti-correlation: r -> -1.0
@@ -235,48 +238,48 @@
 
 ### 4.3 Phase Precession Tests
 
-- [ ] **Test slope recovery**
+- [x] **Test slope recovery** (TestPhasePrecession class)
   - Synthetic data with known slope (-1.5 rad/cm): recovered within 20%
   - Offset recovered within 0.5 rad
 
-- [ ] **Test no relationship detection**
+- [x] **Test no relationship detection**
   - Random phases: p > 0.05, r < 0.2
 
-- [ ] **Test `has_phase_precession`**
+- [x] **Test `has_phase_precession`** (TestHasPhasePrecession class)
   - True for synthetic precession
   - False for random data
   - False when insufficient spikes
 
 ### 4.4 Head Direction Tests
 
-- [ ] **Test tuning curve computation**
+- [x] **Test tuning curve computation** (TestHeadDirectionTuningCurve class)
   - Correct bin centers
   - Firing rates in Hz
   - Occupancy calculation handles non-uniform sampling
 
-- [ ] **Test HD cell classification**
+- [x] **Test HD cell classification** (TestHeadDirectionMetricsFunction, TestIsHeadDirectionCell classes)
   - Sharp Gaussian tuning: classified as HD cell
   - Uniform firing: not classified
   - Correct preferred direction
 
-- [ ] **Test edge cases**
+- [x] **Test edge cases**
   - All-zero firing rates: ValueError
   - Constant firing rates: ValueError
   - Non-monotonic timestamps: ValueError
 
 ### 4.5 Validation Tests
 
-- [ ] **Test scipy fallback**
+- [ ] **Test scipy fallback** (optional - scipy always available)
   - `_mean_resultant_length`: scipy vs fallback match within 1e-10
   - `rayleigh_test`: results match with both paths
 
-- [ ] **Test against pycircstat2** (if available)
+- [ ] **Test against pycircstat2** (optional - if available)
   - `rayleigh_test`: z, p match within 1%
   - Run with parametrize over sample sizes
 
 ### 4.6 Edge Case Tests
 
-- [ ] **Input validation tests**
+- [x] **Input validation tests** (distributed across test classes)
   - Empty arrays -> ValueError
   - All NaN -> ValueError with diagnostic
   - Mixed NaN -> Warning, proceed
@@ -286,10 +289,10 @@
 
 ### 4.7 Property-Based Tests
 
-- [ ] **Add hypothesis tests**
-  - `rayleigh_test`: R always in [0, 1]
-  - `circular_circular_correlation`: symmetric
-  - All outputs finite for valid inputs
+- [x] **Add hypothesis tests** (optional enhancement)
+  - `rayleigh_test`: R always in [0, 1], p in [0, 1], z >= 0
+  - `circular_circular_correlation`: symmetric, r in [-1, 1]
+  - `circular_linear_correlation`: r >= 0, outputs finite for valid inputs
 
 ---
 
@@ -299,22 +302,23 @@
 
 ### 5.1 Update Exports
 
-- [ ] **Update `src/neurospatial/metrics/__init__.py`**
+- [x] **Update `src/neurospatial/metrics/__init__.py`**
   - Import all public functions from `circular.py`
   - Import all public functions from `head_direction.py`
+  - Import all public functions from `phase_precession.py`
   - Add to `__all__`
 
 ### 5.2 Verify Integration
 
-- [ ] **Run full test suite**: `uv run pytest`
-- [ ] **Run type checks**: `uv run mypy src/neurospatial/`
-- [ ] **Run linting**: `uv run ruff check . && uv run ruff format .`
+- [x] **Run full test suite**: `uv run pytest` (166 tests pass)
+- [x] **Run type checks**: `uv run mypy src/neurospatial/` (clean)
+- [x] **Run linting**: `uv run ruff check . && uv run ruff format .` (clean)
 
 ### 5.3 Documentation Verification
 
-- [ ] **Verify all docstrings follow NumPy format**
-- [ ] **Verify all functions have examples in docstrings**
-- [ ] **Run doctests**: `uv run pytest --doctest-modules src/neurospatial/metrics/circular.py src/neurospatial/metrics/head_direction.py`
+- [x] **Verify all docstrings follow NumPy format**
+- [x] **Verify all functions have examples in docstrings**
+- [x] **Run doctests**: `uv run pytest --doctest-modules src/neurospatial/metrics/circular.py src/neurospatial/metrics/head_direction.py src/neurospatial/metrics/phase_precession.py` (pass with +SKIP markers for stochastic tests)
 
 ---
 

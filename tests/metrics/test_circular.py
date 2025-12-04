@@ -644,3 +644,237 @@ class TestCircularCircularCorrelation:
         # Fisher & Lee measures deviation correlation, not raw angle correlation
         assert r > 0.9, f"Expected r > 0.9 for constant offset, got r={r}"
         assert p < 0.001, f"Expected p < 0.001, got p={p}"
+
+
+# ============================================================================
+# Property-Based Tests (Milestone 4.7)
+# ============================================================================
+
+
+class TestPropertyBasedRayleighTest:
+    """Property-based tests for rayleigh_test using hypothesis."""
+
+    def test_mean_resultant_length_always_in_0_1(self) -> None:
+        """Mean resultant length R should always be in [0, 1]."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics.circular import _mean_resultant_length
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=1,
+                max_size=1000,
+            )
+        )
+        @settings(max_examples=100)
+        def check_r_bounds(angles_list: list[float]) -> None:
+            angles = np.array(angles_list)
+            r = _mean_resultant_length(angles)
+            # Allow small floating-point tolerance (R can be 1.0+epsilon for identical angles)
+            assert -1e-10 <= r <= 1.0 + 1e-10, f"R={r} not in [0, 1]"
+
+        check_r_bounds()
+
+    def test_rayleigh_pvalue_always_in_0_1(self) -> None:
+        """Rayleigh test p-value should always be in [0, 1]."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import rayleigh_test
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=3,  # Minimum for valid test
+                max_size=500,
+            )
+        )
+        @settings(max_examples=100)
+        def check_pvalue_bounds(angles_list: list[float]) -> None:
+            angles = np.array(angles_list)
+            _z, p = rayleigh_test(angles)
+            assert 0 <= p <= 1, f"p={p} not in [0, 1]"
+
+        check_pvalue_bounds()
+
+    def test_rayleigh_z_always_nonnegative(self) -> None:
+        """Rayleigh test z-statistic should always be non-negative."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import rayleigh_test
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=3,
+                max_size=500,
+            )
+        )
+        @settings(max_examples=100)
+        def check_z_nonnegative(angles_list: list[float]) -> None:
+            angles = np.array(angles_list)
+            z, _p = rayleigh_test(angles)
+            assert z >= 0, f"z={z} is negative"
+
+        check_z_nonnegative()
+
+
+class TestPropertyBasedCircularCircularCorrelation:
+    """Property-based tests for circular_circular_correlation using hypothesis."""
+
+    def test_correlation_symmetric(self) -> None:
+        """Circular-circular correlation should be symmetric: r(a, b) == r(b, a)."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import circular_circular_correlation
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=5,  # circular_circular_correlation requires min 5 samples
+                max_size=200,
+            ),
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=5,
+                max_size=200,
+            ),
+        )
+        @settings(max_examples=50)
+        def check_symmetry(
+            angles1_list: list[float], angles2_list: list[float]
+        ) -> None:
+            # Make arrays same length
+            min_len = min(len(angles1_list), len(angles2_list))
+            if min_len < 5:
+                return  # Skip if too small (circular_circular_correlation needs >= 5)
+            angles1 = np.array(angles1_list[:min_len])
+            angles2 = np.array(angles2_list[:min_len])
+
+            r1, p1 = circular_circular_correlation(angles1, angles2)
+            r2, p2 = circular_circular_correlation(angles2, angles1)
+
+            assert_allclose(r1, r2, rtol=1e-10)
+            assert_allclose(p1, p2, rtol=1e-10)
+
+        check_symmetry()
+
+    def test_correlation_in_valid_range(self) -> None:
+        """Circular-circular correlation r should be in [-1, 1]."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import circular_circular_correlation
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=5,  # circular_circular_correlation requires min 5 samples
+                max_size=200,
+            )
+        )
+        @settings(max_examples=100)
+        def check_r_bounds(angles_list: list[float]) -> None:
+            angles1 = np.array(angles_list)
+            # Create slightly perturbed version
+            angles2 = (
+                angles1 + np.random.default_rng(42).uniform(-0.5, 0.5, len(angles1))
+            ) % (2 * np.pi)
+
+            r, p = circular_circular_correlation(angles1, angles2)
+            assert -1 <= r <= 1, f"r={r} not in [-1, 1]"
+            assert 0 <= p <= 1, f"p={p} not in [0, 1]"
+
+        check_r_bounds()
+
+
+class TestPropertyBasedCircularLinearCorrelation:
+    """Property-based tests for circular_linear_correlation using hypothesis."""
+
+    def test_correlation_always_nonnegative(self) -> None:
+        """Circular-linear correlation r should always be >= 0."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import circular_linear_correlation
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=5,  # Need enough samples for robust analysis
+                max_size=200,
+            ),
+            st.lists(
+                st.floats(min_value=-1000, max_value=1000, allow_nan=False),
+                min_size=5,
+                max_size=200,
+            ),
+        )
+        @settings(max_examples=50)
+        def check_r_nonnegative(
+            angles_list: list[float], values_list: list[float]
+        ) -> None:
+            # Make arrays same length
+            min_len = min(len(angles_list), len(values_list))
+            if min_len < 5:
+                return  # Skip if too small (need enough samples for robust analysis)
+            angles = np.array(angles_list[:min_len])
+            values = np.array(values_list[:min_len])
+
+            # Check for degenerate cases
+            if np.std(values) < 1e-10:
+                return  # Skip constant values
+            if np.std(np.sin(angles)) < 1e-10 or np.std(np.cos(angles)) < 1e-10:
+                return  # Skip degenerate angle distributions
+
+            r, p = circular_linear_correlation(angles, values)
+            assert r >= 0, f"r={r} is negative"
+            assert 0 <= p <= 1, f"p={p} not in [0, 1]"
+
+        check_r_nonnegative()
+
+    def test_outputs_finite_for_valid_inputs(self) -> None:
+        """Outputs should be finite for valid inputs."""
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        from neurospatial.metrics import circular_linear_correlation
+
+        @given(
+            st.lists(
+                st.floats(min_value=0, max_value=2 * np.pi, allow_nan=False),
+                min_size=10,  # Need enough samples for valid analysis
+                max_size=200,
+            ),
+            st.lists(
+                st.floats(min_value=-1000, max_value=1000, allow_nan=False),
+                min_size=10,
+                max_size=200,
+            ),
+        )
+        @settings(max_examples=50)
+        def check_finite_outputs(
+            angles_list: list[float], values_list: list[float]
+        ) -> None:
+            # Make arrays same length
+            min_len = min(len(angles_list), len(values_list))
+            if min_len < 5:
+                return  # Skip if too small (need enough samples for robust analysis)
+            angles = np.array(angles_list[:min_len])
+            values = np.array(values_list[:min_len])
+
+            # Check for degenerate cases
+            if np.std(values) < 1e-10:
+                return  # Skip constant values
+            if np.std(np.sin(angles)) < 1e-10 or np.std(np.cos(angles)) < 1e-10:
+                return  # Skip degenerate angle distributions
+
+            r, p = circular_linear_correlation(angles, values)
+            assert np.isfinite(r), f"r={r} is not finite"
+            assert np.isfinite(p), f"p={p} is not finite"
+
+        check_finite_outputs()
