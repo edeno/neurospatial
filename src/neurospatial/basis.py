@@ -26,7 +26,7 @@ Which Basis Should I Use?
 You can always switch later—all three work the same way in GLMs.
 
 **Want automatic parameter selection?** Use `spatial_basis()`:
-    >>> basis = spatial_basis(env)  # Automatic, sensible defaults
+    >>> basis = spatial_basis(env)  # Automatic, sensible defaults  # doctest: +SKIP
 
 Scale Parameters Across Bases
 ------------------------------
@@ -45,44 +45,46 @@ For example, with 2cm bins and 10cm desired spatial extent:
 
 Quick Start
 -----------
->>> from neurospatial import Environment
->>> from neurospatial.basis import geodesic_rbf_basis
+>>> from neurospatial import Environment  # doctest: +SKIP
+>>> from neurospatial.basis import geodesic_rbf_basis  # doctest: +SKIP
 >>>
->>> env = Environment.from_samples(positions, bin_size=2.0)
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)
+>>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
+>>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
 >>>
 >>> # Create GLM design matrix
->>> bin_indices = env.bin_sequence(trajectory, times)
->>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)
+>>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)  # doctest: +SKIP
 
 Full GLM Workflow
 -----------------
->>> from neurospatial import Environment
->>> from neurospatial.basis import geodesic_rbf_basis
->>> import numpy as np
+>>> from neurospatial import Environment  # doctest: +SKIP
+>>> from neurospatial.basis import geodesic_rbf_basis  # doctest: +SKIP
+>>> import numpy as np  # doctest: +SKIP
 >>>
 >>> # 1. Create environment and basis
->>> env = Environment.from_samples(positions, bin_size=2.0)
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])
+>>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
+>>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])  # doctest: +SKIP
 >>>
 >>> # 2. Create design matrix from trajectory
->>> bin_indices = env.bin_sequence(trajectory, times)
->>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)
+>>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
 >>>
 >>> # 3. Combine with other features (optional)
->>> speed = compute_speed(positions, times)
->>> X = np.column_stack([X_spatial, speed[:, None]])
+>>> speed = compute_speed(positions, times)  # doctest: +SKIP
+>>> X = np.column_stack([X_spatial, speed[:, None]])  # doctest: +SKIP
 >>>
 >>> # 4. Fit GLM (example with statsmodels)
->>> import statsmodels.api as sm
->>> X = sm.add_constant(X)
->>> model = sm.GLM(spike_counts, X, family=sm.families.Poisson())
->>> result = model.fit()
+>>> import statsmodels.api as sm  # doctest: +SKIP
+>>> X = sm.add_constant(X)  # doctest: +SKIP
+>>> model = sm.GLM(spike_counts, X, family=sm.families.Poisson())  # doctest: +SKIP
+>>> result = model.fit()  # doctest: +SKIP
 >>>
 >>> # 5. Visualize fitted place field
->>> beta_spatial = result.params[1 : len(basis) + 1]  # Spatial coefficients
->>> place_field = beta_spatial @ basis  # Project back to space
->>> env.plot(place_field, title="Fitted Place Field")
+>>> beta_spatial = result.params[
+...     1 : len(basis) + 1
+... ]  # Spatial coefficients  # doctest: +SKIP
+>>> place_field = beta_spatial @ basis  # Project back to space  # doctest: +SKIP
+>>> env.plot(place_field, title="Fitted Place Field")  # doctest: +SKIP
 
 References
 ----------
@@ -414,8 +416,8 @@ def geodesic_rbf_basis(
             Row 5: center 2, sigma=10
 
         To create GLM design matrix from trajectory:
-        >>> bin_indices = env.bin_sequence(trajectory, times)
-        >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)
+        >>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+        >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)  # doctest: +SKIP
 
     Raises
     ------

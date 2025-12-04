@@ -240,6 +240,49 @@ is_in_start = env.point_in_region((12.0, 12.0), "start")
 env.regions.update_region("goal", point=(55.0, 55.0))  # No warning
 ```
 
+### Spatial Basis Functions for GLMs
+
+Create maze-aware basis functions that respect walls and barriers for spatial regression:
+
+```python
+from neurospatial import Environment, geodesic_rbf_basis, spatial_basis
+
+# Create environment
+env = Environment.from_samples(positions, bin_size=2.0)
+env.units = "cm"
+
+# Option 1: Automatic (recommended for most users)
+basis = spatial_basis(env, n_features=100)  # Automatic parameter selection
+
+# Option 2: Manual control with geodesic RBF
+basis = geodesic_rbf_basis(
+    env,
+    n_centers=50,        # Number of basis centers
+    sigma=[5.0, 10.0],   # Bandwidths in cm (multi-scale)
+)  # Shape: (n_centers * n_sigmas, n_bins)
+
+# Create GLM design matrix from trajectory
+bin_indices = env.bin_sequence(trajectory, times)
+X_spatial = basis[:, bin_indices].T  # Shape: (n_times, n_basis)
+
+# Fit GLM (example with statsmodels)
+import statsmodels.api as sm
+X = sm.add_constant(X_spatial)
+model = sm.GLM(spike_counts, X, family=sm.families.Poisson())
+result = model.fit()
+
+# Visualize fitted place field
+beta_spatial = result.params[1:]  # Spatial coefficients
+place_field = beta_spatial @ basis  # Project back to space
+env.plot_field(place_field, title="Fitted Place Field")
+```
+
+**Three basis types available:**
+
+- `geodesic_rbf_basis`: RBF using shortest-path distances (start here)
+- `heat_kernel_wavelet_basis`: Diffusion-based multi-scale (rooms/corridors)
+- `chebyshev_filter_basis`: Polynomial filters (fast, large environments)
+
 ### NWB Integration (Optional)
 
 Requires: `pip install neurospatial[nwb-full]`

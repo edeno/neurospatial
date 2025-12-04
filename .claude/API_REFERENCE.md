@@ -97,6 +97,28 @@ from neurospatial.decoding import (
 
 ---
 
+## Basis Functions for GLMs (v0.15.0+)
+
+```python
+from neurospatial import (
+    # Convenience function (recommended starting point)
+    spatial_basis,              # Automatic parameter selection
+
+    # Center selection
+    select_basis_centers,       # kmeans, farthest_point, random methods
+
+    # Basis types
+    geodesic_rbf_basis,         # RBF using shortest-path distances
+    heat_kernel_wavelet_basis,  # Diffusion-based multi-scale
+    chebyshev_filter_basis,     # Polynomial filters with k-bin locality
+
+    # Visualization
+    plot_basis_functions,       # Visualize selected basis functions
+)
+```
+
+---
+
 ## Behavioral Analysis (v0.7.0+)
 
 ```python

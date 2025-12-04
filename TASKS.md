@@ -263,22 +263,22 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M7.1**: Update `.claude/QUICKSTART.md`
+- [x] **M7.1**: Update `.claude/QUICKSTART.md`
   - Add "Spatial Basis Functions for GLMs" section
   - Include quick example with geodesic_rbf_basis
   - Show GLM design matrix creation pattern
 
-- [ ] **M7.2**: Update `.claude/API_REFERENCE.md`
+- [x] **M7.2**: Update `.claude/API_REFERENCE.md`
   - Add Basis Functions section
   - List all public functions with import statements
   - Group by category (convenience, center selection, basis types, visualization)
 
-- [ ] **M7.3**: Verify all docstrings follow NumPy format
+- [x] **M7.3**: Verify all docstrings follow NumPy format
   - Check Parameters, Returns, Examples sections
   - Ensure examples are runnable (doctest)
   - Run: `uv run pytest --doctest-modules src/neurospatial/basis.py`
 
-- [ ] **M7.4**: Add usage example to module docstring
+- [x] **M7.4**: Add usage example to module docstring
   - Full GLM workflow example
   - Phase precession example (if appropriate)
 
