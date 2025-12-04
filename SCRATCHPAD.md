@@ -44,30 +44,41 @@
 
 ---
 
-### 2025-12-04: M2.1 Complete - time_since_event()
+### 2025-12-04: M2.1 Complete - time_to_nearest_event() (REFACTORED)
 
 **Completed Tasks:**
-- M2.1: Implemented `time_since_event()` in `regressors.py`
-  - Uses `np.searchsorted()` for O(n log m) performance
-  - Parameters: `sample_times`, `event_times`, `max_time`, `fill_before_first`, `nan_policy`
-  - Handles edge cases: empty arrays, NaN/Inf validation, unsorted events
-  - Comprehensive error messages following WHAT/WHY/HOW pattern
+- M2.1: Implemented `time_to_nearest_event()` in `regressors.py`
+  - **Refactored** from original plan of separate `time_since_event()`/`time_to_event()`
+  - Single unified function for peri-event time calculation
+  - Uses two `np.searchsorted()` calls to find nearest event (O(n log m))
+  - Parameters: `sample_times`, `event_times`, `signed`, `max_time`
+  - Returns signed time: negative before event, positive after (PSTH convention)
+  - Handles edge cases: empty arrays, NaN/Inf validation, midpoint tie-breaking
 
-- Created `tests/test_events_regressors.py` with 25 tests
-  - Basic functionality, boundary conditions, parameter combinations
+- Created `tests/test_events_regressors.py` with 23 tests
+  - Sign convention tests (matches PSTH x-axis)
+  - Multiple events - nearest wins
+  - Midpoint tie-breaking (earlier event preferred)
+  - Unsigned mode for absolute distance
   - Edge cases, validation, output properties
 
+- Updated `events/__init__.py` exports (replaced old function names)
 - Code review passed with approval
 - All ruff and mypy checks pass
 
 **Key Decisions:**
-1. Use `np.searchsorted(side="right") - 1` to find most recent event
-2. Internally sort events (user doesn't need to pre-sort)
-3. NaN values before first event by default (configurable via `fill_before_first`)
-4. `nan_policy` parameter controls validation behavior
+1. **Unified API**: Single `time_to_nearest_event()` instead of separate before/after functions
+2. **Sign convention**: Negative before event, positive after (matches PSTH x-axis)
+3. **Nearest event**: Find closest event, not just previous/next
+4. **Tie-breaking**: At exact midpoint between events, prefer earlier event (consistent)
+5. **No NaN policy needed**: Always return values (NaN only when no events)
+6. Fixed negative zero display issue (`-0.` → `0.`)
+
+**Rationale for Refactoring:**
+User feedback: "We usually study the time around an event" - the peri-event window is centered on events, not one-sided. A unified function that finds the nearest event is more natural for PSTH-like analysis.
 
 **Next Steps:**
-- M2.2: Implement `time_to_event()` (mirror of `time_since_event()` looking forward)
+- M2.2: Implement `event_count_in_window()`
 
 ---
 

@@ -30,8 +30,7 @@ Interval Utilities:
     filter_by_intervals : Filter events by time intervals
 
 GLM Regressors:
-    time_since_event : Time since most recent event
-    time_to_event : Time until next event
+    time_to_nearest_event : Signed time to nearest event (peri-event time)
     event_count_in_window : Count events in time window
     event_indicator : Binary indicator of event presence
     exponential_kernel : Convolve events with exponential kernel
@@ -61,9 +60,9 @@ Computing a peri-event time histogram (PSTH):
 
 Creating GLM regressors:
 
->>> from neurospatial.events import time_since_event, exponential_kernel
->>> time_since_reward = time_since_event(  # doctest: +SKIP
-...     sample_times, reward_times, max_time=10.0
+>>> from neurospatial.events import time_to_nearest_event, exponential_kernel
+>>> peri_event_time = time_to_nearest_event(  # doctest: +SKIP
+...     sample_times, reward_times, max_time=2.0
 ... )
 >>> reward_signal = exponential_kernel(  # doctest: +SKIP
 ...     sample_times, reward_times, tau=2.0
@@ -101,8 +100,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "events_to_intervals": "neurospatial.events.intervals:events_to_intervals",
     "filter_by_intervals": "neurospatial.events.intervals:filter_by_intervals",
     # GLM regressors
-    "time_since_event": "neurospatial.events.regressors:time_since_event",
-    "time_to_event": "neurospatial.events.regressors:time_to_event",
+    "time_to_nearest_event": "neurospatial.events.regressors:time_to_nearest_event",
     "event_count_in_window": "neurospatial.events.regressors:event_count_in_window",
     "event_indicator": "neurospatial.events.regressors:event_indicator",
     "exponential_kernel": "neurospatial.events.regressors:exponential_kernel",
@@ -150,8 +148,7 @@ __all__ = [
     "plot_peri_event_histogram",
     "population_peri_event_histogram",
     "spatial_event_rate",
-    "time_since_event",
-    "time_to_event",
+    "time_to_nearest_event",
     "validate_events_dataframe",
     "validate_spatial_columns",
 ]

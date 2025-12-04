@@ -75,38 +75,35 @@ This task list breaks down the Events Module implementation into actionable step
 
 ### Tasks
 
-- [x] **M2.1**: Implement `time_since_event()` in `regressors.py`
-  - Parameters: `sample_times`, `event_times`, `max_time`, `fill_before_first`, `nan_policy`
-  - Use `np.searchsorted` for efficient lookup
-  - Handle edge case: samples before first event → NaN or fill value
+- [x] **M2.1**: Implement `time_to_nearest_event()` in `regressors.py`
+  - Refactored from separate `time_since_event()` / `time_to_event()` to unified function
+  - Parameters: `sample_times`, `event_times`, `signed`, `max_time`
+  - Returns signed peri-event time (negative before, positive after) - matches PSTH convention
+  - Use `np.searchsorted` for efficient nearest-event lookup
+  - Handle edge cases: empty arrays, NaN/Inf validation, midpoint tie-breaking
 
-- [ ] **M2.2**: Implement `time_to_event()` in `regressors.py`
-  - Parameters: `sample_times`, `event_times`, `max_time`, `fill_after_last`, `nan_policy`
-  - Mirror logic of `time_since_event()` but look forward
-
-- [ ] **M2.3**: Implement `event_count_in_window()` in `regressors.py`
+- [ ] **M2.2**: Implement `event_count_in_window()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `window`
   - Return type: `NDArray[np.int64]`
   - Handle: empty events → return zeros
 
-- [ ] **M2.4**: Implement `event_indicator()` in `regressors.py`
+- [ ] **M2.3**: Implement `event_indicator()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `window`
   - Return type: `NDArray[np.bool_]`
   - Handle: empty events → return all False
 
-- [ ] **M2.5**: Implement `exponential_kernel()` in `regressors.py`
+- [ ] **M2.4**: Implement `exponential_kernel()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `tau`, `direction`, `normalize`
   - Support `direction`: "causal", "acausal", "symmetric"
   - Use efficient sorted-merge algorithm
   - Handle: empty events → return zeros
 
-- [ ] **M2.6**: Create `tests/test_events_regressors.py`
+- [ ] **M2.5**: Add tests for remaining regressors to `tests/test_events_regressors.py`
   - Test each function with known inputs/outputs
   - Test edge cases: empty events, single event, events outside range
-  - Test NaN handling with different `nan_policy` values
   - Test numerical precision (use `np.allclose`)
 
-- [ ] **M2.7**: Verify milestone completion
+- [ ] **M2.6**: Verify milestone completion
   - Run `uv run pytest tests/test_events_regressors.py -v`
   - Run `uv run mypy src/neurospatial/events/regressors.py`
 

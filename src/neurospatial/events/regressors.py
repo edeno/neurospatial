@@ -4,8 +4,7 @@ GLM regressor generation for neurospatial events.
 This module provides functions to generate regressors for GLM design matrices:
 
 Temporal regressors:
-- time_since_event: Time since most recent event
-- time_to_event: Time until next event
+- time_to_nearest_event: Signed time to nearest event (peri-event time)
 - event_count_in_window: Count events in time window
 - event_indicator: Binary indicator of event presence
 - exponential_kernel: Convolve events with exponential kernel
@@ -16,22 +15,23 @@ Spatial regressors:
 
 from __future__ import annotations
 
-from typing import Literal
-
 import numpy as np
 from numpy.typing import NDArray
 
 
-def time_since_event(
+def time_to_nearest_event(
     sample_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     *,
+    signed: bool = True,
     max_time: float | None = None,
-    fill_before_first: float | None = None,
-    nan_policy: Literal["raise", "fill", "propagate"] = "propagate",
 ) -> NDArray[np.float64]:
     """
-    Compute time since most recent event for each sample.
+    Compute time to nearest event for each sample.
+
+    Returns signed time relative to nearest event: negative values indicate
+    time before the event, positive values indicate time after. This matches
+    the convention used in peri-event time histograms (PSTH).
 
     Parameters
     ----------
@@ -39,46 +39,68 @@ def time_since_event(
         Times at which to compute regressor.
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
+    signed : bool, default=True
+        If True, return signed time (negative before event, positive after).
+        If False, return absolute distance to nearest event.
     max_time : float, optional
-        Maximum time to return (clips at this value).
-        Useful for capping distant events.
-    fill_before_first : float, optional
-        Value to use before first event. Default: NaN.
-    nan_policy : {"raise", "fill", "propagate"}, default="propagate"
-        How to handle NaN values in output:
-        - "raise": Raise ValueError if any output would be NaN
-        - "fill": Fill NaN with `fill_before_first` (required if policy="fill")
-        - "propagate": Keep NaN values (default, suitable for GLMs with NaN handling)
+        Maximum absolute time to return. Values beyond this are clipped.
+        For signed=True, clips to [-max_time, +max_time].
+        For signed=False, clips to [0, max_time].
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Time since most recent event (seconds).
-        NaN for samples before first event (unless fill_before_first set).
+        Time to nearest event (seconds).
+        - signed=True: Negative before event, positive after, zero at event.
+        - signed=False: Absolute distance to nearest event.
+        - NaN when no events are provided.
 
     Raises
     ------
     ValueError
-        If nan_policy="raise" and output would contain NaN values.
-        If nan_policy="fill" but fill_before_first is not provided.
         If sample_times or event_times contain NaN or Inf values.
         If max_time is negative.
 
     Notes
     -----
+    This function finds the nearest event for each sample and computes the
+    signed time difference. For peri-event analysis:
+
+    - Use `signed=True` (default) for PSTH-like time axis
+    - Use `signed=False` for distance-based filtering
+    - Use `max_time` to define a peri-event window
+
     Common use cases:
-    - Time since reward: Captures reward expectation decay
-    - Time since cue: Captures cue-triggered anticipation
-    - Time since zone entry: Captures spatial context
+    - PSTH time axis: samples within window of events
+    - GLM regressor: continuous time-to-event predictor
+    - Event-triggered filtering: select samples near events
+
+    At exact midpoints between two events, the earlier event is used
+    (tie-breaking is consistent but arbitrary).
 
     Examples
     --------
-    >>> from neurospatial.events import time_since_event
-    >>> sample_times = np.linspace(0, 10, 100)
-    >>> reward_times = np.array([2.0, 5.0, 8.0])
-    >>> time_since_reward = time_since_event(sample_times, reward_times)
-    >>> # Use in GLM design matrix
-    >>> X = sm.add_constant(time_since_reward[:, None])
+    >>> import numpy as np
+    >>> from neurospatial.events import time_to_nearest_event
+
+    Basic usage - PSTH-like time axis:
+
+    >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    >>> event_times = np.array([2.0])
+    >>> time_to_nearest_event(sample_times, event_times)
+    array([-2., -1.,  0.,  1.,  2.])
+
+    Filter to peri-event window:
+
+    >>> times = time_to_nearest_event(sample_times, event_times)
+    >>> peri_event_mask = np.abs(times) <= 1.5  # +/- 1.5s window
+    >>> sample_times[peri_event_mask]
+    array([1., 2., 3.])
+
+    Clip to maximum time (for GLM design matrix):
+
+    >>> time_to_nearest_event(sample_times, event_times, max_time=1.0)
+    array([-1., -1.,  0.,  1.,  1.])
     """
     # Convert to numpy arrays and validate
     sample_times = np.asarray(sample_times, dtype=np.float64)
@@ -117,15 +139,8 @@ def time_since_event(
     if max_time is not None and max_time < 0:
         raise ValueError(
             f"max_time must be non-negative, got {max_time}.\n"
-            "  WHY: max_time clips the time since event to a positive value.\n"
+            "  WHY: max_time defines a symmetric window around events.\n"
             "  HOW: Use max_time >= 0 or None for no clipping."
-        )
-
-    if nan_policy == "fill" and fill_before_first is None:
-        raise ValueError(
-            "nan_policy='fill' requires fill_before_first to be specified.\n"
-            "  WHY: Cannot fill NaN values without a fill value.\n"
-            "  HOW: Provide fill_before_first=value or use nan_policy='propagate'."
         )
 
     # Handle empty sample_times
@@ -134,57 +149,54 @@ def time_since_event(
 
     # Handle empty events
     if len(event_times) == 0:
-        result = np.full(len(sample_times), np.nan, dtype=np.float64)
-        if fill_before_first is not None:
-            result[:] = fill_before_first
-        if nan_policy == "raise" and np.any(np.isnan(result)):
-            raise ValueError(
-                "Output contains NaN values (no events provided).\n"
-                "  WHY: nan_policy='raise' requires no NaN in output.\n"
-                "  HOW: Provide events, set fill_before_first, or use nan_policy='propagate'."
-            )
-        return result
+        return np.full(len(sample_times), np.nan, dtype=np.float64)
 
     # Sort events (handles unsorted input)
     sorted_events = np.sort(event_times)
 
-    # Use searchsorted to find the index of the most recent event
-    # searchsorted returns the index where each sample would be inserted
-    # to maintain sorted order, so we subtract 1 to get the most recent event
-    indices = np.searchsorted(sorted_events, sample_times, side="right") - 1
+    # Find indices of surrounding events using searchsorted
+    # idx_right: index of first event >= sample_time (or len if none)
+    idx_right = np.searchsorted(sorted_events, sample_times, side="left")
 
-    # Compute result
-    result = np.empty(len(sample_times), dtype=np.float64)
+    # idx_left: index of last event < sample_time (or -1 if none)
+    idx_left = idx_right - 1
 
-    # Samples before first event
-    before_first = indices < 0
+    # Compute distances to left and right events
+    n_events = len(sorted_events)
+    n_samples = len(sample_times)
 
-    # Samples after at least one event
-    after_event = ~before_first
+    # Initialize with large values
+    dist_left = np.full(n_samples, np.inf, dtype=np.float64)
+    dist_right = np.full(n_samples, np.inf, dtype=np.float64)
 
-    # Time since most recent event for samples after events
-    result[after_event] = (
-        sample_times[after_event] - sorted_events[indices[after_event]]
+    # Distance to left event (if exists)
+    has_left = idx_left >= 0
+    dist_left[has_left] = sample_times[has_left] - sorted_events[idx_left[has_left]]
+
+    # Distance to right event (if exists)
+    has_right = idx_right < n_events
+    dist_right[has_right] = (
+        sorted_events[idx_right[has_right]] - sample_times[has_right]
     )
 
-    # Handle samples before first event
-    if fill_before_first is not None:
-        result[before_first] = fill_before_first
-    else:
-        result[before_first] = np.nan
+    # Select nearest event
+    # For ties (dist_left == dist_right), prefer left (earlier) event
+    use_left = dist_left <= dist_right
 
-    # Apply max_time clipping (only to non-NaN values)
+    # Compute signed time to nearest event
+    result = np.empty(n_samples, dtype=np.float64)
+    result[use_left] = dist_left[use_left]  # Positive (after left event)
+    result[~use_left] = -dist_right[~use_left]  # Negative (before right event)
+
+    # Convert to unsigned if requested
+    if not signed:
+        result = np.abs(result)
+
+    # Convert -0.0 to 0.0 for cleaner output
+    result = result + 0.0  # Adding 0.0 converts -0.0 to 0.0
+
+    # Apply max_time clipping
     if max_time is not None:
-        valid_mask = ~np.isnan(result)
-        result[valid_mask] = np.minimum(result[valid_mask], max_time)
-
-    # Check nan_policy
-    if nan_policy == "raise" and np.any(np.isnan(result)):
-        raise ValueError(
-            "Output contains NaN values (samples before first event).\n"
-            "  WHY: nan_policy='raise' requires no NaN in output.\n"
-            "  HOW: Set fill_before_first to handle samples before first event, "
-            "or use nan_policy='propagate'."
-        )
+        result = np.clip(result, -max_time if signed else 0.0, max_time)
 
     return result
