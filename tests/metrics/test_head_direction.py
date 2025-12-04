@@ -1216,8 +1216,8 @@ class TestPlotHeadDirectionTuning:
 
         plt.close("all")
 
-    def test_angle_display_unit_degrees(self) -> None:
-        """Test that angle_display_unit='deg' shows degrees on axis."""
+    def test_angle_unit_degrees(self) -> None:
+        """Test that angle_unit='deg' shows degrees on axis."""
         import matplotlib.pyplot as plt
 
         from neurospatial.metrics.head_direction import plot_head_direction_tuning
@@ -1226,9 +1226,7 @@ class TestPlotHeadDirectionTuning:
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
         firing_rates = np.exp(2.0 * np.cos(bin_centers))
 
-        ax = plot_head_direction_tuning(
-            bin_centers, firing_rates, angle_display_unit="deg"
-        )
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, angle_unit="deg")
 
         # Get tick labels and check they use degrees
         # For polar plots, labels are stored as thetagrids
@@ -1240,8 +1238,8 @@ class TestPlotHeadDirectionTuning:
 
         plt.close("all")
 
-    def test_angle_display_unit_radians(self) -> None:
-        """Test that angle_display_unit='rad' shows radians on axis."""
+    def test_angle_unit_radians(self) -> None:
+        """Test that angle_unit='rad' shows radians on axis."""
         import matplotlib.pyplot as plt
 
         from neurospatial.metrics.head_direction import plot_head_direction_tuning
@@ -1250,9 +1248,7 @@ class TestPlotHeadDirectionTuning:
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
         firing_rates = np.exp(2.0 * np.cos(bin_centers))
 
-        ax = plot_head_direction_tuning(
-            bin_centers, firing_rates, angle_display_unit="rad"
-        )
+        ax = plot_head_direction_tuning(bin_centers, firing_rates, angle_unit="rad")
 
         # Get tick labels - should use pi notation
         labels = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
@@ -1368,7 +1364,7 @@ class TestPlotHeadDirectionTuning:
         firing_rates = np.exp(2.0 * np.cos(bin_centers))
 
         ax = plot_head_direction_tuning(
-            bin_centers, firing_rates, projection="linear", angle_display_unit="deg"
+            bin_centers, firing_rates, projection="linear", angle_unit="deg"
         )
 
         # X-axis should show head direction label

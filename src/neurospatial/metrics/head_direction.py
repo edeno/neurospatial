@@ -201,7 +201,7 @@ def head_direction_tuning_curve(
     position_times: NDArray[np.float64],
     *,
     bin_size: float = 6.0,
-    angle_unit: Literal["rad", "deg"] = "deg",
+    angle_unit: Literal["rad", "deg"] = "rad",
     smoothing_window: int = 5,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
@@ -224,11 +224,11 @@ def head_direction_tuning_curve(
         Timestamps corresponding to each head direction sample.
         Must be monotonically increasing.
     bin_size : float, default=6.0
-        Width of angular bins. Units match ``angle_unit`` (degrees by default).
-    angle_unit : {'rad', 'deg'}, default='deg'
+        Width of angular bins. Units match ``angle_unit`` (radians by default).
+    angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``head_directions`` and ``bin_size``.
-        Note: HD research commonly uses degrees, hence the default differs
-        from other circular statistics functions.
+        Note: HD research commonly uses degrees. If your data is in degrees,
+        use ``angle_unit='deg'``.
     smoothing_window : int, default=5
         Standard deviation of Gaussian smoothing kernel in bins.
         Set to 0 to disable smoothing.
@@ -603,7 +603,7 @@ def plot_head_direction_tuning(
     ax: Axes | PolarAxes | None = None,
     *,
     projection: Literal["polar", "linear"] = "polar",
-    angle_display_unit: Literal["deg", "rad"] = "deg",
+    angle_unit: Literal["deg", "rad"] = "rad",
     show_metrics: bool = True,
     color: str = "C0",
     fill_alpha: float = 0.3,
@@ -629,8 +629,8 @@ def plot_head_direction_tuning(
         Axes to plot on. If None, creates new figure with appropriate projection.
     projection : {'polar', 'linear'}, default='polar'
         Plot projection type.
-    angle_display_unit : {'deg', 'rad'}, default='deg'
-        Unit for angle labels on axes.
+    angle_unit : {'deg', 'rad'}, default='rad'
+        Unit for angle labels on axes. Use ``'deg'`` if you prefer degrees.
     show_metrics : bool, default=True
         If True and metrics provided, show metrics text box.
     color : str, default='C0'
@@ -740,7 +740,7 @@ def plot_head_direction_tuning(
         polar_ax.fill(angles_closed, rates_closed, **fill_kw)
 
         # Set angle labels
-        if angle_display_unit == "deg":
+        if angle_unit == "deg":
             polar_ax.set_thetagrids(
                 [0, 45, 90, 135, 180, 225, 270, 315],
                 ["0°", "45°", "90°", "135°", "180°", "225°", "270°", "315°"],
@@ -755,7 +755,7 @@ def plot_head_direction_tuning(
     else:
         # Linear projection
         # Convert to display unit for x-axis
-        if angle_display_unit == "deg":
+        if angle_unit == "deg":
             x_closed = np.degrees(angles_closed)
             x_closed[-1] = 360.0  # Ensure last point is at 360
             ax.set_xlabel("Head Direction (deg)")
@@ -789,7 +789,7 @@ def plot_head_direction_tuning(
                 zorder=3,
             )
         else:
-            pfd_display = np.degrees(pfd) if angle_display_unit == "deg" else pfd
+            pfd_display = np.degrees(pfd) if angle_unit == "deg" else pfd
             ax.axvline(pfd_display, color="red", linewidth=2, linestyle="--", zorder=3)
 
         # Show metrics text box if requested
