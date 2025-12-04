@@ -200,3 +200,139 @@ def time_to_nearest_event(
         result = np.clip(result, -max_time if signed else 0.0, max_time)
 
     return result
+
+
+def event_count_in_window(
+    sample_times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+) -> NDArray[np.int64]:
+    """
+    Count events within time window around each sample.
+
+    For each sample time, counts the number of events that fall within
+    the specified window. Useful for creating GLM regressors that capture
+    recent event history (e.g., "rewards in last 5 seconds").
+
+    Parameters
+    ----------
+    sample_times : NDArray[np.float64], shape (n_samples,)
+        Times at which to compute count.
+    event_times : NDArray[np.float64], shape (n_events,)
+        Event timestamps (seconds).
+    window : tuple[float, float]
+        Time window (start, end) relative to sample_time.
+        E.g., (-1.0, 0.0) counts events in previous 1 second.
+        E.g., (0.0, 1.0) counts events in next 1 second.
+        E.g., (-0.5, 0.5) counts events within +/- 0.5 seconds.
+        Window boundaries are inclusive.
+
+    Returns
+    -------
+    NDArray[np.int64], shape (n_samples,)
+        Number of events within window of each sample.
+        Always non-negative integers.
+
+    Raises
+    ------
+    ValueError
+        If sample_times or event_times contain NaN or Inf values.
+        If window start > window end.
+
+    Notes
+    -----
+    Common use cases:
+
+    - Count rewards in last N seconds: ``window=(-N, 0.0)``
+    - Count licks before reward: ``window=(-1.0, 0.0)``
+    - Count spikes around event: ``window=(-0.5, 0.5)``
+
+    Window boundaries are inclusive on both ends, so an event exactly
+    at ``sample_time + window[0]`` or ``sample_time + window[1]`` is counted.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.events import event_count_in_window
+
+    Count rewards in previous 5 seconds:
+
+    >>> sample_times = np.array([0.0, 3.0, 6.0, 10.0])
+    >>> reward_times = np.array([1.0, 2.0, 5.0])
+    >>> event_count_in_window(sample_times, reward_times, window=(-5.0, 0.0))
+    array([0, 2, 3, 1])
+
+    Count events in symmetric window:
+
+    >>> event_count_in_window(sample_times, reward_times, window=(-1.5, 1.5))
+    array([1, 1, 1, 0])
+    """
+    # Convert to numpy arrays and validate
+    sample_times = np.asarray(sample_times, dtype=np.float64)
+    event_times = np.asarray(event_times, dtype=np.float64)
+
+    # Input validation
+    if np.any(np.isnan(sample_times)):
+        raise ValueError(
+            "sample_times contains NaN values.\n"
+            "  WHY: Times must be valid numeric values.\n"
+            "  HOW: Remove or interpolate NaN values before calling."
+        )
+
+    if np.any(np.isinf(sample_times)):
+        raise ValueError(
+            "sample_times contains inf values.\n"
+            "  WHY: Times must be finite.\n"
+            "  HOW: Remove or clip infinite values before calling."
+        )
+
+    if len(event_times) > 0:
+        if np.any(np.isnan(event_times)):
+            raise ValueError(
+                "event_times contains NaN values.\n"
+                "  WHY: Event times must be valid numeric values.\n"
+                "  HOW: Remove NaN values from event times."
+            )
+
+        if np.any(np.isinf(event_times)):
+            raise ValueError(
+                "event_times contains inf values.\n"
+                "  WHY: Event times must be finite.\n"
+                "  HOW: Remove infinite values from event times."
+            )
+
+    # Validate window
+    window_start, window_end = window
+    if window_start > window_end:
+        raise ValueError(
+            f"window start ({window_start}) must be <= window end ({window_end}).\n"
+            "  WHY: Window defines a time range [start, end] relative to sample.\n"
+            "  HOW: Use window=(start, end) where start <= end."
+        )
+
+    # Handle empty sample_times
+    if len(sample_times) == 0:
+        return np.array([], dtype=np.int64)
+
+    # Handle empty events
+    if len(event_times) == 0:
+        return np.zeros(len(sample_times), dtype=np.int64)
+
+    # Sort events for efficient searchsorted
+    sorted_events = np.sort(event_times)
+
+    # For each sample, compute window bounds in absolute time
+    # and count events within those bounds
+    window_starts = sample_times + window_start
+    window_ends = sample_times + window_end
+
+    # Use searchsorted to find event indices at window boundaries
+    # left_indices: first event >= window_start
+    # right_indices: first event > window_end (so count = right - left)
+    left_indices = np.searchsorted(sorted_events, window_starts, side="left")
+    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
+
+    # Count = number of events in [window_start, window_end]
+    counts = right_indices - left_indices
+
+    return counts.astype(np.int64)

@@ -78,7 +78,38 @@
 User feedback: "We usually study the time around an event" - the peri-event window is centered on events, not one-sided. A unified function that finds the nearest event is more natural for PSTH-like analysis.
 
 **Next Steps:**
-- M2.2: Implement `event_count_in_window()`
+- M2.3: Implement `event_indicator()`
+
+---
+
+### 2025-12-04: M2.2 Complete - event_count_in_window()
+
+**Completed Tasks:**
+- M2.2: Implemented `event_count_in_window()` in `regressors.py`
+  - Parameters: `sample_times`, `event_times`, `window` (tuple of start, end)
+  - Returns `NDArray[np.int64]` with count of events in window
+  - Uses efficient double `np.searchsorted()` for O(n log m) complexity
+  - Inclusive boundaries on both ends (`side="left"` and `side="right"`)
+  - Edge cases: empty arrays, unsorted events, window validation
+
+- Created 20 tests in `tests/test_events_regressors.py::TestEventCountInWindow`
+  - Backward, forward, symmetric window tests
+  - Empty arrays, single event, multiple events at same time
+  - Boundary inclusion, unsorted events, zero-width window
+  - NaN/Inf/inverted window validation
+  - Dense events, typical spike counting use case
+
+- Code review passed with APPROVE
+- All ruff and mypy checks pass
+
+**Key Decisions:**
+1. **Inclusive boundaries**: Events exactly at window edges are counted
+2. **int64 return type**: Counts are always non-negative integers
+3. **Window tuple format**: `(start, end)` relative to sample time
+4. **Automatic sorting**: Handles unsorted event input transparently
+
+**Next Steps:**
+- M2.3: Implement `event_indicator()`
 
 ---
 

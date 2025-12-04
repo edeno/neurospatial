@@ -319,3 +319,309 @@ class TestTimeToNearestEvent:
         # Should exclude samples far from events
         assert not window_mask[0]  # t=0.0, far from events
         assert not window_mask[50]  # t=5.0, equidistant but >1s from both
+
+
+# =============================================================================
+# Test event_count_in_window
+# =============================================================================
+
+
+class TestEventCountInWindow:
+    """Tests for event_count_in_window function."""
+
+    def test_basic_backward_window(self):
+        """Test counting events in backward window (past events)."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+        event_times = np.array([1.0, 2.5])
+        window = (-2.0, 0.0)  # Look 2s into the past
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=0.0: window [-2, 0], no events
+        assert result[0] == 0
+        # t=1.0: window [-1, 1], event at 1.0 is at boundary (included)
+        assert result[1] == 1
+        # t=2.0: window [0, 2], event at 1.0 is at start (included)
+        assert result[2] == 1
+        # t=3.0: window [1, 3], events at 1.0, 2.5 both included
+        assert result[3] == 2
+        # t=4.0: window [2, 4], event at 2.5 included
+        assert result[4] == 1
+        # t=5.0: window [3, 5], no events in [3, 5]
+        assert result[5] == 0
+
+    def test_basic_forward_window(self):
+        """Test counting events in forward window (future events)."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        event_times = np.array([2.0, 3.5])
+        window = (0.0, 2.0)  # Look 2s into the future
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=0.0: window [0, 2], event at 2.0 at boundary (included)
+        assert result[0] == 1
+        # t=1.0: window [1, 3], event at 2.0 included
+        assert result[1] == 1
+        # t=2.0: window [2, 4], events at 2.0, 3.5 both included
+        assert result[2] == 2
+        # t=3.0: window [3, 5], event at 3.5 included
+        assert result[3] == 1
+        # t=4.0: window [4, 6], no events
+        assert result[4] == 0
+
+    def test_symmetric_window(self):
+        """Test counting events in symmetric window around sample."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 2.0, 5.0])
+        event_times = np.array([1.0, 3.0, 4.0])
+        window = (-1.5, 1.5)  # +/- 1.5s around each sample
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=0.0: window [-1.5, 1.5], event at 1.0 included
+        assert result[0] == 1
+        # t=2.0: window [0.5, 3.5], events at 1.0, 3.0 included
+        assert result[1] == 2
+        # t=5.0: window [3.5, 6.5], event at 4.0 included
+        assert result[2] == 1
+
+    def test_empty_events_returns_zeros(self):
+        """Test empty events array returns all zeros."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([])
+        window = (-1.0, 1.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        assert np.all(result == 0)
+        assert len(result) == 3
+
+    def test_empty_sample_times(self):
+        """Test empty sample_times returns empty array."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([])
+        event_times = np.array([1.0, 2.0])
+        window = (-1.0, 1.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        assert len(result) == 0
+        assert result.dtype == np.int64
+
+    def test_single_event(self):
+        """Test with single event."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0, 3.0])
+        event_times = np.array([1.5])
+        window = (-1.0, 1.0)  # +/- 1s
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=0.0: window [-1, 1], event at 1.5 not in window
+        assert result[0] == 0
+        # t=1.0: window [0, 2], event at 1.5 included
+        assert result[1] == 1
+        # t=2.0: window [1, 3], event at 1.5 included
+        assert result[2] == 1
+        # t=3.0: window [2, 4], event at 1.5 not in window
+        assert result[3] == 0
+
+    def test_multiple_events_same_time(self):
+        """Test multiple events at same timestamp are counted separately."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, 1.0, 1.0])  # Three events at same time
+        window = (-0.5, 0.5)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=0.0: window [-0.5, 0.5], no events
+        assert result[0] == 0
+        # t=1.0: window [0.5, 1.5], 3 events at 1.0 included
+        assert result[1] == 3
+        # t=2.0: window [1.5, 2.5], no events
+        assert result[2] == 0
+
+    def test_event_at_window_boundary_included(self):
+        """Test events exactly at window boundaries are included."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([2.0])
+        event_times = np.array([1.0, 3.0])  # Events at exact boundaries
+        window = (-1.0, 1.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # window [1.0, 3.0], both boundary events included
+        assert result[0] == 2
+
+    def test_output_dtype_is_int64(self):
+        """Test output dtype is int64."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0])
+        window = (-1.0, 1.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        assert result.dtype == np.int64
+
+    def test_output_shape_matches_sample_times(self):
+        """Test output shape matches sample_times."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.linspace(0, 10, 100)
+        event_times = np.array([2.0, 5.0, 8.0])
+        window = (-1.0, 1.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        assert result.shape == sample_times.shape
+
+    def test_unsorted_events_handled(self):
+        """Test unsorted event times are handled correctly."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([2.0])
+        event_times = np.array([3.0, 1.0, 2.5])  # Unsorted
+        window = (-1.5, 1.5)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=2.0: window [0.5, 3.5], all events included
+        assert result[0] == 3
+
+    def test_nan_in_sample_times_raises(self):
+        """Test NaN in sample_times raises ValueError."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, np.nan, 2.0])
+        event_times = np.array([1.0])
+        window = (-1.0, 1.0)
+
+        with pytest.raises(ValueError, match=r"sample_times.*NaN"):
+            event_count_in_window(sample_times, event_times, window)
+
+    def test_nan_in_event_times_raises(self):
+        """Test NaN in event_times raises ValueError."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, np.nan])
+        window = (-1.0, 1.0)
+
+        with pytest.raises(ValueError, match=r"event_times.*NaN"):
+            event_count_in_window(sample_times, event_times, window)
+
+    def test_inf_in_sample_times_raises(self):
+        """Test Inf in sample_times raises ValueError."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, np.inf, 2.0])
+        event_times = np.array([1.0])
+        window = (-1.0, 1.0)
+
+        with pytest.raises(ValueError, match=r"sample_times.*inf"):
+            event_count_in_window(sample_times, event_times, window)
+
+    def test_inf_in_event_times_raises(self):
+        """Test Inf in event_times raises ValueError."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, np.inf])
+        window = (-1.0, 1.0)
+
+        with pytest.raises(ValueError, match=r"event_times.*inf"):
+            event_count_in_window(sample_times, event_times, window)
+
+    def test_inverted_window_raises(self):
+        """Test window with start > end raises ValueError."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0])
+        window = (1.0, -1.0)  # Inverted
+
+        with pytest.raises(ValueError, match=r"window.*start.*end"):
+            event_count_in_window(sample_times, event_times, window)
+
+    def test_zero_width_window(self):
+        """Test zero-width window only counts exact matches."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([0.0, 1.0, 2.0])
+        event_times = np.array([1.0, 1.5])
+        window = (0.0, 0.0)  # Zero width
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # Only exact matches counted
+        assert result[0] == 0  # t=0, no event at exactly 0
+        assert result[1] == 1  # t=1, event at exactly 1
+        assert result[2] == 0  # t=2, no event at exactly 2
+
+    def test_dense_events(self):
+        """Test with many closely spaced events."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.array([5.0])
+        event_times = np.linspace(0, 10, 101)  # Events every 0.1s
+        window = (-1.0, 1.0)  # 2s total window
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # t=5.0: window [4.0, 6.0], should have ~21 events (4.0 to 6.0 inclusive)
+        # 4.0, 4.1, ..., 5.9, 6.0 = 21 events
+        assert result[0] == 21
+
+    def test_typical_spike_counting_use_case(self):
+        """Test typical use case: counting spikes in recent history."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        # Continuous time at 100 Hz
+        sample_times = np.arange(0, 5, 0.01)
+        # Reward events at 1s and 3s
+        event_times = np.array([1.0, 3.0])
+        # Count rewards in last 0.5s
+        window = (-0.5, 0.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        # Before any reward
+        assert result[0] == 0  # t=0.0
+        assert result[50] == 0  # t=0.5
+
+        # Just after first reward
+        assert result[100] == 1  # t=1.0, reward at boundary
+        assert result[110] == 1  # t=1.1, reward within 0.5s window
+        assert result[150] == 1  # t=1.5, reward at edge of window
+
+        # After first reward fades from window
+        assert result[160] == 0  # t=1.6, reward at 1.0 is 0.6s ago (outside window)
+
+        # At second reward
+        assert result[300] == 1  # t=3.0
+
+    def test_non_negative_counts(self):
+        """Test that counts are always non-negative."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        sample_times = np.linspace(0, 100, 1000)
+        event_times = np.random.rand(50) * 100
+        window = (-2.0, 2.0)
+
+        result = event_count_in_window(sample_times, event_times, window)
+
+        assert np.all(result >= 0)

@@ -82,7 +82,7 @@ This task list breaks down the Events Module implementation into actionable step
   - Use `np.searchsorted` for efficient nearest-event lookup
   - Handle edge cases: empty arrays, NaN/Inf validation, midpoint tie-breaking
 
-- [ ] **M2.2**: Implement `event_count_in_window()` in `regressors.py`
+- [x] **M2.2**: Implement `event_count_in_window()` in `regressors.py`
   - Parameters: `sample_times`, `event_times`, `window`
   - Return type: `NDArray[np.int64]`
   - Handle: empty events → return zeros
