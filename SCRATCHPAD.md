@@ -198,8 +198,28 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 
 **Next Steps:**
 
-- M3.5: Implement `events_in_region()`
-- M3.6: Implement `spatial_event_rate()`
+- M4: Implement interval utilities (if needed)
+
+---
+
+### 2025-12-04: M3.5-M3.8 Deferred
+
+**Deferred Tasks:**
+
+- **M3.5 `events_in_region()`**: Users can combine `add_positions()` with `Environment.contains()`
+- **M3.6 `spatial_event_rate()`**: Users can use existing place field computation methods
+- **M3.7-M3.8**: Additional tests and verification - deferred with functions
+
+**Rationale:**
+
+- `add_positions()` is the core unique functionality - adds coordinates to events
+- Remaining functions are thin wrappers around existing Environment methods
+- Users can easily compose: `events_with_pos = add_positions(events, pos, times)` then filter with `env.contains()`
+
+**Milestone 3 Status: PARTIALLY COMPLETE**
+
+- 1 spatial utility implemented (`add_positions()`, 20 tests)
+- All pass mypy, ruff, pytest
 
 ---
 

@@ -117,8 +117,12 @@ This task list breaks down the Events Module implementation into actionable step
 - [ ] **M3.1**: `extract_region_crossing_events()` - deferred
 - [ ] **M3.2**: `extract_threshold_crossing_events()` - deferred
 - [ ] **M3.3**: `extract_movement_onset_events()` - deferred
+- [ ] **M3.5**: `events_in_region()` - deferred (can use Environment.contains() directly)
+- [ ] **M3.6**: `spatial_event_rate()` - deferred (can use existing place field methods)
+- [ ] **M3.7**: Additional detection tests - deferred
+- [ ] **M3.8**: Milestone verification - deferred
 
-### Active Tasks (Spatial Event Utilities)
+### Completed Tasks
 
 - [x] **M3.4**: Implement `add_positions()` in `detection.py`
   - Parameters: `events`, `positions`, `times`, `timestamp_column`
@@ -128,26 +132,10 @@ This task list breaks down the Events Module implementation into actionable step
   - Return new DataFrame (don't modify input)
   - 20 tests in `tests/test_events_detection.py`
 
-- [ ] **M3.5**: Implement `events_in_region()` in `detection.py`
-  - Parameters: `events`, `env`, `region`
-  - Requires events to have `x`, `y` columns (raise if missing)
-  - Filter events whose coordinates fall within region
+Milestone 3 Status: PARTIALLY COMPLETE
 
-- [ ] **M3.6**: Implement `spatial_event_rate()` in `detection.py`
-  - Parameters: `events`, `env`, `occupancy`, `smooth`, `bandwidth`
-  - Requires events to have `x`, `y` columns
-  - Requires pre-computed occupancy (explicit dependency)
-  - Compute event rate per spatial bin
-
-- [ ] **M3.7**: Create `tests/test_events_detection.py`
-  - Test spatial utility functions
-  - Test `add_positions()` only adds coordinates (no bin_index, region)
-  - Test `events_in_region()` raises if missing x, y
-  - Test with real Environment fixtures
-
-- [ ] **M3.8**: Verify milestone completion
-  - Run `uv run pytest tests/test_events_detection.py -v`
-  - Run `uv run mypy src/neurospatial/events/detection.py`
+- `add_positions()` implemented (20 tests)
+- Remaining spatial utilities deferred - users can combine `add_positions()` with existing Environment methods
 
 ---
 
