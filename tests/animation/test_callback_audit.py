@@ -10,6 +10,8 @@ This test module verifies that callbacks connected to
 
 These tests document the audit findings from Phase 5.1 and ensure
 the optimization patterns remain in place.
+
+Requires qtpy for PlaybackController tests (QTimer-based debouncing).
 """
 
 from __future__ import annotations
@@ -22,6 +24,17 @@ import pytest
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+
+
+# Helper to check if qtpy is available for PlaybackController tests
+def _qtpy_available() -> bool:
+    """Check if qtpy is available."""
+    try:
+        import qtpy  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 # =============================================================================
@@ -343,6 +356,7 @@ class TestEventOverlayCallbackAudit:
 # =============================================================================
 
 
+@pytest.mark.skipif(not _qtpy_available(), reason="PlaybackController requires qtpy")
 class TestPlaybackControllerCallbackIntegration:
     """Tests verifying PlaybackController callback mechanism."""
 

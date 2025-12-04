@@ -5,6 +5,8 @@ This test module validates the debounce feature for rapid frame changes:
 - Pending frame coalescing (only latest frame applied)
 - Immediate feedback maintained (seek feels responsive)
 - Debounce can be disabled for testing/video export
+
+Requires qtpy for QTimer-based debouncing.
 """
 
 from __future__ import annotations
@@ -13,6 +15,9 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+
+# PlaybackController requires qtpy for QTimer-based scrub debouncing
+pytest.importorskip("qtpy", reason="PlaybackController requires qtpy for QTimer")
 
 
 class TestScrubDebounceInit:

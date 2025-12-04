@@ -549,19 +549,21 @@ def test_persistent_figure_renderer_reuses_figure(sample_env, sample_fields):
     )
 
     try:
-        # Store reference to internal figure
-        fig_id = id(renderer._fig)
-
-        # Render frame 1
+        # Render frame 1 (figure is created lazily on first render)
         png_bytes_1 = renderer.render(sample_fields[0], frame_idx=0)
 
-        # Verify figure is still the same
-        assert id(renderer._fig) == fig_id
+        # Store reference to internal figure AFTER first render (lazy initialization)
+        fig_id = id(renderer._fig)
+        assert fig_id is not None  # Figure should now exist
 
         # Render frame 2
         png_bytes_2 = renderer.render(sample_fields[1], frame_idx=1)
 
-        # Verify figure is still the same
+        # Verify figure is still the same (reused, not recreated)
+        assert id(renderer._fig) == fig_id
+
+        # Render frame 3 to further verify reuse
+        _ = renderer.render(sample_fields[2], frame_idx=2)
         assert id(renderer._fig) == fig_id
 
         # Assert outputs are valid PNG bytes

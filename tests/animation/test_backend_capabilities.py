@@ -474,44 +474,40 @@ class TestHTMLCapabilities:
 
         assert save_path.exists()
 
-    def test_does_not_support_bodypart_overlay(
+    def test_supports_bodypart_overlay(
         self, simple_env, simple_fields, bodypart_overlay_data, tmp_path
     ):
-        """Test HTML warns for bodypart overlay (not supported)."""
+        """Test HTML supports bodypart overlay (rendered via matplotlib)."""
         save_path = tmp_path / "test.html"
 
-        # Should emit warning for bodypart overlay
-        with pytest.warns(
-            UserWarning, match="HTML backend supports positions and regions only"
-        ):
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=bodypart_overlay_data,
-            )
+        # Bodypart overlays are now supported via matplotlib rendering
+        # No warning should be emitted
+        render_html(
+            simple_env,
+            simple_fields,
+            str(save_path),
+            overlay_data=bodypart_overlay_data,
+        )
 
-        # File should still be created (just without bodypart overlay)
+        # File should be created with bodypart overlay
         assert save_path.exists()
 
-    def test_does_not_support_head_direction_overlay(
+    def test_supports_head_direction_overlay(
         self, simple_env, simple_fields, head_direction_overlay_data, tmp_path
     ):
-        """Test HTML warns for head direction overlay (not supported)."""
+        """Test HTML supports head direction overlay (rendered via matplotlib)."""
         save_path = tmp_path / "test.html"
 
-        # Should emit warning for head direction overlay
-        with pytest.warns(
-            UserWarning, match="HTML backend supports positions and regions only"
-        ):
-            render_html(
-                simple_env,
-                simple_fields,
-                str(save_path),
-                overlay_data=head_direction_overlay_data,
-            )
+        # Head direction overlays are now supported via matplotlib rendering
+        # No warning should be emitted
+        render_html(
+            simple_env,
+            simple_fields,
+            str(save_path),
+            overlay_data=head_direction_overlay_data,
+        )
 
-        # File should still be created (just without head direction overlay)
+        # File should be created with head direction overlay
         assert save_path.exists()
 
 

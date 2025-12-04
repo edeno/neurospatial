@@ -26,7 +26,7 @@ RadonDetectionResult
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -38,11 +38,13 @@ if TYPE_CHECKING:
 # Check for optional scikit-image dependency
 _SKIMAGE_AVAILABLE = False
 try:
-    from skimage.transform import radon
+    from skimage.transform import radon as _radon
 
     _SKIMAGE_AVAILABLE = True
 except ImportError:
-    radon = None
+    _radon = None
+
+radon: Any = _radon
 
 
 @dataclass(frozen=True)

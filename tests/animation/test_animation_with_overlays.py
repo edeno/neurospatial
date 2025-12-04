@@ -570,10 +570,10 @@ class TestHTMLBackendIntegration:
             html_content = save_path.read_text()
             assert len(html_content) > 0
 
-    def test_html_warns_unsupported_overlays(
+    def test_html_supports_bodypart_overlays(
         self, simple_env, spatial_fields, bodypart_overlay_data
     ):
-        """Test HTML backend warns when bodypart/head direction overlays provided."""
+        """Test HTML backend supports bodypart overlays (rendered via matplotlib)."""
         # Create fields
         fields = spatial_fields(simple_env.n_bins, n_frames=20)
         frame_times = np.linspace(0, 2.0, 20)
@@ -581,20 +581,17 @@ class TestHTMLBackendIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             save_path = Path(tmpdir) / "test_animation.html"
 
-            # Call animate_fields with bodypart overlay (unsupported)
-            with pytest.warns(
-                UserWarning, match="HTML backend supports positions and regions only"
-            ):
-                _ = simple_env.animate_fields(
-                    fields,
-                    backend="html",
-                    overlays=[bodypart_overlay_data],
-                    save_path=str(save_path),
-                    frame_times=frame_times,
-                    fps=10,
-                )
+            # Bodypart overlays are now supported - no warning expected
+            _ = simple_env.animate_fields(
+                fields,
+                backend="html",
+                overlays=[bodypart_overlay_data],
+                save_path=str(save_path),
+                frame_times=frame_times,
+                fps=10,
+            )
 
-            # Verify HTML file still created (just without bodypart overlay)
+            # Verify HTML file created with bodypart overlay
             assert save_path.exists()
 
 

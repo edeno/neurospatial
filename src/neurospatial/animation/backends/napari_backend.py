@@ -2338,7 +2338,7 @@ def _add_speed_control_widget(
     sample_rate_hz : float, default=30.0
         Data sample rate in Hz. Used to compute actual fps from speed.
         For example, 30 Hz data at speed=0.5 gives 15 fps playback.
-    max_playback_fps : int, default=MAX_PLAYBACK_FPS (25)
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS (60)
         Maximum playback fps. Speed slider is capped so that
         ``sample_rate_hz * speed <= max_playback_fps``.
 
@@ -2834,7 +2834,7 @@ def render_napari(
         for replay decoding). Computed from ``frame_times`` by ``animate_fields()``
         and used by the speed control widget to convert between speed multiplier
         and playback fps. If None, defaults to computing from fps.
-    max_playback_fps : int, default=MAX_PLAYBACK_FPS (25)
+    max_playback_fps : int, default=MAX_PLAYBACK_FPS (60)
         Maximum playback fps for the speed control widget. Higher values may
         exceed display refresh rate. Passed from ``animate_fields()`` to ensure
         consistent speed capping across the API.

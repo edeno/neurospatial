@@ -597,7 +597,7 @@ class EnvironmentVisualization:
             ``playback_fps = min(sample_rate_hz * speed, MAX_PLAYBACK_FPS)``
 
             where sample_rate_hz is inferred from frame_times.
-            Playback is capped at MAX_PLAYBACK_FPS (25) for display compatibility.
+            Playback is capped at MAX_PLAYBACK_FPS (60) for display compatibility.
         cmap : str, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
         vmin : float, optional

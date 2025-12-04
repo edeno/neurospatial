@@ -6,6 +6,8 @@ This test module validates the PlaybackController:
 - Frame skipping based on elapsed time
 - Callback registration and notification
 - Metrics tracking (frames_rendered, frames_skipped)
+
+Requires qtpy for QTimer-based debouncing.
 """
 
 from __future__ import annotations
@@ -16,6 +18,9 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+
+# PlaybackController requires qtpy for QTimer-based scrub debouncing
+pytest.importorskip("qtpy", reason="PlaybackController requires qtpy for QTimer")
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
