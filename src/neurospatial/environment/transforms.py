@@ -577,9 +577,23 @@ class EnvironmentTransforms:
                 self.is_1d = False
 
             def build(self) -> None:
+                """Build the layout (no-op for subset layouts)."""
                 pass  # Already built
 
             def point_to_bin_index(self, point: NDArray[np.float64]) -> int:
+                """
+                Find the nearest bin index for a given point.
+
+                Parameters
+                ----------
+                point : ndarray of shape (n_dims,)
+                    Spatial coordinate to query.
+
+                Returns
+                -------
+                int
+                    Index of the nearest bin.
+                """
                 # Use KDTree for nearest neighbor
                 from scipy.spatial import cKDTree
 
@@ -588,6 +602,14 @@ class EnvironmentTransforms:
                 return int(idx)
 
             def bin_sizes(self) -> NDArray[np.float64]:
+                """
+                Estimate bin sizes from connectivity graph.
+
+                Returns
+                -------
+                ndarray of shape (n_bins,)
+                    Estimated size of each bin based on edge distances.
+                """
                 # Estimate from connectivity graph
                 # Use edge distances to estimate bin sizes
                 sizes = np.ones(len(self.bin_centers))
@@ -601,6 +623,21 @@ class EnvironmentTransforms:
                 return sizes
 
             def plot(self, ax: Any | None = None, **kwargs: Any) -> Any:
+                """
+                Plot the layout bin centers.
+
+                Parameters
+                ----------
+                ax : matplotlib.axes.Axes, optional
+                    Axes to plot on. If None, creates a new figure.
+                **kwargs : dict
+                    Additional keyword arguments passed to scatter().
+
+                Returns
+                -------
+                matplotlib.axes.Axes
+                    The axes containing the plot.
+                """
                 import matplotlib.pyplot as plt
 
                 if ax is None:

@@ -86,6 +86,21 @@ def timed(func: Callable[P, T]) -> Callable[P, T]:
         return func
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        """
+        Execute the wrapped function and log its execution time.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments to pass to the wrapped function.
+        **kwargs : dict
+            Keyword arguments to pass to the wrapped function.
+
+        Returns
+        -------
+        T
+            Return value from the wrapped function.
+        """
         start = time.perf_counter()
         try:
             return func(*args, **kwargs)

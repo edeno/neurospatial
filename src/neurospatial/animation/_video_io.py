@@ -336,6 +336,13 @@ class VideoReader:
 
         # Submit prefetch task (non-blocking)
         def prefetch_frames() -> None:
+            """
+            Prefetch upcoming frames into cache in background thread.
+
+            Iterates through the specified frame range and loads each frame
+            into the LRU cache. Errors are suppressed since they will be
+            caught on actual frame access.
+            """
             for idx in range(start_frame, end_frame):
                 # Ignore errors in prefetching - they'll be caught on actual access
                 with contextlib.suppress(Exception):

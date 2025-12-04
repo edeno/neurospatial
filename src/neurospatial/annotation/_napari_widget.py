@@ -57,6 +57,14 @@ def create_annotation_widget(
 
     # Get shapes layer
     def get_shapes() -> napari.layers.Shapes | None:
+        """
+        Retrieve the shapes layer by name.
+
+        Returns
+        -------
+        napari.layers.Shapes or None
+            The shapes layer if it exists, otherwise None.
+        """
         try:
             return viewer.layers[shapes_layer_name]
         except KeyError:
@@ -334,6 +342,21 @@ def create_annotation_widget(
         """Event filter to handle Enter key in name input without propagating to napari."""
 
         def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802 - Qt override
+            """
+            Filter Qt events to intercept Enter key presses.
+
+            Parameters
+            ----------
+            obj : QObject
+                The object that received the event.
+            event : QEvent
+                The event to filter.
+
+            Returns
+            -------
+            bool
+                True if the event was handled (consumed), False to pass it through.
+            """
             if event.type() == qt_core.QEvent.KeyPress and event.key() in (
                 qt_core.Qt.Key_Return,
                 qt_core.Qt.Key_Enter,

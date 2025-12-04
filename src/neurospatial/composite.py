@@ -650,7 +650,7 @@ class CompositeEnvironment:
 
         Returns
         -------
-        NDArray[np.int_]
+        NDArray[np.int_] of shape (n_bins_in_region,)
             Array of composite bin indices (0 to n_bins - 1) that fall within
             the specified region.
 

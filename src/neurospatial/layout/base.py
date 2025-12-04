@@ -47,6 +47,21 @@ def capture_build_params(build_method: Callable[..., T]) -> Callable[..., T]:
 
     @wraps(build_method)
     def wrapper(self, *args, **kwargs) -> T:
+        """
+        Capture build parameters before calling the original method.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments to pass to the build method.
+        **kwargs : dict
+            Keyword arguments to pass to the build method.
+
+        Returns
+        -------
+        T
+            Return value from the original build method.
+        """
         # Bind all arguments to the signature
         bound = sig.bind(self, *args, **kwargs)
         bound.apply_defaults()

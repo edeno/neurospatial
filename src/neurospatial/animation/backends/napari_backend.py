@@ -2005,6 +2005,15 @@ def _register_event_visibility_callback(
     """
 
     def on_frame_change(event: Any) -> None:
+        """
+        Update event visibility when the animation frame changes.
+
+        Parameters
+        ----------
+        event : Any
+            Napari dims change event (not directly used, but required
+            for event callback signature).
+        """
         with perf_timer("event_visibility_callback"):
             # Get current frame from dims slider
             current_frame = int(viewer.dims.current_step[0])
