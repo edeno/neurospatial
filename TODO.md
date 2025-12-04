@@ -34,16 +34,29 @@
 
 ### **2.2 Head direction system**
 
-* [ ] Circular occupancy (angular bins).
-* [ ] HD tuning curves.
-* [ ] Mean vector length, preferred direction.
-* [ ] Rayleigh test & circular statistics library.
+* [x] Circular occupancy (angular bins).
+  * `head_direction_tuning_curve()` with configurable bin_size
+* [x] HD tuning curves.
+  * `head_direction_tuning_curve()` computes firing rate as function of head direction
+* [x] Mean vector length, preferred direction.
+  * `head_direction_metrics()` returns `HeadDirectionMetrics` with `preferred_direction`, `mean_vector_length`, `tuning_width`
+* [x] Rayleigh test & circular statistics library.
+  * `rayleigh_test()`, `circular_mean()`, `mean_resultant_length()` in `circular.py`
+* [x] HD cell classification.
+  * `is_head_direction_cell()`, `HeadDirectionMetrics.is_hd_cell`
+* [x] HD tuning visualization.
+  * `plot_head_direction_tuning()` with polar/linear projections
 
 ### **2.3 Phase precession**
 
-* [ ] Per-field phase–position analysis.
-* [ ] Circular–linear correlation.
-* [ ] Field-restricted spike-phase plots.
+* [x] Per-field phase–position analysis.
+  * `phase_precession()` returns `PhasePrecessionResult` with slope, offset, correlation
+* [x] Circular–linear correlation.
+  * `circular_linear_correlation()` in `circular.py`
+* [x] Field-restricted spike-phase plots.
+  * `plot_phase_precession()` with doubled-axis visualization
+* [x] Fast screening for many neurons.
+  * `has_phase_precession()` boolean filter
 
 ### **2.4 Distance-to-goal**
 
@@ -77,9 +90,17 @@
 * [ ] Time since reward, cue, zone entry.
 * [ ] Distance to reward (Euclidean or cost-distance).
 * [ ] Distance to walls, obstacles, region boundaries.
-* [ ] Head direction, speed, acceleration, behavioral phase.
-* [ ] “Reachability” features (speed-constrained).
-* [ ] All designed as GLM-ready.
+* [x] Head direction, speed, acceleration, behavioral phase.
+  * `circular_basis()` for circular predictors (HD, phase, direction)
+  * `circular_basis_metrics()` to interpret GLM coefficients
+  * `is_modulated()` for quick significance checks
+  * `plot_circular_basis_tuning()` for visualization
+* [ ] "Reachability" features (speed-constrained).
+* [x] Maze-aware spatial basis functions.
+  * `spatial_basis()` for automatic parameter selection
+  * `geodesic_rbf_basis()` for RBF using geodesic distances
+  * `heat_kernel_wavelet_basis()` for diffusion-based multi-scale
+  * `chebyshev_filter_basis()` for polynomial filters
 
 ---
 
@@ -271,42 +292,42 @@
 
 # 🎯 **Structured Roadmap View (Suggested)**
 
-### **Phase 1: Foundations**
+### **Phase 1: Foundations** ✅ (mostly complete)
 
-* Population API (shared occupancy)
-* Result objects
-* Basic visualization utilities
-* Events module
-* NWB IO
-* Head direction system
+* [ ] Population API (shared occupancy)
+* [ ] Result objects
+* [x] Basic visualization utilities
+* [ ] Events module
+* [x] NWB IO
+* [x] Head direction system
 
 ### **Phase 2: Spatial statistics + GIS**
 
-* K-functions, Moran’s I, variograms
-* Zonal stats
-* Cost-distance maps, maze graphs
-* Visibility / viewshed
-* Patch metrics
+* [ ] K-functions, Moran's I, variograms
+* [ ] Zonal stats
+* [x] Cost-distance maps, maze graphs
+* [ ] Visibility / viewshed
+* [ ] Patch metrics
 
 ### **Phase 3: Spatio-temporal analytics**
 
-* Event-triggered rate cubes
-* GLM regressors
-* Phase precession module
-* Dynamic place fields across time
+* [ ] Event-triggered rate cubes
+* [x] GLM regressors (circular basis, spatial basis)
+* [x] Phase precession module
+* [ ] Dynamic place fields across time (estimation, not just visualization)
 
 ### **Phase 4: Pipelines + UX**
 
-* `analyze_session()` pipeline
-* Remapping / cross-animal alignment
-* napari dashboards for annotation + inspection
-* Multi-animal and video integration
+* [ ] `analyze_session()` pipeline
+* [ ] Remapping / cross-animal alignment
+* [ ] napari dashboards for annotation + inspection
+* [x] Multi-animal and video integration
 
 ### **Phase 5: Scaling**
 
-* Chunked computation
-* Parallelism
-* Large-population optimizations
+* [ ] Chunked computation
+* [ ] Parallelism
+* [ ] Large-population optimizations
 
 ### Other
 
