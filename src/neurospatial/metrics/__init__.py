@@ -23,6 +23,10 @@ from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.grid_cells import (
+    GridProperties,
+    grid_orientation,
+    grid_properties,
+    grid_scale,
     grid_score,
     periodicity_score,
     spatial_autocorrelation,
@@ -61,6 +65,7 @@ from neurospatial.metrics.trajectory import (
 )
 
 __all__ = [
+    "GridProperties",
     "PopulationCoverageResult",
     "border_score",
     "compute_field_emd",
@@ -77,6 +82,9 @@ __all__ = [
     "field_shift_distance",
     "field_size",
     "field_stability",
+    "grid_orientation",
+    "grid_properties",
+    "grid_scale",
     "grid_score",
     "in_out_field_ratio",
     "information_per_second",

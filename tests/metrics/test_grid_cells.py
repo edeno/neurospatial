@@ -507,3 +507,353 @@ class TestPeriodicityScore:
 
         # Score should be in [0, 1]
         assert 0.0 <= score <= 1.0
+
+
+def _create_hexagonal_autocorr(size: int = 100, radius: float = 20.0) -> np.ndarray:
+    """Create synthetic hexagonal autocorrelogram for testing."""
+    autocorr = np.zeros((size, size))
+    center = size // 2
+
+    # Coordinate grids
+    y_grid, x_grid = np.ogrid[:size, :size]
+
+    # Central peak
+    dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
+    autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
+
+    # Add 6 peaks at 60° intervals (hexagonal pattern)
+    for angle_deg in [0, 60, 120, 180, 240, 300]:
+        angle_rad = np.radians(angle_deg)
+        peak_y = center + int(radius * np.sin(angle_rad))
+        peak_x = center + int(radius * np.cos(angle_rad))
+        peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
+        autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
+
+    return autocorr / autocorr.max()
+
+
+class TestGridScale:
+    """Tests for grid_scale function."""
+
+    def test_grid_scale_anchor_hexagonal_pattern(self):
+        """Anchor test: Hexagonal pattern with known radius should return correct scale.
+
+        Mathematical reasoning:
+        - Peaks are placed at radius=20 pixels from center
+        - With bin_size=2.0, expected scale = 20 * 2.0 = 40.0 units
+        """
+        from neurospatial.metrics.grid_cells import grid_scale
+
+        # Create hexagonal pattern with known radius
+        radius_pixels = 20.0
+        bin_size = 2.0
+        autocorr = _create_hexagonal_autocorr(size=100, radius=radius_pixels)
+
+        scale = grid_scale(autocorr, bin_size=bin_size)
+
+        # Should recover approximately the correct scale
+        expected_scale = radius_pixels * bin_size
+        assert abs(scale - expected_scale) < 10.0, (
+            f"Expected scale ~{expected_scale}, got {scale}"
+        )
+
+    def test_grid_scale_returns_nan_on_flat_input(self):
+        """Test returns NaN when no clear peaks detected (flat data)."""
+        from neurospatial.metrics.grid_cells import grid_scale
+
+        # Truly flat data (no local maxima possible)
+        autocorr = np.ones((50, 50)) * 0.5
+
+        scale = grid_scale(autocorr, bin_size=2.0)
+
+        # Should return NaN (no peaks in flat data)
+        assert np.isnan(scale)
+
+    def test_grid_scale_raises_on_1d_input(self):
+        """Test raises ValueError on 1D input."""
+        from neurospatial.metrics.grid_cells import grid_scale
+
+        autocorr = np.zeros(100)
+
+        with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
+            grid_scale(autocorr, bin_size=2.0)
+
+    def test_grid_scale_raises_on_invalid_bin_size(self):
+        """Test raises ValueError on non-positive bin_size."""
+        from neurospatial.metrics.grid_cells import grid_scale
+
+        autocorr = _create_hexagonal_autocorr()
+
+        with pytest.raises(ValueError, match="bin_size must be positive"):
+            grid_scale(autocorr, bin_size=0.0)
+
+        with pytest.raises(ValueError, match="bin_size must be positive"):
+            grid_scale(autocorr, bin_size=-1.0)
+
+    def test_grid_scale_scales_with_bin_size(self):
+        """Test scale output is proportional to bin_size."""
+        from neurospatial.metrics.grid_cells import grid_scale
+
+        autocorr = _create_hexagonal_autocorr()
+
+        scale1 = grid_scale(autocorr, bin_size=1.0)
+        scale2 = grid_scale(autocorr, bin_size=2.0)
+
+        # scale2 should be approximately 2x scale1
+        assert abs(scale2 / scale1 - 2.0) < 0.1
+
+
+class TestGridOrientation:
+    """Tests for grid_orientation function."""
+
+    def test_grid_orientation_anchor_horizontal_grid(self):
+        """Anchor test: Grid aligned with horizontal axis should have orientation ~0°.
+
+        Mathematical reasoning:
+        - Peaks at 0°, 60°, 120°, 180°, 240°, 300° relative to horizontal
+        - First peak at 0° (horizontal)
+        - Orientation should be close to 0° (or equivalently ~60°)
+        """
+        from neurospatial.metrics.grid_cells import grid_orientation
+
+        autocorr = _create_hexagonal_autocorr()
+
+        orientation, orientation_std = grid_orientation(autocorr)
+
+        # Orientation should be near 0° or 60° (equivalent due to symmetry)
+        assert orientation >= 0.0
+        assert orientation < 60.0
+        # Std should be relatively low for clean pattern
+        assert orientation_std < 15.0
+
+    def test_grid_orientation_anchor_rotated_grid(self):
+        """Anchor test: Grid rotated by 30° should have orientation ~30°."""
+        from neurospatial.metrics.grid_cells import grid_orientation
+
+        # Create hexagonal pattern rotated by 30°
+        size = 100
+        autocorr = np.zeros((size, size))
+        center = size // 2
+        radius = 20.0
+
+        y_grid, x_grid = np.ogrid[:size, :size]
+
+        # Central peak
+        dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
+        autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
+
+        # Add 6 peaks at 60° intervals, starting from 30° (not 0°)
+        for angle_deg in [30, 90, 150, 210, 270, 330]:
+            angle_rad = np.radians(angle_deg)
+            peak_y = center + int(radius * np.sin(angle_rad))
+            peak_x = center + int(radius * np.cos(angle_rad))
+            peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
+            autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
+
+        autocorr = autocorr / autocorr.max()
+
+        orientation, _orientation_std = grid_orientation(autocorr)
+
+        # Orientation should be near 30°
+        assert 20.0 < orientation < 40.0, (
+            f"Expected orientation ~30°, got {orientation}"
+        )
+
+    def test_grid_orientation_returns_nan_on_flat_input(self):
+        """Test returns NaN when no clear peaks detected (flat data)."""
+        from neurospatial.metrics.grid_cells import grid_orientation
+
+        # Truly flat data (no local maxima possible)
+        autocorr = np.ones((50, 50)) * 0.5
+
+        orientation, orientation_std = grid_orientation(autocorr)
+
+        # Should return NaN (no peaks in flat data)
+        assert np.isnan(orientation)
+        assert np.isnan(orientation_std)
+
+    def test_grid_orientation_in_valid_range(self):
+        """Test orientation is in range [0, 60)."""
+        from neurospatial.metrics.grid_cells import grid_orientation
+
+        autocorr = _create_hexagonal_autocorr()
+
+        orientation, _ = grid_orientation(autocorr)
+
+        assert 0.0 <= orientation < 60.0
+
+    def test_grid_orientation_raises_on_1d_input(self):
+        """Test raises ValueError on 1D input."""
+        from neurospatial.metrics.grid_cells import grid_orientation
+
+        autocorr = np.zeros(100)
+
+        with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
+            grid_orientation(autocorr)
+
+
+class TestGridProperties:
+    """Tests for grid_properties function and GridProperties dataclass."""
+
+    def test_grid_properties_returns_dataclass(self):
+        """Test grid_properties returns GridProperties dataclass."""
+        from neurospatial.metrics.grid_cells import GridProperties, grid_properties
+
+        autocorr = _create_hexagonal_autocorr()
+
+        props = grid_properties(autocorr, bin_size=2.0)
+
+        assert isinstance(props, GridProperties)
+        assert hasattr(props, "score")
+        assert hasattr(props, "scale")
+        assert hasattr(props, "orientation")
+        assert hasattr(props, "orientation_std")
+        assert hasattr(props, "peak_coords")
+        assert hasattr(props, "n_peaks")
+
+    def test_grid_properties_anchor_hexagonal(self):
+        """Anchor test: Hexagonal pattern should have consistent properties."""
+        from neurospatial.metrics.grid_cells import grid_properties
+
+        autocorr = _create_hexagonal_autocorr(size=100, radius=20.0)
+        bin_size = 2.0
+
+        props = grid_properties(autocorr, bin_size=bin_size)
+
+        # Score should be positive (hexagonal pattern)
+        assert props.score > 0.3
+
+        # Scale should be approximately 20 * 2 = 40
+        assert 30.0 < props.scale < 50.0
+
+        # Orientation should be in valid range
+        assert 0.0 <= props.orientation < 60.0
+
+        # Should detect 6 peaks
+        assert props.n_peaks >= 5  # Allow some tolerance
+
+        # Peak coords should be 2D array
+        assert props.peak_coords.ndim == 2
+        assert props.peak_coords.shape[1] == 2
+
+    def test_grid_properties_matches_individual_functions(self):
+        """Test grid_properties matches individual function outputs."""
+        from neurospatial.metrics.grid_cells import (
+            grid_orientation,
+            grid_properties,
+            grid_scale,
+            grid_score,
+        )
+
+        autocorr = _create_hexagonal_autocorr()
+        bin_size = 2.0
+
+        # Get combined properties
+        props = grid_properties(autocorr, bin_size=bin_size)
+
+        # Get individual function outputs
+        score_individual = grid_score(autocorr)
+        scale_individual = grid_scale(autocorr, bin_size=bin_size)
+        orientation_individual, _std_individual = grid_orientation(autocorr)
+
+        # Score should match exactly
+        assert props.score == score_individual
+
+        # Scale should match (within tolerance due to peak detection variance)
+        assert abs(props.scale - scale_individual) < 5.0
+
+        # Orientation should be close (within tolerance)
+        assert abs(props.orientation - orientation_individual) < 5.0
+
+    def test_grid_properties_raises_on_invalid_input(self):
+        """Test raises ValueError on invalid input."""
+        from neurospatial.metrics.grid_cells import grid_properties
+
+        # 1D input
+        with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
+            grid_properties(np.zeros(100), bin_size=2.0)
+
+        # Invalid bin_size
+        with pytest.raises(ValueError, match="bin_size must be positive"):
+            grid_properties(np.zeros((50, 50)), bin_size=0.0)
+
+    def test_grid_properties_handles_no_peaks(self):
+        """Test handles case with no detectable peaks (flat data)."""
+        from neurospatial.metrics.grid_cells import grid_properties
+
+        # Truly flat data (no local maxima possible)
+        autocorr = np.ones((50, 50)) * 0.5
+
+        props = grid_properties(autocorr, bin_size=2.0)
+
+        # Score is computed independently (may be non-NaN for flat data)
+        # Scale and orientation should be NaN
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+        assert np.isnan(props.orientation_std)
+        # n_peaks should be 0 for flat data
+        assert props.n_peaks == 0
+
+
+class TestFindAutocorrPeaks:
+    """Tests for _find_autocorr_peaks helper function."""
+
+    def test_finds_hexagonal_peaks(self):
+        """Test finds 6 peaks in hexagonal pattern."""
+        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+
+        autocorr = _create_hexagonal_autocorr()
+
+        peaks = _find_autocorr_peaks(autocorr)
+
+        # Should find 6 peaks (excluding central peak)
+        assert 5 <= len(peaks) <= 7
+
+    def test_excludes_central_peak(self):
+        """Test excludes central peak from results."""
+        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+
+        autocorr = _create_hexagonal_autocorr()
+
+        peaks = _find_autocorr_peaks(autocorr)
+
+        # All peaks should be non-zero distance from center
+        distances = np.sqrt(peaks[:, 0] ** 2 + peaks[:, 1] ** 2)
+        assert np.all(distances > 5)
+
+    def test_returns_center_relative_coords(self):
+        """Test returns coordinates relative to center."""
+        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+
+        autocorr = _create_hexagonal_autocorr(size=100)
+
+        peaks = _find_autocorr_peaks(autocorr)
+
+        # Peaks should be centered around (0, 0)
+        # Mean should be near zero for symmetric pattern
+        assert abs(np.mean(peaks[:, 0])) < 5
+        assert abs(np.mean(peaks[:, 1])) < 5
+
+    def test_sorted_by_distance(self):
+        """Test peaks are sorted by distance from center."""
+        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+
+        autocorr = _create_hexagonal_autocorr()
+
+        peaks = _find_autocorr_peaks(autocorr)
+
+        if len(peaks) > 1:
+            distances = np.sqrt(peaks[:, 0] ** 2 + peaks[:, 1] ** 2)
+            # Should be sorted in ascending order
+            assert np.all(np.diff(distances) >= 0)
+
+    def test_returns_empty_on_flat_input(self):
+        """Test returns empty array on flat input (no peaks)."""
+        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+
+        autocorr = np.ones((50, 50)) * 0.5
+
+        peaks = _find_autocorr_peaks(autocorr)
+
+        assert len(peaks) == 0
+        assert peaks.shape == (0, 2)
