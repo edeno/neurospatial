@@ -129,22 +129,21 @@ This document breaks down CIRCULAR_BASIS_PLAN.md into actionable tasks for Claud
 
 ### Tasks
 
-- [ ] **M3.1**: Add matplotlib imports
+- [x] **M3.1**: Add matplotlib imports
   - File: `src/neurospatial/metrics/circular.py`
-  - Add: `from matplotlib.axes import Axes`
-  - Add: `from matplotlib.projections.polar import PolarAxes`
-  - Check if matplotlib is already imported; add only what's needed
+  - Added: TYPE_CHECKING imports for `Axes` and `PolarAxes`
+  - Added: `Any`, `cast` to typing imports
 
-- [ ] **M3.2**: Implement `plot_circular_basis_tuning()` function
+- [x] **M3.2**: Implement `plot_circular_basis_tuning()` function
   - File: `src/neurospatial/metrics/circular.py`
-  - Parameters: `coefficients`, `angles=None`, `rates=None`, `metrics=None`, `ax=None`, `n_harmonics=1`, `include_intercept=True`, `projection='polar'`, `n_points=100`, `show_data=True`, `show_fit=True`, `color='C0'`
+  - Parameters: `beta_sin`, `beta_cos`, `angles=None`, `rates=None`, `ax=None`, `intercept=0.0`, `projection='polar'`, `n_points=100`, `show_data=False`, `show_fit=True`, `color='C0'`, `data_color='gray'`, `data_alpha=0.5`, `line_kwargs`, `scatter_kwargs`
   - Raises `ValueError` if `show_data=True` but angles/rates not provided
   - Creates polar or linear plot based on projection
-  - Optionally marks preferred direction when metrics provided
-  - Returns Axes
+  - Uses exp() link function for Poisson GLM visualization
+  - Added 12 tests (all passing)
 
-- [ ] **M3.3**: Add to `__all__` in circular.py
-  - Add: `"plot_circular_basis_tuning"`
+- [x] **M3.3**: Add to `__all__` in circular.py and metrics/__init__.py
+  - Added: `"plot_circular_basis_tuning"` to both files
 
 **Success Criteria**:
 - Polar plot shows smooth tuning curve from coefficients

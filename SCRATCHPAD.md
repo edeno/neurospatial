@@ -2,8 +2,8 @@
 
 ## Current Status
 
-**Completed**: M0, M1, M2
-**Next**: M3 - Visualization (plot_circular_basis_tuning)
+**Completed**: M0, M1, M2, M3
+**Next**: M4 - Tests (remaining tests for M4.1-M4.3), M5 - Integration
 
 ## Completed Tasks
 
@@ -51,10 +51,20 @@
 6. `is_modulated()` takes `beta_sin`, `beta_cos` separately (not packed array) - matches API of `circular_basis_metrics()`
 7. `is_modulated()` returns False for NaN p-values (singular covariance) due to NaN comparison semantics
 
+### M3: Implement plot_circular_basis_tuning() Visualization ✓
+
+- [x] Added matplotlib imports (TYPE_CHECKING for Axes, PolarAxes; Any, cast)
+- [x] Implemented `plot_circular_basis_tuning(beta_sin, beta_cos, ...)` function
+- [x] Parameters: intercept, projection, n_points, show_data, show_fit, color, data_color, data_alpha, line_kwargs, scatter_kwargs
+- [x] Added to `__all__` in circular.py and metrics/__init__.py
+- [x] Added 12 tests (all passing)
+- [x] Code review passed with approval
+- [x] All 101 circular tests pass, ruff and mypy clean
+
 ## Next Steps
 
-1. Commit M2 changes
-2. Start M3: Add plot_circular_basis_tuning() visualization
+1. Complete M4 (remaining tests for TestCircularBasis, TestCircularBasisMetrics, TestIsModulated - may already exist)
+2. Complete M5: Integration verification
 
 ## Blockers
 

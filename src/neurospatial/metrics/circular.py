@@ -60,11 +60,15 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import chi2
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.projections.polar import PolarAxes
 
 __all__ = [
     "CircularBasisResult",
@@ -74,6 +78,7 @@ __all__ = [
     "circular_linear_correlation",
     "is_modulated",
     "phase_position_correlation",
+    "plot_circular_basis_tuning",
     "rayleigh_test",
 ]
 
@@ -661,6 +666,201 @@ def is_modulated(
         return False
 
     return pvalue < alpha and amplitude >= min_magnitude
+
+
+def plot_circular_basis_tuning(
+    beta_sin: float,
+    beta_cos: float,
+    angles: NDArray[np.float64] | None = None,
+    rates: NDArray[np.float64] | None = None,
+    ax: Axes | PolarAxes | None = None,
+    *,
+    intercept: float = 0.0,
+    projection: Literal["polar", "linear"] = "polar",
+    n_points: int = 100,
+    show_data: bool = False,
+    show_fit: bool = True,
+    color: str = "C0",
+    data_color: str = "gray",
+    data_alpha: float = 0.5,
+    line_kwargs: dict[str, Any] | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
+) -> Axes | PolarAxes:
+    """
+    Plot tuning curve from GLM circular basis coefficients.
+
+    Visualizes the fitted circular tuning curve from a GLM with sin/cos
+    basis functions, optionally overlaying raw binned data.
+
+    Parameters
+    ----------
+    beta_sin : float
+        Coefficient for sin(angle) from fitted GLM.
+    beta_cos : float
+        Coefficient for cos(angle) from fitted GLM.
+    angles : array, shape (n_bins,), optional
+        Center of each angular bin (radians) for raw data overlay.
+        Required if ``show_data=True``.
+    rates : array, shape (n_bins,), optional
+        Firing rate or response in each bin.
+        Required if ``show_data=True``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates new figure with appropriate projection.
+    intercept : float, default=0.0
+        Intercept (baseline) coefficient from GLM. For Poisson GLM, this
+        controls the baseline firing rate: exp(intercept).
+    projection : {'polar', 'linear'}, default='polar'
+        Plot projection type.
+    n_points : int, default=100
+        Number of points for smooth fitted curve.
+    show_data : bool, default=False
+        If True, overlay raw data points. Requires ``angles`` and ``rates``.
+    show_fit : bool, default=True
+        If True, show smooth curve from GLM fit.
+    color : str, default='C0'
+        Color for fitted curve.
+    data_color : str, default='gray'
+        Color for data points.
+    data_alpha : float, default=0.5
+        Alpha (transparency) for data points.
+    line_kwargs : dict, optional
+        Additional kwargs for line plot (fitted curve).
+    scatter_kwargs : dict, optional
+        Additional kwargs for scatter plot (data points).
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes object with the plot.
+
+    Raises
+    ------
+    ValueError
+        If ``show_data=True`` but ``angles`` or ``rates`` not provided.
+
+    See Also
+    --------
+    circular_basis_metrics : Compute amplitude/phase from coefficients.
+    circular_basis : Create design matrix for GLM.
+
+    Notes
+    -----
+    **GLM Model**:
+
+    For a Poisson GLM with circular basis, the expected response is:
+
+        lambda(theta) = exp(intercept + beta_cos*cos(theta) + beta_sin*sin(theta))
+
+    This can be rewritten as:
+
+        lambda(theta) = exp(intercept) * exp(R * cos(theta - phi))
+
+    where:
+    - R = sqrt(beta_sin^2 + beta_cos^2) is the modulation amplitude
+    - phi = atan2(beta_sin, beta_cos) is the preferred angle
+
+    **Polar plot conventions**:
+
+    - 0 at top (North): Uses ``theta_zero_location='N'``
+    - Clockwise direction: Uses ``theta_direction=-1``
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import plot_circular_basis_tuning
+    >>> # After fitting GLM: beta_sin=0.5, beta_cos=1.0, intercept=2.0
+    >>> ax = plot_circular_basis_tuning(0.5, 1.0, intercept=2.0)  # doctest: +SKIP
+
+    >>> # With raw data overlay
+    >>> bin_centers = np.linspace(0, 2 * np.pi, 36, endpoint=False)
+    >>> rates = np.exp(2 + np.cos(bin_centers - 0.5))  # Simulated data
+    >>> ax = plot_circular_basis_tuning(
+    ...     0.5, 1.0, angles=bin_centers, rates=rates, intercept=2.0, show_data=True
+    ... )  # doctest: +SKIP
+    """
+    import matplotlib.pyplot as plt
+
+    # Validate show_data requirements
+    if show_data and (angles is None or rates is None):
+        raise ValueError(
+            "show_data=True requires both angles and rates arguments.\n\n"
+            "To show model fit over raw data:\n"
+            "  plot_circular_basis_tuning(beta_sin, beta_cos, "
+            "angles=bins, rates=rates, show_data=True)\n\n"
+            "To show only the fitted curve:\n"
+            "  plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)"
+        )
+
+    # Create figure if needed
+    if ax is None:
+        if projection == "polar":
+            _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        else:
+            _, ax = plt.subplots()
+
+    # Default kwargs
+    line_defaults: dict = {"color": color, "linewidth": 2, "zorder": 2}
+    scatter_defaults: dict = {
+        "color": data_color,
+        "alpha": data_alpha,
+        "s": 30,
+        "zorder": 1,
+    }
+
+    # Merge with user kwargs
+    line_kw = {**line_defaults, **(line_kwargs or {})}
+    scatter_kw = {**scatter_defaults, **(scatter_kwargs or {})}
+
+    # Generate smooth curve for fit
+    theta_smooth = np.linspace(0, 2 * np.pi, n_points, endpoint=False)
+
+    # GLM prediction: lambda(theta) = exp(intercept + beta_cos*cos + beta_sin*sin)
+    # For visualization, we use the linear predictor
+    linear_pred = (
+        intercept + beta_cos * np.cos(theta_smooth) + beta_sin * np.sin(theta_smooth)
+    )
+    # Transform to response scale (Poisson GLM uses exp link)
+    fitted_response = np.exp(linear_pred)
+
+    # Close the curve (append first point)
+    theta_closed = np.concatenate([theta_smooth, [theta_smooth[0] + 2 * np.pi]])
+    fitted_closed = np.concatenate([fitted_response, [fitted_response[0]]])
+
+    if projection == "polar":
+        # Import PolarAxes at runtime for cast
+        polar_ax = cast("PolarAxes", ax)
+
+        # Configure polar plot: 0° at top (North), clockwise direction
+        polar_ax.set_theta_zero_location("N")
+        polar_ax.set_theta_direction(-1)
+
+        # Plot fitted curve
+        if show_fit:
+            polar_ax.plot(theta_closed, fitted_closed, **line_kw)
+
+        # Plot data points
+        if show_data and angles is not None and rates is not None:
+            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
+            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
+            polar_ax.scatter(angles_arr, rates_arr, **scatter_kw)
+
+    else:
+        # Linear projection
+        # Plot fitted curve
+        if show_fit:
+            ax.plot(theta_closed, fitted_closed, **line_kw)
+
+        # Plot data points
+        if show_data and angles is not None and rates is not None:
+            angles_arr = np.asarray(angles, dtype=np.float64).ravel()
+            rates_arr = np.asarray(rates, dtype=np.float64).ravel()
+            ax.scatter(angles_arr, rates_arr, **scatter_kw)
+
+        ax.set_xlabel("Angle (rad)")
+        ax.set_ylabel("Response")
+        ax.set_xlim(0, 2 * np.pi)
+
+    return ax
 
 
 # =============================================================================

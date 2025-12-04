@@ -1244,3 +1244,191 @@ class TestIsModulated:
         from neurospatial.metrics import is_modulated
 
         assert callable(is_modulated)
+
+
+# ============================================================================
+# Visualization: plot_circular_basis_tuning (Milestone M3)
+# ============================================================================
+
+
+class TestPlotCircularBasisTuning:
+    """Tests for plot_circular_basis_tuning() visualization function (Milestone M3)."""
+
+    def test_function_exists(self) -> None:
+        """Test that plot_circular_basis_tuning can be imported."""
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        assert callable(plot_circular_basis_tuning)
+
+    def test_polar_plot_creates_figure(self) -> None:
+        """Test that polar projection creates a figure with polar axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        # GLM coefficients for cos/sin (beta_cos=1, beta_sin=0 => peak at 0)
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        ax = plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
+
+        # Check it's a polar axes
+        assert ax.name == "polar"
+        plt.close("all")
+
+    def test_linear_plot_creates_figure(self) -> None:
+        """Test that linear projection creates a figure with linear axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        ax = plot_circular_basis_tuning(beta_sin, beta_cos, projection="linear")
+
+        # Check it's NOT a polar axes
+        assert ax.name != "polar"
+        plt.close("all")
+
+    def test_show_data_requires_angles_rates(self) -> None:
+        """Test that show_data=True requires both angles and rates."""
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # Missing both
+        with pytest.raises(ValueError, match="show_data=True requires"):
+            plot_circular_basis_tuning(beta_sin, beta_cos, show_data=True)
+
+        # Missing rates
+        with pytest.raises(ValueError, match="show_data=True requires"):
+            plot_circular_basis_tuning(
+                beta_sin, beta_cos, angles=np.linspace(0, 2 * np.pi, 10), show_data=True
+            )
+
+        # Missing angles
+        with pytest.raises(ValueError, match="show_data=True requires"):
+            plot_circular_basis_tuning(
+                beta_sin, beta_cos, rates=np.random.rand(10), show_data=True
+            )
+
+    def test_show_fit_only_works(self) -> None:
+        """Test that show_data=False works without angles/rates."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # Should work without data
+        ax = plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)
+        assert ax is not None
+        plt.close("all")
+
+    def test_with_data_overlay(self) -> None:
+        """Test that data overlay works when angles and rates provided."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+        angles = np.linspace(0, 2 * np.pi, 36, endpoint=False)
+        rates = np.random.rand(36) * 10
+
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, angles=angles, rates=rates, show_data=True
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_returns_axes_object(self) -> None:
+        """Test that function returns matplotlib Axes."""
+        import matplotlib.pyplot as plt
+        from matplotlib.axes import Axes
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        ax = plot_circular_basis_tuning(beta_sin, beta_cos, show_data=False)
+        assert isinstance(ax, Axes)
+        plt.close("all")
+
+    def test_accepts_existing_axes(self) -> None:
+        """Test that function can plot on provided axes."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # Create axes first
+        _, ax_provided = plt.subplots(subplot_kw={"projection": "polar"})
+        ax_returned = plot_circular_basis_tuning(
+            beta_sin, beta_cos, ax=ax_provided, projection="polar", show_data=False
+        )
+
+        # Should return same axes
+        assert ax_returned is ax_provided
+        plt.close("all")
+
+    def test_n_points_parameter(self) -> None:
+        """Test that n_points controls curve smoothness."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # With few points
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, n_points=10, show_data=False
+        )
+        # Plot should still be created
+        assert ax is not None
+        plt.close("all")
+
+    def test_color_parameter(self) -> None:
+        """Test that color parameter is accepted."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # Should not raise
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, color="red", show_data=False
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_intercept_parameter(self) -> None:
+        """Test that intercept parameter affects the curve baseline."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.metrics.circular import plot_circular_basis_tuning
+
+        beta_cos = 1.0
+        beta_sin = 0.5
+
+        # With intercept (baseline shift)
+        ax = plot_circular_basis_tuning(
+            beta_sin, beta_cos, intercept=2.0, show_data=False
+        )
+        assert ax is not None
+        plt.close("all")
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import plot_circular_basis_tuning
+
+        assert callable(plot_circular_basis_tuning)

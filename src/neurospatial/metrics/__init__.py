@@ -30,6 +30,7 @@ from neurospatial.metrics.circular import (
     circular_linear_correlation,
     is_modulated,
     phase_position_correlation,
+    plot_circular_basis_tuning,
     rayleigh_test,
 )
 from neurospatial.metrics.grid_cells import (
@@ -128,6 +129,7 @@ __all__ = [
     "periodicity_score",
     "phase_position_correlation",
     "phase_precession",
+    "plot_circular_basis_tuning",
     "plot_head_direction_tuning",
     "plot_phase_precession",
     "plot_population_coverage",
