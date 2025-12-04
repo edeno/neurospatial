@@ -292,3 +292,183 @@ class TestRayleighTest:
 
         with pytest.raises(ValueError, match="at least 3"):
             rayleigh_test(np.array([0.0, 0.5]))
+
+
+class TestCircularLinearCorrelation:
+    """Tests for circular_linear_correlation() function."""
+
+    def test_perfect_linear_relationship_high_correlation(self) -> None:
+        """Perfect linear phase-position relationship should give high correlation.
+
+        Note: The Mardia-Jupp circular-linear correlation has a theoretical maximum
+        less than 1.0 for a single-cycle linear relationship due to the sine/cosine
+        transformation. For phases spanning [0, 2pi], the max r is ~0.755.
+        """
+        from neurospatial.metrics import circular_linear_correlation
+
+        # Phases increase linearly with position
+        positions = np.linspace(0, 100, 50)
+        phases = np.linspace(0, 2 * np.pi, 50)
+
+        r, p = circular_linear_correlation(phases, positions)
+        # For a perfect linear relationship spanning one cycle, r ~ 0.755
+        assert r > 0.7, f"Expected r > 0.7 for perfect relationship, got r={r}"
+        assert p < 0.001, f"Expected highly significant p-value, got p={p}"
+
+    def test_random_data_low_correlation(self) -> None:
+        """Random uncorrelated data should give r near 0."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        rng = np.random.default_rng(42)
+        phases = rng.uniform(0, 2 * np.pi, 100)
+        positions = rng.uniform(0, 100, 100)
+
+        r, _p = circular_linear_correlation(phases, positions)
+        assert r < 0.3, f"Expected r < 0.3 for random data, got r={r}"
+
+    def test_correlation_always_nonnegative(self) -> None:
+        """Circular-linear correlation r should always be non-negative."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            positions = rng.uniform(0, 100, 50)
+            r, _p = circular_linear_correlation(phases, positions)
+            assert r >= 0, f"Expected r >= 0, got r={r}"
+
+    def test_correlation_at_most_one(self) -> None:
+        """Circular-linear correlation r should be at most 1."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            positions = rng.uniform(0, 100, 50)
+            r, _p = circular_linear_correlation(phases, positions)
+            assert r <= 1, f"Expected r <= 1, got r={r}"
+
+    def test_pvalue_in_valid_range(self) -> None:
+        """P-value should be in [0, 1]."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            phases = rng.uniform(0, 2 * np.pi, 50)
+            positions = rng.uniform(0, 100, 50)
+            _r, p = circular_linear_correlation(phases, positions)
+            assert 0 <= p <= 1, f"Expected p in [0, 1], got p={p}"
+
+    def test_degrees_input(self) -> None:
+        """Should handle degree input correctly."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        positions = np.linspace(0, 100, 50)
+        phases_rad = np.linspace(0, 2 * np.pi, 50)
+        phases_deg = np.degrees(phases_rad)
+
+        r_rad, p_rad = circular_linear_correlation(
+            phases_rad, positions, angle_unit="rad"
+        )
+        r_deg, p_deg = circular_linear_correlation(
+            phases_deg, positions, angle_unit="deg"
+        )
+
+        assert_allclose(r_rad, r_deg, rtol=1e-10)
+        assert_allclose(p_rad, p_deg, rtol=1e-10)
+
+    def test_mismatched_lengths_raises(self) -> None:
+        """Mismatched array lengths should raise ValueError."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        phases = np.array([0.0, 0.5, 1.0])
+        positions = np.array([0.0, 50.0])
+
+        with pytest.raises(ValueError, match="same length"):
+            circular_linear_correlation(phases, positions)
+
+    def test_insufficient_samples_raises(self) -> None:
+        """Too few samples should raise ValueError."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        phases = np.array([0.0, 0.5])
+        positions = np.array([0.0, 50.0])
+
+        with pytest.raises(ValueError, match="at least 3"):
+            circular_linear_correlation(phases, positions)
+
+    def test_degenerate_case_constant_linear_variable(self) -> None:
+        """Constant linear variable (no variation) should return r=0 with warning."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        phases = np.linspace(0, 2 * np.pi, 50)
+        positions = np.ones(50) * 50.0  # Constant position
+
+        with pytest.warns(UserWarning, match="[Dd]egenerate|constant|variation"):
+            r, _p = circular_linear_correlation(phases, positions)
+        assert r == 0.0 or np.isnan(r)
+
+    def test_negative_slope_still_positive_correlation(self) -> None:
+        """Phase precession (negative slope) should still give positive r.
+
+        Note: The circular-linear correlation is always non-negative because
+        it measures the strength of the relationship, not the direction.
+        For a perfect linear relationship spanning one cycle, r ~ 0.755.
+        """
+        from neurospatial.metrics import circular_linear_correlation
+
+        # Phase decreases as position increases (phase precession)
+        positions = np.linspace(0, 100, 50)
+        phases = 2 * np.pi - np.linspace(0, 2 * np.pi, 50)  # Decreasing
+
+        r, _p = circular_linear_correlation(phases, positions)
+        assert r > 0, f"Expected positive r for negative slope, got r={r}"
+        # Same high correlation as positive slope - correlation measures strength
+        assert r > 0.7, f"Expected r > 0.7 for perfect relationship, got r={r}"
+
+    def test_nan_handling(self) -> None:
+        """NaN values in either array should be removed with warning."""
+        from neurospatial.metrics import circular_linear_correlation
+
+        positions = np.array([0.0, 10.0, np.nan, 30.0, 40.0, 50.0, 60.0])
+        phases = np.array([0.0, 0.5, 1.0, np.nan, 2.0, 2.5, 3.0])
+
+        with pytest.warns(UserWarning, match="[Rr]emoved.*pairs"):
+            r, p = circular_linear_correlation(phases, positions)
+        # Should still work with remaining valid pairs
+        assert 0 <= r <= 1
+        assert 0 <= p <= 1
+
+
+class TestPhasePositionCorrelation:
+    """Tests for phase_position_correlation() alias function."""
+
+    def test_same_as_circular_linear_correlation(self) -> None:
+        """Should return same result as circular_linear_correlation."""
+        from neurospatial.metrics import (
+            circular_linear_correlation,
+            phase_position_correlation,
+        )
+
+        rng = np.random.default_rng(42)
+        phases = rng.uniform(0, 2 * np.pi, 50)
+        positions = rng.uniform(0, 100, 50)
+
+        r1, p1 = circular_linear_correlation(phases, positions)
+        r2, p2 = phase_position_correlation(phases, positions)
+
+        assert r1 == r2
+        assert p1 == p2
+
+    def test_accepts_angle_unit(self) -> None:
+        """Should accept angle_unit parameter."""
+        from neurospatial.metrics import phase_position_correlation
+
+        rng = np.random.default_rng(42)
+        phases_deg = rng.uniform(0, 360, 50)
+        positions = rng.uniform(0, 100, 50)
+
+        # Should not raise
+        r, p = phase_position_correlation(phases_deg, positions, angle_unit="deg")
+        assert 0 <= r <= 1
+        assert 0 <= p <= 1

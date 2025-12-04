@@ -484,6 +484,20 @@ def circular_linear_correlation(
     phase_position_correlation : Alias with neuroscience naming.
     circular_circular_correlation : For two circular variables.
 
+    Notes
+    -----
+    The circular-linear correlation is computed using the formula from
+    Mardia & Jupp (2000, Section 11.3):
+
+        r^2 = (r_xs^2 + r_xc^2 - 2*r_xs*r_xc*r_cs) / (1 - r_cs^2)
+
+    where:
+    - r_xs: Pearson correlation between linear variable x and sin(angles)
+    - r_xc: Pearson correlation between linear variable x and cos(angles)
+    - r_cs: Pearson correlation between cos(angles) and sin(angles)
+
+    The result is always non-negative because r is the square root of r^2.
+
     Examples
     --------
     >>> import numpy as np
@@ -494,7 +508,72 @@ def circular_linear_correlation(
     >>> r > 0.9
     True
     """
-    raise NotImplementedError("circular_linear_correlation not yet implemented")
+    from scipy.stats import chi2, pearsonr
+
+    # Convert to arrays and radians if needed
+    angles = np.asarray(angles, dtype=np.float64)
+    values = np.asarray(values, dtype=np.float64)
+    angles = _to_radians(angles, angle_unit)
+
+    # Validate paired inputs (handles length mismatch, NaN removal)
+    angles, values = _validate_paired_input(
+        angles, values, "angles", "values", min_samples=3
+    )
+
+    n = len(angles)
+
+    # Compute sin and cos of angles
+    sin_angles = np.sin(angles)
+    cos_angles = np.cos(angles)
+
+    # Check for degenerate case: no variation in linear variable
+    values_std = np.std(values)
+    if values_std < 1e-10:
+        warnings.warn(
+            "Linear variable has no variation (constant values). "
+            "Circular-linear correlation is undefined. Returning r=0.",
+            stacklevel=2,
+        )
+        return 0.0, 1.0
+
+    # Compute Pearson correlations
+    # r_xs: correlation between x (linear) and sin(angles)
+    # r_xc: correlation between x (linear) and cos(angles)
+    # r_cs: correlation between cos(angles) and sin(angles)
+    r_xs, _ = pearsonr(values, sin_angles)
+    r_xc, _ = pearsonr(values, cos_angles)
+    r_cs, _ = pearsonr(cos_angles, sin_angles)
+
+    # Handle degenerate case: r_cs near 1 (cos and sin perfectly correlated)
+    # This shouldn't happen for real circular data but handle it anyway
+    if np.abs(r_cs) > 0.9999:
+        warnings.warn(
+            "Degenerate case: cos(angles) and sin(angles) are nearly perfectly "
+            "correlated. This suggests angles have very limited range. "
+            "Returning r=0.",
+            stacklevel=2,
+        )
+        return 0.0, 1.0
+
+    # Mardia & Jupp formula for circular-linear correlation
+    # r^2 = (r_xs^2 + r_xc^2 - 2*r_xs*r_xc*r_cs) / (1 - r_cs^2)
+    r_squared = (r_xs**2 + r_xc**2 - 2 * r_xs * r_xc * r_cs) / (1 - r_cs**2)
+
+    # Ensure r_squared is non-negative (numerical issues can make it slightly negative)
+    r_squared = max(0.0, r_squared)
+
+    # r is always non-negative by definition
+    r = float(np.sqrt(r_squared))
+
+    # P-value from chi-squared distribution with 2 degrees of freedom
+    # Test statistic: n * r^2 follows chi-squared(2) under null hypothesis
+    chi2_stat = n * r_squared
+    pval = float(1.0 - chi2.cdf(chi2_stat, df=2))
+
+    # Ensure p-value is in valid range
+    pval = float(np.clip(pval, 0.0, 1.0))
+
+    return r, pval
 
 
 def phase_position_correlation(

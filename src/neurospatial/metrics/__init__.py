@@ -22,7 +22,11 @@ trajectory
 from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
-from neurospatial.metrics.circular import rayleigh_test
+from neurospatial.metrics.circular import (
+    circular_linear_correlation,
+    phase_position_correlation,
+    rayleigh_test,
+)
 from neurospatial.metrics.grid_cells import (
     GridProperties,
     grid_orientation,
@@ -69,6 +73,7 @@ __all__ = [
     "GridProperties",
     "PopulationCoverageResult",
     "border_score",
+    "circular_linear_correlation",
     "compute_field_emd",
     "compute_home_range",
     "compute_region_coverage",
@@ -92,6 +97,7 @@ __all__ = [
     "mean_square_displacement",
     "mutual_information",
     "periodicity_score",
+    "phase_position_correlation",
     "plot_population_coverage",
     "population_coverage",
     "population_vector_correlation",

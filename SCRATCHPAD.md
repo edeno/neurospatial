@@ -40,6 +40,31 @@
 - Exported from `neurospatial.metrics`
 - All 26 tests passing, ruff and mypy clean
 
+### 2025-12-03: Circular-Linear Correlation Implementation
+
+**Completed:**
+- Implemented `circular_linear_correlation()` using Mardia & Jupp formula:
+  - r^2 = (r_xs^2 + r_xc^2 - 2*r_xs*r_xc*r_cs) / (1 - r_cs^2)
+  - Uses scipy.stats.pearsonr for component correlations
+  - P-value from chi-squared(2) distribution
+- Implemented `phase_position_correlation()` as alias
+- Added 13 tests (11 for circular_linear_correlation, 2 for phase_position_correlation)
+- All 39 tests passing, ruff and mypy clean
+- Exported from `neurospatial.metrics`
+
+**Design Decisions:**
+1. The Mardia-Jupp circular-linear correlation has a theoretical maximum less than 1.0
+   for a single-cycle linear relationship (~0.755 for phases spanning 0 to 2π). This is
+   a known characteristic of this correlation measure due to sine/cosine transformations.
+2. Handles degenerate cases:
+   - Constant linear variable → warns and returns r=0, p=1.0
+   - cos/sin perfectly correlated (limited angle range) → warns and returns r=0, p=1.0
+3. Correlation is always non-negative (measures strength, not direction)
+
+**Next Steps:**
+- Implement `circular_circular_correlation()` (Milestone 1.4)
+- Write tests first (TDD)
+
 ---
 
 ## Blockers

@@ -58,7 +58,7 @@
 
 ### 1.3 Circular-Linear Correlation
 
-- [ ] **Implement `circular_linear_correlation()`**
+- [x] **Implement `circular_linear_correlation()`**
   - Parameters: `angles`, `values`, `angle_unit='rad'`
   - Validate paired inputs
   - Compute Pearson correlations: rxs, rxc, rcs using `scipy.stats.pearsonr`
@@ -66,11 +66,11 @@
   - Compute r using Mardia & Jupp formula
   - Compute p-value from chi-squared with 2 df
   - **Success criteria:**
-    - Perfect linear relationship: r -> 1.0
+    - Perfect linear relationship: r -> ~0.755 (theoretical max for single cycle)
     - Random data: r -> 0
     - r always non-negative
 
-- [ ] **Implement `phase_position_correlation()`**
+- [x] **Implement `phase_position_correlation()`**
   - Alias for `circular_linear_correlation` with neuroscience naming
   - Parameters: `phases`, `positions`, `angle_unit='rad'`
   - **Success criteria:** Same output as `circular_linear_correlation`
