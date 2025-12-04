@@ -181,22 +181,29 @@ class TestDetectPlaceFields:
 
         assert len(fields) == 0
 
-    def test_detect_place_fields_no_fields(self):
-        """Test detection with uniform low firing (detects one large field)."""
+    def test_detect_place_fields_uniform_rate(self):
+        """Test detection with uniform firing rate.
+
+        Uniform firing creates one large connected field because all bins
+        are above threshold (threshold is fraction of peak, and peak equals
+        the uniform rate). This tests the expected behavior: uniform firing
+        is NOT spatially selective, so no discrete place fields are detected.
+        """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # Uniform low firing rate everywhere
-        firing_rate = np.ones(env.n_bins) * 0.01
+        # Uniform firing rate everywhere (below interneuron threshold)
+        firing_rate = np.ones(env.n_bins) * 5.0  # 5 Hz everywhere
 
         from neurospatial.metrics.place_fields import detect_place_fields
 
         fields = detect_place_fields(firing_rate, env)
 
         # Uniform firing creates one large field (all bins above threshold)
+        # This is correct behavior: uniform rate has no spatial selectivity
         assert len(fields) == 1
-        # The field should contain most/all bins
+        # The field should contain most/all bins (entire environment)
         assert len(fields[0]) > env.n_bins * 0.9
 
     def test_detect_place_fields_parameter_order(self):
@@ -585,16 +592,28 @@ class TestFieldStability:
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
         assert isinstance(stability, (float, np.floating))
 
-    def test_field_stability_constant_arrays(self):
-        """Test that constant arrays return NaN (correlation undefined)."""
-        rate_map_1 = np.ones(50)
-        rate_map_2 = np.ones(50)
+    def test_field_stability_uniform_rate(self):
+        """Test that uniform firing rates return NaN (correlation undefined).
+
+        Uniform firing rate means zero variance, which makes Pearson/Spearman
+        correlation undefined. This is correct behavior: stability between
+        two uniform rate maps is meaningless since there's no spatial structure
+        to compare.
+        """
+        # Two identical uniform rate maps
+        rate_map_1 = np.ones(50) * 5.0  # 5 Hz everywhere
+        rate_map_2 = np.ones(50) * 5.0
 
         from neurospatial.metrics.place_fields import field_stability
 
-        # Constant arrays → correlation undefined
+        # Uniform rate → zero variance → correlation undefined
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
         assert np.isnan(stability)
+
+        # Also test with different uniform rates (still zero variance each)
+        rate_map_3 = np.ones(50) * 3.0  # Different uniform rate
+        stability_different = field_stability(rate_map_1, rate_map_3, method="pearson")
+        assert np.isnan(stability_different)
 
 
 class TestRateMapCoherence:
@@ -616,8 +635,14 @@ class TestRateMapCoherence:
     - Different correlation methods (Pearson vs. Spearman)
     """
 
-    def test_rate_map_coherence_perfectly_smooth(self):
-        """Test coherence on perfectly smooth (constant) rate map."""
+    def test_rate_map_coherence_uniform_rate(self):
+        """Test coherence with uniform firing rate returns NaN.
+
+        Uniform firing rate means zero variance across bins, which makes
+        the correlation between bin rates and neighbor means undefined.
+        This is correct behavior: coherence is meaningless for uniform
+        firing since there's no spatial structure to measure smoothness of.
+        """
         # Create environment
         rng = np.random.default_rng(42)
         positions = (
@@ -632,8 +657,8 @@ class TestRateMapCoherence:
 
         coherence = rate_map_coherence(firing_rate, env)
 
-        # Constant map has no variance - coherence undefined (NaN)
-        assert np.isnan(coherence), f"Expected NaN for constant map, got {coherence}"
+        # Uniform rate → zero variance → coherence undefined (NaN)
+        assert np.isnan(coherence), f"Expected NaN for uniform rate, got {coherence}"
 
     def test_rate_map_coherence_random_noise(self):
         """Test coherence on random noise (no spatial structure)."""
@@ -1322,6 +1347,37 @@ class TestComputeFieldEMD:
         # EMD of distribution with itself should be zero
         emd = compute_field_emd(firing_rate, firing_rate, env, metric="euclidean")
         assert_allclose(emd, 0.0, atol=1e-10)
+
+    def test_emd_uniform_distributions(self):
+        """Test EMD is zero for two identical uniform distributions.
+
+        When both distributions are uniform (constant rate everywhere),
+        they are identical after normalization, so EMD should be zero.
+        This is the baseline case: no spatial structure means no difference
+        to measure.
+        """
+        from neurospatial.metrics import compute_field_emd
+
+        rng = np.random.default_rng(42)
+        data = rng.standard_normal((500, 2)) * 20
+        env = Environment.from_samples(data, bin_size=2.0)
+
+        # Two identical uniform distributions
+        firing_rate_1 = np.ones(env.n_bins) * 5.0  # 5 Hz everywhere
+        firing_rate_2 = np.ones(env.n_bins) * 5.0
+
+        # EMD should be zero (identical after normalization)
+        emd = compute_field_emd(
+            firing_rate_1, firing_rate_2, env, metric="euclidean", normalize=True
+        )
+        assert_allclose(emd, 0.0, atol=1e-10)
+
+        # Also test with different uniform rates (still identical after normalization)
+        firing_rate_3 = np.ones(env.n_bins) * 10.0  # Different uniform rate
+        emd_different_rates = compute_field_emd(
+            firing_rate_1, firing_rate_3, env, metric="euclidean", normalize=True
+        )
+        assert_allclose(emd_different_rates, 0.0, atol=1e-10)
 
     def test_emd_euclidean_metric(self):
         """Test EMD with Euclidean metric."""
