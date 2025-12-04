@@ -164,6 +164,45 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 
 ---
 
+### 2025-12-04: M3.4 Complete - add_positions()
+
+**Completed Tasks:**
+
+- M3.4: Implemented `add_positions()` in `detection.py`
+  - Parameters: `events`, `positions`, `times`, `timestamp_column`
+  - Uses `scipy.interpolate.interp1d` with `fill_value="extrapolate"`
+  - Supports 1D, 2D, 3D trajectories
+  - Linear interpolation and extrapolation beyond trajectory bounds
+  - NaN timestamps propagate to NaN positions
+  - Handles unsorted trajectory times via internal sorting
+  - Only adds coordinate columns (`x`, `y`, `z`) - no derived columns
+
+- Created 20 tests in `tests/test_events_detection.py::TestAddPositions`
+  - Basic interpolation (1D, 2D, 3D)
+  - Edge cases: empty events, single event, events at trajectory times
+  - Extrapolation: before and after trajectory bounds
+  - Data integrity: returns new DataFrame, preserves columns/index
+  - Validation: missing column, wrong type, mismatched arrays
+  - NaN handling, unsorted trajectory times
+  - Typical neuroscience use case
+
+- Code review passed with APPROVE
+- All ruff and mypy checks pass
+
+**Key Decisions:**
+
+1. **scipy.interpolate.interp1d**: Used instead of np.interp for extrapolation support
+2. **Linear extrapolation**: Events before/after trajectory extrapolate linearly
+3. **Coordinate columns only**: x, y, z - no derived columns like bin_index/region
+4. **Immutable**: Returns copy, original DataFrame unchanged
+
+**Next Steps:**
+
+- M3.5: Implement `events_in_region()`
+- M3.6: Implement `spatial_event_rate()`
+
+---
+
 ## Open Questions
 
 None currently.

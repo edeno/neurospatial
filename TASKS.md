@@ -120,11 +120,13 @@ This task list breaks down the Events Module implementation into actionable step
 
 ### Active Tasks (Spatial Event Utilities)
 
-- [ ] **M3.4**: Implement `add_positions()` in `detection.py`
+- [x] **M3.4**: Implement `add_positions()` in `detection.py`
   - Parameters: `events`, `positions`, `times`, `timestamp_column`
-  - Interpolate positions at event times
+  - Interpolate positions at event times using scipy.interpolate.interp1d
+  - Supports 1D, 2D, 3D trajectories with linear interpolation/extrapolation
   - Only adds `x`, `y` (and `z` if 3D) - no derived columns
   - Return new DataFrame (don't modify input)
+  - 20 tests in `tests/test_events_detection.py`
 
 - [ ] **M3.5**: Implement `events_in_region()` in `detection.py`
   - Parameters: `events`, `env`, `region`
