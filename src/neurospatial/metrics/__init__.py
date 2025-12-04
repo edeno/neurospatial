@@ -22,6 +22,7 @@ trajectory
 from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
+from neurospatial.metrics.circular import rayleigh_test
 from neurospatial.metrics.grid_cells import (
     GridProperties,
     grid_orientation,
@@ -95,6 +96,7 @@ __all__ = [
     "population_coverage",
     "population_vector_correlation",
     "rate_map_coherence",
+    "rayleigh_test",
     "selectivity",
     "skaggs_information",
     "sparsity",

@@ -401,7 +401,49 @@ def rayleigh_test(
     >>> p > 0.5
     True
     """
-    raise NotImplementedError("rayleigh_test not yet implemented")
+    # Convert to radians if needed
+    angles = np.asarray(angles, dtype=np.float64)
+    angles = _to_radians(angles, angle_unit)
+
+    # Validate input (handles NaN, Inf, minimum samples)
+    angles = _validate_circular_input(
+        angles, "angles", min_samples=3, check_range=False
+    )
+
+    n = len(angles)
+
+    # Compute mean resultant length
+    r_mean = _mean_resultant_length(angles, weights=weights)
+
+    # Compute effective sample size for weighted data
+    if weights is not None:
+        weights = np.asarray(weights, dtype=np.float64)
+        # Effective sample size: sum(w)^2 / sum(w^2)
+        # This accounts for unequal weighting
+        n_eff: float = float(np.sum(weights) ** 2 / np.sum(weights**2))
+    else:
+        n_eff = float(n)
+
+    # Rayleigh z-statistic: z = n * R^2
+    z = n_eff * r_mean**2
+
+    # P-value with finite-sample correction (Mardia & Jupp, p. 94)
+    # For large n, p = exp(-z) is a good approximation
+    # For small n, we use the correction formula
+    pval = float(np.exp(-z))
+
+    # Apply finite-sample correction for more accurate p-values
+    # From Mardia & Jupp (2000), Section 5.3.2, equation 5.3.6
+    if n_eff < 50:
+        # Correction terms
+        term1 = (2 * z - z**2) / (4 * n_eff)
+        term2 = (24 * z - 132 * z**2 + 76 * z**3 - 9 * z**4) / (288 * n_eff**2)
+        pval = pval * (1 + term1 - term2)
+
+    # Ensure p-value is in valid range
+    pval = float(np.clip(pval, 0.0, 1.0))
+
+    return float(z), pval
 
 
 def circular_linear_correlation(

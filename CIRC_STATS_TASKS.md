@@ -45,7 +45,7 @@
 
 ### 1.2 Rayleigh Test
 
-- [ ] **Implement `rayleigh_test()`**
+- [x] **Implement `rayleigh_test()`**
   - Parameters: `angles`, `angle_unit='rad'`, `weights=None`
   - Convert to radians, validate input
   - Handle optional weights with effective sample size
@@ -321,6 +321,7 @@
 ## Dependencies
 
 **Required (already in project):**
+
 - numpy
 - scipy (stats, optimize, ndimage)
 - matplotlib
@@ -328,6 +329,7 @@
 **No new dependencies needed.**
 
 **Optional dev dependencies:**
+
 - pycircstat2 (validation only)
 - hypothesis (property tests, already available)
 
@@ -340,6 +342,7 @@
 3. Linting passes: `uv run ruff check src/neurospatial/metrics/circular.py src/neurospatial/metrics/head_direction.py`
 4. Imports work: `from neurospatial.metrics import rayleigh_test, phase_precession, head_direction_metrics`
 5. Example workflow runs without errors:
+
    ```python
    from neurospatial.metrics import (
        rayleigh_test, phase_precession, plot_phase_precession,

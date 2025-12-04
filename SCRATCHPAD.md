@@ -26,8 +26,19 @@
 4. Warnings for data quality issues (NaN removal, angle wrapping)
 
 **Next Steps:**
-- Implement `rayleigh_test()` (Milestone 1.2)
+- Implement `circular_linear_correlation()` (Milestone 1.3)
 - Write tests first (TDD)
+
+### 2025-12-03: Rayleigh Test Implementation
+
+**Completed:**
+- Implemented `rayleigh_test()` with:
+  - Finite-sample correction (Mardia & Jupp, p. 94)
+  - Weighted version with effective sample size
+  - Degree/radian support
+- Added 10 tests for Rayleigh test
+- Exported from `neurospatial.metrics`
+- All 26 tests passing, ruff and mypy clean
 
 ---
 

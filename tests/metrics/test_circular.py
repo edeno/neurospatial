@@ -175,3 +175,120 @@ class TestValidatePairedInput:
         arr2 = np.array([np.nan, 2.0, 3.0])
         with pytest.raises(ValueError, match="at least 3 valid pairs"):
             _validate_paired_input(arr1, arr2, "a", "b", min_samples=3)
+
+
+class TestRayleighTest:
+    """Tests for rayleigh_test() function."""
+
+    def test_uniform_distribution_high_pvalue(self) -> None:
+        """Uniform distribution should have high p-value (> 0.5)."""
+        from neurospatial.metrics import rayleigh_test
+
+        # Perfectly uniform angles
+        angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
+        _z, p = rayleigh_test(angles)
+        assert p > 0.5, f"Expected p > 0.5 for uniform, got p={p}"
+
+    def test_concentrated_distribution_low_pvalue(self) -> None:
+        """Von Mises with kappa=2 should have low p-value (< 0.001)."""
+        from neurospatial.metrics import rayleigh_test
+
+        # Concentrated around 0 (von Mises with high concentration)
+        rng = np.random.default_rng(42)
+        # Use scipy's von Mises distribution
+        from scipy.stats import vonmises
+
+        angles = vonmises.rvs(kappa=2.0, loc=0, size=100, random_state=rng)
+        _z, p = rayleigh_test(angles)
+        assert p < 0.001, f"Expected p < 0.001 for concentrated, got p={p}"
+
+    def test_all_same_angle_max_z(self) -> None:
+        """All same angle should give R = 1.0, z = n."""
+        from neurospatial.metrics import rayleigh_test
+
+        n = 50
+        angles = np.ones(n) * np.pi / 4
+        z, p = rayleigh_test(angles)
+        # z = n * R^2, and R = 1 when all angles same
+        assert_allclose(z, n, rtol=1e-10)
+        assert p < 1e-10  # Very significant
+
+    def test_degrees_input(self) -> None:
+        """Should handle degree input correctly."""
+        from neurospatial.metrics import rayleigh_test
+
+        # Same test as concentrated, but in degrees
+        rng = np.random.default_rng(42)
+        from scipy.stats import vonmises
+
+        angles_rad = vonmises.rvs(kappa=2.0, loc=0, size=100, random_state=rng)
+        angles_deg = np.degrees(angles_rad)
+
+        z_rad, p_rad = rayleigh_test(angles_rad, angle_unit="rad")
+        z_deg, p_deg = rayleigh_test(angles_deg, angle_unit="deg")
+
+        assert_allclose(z_rad, z_deg, rtol=1e-10)
+        assert_allclose(p_rad, p_deg, rtol=1e-10)
+
+    def test_weighted_rayleigh(self) -> None:
+        """Weighted Rayleigh should use effective sample size."""
+        from neurospatial.metrics import rayleigh_test
+
+        # Very concentrated angles with strong weights
+        angles = np.array([0.0, 0.05, 0.1, 0.15, np.pi, np.pi + 0.1])
+        # Weight heavily toward first 4 (very concentrated near 0)
+        weights = np.array([20.0, 20.0, 20.0, 20.0, 1.0, 1.0])
+
+        _z, p = rayleigh_test(angles, weights=weights)
+        # Should be significant due to weighted concentration
+        assert p < 0.05
+
+    def test_z_statistic_range(self) -> None:
+        """Z statistic should be in [0, n]."""
+        from neurospatial.metrics import rayleigh_test
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            n = 50
+            angles = rng.uniform(0, 2 * np.pi, n)
+            z, _p = rayleigh_test(angles)
+            assert 0 <= z <= n, f"z={z} outside [0, {n}]"
+
+    def test_pvalue_range(self) -> None:
+        """P-value should be in [0, 1]."""
+        from neurospatial.metrics import rayleigh_test
+
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            angles = rng.uniform(0, 2 * np.pi, 50)
+            _z, p = rayleigh_test(angles)
+            assert 0 <= p <= 1, f"p={p} outside [0, 1]"
+
+    def test_small_sample_correction(self) -> None:
+        """Small samples should use finite-sample correction."""
+        from neurospatial.metrics import rayleigh_test
+
+        # With very few samples, correction matters more
+        rng = np.random.default_rng(42)
+        from scipy.stats import vonmises
+
+        angles = vonmises.rvs(kappa=1.0, loc=0, size=10, random_state=rng)
+        z, p = rayleigh_test(angles)
+
+        # Should still be valid
+        assert 0 <= z <= 10
+        assert 0 <= p <= 1
+
+    def test_empty_array_raises(self) -> None:
+        """Empty array should raise ValueError."""
+        from neurospatial.metrics import rayleigh_test
+
+        with pytest.raises(ValueError):
+            rayleigh_test(np.array([]))
+
+    def test_insufficient_samples_raises(self) -> None:
+        """Too few samples should raise ValueError."""
+        from neurospatial.metrics import rayleigh_test
+
+        with pytest.raises(ValueError, match="at least 3"):
+            rayleigh_test(np.array([0.0, 0.5]))
