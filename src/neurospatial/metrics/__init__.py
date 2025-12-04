@@ -23,13 +23,9 @@ from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.circular import (
-    PhasePrecessionResult,
     circular_circular_correlation,
     circular_linear_correlation,
-    has_phase_precession,
     phase_position_correlation,
-    phase_precession,
-    plot_phase_precession,
     rayleigh_test,
 )
 from neurospatial.metrics.grid_cells import (
@@ -40,6 +36,12 @@ from neurospatial.metrics.grid_cells import (
     grid_score,
     periodicity_score,
     spatial_autocorrelation,
+)
+from neurospatial.metrics.phase_precession import (
+    PhasePrecessionResult,
+    has_phase_precession,
+    phase_precession,
+    plot_phase_precession,
 )
 from neurospatial.metrics.place_fields import (
     compute_field_emd,

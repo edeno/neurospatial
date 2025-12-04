@@ -137,6 +137,30 @@
 3. Added length validation with clear error message (not just matplotlib's cryptic error).
 4. Default annotation explains the doubling convention to help new users.
 
+### 2025-12-04: Phase Precession Module Refactoring
+
+**Completed:**
+
+- Extracted phase precession code from `circular.py` into new `phase_precession.py` module
+- Created `src/neurospatial/metrics/phase_precession.py` (466 lines) containing:
+  - `PhasePrecessionResult` dataclass
+  - `phase_precession()` function
+  - `has_phase_precession()` function
+  - `plot_phase_precession()` function
+- Slimmed `circular.py` from ~1200 to 732 lines (core circular stats only)
+- Created `tests/metrics/test_phase_precession.py` (549 lines, 43 tests)
+- Updated `metrics/__init__.py` to import from both modules
+- All 90 tests passing (47 circular + 43 phase precession)
+- Backward compatibility maintained - `from neurospatial.metrics import phase_precession` still works
+
+**Design Decisions:**
+
+1. Internal helpers (`_to_radians`, `_mean_resultant_length`, `_validate_*`) stay in
+   `circular.py` and are imported by `phase_precession.py` - avoids circular imports.
+2. Helpers removed from `__all__` in circular.py - they're private implementation details.
+3. Module docstrings include "Which Function Should I Use?" decision trees.
+4. Both code-reviewer and ux-reviewer approved the refactoring.
+
 ---
 
 ## Blockers
