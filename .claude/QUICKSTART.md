@@ -283,6 +283,46 @@ env.plot_field(place_field, title="Fitted Place Field")
 - `heat_kernel_wavelet_basis`: Diffusion-based multi-scale (rooms/corridors)
 - `chebyshev_filter_basis`: Polynomial filters (fast, large environments)
 
+### Circular Basis Functions for GLMs
+
+For circular predictors (head direction, theta phase, running direction):
+
+```python
+from neurospatial.metrics import (
+    circular_basis,
+    circular_basis_metrics,
+    plot_circular_basis_tuning,
+)
+import statsmodels.api as sm
+
+# Create design matrix from head direction angles
+result = circular_basis(head_direction_angles)  # angles in radians
+X = result.design_matrix  # Shape: (n_samples, 2) = [sin(θ), cos(θ)]
+
+# Fit GLM
+X_with_const = sm.add_constant(X)
+model = sm.GLM(spike_counts, X_with_const, family=sm.families.Poisson())
+fit = model.fit()
+
+# Extract tuning parameters
+beta_sin, beta_cos = fit.params[1], fit.params[2]
+amplitude, preferred_direction, p_value = circular_basis_metrics(
+    beta_sin, beta_cos,
+    var_sin=fit.cov_params()[1, 1],
+    var_cos=fit.cov_params()[2, 2],
+    cov_sin_cos=fit.cov_params()[1, 2],
+)
+
+# Visualize tuning curve
+plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
+```
+
+**Related functions:**
+
+- `head_direction_metrics()`: Complete head direction cell analysis
+- `phase_precession()`: Detect theta phase precession
+- `rayleigh_test()`: Test for circular uniformity
+
 ### NWB Integration (Optional)
 
 Requires: `pip install neurospatial[nwb-full]`

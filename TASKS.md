@@ -20,6 +20,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Create module structure and implement center selection utility.
 
 **Success Criteria**:
+
 - `select_basis_centers` returns valid node indices
 - All methods (kmeans, farthest_point, random) work correctly
 - Tests pass with 100% coverage for this function
@@ -67,6 +68,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Implement the simplest basis function type using geodesic distances.
 
 **Success Criteria**:
+
 - `geodesic_rbf_basis` returns correct shape (n_centers * n_sigmas, n_bins)
 - Basis functions peak at their centers
 - Basis respects walls (no leakage through barriers)
@@ -114,6 +116,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Implement diffusion-based basis functions using matrix exponential.
 
 **Success Criteria**:
+
 - `heat_kernel_wavelet_basis` returns correct shape
 - Larger scales produce wider spatial support
 - Heat diffusion respects graph structure (walls)
@@ -148,6 +151,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Implement polynomial filter basis with strict k-hop locality.
 
 **Success Criteria**:
+
 - `chebyshev_filter_basis` returns correct shape (n_centers * (max_degree+1), n_bins)
 - Degree 0 is identity (delta function)
 - Degree k only affects k-hop neighbors
@@ -188,6 +192,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Provide easy-to-use wrapper and visualization helper.
 
 **Success Criteria**:
+
 - `spatial_basis` returns sensible defaults without parameter tuning
 - `plot_basis_functions` creates informative visualization
 - Coverage settings produce appropriately scaled bases
@@ -226,6 +231,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Integrate module into package and update exports.
 
 **Success Criteria**:
+
 - All functions importable from `neurospatial` and `neurospatial.basis`
 - Type checking passes with mypy
 - Full test suite passes
@@ -257,6 +263,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Update documentation with basis function examples and API reference.
 
 **Success Criteria**:
+
 - QUICKSTART.md has working copy-paste examples
 - API_REFERENCE.md lists all imports
 - Docstrings are comprehensive with examples
@@ -289,6 +296,7 @@ This task list implements the `neurospatial.basis` module providing localized, m
 **Goal**: Comprehensive testing and validation before merge.
 
 **Success Criteria**:
+
 - All tests pass
 - No regressions in existing functionality
 - Performance is acceptable for typical use cases

@@ -119,6 +119,50 @@ from neurospatial import (
 
 ---
 
+## Circular Basis Functions for GLMs
+
+```python
+from neurospatial.metrics import (
+    # Design matrix creation
+    circular_basis,             # sin/cos basis for circular predictors
+    CircularBasisResult,        # Result container with design_matrix property
+
+    # Interpretation helpers
+    circular_basis_metrics,     # Extract amplitude, phase, p-value from GLM
+    is_modulated,               # Quick significance check (True/False)
+
+    # Visualization
+    plot_circular_basis_tuning, # Polar or linear tuning curve plots
+)
+```
+
+**Related circular metrics:**
+
+```python
+from neurospatial.metrics import (
+    # Head direction analysis
+    head_direction_tuning_curve,
+    head_direction_metrics,
+    is_head_direction_cell,
+    plot_head_direction_tuning,
+    HeadDirectionMetrics,
+
+    # Phase precession
+    phase_precession,
+    has_phase_precession,
+    plot_phase_precession,
+    PhasePrecessionResult,
+
+    # Circular statistics
+    rayleigh_test,
+    circular_linear_correlation,
+    circular_circular_correlation,
+    phase_position_correlation,
+)
+```
+
+---
+
 ## Behavioral Analysis (v0.7.0+)
 
 ```python
