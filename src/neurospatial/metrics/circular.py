@@ -59,12 +59,17 @@ Jammalamadaka, S.R. & SenGupta, A. (2001). Topics in Circular Statistics.
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.stats import chi2
 
 __all__ = [
+    "CircularBasisResult",
+    "circular_basis",
+    "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
     "phase_position_correlation",
@@ -319,7 +324,271 @@ def _validate_paired_input(
 
 
 # =============================================================================
-# Public API - Placeholder stubs for future implementation
+# Circular Basis Functions for GLM Design Matrices
+# =============================================================================
+
+
+@dataclass
+class CircularBasisResult:
+    """
+    Result from circular_basis() function.
+
+    Contains sin/cos components for use in GLM design matrices, plus the
+    original angles for reference.
+
+    Attributes
+    ----------
+    sin_component : ndarray, shape (n_samples,)
+        Sine of angles: sin(angles).
+    cos_component : ndarray, shape (n_samples,)
+        Cosine of angles: cos(angles).
+    angles : ndarray, shape (n_samples,)
+        Original angles (in radians).
+
+    Properties
+    ----------
+    design_matrix : ndarray, shape (n_samples, 2)
+        Design matrix with columns [sin_component, cos_component].
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import circular_basis
+    >>> angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
+    >>> result = circular_basis(angles)
+    >>> result.design_matrix.shape
+    (100, 2)
+    """
+
+    sin_component: NDArray[np.float64]
+    cos_component: NDArray[np.float64]
+    angles: NDArray[np.float64]
+
+    @property
+    def design_matrix(self) -> NDArray[np.float64]:
+        """
+        Return design matrix with columns [sin_component, cos_component].
+
+        Returns
+        -------
+        ndarray, shape (n_samples, 2)
+            Design matrix suitable for GLM.
+        """
+        return np.column_stack([self.sin_component, self.cos_component])
+
+
+def circular_basis(
+    angles: NDArray[np.float64],
+    *,
+    angle_unit: Literal["rad", "deg"] = "rad",
+) -> CircularBasisResult:
+    """
+    Compute sine/cosine basis functions for circular variables.
+
+    Creates a design matrix for use in GLMs (Generalized Linear Models) where
+    the sin and cos components capture circular modulation. This is the standard
+    approach for including circular predictors in regression models.
+
+    Parameters
+    ----------
+    angles : array, shape (n_samples,)
+        Circular variable (e.g., head direction, LFP phase).
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of input angles.
+
+    Returns
+    -------
+    CircularBasisResult
+        Result object containing:
+        - sin_component: sin(angles)
+        - cos_component: cos(angles)
+        - angles: original angles (in radians)
+        - design_matrix property: (n_samples, 2) array for GLM
+
+    See Also
+    --------
+    circular_basis_metrics : Compute amplitude/phase from GLM coefficients.
+
+    Notes
+    -----
+    **Why sin/cos basis?**
+
+    For a circular predictor theta, using sin(theta) and cos(theta) as separate
+    predictors allows the model to capture any phase and amplitude of circular
+    modulation. The fitted coefficients (beta_sin, beta_cos) can be converted to:
+
+    - Amplitude: sqrt(beta_sin^2 + beta_cos^2)
+    - Phase: atan2(beta_sin, beta_cos)
+
+    **GLM Workflow**:
+
+    1. Create design matrix: ``X = circular_basis(angles).design_matrix``
+    2. Fit GLM: ``model.fit(X, y)``
+    3. Get metrics: ``amplitude, phase, pval = circular_basis_metrics(
+           beta_sin, beta_cos, cov_matrix)``
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.metrics import circular_basis
+    >>> # Create basis for head direction
+    >>> angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
+    >>> result = circular_basis(angles)
+    >>> result.design_matrix.shape
+    (100, 2)
+
+    >>> # Use with statsmodels GLM
+    >>> # X = result.design_matrix
+    >>> # model = sm.GLM(y, sm.add_constant(X), family=sm.families.Poisson())
+    >>> # fit = model.fit()
+    >>> # beta_sin, beta_cos = fit.params[1:3]
+    """
+    # Convert to radians if needed
+    angles = np.asarray(angles, dtype=np.float64).ravel()
+    angles_rad = _to_radians(angles, angle_unit)
+
+    # Compute sin/cos components
+    sin_component = np.sin(angles_rad)
+    cos_component = np.cos(angles_rad)
+
+    return CircularBasisResult(
+        sin_component=sin_component,
+        cos_component=cos_component,
+        angles=angles_rad,
+    )
+
+
+def _wald_test_magnitude(
+    beta_sin: float,
+    beta_cos: float,
+    cov_matrix: NDArray[np.float64],
+) -> float:
+    """
+    Wald test for significance of circular modulation magnitude.
+
+    Tests H0: amplitude = sqrt(beta_sin^2 + beta_cos^2) = 0.
+
+    Parameters
+    ----------
+    beta_sin : float
+        Coefficient for sin component from GLM.
+    beta_cos : float
+        Coefficient for cos component from GLM.
+    cov_matrix : ndarray, shape (2, 2)
+        Covariance matrix for [beta_sin, beta_cos].
+
+    Returns
+    -------
+    float
+        P-value from chi-squared distribution with 2 df.
+
+    Notes
+    -----
+    Uses the Wald test statistic: W = beta.T @ inv(cov) @ beta ~ chi2(2)
+    where beta = [beta_sin, beta_cos].
+    """
+    beta = np.array([beta_sin, beta_cos])
+
+    # Wald statistic: beta.T @ inv(cov) @ beta
+    # Use solve instead of inv for numerical stability
+    try:
+        wald_stat = float(beta @ np.linalg.solve(cov_matrix, beta))
+    except np.linalg.LinAlgError:
+        # Singular covariance matrix
+        warnings.warn(
+            "Covariance matrix is singular. Cannot compute p-value.",
+            stacklevel=3,
+        )
+        return np.nan
+
+    # P-value from chi-squared with 2 df
+    pval = float(1.0 - chi2.cdf(wald_stat, df=2))
+
+    return float(np.clip(pval, 0.0, 1.0))
+
+
+def circular_basis_metrics(
+    beta_sin: float,
+    beta_cos: float,
+    cov_matrix: NDArray[np.float64] | None = None,
+) -> tuple[float, float, float | None]:
+    """
+    Compute amplitude, phase, and p-value from GLM coefficients.
+
+    Given fitted coefficients for sin and cos basis functions, compute:
+    - Amplitude (strength of modulation)
+    - Phase (preferred angle)
+    - P-value (statistical significance via Wald test)
+
+    Parameters
+    ----------
+    beta_sin : float
+        Coefficient for sin(angle) from fitted GLM.
+    beta_cos : float
+        Coefficient for cos(angle) from fitted GLM.
+    cov_matrix : ndarray, shape (2, 2), optional
+        Covariance matrix for [beta_sin, beta_cos] from GLM fit.
+        If provided, computes p-value via Wald test.
+
+    Returns
+    -------
+    amplitude : float
+        Modulation amplitude: sqrt(beta_sin^2 + beta_cos^2).
+        Larger values indicate stronger circular modulation.
+    phase : float
+        Preferred phase angle in radians, range [-pi, pi].
+        Computed as atan2(beta_sin, beta_cos).
+    pvalue : float or None
+        P-value testing H0: amplitude = 0 (no modulation).
+        None if cov_matrix not provided.
+
+    See Also
+    --------
+    circular_basis : Create design matrix for GLM.
+
+    Notes
+    -----
+    **Interpretation**:
+
+    - amplitude > 0.3 typically indicates meaningful modulation
+    - pvalue < 0.05 indicates statistically significant modulation
+    - phase tells you the preferred angle (e.g., preferred head direction)
+
+    **Standard Errors**:
+
+    The p-value is computed using the Wald test, which tests whether the
+    joint effect of (beta_sin, beta_cos) is significantly different from zero.
+    This is preferred over testing each coefficient separately.
+
+    Examples
+    --------
+    >>> from neurospatial.metrics import circular_basis_metrics
+    >>> # After fitting GLM with circular basis
+    >>> beta_sin, beta_cos = 0.5, 0.3
+    >>> cov = np.array([[0.01, 0.001], [0.001, 0.01]])
+    >>> amplitude, phase, pval = circular_basis_metrics(beta_sin, beta_cos, cov)
+    >>> print(f"Amplitude: {amplitude:.2f}, Phase: {np.degrees(phase):.1f}°")
+    Amplitude: 0.58, Phase: 59.0°
+    """
+    # Compute amplitude: sqrt(beta_sin^2 + beta_cos^2)
+    amplitude = float(np.sqrt(beta_sin**2 + beta_cos**2))
+
+    # Compute phase: atan2(beta_sin, beta_cos)
+    phase = float(np.arctan2(beta_sin, beta_cos))
+
+    # Compute p-value if covariance provided
+    pvalue: float | None = None
+    if cov_matrix is not None:
+        cov_matrix = np.asarray(cov_matrix, dtype=np.float64)
+        if cov_matrix.shape != (2, 2):
+            raise ValueError(f"cov_matrix must be shape (2, 2), got {cov_matrix.shape}")
+        pvalue = _wald_test_magnitude(beta_sin, beta_cos, cov_matrix)
+
+    return amplitude, phase, pvalue
+
+
+# =============================================================================
+# Public API - Core Circular Statistics
 # =============================================================================
 
 

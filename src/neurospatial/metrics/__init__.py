@@ -23,6 +23,9 @@ from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.circular import (
+    CircularBasisResult,
+    circular_basis,
+    circular_basis_metrics,
     circular_circular_correlation,
     circular_linear_correlation,
     phase_position_correlation,
@@ -84,11 +87,14 @@ from neurospatial.metrics.trajectory import (
 )
 
 __all__ = [
+    "CircularBasisResult",
     "GridProperties",
     "HeadDirectionMetrics",
     "PhasePrecessionResult",
     "PopulationCoverageResult",
     "border_score",
+    "circular_basis",
+    "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
     "compute_field_emd",

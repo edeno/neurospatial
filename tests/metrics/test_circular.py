@@ -878,3 +878,238 @@ class TestPropertyBasedCircularLinearCorrelation:
             assert np.isfinite(p), f"p={p} is not finite"
 
         check_finite_outputs()
+
+
+# ============================================================================
+# Circular Basis Functions (Milestone M1-M4)
+# ============================================================================
+
+
+class TestCircularBasisResult:
+    """Tests for CircularBasisResult dataclass (Milestone M1.4)."""
+
+    def test_dataclass_can_be_imported(self) -> None:
+        """Test that CircularBasisResult can be imported."""
+        from neurospatial.metrics.circular import CircularBasisResult
+
+        assert CircularBasisResult is not None
+
+    def test_dataclass_has_all_fields(self) -> None:
+        """Test that CircularBasisResult has all required fields."""
+        from neurospatial.metrics.circular import CircularBasisResult
+
+        # Create instance with required fields
+        result = CircularBasisResult(
+            sin_component=np.array([0.0, 0.5, 1.0]),
+            cos_component=np.array([1.0, 0.866, 0.5]),
+            angles=np.array([0.0, np.pi / 6, np.pi / 3]),
+        )
+
+        assert hasattr(result, "sin_component")
+        assert hasattr(result, "cos_component")
+        assert hasattr(result, "angles")
+
+    def test_design_matrix_property(self) -> None:
+        """Test that design_matrix property returns (n_samples, 2) array."""
+        from neurospatial.metrics.circular import CircularBasisResult
+
+        n = 100
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        sin_comp = np.sin(angles)
+        cos_comp = np.cos(angles)
+
+        result = CircularBasisResult(
+            sin_component=sin_comp,
+            cos_component=cos_comp,
+            angles=angles,
+        )
+
+        dm = result.design_matrix
+        assert dm.shape == (n, 2)
+        assert_allclose(dm[:, 0], sin_comp)
+        assert_allclose(dm[:, 1], cos_comp)
+
+
+class TestCircularBasis:
+    """Tests for circular_basis() function (Milestone M1.3)."""
+
+    def test_function_exists(self) -> None:
+        """Test that circular_basis can be imported."""
+        from neurospatial.metrics.circular import circular_basis
+
+        assert callable(circular_basis)
+
+    def test_returns_circular_basis_result(self) -> None:
+        """Test that circular_basis returns CircularBasisResult."""
+        from neurospatial.metrics.circular import CircularBasisResult, circular_basis
+
+        angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
+        result = circular_basis(angles)
+        assert isinstance(result, CircularBasisResult)
+
+    def test_sin_cos_components_correct(self) -> None:
+        """Test that sin/cos components are computed correctly."""
+        from neurospatial.metrics.circular import circular_basis
+
+        angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
+        result = circular_basis(angles)
+
+        expected_sin = np.sin(angles)
+        expected_cos = np.cos(angles)
+
+        assert_allclose(result.sin_component, expected_sin, atol=1e-10)
+        assert_allclose(result.cos_component, expected_cos, atol=1e-10)
+
+    def test_angles_stored_in_result(self) -> None:
+        """Test that input angles are stored in result."""
+        from neurospatial.metrics.circular import circular_basis
+
+        angles = np.linspace(0, 2 * np.pi, 50, endpoint=False)
+        result = circular_basis(angles)
+
+        assert_allclose(result.angles, angles)
+
+    def test_degrees_input(self) -> None:
+        """Test that degree input is handled correctly."""
+        from neurospatial.metrics.circular import circular_basis
+
+        angles_deg = np.array([0, 90, 180, 270])
+        angles_rad = np.radians(angles_deg)
+
+        result_deg = circular_basis(angles_deg, angle_unit="deg")
+        result_rad = circular_basis(angles_rad, angle_unit="rad")
+
+        # Results should be the same
+        assert_allclose(result_deg.sin_component, result_rad.sin_component, atol=1e-10)
+        assert_allclose(result_deg.cos_component, result_rad.cos_component, atol=1e-10)
+
+    def test_design_matrix_shape(self) -> None:
+        """Test design_matrix has shape (n_samples, 2)."""
+        from neurospatial.metrics.circular import circular_basis
+
+        n = 100
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        result = circular_basis(angles)
+
+        assert result.design_matrix.shape == (n, 2)
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import circular_basis
+
+        assert callable(circular_basis)
+
+
+class TestCircularBasisMetrics:
+    """Tests for circular_basis_metrics() function (Milestone M1.6)."""
+
+    def test_function_exists(self) -> None:
+        """Test that circular_basis_metrics can be imported."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        assert callable(circular_basis_metrics)
+
+    def test_returns_tuple_of_three(self) -> None:
+        """Test that circular_basis_metrics returns (amplitude, phase, pvalue)."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        # GLM coefficients (beta_sin, beta_cos)
+        beta_sin = 0.5
+        beta_cos = 0.5
+
+        result = circular_basis_metrics(beta_sin, beta_cos)
+        assert len(result) == 3
+
+        amplitude, phase, pvalue = result
+        assert isinstance(amplitude, float)
+        assert isinstance(phase, float)
+        assert isinstance(pvalue, (float, type(None)))
+
+    def test_amplitude_correct(self) -> None:
+        """Test that amplitude is sqrt(beta_sin^2 + beta_cos^2)."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        beta_sin = 3.0
+        beta_cos = 4.0
+        expected_amplitude = 5.0  # sqrt(9 + 16)
+
+        amplitude, _, _ = circular_basis_metrics(beta_sin, beta_cos)
+        assert_allclose(amplitude, expected_amplitude, rtol=1e-10)
+
+    def test_phase_correct(self) -> None:
+        """Test that phase is atan2(beta_sin, beta_cos)."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        # Pure sin component (phase = pi/2)
+        _amplitude, phase, _ = circular_basis_metrics(1.0, 0.0)
+        assert_allclose(phase, np.pi / 2, atol=1e-10)
+
+        # Pure cos component (phase = 0)
+        _amplitude, phase, _ = circular_basis_metrics(0.0, 1.0)
+        assert_allclose(phase, 0.0, atol=1e-10)
+
+        # 45 degrees (equal sin and cos)
+        _amplitude, phase, _ = circular_basis_metrics(1.0, 1.0)
+        assert_allclose(phase, np.pi / 4, atol=1e-10)
+
+    def test_phase_in_valid_range(self) -> None:
+        """Test that phase is in [-pi, pi]."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        for _ in range(20):
+            beta_sin = np.random.default_rng(42).uniform(-10, 10)
+            beta_cos = np.random.default_rng(43).uniform(-10, 10)
+            _, phase, _ = circular_basis_metrics(beta_sin, beta_cos)
+            assert -np.pi <= phase <= np.pi
+
+    def test_pvalue_without_cov(self) -> None:
+        """Test that pvalue is None when covariance matrix not provided."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        _, _, pvalue = circular_basis_metrics(0.5, 0.5)
+        assert pvalue is None
+
+    def test_pvalue_with_cov(self) -> None:
+        """Test that pvalue is computed when covariance matrix provided."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        beta_sin = 0.5
+        beta_cos = 0.5
+        # Covariance matrix for [beta_sin, beta_cos]
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])
+
+        _, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix=cov)
+        assert pvalue is not None
+        assert 0 <= pvalue <= 1
+
+    def test_significant_modulation_low_pvalue(self) -> None:
+        """Test that strong modulation with small variance gives low p-value."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        # Strong coefficients with small variance -> significant
+        beta_sin = 2.0
+        beta_cos = 2.0
+        cov = np.array([[0.01, 0.0], [0.0, 0.01]])  # Small variance
+
+        _, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix=cov)
+        assert pvalue is not None
+        assert pvalue < 0.001  # Highly significant
+
+    def test_weak_modulation_high_pvalue(self) -> None:
+        """Test that weak modulation with large variance gives high p-value."""
+        from neurospatial.metrics.circular import circular_basis_metrics
+
+        # Weak coefficients with large variance -> not significant
+        beta_sin = 0.1
+        beta_cos = 0.1
+        cov = np.array([[1.0, 0.0], [0.0, 1.0]])  # Large variance
+
+        _, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix=cov)
+        assert pvalue is not None
+        assert pvalue > 0.1  # Not significant
+
+    def test_exported_from_metrics(self) -> None:
+        """Test that function is exported from neurospatial.metrics."""
+        from neurospatial.metrics import circular_basis_metrics
+
+        assert callable(circular_basis_metrics)
