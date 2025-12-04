@@ -62,9 +62,8 @@ class TestModuleSetup:
         from neurospatial.metrics import head_direction
 
         # The module should import rayleigh_test internally
-        # We check this by seeing if the module can access it
-        # (actual usage will be tested in later milestones)
-        assert hasattr(head_direction, "_has_circular_imports") or True
+        # We verify this by checking the function is accessible
+        assert hasattr(head_direction, "rayleigh_test")
 
     def test_module_docstring_mentions_head_direction(self) -> None:
         """Test that docstring mentions head direction analysis."""

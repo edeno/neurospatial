@@ -192,8 +192,8 @@ class TestPhasePrecession:
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        with pytest.warns(UserWarning, match="position_range"):
-            result = phase_precession(positions, phases, position_range=(0.0, 100.0))
+        # position_range normalizes to [0, 1] - documented behavior, not a warning
+        result = phase_precession(positions, phases, position_range=(0.0, 100.0))
 
         assert "normalized" in result.slope_units.lower()
 

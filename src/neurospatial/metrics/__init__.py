@@ -23,15 +23,17 @@ from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.circular import (
+    circular_circular_correlation,
+    circular_linear_correlation,
+    phase_position_correlation,
+    rayleigh_test,
+)
+from neurospatial.metrics.circular_basis import (
     CircularBasisResult,
     circular_basis,
     circular_basis_metrics,
-    circular_circular_correlation,
-    circular_linear_correlation,
     is_modulated,
-    phase_position_correlation,
     plot_circular_basis_tuning,
-    rayleigh_test,
 )
 from neurospatial.metrics.grid_cells import (
     GridProperties,

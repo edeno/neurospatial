@@ -45,7 +45,6 @@ Kempter, R. et al. (2012). Quantifying circular-linear associations.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -192,14 +191,19 @@ def phase_precession(
 
     Parameters
     ----------
-    positions : array, shape (n,)
-        Position at each spike.
-    phases : array, shape (n,)
-        Spike phase relative to LFP theta.
+    positions : ndarray of shape (n_spikes,)
+        Position at each spike in arbitrary position units.
+    phases : ndarray of shape (n_spikes,)
+        Spike phase relative to LFP theta in radians or degrees.
     slope_bounds : tuple of float, default=(-2*pi, 2*pi)
         Bounds for slope optimization (radians per position unit).
-    position_range : tuple of float, optional
-        If provided, normalize positions to [0, 1]. This changes slope units!
+    position_range : tuple of (float, float), optional
+        If provided as ``(pos_min, pos_max)``, positions are normalized to
+        [0, 1] before fitting. This changes the slope units from
+        ``rad/position_unit`` to ``rad/normalized_position``, where the slope
+        represents phase change across the entire normalized field.
+        **Use case**: When comparing precession across fields of different
+        sizes, normalization makes slopes comparable.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
     min_spikes : int, default=10
@@ -266,12 +270,6 @@ def phase_precession(
                 f"Got pos_min={pos_min}, pos_max={pos_max}.\n"
                 f"Fix: Ensure position_range=(min, max) where max > min."
             )
-        warnings.warn(
-            "Using position_range normalizes positions to [0, 1], which changes "
-            "slope units from rad/position_unit to rad/normalized_position. "
-            "The slope will represent phase change per normalized field position.",
-            stacklevel=2,
-        )
         positions = (positions - pos_min) / (pos_max - pos_min)
         slope_units = "rad/normalized_position (0-1)"
 
@@ -340,10 +338,10 @@ def has_phase_precession(
 
     Parameters
     ----------
-    positions : array, shape (n,)
+    positions : ndarray of shape (n_spikes,)
         Position at each spike.
-    phases : array, shape (n,)
-        Spike phase relative to LFP theta.
+    phases : ndarray of shape (n_spikes,)
+        Spike phase relative to LFP theta in radians or degrees.
     alpha : float, default=0.05
         Significance level for correlation test.
     min_correlation : float, default=0.2
@@ -404,9 +402,9 @@ def plot_phase_precession(
 
     Parameters
     ----------
-    positions : array, shape (n,)
+    positions : ndarray of shape (n_spikes,)
         Position at each spike.
-    phases : array, shape (n,)
+    phases : ndarray of shape (n_spikes,)
         Spike phase relative to LFP theta (radians).
     result : PhasePrecessionResult, optional
         If provided, overlay fitted line.
@@ -416,16 +414,24 @@ def plot_phase_precession(
         Label for x-axis.
     show_fit : bool, default=True
         If True and result provided, show fitted line.
+
+        **Rationale for default=True**: Phase precession analysis is primarily
+        about fitting the phase-position relationship. Showing the fit line
+        is essential for visualizing the slope that defines precession.
     marker_size : float, default=20.0
         Size of scatter markers.
     marker_alpha : float, default=0.6
         Alpha of scatter markers.
     show_doubled_note : bool, default=True
         If True, add annotation explaining doubled phase axis.
+
+        **Rationale for default=True**: The doubled-axis convention (O'Keefe &
+        Recce, 1993) may be unfamiliar to new users. The annotation helps
+        prevent confusion about why each spike appears twice.
     scatter_kwargs : dict, optional
-        Additional kwargs for scatter plot.
+        Additional keyword arguments for scatter plot.
     line_kwargs : dict, optional
-        Additional kwargs for fitted line.
+        Additional keyword arguments for fitted line.
 
     Returns
     -------

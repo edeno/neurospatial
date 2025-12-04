@@ -74,11 +74,9 @@ from scipy.ndimage import gaussian_filter1d
 from neurospatial.metrics.circular import (
     _mean_resultant_length,
     _to_radians,
+    _validate_tuning_data,
     rayleigh_test,
 )
-
-# Mark that circular imports are available for testing
-_has_circular_imports = True
 
 __all__: list[str] = [
     "HeadDirectionMetrics",
@@ -114,6 +112,8 @@ class HeadDirectionMetrics:
         True if passes HD cell criteria.
     rayleigh_pval : float
         P-value from Rayleigh test.
+    min_vector_length_threshold : float
+        The threshold used for HD cell classification.
 
     Notes
     -----
@@ -144,6 +144,7 @@ class HeadDirectionMetrics:
     tuning_width_deg: float
     is_hd_cell: bool
     rayleigh_pval: float
+    min_vector_length_threshold: float = 0.4
 
     def interpretation(self) -> str:
         """
@@ -155,24 +156,28 @@ class HeadDirectionMetrics:
             Multi-line interpretation.
         """
         lines = []
+        threshold = self.min_vector_length_threshold
 
         if self.is_hd_cell:
             lines.append("*** HEAD DIRECTION CELL ***")
             lines.append(f"Preferred direction: {self.preferred_direction_deg:.1f} deg")
             lines.append(
-                f"Mean vector length: {self.mean_vector_length:.3f} (threshold = 0.4)"
+                f"Mean vector length: {self.mean_vector_length:.3f} "
+                f"(threshold = {threshold})"
             )
             lines.append(f"Peak firing rate: {self.peak_firing_rate:.1f} Hz")
             lines.append(f"Tuning width (HWHM): {self.tuning_width_deg:.1f} deg")
             lines.append(f"Rayleigh test: p = {self.rayleigh_pval:.4f}")
         else:
             lines.append("Not classified as HD cell")
-            if self.mean_vector_length < 0.4:
+            if self.mean_vector_length < threshold:
                 lines.append(
-                    f"  - Mean vector length too low: {self.mean_vector_length:.3f} < 0.4"
+                    f"  - Mean vector length too low: "
+                    f"{self.mean_vector_length:.3f} < {threshold}"
                 )
                 lines.append(
-                    "    How was 0.4 chosen? From Taube et al. (1990) analyzing"
+                    f"    How was {threshold} chosen? Default 0.4 is from "
+                    "Taube et al. (1990) analyzing"
                 )
                 lines.append("    postsubicular HD cells in rats. Empirically:")
                 lines.append("      Classic HD cells: 0.5-0.8")
@@ -216,11 +221,11 @@ def head_direction_tuning_curve(
 
     Parameters
     ----------
-    head_directions : array, shape (n_frames,)
+    head_directions : ndarray of shape (n_frames,)
         Head direction at each time point. Units determined by ``angle_unit``.
-    spike_times : array, shape (n_spikes,)
+    spike_times : ndarray of shape (n_spikes,)
         Times of spikes in the same units as ``position_times``.
-    position_times : array, shape (n_frames,)
+    position_times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
         Must be monotonically increasing.
     bin_size : float, default=6.0
@@ -235,9 +240,9 @@ def head_direction_tuning_curve(
 
     Returns
     -------
-    bin_centers : array, shape (n_bins,)
+    bin_centers : ndarray of shape (n_bins,)
         Center of each angular bin in radians.
-    firing_rates : array, shape (n_bins,)
+    firing_rates : ndarray of shape (n_bins,)
         Firing rate (Hz) in each bin.
 
     Raises
@@ -402,9 +407,9 @@ def head_direction_metrics(
 
     Parameters
     ----------
-    bin_centers : array, shape (n_bins,)
+    bin_centers : ndarray of shape (n_bins,)
         Center of each angular bin (radians).
-    firing_rates : array, shape (n_bins,)
+    firing_rates : ndarray of shape (n_bins,)
         Firing rate in each bin (Hz).
     min_vector_length : float, default=0.4
         Minimum Rayleigh vector length to classify as HD cell.
@@ -472,27 +477,11 @@ def head_direction_metrics(
     Taube, J.S., Muller, R.U., & Ranck, J.B. (1990). Head-direction cells.
         J Neurosci, 10(2), 420-435.
     """
-    bin_centers = np.asarray(bin_centers, dtype=np.float64).ravel()
-    firing_rates = np.asarray(firing_rates, dtype=np.float64).ravel()
-
-    if len(bin_centers) != len(firing_rates):
-        raise ValueError(
-            f"bin_centers and firing_rates must have same length. "
-            f"Got {len(bin_centers)} and {len(firing_rates)}."
-        )
-
-    if np.sum(firing_rates) == 0:
-        raise ValueError(
-            "All firing rates are zero. Cannot compute HD metrics.\n"
-            "Fix: Check if neuron has any spikes in this recording."
-        )
-
-    # Check for constant (non-zero) firing rates
-    if np.ptp(firing_rates) == 0:
-        raise ValueError(
-            "All firing rates are constant. Cannot compute HD metrics.\n"
-            "Fix: Neuron shows no directional tuning (uniform firing)."
-        )
+    # Validate input data (checks length match, non-empty, non-negative,
+    # all-zero, and constant firing rates)
+    bin_centers, firing_rates = _validate_tuning_data(
+        bin_centers, firing_rates, require_variation=True
+    )
 
     # Compute mean resultant length using centralized helper (uses scipy if available)
     mean_vector_length = _mean_resultant_length(bin_centers, weights=firing_rates)
@@ -547,6 +536,7 @@ def head_direction_metrics(
         tuning_width_deg=float(np.degrees(tuning_width)),
         is_hd_cell=is_hd_cell,
         rayleigh_pval=float(pval),
+        min_vector_length_threshold=min_vector_length,
     )
 
 
@@ -564,13 +554,13 @@ def is_head_direction_cell(
 
     Parameters
     ----------
-    head_directions : array, shape (n_frames,)
+    head_directions : ndarray of shape (n_frames,)
         Head direction at each time point.
-    spike_times : array, shape (n_spikes,)
+    spike_times : ndarray of shape (n_spikes,)
         Times of spikes (same time units as position_times).
-    position_times : array, shape (n_frames,)
+    position_times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
-    **kwargs
+    **kwargs : dict
         Additional arguments passed to ``head_direction_tuning_curve``.
 
     Returns
@@ -619,9 +609,9 @@ def plot_head_direction_tuning(
 
     Parameters
     ----------
-    bin_centers : array, shape (n_bins,)
+    bin_centers : ndarray of shape (n_bins,)
         Center of each angular bin (radians).
-    firing_rates : array, shape (n_bins,)
+    firing_rates : ndarray of shape (n_bins,)
         Firing rate in each bin (Hz).
     metrics : HeadDirectionMetrics, optional
         If provided, mark preferred direction and optionally show metrics.
@@ -633,14 +623,19 @@ def plot_head_direction_tuning(
         Unit for angle labels on axes. Use ``'deg'`` if you prefer degrees.
     show_metrics : bool, default=True
         If True and metrics provided, show metrics text box.
+
+        **Rationale for default=True**: Head direction tuning curves are typically
+        shown with key metrics (preferred direction, vector length) overlaid to
+        aid interpretation. This is the standard presentation in neuroscience
+        publications (Taube et al., 1990).
     color : str, default='C0'
         Color for tuning curve line and fill.
     fill_alpha : float, default=0.3
         Alpha (transparency) for filled area under curve.
     line_kwargs : dict, optional
-        Additional kwargs for line plot.
+        Additional keyword arguments for line plot.
     fill_kwargs : dict, optional
-        Additional kwargs for fill.
+        Additional keyword arguments for fill.
 
     Returns
     -------
@@ -677,33 +672,11 @@ def plot_head_direction_tuning(
     """
     import matplotlib.pyplot as plt
 
-    # Convert to arrays
-    bin_centers = np.asarray(bin_centers, dtype=np.float64).ravel()
-    firing_rates = np.asarray(firing_rates, dtype=np.float64).ravel()
-
-    # Validate matching lengths
-    if len(bin_centers) != len(firing_rates):
-        raise ValueError(
-            f"bin_centers and firing_rates must have the same length.\n"
-            f"Got bin_centers: {len(bin_centers)}, firing_rates: {len(firing_rates)}.\n\n"
-            f"This usually means:\n"
-            f"- You're using outputs from different analyses\n"
-            f"- One array was accidentally sliced or filtered\n\n"
-            f"Fix: Verify both came from same head_direction_tuning_curve() call."
-        )
-
-    # Validate non-empty
-    if len(bin_centers) == 0:
-        raise ValueError(
-            "bin_centers and firing_rates must not be empty. Got empty arrays."
-        )
-
-    # Validate firing rates are non-negative
-    if np.any(firing_rates < 0):
-        raise ValueError(
-            f"firing_rates cannot be negative. Found {np.sum(firing_rates < 0)} "
-            f"negative values. Check your spike count or time normalization."
-        )
+    # Validate input data (checks length match, non-empty, non-negative)
+    # Note: require_variation=False because plotting can handle flat curves
+    bin_centers, firing_rates = _validate_tuning_data(
+        bin_centers, firing_rates, require_variation=False
+    )
 
     # Create figure if needed
     if ax is None:
