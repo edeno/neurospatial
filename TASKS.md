@@ -76,28 +76,28 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M2.1**: Implement `_normalize_basis` helper function
+- [x] **M2.1**: Implement `_normalize_basis` helper function
   - Support modes: "unit" (L2 norm=1), "max" (max=1), "none"
   - Handle zero-norm rows gracefully
   - **Location**: `src/neurospatial/basis.py`
 
-- [ ] **M2.2**: Implement `geodesic_rbf_basis` core logic
+- [x] **M2.2**: Implement `geodesic_rbf_basis` core logic
   - Handle centers (explicit or auto-select via n_centers)
   - Validate sigma (must be positive)
   - Use scipy.sparse.csgraph.shortest_path with indices parameter
   - Compute RBF: exp(-d²/(2σ²))
   - **Dependencies**: scipy.sparse.csgraph.shortest_path
 
-- [ ] **M2.3**: Add multi-sigma support to `geodesic_rbf_basis`
+- [x] **M2.3**: Add multi-sigma support to `geodesic_rbf_basis`
   - Accept single float or sequence of floats
   - Output shape: (n_centers * n_sigmas, n_bins)
   - Row ordering: (center, sigma) - all sigmas for center 0, then center 1, etc.
 
-- [ ] **M2.4**: Add disconnected graph detection
+- [x] **M2.4**: Add disconnected graph detection
   - Check for infinite distances from shortest_path
   - Raise helpful ValueError with diagnostic commands
 
-- [ ] **M2.5**: Write tests for `TestGeodesicRBFBasis` class
+- [x] **M2.5**: Write tests for `TestGeodesicRBFBasis` class
   - test_output_shape_single_sigma
   - test_output_shape_multi_sigma
   - test_row_ordering_center_major
@@ -123,21 +123,21 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M3.1**: Implement `heat_kernel_wavelet_basis` core logic
+- [x] **M3.1**: Implement `heat_kernel_wavelet_basis` core logic
   - Get graph Laplacian via nx.laplacian_matrix
   - Create delta vectors at centers
   - Use scipy.sparse.linalg.expm_multiply for efficient exp(-s*L) @ B
   - **Dependencies**: scipy.sparse.linalg.expm_multiply
 
-- [ ] **M3.2**: Add multi-scale support
+- [x] **M3.2**: Add multi-scale support
   - Default scales: (0.5, 1.0, 2.0, 4.0)
   - Same row ordering as geodesic_rbf: (center, scale)
 
-- [ ] **M3.3**: Add input validation
+- [x] **M3.3**: Add input validation
   - Validate scales (must be positive)
   - Handle centers (explicit or auto-select)
 
-- [ ] **M3.4**: Write tests for `TestHeatKernelWaveletBasis` class
+- [x] **M3.4**: Write tests for `TestHeatKernelWaveletBasis` class
   - test_output_shape
   - test_larger_scale_is_wider
   - test_respects_graph_structure
@@ -159,26 +159,26 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M4.1**: Implement `_estimate_spectral_radius` helper
+- [x] **M4.1**: Implement `_estimate_spectral_radius` helper
   - Use scipy.sparse.linalg.eigsh with k=1, which='LM'
   - Fall back to max-degree bound (2 * max node degree) if eigsh fails
   - Handle small matrices (n <= 2) directly
   - **Dependencies**: scipy.sparse.linalg.eigsh
 
-- [ ] **M4.2**: Implement `chebyshev_filter_basis` core logic
+- [x] **M4.2**: Implement `chebyshev_filter_basis` core logic
   - Get Laplacian and rescale to [-1, 1]: L_scaled = 2L/λ_max - I
   - Chebyshev recurrence: T₀=1, T₁=x, T_{k+1}=2x*T_k - T_{k-1}
   - Each iteration is sparse matrix-vector product
 
-- [ ] **M4.3**: Add proper row ordering
+- [x] **M4.3**: Add proper row ordering
   - Output shape: (n_centers * (max_degree + 1), n_bins)
   - Row ordering: (center, degree) - all degrees for center 0, then center 1
 
-- [ ] **M4.4**: Add input validation
+- [x] **M4.4**: Add input validation
   - Validate max_degree >= 0
   - Handle centers (explicit or auto-select)
 
-- [ ] **M4.5**: Write tests for `TestChebyshevFilterBasis` class
+- [x] **M4.5**: Write tests for `TestChebyshevFilterBasis` class
   - test_output_shape
   - test_degree_0_is_delta
   - test_k_hop_locality
@@ -199,26 +199,26 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M5.1**: Implement `spatial_basis` convenience function
+- [x] **M5.1**: Implement `spatial_basis` convenience function
   - Compute environment extent (geometric mean for multi-dim)
   - Map coverage ("local", "medium", "global") to sigma fractions (5%, 10%, 20%)
   - Create multi-scale basis with 3 octave-spaced sigmas
   - Compute n_centers to achieve target n_features
 
-- [ ] **M5.2**: Implement `plot_basis_functions` visualization helper
+- [x] **M5.2**: Implement `plot_basis_functions` visualization helper
   - Select random indices if not specified
   - Create subplot grid with env.plot() for each basis
   - Handle empty subplots gracefully
   - Return matplotlib Figure
 
-- [ ] **M5.3**: Write tests for `TestSpatialBasis` class
+- [x] **M5.3**: Write tests for `TestSpatialBasis` class
   - test_returns_basis
   - test_coverage_affects_sigma
   - test_n_features_approximate
   - test_random_state_reproducibility
   - Run: `uv run pytest tests/test_basis.py::TestSpatialBasis -v`
 
-- [ ] **M5.4**: Write tests for `TestPlotBasisFunctions` class
+- [x] **M5.4**: Write tests for `TestPlotBasisFunctions` class
   - test_returns_figure
   - test_respects_indices
   - Use matplotlib Agg backend for CI
@@ -238,21 +238,21 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M6.1**: Update `src/neurospatial/__init__.py`
+- [x] **M6.1**: Update `src/neurospatial/__init__.py`
   - Add imports for all public functions
   - Add to `__all__` list
   - **Exports**: spatial_basis, select_basis_centers, geodesic_rbf_basis, heat_kernel_wavelet_basis, chebyshev_filter_basis, plot_basis_functions
 
-- [ ] **M6.2**: Run type checking
+- [x] **M6.2**: Run type checking
   - `uv run mypy src/neurospatial/basis.py`
   - Fix any type errors
   - Ensure all function signatures have proper type hints
 
-- [ ] **M6.3**: Run full test suite
+- [x] **M6.3**: Run full test suite
   - `uv run pytest tests/test_basis.py -v --cov=src/neurospatial/basis`
   - Target: 90%+ coverage
 
-- [ ] **M6.4**: Run linting and formatting
+- [x] **M6.4**: Run linting and formatting
   - `uv run ruff check src/neurospatial/basis.py tests/test_basis.py`
   - `uv run ruff format src/neurospatial/basis.py tests/test_basis.py`
 
@@ -303,27 +303,27 @@ This task list implements the `neurospatial.basis` module providing localized, m
 
 ### Tasks
 
-- [ ] **M8.1**: Run complete test suite
+- [x] **M8.1**: Run complete test suite
   - `uv run pytest` (all tests)
   - Ensure no regressions
 
-- [ ] **M8.2**: Performance benchmarking
+- [x] **M8.2**: Performance benchmarking
   - Test with 100x100 grid (10,000 bins), 100 centers
   - geodesic_rbf_basis should complete in < 5s
   - heat_kernel_wavelet_basis should complete in < 15s
   - chebyshev_filter_basis should complete in < 3s
 
-- [ ] **M8.3**: Integration test with real-world-like data
+- [x] **M8.3**: Integration test with real-world-like data
   - Create environment from realistic position data
   - Generate basis and create design matrix
   - Verify shapes and values are reasonable
 
-- [ ] **M8.4**: Code review checklist
-  - [ ] All functions have comprehensive docstrings
-  - [ ] Error messages are helpful (WHAT/WHY/HOW)
-  - [ ] No bare Environment() calls (use factories)
-  - [ ] Uses `uv run` for all commands
-  - [ ] Type hints are complete and correct
+- [x] **M8.4**: Code review checklist
+  - [x] All functions have comprehensive docstrings
+  - [x] Error messages are helpful (WHAT/WHY/HOW)
+  - [x] No bare Environment() calls (use factories)
+  - [x] Uses `uv run` for all commands
+  - [x] Type hints are complete and correct
 
 ---
 
