@@ -764,3 +764,201 @@ class EnvironmentFactories:
             "Environment",
             environment_from_position(nwbfile, bin_size=bin_size, **kwargs),
         )
+
+    @classmethod
+    def from_polar_egocentric(
+        cls,
+        distance_range: tuple[float, float],
+        angle_range: tuple[float, float],
+        distance_bin_size: float,
+        angle_bin_size: float,
+        circular_angle: bool = True,
+        name: str = "",
+    ) -> Environment:
+        """Create an egocentric polar coordinate environment.
+
+        This factory creates a 2D environment in polar coordinates where:
+        - First dimension (bin_centers[:, 0]) represents distance from the observer
+        - Second dimension (bin_centers[:, 1]) represents angle relative to heading
+
+        The environment is designed for egocentric spatial analyses where spatial
+        relationships are computed relative to an animal's position and heading,
+        rather than in an allocentric (world-centered) reference frame.
+
+        Parameters
+        ----------
+        distance_range : tuple of (float, float)
+            The (min, max) range of distances in physical units (e.g., cm).
+            Must have min < max.
+        angle_range : tuple of (float, float)
+            The (min, max) range of angles in radians. For full circle coverage,
+            use (-π, π) or (0, 2π). Must have min < max.
+        distance_bin_size : float
+            The size of each distance bin in the same units as distance_range.
+            Must be positive.
+        angle_bin_size : float
+            The size of each angle bin in radians. Must be positive.
+        circular_angle : bool, default=True
+            If True, the angle dimension wraps circularly, connecting the first
+            and last angle bins. This is appropriate when angle_range spans a
+            full circle (e.g., -π to π). Set to False for partial angular ranges.
+        name : str, default=""
+            Optional name for the environment.
+
+        Returns
+        -------
+        Environment
+            A fitted Environment instance in egocentric polar coordinates.
+            - ``bin_centers[:, 0]``: Distance values
+            - ``bin_centers[:, 1]``: Angle values
+
+        Raises
+        ------
+        ValueError
+            If distance_bin_size or angle_bin_size is not positive.
+            If distance_range or angle_range is invalid (min >= max).
+
+        Notes
+        -----
+        This environment lives in egocentric polar coordinates, not allocentric
+        Cartesian coordinates. The connectivity graph connects adjacent bins in
+        both the distance and angle dimensions. When ``circular_angle=True``,
+        bins at the minimum and maximum angles are connected (at each distance).
+
+        Coordinate convention:
+        - Angle 0 = directly ahead (egocentric forward direction)
+        - Angle π/2 = left
+        - Angle -π/2 = right
+        - Angle ±π = behind
+
+        Examples
+        --------
+        Create a full-circle egocentric polar environment:
+
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_polar_egocentric(
+        ...     distance_range=(0.0, 100.0),  # 0-100 cm
+        ...     angle_range=(-np.pi, np.pi),  # Full circle
+        ...     distance_bin_size=10.0,  # 10 cm distance bins
+        ...     angle_bin_size=np.pi / 4,  # 45 degree angle bins
+        ... )
+        >>> env.n_bins  # 10 distance * 8 angle = 80 bins
+        80
+
+        Create a forward-facing field of view:
+
+        >>> env = Environment.from_polar_egocentric(
+        ...     distance_range=(0.0, 50.0),
+        ...     angle_range=(-np.pi / 2, np.pi / 2),  # Front 180 degrees
+        ...     distance_bin_size=10.0,
+        ...     angle_bin_size=np.pi / 6,
+        ...     circular_angle=False,  # Don't wrap (not a full circle)
+        ... )
+
+        See Also
+        --------
+        from_samples : Create environment from position samples.
+        from_mask : Create environment from pre-defined boolean mask.
+        neurospatial.reference_frames : Functions for egocentric transforms.
+
+        """
+        # Validate parameters
+        if distance_bin_size <= 0:
+            raise ValueError(
+                f"distance_bin_size must be positive, got {distance_bin_size}"
+            )
+        if angle_bin_size <= 0:
+            raise ValueError(f"angle_bin_size must be positive, got {angle_bin_size}")
+
+        if distance_range[0] >= distance_range[1]:
+            raise ValueError(
+                f"distance_range must have min < max, got {distance_range}"
+            )
+        if angle_range[0] >= angle_range[1]:
+            raise ValueError(f"angle_range must have min < max, got {angle_range}")
+
+        # Calculate number of bins in each dimension
+        n_distance = max(
+            1, int(np.ceil((distance_range[1] - distance_range[0]) / distance_bin_size))
+        )
+        n_angle = max(
+            1, int(np.ceil((angle_range[1] - angle_range[0]) / angle_bin_size))
+        )
+
+        # Create grid edges
+        distance_edges = np.linspace(
+            distance_range[0], distance_range[1], n_distance + 1
+        )
+        angle_edges = np.linspace(angle_range[0], angle_range[1], n_angle + 1)
+        grid_edges = (distance_edges, angle_edges)
+
+        # Create all-active mask
+        active_mask = np.ones((n_distance, n_angle), dtype=bool)
+
+        # Build the environment using from_mask
+        env = cls.from_mask(
+            active_mask=active_mask,
+            grid_edges=grid_edges,
+            name=name,
+            connect_diagonal_neighbors=True,
+        )
+
+        # If circular_angle is True, add edges between first and last angle bins
+        if circular_angle and n_angle > 1:
+            _add_circular_connectivity(env.connectivity, n_distance, n_angle)
+
+        return env
+
+
+def _add_circular_connectivity(
+    connectivity: nx.Graph, n_distance: int, n_angle: int
+) -> None:
+    """Add circular connectivity edges between first and last angle bins.
+
+    This function modifies the connectivity graph in-place to add edges
+    between bins at angle index 0 and angle index (n_angle - 1) for each
+    distance ring.
+
+    Parameters
+    ----------
+    connectivity : nx.Graph
+        The connectivity graph to modify. Assumed to have nodes indexed
+        in row-major order: node_id = distance_idx * n_angle + angle_idx.
+    n_distance : int
+        Number of distance bins.
+    n_angle : int
+        Number of angle bins.
+
+    """
+    # Get the highest existing edge_id to continue numbering
+    max_edge_id = max(
+        (data.get("edge_id", -1) for _, _, data in connectivity.edges(data=True)),
+        default=-1,
+    )
+
+    for d_idx in range(n_distance):
+        # Node at first angle (angle_idx = 0)
+        first_angle_node = d_idx * n_angle + 0
+        # Node at last angle (angle_idx = n_angle - 1)
+        last_angle_node = d_idx * n_angle + (n_angle - 1)
+
+        if not connectivity.has_edge(first_angle_node, last_angle_node):
+            # Get positions for edge attributes
+            pos_first = connectivity.nodes[first_angle_node]["pos"]
+            pos_last = connectivity.nodes[last_angle_node]["pos"]
+
+            # Compute edge attributes
+            vector = np.array(pos_last) - np.array(pos_first)
+            distance = np.linalg.norm(vector)
+            angle_2d = np.arctan2(vector[1], vector[0]) if len(vector) >= 2 else 0.0
+
+            max_edge_id += 1
+            connectivity.add_edge(
+                first_angle_node,
+                last_angle_node,
+                distance=float(distance),
+                vector=vector.tolist(),
+                angle_2d=float(angle_2d),
+                edge_id=int(max_edge_id),
+            )

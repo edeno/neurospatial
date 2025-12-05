@@ -46,6 +46,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
 - [x] Define `__all__` exports
 
 **Success criteria**:
+
 - Round-trip test: `allocentric → egocentric → allocentric` preserves coordinates
 - Heading=0: egocentric x-axis aligns with allocentric x-axis
 - Heading=π/2: egocentric x-axis aligns with allocentric y-axis
@@ -69,6 +70,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [x] Raise ValueError when all keypoints NaN
 
 **Success criteria**:
+
 - Stationary periods produce smooth interpolated headings (no jumps)
 - NaN keypoints are filled without discontinuities at ±π boundary
 
@@ -76,14 +78,15 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/environment/factories.py`
 
-- [ ] Add `from_polar_egocentric()` classmethod to Environment
-  - [ ] Parameters: `distance_range`, `angle_range`, `distance_bin_size`, `angle_bin_size`
-  - [ ] Parameter: `circular_angle=True` for periodic connectivity
-  - [ ] Create polar environment using existing RegularGrid machinery
-  - [ ] Document: "This environment lives in egocentric polar coordinates"
-  - [ ] Return Environment with bin_centers[:, 0] = distances, [:, 1] = angles
+- [x] Add `from_polar_egocentric()` classmethod to Environment
+  - [x] Parameters: `distance_range`, `angle_range`, `distance_bin_size`, `angle_bin_size`
+  - [x] Parameter: `circular_angle=True` for periodic connectivity
+  - [x] Create polar environment using existing MaskedGrid machinery
+  - [x] Document: "This environment lives in egocentric polar coordinates"
+  - [x] Return Environment with bin_centers[:, 0] = distances, [:, 1] = angles
 
 **Success criteria**:
+
 - `ego_env.n_bins` matches expected `n_distance * n_angle`
 - Circular connectivity wraps first↔last angle bins when `circular_angle=True`
 
@@ -170,6 +173,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
 - [ ] Implement `ground_truth` property
 
 **Success criteria**:
+
 - Firing rate peaks at `(preferred_distance, preferred_direction)` from object
 - `direction_kappa=4` produces ~30° half-width tuning
 
@@ -220,6 +224,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Return `ObjectVectorFieldResult`
 
 **Success criteria**:
+
 - Field peaks at `(preferred_distance, preferred_direction)` for simulated cells
 
 ### M2.4: Object-Vector Overlay (Animation)
@@ -336,6 +341,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Time each bin was visible during trajectory
 
 **Success criteria**:
+
 - `FieldOfView.rat().total_angle_degrees` ≈ 300°
 - `FieldOfView.primate().total_angle_degrees` ≈ 180°
 - Blind spot behind correctly excludes rear regions
@@ -360,6 +366,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
 - [ ] Implement `ground_truth` property
 
 **Success criteria**:
+
 - Firing rate peaks when viewing `preferred_view_location`
 
 ### M3.3: Spatial View Field Analysis
@@ -379,6 +386,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Return field with same shape as place field
 
 **Success criteria**:
+
 - View field differs from place field for spatial view cells
 - View field similar to place field for place cells
 

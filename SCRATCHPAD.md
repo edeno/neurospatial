@@ -42,9 +42,44 @@
 - mypy: No issues found
 - Code review: Approved after type safety fixes
 
+### Completed: M1.3 Egocentric Polar Environment
+
+**Files Modified/Created:**
+- `src/neurospatial/environment/factories.py` - Added `from_polar_egocentric()` factory method
+- `tests/test_polar_egocentric.py` - 21 comprehensive tests
+
+**Implemented:**
+- [x] `from_polar_egocentric()` classmethod with parameters:
+  - `distance_range`, `angle_range` - define the polar space bounds
+  - `distance_bin_size`, `angle_bin_size` - control bin resolution
+  - `circular_angle=True` - enables periodic connectivity for full-circle angles
+- [x] `_add_circular_connectivity()` helper - connects first/last angle bins at each distance ring
+- [x] Comprehensive parameter validation with clear error messages
+- [x] NumPy-style docstring with coordinate convention and examples
+
+**Key Design Decisions:**
+- Reuses existing `from_mask()` infrastructure (MaskedGridLayout)
+- Coordinate convention matches `reference_frames`: angle 0=ahead, π/2=left, -π/2=right
+- Circular edges include proper `edge_id` attribute (critical for graph consistency)
+- `bin_centers[:, 0]` = distances, `bin_centers[:, 1]` = angles
+
+**Tests:**
+- 21/21 passing
+- Basic creation tests (n_bins, dimensions, value ranges)
+- Circular connectivity tests (wrapping, edge attributes)
+- Parameter validation tests (bin sizes, ranges)
+- Edge case tests (single angle bin, equal range bounds)
+
+**Code Quality:**
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved after edge_id fix
+
 ### Next Task
-- **M1.2**: Heading Computation Utilities (some already implemented in M1.1)
-- **M1.3**: Egocentric Polar Environment (`from_polar_egocentric()` factory)
+- **M1.5**: Integration and Documentation
+  - [x] Add exports to `src/neurospatial/__init__.py` (already done in M1.1)
+  - [ ] Update `.claude/QUICKSTART.md` with egocentric transform examples
+  - [ ] Update `.claude/API_REFERENCE.md` with `reference_frames` imports
 
 ### Blockers
 None currently.
