@@ -71,15 +71,24 @@
 
 ### **3.1 Events module (beh. events in space–time)**
 
-* [ ] Standardized `EventSeries` representation for:
-
-  * rewards, cues, licks, errors, choices, opto, zone entries/exits.
-* [ ] IO utilities for events.
+* [x] Standardized events representation for:
+  * `validate_events_dataframe()` validates pandas DataFrame structure
+  * `validate_spatial_columns()` checks for x, y columns
+  * Supports: rewards, cues, licks, errors, choices, opto, zone entries/exits
+* [x] IO utilities for events.
+  * NWB: `read_events()`, `write_events()`, `write_region_crossings()`
+  * Interval conversion: `intervals_to_events()`, `events_to_intervals()`
+  * Filtering: `filter_by_intervals()`
 * [ ] Event timeline visualization.
 
 ### **3.2 Spatio-temporal field estimation**
 
-* [ ] Event-triggered PSTHs.
+* [x] Event-triggered PSTHs.
+  * `peri_event_histogram()` returns `PeriEventResult`
+  * `population_peri_event_histogram()` returns `PopulationPeriEventResult`
+  * `align_spikes_to_events()` for per-trial spike times
+  * `align_events()` for event-to-event alignment
+  * `plot_peri_event_histogram()` for visualization
 * [ ] Event-triggered rate maps (reward-locked).
 * [ ] Full spatio-temporal rate cubes:
 
@@ -87,7 +96,10 @@
 
 ### **3.3 Regressors for GLMs**
 
-* [ ] Time since reward, cue, zone entry.
+* [x] Time since reward, cue, zone entry.
+  * `time_to_nearest_event()` - signed peri-event time
+  * `event_count_in_window()` - count events in window
+  * `event_indicator()` - binary presence indicator
 * [ ] Distance to reward (Euclidean or cost-distance).
 * [ ] Distance to walls, obstacles, region boundaries.
 * [x] Head direction, speed, acceleration, behavioral phase.
@@ -257,7 +269,7 @@
   * ~~spikes~~ (use pynwb directly)
   * ~~LFP~~ (use pynwb directly)
   * [x] continuous behavior
-  * [x] events (`read_events()`, `write_region_crossings()`)
+  * [x] events (`read_events()`, `write_events()`, `write_region_crossings()`, `read_intervals()`, `read_trials()`, `write_laps()`)
   * [x] regions (via Environment scratch storage)
 
 ### **9.2 Other IO**
@@ -297,7 +309,12 @@
 * [ ] Population API (shared occupancy)
 * [ ] Result objects
 * [x] Basic visualization utilities
-* [ ] Events module
+* [x] Events module
+  * `peri_event_histogram()`, `population_peri_event_histogram()`
+  * GLM regressors: `time_to_nearest_event()`, `event_count_in_window()`, `event_indicator()`
+  * Interval utilities: `intervals_to_events()`, `events_to_intervals()`, `filter_by_intervals()`
+  * Spatial utilities: `add_positions()`
+  * NWB integration: `read_events()`, `write_events()`
 * [x] NWB IO
 * [x] Head direction system
 
@@ -311,8 +328,11 @@
 
 ### **Phase 3: Spatio-temporal analytics**
 
-* [ ] Event-triggered rate cubes
-* [x] GLM regressors (circular basis, spatial basis)
+* [x] Peri-event histograms (PSTHs)
+  * `peri_event_histogram()`, `population_peri_event_histogram()`
+  * `plot_peri_event_histogram()` visualization
+* [ ] Event-triggered rate cubes (spatial + temporal)
+* [x] GLM regressors (circular basis, spatial basis, temporal event regressors)
 * [x] Phase precession module
 * [ ] Dynamic place fields across time (estimation, not just visualization)
 
