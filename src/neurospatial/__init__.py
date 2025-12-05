@@ -287,6 +287,12 @@ from neurospatial.metrics import (
     skaggs_information,
     sparsity,
 )
+
+# Object-vector field analysis
+from neurospatial.object_vector_field import (
+    ObjectVectorFieldResult,
+    compute_object_vector_field,
+)
 from neurospatial.primitives import convolve, neighbor_reduce
 
 # Reference frame transformations (egocentric/allocentric)
@@ -451,4 +457,7 @@ __all__ = [
     "egocentric_to_allocentric",
     "heading_from_body_orientation",
     "heading_from_velocity",
+    # Object-vector field analysis
+    "ObjectVectorFieldResult",
+    "compute_object_vector_field",
 ]

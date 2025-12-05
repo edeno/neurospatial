@@ -210,22 +210,22 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/object_vector_field.py`
 
-- [ ] Create module with docstring
-- [ ] Implement `ObjectVectorFieldResult` frozen dataclass
-  - [ ] Fields: `field`, `ego_env`, `occupancy`
-- [ ] Implement `compute_object_vector_field()` function
-  - [ ] Create egocentric polar environment via `from_polar_egocentric()`
-  - [ ] Compute distance and bearing to nearest object at each timepoint
-  - [ ] Support geodesic distance when `allocentric_env` provided
-  - [ ] Compute occupancy in egocentric polar space (time per bin)
-  - [ ] Bin spikes by egocentric position at spike time (interpolate)
-  - [ ] Normalize by occupancy, apply `min_occupancy_seconds` threshold
-  - [ ] Support methods: "binned", "diffusion_kde"
-  - [ ] Return `ObjectVectorFieldResult`
+- [x] Create module with docstring
+- [x] Implement `ObjectVectorFieldResult` frozen dataclass
+  - [x] Fields: `field`, `ego_env`, `occupancy`
+- [x] Implement `compute_object_vector_field()` function
+  - [x] Create egocentric polar environment via `from_polar_egocentric()`
+  - [x] Compute distance and bearing to nearest object at each timepoint
+  - [x] Support geodesic distance when `allocentric_env` provided
+  - [x] Compute occupancy in egocentric polar space (time per bin)
+  - [x] Bin spikes by egocentric position at spike time (interpolate)
+  - [x] Normalize by occupancy, apply `min_occupancy_seconds` threshold
+  - [x] Support methods: "binned", "diffusion_kde"
+  - [x] Return `ObjectVectorFieldResult`
 
 **Success criteria**:
 
-- Field peaks at `(preferred_distance, preferred_direction)` for simulated cells
+- [x] Field peaks at `(preferred_distance, preferred_direction)` for simulated cells
 
 ### M2.4: Object-Vector Overlay (Animation)
 

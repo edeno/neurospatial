@@ -230,12 +230,66 @@
   - `ObjectVectorMetrics`, `compute_object_vector_tuning`
   - `object_vector_score`, `is_object_vector_cell`, `plot_object_vector_tuning`
 
+### Completed: M2.3 Object-Vector Field Computation
+
+**Files Created:**
+
+- `src/neurospatial/object_vector_field.py` - Main implementation (~430 LOC)
+- `tests/test_object_vector_field.py` - 27 comprehensive tests
+
+**Implemented:**
+
+- [x] `ObjectVectorFieldResult` frozen dataclass with fields:
+  - `field` - firing rate (Hz) in each egocentric polar bin
+  - `ego_env` - egocentric polar coordinate environment
+  - `occupancy` - time spent (seconds) in each bin
+- [x] `compute_object_vector_field()` function:
+  - Creates egocentric polar environment via `from_polar_egocentric()`
+  - Computes distance and bearing to nearest object at each timepoint
+  - Supports geodesic distance when `allocentric_env` provided
+  - Computes occupancy in egocentric polar space (vectorized)
+  - Bins spikes by egocentric position at spike time (vectorized)
+  - Normalizes by occupancy, applies `min_occupancy_seconds` threshold
+  - Supports methods: "binned", "diffusion_kde"
+  - Returns `ObjectVectorFieldResult`
+
+**Key Design Decisions:**
+
+- Uses `compute_egocentric_bearing()` from M1 for direction computation
+- Nearest object selection (consistent with OVC biology)
+- Vectorized bin assignment for performance (np.add.at)
+- diffusion_kde uses kernel matrix from ego_env (respects circular boundaries)
+- Literal types for method and distance_metric parameters
+
+**Tests:**
+
+- 27/27 passing
+- Module structure tests (imports, docstring, exports)
+- Dataclass tests (fields, frozen)
+- Field computation tests (shape, polar coordinates, occupancy)
+- Smoothing method tests (binned, diffusion_kde)
+- Validation tests (empty spikes, mismatched lengths, invalid method)
+- Geodesic distance tests (with allocentric_env)
+- Ground truth recovery tests (simulated OVC → field peaks at preferred location)
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved after critical fixes
+- NumPy docstrings with coordinate convention docs
+- Complete type annotations with Literal types
+
+**Module Updated:**
+
+- `src/neurospatial/__init__.py` - Added exports:
+  - `ObjectVectorFieldResult`, `compute_object_vector_field`
+
 ### Next Task
 
-- **M2.3**: Object-Vector Field Computation
-  - Create `src/neurospatial/object_vector_field.py`
-  - Implement `ObjectVectorFieldResult` dataclass
-  - Implement `compute_object_vector_field()` function
+- **M2.4**: Object-Vector Overlay (Animation)
+  - Create `src/neurospatial/animation/overlays/object_vector.py`
+  - Implement `ObjectVectorFieldOverlay` class
 
 ### Blockers
 
