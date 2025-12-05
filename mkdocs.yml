@@ -181,5 +181,9 @@ nav:
       - Behavioral Segmentation: examples/14_behavioral_segmentation.ipynb
       - Simulation Workflows: examples/15_simulation_workflows.ipynb
       - Field Animation: examples/16_field_animation.ipynb
+      - Animation with Overlays: examples/17_animation_with_overlays.ipynb
+      - Video Overlay: examples/18_video_overlay.ipynb
+      - Real Data Bandit Task: examples/19_real_data_bandit_task.ipynb
+      - Bayesian Decoding: examples/20_bayesian_decoding.ipynb
   - Contributing: contributing.md
   - Changelog: changelog.md
