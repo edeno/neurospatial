@@ -552,14 +552,80 @@
 - `src/neurospatial/__init__.py` - Added exports:
   - `SpatialViewFieldResult`, `compute_spatial_view_field`
 
+### Completed: M3.4 Spatial View Metrics
+
+**Files Created:**
+
+- `src/neurospatial/metrics/spatial_view_cells.py` - Main implementation (~520 LOC)
+- `tests/metrics/test_spatial_view_cells.py` - 23 comprehensive tests
+
+**Implemented:**
+
+- [x] `SpatialViewMetrics` frozen dataclass with fields:
+  - `view_field_skaggs_info` - Skaggs spatial information for view field
+  - `place_field_skaggs_info` - Skaggs spatial information for place field
+  - `view_place_correlation` - Pearson correlation between view and place fields
+  - `view_field_sparsity` - sparsity of view field
+  - `view_field_coherence` - spatial coherence of view field
+  - `is_spatial_view_cell` - classification result
+  - `interpretation()` method - human-readable string with classification reasoning
+- [x] `spatial_view_cell_metrics()` function:
+  - Computes both place field and view field from same spike data
+  - Uses existing `compute_place_field()` and `compute_spatial_view_field()`
+  - Computes Skaggs information for both fields using `skaggs_information()`
+  - Computes sparsity and coherence using existing metrics functions
+  - Computes correlation between view and place fields (handles NaN)
+  - Classification based on info ratio and correlation thresholds
+- [x] `is_spatial_view_cell()` classifier:
+  - Quick boolean function for screening many neurons
+  - Configurable `info_ratio` (default 1.5) and `max_correlation` (default 0.7)
+  - Returns False on ValueError (graceful error handling)
+
+**Key Design Decisions:**
+
+- API pattern mirrors `head_direction.py` (dataclass + compute + classifier)
+- Uses frozen dataclass for immutable metrics
+- Reuses existing Skaggs information, sparsity, and coherence functions from `place_fields.py`
+- Classification criteria: view_info > ratio * place_info AND correlation < max_corr
+- Default thresholds based on principle that SVCs have view-selective, not position-selective, firing
+- Returns Python bool (not numpy bool) for type safety
+
+**Tests:**
+
+- 23/23 passing
+- Module structure tests (imports, docstring, exports)
+- Dataclass tests (creation, frozen, interpretation for SVC and non-SVC)
+- Computation tests (all 5 metrics computed, correct ranges)
+- Validation tests (empty spikes, mismatched lengths)
+- Parameter tests (view_distance, info_ratio, max_correlation)
+- Ground truth recovery tests:
+  - Simulated SVC has higher view field info than place field info
+  - Place cell not classified as SVC (using PlaceCellModel from simulation)
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved - exemplary implementation:
+  - Consistent with project patterns (mirrors head_direction.py)
+  - Outstanding documentation with scientific references
+  - Robust error handling (NaN, zero variance, edge cases)
+  - Comprehensive test coverage with edge cases
+- NumPy docstrings with "Which Function Should I Use?" guidance
+- Complete type annotations
+
+**Module Updated:**
+
+- `src/neurospatial/metrics/__init__.py` - Added exports:
+  - `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`
+- `src/neurospatial/simulation/__init__.py` - Added `SpatialViewCellModel` export
+
 ### Next Task
 
-- **M3.4**: Spatial View Metrics
-  - Create `src/neurospatial/metrics/spatial_view_cells.py`
-  - Implement `SpatialViewMetrics` dataclass
-  - Implement `compute_spatial_view_tuning()` function
-  - Implement `spatial_view_score()` function
-  - Implement `is_spatial_view_cell()` classifier
+- **M3.5**: Tests for Spatial View Cells
+  - Create/update visibility tests
+  - Create/update spatial view cell model tests
+  - Create/update spatial view field tests
 
 ### Blockers
 

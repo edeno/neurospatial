@@ -61,6 +61,7 @@ from neurospatial.simulation.models import (
     NeuralModel,  # Protocol
     ObjectVectorCellModel,
     PlaceCellModel,
+    SpatialViewCellModel,
 )
 
 # Milestone 3 imports (grid cells + session API)
@@ -97,6 +98,7 @@ __all__ = [
     "ObjectVectorCellModel",
     "PlaceCellModel",
     "SimulationSession",
+    "SpatialViewCellModel",
     "add_modulation",
     "boundary_cell_session",
     "generate_poisson_spikes",

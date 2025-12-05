@@ -90,6 +90,11 @@ from neurospatial.metrics.population import (
     population_coverage,
     population_vector_correlation,
 )
+from neurospatial.metrics.spatial_view_cells import (
+    SpatialViewMetrics,
+    is_spatial_view_cell,
+    spatial_view_cell_metrics,
+)
 from neurospatial.metrics.trajectory import (
     compute_home_range,
     compute_step_lengths,
@@ -104,6 +109,7 @@ __all__ = [
     "ObjectVectorMetrics",
     "PhasePrecessionResult",
     "PopulationCoverageResult",
+    "SpatialViewMetrics",
     "border_score",
     "circular_basis",
     "circular_basis_metrics",
@@ -136,6 +142,7 @@ __all__ = [
     "is_head_direction_cell",
     "is_modulated",
     "is_object_vector_cell",
+    "is_spatial_view_cell",
     "mean_square_displacement",
     "mutual_information",
     "object_vector_score",
@@ -156,4 +163,5 @@ __all__ = [
     "sparsity",
     "spatial_autocorrelation",
     "spatial_coverage_single_cell",
+    "spatial_view_cell_metrics",
 ]

@@ -394,21 +394,21 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/metrics/spatial_view_cells.py`
 
-- [ ] Create module with docstring
-- [ ] Implement `SpatialViewMetrics` frozen dataclass
-  - [ ] Fields: `view_field_skaggs_info`, `place_field_skaggs_info`
-  - [ ] Fields: `view_place_correlation`
-  - [ ] Fields: `view_field_sparsity`, `view_field_coherence`
-  - [ ] Field: `is_spatial_view_cell`
-  - [ ] Method: `interpretation()`
-- [ ] Implement `spatial_view_cell_metrics()` function
-  - [ ] Compute place field and view field
-  - [ ] Compute Skaggs info for both (reuse from `place_fields.py`)
-  - [ ] Compute sparsity, coherence (reuse existing)
-  - [ ] Compute view-place correlation (Z-score, mask NaN)
-  - [ ] Return `SpatialViewMetrics`
-- [ ] Implement `is_spatial_view_cell()` classifier
-  - [ ] `view_info > ratio * place_info` AND `correlation < max_corr`
+- [x] Create module with docstring
+- [x] Implement `SpatialViewMetrics` frozen dataclass
+  - [x] Fields: `view_field_skaggs_info`, `place_field_skaggs_info`
+  - [x] Fields: `view_place_correlation`
+  - [x] Fields: `view_field_sparsity`, `view_field_coherence`
+  - [x] Field: `is_spatial_view_cell`
+  - [x] Method: `interpretation()`
+- [x] Implement `spatial_view_cell_metrics()` function
+  - [x] Compute place field and view field
+  - [x] Compute Skaggs info for both (reuse from `place_fields.py`)
+  - [x] Compute sparsity, coherence (reuse existing)
+  - [x] Compute view-place correlation (Z-score, mask NaN)
+  - [x] Return `SpatialViewMetrics`
+- [x] Implement `is_spatial_view_cell()` classifier
+  - [x] `view_info > ratio * place_info` AND `correlation < max_corr`
 
 ### M3.5: Tests for Spatial View Cells
 
