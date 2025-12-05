@@ -287,7 +287,7 @@ class TestValidateSimulation:
         )
 
         # Use binned method
-        result = validate_simulation(session, method="binned")
+        result = validate_simulation(session, smoothing_method="binned")
 
         assert "center_errors" in result
 

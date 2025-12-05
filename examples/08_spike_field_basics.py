@@ -295,7 +295,7 @@ place_field = compute_place_field(
     spike_times,
     times,
     positions,
-    method="diffusion_kde",  # Boundary-aware smoothing (recommended)
+    smoothing_method="diffusion_kde",  # Boundary-aware smoothing (recommended)
     bandwidth=8.0,  # Smoothing bandwidth in cm
     min_occupancy_seconds=0.5,  # Exclude bins with <0.5s occupancy
 )

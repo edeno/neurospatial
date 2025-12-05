@@ -24,7 +24,9 @@ def validate_simulation(
     times: NDArray[np.float64] | None = None,
     ground_truth: dict[str, Any] | None = None,
     cell_indices: list[int] | None = None,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
     max_center_error: float | None = None,
     min_correlation: float | None = None,
     show_plots: bool = False,
@@ -52,8 +54,8 @@ def validate_simulation(
         Ground truth parameters for each cell (required if session not provided).
     cell_indices : list[int] | None, optional
         Indices of cells to validate. If None, validates all cells.
-    method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
-        Method for computing place fields (default: 'diffusion_kde').
+    smoothing_method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
+        Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
         Maximum acceptable center error in environment units. If None, uses
         2 * mean(bin_sizes) as threshold.
@@ -238,7 +240,7 @@ def validate_simulation(
             spike_times,
             times,
             positions,
-            method=method,
+            smoothing_method=smoothing_method,
             **kwargs,
         )
 
@@ -637,7 +639,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
         else:
             # Compute rate map
             rate_map = compute_place_field(
-                env, spike_times, times, positions, method="diffusion_kde"
+                env, spike_times, times, positions, smoothing_method="diffusion_kde"
             )
 
             # Plot as 2D heatmap if possible

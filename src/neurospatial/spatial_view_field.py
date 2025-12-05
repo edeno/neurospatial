@@ -19,8 +19,8 @@ Which Function Should I Use?
     of viewed location (not animal position).
 
 **Need binned vs smoothed fields?**
-    Use ``method="binned"`` for simple histogram-based fields, or
-    ``method="diffusion_kde"`` (default) for graph-smoothed fields.
+    Use ``smoothing_method="binned"`` for simple histogram-based fields, or
+    ``smoothing_method="diffusion_kde"`` (default) for graph-smoothed fields.
 
 **Different gaze models?**
     Use ``gaze_model="fixed_distance"`` for a point at fixed distance in gaze
@@ -143,7 +143,9 @@ def compute_spatial_view_field(
     view_distance: float = 10.0,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     gaze_offsets: NDArray[np.float64] | None = None,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.1,
 ) -> SpatialViewFieldResult:
@@ -175,7 +177,7 @@ def compute_spatial_view_field(
     gaze_offsets : NDArray[np.float64], shape (n_time,), optional
         Offset from heading to gaze direction (e.g., from eye tracking).
         If None, gaze is aligned with heading.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method:
         - "diffusion_kde": Graph-smoothed field using diffusion kernel
         - "gaussian_kde": Standard Gaussian KDE (Euclidean distance)
@@ -195,7 +197,7 @@ def compute_spatial_view_field(
     ------
     ValueError
         If spike_times is empty, arrays have mismatched lengths,
-        method is invalid, or gaze_model is invalid.
+        smoothing_method is invalid, or gaze_model is invalid.
 
     See Also
     --------
@@ -263,11 +265,11 @@ def compute_spatial_view_field(
         )
 
     valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
-    if method not in valid_methods:
+    if smoothing_method not in valid_methods:
         raise ValueError(
-            f"Invalid smoothing method: '{method}'.\n\n"
-            f"WHAT: method must be one of {sorted(valid_methods)}\n"
-            f"WHY: Each method uses different spatial smoothing algorithms\n\n"
+            f"Invalid smoothing_method: '{smoothing_method}'.\n\n"
+            f"WHAT: smoothing_method must be one of {sorted(valid_methods)}\n"
+            f"WHY: Each smoothing_method uses different spatial smoothing algorithms\n\n"
             f"HOW to choose:\n"
             f"1. 'diffusion_kde' (default) - Graph-based smoothing respecting boundaries\n"
             f"2. 'gaussian_kde' - Standard Gaussian kernel (Euclidean distance)\n"
@@ -353,18 +355,18 @@ def compute_spatial_view_field(
         # Count spikes per viewed bin (vectorized)
         np.add.at(spike_counts, valid_spike_view_bins, 1.0)
 
-    # Step 5: Compute firing rate based on method
+    # Step 5: Compute firing rate based on smoothing_method
     field = np.zeros(env.n_bins, dtype=np.float64)
     sufficient_occupancy = view_occupancy >= min_occupancy_seconds
 
-    if method == "binned":
+    if smoothing_method == "binned":
         # Simple occupancy-normalized field
         field[sufficient_occupancy] = (
             spike_counts[sufficient_occupancy] / view_occupancy[sufficient_occupancy]
         )
         field[~sufficient_occupancy] = np.nan
 
-    elif method == "diffusion_kde":
+    elif smoothing_method == "diffusion_kde":
         # Apply diffusion smoothing before normalizing (spread→normalize)
         kernel = cast("EnvironmentProtocol", env).compute_kernel(
             bandwidth, mode="density", cache=True

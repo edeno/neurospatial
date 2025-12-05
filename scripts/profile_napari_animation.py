@@ -159,7 +159,7 @@ def compute_place_field(
             spike_times,
             times_array,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=8.0,
             min_occupancy_seconds=0.5,
         )

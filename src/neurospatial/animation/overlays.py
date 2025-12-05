@@ -164,6 +164,13 @@ class OverlayProtocol(Protocol):
 class PositionOverlay:
     """Single trajectory with optional trail visualization.
 
+    **IMPORTANT - Coordinate System**:
+      Provide coordinates in your tracking/environment format (x, y).
+      DO NOT pre-convert to napari (row, col) - handled automatically.
+
+      ✓ CORRECT:  data=positions  # Your tracking coordinates
+      ✗ INCORRECT: data=positions[:, ::-1]  # Don't swap axes manually
+
     Represents position data for a single entity (e.g., animal, object) over time.
     Can be rendered with a trail showing recent history. For multi-animal tracking,
     create multiple PositionOverlay instances with different colors.
@@ -173,12 +180,8 @@ class PositionOverlay:
     data : ndarray of shape (n_samples, n_dims), dtype float64
         Position coordinates in **environment (x, y) format**. Each row is a
         position at a time point. Dimensionality must match the environment
-        (env.n_dims).
-
-        **Important**: Use the same coordinate system as your tracking data
-        and Environment. Do NOT pre-convert to napari (row, col) format - the
-        animation system handles coordinate transformation automatically,
-        including axis swap and Y-axis inversion for proper display.
+        (env.n_dims). The animation system handles coordinate transformation
+        automatically, including axis swap and Y-axis inversion for proper display.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each position sample, in seconds. If None, samples are
         assumed uniformly spaced at the animation fps rate. Must be

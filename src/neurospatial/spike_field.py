@@ -171,7 +171,9 @@ def compute_directional_place_fields(
     positions: NDArray[np.float64],
     direction_labels: NDArray[np.object_],
     *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
 ) -> DirectionalPlaceFields:
@@ -196,7 +198,7 @@ def compute_directional_place_fields(
         Direction label for each timepoint. Each label is a hashable string
         (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
         from results, allowing unlabeled periods to be ignored.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed to ``compute_place_field``. See that function
         for detailed descriptions of each method.
     bandwidth : float, default=5.0
@@ -295,7 +297,7 @@ def compute_directional_place_fields(
             spike_times_sub,
             times_sub,
             positions_sub,
-            method=method,
+            smoothing_method=smoothing_method,
             bandwidth=bandwidth,
             min_occupancy_seconds=min_occupancy_seconds,
         )
@@ -744,11 +746,8 @@ def _gaussian_kde(
             traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
             occ_dens = np.sum(traj_weights * dt_computed)
 
-        # Normalize
-        if occ_dens > 0:
-            firing_rate[i] = spike_density / occ_dens
-        else:
-            firing_rate[i] = np.nan
+    # Compute firing rate with safe division
+    firing_rate = np.where(occ_dens > 0, spike_density / occ_dens, np.nan)
 
     return firing_rate
 
@@ -823,7 +822,9 @@ def compute_place_field(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
     trajectory_bins: NDArray[np.int64] | None = None,
@@ -847,7 +848,7 @@ def compute_place_field(
         Timestamps of trajectory samples (seconds).
     positions : NDArray[np.float64], shape (n_timepoints, n_dims) or (n_timepoints,)
         Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method:
 
         - **"diffusion_kde"** (default, recommended):
@@ -970,19 +971,31 @@ def compute_place_field(
     Compare all three methods:
 
     >>> rate_diffusion = compute_place_field(
-    ...     env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     smoothing_method="diffusion_kde",
+    ...     bandwidth=8.0,
     ... )
     >>> rate_gaussian = compute_place_field(
-    ...     env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     smoothing_method="gaussian_kde",
+    ...     bandwidth=8.0,
     ... )
     >>> rate_binned = compute_place_field(
-    ...     env, spike_times, times, positions, method="binned", bandwidth=8.0
+    ...     env, spike_times, times, positions, smoothing_method="binned", bandwidth=8.0
     ... )
     """
-    # Validate method
+    # Validate smoothing_method
     valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
-    if method not in valid_methods:
-        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+    if smoothing_method not in valid_methods:
+        raise ValueError(
+            f"smoothing_method must be one of {valid_methods}, got '{smoothing_method}'"
+        )
 
     # Validate bandwidth
     if bandwidth <= 0:
@@ -1019,7 +1032,7 @@ def compute_place_field(
         )
 
     # Dispatch to appropriate backend
-    match method:
+    match smoothing_method:
         case "diffusion_kde":
             return _diffusion_kde(
                 env,
@@ -1049,4 +1062,4 @@ def compute_place_field(
             )
         case _:
             # Should never reach here due to validation above
-            raise ValueError(f"Unknown method: {method}")
+            raise ValueError(f"Unknown smoothing_method: {smoothing_method}")

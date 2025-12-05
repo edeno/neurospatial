@@ -353,7 +353,7 @@ for unit_idx in example_units:
         spikes,
         times_array,
         positions_array,
-        method="diffusion_kde",
+        smoothing_method="diffusion_kde",
         bandwidth=8.0,  # 8 cm smoothing
         min_occupancy_seconds=0.5,
     )
@@ -745,7 +745,7 @@ for unit_idx in active_units:
         spikes,
         times_array,
         positions_array,
-        method="diffusion_kde",
+        smoothing_method="diffusion_kde",
         bandwidth=8.0,
         min_occupancy_seconds=0.5,
     )

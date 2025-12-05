@@ -152,7 +152,7 @@ class TestPlaceFieldComputationPerformance:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -171,7 +171,7 @@ class TestPlaceFieldComputationPerformance:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -188,7 +188,7 @@ class TestPlaceFieldComputationPerformance:
             spike_times,
             times,
             positions,
-            method="binned",
+            smoothing_method="binned",
         )
 
         assert result.shape == (small_env.n_bins,)

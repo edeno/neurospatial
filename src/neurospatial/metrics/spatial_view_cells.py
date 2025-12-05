@@ -210,7 +210,9 @@ def spatial_view_cell_metrics(
     *,
     view_distance: float = 10.0,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.1,
     info_ratio: float = 1.5,
@@ -237,7 +239,7 @@ def spatial_view_cell_metrics(
         Distance for fixed_distance gaze model (environment units).
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
         Method for computing viewed location.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method for field computation.
     bandwidth : float, default=5.0
         Smoothing bandwidth for KDE methods (environment units).
@@ -314,7 +316,7 @@ def spatial_view_cell_metrics(
         spike_times,
         times,
         positions,
-        method=method,
+        smoothing_method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy_seconds=min_occupancy_seconds,
     )
@@ -328,7 +330,7 @@ def spatial_view_cell_metrics(
         headings,
         view_distance=view_distance,
         gaze_model=gaze_model,
-        method=method,
+        smoothing_method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy_seconds=min_occupancy_seconds,
     )

@@ -12,8 +12,8 @@ Which Function Should I Use?
     of egocentric distance and direction to nearest object.
 
 **Need binned vs smoothed fields?**
-    Use ``method="binned"`` for simple histogram-based fields, or
-    ``method="diffusion_kde"`` for graph-smoothed fields.
+    Use ``smoothing_method="binned"`` for simple histogram-based fields, or
+    ``smoothing_method="diffusion_kde"`` for graph-smoothed fields.
 
 **Using geodesic distances?**
     Pass ``allocentric_env`` and ``distance_metric="geodesic"`` to compute
@@ -134,7 +134,7 @@ def compute_object_vector_field(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     min_occupancy_seconds: float = 0.1,
-    method: Literal["binned", "diffusion_kde"] = "binned",
+    smoothing_method: Literal["binned", "diffusion_kde"] = "binned",
     bandwidth: float = 5.0,
     allocentric_env: Environment | None = None,
     distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
@@ -167,12 +167,12 @@ def compute_object_vector_field(
     min_occupancy_seconds : float, default=0.1
         Minimum occupancy required in a bin (seconds). Bins with less
         occupancy are set to NaN.
-    method : {"binned", "diffusion_kde"}, default="binned"
+    smoothing_method : {"binned", "diffusion_kde"}, default="binned"
         Smoothing method:
         - "binned": Simple histogram-based field
         - "diffusion_kde": Graph-smoothed field using diffusion KDE
     bandwidth : float, default=5.0
-        Smoothing bandwidth for diffusion_kde method. Units should match
+        Smoothing bandwidth for diffusion_kde smoothing_method. Units should match
         the position coordinates (e.g., centimeters).
     allocentric_env : Environment, optional
         Allocentric environment for geodesic distance calculation.
@@ -191,7 +191,7 @@ def compute_object_vector_field(
     ------
     ValueError
         If spike_times is empty, arrays have mismatched lengths,
-        method is invalid, or geodesic requires allocentric_env.
+        smoothing_method is invalid, or geodesic requires allocentric_env.
 
     Examples
     --------
@@ -254,10 +254,10 @@ def compute_object_vector_field(
             f"2. Check for dropped frames or different sampling rates"
         )
 
-    if method not in ("binned", "diffusion_kde"):
+    if smoothing_method not in ("binned", "diffusion_kde"):
         raise ValueError(
-            f"Invalid smoothing method: '{method}'.\n\n"
-            f"WHAT: method must be 'binned' or 'diffusion_kde'\n"
+            f"Invalid smoothing_method: '{smoothing_method}'.\n\n"
+            f"WHAT: smoothing_method must be 'binned' or 'diffusion_kde'\n"
             f"WHY: These are the supported spatial smoothing algorithms\n\n"
             f"HOW to choose:\n"
             f"1. 'binned' - Simple histogram (faster, noisier)\n"
@@ -440,7 +440,7 @@ def compute_object_vector_field(
     field = np.zeros(ego_env.n_bins, dtype=np.float64)
     sufficient_occupancy = occupancy >= min_occupancy_seconds
 
-    if method == "binned":
+    if smoothing_method == "binned":
         field[sufficient_occupancy] = (
             spike_counts[sufficient_occupancy] / occupancy[sufficient_occupancy]
         )

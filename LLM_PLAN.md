@@ -42,7 +42,7 @@ Provide JSON‑safe, high‑level agent functions that wrap existing APIs:
   - `load_environment_tool(path) -> {"env_id": str, "summary": {...}}` (wraps `from_file` / later `Environment.from_nwb`).
 - **Basic analysis**
   - `compute_occupancy_tool(env_id, times, positions, **options) -> {"field_id": str, "summary": {...}}`
-  - `compute_place_field_tool(env_id, spike_times, times, positions, method="diffusion_kde", **options) -> {"field_id": str, "summary": {...}}`
+  - `compute_place_field_tool(env_id, spike_times, times, positions, smoothing_method="diffusion_kde", **options) -> {"field_id": str, "summary": {...}}`
   - Inputs/outputs must be JSON‑safe: lists, dicts, floats, ints, bools.
 - **Geometry / regions**
   - `list_regions_tool(env_id) -> {"regions": [..., {"name": str, "type": "point|polygon", ...}]}`

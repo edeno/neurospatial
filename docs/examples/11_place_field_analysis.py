@@ -175,7 +175,7 @@ firing_rate = compute_place_field(
     spike_times,
     times,
     positions,
-    method="diffusion_kde",  # Default: boundary-aware graph-based KDE
+    smoothing_method="diffusion_kde",  # Default: boundary-aware graph-based KDE
     bandwidth=5.0,  # Spatial smoothing bandwidth (cm)
 )
 

@@ -266,7 +266,7 @@ class TestComputeSpatialViewField:
             times=times,
             positions=positions,
             headings=headings,
-            method="binned",
+            smoothing_method="binned",
         )
 
         # Field should be valid
@@ -294,7 +294,7 @@ class TestComputeSpatialViewField:
             times=times,
             positions=positions,
             headings=headings,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -323,7 +323,7 @@ class TestComputeSpatialViewField:
             times=times,
             positions=positions,
             headings=headings,
-            method="gaussian_kde",
+            smoothing_method="gaussian_kde",
             bandwidth=5.0,
         )
 
@@ -535,14 +535,14 @@ class TestValidation:
         headings = rng.uniform(-np.pi, np.pi, n_time)
         spike_times = np.array([1.0, 2.0, 3.0])
 
-        with pytest.raises(ValueError, match="method"):
+        with pytest.raises(ValueError, match="smoothing_method"):
             compute_spatial_view_field(
                 env=env,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
                 headings=headings,
-                method="invalid_method",  # type: ignore[arg-type]
+                smoothing_method="invalid_method",  # type: ignore[arg-type]
             )
 
     def test_validation_invalid_gaze_model(self) -> None:
@@ -720,7 +720,7 @@ class TestRecoverGroundTruthFromSimulation:
             spike_times=spike_times,
             times=times,
             positions=positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
 

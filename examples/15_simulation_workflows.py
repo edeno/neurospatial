@@ -415,7 +415,7 @@ print(f"  Grid spacing: {grid_session.metadata['grid_spacing']} cm")
 # Validate the open field session
 report = validate_simulation(
     session=open_field,
-    method="diffusion_kde",  # Use boundary-aware place field detection
+    smoothing_method="diffusion_kde",  # Use boundary-aware place field detection
     show_plots=False,  # Set to True to see diagnostic plots
 )
 

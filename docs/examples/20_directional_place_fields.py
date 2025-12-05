@@ -295,7 +295,7 @@ directional_fields = compute_directional_place_fields(
     times,
     positions,
     direction_labels,
-    method="diffusion_kde",
+    smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
 
@@ -319,7 +319,7 @@ overall_field = compute_place_field(
     spike_times,
     times,
     positions,
-    method="diffusion_kde",
+    smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
 
@@ -556,7 +556,7 @@ directional_fields_heading = compute_directional_place_fields(
     arena_times,
     arena_positions,
     heading_labels,
-    method="diffusion_kde",
+    smoothing_method="diffusion_kde",
     bandwidth=10.0,
 )
 

@@ -251,7 +251,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -261,7 +261,7 @@ class TestComputeDirectionalPlaceFields:
             spike_times,
             times,
             positions,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -289,7 +289,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -320,7 +320,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -346,7 +346,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -370,7 +370,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 
@@ -404,7 +404,7 @@ class TestComputeDirectionalPlaceFields:
                 times,
                 positions,
                 wrong_labels,
-                method="binned",
+                smoothing_method="binned",
                 bandwidth=10.0,
             )
 
@@ -423,7 +423,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=10.0,
         )
 

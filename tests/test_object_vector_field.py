@@ -290,7 +290,7 @@ class TestComputeObjectVectorField:
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            method="binned",
+            smoothing_method="binned",
         )
 
         # Field should be valid
@@ -315,7 +315,7 @@ class TestComputeObjectVectorField:
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
         )
 
         # Field should be valid
@@ -422,14 +422,14 @@ class TestComputeObjectVectorField:
         object_positions = np.array([[50.0, 50.0]])
         spike_times = np.array([1.0, 2.0, 3.0])
 
-        with pytest.raises(ValueError, match="method"):
+        with pytest.raises(ValueError, match="smoothing_method"):
             compute_object_vector_field(
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
                 headings=headings,
                 object_positions=object_positions,
-                method="invalid_method",
+                smoothing_method="invalid_method",
             )
 
 

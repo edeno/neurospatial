@@ -248,7 +248,7 @@ class TestPlaceFieldDetectionAccuracy:
             if len(spike_times) > 5:
                 # Compute place field
                 rate_map = compute_place_field(
-                    env, spike_times, times, positions, method="diffusion_kde"
+                    env, spike_times, times, positions, smoothing_method="diffusion_kde"
                 )
 
                 # Find peak (detected center)
@@ -304,7 +304,11 @@ class TestPlaceFieldDetectionAccuracy:
         # Detect centers
         if len(spikes_short) > 0:
             rate_map_short = compute_place_field(
-                env, spikes_short, times_short, positions_short, method="diffusion_kde"
+                env,
+                spikes_short,
+                times_short,
+                positions_short,
+                smoothing_method="diffusion_kde",
             )
             detected_short = env.bin_centers[np.argmax(rate_map_short)]
             error_short = np.linalg.norm(center - detected_short)
@@ -313,7 +317,11 @@ class TestPlaceFieldDetectionAccuracy:
 
         if len(spikes_long) > 0:
             rate_map_long = compute_place_field(
-                env, spikes_long, times_long, positions_long, method="diffusion_kde"
+                env,
+                spikes_long,
+                times_long,
+                positions_long,
+                smoothing_method="diffusion_kde",
             )
             detected_long = env.bin_centers[np.argmax(rate_map_long)]
             error_long = np.linalg.norm(center - detected_long)

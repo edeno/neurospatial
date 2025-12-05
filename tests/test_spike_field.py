@@ -272,18 +272,26 @@ class TestComputePlaceField:
 
         # Explicit diffusion_kde call
         field_explicit = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         assert_array_equal(field_default, field_explicit)
 
     @pytest.mark.parametrize(
-        "method",
+        "smoothing_method",
         ["diffusion_kde", "gaussian_kde", "binned"],
         ids=["diffusion_kde", "gaussian_kde", "binned"],
     )
     def test_all_methods_produce_valid_output(
-        self, method, spike_field_env_random: Environment, spike_field_random_trajectory
+        self,
+        smoothing_method,
+        spike_field_env_random: Environment,
+        spike_field_random_trajectory,
     ):
         """Test that all three methods produce valid firing rate maps."""
         env = spike_field_env_random
@@ -292,7 +300,12 @@ class TestComputePlaceField:
         spike_times = rng.uniform(0, 50, 25)
 
         field = compute_place_field(
-            env, spike_times, times, positions, method=method, bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=5.0,
         )
 
         # Check shape
@@ -315,7 +328,12 @@ class TestComputePlaceField:
         spike_times = rng.uniform(0, 50, 25)
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Diffusion KDE should have no NaN bins (naturally handles low occupancy)
@@ -335,7 +353,7 @@ class TestComputePlaceField:
             spike_times,
             times,
             positions,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=5.0,
             min_occupancy_seconds=5.0,
         )
@@ -346,7 +364,7 @@ class TestComputePlaceField:
             spike_times,
             times,
             positions,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=5.0,
             min_occupancy_seconds=0.1,
         )
@@ -371,13 +389,23 @@ class TestComputePlaceField:
 
         # Compute with all three methods
         field_diffusion = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=8.0,
         )
         field_gaussian = compute_place_field(
-            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="gaussian_kde",
+            bandwidth=8.0,
         )
         field_binned = compute_place_field(
-            env, spike_times, times, positions, method="binned", bandwidth=8.0
+            env, spike_times, times, positions, smoothing_method="binned", bandwidth=8.0
         )
 
         # For open field with good coverage, all methods should give similar results
@@ -405,12 +433,15 @@ class TestComputePlaceField:
             )
 
     @pytest.mark.parametrize(
-        "method",
+        "smoothing_method",
         ["diffusion_kde", "gaussian_kde", "binned"],
         ids=["diffusion_kde", "gaussian_kde", "binned"],
     )
     def test_empty_spikes(
-        self, method, spike_field_env_100: Environment, spike_field_trajectory
+        self,
+        smoothing_method,
+        spike_field_env_100: Environment,
+        spike_field_trajectory,
     ):
         """Test that all methods handle empty spike train correctly."""
         env = spike_field_env_100
@@ -418,7 +449,12 @@ class TestComputePlaceField:
         spike_times = np.array([])
 
         field = compute_place_field(
-            env, spike_times, times, positions, method=method, bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=5.0,
         )
 
         # Should have valid shape
@@ -437,14 +473,14 @@ class TestComputePlaceField:
         env = Environment.from_samples(positions, bin_size=20.0)
         spike_times = np.array([1.0, 2.0])
 
-        # Invalid method
-        with pytest.raises(ValueError, match="method must be one of"):
+        # Invalid smoothing_method
+        with pytest.raises(ValueError, match="smoothing_method must be one of"):
             compute_place_field(
                 env,
                 spike_times,
                 times,
                 positions,
-                method="invalid_method",
+                smoothing_method="invalid_method",
                 bandwidth=5.0,
             )
 
@@ -455,7 +491,7 @@ class TestComputePlaceField:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=-5.0,
             )
 
@@ -465,7 +501,7 @@ class TestComputePlaceField:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=0.0,
             )
 
@@ -479,16 +515,16 @@ class TestComputePlaceField:
                 spike_times,
                 bad_times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=5.0,
             )
 
     @pytest.mark.parametrize(
-        "method",
+        "smoothing_method",
         ["diffusion_kde", "gaussian_kde", "binned"],
         ids=["diffusion_kde", "gaussian_kde", "binned"],
     )
-    def test_1d_trajectory_all_methods(self, method):
+    def test_1d_trajectory_all_methods(self, smoothing_method):
         """Test that all methods handle 1D trajectories correctly."""
         positions = np.linspace(0, 100, 1000).reshape(-1, 1)
         times = np.linspace(0, 10, 1000)
@@ -496,7 +532,12 @@ class TestComputePlaceField:
         spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         field = compute_place_field(
-            env, spike_times, times, positions, method=method, bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=5.0,
         )
 
         assert field.shape == (env.n_bins,)
@@ -512,7 +553,12 @@ class TestComputePlaceField:
         spike_times = rng.uniform(0, 50, 25)
 
         field_diffusion = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=8.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=8.0,
         )
 
         # Diffusion KDE should have smoother spatial distribution
@@ -555,7 +601,12 @@ class TestComputePlaceField:
         env = Environment.from_samples(positions, bin_size=8.0)
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="gaussian_kde",
+            bandwidth=8.0,
         )
 
         # Should produce valid output
@@ -579,7 +630,7 @@ class TestComputePlaceField:
             spike_times,
             times,
             positions,
-            method="binned",
+            smoothing_method="binned",
             bandwidth=5.0,
             min_occupancy_seconds=0.5,
         )
@@ -621,7 +672,12 @@ class TestComputePlaceField:
         env = Environment.from_samples(positions, bin_size=0.5)
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=1.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=1.0,
         )
 
         # Should produce valid output
@@ -642,7 +698,12 @@ class TestComputePlaceField:
         spike_times = np.array([10.0, 50.0, 90.0])
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Should handle sparse spikes gracefully
@@ -663,7 +724,12 @@ class TestComputePlaceField:
         spike_times = np.array([5.0])
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Should produce valid field with single spike
@@ -686,7 +752,12 @@ class TestComputePlaceField:
         env = Environment.from_samples(positions, bin_size=20.0)
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=10.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=10.0,
         )
 
         # Should handle 3D correctly
@@ -710,7 +781,12 @@ class TestComputePlaceField:
         assert env.n_bins < 10, "Small area should have few bins"
 
         field = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Should handle single/few bin case
@@ -735,7 +811,12 @@ class TestPrecomputedData:
 
         # Compute without precomputed data
         field_fresh = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Precompute trajectory bins
@@ -747,7 +828,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
             trajectory_bins=trajectory_bins,
         )
@@ -765,7 +846,12 @@ class TestPrecomputedData:
 
         # Compute without precomputed data
         field_fresh = compute_place_field(
-            env, spike_times, times, positions, method="diffusion_kde", bandwidth=5.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
         )
 
         # Precompute dt
@@ -777,7 +863,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
             dt=dt,
         )
@@ -801,7 +887,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
         )
 
@@ -814,7 +900,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
             kernel=kernel,
         )
@@ -838,7 +924,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
         )
 
@@ -861,7 +947,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
             occupancy_density=occupancy_density,
             kernel=kernel,
@@ -886,7 +972,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
         )
 
@@ -909,7 +995,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
             trajectory_bins=trajectory_bins,
             dt=dt,
@@ -930,7 +1016,12 @@ class TestPrecomputedData:
 
         # Compute without precomputed data
         field_fresh = compute_place_field(
-            env, spike_times, times, positions, method="gaussian_kde", bandwidth=8.0
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method="gaussian_kde",
+            bandwidth=8.0,
         )
 
         # Precompute dt
@@ -942,7 +1033,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="gaussian_kde",
+            smoothing_method="gaussian_kde",
             bandwidth=8.0,
             dt=dt,
         )
@@ -970,7 +1061,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="gaussian_kde",
+            smoothing_method="gaussian_kde",
             bandwidth=bandwidth,
         )
 
@@ -989,7 +1080,7 @@ class TestPrecomputedData:
             spike_times,
             times,
             positions,
-            method="gaussian_kde",
+            smoothing_method="gaussian_kde",
             bandwidth=bandwidth,
             occupancy_density=occupancy_density,
         )
@@ -1029,7 +1120,7 @@ class TestPrecomputedData:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=bandwidth,
                 trajectory_bins=trajectory_bins,
                 dt=dt,
@@ -1069,7 +1160,7 @@ class TestPrecomputedData:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=5.0,
                 trajectory_bins=bad_trajectory_bins,
             )
@@ -1091,7 +1182,7 @@ class TestPrecomputedData:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=5.0,
                 dt=bad_dt,
             )
@@ -1113,7 +1204,7 @@ class TestPrecomputedData:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=5.0,
                 occupancy_density=bad_occupancy_density,
             )
@@ -1135,7 +1226,7 @@ class TestPrecomputedData:
                 spike_times,
                 times,
                 positions,
-                method="diffusion_kde",
+                smoothing_method="diffusion_kde",
                 bandwidth=5.0,
                 kernel=bad_kernel,
             )

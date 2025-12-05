@@ -1202,25 +1202,11 @@ class Environment(
 
         # Clear @cached_property values from instance __dict__ if requested
         if cached_properties:
-            # IMPORTANT: When adding new @cached_property methods to Environment or its mixins,
-            # you MUST add them to this list to ensure they're cleared by clear_cache().
-            # Current @cached_property methods across all mixins:
-            #   - core.py: differential_operator, _source_flat_to_active_node_id_map
-            #   - queries.py: bin_sizes
-            #   - metrics.py: boundary_bins, bin_attributes, edge_attributes, linearization_properties
-            cached_property_names = [
-                # core.py
-                "differential_operator",
-                "_source_flat_to_active_node_id_map",
-                # queries.py
-                "bin_sizes",
-                # metrics.py
-                "boundary_bins",
-                "bin_attributes",
-                "edge_attributes",
-                "linearization_properties",
-            ]
-
-            for prop_name in cached_property_names:
-                # Remove from __dict__ if present (cached_property stores value here)
-                self.__dict__.pop(prop_name, None)
+            # Dynamically discover all @cached_property attributes across the class hierarchy
+            # This avoids maintaining a hardcoded list that can become stale when adding
+            # new cached properties to Environment or its mixins.
+            for cls in type(self).__mro__:
+                for name, attr in vars(cls).items():
+                    if isinstance(attr, cached_property):
+                        # Remove from __dict__ if present (cached_property stores value here)
+                        self.__dict__.pop(name, None)

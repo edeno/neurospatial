@@ -104,7 +104,7 @@ from neurospatial import compute_place_field
 # Compute place field for one neuron
 firing_rate = compute_place_field(
     env, spike_times, times, positions,
-    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0  # Smoothing bandwidth (cm)
 )
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
@@ -362,7 +362,7 @@ result = compute_object_vector_field(
     max_distance=50.0,                 # Max distance to consider (cm)
     n_distance_bins=10,                # Number of radial bins
     n_direction_bins=12,               # Number of angular bins
-    method="diffusion_kde",            # or "binned"
+    smoothing_method="diffusion_kde",            # or "binned"
 )
 
 # Access results
@@ -471,7 +471,7 @@ result = compute_spatial_view_field(
     headings=headings,
     view_distance=15.0,      # Fixed viewing distance
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
-    method="diffusion_kde",  # or "binned", "gaussian_kde"
+    smoothing_method="diffusion_kde",  # or "binned", "gaussian_kde"
 )
 
 # Access results

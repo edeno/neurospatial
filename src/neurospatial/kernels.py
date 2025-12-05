@@ -73,7 +73,7 @@ def compute_diffusion_kernels(
     number of bins. For large environments (>1000 bins), computation may be slow.
 
     A UserWarning is issued when n_bins > 3000. For very large environments,
-    consider using ``method="binned"`` in higher-level functions or reducing
+    consider using ``smoothing_method="binned"`` in higher-level functions or reducing
     bin_size to decrease the number of bins.
     """
     # 1) Validate bandwidth is positive

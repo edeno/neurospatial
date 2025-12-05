@@ -101,14 +101,14 @@ svc_view_result = compute_spatial_view_field(
     positions,
     headings,
     view_distance=15.0,
-    method="diffusion_kde",
+    smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
 svc_view_field = svc_view_result.field
 
 # Place field: binned by POSITION
 svc_place_field = compute_place_field(
-    env, svc_spikes, times, positions, method="diffusion_kde", bandwidth=8.0
+    env, svc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
 )
 
 # Same for place cell
@@ -119,12 +119,12 @@ pc_view_result = compute_spatial_view_field(
     positions,
     headings,
     view_distance=15.0,
-    method="diffusion_kde",
+    smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
 pc_view_field = pc_view_result.field
 pc_place_field = compute_place_field(
-    env, pc_spikes, times, positions, method="diffusion_kde", bandwidth=8.0
+    env, pc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
 )
 
 # %% Classify cells
