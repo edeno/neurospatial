@@ -18,6 +18,8 @@ trajectory
     Trajectory characterization metrics (turn angles, step lengths, home range, MSD).
 path_efficiency
     Path efficiency metrics for spatial navigation analysis.
+goal_directed
+    Goal-directed navigation metrics (goal bias, approach rate).
 
 """
 
@@ -36,6 +38,15 @@ from neurospatial.metrics.circular_basis import (
     circular_basis_metrics,
     is_modulated,
     plot_circular_basis_tuning,
+)
+from neurospatial.metrics.goal_directed import (
+    GoalDirectedMetrics,
+    approach_rate,
+    compute_goal_directed_metrics,
+    goal_bias,
+    goal_direction,
+    goal_vector,
+    instantaneous_goal_alignment,
 )
 from neurospatial.metrics.grid_cells import (
     GridProperties,
@@ -117,6 +128,7 @@ from neurospatial.metrics.trajectory import (
 
 __all__ = [
     "CircularBasisResult",
+    "GoalDirectedMetrics",
     "GridProperties",
     "HeadDirectionMetrics",
     "ObjectVectorMetrics",
@@ -126,12 +138,14 @@ __all__ = [
     "SpatialViewMetrics",
     "SubgoalEfficiencyResult",
     "angular_efficiency",
+    "approach_rate",
     "border_score",
     "circular_basis",
     "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
     "compute_field_emd",
+    "compute_goal_directed_metrics",
     "compute_home_range",
     "compute_object_vector_tuning",
     "compute_path_efficiency",
@@ -147,6 +161,9 @@ __all__ = [
     "field_shift_distance",
     "field_size",
     "field_stability",
+    "goal_bias",
+    "goal_direction",
+    "goal_vector",
     "grid_orientation",
     "grid_properties",
     "grid_scale",
@@ -156,6 +173,7 @@ __all__ = [
     "head_direction_tuning_curve",
     "in_out_field_ratio",
     "information_per_second",
+    "instantaneous_goal_alignment",
     "is_head_direction_cell",
     "is_modulated",
     "is_object_vector_cell",

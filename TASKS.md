@@ -149,66 +149,66 @@ path_efficiency.py (no internal dependencies)
 
 ### M2.1: Module Setup
 
-- [ ] Create `goal_directed.py` with module docstring
-- [ ] Add imports from `neurospatial.reference_frames`, `neurospatial.behavioral`
+- [x] Create `goal_directed.py` with module docstring
+- [x] Add imports from `neurospatial.reference_frames`, `neurospatial.behavioral`
 
 ### M2.2: Data Structures
 
-- [ ] Implement `GoalDirectedMetrics` frozen dataclass
-  - [ ] Fields: `goal_bias`, `mean_approach_rate`, `time_to_goal`, `min_distance_to_goal`, `goal_distance_at_start`, `goal_distance_at_end`, `goal_position`, `metric`
-  - [ ] Method: `is_goal_directed(threshold=0.3) -> bool`
-  - [ ] Method: `summary() -> str`
+- [x] Implement `GoalDirectedMetrics` frozen dataclass
+  - [x] Fields: `goal_bias`, `mean_approach_rate`, `time_to_goal`, `min_distance_to_goal`, `goal_distance_at_start`, `goal_distance_at_end`, `goal_position`, `metric`
+  - [x] Method: `is_goal_directed(threshold=0.3) -> bool`
+  - [x] Method: `summary() -> str`
 
 ### M2.3: Core Functions
 
-- [ ] Implement `goal_vector(positions, goal) -> NDArray`
-  - [ ] Compute `goal - positions` for each timepoint
-  - [ ] Validate dimension match
-- [ ] Implement `goal_direction(positions, goal) -> NDArray`
-  - [ ] Compute `atan2` of goal vector
-- [ ] Implement `instantaneous_goal_alignment(positions, times, goal, *, min_speed=5.0) -> NDArray`
-  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
-  - [ ] Compute cosine of angle between velocity and goal direction
-  - [ ] NaN for stationary periods (handled by `heading_from_velocity`)
-- [ ] Implement `goal_bias(positions, times, goal, *, min_speed=5.0) -> float`
-  - [ ] Mean of `instantaneous_goal_alignment`, ignoring NaN
-- [ ] Implement `approach_rate(positions, times, goal, *, metric="geodesic", env=None) -> NDArray`
-  - [ ] Compute `d/dt` of distance to goal
-  - [ ] Negative = approaching, positive = retreating
+- [x] Implement `goal_vector(positions, goal) -> NDArray`
+  - [x] Compute `goal - positions` for each timepoint
+  - [x] Validate dimension match
+- [x] Implement `goal_direction(positions, goal) -> NDArray`
+  - [x] Compute `atan2` of goal vector
+- [x] Implement `instantaneous_goal_alignment(positions, times, goal, *, min_speed=5.0) -> NDArray`
+  - [x] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [x] Compute cosine of angle between velocity and goal direction
+  - [x] NaN for stationary periods (handled by `heading_from_velocity`)
+- [x] Implement `goal_bias(positions, times, goal, *, min_speed=5.0) -> float`
+  - [x] Mean of `instantaneous_goal_alignment`, ignoring NaN
+- [x] Implement `approach_rate(positions, times, goal, *, metric="geodesic", env=None) -> NDArray`
+  - [x] Compute `d/dt` of distance to goal
+  - [x] Negative = approaching, positive = retreating
 
 ### M2.4: Composite Function
 
-- [ ] Implement `compute_goal_directed_metrics(env, positions, times, goal, ...) -> GoalDirectedMetrics`
-  - [ ] Combine all metrics
-  - [ ] Compute `time_to_goal` if goal region reached
+- [x] Implement `compute_goal_directed_metrics(env, positions, times, goal, ...) -> GoalDirectedMetrics`
+  - [x] Combine all metrics
+  - [x] Compute `time_to_goal` if goal region reached
 
 ### M2.5: Tests
 
 **File**: `tests/metrics/test_goal_directed.py`
 
-- [ ] Test `goal_vector()` dimension validation
-- [ ] Test `instantaneous_goal_alignment()` for direct approach (should be ~1.0)
-- [ ] Test `goal_bias()` for moving away (should be negative)
-- [ ] Test `goal_bias()` for circular path around goal (should be ~0)
-- [ ] Test `approach_rate()` sign convention
-- [ ] Test edge cases (stationary animal, single position)
+- [x] Test `goal_vector()` dimension validation
+- [x] Test `instantaneous_goal_alignment()` for direct approach (should be ~1.0)
+- [x] Test `goal_bias()` for moving away (should be negative)
+- [x] Test `goal_bias()` for circular path around goal (should be ~0)
+- [x] Test `approach_rate()` sign convention
+- [x] Test edge cases (stationary animal, single position)
 
 ### M2.6: Exports
 
-- [ ] Add to `src/neurospatial/metrics/__init__.py`:
-  - [ ] `GoalDirectedMetrics`
-  - [ ] `goal_vector`
-  - [ ] `goal_direction`
-  - [ ] `instantaneous_goal_alignment`
-  - [ ] `goal_bias`
-  - [ ] `approach_rate`
-  - [ ] `compute_goal_directed_metrics`
+- [x] Add to `src/neurospatial/metrics/__init__.py`:
+  - [x] `GoalDirectedMetrics`
+  - [x] `goal_vector`
+  - [x] `goal_direction`
+  - [x] `instantaneous_goal_alignment`
+  - [x] `goal_bias`
+  - [x] `approach_rate`
+  - [x] `compute_goal_directed_metrics`
 
 **Success criteria**:
 
-- [ ] Direct approach to goal: `goal_bias > 0.8`
-- [ ] Moving away from goal: `goal_bias < -0.5`
-- [ ] All tests pass: `uv run pytest tests/metrics/test_goal_directed.py -v`
+- [x] Direct approach to goal: `goal_bias > 0.8`
+- [x] Moving away from goal: `goal_bias < -0.5`
+- [x] All tests pass: `uv run pytest tests/metrics/test_goal_directed.py -v`
 
 ---
 
@@ -261,7 +261,7 @@ path_efficiency.py (no internal dependencies)
   - [ ] Compute distance field from each goal
   - [ ] Label each bin by nearest goal
   - [ ] Mark unreachable bins as -1
-  - [ ] Add performance note: O(n_goals * n_bins * log(n_bins))
+  - [ ] Add performance note: O(n_goals *n_bins* log(n_bins))
 - [ ] Implement `distance_to_decision_boundary(env, trajectory_bins, goal_bins) -> NDArray[np.float64]`
   - [ ] For each position, compute distance to nearest boundary
 - [ ] Implement `detect_boundary_crossings(trajectory_bins, voronoi_labels, times) -> tuple[list, list]`
@@ -463,12 +463,14 @@ path_efficiency.py (no internal dependencies)
 1. **Parameter naming**: Use `metric` (not `distance_type`) for consistency with `behavioral.py`
 
 2. **`heading_from_velocity()` signature**: Takes `dt: float`, not `times` array
+
    ```python
    dt = float(np.median(np.diff(times)))
    headings = heading_from_velocity(positions, dt, min_speed=min_speed)
    ```
 
 3. **Circular statistics**: Compute directly, not via private functions
+
    ```python
    cos_headings = np.cos(headings)
    sin_headings = np.sin(headings)
