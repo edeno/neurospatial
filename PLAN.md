@@ -288,8 +288,22 @@ def compute_egocentric_distance_geodesic(
 ) -> NDArray[np.float64]:
     """Compute geodesic distance to targets using environment connectivity.
 
-    Note: For repeated queries with fixed targets, precompute distance fields
-    using distance_field() and index by animal bin for better performance.
+    Performance Warning
+    -------------------
+    This function recomputes distance fields on every call. For repeated
+    queries with fixed targets (e.g., object-vector cell analysis), precompute
+    distance fields once and index by animal bin:
+
+    >>> # Precompute once
+    >>> target_bins = env.bin_at(object_positions)
+    >>> dist_fields = [distance_field(env.connectivity, [b]) for b in target_bins]
+    >>>
+    >>> # Then in analysis loop:
+    >>> animal_bin = env.bin_at(position)
+    >>> distances = np.array([df[animal_bin] for df in dist_fields])
+
+    The ObjectVectorCellModel class uses this optimization in __post_init__
+    to avoid repeated computation during firing_rate() calls.
     """
     from neurospatial.distance import distance_field
 
@@ -357,13 +371,13 @@ def compute_egocentric_distance(
         raise ValueError(f"Unknown metric: {metric}")
 ```
 
-### M1.2: Egocentric Environment Grid
+### M1.2: Egocentric Polar Environment
 
 **File**: `src/neurospatial/environment/factories.py` (add method)
 
 ```python
 @classmethod
-def from_egocentric_grid(
+def from_polar_egocentric(
     cls,
     distance_range: tuple[float, float] = (0.0, 50.0),
     angle_range: tuple[float, float] = (-np.pi, np.pi),
@@ -374,12 +388,9 @@ def from_egocentric_grid(
 ) -> "Environment":
     """Create polar environment for egocentric rate maps.
 
-    Creates a 2D grid in (distance, angle) space centered on animal.
-    Useful for egocentric place fields and object-vector analysis.
-
-    **Naming Note**: Despite "grid" in the name, this creates a **polar**
-    coordinate environment (distance × angle), not a Cartesian grid.
-    The name reflects that it uses the regular grid machinery internally.
+    Creates a 2D environment in (distance, angle) polar coordinates
+    centered on the animal. Useful for egocentric place fields and
+    object-vector analysis.
 
     **Important**: This environment lives in egocentric polar coordinates,
     not physical allocentric space. Dimension 0 is radial distance from
@@ -404,7 +415,7 @@ def from_egocentric_grid(
     Returns
     -------
     Environment
-        Polar grid environment. Access bin centers via:
+        Polar environment. Access bin centers via:
         - env.bin_centers[:, 0] = distances
         - env.bin_centers[:, 1] = angles
 
@@ -419,7 +430,7 @@ def from_egocentric_grid(
 
     Examples
     --------
-    >>> ego_env = Environment.from_egocentric_grid(
+    >>> ego_env = Environment.from_polar_egocentric(
     ...     distance_range=(0, 50),
     ...     distance_bin_size=5.0,
     ...     angle_bin_size=np.pi / 6,  # 30° bins
@@ -473,7 +484,7 @@ def heading_from_velocity(
     ----------
     - n_time < 2: Raises ValueError (cannot compute velocity)
     - n_time == 2: Returns heading from single velocity vector (no smoothing)
-    - All speeds below min_speed: Returns zeros (forward-fills initial direction)
+    - All speeds below min_speed: Returns NaN array (cannot determine heading)
 
     Implementation:
     1. Compute velocity via finite differences
@@ -517,18 +528,16 @@ def heading_from_velocity(
             import warnings
             warnings.warn(
                 f"All {n_time} timepoints have speed below min_speed={min_speed}.\n\n"
-                "This usually means:\n"
-                "- Animal was stationary throughout recording\n"
-                "- Position tracking has low temporal resolution\n"
-                "- min_speed threshold is too high\n\n"
-                "Returning zeros (forward heading). Consider:\n"
-                "1. Lowering min_speed threshold\n"
-                "2. Using heading_from_body_orientation() with pose keypoints\n"
-                "3. Using a fixed heading value for stationary analysis",
+                "Cannot compute velocity-based heading for stationary trajectory.\n\n"
+                "Returning NaN array. Options to resolve:\n"
+                "1. Use heading_from_body_orientation() with pose keypoints\n"
+                "2. Provide externally measured heading data\n"
+                "3. Lower min_speed threshold if animal is moving slowly\n"
+                "4. Use a fixed heading value if appropriate for your analysis",
                 category=UserWarning,
                 stacklevel=2,
             )
-            return np.zeros(n_time)
+            return np.full(n_time, np.nan)
 
         # Circular interpolation via unit vectors
         unit_x = np.cos(heading)
@@ -625,6 +634,7 @@ def heading_from_body_orientation(
 **File**: `tests/test_reference_frames.py`
 
 **Test categories**:
+
 1. `TestModuleSetup` - imports, docstrings, `__all__`
 2. `TestEgocentricFrame` - dataclass, to_egocentric, to_allocentric, round-trip
 3. `TestAllocentricToEgocentric` - batch transform, broadcasting, edge cases
@@ -633,6 +643,7 @@ def heading_from_body_orientation(
 6. `TestHeadingFromBodyOrientation` - pose-based heading
 
 **Critical test cases**:
+
 - Round-trip: `allocentric → egocentric → allocentric` preserves positions
 - Heading=0: egocentric x-axis aligns with allocentric x-axis
 - Heading=π/2: egocentric x-axis aligns with allocentric y-axis
@@ -642,6 +653,7 @@ def heading_from_body_orientation(
 ### M1.5: Documentation
 
 **Updates required**:
+
 - `.claude/QUICKSTART.md`: Add egocentric transform examples
 - `.claude/API_REFERENCE.md`: Add `reference_frames` module
 - `src/neurospatial/__init__.py`: Export key functions
@@ -721,8 +733,15 @@ class ObjectVectorCellModel:
         - kappa=1: very broad (~60° half-width)
         - kappa=4: moderate (~30° half-width)
         - kappa=10: narrow (~18° half-width)
-        Note: The approximation κ ≈ 1/σ² only holds for large κ (>2).
-        For tuning width, use half-width ≈ arccos(1 - 1/κ) for κ > 1.
+
+        **Normalization Note**: The direction tuning is scaled to peak=1
+        for interpretability (multiplied with distance tuning), NOT
+        normalized as a probability distribution. If you need proper
+        probability density, use scipy.stats.vonmises instead.
+
+        **Approximation Note**: The approximation κ ≈ 1/σ² only holds
+        for large κ (>2). For tuning width, use half-width ≈ arccos(1 - 1/κ)
+        for κ > 1.
     object_selectivity : {"any", "nearest", "specific"}
         - "any": responds to any object at preferred vector
         - "nearest": responds only to nearest object
@@ -1128,7 +1147,7 @@ def object_vector_score(
     --------
     compute_object_vector_tuning : Compute the tuning curve input for this function.
     """
-    from neurospatial.metrics.circular import _mean_resultant_length
+    from neurospatial.metrics.circular import _mean_resultant_length  # noqa: PLC0415
 
     # Validate max_distance_selectivity
     if max_distance_selectivity <= 1:
@@ -1317,7 +1336,7 @@ def compute_object_vector_field(
     )
 
     # 1. Create egocentric polar environment
-    ego_env = Environment.from_egocentric_grid(
+    ego_env = Environment.from_polar_egocentric(
         distance_range=distance_range,
         distance_bin_size=distance_bin_size,
         angle_bin_size=angle_bin_size,
@@ -1343,10 +1362,42 @@ def compute_object_vector_field(
     nearest_distance = distances[np.arange(len(distances)), nearest_idx]
     nearest_bearing = bearings[np.arange(len(bearings)), nearest_idx]
 
-    # 3. Map to egocentric bins
+    # 3. Compute occupancy in egocentric polar space
+    # Each timepoint contributes to ONE (distance, angle) bin based on
+    # the animal's egocentric relationship to the nearest object
     ego_positions = np.column_stack([nearest_distance, nearest_bearing])
-    # ... rest follows compute_place_field pattern with ego_env
-    ...
+    ego_bins = ego_env.bin_at(ego_positions)
+
+    # Compute time per bin (occupancy)
+    dt = np.median(np.diff(times))
+    occupancy = np.bincount(ego_bins[ego_bins >= 0], minlength=ego_env.n_bins) * dt
+
+    # 4. Bin spikes by egocentric position at spike time
+    # Interpolate nearest distance and bearing at spike times
+    spike_nearest_distance = np.interp(spike_times, times, nearest_distance)
+    spike_nearest_bearing = np.interp(spike_times, times, nearest_bearing)
+    spike_ego_positions = np.column_stack([spike_nearest_distance, spike_nearest_bearing])
+    spike_bins = ego_env.bin_at(spike_ego_positions)
+
+    # 5. Compute rate map
+    spike_counts = np.bincount(spike_bins[spike_bins >= 0], minlength=ego_env.n_bins)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        firing_rate = np.where(
+            occupancy >= min_occupancy_seconds,
+            spike_counts / occupancy,
+            np.nan
+        )
+
+    # 6. Apply smoothing if method=="diffusion_kde"
+    if method == "diffusion_kde" and bandwidth is not None:
+        firing_rate = ego_env.smooth(firing_rate, kernel_bandwidth=bandwidth)
+
+    return ObjectVectorFieldResult(
+        field=firing_rate,
+        ego_env=ego_env,
+        occupancy=occupancy,
+    )
 ```
 
 ### M2.4: Object-Vector Overlay (Animation)
@@ -1406,6 +1457,7 @@ class ObjectVectorOverlay:
 **File**: `tests/metrics/test_object_vector_cells.py`
 
 **Test categories**:
+
 1. Model validation (parameters, ground_truth)
 2. Firing rate computation (distance tuning, direction tuning)
 3. Object selectivity modes (any, nearest, specific)
@@ -1796,19 +1848,20 @@ class ViewshedResult:
     ----------
     visible_bins : NDArray[np.bool_], shape (n_bins,)
         Boolean mask of visible bins from observer position.
-    visible_boundary_segments : list[tuple[int, int]]
-        List of (start_idx, end_idx) pairs for visible boundary segments.
+    visible_boundary_segments : list[NDArray[np.float64]]
+        List of (N, 2) arrays representing visible boundary line segments.
     visible_cues : NDArray[np.bool_], shape (n_cues,)
-        Boolean mask of visible cues/landmarks.
+        Boolean mask of visible cues/landmarks with clear line-of-sight.
     cue_distances : NDArray[np.float64], shape (n_cues,)
-        Distance to each cue (NaN if not visible).
+        Euclidean distance to each cue (NaN if not visible).
     cue_bearings : NDArray[np.float64], shape (n_cues,)
-        Egocentric bearing to each cue (NaN if not visible).
+        Egocentric bearing to each cue in radians (NaN if not visible).
     occlusion_map : NDArray[np.float64], shape (n_bins,)
-        For each bin, distance to nearest occluding boundary (0 if visible).
+        Per-bin occlusion score [0, 1]: 0=fully occluded, 1=fully visible.
+        Computed as fraction of rays reaching each bin unobstructed.
     """
     visible_bins: NDArray[np.bool_]
-    visible_boundary_segments: list[tuple[int, int]]
+    visible_boundary_segments: list[NDArray[np.float64]]
     visible_cues: NDArray[np.bool_]
     cue_distances: NDArray[np.float64]
     cue_bearings: NDArray[np.float64]
@@ -1821,13 +1874,59 @@ class ViewshedResult:
 
     @property
     def visibility_fraction(self) -> float:
-        """Fraction of environment visible."""
-        return float(self.visible_bins.mean())
+        """Fraction of environment visible (0-1)."""
+        return float(self.n_visible_bins / len(self.visible_bins))
 
     @property
     def n_visible_cues(self) -> int:
         """Number of visible cues."""
         return int(self.visible_cues.sum())
+
+    def filter_cues(
+        self, cue_ids: list[str]
+    ) -> tuple[list[str], NDArray[np.float64], NDArray[np.float64]]:
+        """Return visible cue IDs with distances and bearings.
+
+        Parameters
+        ----------
+        cue_ids : list[str]
+            Identifiers for each cue (must match length of visible_cues).
+
+        Returns
+        -------
+        visible_ids : list[str]
+            IDs of visible cues.
+        visible_distances : NDArray[np.float64]
+            Distances to visible cues.
+        visible_bearings : NDArray[np.float64]
+            Bearings to visible cues in radians.
+
+        Examples
+        --------
+        >>> cue_ids = ["reward_port", "landmark_A", "landmark_B"]
+        >>> visible_ids, dists, bearings = result.filter_cues(cue_ids)
+        >>> for cid, d, b in zip(visible_ids, dists, bearings):
+        ...     print(f"{cid}: {d:.1f} cm at {np.degrees(b):.0f}°")
+        """
+        visible_ids = [cid for i, cid in enumerate(cue_ids) if self.visible_cues[i]]
+        visible_dists = self.cue_distances[self.visible_cues]
+        visible_bearings = self.cue_bearings[self.visible_cues]
+        return visible_ids, visible_dists, visible_bearings
+
+    def visible_bin_centers(self, env: "Environment") -> NDArray[np.float64]:
+        """Get allocentric positions of visible bins.
+
+        Parameters
+        ----------
+        env : Environment
+            Environment for bin center lookup.
+
+        Returns
+        -------
+        NDArray, shape (n_visible, 2)
+            Allocentric coordinates of visible bin centers.
+        """
+        return env.bin_centers[self.visible_bins]
 
 
 def compute_viewshed(
@@ -2565,11 +2664,13 @@ def is_spatial_view_cell(
 ### M3.5: Tests and Documentation
 
 **Test files**:
+
 - `tests/test_visibility.py`
 - `tests/simulation/models/test_spatial_view_cells.py`
 - `tests/metrics/test_spatial_view_cells.py`
 
 **Documentation updates**:
+
 - `.claude/QUICKSTART.md`: Add spatial view cell examples
 - `.claude/ADVANCED.md`: Section on gaze-based analysis
 - Example notebook: `examples/spatial_view_cells.py`
@@ -2674,11 +2775,13 @@ Each module follows the established pattern from `test_head_direction.py`:
 ## Dependencies
 
 **No new dependencies required.** All features implemented with:
+
 - NumPy (array operations, linear algebra)
 - SciPy (von Mises distribution, interpolation)
 - Shapely (already dependency; for ray casting)
 
 **Optional enhancements** (not required):
+
 - numba: JIT compilation for ray casting (performance)
 - shapely.strtree: Spatial indexing for complex environments
 
@@ -2705,6 +2808,7 @@ assert abs(metrics.preferred_distance - model.ground_truth["preferred_distance"]
 ### Literature Validation
 
 Reference implementations from:
+
 - Hoydal et al. (2019) - Object-vector cells
 - Rolls et al. (1997) - Spatial view cells
 - Deshmukh & Knierim (2011) - Object-related firing
@@ -2746,6 +2850,7 @@ metrics = compute_object_vector_tuning(
 print(metrics.interpretation())
 # "Object-vector cell: fires 10.0 cm ahead of object (direction=15°). Score=0.72"
 ```
+
 ```
 
 ### API_REFERENCE.md Additions
@@ -2798,6 +2903,7 @@ from neurospatial.visibility import (
     visibility_occupancy,
 )
 ```
+
 ```
 
 ---
