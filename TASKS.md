@@ -373,22 +373,22 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/spatial_view_field.py`
 
-- [ ] Create module with docstring
-- [ ] Implement `compute_spatial_view_field()` function
-  - [ ] Compute viewed location at each timepoint
-  - [ ] Filter NaN (viewing outside environment)
-  - [ ] Compute view occupancy
-  - [ ] Interpolate viewed location at spike times
-  - [ ] Bin spikes by viewed location
-  - [ ] Normalize by view occupancy
-  - [ ] Apply `min_occupancy_seconds` threshold
-  - [ ] Optional smoothing (diffusion_kde, gaussian_kde)
-  - [ ] Return field with same shape as place field
+- [x] Create module with docstring
+- [x] Implement `compute_spatial_view_field()` function
+  - [x] Compute viewed location at each timepoint
+  - [x] Filter NaN (viewing outside environment)
+  - [x] Compute view occupancy
+  - [x] Interpolate viewed location at spike times
+  - [x] Bin spikes by viewed location
+  - [x] Normalize by view occupancy
+  - [x] Apply `min_occupancy_seconds` threshold
+  - [x] Optional smoothing (diffusion_kde, gaussian_kde)
+  - [x] Return field with same shape as place field
 
 **Success criteria**:
 
-- View field differs from place field for spatial view cells
-- View field similar to place field for place cells
+- [x] View field differs from place field for spatial view cells
+- [x] View field similar to place field for place cells
 
 ### M3.4: Spatial View Metrics
 

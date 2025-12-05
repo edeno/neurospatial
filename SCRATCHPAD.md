@@ -487,12 +487,79 @@
 
 - `src/neurospatial/simulation/models/__init__.py` - Added `SpatialViewCellModel` export
 
+### Completed: M3.3 Spatial View Field Analysis
+
+**Files Created:**
+
+- `src/neurospatial/spatial_view_field.py` - Main implementation (~400 LOC)
+- `tests/test_spatial_view_field.py` - 30 comprehensive tests
+
+**Implemented:**
+
+- [x] `SpatialViewFieldResult` frozen dataclass with fields:
+  - `field` - firing rate (Hz) in each spatial bin, binned by *viewed location*
+  - `env` - the spatial environment
+  - `view_occupancy` - time spent viewing each bin (not position occupancy)
+- [x] `compute_spatial_view_field()` function:
+  - Computes viewed location at each timepoint via `compute_viewed_location()`
+  - Filters NaN viewed locations (viewing outside environment)
+  - Computes view occupancy (time viewing each bin)
+  - Interpolates spike times to frames, gets viewed bin at spike time
+  - Bins spikes by viewed location (not animal position!)
+  - Normalizes by view occupancy
+  - Applies `min_occupancy_seconds` threshold
+  - Supports methods: "binned", "diffusion_kde", "gaussian_kde"
+  - Supports gaze models: "fixed_distance", "ray_cast", "boundary"
+  - Supports `gaze_offsets` for eye tracking integration
+
+**Key Design Decisions:**
+
+- Uses `compute_viewed_location()` from visibility module for gaze computation
+- View occupancy is fundamentally different from position occupancy
+- Spikes are binned by where the animal was *looking*, not where it was
+- diffusion_kde smooths both spike counts and view occupancy before normalization
+- gaussian_kde uses Euclidean distance from viewed locations to bin centers
+- gaze_offsets parameter enables integration with eye tracking data
+
+**Tests:**
+
+- 30/30 passing
+- Module structure tests (imports, docstring, exports)
+- Dataclass tests (fields, frozen, immutability)
+- Field computation tests (shape, view occupancy, NaN handling)
+- Smoothing method tests (binned, diffusion_kde, gaussian_kde)
+- Gaze model tests (fixed_distance, ray_cast)
+- Validation tests (empty spikes, mismatched lengths, invalid method/gaze_model)
+- gaze_offsets parameter test
+- Ground truth recovery tests:
+  - Spatial view cell: view field peaks at preferred view location
+  - Spatial view cell: view field differs from place field (key scientific test!)
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved after fixes:
+  - Fixed doctest skip directive
+  - Added gaze_offsets validation
+  - Added gaze_offsets test
+- NumPy docstrings with coordinate conventions and scientific references
+- Complete type annotations with Literal types
+- Excellent module docstring with "Which Function Should I Use?" guidance
+
+**Module Updated:**
+
+- `src/neurospatial/__init__.py` - Added exports:
+  - `SpatialViewFieldResult`, `compute_spatial_view_field`
+
 ### Next Task
 
-- **M3.3**: Spatial View Field Analysis
-  - Create `src/neurospatial/spatial_view_field.py`
-  - Implement `compute_spatial_view_field()` function
-  - Bin spikes by viewed location (not animal position)
+- **M3.4**: Spatial View Metrics
+  - Create `src/neurospatial/metrics/spatial_view_cells.py`
+  - Implement `SpatialViewMetrics` dataclass
+  - Implement `compute_spatial_view_tuning()` function
+  - Implement `spatial_view_score()` function
+  - Implement `is_spatial_view_cell()` classifier
 
 ### Blockers
 

@@ -321,6 +321,12 @@ from neurospatial.spatial import (
     regions_to_mask,
     resample_field,
 )
+
+# Spatial view field analysis
+from neurospatial.spatial_view_field import (
+    SpatialViewFieldResult,
+    compute_spatial_view_field,
+)
 from neurospatial.spike_field import (
     DirectionalPlaceFields,
     compute_directional_place_fields,
@@ -472,6 +478,9 @@ __all__ = [
     # Object-vector field analysis
     "ObjectVectorFieldResult",
     "compute_object_vector_field",
+    # Spatial view field analysis
+    "SpatialViewFieldResult",
+    "compute_spatial_view_field",
     # Visibility and gaze analysis
     "FieldOfView",
     "ViewshedResult",
