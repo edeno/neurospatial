@@ -17,7 +17,17 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 - **1D Linearization**: Transform complex 2D environments into 1D linearized coordinates for track-based analysis
 - **Region Support**: Define and manage named regions of interest (ROIs) with immutable semantics
 - **Environment Composition**: Merge multiple environments with automatic bridge inference
-- **Type-Safe Protocol Design**: Layout engines implement protocols, not inheritance, for maximum flexibility
+
+### What neurospatial does that others don't
+
+- generalizes analyses to 2D/3D and arbitrary shapes
+- Geodesic distance computations (distances are not just Euclidean, they respect environment topology)
+- Spatial kernels that respect connectivity graphs (smoothing is not just Gaussian, it respects environment topology)
+- Interactive and static visualization of environments and spatial fields
+- Comprehensive simulation subpackage for generating synthetic trajectories, neural activity, and spikes with ground truth
+- unified analyses (the field reimplements many common neuroscience spatial analyses), this is designed to be a one-stop shop for spatial environment discretization and analysis so that the field is using consistent methods
+- python-native with no matlab dependencies
+- gpu acceleration
 
 ### Spatial Analysis Operations (v0.2.0+)
 
@@ -390,6 +400,7 @@ print(f"Detected peak: {env.bin_centers[detected_field.argmax()]}")
 ### Learn More
 
 See the comprehensive tutorial: **[Simulation Workflows Notebook](examples/15_simulation_workflows.ipynb)** for complete examples including:
+
 - Quick start with pre-configured sessions
 - Low-level API for custom workflows
 - All cell types (place, boundary, grid)

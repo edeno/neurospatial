@@ -331,6 +331,18 @@ from neurospatial.transforms import (
     apply_transform_to_environment,
     estimate_transform,
 )
+
+# Visibility and gaze analysis
+from neurospatial.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
 from neurospatial.visualization.scale_bar import ScaleBarConfig
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
@@ -460,4 +472,13 @@ __all__ = [
     # Object-vector field analysis
     "ObjectVectorFieldResult",
     "compute_object_vector_field",
+    # Visibility and gaze analysis
+    "FieldOfView",
+    "ViewshedResult",
+    "compute_view_field",
+    "compute_viewed_location",
+    "compute_viewshed",
+    "compute_viewshed_trajectory",
+    "visibility_occupancy",
+    "visible_cues",
 ]

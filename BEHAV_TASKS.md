@@ -1,0 +1,528 @@
+# Behavioral Trajectory Metrics: Implementation Tasks
+
+**Source**: [BEHAV_PLAN.md](BEHAV_PLAN.md)
+**Created**: 2025-12-05
+**Status**: Ready for implementation
+
+---
+
+## Overview
+
+Implementation of behavioral trajectory analysis metrics for spatial navigation research.
+
+**Modules to implement**:
+
+1. Path Efficiency (`path_efficiency.py`)
+2. Goal-Directed Metrics (`goal_directed.py`)
+3. Decision Analysis (`decision_analysis.py`)
+4. VTE Metrics (`vte.py`)
+
+**Estimated LOC**: ~1,700 new + ~1,300 tests
+
+---
+
+## Dependencies
+
+```
+path_efficiency.py (no internal dependencies)
+    │
+    └──► goal_directed.py (no dependencies on path_efficiency)
+              │
+              └──► decision_analysis.py (no dependencies on goal_directed)
+                        │
+                        └──► vte.py (depends on decision_analysis)
+```
+
+**External dependencies** (already exist):
+
+- `neurospatial.metrics.trajectory`: `compute_step_lengths()`, `compute_turn_angles()`
+- `neurospatial.distance`: `distance_field()`, `geodesic_distance_matrix()`
+- `neurospatial.behavioral`: `distance_to_region()`, `path_progress()`
+- `neurospatial.reference_frames`: `heading_from_velocity()`
+- `neurospatial.segmentation.trials`: `segment_trials()`, `Trial`
+
+---
+
+## Milestone 1: Path Efficiency
+
+**Goal**: Compute how efficiently an animal navigates from start to goal.
+
+**File**: `src/neurospatial/metrics/path_efficiency.py`
+
+**Priority**: HIGH (foundation for other modules)
+
+### M1.1: Module Setup
+
+- [ ] Create `path_efficiency.py` with module docstring
+- [ ] Add imports: numpy, typing, dataclasses
+- [ ] Add internal imports from `neurospatial.metrics.trajectory`, `neurospatial.distance`
+
+### M1.2: Data Structures
+
+- [ ] Implement `PathEfficiencyResult` frozen dataclass
+  - [ ] Fields: `traveled_length`, `shortest_length`, `efficiency`, `time_efficiency`, `angular_efficiency`, `start_position`, `goal_position`, `metric`
+  - [ ] Method: `is_efficient(threshold=0.8) -> bool`
+  - [ ] Method: `summary() -> str`
+- [ ] Implement `SubgoalEfficiencyResult` frozen dataclass
+  - [ ] Fields: `segment_results`, `mean_efficiency`, `weighted_efficiency`, `subgoal_positions`
+  - [ ] Method: `summary() -> str`
+
+### M1.3: Core Functions
+
+- [ ] Implement `traveled_path_length(positions, *, metric="euclidean", env=None) -> float`
+  - [ ] Wrap `compute_step_lengths()` with `metric` -> `distance_type` mapping
+  - [ ] Handle < 2 positions (return 0.0)
+  - [ ] Validate env required for geodesic
+- [ ] Implement `shortest_path_length(env, start, goal, *, metric="geodesic") -> float`
+  - [ ] Use `distance_field()` for geodesic
+  - [ ] Use euclidean distance for euclidean metric
+  - [ ] Handle disconnected graph (return inf)
+- [ ] Implement `path_efficiency(env, positions, goal, *, metric="geodesic") -> float`
+  - [ ] Compute ratio: `shortest_length / traveled_length`
+  - [ ] Return NaN for < 2 positions or traveled_length == 0
+- [ ] Implement `time_efficiency(positions, times, goal, *, reference_speed) -> float`
+  - [ ] Compute `T_optimal / T_actual`
+- [ ] Implement `angular_efficiency(positions, goal) -> float`
+  - [ ] Use `compute_turn_angles()` for heading changes
+  - [ ] Return 1.0 for < 3 positions
+  - [ ] Return NaN if all positions identical (`np.ptp() < 1e-10`)
+  - [ ] Formula: `1 - mean(|delta_theta|) / pi`
+
+### M1.4: Composite Functions
+
+- [ ] Implement `subgoal_efficiency(env, positions, subgoals, *, metric="geodesic") -> SubgoalEfficiencyResult`
+  - [ ] Segment trajectory by subgoal arrivals
+  - [ ] Compute per-segment efficiency
+  - [ ] Compute weighted mean by segment length
+- [ ] Implement `compute_path_efficiency(env, positions, times, goal, ...) -> PathEfficiencyResult`
+  - [ ] Combine all metrics into single result
+  - [ ] Optional `reference_speed` for time efficiency
+
+### M1.5: Error Handling
+
+- [ ] Add helpful error messages:
+  - [ ] Mismatched array lengths
+  - [ ] Goal outside environment bounds
+  - [ ] Empty trajectory
+  - [ ] Disconnected graph (infinite distance)
+
+### M1.6: Tests
+
+**File**: `tests/metrics/test_path_efficiency.py`
+
+- [ ] Test `traveled_path_length()` with euclidean/geodesic
+- [ ] Test `shortest_path_length()` euclidean vs geodesic
+- [ ] Test `path_efficiency()` returns 1.0 for straight path
+- [ ] Test `path_efficiency()` returns < 0.5 for random walk
+- [ ] Test `angular_efficiency()` edge cases (< 3 positions, identical positions)
+- [ ] Test `subgoal_efficiency()` with T-maze trajectory
+- [ ] Test error messages are helpful
+
+### M1.7: Exports
+
+- [ ] Add to `src/neurospatial/metrics/__init__.py`:
+  - [ ] `PathEfficiencyResult`
+  - [ ] `SubgoalEfficiencyResult`
+  - [ ] `traveled_path_length`
+  - [ ] `shortest_path_length`
+  - [ ] `path_efficiency`
+  - [ ] `time_efficiency`
+  - [ ] `angular_efficiency`
+  - [ ] `subgoal_efficiency`
+  - [ ] `compute_path_efficiency`
+
+**Success criteria**:
+
+- [ ] Straight-line path to goal returns efficiency = 1.0
+- [ ] U-turn path returns efficiency ~ 0.5
+- [ ] All tests pass: `uv run pytest tests/metrics/test_path_efficiency.py -v`
+
+---
+
+## Milestone 2: Goal-Directed Metrics
+
+**Goal**: Measure how directly an animal navigates toward a goal.
+
+**File**: `src/neurospatial/metrics/goal_directed.py`
+
+**Priority**: HIGH
+
+### M2.1: Module Setup
+
+- [ ] Create `goal_directed.py` with module docstring
+- [ ] Add imports from `neurospatial.reference_frames`, `neurospatial.behavioral`
+
+### M2.2: Data Structures
+
+- [ ] Implement `GoalDirectedMetrics` frozen dataclass
+  - [ ] Fields: `goal_bias`, `mean_approach_rate`, `time_to_goal`, `min_distance_to_goal`, `goal_distance_at_start`, `goal_distance_at_end`, `goal_position`, `metric`
+  - [ ] Method: `is_goal_directed(threshold=0.3) -> bool`
+  - [ ] Method: `summary() -> str`
+
+### M2.3: Core Functions
+
+- [ ] Implement `goal_vector(positions, goal) -> NDArray`
+  - [ ] Compute `goal - positions` for each timepoint
+  - [ ] Validate dimension match
+- [ ] Implement `goal_direction(positions, goal) -> NDArray`
+  - [ ] Compute `atan2` of goal vector
+- [ ] Implement `instantaneous_goal_alignment(positions, times, goal, *, min_speed=5.0) -> NDArray`
+  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [ ] Compute cosine of angle between velocity and goal direction
+  - [ ] NaN for stationary periods (handled by `heading_from_velocity`)
+- [ ] Implement `goal_bias(positions, times, goal, *, min_speed=5.0) -> float`
+  - [ ] Mean of `instantaneous_goal_alignment`, ignoring NaN
+- [ ] Implement `approach_rate(positions, times, goal, *, metric="geodesic", env=None) -> NDArray`
+  - [ ] Compute `d/dt` of distance to goal
+  - [ ] Negative = approaching, positive = retreating
+
+### M2.4: Composite Function
+
+- [ ] Implement `compute_goal_directed_metrics(env, positions, times, goal, ...) -> GoalDirectedMetrics`
+  - [ ] Combine all metrics
+  - [ ] Compute `time_to_goal` if goal region reached
+
+### M2.5: Tests
+
+**File**: `tests/metrics/test_goal_directed.py`
+
+- [ ] Test `goal_vector()` dimension validation
+- [ ] Test `instantaneous_goal_alignment()` for direct approach (should be ~1.0)
+- [ ] Test `goal_bias()` for moving away (should be negative)
+- [ ] Test `goal_bias()` for circular path around goal (should be ~0)
+- [ ] Test `approach_rate()` sign convention
+- [ ] Test edge cases (stationary animal, single position)
+
+### M2.6: Exports
+
+- [ ] Add to `src/neurospatial/metrics/__init__.py`:
+  - [ ] `GoalDirectedMetrics`
+  - [ ] `goal_vector`
+  - [ ] `goal_direction`
+  - [ ] `instantaneous_goal_alignment`
+  - [ ] `goal_bias`
+  - [ ] `approach_rate`
+  - [ ] `compute_goal_directed_metrics`
+
+**Success criteria**:
+
+- [ ] Direct approach to goal: `goal_bias > 0.8`
+- [ ] Moving away from goal: `goal_bias < -0.5`
+- [ ] All tests pass: `uv run pytest tests/metrics/test_goal_directed.py -v`
+
+---
+
+## Milestone 3: Decision Analysis
+
+**Goal**: Analyze behavior at decision points (T-junctions, Y-mazes).
+
+**File**: `src/neurospatial/metrics/decision_analysis.py`
+
+**Priority**: MEDIUM (depends on VTE but can be developed in parallel)
+
+### M3.1: Module Setup
+
+- [ ] Create `decision_analysis.py` with module docstring
+- [ ] Add imports from `neurospatial.distance`, `neurospatial.reference_frames`
+
+### M3.2: Data Structures
+
+- [ ] Implement `PreDecisionMetrics` frozen dataclass
+  - [ ] Fields: `mean_speed`, `min_speed`, `heading_mean_direction`, `heading_circular_variance`, `heading_mean_resultant_length`, `window_duration`, `n_samples`
+  - [ ] Method: `suggests_deliberation(variance_threshold=0.5, speed_threshold=10.0) -> bool`
+- [ ] Implement `DecisionBoundaryMetrics` frozen dataclass
+  - [ ] Fields: `goal_labels`, `distance_to_boundary`, `crossing_times`, `crossing_directions`
+  - [ ] Property: `n_crossings`
+  - [ ] Method: `summary() -> str`
+- [ ] Implement `DecisionAnalysisResult` frozen dataclass
+  - [ ] Fields: `entry_time`, `pre_decision`, `boundary`, `chosen_goal`
+  - [ ] Method: `summary() -> str`
+
+### M3.3: Pre-Decision Window Functions
+
+- [ ] Implement `decision_region_entry_time(trajectory_bins, times, env, region) -> float`
+  - [ ] Find first entry to region
+  - [ ] Raise ValueError if never enters
+- [ ] Implement `extract_pre_decision_window(positions, times, entry_time, window_duration) -> tuple[NDArray, NDArray]`
+  - [ ] Slice trajectory before entry
+  - [ ] Handle case where window starts before trajectory
+- [ ] Implement `pre_decision_heading_stats(positions, times, *, min_speed=5.0) -> tuple[float, float, float]`
+  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [ ] Compute circular mean, variance, mean resultant length directly
+  - [ ] Do NOT use private `_mean_resultant_length()`
+- [ ] Implement `pre_decision_speed_stats(positions, times) -> tuple[float, float]`
+  - [ ] Return mean and min speed
+- [ ] Implement `compute_pre_decision_metrics(...) -> PreDecisionMetrics`
+  - [ ] Combine window extraction and stats
+
+### M3.4: Decision Boundary Functions
+
+- [ ] Implement `geodesic_voronoi_labels(env, goal_bins) -> NDArray[np.int_]`
+  - [ ] Compute distance field from each goal
+  - [ ] Label each bin by nearest goal
+  - [ ] Mark unreachable bins as -1
+  - [ ] Add performance note: O(n_goals * n_bins * log(n_bins))
+- [ ] Implement `distance_to_decision_boundary(env, trajectory_bins, goal_bins) -> NDArray[np.float64]`
+  - [ ] For each position, compute distance to nearest boundary
+- [ ] Implement `detect_boundary_crossings(trajectory_bins, voronoi_labels, times) -> tuple[list, list]`
+  - [ ] Find times and directions of label changes
+
+### M3.5: Composite Function
+
+- [ ] Implement `compute_decision_analysis(env, positions, times, decision_region, goal_regions, ...) -> DecisionAnalysisResult`
+  - [ ] Combine pre-decision metrics and boundary metrics
+  - [ ] Determine chosen goal
+
+### M3.6: Tests
+
+**File**: `tests/metrics/test_decision_analysis.py`
+
+- [ ] Test `decision_region_entry_time()` finds correct entry
+- [ ] Test `extract_pre_decision_window()` slice correctness
+- [ ] Test `pre_decision_heading_stats()` circular variance computation
+- [ ] Test `geodesic_voronoi_labels()` with T-maze (2 goals)
+- [ ] Test `detect_boundary_crossings()` counts correctly
+- [ ] Test `suggests_deliberation()` method
+
+### M3.7: Exports
+
+- [ ] Add to `src/neurospatial/metrics/__init__.py`:
+  - [ ] `PreDecisionMetrics`
+  - [ ] `DecisionBoundaryMetrics`
+  - [ ] `DecisionAnalysisResult`
+  - [ ] `decision_region_entry_time`
+  - [ ] `extract_pre_decision_window`
+  - [ ] `pre_decision_heading_stats`
+  - [ ] `pre_decision_speed_stats`
+  - [ ] `compute_pre_decision_metrics`
+  - [ ] `geodesic_voronoi_labels`
+  - [ ] `distance_to_decision_boundary`
+  - [ ] `detect_boundary_crossings`
+  - [ ] `compute_decision_analysis`
+
+**Success criteria**:
+
+- [ ] High heading variance + low speed → `suggests_deliberation() == True`
+- [ ] T-maze labels bins correctly to left/right goals
+- [ ] All tests pass: `uv run pytest tests/metrics/test_decision_analysis.py -v`
+
+---
+
+## Milestone 4: VTE Metrics
+
+**Goal**: Detect and quantify Vicarious Trial and Error (VTE) behavior.
+
+**File**: `src/neurospatial/metrics/vte.py`
+
+**Priority**: MEDIUM (depends on M3 decision_analysis)
+
+**Dependency**: Requires `decision_region_entry_time()` and `extract_pre_decision_window()` from M3
+
+### M4.1: Module Setup
+
+- [ ] Create `vte.py` with module docstring
+- [ ] Add terminology glossary (IdPhi, zIdPhi, VTE index)
+- [ ] Add imports from `neurospatial.reference_frames`, `neurospatial.metrics.decision_analysis`
+
+### M4.2: Data Structures
+
+- [ ] Implement `VTETrialResult` frozen dataclass
+  - [ ] Fields: `head_sweep_magnitude`, `z_head_sweep`, `mean_speed`, `min_speed`, `z_speed_inverse`, `vte_index`, `is_vte`, `window_start`, `window_end`
+  - [ ] Property aliases: `idphi`, `z_idphi`
+  - [ ] Method: `summary() -> str`
+- [ ] Implement `VTESessionResult` frozen dataclass
+  - [ ] Fields: `trial_results`, `mean_head_sweep`, `std_head_sweep`, `mean_speed`, `std_speed`, `n_vte_trials`, `vte_fraction`
+  - [ ] Property aliases: `mean_idphi`, `std_idphi`
+  - [ ] Method: `summary() -> str`
+  - [ ] Method: `get_vte_trials() -> list[VTETrialResult]`
+
+### M4.3: Core Functions
+
+- [ ] Implement `wrap_angle(angle) -> NDArray[np.float64]`
+  - [ ] Wrap to (-pi, pi]
+  - [ ] Formula: `(angle + pi) % (2 * pi) - pi`
+- [ ] Implement `head_sweep_magnitude(headings) -> float`
+  - [ ] Sum of `|delta_theta|` with angle wrapping
+  - [ ] Return 0.0 for < 2 valid samples
+  - [ ] Filter NaN values
+- [ ] Add `integrated_absolute_rotation = head_sweep_magnitude` alias
+- [ ] Implement `head_sweep_from_positions(positions, times, *, min_speed=5.0) -> float`
+  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [ ] Get headings and compute magnitude
+
+### M4.4: Z-Scoring Functions
+
+- [ ] Implement `normalize_vte_scores(head_sweeps, speeds) -> tuple[NDArray, NDArray]`
+  - [ ] Z-score head sweeps
+  - [ ] Z-score inverse speed (higher = slower = more VTE-like)
+  - [ ] Warn if std=0 with helpful message about adjusting parameters
+  - [ ] Return zeros (not NaN) when std=0
+
+### M4.5: Classification Functions
+
+- [ ] Implement `compute_vte_index(z_head_sweep, z_speed_inv, *, alpha=0.5) -> float`
+  - [ ] Formula: `alpha * z_head_sweep + (1 - alpha) * z_speed_inverse`
+- [ ] Implement `classify_vte(vte_index, *, threshold=0.5) -> bool`
+  - [ ] Return `vte_index > threshold`
+
+### M4.6: Composite Functions
+
+- [ ] Implement `compute_vte_trial(positions, times, entry_time, window_duration, ...) -> VTETrialResult`
+  - [ ] Single trial analysis (z-scores are None)
+- [ ] Implement `compute_vte_session(positions, times, trials, decision_region, env, ...) -> VTESessionResult`
+  - [ ] Loop over trials
+  - [ ] Compute session statistics
+  - [ ] Z-score and classify each trial
+
+### M4.7: Tests
+
+**File**: `tests/metrics/test_vte.py`
+
+- [ ] Test `wrap_angle()` wraps correctly around boundaries
+- [ ] Test `head_sweep_magnitude()` for stationary vs scanning trajectory
+- [ ] Test `head_sweep_from_positions()` with known trajectory
+- [ ] Test `normalize_vte_scores()` z-scoring correctness
+- [ ] Test `normalize_vte_scores()` warning when std=0
+- [ ] Test `compute_vte_index()` weighting
+- [ ] Test `compute_vte_session()` classifies correctly
+- [ ] Test high head sweep + low speed → VTE
+- [ ] Test low head sweep + high speed → non-VTE
+
+### M4.8: Exports
+
+- [ ] Add to `src/neurospatial/metrics/__init__.py`:
+  - [ ] `VTETrialResult`
+  - [ ] `VTESessionResult`
+  - [ ] `wrap_angle`
+  - [ ] `head_sweep_magnitude`
+  - [ ] `integrated_absolute_rotation`
+  - [ ] `head_sweep_from_positions`
+  - [ ] `normalize_vte_scores`
+  - [ ] `compute_vte_index`
+  - [ ] `classify_vte`
+  - [ ] `compute_vte_trial`
+  - [ ] `compute_vte_session`
+
+**Success criteria**:
+
+- [ ] High head sweep + low speed → classified as VTE
+- [ ] Low head sweep + high speed → not classified as VTE
+- [ ] std=0 triggers warning, not error
+- [ ] All tests pass: `uv run pytest tests/metrics/test_vte.py -v`
+
+---
+
+## Milestone 5: Integration and Documentation
+
+**Goal**: Integrate all modules and update documentation.
+
+**Priority**: LOW (after M1-M4 complete)
+
+### M5.1: Full Test Suite
+
+- [ ] Run all tests: `uv run pytest tests/metrics/ -v`
+- [ ] Run type checker: `uv run mypy src/neurospatial/metrics/`
+- [ ] Run linter: `uv run ruff check src/neurospatial/metrics/`
+- [ ] Fix any issues
+
+### M5.2: Integration Tests
+
+- [ ] Test cross-module consistency (VTE uses decision_analysis functions correctly)
+- [ ] Test round-trip: simulated VTE trial → compute_vte_session → correct classification
+- [ ] Test path_efficiency consistent with existing path_progress
+
+### M5.3: Documentation Updates
+
+- [ ] Update `.claude/QUICKSTART.md` with behavioral metrics examples
+  - [ ] Path efficiency example
+  - [ ] Goal-directed metrics example
+  - [ ] VTE detection example
+- [ ] Update `.claude/API_REFERENCE.md` with new imports
+  - [ ] List all new functions and dataclasses
+  - [ ] Group by module
+
+### M5.4: Final Validation
+
+- [ ] All tests pass
+- [ ] No type errors
+- [ ] No linting errors
+- [ ] Examples in docstrings work
+
+**Success criteria**:
+
+- [ ] `uv run pytest tests/metrics/ -v` all pass
+- [ ] `uv run mypy src/neurospatial/metrics/` no errors
+- [ ] `uv run ruff check src/neurospatial/metrics/` no errors
+
+---
+
+## Implementation Notes
+
+### Critical Design Decisions
+
+1. **Parameter naming**: Use `metric` (not `distance_type`) for consistency with `behavioral.py`
+
+2. **`heading_from_velocity()` signature**: Takes `dt: float`, not `times` array
+   ```python
+   dt = float(np.median(np.diff(times)))
+   headings = heading_from_velocity(positions, dt, min_speed=min_speed)
+   ```
+
+3. **Circular statistics**: Compute directly, not via private functions
+   ```python
+   cos_headings = np.cos(headings)
+   sin_headings = np.sin(headings)
+   mean_resultant_length = np.sqrt(np.mean(cos_headings)**2 + np.mean(sin_headings)**2)
+   circular_variance = 1.0 - mean_resultant_length
+   ```
+
+4. **Edge case handling**:
+   - `< 2 positions`: return 0.0 for path length, NaN for efficiency
+   - `< 3 positions`: return 1.0 for angular efficiency
+   - All identical positions: use `np.ptp(positions, axis=0).max() < 1e-10`
+   - std=0 in z-scoring: warn and return zeros
+
+### Import Patterns
+
+```python
+# Correct internal imports
+from neurospatial.distance import distance_field, geodesic_distance_matrix
+from neurospatial.reference_frames import heading_from_velocity
+from neurospatial.metrics.trajectory import compute_step_lengths, compute_turn_angles
+from neurospatial.metrics.circular import rayleigh_test
+from neurospatial.behavioral import distance_to_region
+```
+
+### Error Message Template
+
+```python
+raise ValueError(
+    f"<What's wrong>. "
+    f"Got <actual values>. "
+    f"\nTo fix:\n"
+    f"- <Suggestion 1>\n"
+    f"- <Suggestion 2>"
+)
+```
+
+---
+
+## Execution Order
+
+| Order | Milestone | Dependencies | Est. Time |
+|-------|-----------|--------------|-----------|
+| 1 | M1: Path Efficiency | None | First |
+| 2 | M2: Goal-Directed | None (parallel with M1) | Second |
+| 3 | M3: Decision Analysis | None (parallel with M1/M2) | Third |
+| 4 | M4: VTE Metrics | M3.3 (pre-decision functions) | Fourth |
+| 5 | M5: Integration | M1, M2, M3, M4 | Last |
+
+**Recommended approach**: Implement M1, M2, M3 in parallel, then M4, then M5.
+
+---
+
+## References
+
+- **BEHAV_PLAN.md**: Full implementation details, dataclass definitions, function signatures
+- **Mathematical framework**: Batschelet (1981), Johnson & Redish (2007), Redish (2016), Papale et al. (2012)
+- **Existing code**: `neurospatial.behavioral`, `neurospatial.metrics.trajectory`, `neurospatial.distance`

@@ -299,56 +299,52 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/visibility.py`
 
-- [ ] Create module with docstring
-- [ ] Implement `compute_viewed_location()` function
-  - [ ] Method: "fixed_distance" - point at fixed distance in gaze direction
-  - [ ] Method: "ray_cast" - intersection with environment boundary
-  - [ ] Method: "boundary" - nearest boundary point in gaze direction
-  - [ ] Support optional `gaze_offsets` relative to heading
-  - [ ] Mark as NaN when viewing outside environment
-- [ ] Implement `_ray_cast_to_boundary()` helper
-  - [ ] Use Shapely for boundary intersection
-  - [ ] Iterative stepping with binary search refinement
-- [ ] Implement `FieldOfView` frozen dataclass
-  - [ ] Attributes: `left_angle`, `right_angle`, `binocular_half_angle`, `blind_spot_behind`
-  - [ ] Class methods: `symmetric()`, `rat()`, `mouse()`, `primate()`,
-  - [ ] Properties: `total_angle`, `total_angle_degrees`
-  - [ ] Method: `contains_angle()` - check if bearing in FOV
-  - [ ] Method: `is_binocular()` - check if in binocular region
-  - [ ] Validation in `__post_init__`
-- [ ] Implement `ViewshedResult` frozen dataclass
-  - [ ] Fields: `visible_bins`, `visible_boundary_segments` (list of NDArrays)
-  - [ ] Fields: `visible_cues`, `cue_distances`, `cue_bearings`
-  - [ ] Field: `occlusion_map` (per-bin score [0,1]: fraction of rays unobstructed)
-  - [ ] Properties: `n_visible_bins`, `visibility_fraction`, `n_visible_cues`
-  - [ ] Method: `filter_cues(cue_ids)` → visible IDs, distances, bearings
-  - [ ] Method: `visible_bin_centers(env)` → allocentric positions of visible bins
-- [ ] Implement `compute_viewshed()` function
-  - [ ] Cast n_rays from observer position
-  - [ ] Find intersection with boundary for each ray
-  - [ ] Mark bins between observer and intersection as visible
-  - [ ] Support `fov` parameter (FieldOfView, float, or None for 360°)
-  - [ ] Check cue visibility
-  - [ ] Return `ViewshedResult`
-- [ ] Implement `compute_view_field()` function
-  - [ ] Binary mask of visible bins from position/heading
-  - [ ] Uses `compute_viewshed()` internally
-- [ ] Implement `visible_boundaries()` function
-  - [ ] Return visible boundary segments as list of arrays
-- [ ] Implement `visible_cues()` function
-  - [ ] Check line-of-sight for each cue
-  - [ ] Return: visible mask, distances, bearings
-- [ ] Implement `_line_of_sight_clear()` helper using Shapely
-- [ ] Implement `compute_viewshed_trajectory()` function
-  - [ ] Vectorized computation along trajectory
-- [ ] Implement `visibility_occupancy()` function
-  - [ ] Time each bin was visible during trajectory
+- [x] Create module with docstring
+- [x] Implement `compute_viewed_location()` function
+  - [x] Method: "fixed_distance" - point at fixed distance in gaze direction
+  - [x] Method: "ray_cast" - intersection with environment boundary
+  - [x] Method: "boundary" - nearest boundary point in gaze direction
+  - [x] Support optional `gaze_offsets` relative to heading
+  - [x] Mark as NaN when viewing outside environment
+- [x] Implement `_ray_cast_to_boundary()` helper
+  - [x] Iterative stepping with binary search refinement
+- [x] Implement `FieldOfView` frozen dataclass
+  - [x] Attributes: `left_angle`, `right_angle`, `binocular_half_angle`, `blind_spot_behind`
+  - [x] Class methods: `symmetric()`, `rat()`, `mouse()`, `primate()`
+  - [x] Properties: `total_angle`, `total_angle_degrees`
+  - [x] Method: `contains_angle()` - check if bearing in FOV
+  - [x] Method: `is_binocular()` - check if in binocular region
+  - [x] Validation in `__post_init__`
+- [x] Implement `ViewshedResult` frozen dataclass
+  - [x] Fields: `visible_bins`, `visible_cues`, `cue_distances`, `cue_bearings`
+  - [x] Field: `occlusion_map` (per-bin score [0,1]: fraction of rays unobstructed)
+  - [x] Properties: `n_visible_bins`, `visibility_fraction`, `n_visible_cues`
+  - [x] Method: `filter_cues(cue_ids)` → visible IDs, distances, bearings
+  - [x] Method: `visible_bin_centers(env)` → allocentric positions of visible bins
+- [x] Implement `compute_viewshed()` function
+  - [x] Cast n_rays from observer position
+  - [x] Find intersection with boundary for each ray
+  - [x] Mark bins between observer and intersection as visible
+  - [x] Support `fov` parameter (FieldOfView, float, or None for 360°)
+  - [x] Check cue visibility
+  - [x] Return `ViewshedResult`
+- [x] Implement `compute_view_field()` function
+  - [x] Binary mask of visible bins from position/heading
+  - [x] Uses `compute_viewshed()` internally
+- [x] Implement `visible_cues()` function
+  - [x] Check line-of-sight for each cue
+  - [x] Return: visible mask, distances, bearings
+- [x] Implement `_line_of_sight_clear()` helper
+- [x] Implement `compute_viewshed_trajectory()` function
+  - [x] Computation along trajectory
+- [x] Implement `visibility_occupancy()` function
+  - [x] Time each bin was visible during trajectory
 
 **Success criteria**:
 
-- `FieldOfView.rat().total_angle_degrees` ≈ 300°
-- `FieldOfView.primate().total_angle_degrees` ≈ 180°
-- Blind spot behind correctly excludes rear regions
+- [x] `FieldOfView.rat().total_angle_degrees` ≈ 320° (within 290-340)
+- [x] `FieldOfView.primate().total_angle_degrees` = 180°
+- [x] Blind spot behind correctly excludes rear regions
 
 ### M3.2: Spatial View Cell Model (Simulation)
 

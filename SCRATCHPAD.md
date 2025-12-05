@@ -361,12 +361,79 @@
 
 **All Tests:** 137/137 passing for object-vector modules
 
+### Completed: M3.1 Visibility/Gaze Computation
+
+**Files Created:**
+
+- `src/neurospatial/visibility.py` - Main implementation (~1050 LOC)
+- `tests/test_visibility.py` - 45 comprehensive tests
+
+**Implemented:**
+
+- [x] `FieldOfView` frozen dataclass with:
+  - `left_angle`, `right_angle`, `binocular_half_angle`, `blind_spot_behind`
+  - Factory methods: `symmetric()`, `rat()`, `mouse()`, `primate()`
+  - Properties: `total_angle`, `total_angle_degrees`
+  - Methods: `contains_angle()`, `is_binocular()`
+  - Validation in `__post_init__`
+- [x] `ViewshedResult` frozen dataclass with:
+  - Fields: `visible_bins`, `visible_cues`, `cue_distances`, `cue_bearings`, `occlusion_map`
+  - Properties: `n_visible_bins`, `visibility_fraction`, `n_visible_cues`
+  - Methods: `filter_cues()`, `visible_bin_centers()`
+- [x] `compute_viewed_location()` - compute gaze-directed locations
+  - Methods: "fixed_distance", "ray_cast", "boundary"
+  - Support for `gaze_offsets` parameter
+- [x] `compute_viewshed()` - ray-casting visibility analysis
+  - Support for `fov` parameter (FieldOfView, float, or None)
+  - Returns `ViewshedResult` with occlusion map
+- [x] `compute_view_field()` - binary visibility mask
+- [x] `visible_cues()` - check visibility of cue positions
+- [x] `compute_viewshed_trajectory()` - viewshed along trajectory
+- [x] `visibility_occupancy()` - time each bin was visible
+- [x] `_ray_cast_to_boundary()` - iterative stepping with binary search refinement
+- [x] `_line_of_sight_clear()` - line-of-sight check helper
+
+**Key Design Decisions:**
+
+- Species-specific FOV presets based on literature (rat ~320°, primate ~180°)
+- Uses ray casting with binary search refinement for boundary detection
+- FOV supports blind spots behind and binocular regions
+- Removed `visible_boundary_segments` field (not implemented, deferred to future)
+- Egocentric coordinate convention: 0=ahead, π/2=left, -π/2=right
+
+**Tests:**
+
+- 45/45 passing
+- Module structure tests (imports, docstring, exports)
+- FieldOfView tests (dataclass, factories, properties, methods)
+- ViewshedResult tests (properties, methods)
+- compute_viewed_location tests (methods, validation)
+- compute_viewshed tests (basic, FOV restriction, cue visibility)
+- visible_cues tests (visibility, occlusion)
+- Trajectory tests (compute_viewshed_trajectory, visibility_occupancy)
+- Line-of-sight helper tests
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Issues addressed
+- NumPy docstrings with coordinate convention docs
+- Complete type annotations
+
+**Module Added to Exports:**
+
+- `src/neurospatial/__init__.py` - Added all visibility exports:
+  - `FieldOfView`, `ViewshedResult`
+  - `compute_view_field`, `compute_viewed_location`, `compute_viewshed`
+  - `compute_viewshed_trajectory`, `visibility_occupancy`, `visible_cues`
+
 ### Next Task
 
-- **M3.1**: Visibility/Gaze Computation
-  - Create `src/neurospatial/visibility.py` module
-  - Implement `compute_viewed_location()`, `FieldOfView`, `ViewshedResult`
-  - Implement `compute_viewshed()`, `visible_cues()`, etc.
+- **M3.2**: Spatial View Cell Model (Simulation)
+  - Create `src/neurospatial/simulation/models/spatial_view_cells.py`
+  - Implement `SpatialViewCellModel` class
+  - Use visibility module for gaze-based firing rates
 
 ### Blockers
 
