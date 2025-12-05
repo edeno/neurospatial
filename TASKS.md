@@ -229,16 +229,19 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 ### M2.4: Object-Vector Overlay (Animation)
 
-**File**: `src/neurospatial/animation/overlays/object_vector.py`
+**File**: `src/neurospatial/animation/overlays.py` (added to existing file)
 
-- [ ] Create module with docstring
-- [ ] Implement `ObjectVectorOverlay` dataclass
-  - [ ] Required: `object_positions`, `animal_positions`
-  - [ ] Optional: `firing_rates`, `times`
-  - [ ] Styling: `color`, `linewidth`, `show_objects`, `object_marker`, `object_size`
-  - [ ] Interpolation: `interp` ("linear", "nearest")
-- [ ] Implement `convert_to_data()` method for frame alignment
-- [ ] Register overlay in `animation/overlays/__init__.py`
+- [x] Implement `ObjectVectorOverlay` dataclass
+  - [x] Required: `object_positions`, `animal_positions`
+  - [x] Optional: `firing_rates`, `times`
+  - [x] Styling: `color`, `linewidth`, `show_objects`, `object_marker`, `object_size`
+  - [x] Interpolation: `interp` ("linear", "nearest")
+- [x] Implement `ObjectVectorData` internal data container
+- [x] Implement `convert_to_data()` method for frame alignment
+- [x] Register overlay in `animation/__init__.py` exports
+- [x] Update OverlayProtocol return type
+- [x] Update OverlayData container
+- [x] Update `_convert_overlays_to_data()` dispatch
 
 ### M2.5: Tests for Object-Vector Cells
 
@@ -277,8 +280,8 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [x] Export: `ObjectVectorMetrics`, `compute_object_vector_tuning`
   - [x] Export: `object_vector_score`, `is_object_vector_cell`
   - [x] Export: `plot_object_vector_tuning`
-- [ ] Add exports to `src/neurospatial/animation/overlays/__init__.py`
-  - [ ] Export: `ObjectVectorOverlay`
+- [x] Add exports to `src/neurospatial/animation/__init__.py`
+  - [x] Export: `ObjectVectorOverlay`, `ObjectVectorData`
 - [ ] Update `.claude/QUICKSTART.md` with object-vector examples
 - [ ] Update `.claude/API_REFERENCE.md` with object-vector imports
 

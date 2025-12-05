@@ -127,6 +127,7 @@ class OverlayProtocol(Protocol):
         | VideoData
         | EventData
         | TimeSeriesData
+        | ObjectVectorData
     ):
         """Convert overlay to internal data representation.
 
@@ -141,7 +142,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | ObjectVectorData
             Internal data container aligned to frame times.
 
         Notes
@@ -1643,6 +1644,242 @@ class TimeSeriesOverlay:
 
 
 @dataclass
+class ObjectVectorOverlay:
+    """Vector overlay showing lines from animal to objects for object-vector cell analysis.
+
+    Visualizes the spatial relationship between an animal and one or more objects
+    in the environment. Renders lines from the animal's position to each object,
+    useful for understanding object-vector cell responses.
+
+    The overlay draws vectors pointing from the animal position to object positions
+    at each animation frame. Optionally, firing rate modulation can be shown via
+    line opacity or color intensity.
+
+    Parameters
+    ----------
+    object_positions : ndarray of shape (n_objects, n_dims), dtype float64
+        Static positions of objects in **environment (x, y) format**. These positions
+        remain fixed throughout the animation. Dimensionality must match the
+        environment (env.n_dims).
+    animal_positions : ndarray of shape (n_samples, n_dims), dtype float64
+        Animal position trajectory in **environment (x, y) format**. Each row is a
+        position at a time point. Dimensionality must match the environment.
+    times : ndarray of shape (n_samples,), dtype float64, optional
+        Timestamps for each position sample, in seconds. If None, samples are
+        assumed uniformly spaced at the animation fps rate. Must be monotonically
+        increasing. Default is None.
+    firing_rates : ndarray of shape (n_samples,), dtype float64, optional
+        Firing rates at each time point for modulating line appearance (e.g.,
+        opacity or color intensity). Must match length of animal_positions.
+        If None, uniform appearance is used. Default is None.
+    color : str, optional
+        Color for the vector lines (matplotlib color string). Default is "white".
+    linewidth : float, optional
+        Width of the vector lines in pixels. Default is 2.0.
+    show_objects : bool, optional
+        If True, render object positions as markers. Default is True.
+    object_marker : str, optional
+        Marker style for objects ('o', 's', '^', etc.). Default is "o".
+    object_size : float, optional
+        Size of object markers in points. Default is 15.0.
+    interp : {"linear", "nearest"}, optional
+        Interpolation method for aligning overlay to animation frames.
+        "linear" (default) for smooth trajectories.
+        "nearest" for discrete/categorical data or to preserve exact samples.
+
+    Attributes
+    ----------
+    object_positions : NDArray[np.float64]
+        Static object positions.
+    animal_positions : NDArray[np.float64]
+        Animal position trajectory.
+    times : NDArray[np.float64] | None
+        Optional timestamps.
+    firing_rates : NDArray[np.float64] | None
+        Optional firing rate modulation.
+    color : str
+        Line color.
+    linewidth : float
+        Line width.
+    show_objects : bool
+        Whether to show object markers.
+    object_marker : str
+        Object marker style.
+    object_size : float
+        Object marker size.
+    interp : {"linear", "nearest"}
+        Interpolation method.
+
+    See Also
+    --------
+    PositionOverlay : Single trajectory visualization
+    HeadDirectionOverlay : Heading direction visualization
+    ObjectVectorCellModel : Simulation model for object-vector cells
+    compute_object_vector_field : Field computation for object-vector cells
+
+    Notes
+    -----
+    **Coordinate conventions**: Use environment (x, y) coordinates, matching
+    your tracking data and Environment. Do NOT pre-convert to napari (row, col)
+    format - the animation system handles coordinate transformation automatically.
+
+    **Multiple objects**: When multiple objects are provided, vectors are drawn
+    from the animal position to each object at every frame.
+
+    **Firing rate modulation**: When firing_rates is provided, it can be used
+    by backends to modulate line opacity or color intensity, showing stronger
+    responses as brighter/more opaque lines.
+
+    Examples
+    --------
+    Basic vector overlay with two objects:
+
+    >>> import numpy as np
+    >>> from neurospatial.animation import ObjectVectorOverlay
+    >>> objects = np.array([[25.0, 75.0], [75.0, 25.0]])
+    >>> trajectory = np.array([[10.0, 10.0], [50.0, 50.0], [90.0, 90.0]])
+    >>> overlay = ObjectVectorOverlay(
+    ...     object_positions=objects,
+    ...     animal_positions=trajectory,
+    ... )
+    >>> overlay.show_objects
+    True
+
+    With timestamps and firing rate modulation:
+
+    >>> times = np.array([0.0, 0.5, 1.0])
+    >>> firing_rates = np.array([1.0, 10.0, 3.0])
+    >>> overlay = ObjectVectorOverlay(
+    ...     object_positions=objects,
+    ...     animal_positions=trajectory,
+    ...     times=times,
+    ...     firing_rates=firing_rates,
+    ...     color="cyan",
+    ... )
+    >>> overlay.firing_rates is not None
+    True
+    """
+
+    object_positions: NDArray[np.float64]
+    animal_positions: NDArray[np.float64]
+    times: NDArray[np.float64] | None = None
+    firing_rates: NDArray[np.float64] | None = None
+    color: str = "white"
+    linewidth: float = 2.0
+    show_objects: bool = True
+    object_marker: str = "o"
+    object_size: float = 15.0
+    interp: Literal["linear", "nearest"] = "linear"
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> ObjectVectorData:
+        """Convert overlay to internal data representation.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,).
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            Environment object with ``n_dims`` and ``dimension_ranges``.
+
+        Returns
+        -------
+        ObjectVectorData
+            Internal data container aligned to frame times.
+
+        Raises
+        ------
+        ValueError
+            If shapes don't match or firing_rates length mismatches.
+        """
+        # Validate object positions shape
+        _validate_finite_values(
+            self.object_positions, name="ObjectVectorOverlay.object_positions"
+        )
+        _validate_shape(
+            self.object_positions,
+            env.n_dims,
+            name="ObjectVectorOverlay.object_positions",
+        )
+
+        # Validate animal positions
+        _validate_finite_values(
+            self.animal_positions, name="ObjectVectorOverlay.animal_positions"
+        )
+        _validate_shape(
+            self.animal_positions,
+            env.n_dims,
+            name="ObjectVectorOverlay.animal_positions",
+        )
+
+        # Validate firing rates if provided
+        if self.firing_rates is not None:
+            _validate_finite_values(
+                self.firing_rates, name="ObjectVectorOverlay.firing_rates"
+            )
+            if len(self.firing_rates) != len(self.animal_positions):
+                raise ValueError(
+                    f"WHAT: ObjectVectorOverlay.firing_rates length "
+                    f"({len(self.firing_rates)}) does not match "
+                    f"animal_positions length ({len(self.animal_positions)}).\n\n"
+                    "WHY: Each firing rate value corresponds to an animal position "
+                    "sample, so they must have the same length.\n\n"
+                    "HOW: Ensure firing_rates has shape (n_samples,) matching "
+                    "animal_positions shape (n_samples, n_dims)."
+                )
+
+        # Align animal positions to frame times
+        aligned_positions = _align_to_frame_times(
+            self.animal_positions,
+            self.times,
+            frame_times,
+            n_frames,
+            self.interp,
+            name="ObjectVectorOverlay.animal_positions",
+        )
+
+        # Validate bounds (warning only)
+        _validate_bounds(
+            aligned_positions,
+            env.dimension_ranges,
+            name="ObjectVectorOverlay.animal_positions",
+            threshold=0.1,
+        )
+
+        # Align firing rates if provided
+        aligned_firing_rates: NDArray[np.float64] | None = None
+        if self.firing_rates is not None:
+            # Reshape to 2D for alignment function, then squeeze back
+            rates_2d = self.firing_rates.reshape(-1, 1)
+            aligned_rates_2d = _align_to_frame_times(
+                rates_2d,
+                self.times,
+                frame_times,
+                n_frames,
+                self.interp,
+                name="ObjectVectorOverlay.firing_rates",
+            )
+            aligned_firing_rates = aligned_rates_2d.squeeze()
+
+        return ObjectVectorData(
+            object_positions=self.object_positions,
+            animal_positions=aligned_positions,
+            firing_rates=aligned_firing_rates,
+            color=self.color,
+            linewidth=self.linewidth,
+            show_objects=self.show_objects,
+            object_marker=self.object_marker,
+            object_size=self.object_size,
+        )
+
+
+@dataclass
 class VideoOverlay:
     """Video background overlay for displaying recorded footage behind or above fields.
 
@@ -2491,6 +2728,69 @@ class TimeSeriesData:
 
 
 @dataclass
+class ObjectVectorData:
+    """Internal container for object-vector overlay data aligned to animation frames.
+
+    This is used internally by backends and should not be instantiated by users.
+    Created by the conversion pipeline from ObjectVectorOverlay instances.
+
+    Parameters
+    ----------
+    object_positions : ndarray of shape (n_objects, n_dims), dtype float64
+        Static positions of objects in environment coordinates. These positions
+        remain fixed throughout the animation.
+    animal_positions : ndarray of shape (n_frames, n_dims), dtype float64
+        Animal positions aligned to animation frames. NaN values indicate
+        frames where position is unavailable.
+    firing_rates : ndarray of shape (n_frames,), dtype float64, optional
+        Firing rates aligned to animation frames for modulating line appearance.
+        None if no modulation was specified.
+    color : str
+        Line color (matplotlib color string).
+    linewidth : float
+        Line width in pixels.
+    show_objects : bool
+        Whether to render object markers.
+    object_marker : str
+        Marker style for objects.
+    object_size : float
+        Size of object markers in points.
+
+    Attributes
+    ----------
+    object_positions : NDArray[np.float64]
+        Static object positions.
+    animal_positions : NDArray[np.float64]
+        Animal positions aligned to frames.
+    firing_rates : NDArray[np.float64] | None
+        Firing rates aligned to frames.
+    color : str
+        Line color.
+    linewidth : float
+        Line width.
+    show_objects : bool
+        Object marker visibility.
+    object_marker : str
+        Object marker style.
+    object_size : float
+        Object marker size.
+
+    See Also
+    --------
+    ObjectVectorOverlay : User-facing overlay configuration
+    """
+
+    object_positions: NDArray[np.float64]
+    animal_positions: NDArray[np.float64]
+    firing_rates: NDArray[np.float64] | None
+    color: str
+    linewidth: float
+    show_objects: bool
+    object_marker: str
+    object_size: float
+
+
+@dataclass
 class OverlayData:
     """Container for all overlay data passed to animation backends.
 
@@ -2513,6 +2813,8 @@ class OverlayData:
         List of event overlays. Default is empty list.
     timeseries : list[TimeSeriesData], optional
         List of time series overlays. Default is empty list.
+    object_vectors : list[ObjectVectorData], optional
+        List of object-vector overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
         Region names in normalized format. Key is frame index (0 = all frames),
         value is list of region names. Populated by _convert_overlays_to_data()
@@ -2536,6 +2838,8 @@ class OverlayData:
         List of event overlays.
     timeseries : list[TimeSeriesData]
         List of time series overlays.
+    object_vectors : list[ObjectVectorData]
+        List of object-vector overlays.
     regions : dict[int, list[str]] | None
         Region names in normalized format (key 0 = all frames).
     frame_times : NDArray[np.float64] | None
@@ -2566,6 +2870,7 @@ class OverlayData:
     videos: list[VideoData] = field(default_factory=list)
     events: list[EventData] = field(default_factory=list)
     timeseries: list[TimeSeriesData] = field(default_factory=list)
+    object_vectors: list[ObjectVectorData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
 
@@ -3615,6 +3920,7 @@ def _convert_overlays_to_data(
     video_data_list: list[VideoData] = []
     event_data_list: list[EventData] = []
     timeseries_data_list: list[TimeSeriesData] = []
+    object_vector_data_list: list[ObjectVectorData] = []
 
     # Process each overlay using protocol dispatch
     for overlay in overlays:
@@ -3642,11 +3948,13 @@ def _convert_overlays_to_data(
             event_data_list.append(internal_data)
         elif isinstance(internal_data, TimeSeriesData):
             timeseries_data_list.append(internal_data)
+        elif isinstance(internal_data, ObjectVectorData):
+            object_vector_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
-                f"HeadDirectionData, VideoData, EventData, or TimeSeriesData, "
-                f"got {type(internal_data).__name__}."
+                f"HeadDirectionData, VideoData, EventData, TimeSeriesData, "
+                f"or ObjectVectorData, got {type(internal_data).__name__}."
             )
 
     # Normalize regions to dict[int, list[str]] format
@@ -3668,6 +3976,7 @@ def _convert_overlays_to_data(
         videos=video_data_list,
         events=event_data_list,
         timeseries=timeseries_data_list,
+        object_vectors=object_vector_data_list,
         regions=normalized_regions,
         frame_times=frame_times,
     )

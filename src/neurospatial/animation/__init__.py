@@ -42,9 +42,11 @@ Extensibility
 OverlayProtocol : Protocol
     Protocol for creating custom overlays. Implement ``times``, ``interp``,
     and ``convert_to_data()`` to create custom overlay types.
-PositionData, BodypartData, HeadDirectionData, VideoData, EventData, TimeSeriesData : dataclass
+PositionData, BodypartData, HeadDirectionData, VideoData, EventData, TimeSeriesData, ObjectVectorData : dataclass
     Internal data containers returned by ``convert_to_data()``. Custom overlays
     should return one of these types.
+ObjectVectorOverlay : class
+    Overlay for visualizing vectors from animal to objects (object-vector cells).
 """
 
 from neurospatial.animation._video_io import VideoReaderProtocol
@@ -59,6 +61,8 @@ from neurospatial.animation.overlays import (
     EventData,
     EventOverlay,
     HeadDirectionData,
+    ObjectVectorData,
+    ObjectVectorOverlay,
     OverlayProtocol,
     PositionData,
     SpikeOverlay,
@@ -83,6 +87,8 @@ __all__: list[str] = [
     "EventData",
     "EventOverlay",
     "HeadDirectionData",
+    "ObjectVectorData",
+    "ObjectVectorOverlay",
     "OverlayProtocol",
     "PositionData",
     "Skeleton",

@@ -285,11 +285,71 @@
 - `src/neurospatial/__init__.py` - Added exports:
   - `ObjectVectorFieldResult`, `compute_object_vector_field`
 
+### Completed: M2.4 Object-Vector Overlay (Animation)
+
+**Files Modified:**
+
+- `src/neurospatial/animation/overlays.py` - Added `ObjectVectorOverlay` class and `ObjectVectorData` container
+- `src/neurospatial/animation/__init__.py` - Added exports
+- `tests/animation/test_object_vector_overlay.py` - 25 comprehensive tests
+
+**Implemented:**
+
+- [x] `ObjectVectorOverlay` dataclass with parameters:
+  - `object_positions`, `animal_positions` - required spatial setup
+  - `firing_rates`, `times` - optional modulation and timing
+  - `color`, `linewidth`, `show_objects`, `object_marker`, `object_size` - styling
+  - `interp` ("linear", "nearest") - interpolation method
+- [x] `ObjectVectorData` internal container:
+  - `object_positions` - static object positions (n_objects, n_dims)
+  - `animal_positions` - aligned to frames (n_frames, n_dims)
+  - `firing_rates` - optional, aligned to frames (n_frames,)
+  - Styling fields passed through
+- [x] `convert_to_data()` method:
+  - Validates object_positions and animal_positions (finite values, shape)
+  - Validates firing_rates (finite values, length match)
+  - Aligns animal_positions and firing_rates to frame times
+  - Warns for positions outside environment bounds
+- [x] Integration with OverlayData pipeline:
+  - Updated OverlayProtocol return type
+  - Added object_vectors list to OverlayData container
+  - Updated _convert_overlays_to_data() dispatch
+
+**Key Design Decisions:**
+
+- Added to existing `overlays.py` (not a separate file) to match codebase pattern
+- Follows exact pattern of PositionOverlay, HeadDirectionOverlay
+- Static object_positions (not interpolated) vs dynamic animal_positions
+- Optional firing_rates for modulating line appearance
+- Uses existing validation helpers (_validate_finite_values, _validate_shape, _validate_bounds)
+- WHAT/WHY/HOW error messages for all validation errors
+
+**Tests:**
+
+- 25/25 passing
+- Module structure tests (imports, protocol compliance)
+- Creation tests (basic, with times, with firing rates, custom styling)
+- Conversion tests (basic, with firing rates, no times, preserves objects)
+- Validation tests (shape, finite values, length match, bounds warning)
+- Docstring tests
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved after adding finite value validation for firing_rates
+- NumPy-style docstrings with complete parameter documentation
+- Full type annotations with Literal types
+
 ### Next Task
 
-- **M2.4**: Object-Vector Overlay (Animation)
-  - Create `src/neurospatial/animation/overlays/object_vector.py`
-  - Implement `ObjectVectorFieldOverlay` class
+- **M2.5**: Tests for Object-Vector Cells (remaining unchecked items)
+  - tests/test_object_vector_field.py tests
+- **M2.6**: Integration and Documentation
+  - Add exports to `src/neurospatial/__init__.py`
+  - Add exports to `src/neurospatial/simulation/__init__.py`
+  - Update `.claude/QUICKSTART.md`
+  - Update `.claude/API_REFERENCE.md`
 
 ### Blockers
 
