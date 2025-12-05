@@ -930,3 +930,439 @@ class TestEventIndicator:
         # Can be used directly in design matrix
         X = result.astype(float)
         assert X.dtype == np.float64
+
+
+# =============================================================================
+# Test distance_to_reward
+# =============================================================================
+
+
+@pytest.fixture
+def simple_grid_env():
+    """Create a simple 10x10 grid environment for testing."""
+    from neurospatial import Environment
+
+    # Create positions covering 10x10 grid
+    x = np.linspace(0, 9, 10)
+    y = np.linspace(0, 9, 10)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+
+    env = Environment.from_samples(positions, bin_size=1.0)
+    return env
+
+
+class TestDistanceToReward:
+    """Tests for distance_to_reward function."""
+
+    def test_basic_functionality(self, simple_grid_env):
+        """Test basic distance to reward calculation."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        # Trajectory moving from (0,0) to (9,9)
+        n_samples = 50
+        times = np.linspace(0, 10, n_samples)
+        positions = np.column_stack(
+            [
+                np.linspace(0, 9, n_samples),
+                np.linspace(0, 9, n_samples),
+            ]
+        )
+
+        # Reward at t=5 (midpoint)
+        reward_times = np.array([5.0])
+
+        result = distance_to_reward(
+            env, positions, times, reward_times, metric="euclidean"
+        )
+
+        assert result.shape == (n_samples,)
+        assert not np.all(np.isnan(result))
+        # At t=5, animal is at midpoint, reward is there, distance ~0
+        mid_idx = n_samples // 2
+        assert result[mid_idx] < result[0]  # Closer at reward time
+
+    def test_mode_nearest(self, simple_grid_env):
+        """Test mode='nearest' selects closest reward in time."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 100
+        times = np.linspace(0, 10, n_samples)
+        positions = np.column_stack(
+            [
+                np.full(n_samples, 5.0),  # Stay at center
+                np.full(n_samples, 5.0),
+            ]
+        )
+
+        # Two rewards at different locations and times
+        reward_times = np.array([2.0, 8.0])
+        reward_positions = np.array([[0.0, 5.0], [9.0, 5.0]])
+
+        result = distance_to_reward(
+            env,
+            positions,
+            times,
+            reward_times,
+            reward_positions=reward_positions,
+            mode="nearest",
+            metric="euclidean",
+        )
+
+        # At t=2, should be distance to (0,5) which is 5 units
+        idx_at_2 = 20  # t=2.0
+        # At t=8, should be distance to (9,5) which is 4 units
+        idx_at_8 = 80  # t=8.0
+
+        assert result[idx_at_2] == pytest.approx(5.0, abs=0.5)
+        assert result[idx_at_8] == pytest.approx(4.0, abs=0.5)
+
+    def test_mode_last(self, simple_grid_env):
+        """Test mode='last' uses most recent reward."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 100
+        times = np.linspace(0, 10, n_samples)
+        positions = np.full((n_samples, 2), 5.0)
+
+        reward_times = np.array([3.0, 7.0])
+        reward_positions = np.array([[0.0, 5.0], [9.0, 5.0]])
+
+        result = distance_to_reward(
+            env,
+            positions,
+            times,
+            reward_times,
+            reward_positions=reward_positions,
+            mode="last",
+            metric="euclidean",
+        )
+
+        # Before first reward (t<3): NaN
+        assert np.isnan(result[0])
+        assert np.isnan(result[10])
+
+        # After first reward (3<=t<7): distance to (0,5)
+        assert not np.isnan(result[30])  # t=3.0
+        assert not np.isnan(result[50])  # t=5.0
+
+        # After second reward (t>=7): distance to (9,5)
+        assert not np.isnan(result[70])  # t=7.0
+        assert not np.isnan(result[90])  # t=9.0
+
+    def test_mode_next(self, simple_grid_env):
+        """Test mode='next' uses upcoming reward."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 100
+        times = np.linspace(0, 10, n_samples)
+        positions = np.full((n_samples, 2), 5.0)
+
+        reward_times = np.array([3.0, 7.0])
+        reward_positions = np.array([[0.0, 5.0], [9.0, 5.0]])
+
+        result = distance_to_reward(
+            env,
+            positions,
+            times,
+            reward_times,
+            reward_positions=reward_positions,
+            mode="next",
+            metric="euclidean",
+        )
+
+        # Before first reward: distance to (0,5)
+        assert not np.isnan(result[0])
+        assert not np.isnan(result[20])
+
+        # Between rewards (3<=t<7): distance to (9,5)
+        assert not np.isnan(result[50])
+
+        # After last reward: NaN
+        assert np.isnan(result[80])
+        assert np.isnan(result[99])
+
+    def test_empty_rewards_returns_nan(self, simple_grid_env):
+        """Test empty reward_times returns all NaN."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[0.0, 0.0], [5.0, 5.0], [9.0, 9.0]])
+        reward_times = np.array([])
+
+        result = distance_to_reward(env, positions, times, reward_times)
+
+        assert np.all(np.isnan(result))
+        assert len(result) == 3
+
+    def test_empty_positions(self, simple_grid_env):
+        """Test empty positions returns empty array."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        times = np.array([])
+        positions = np.empty((0, 2))
+        reward_times = np.array([1.0, 2.0])
+
+        result = distance_to_reward(env, positions, times, reward_times)
+
+        assert len(result) == 0
+
+    def test_reward_positions_interpolated(self, simple_grid_env):
+        """Test reward positions are interpolated when not provided."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 50
+        times = np.linspace(0, 10, n_samples)
+        # Trajectory from (0,0) to (9,9)
+        positions = np.column_stack(
+            [
+                np.linspace(0, 9, n_samples),
+                np.linspace(0, 9, n_samples),
+            ]
+        )
+
+        # Reward at t=5 (position should be ~(4.5, 4.5))
+        reward_times = np.array([5.0])
+
+        # Without explicit reward_positions
+        result = distance_to_reward(
+            env, positions, times, reward_times, metric="euclidean"
+        )
+
+        # At t=5, animal is at ~(4.5, 4.5), reward interpolated to same
+        mid_idx = n_samples // 2
+        assert result[mid_idx] < 1.0  # Close to zero at reward time
+
+    def test_position_times_mismatch_raises(self, simple_grid_env):
+        """Test mismatched positions and times raises ValueError."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        positions = np.array([[0.0, 0.0], [5.0, 5.0], [9.0, 9.0]])
+        times = np.array([0.0, 1.0])  # Wrong length
+        reward_times = np.array([0.5])
+
+        with pytest.raises(ValueError, match=r"positions and times.*same length"):
+            distance_to_reward(env, positions, times, reward_times)
+
+    def test_reward_positions_times_mismatch_raises(self, simple_grid_env):
+        """Test mismatched reward_positions and reward_times raises ValueError."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        positions = np.array([[0.0, 0.0], [5.0, 5.0]])
+        times = np.array([0.0, 1.0])
+        reward_times = np.array([0.5, 0.8])
+        reward_positions = np.array([[1.0, 1.0]])  # Wrong length
+
+        with pytest.raises(ValueError, match=r"reward_positions and reward_times"):
+            distance_to_reward(
+                env, positions, times, reward_times, reward_positions=reward_positions
+            )
+
+    def test_output_dtype_is_float64(self, simple_grid_env):
+        """Test output dtype is float64."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        positions = np.array([[0.0, 0.0], [5.0, 5.0]])
+        times = np.array([0.0, 1.0])
+        reward_times = np.array([0.5])
+
+        result = distance_to_reward(env, positions, times, reward_times)
+
+        assert result.dtype == np.float64
+
+    def test_geodesic_respects_graph(self, simple_grid_env):
+        """Test geodesic metric uses graph distances."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        # Position at (0, 0), reward at (1, 1)
+        positions = np.array([[0.0, 0.0]])
+        times = np.array([0.0])
+        reward_times = np.array([0.0])
+        reward_positions = np.array([[1.0, 1.0]])
+
+        # Geodesic distance (Manhattan-like on grid)
+        result_geodesic = distance_to_reward(
+            env,
+            positions,
+            times,
+            reward_times,
+            reward_positions=reward_positions,
+            metric="geodesic",
+        )
+
+        # Euclidean distance (sqrt(2) ~= 1.41)
+        result_euclidean = distance_to_reward(
+            env,
+            positions,
+            times,
+            reward_times,
+            reward_positions=reward_positions,
+            metric="euclidean",
+        )
+
+        # Geodesic should be >= Euclidean (diagonal not directly connected)
+        assert result_geodesic[0] >= result_euclidean[0]
+
+
+# =============================================================================
+# Test distance_to_boundary
+# =============================================================================
+
+
+class TestDistanceToBoundary:
+    """Tests for distance_to_boundary function."""
+
+    def test_basic_edge_distance(self, simple_grid_env):
+        """Test basic distance to edge calculation."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        # Positions: center and corner
+        positions = np.array([[5.0, 5.0], [0.0, 0.0]])
+
+        result = distance_to_boundary(env, positions, boundary_type="edge")
+
+        assert result.shape == (2,)
+        # Center is farther from edge than corner
+        assert result[0] > result[1]
+        # Corner is at edge, distance should be 0 or very small
+        assert result[1] < 1.0
+
+    def test_region_boundary_distance(self, simple_grid_env):
+        """Test distance to region boundary."""
+        from shapely.geometry import box as shapely_box
+
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        # Add a region (simple polygon using shapely)
+        goal_polygon = shapely_box(7.0, 7.0, 9.0, 9.0)  # minx, miny, maxx, maxy
+        env.regions.add("goal", polygon=goal_polygon)
+
+        # Positions: one far from region, one near region
+        positions = np.array([[1.0, 1.0], [6.0, 6.0]])
+
+        result = distance_to_boundary(
+            env, positions, boundary_type="region", region_name="goal"
+        )
+
+        assert result.shape == (2,)
+        # Position at (1,1) is farther from goal region than (6,6)
+        assert result[0] > result[1]
+
+    def test_missing_region_raises(self, simple_grid_env):
+        """Test missing region name raises ValueError."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.array([[5.0, 5.0]])
+
+        with pytest.raises(ValueError, match=r"Region.*not found"):
+            distance_to_boundary(
+                env, positions, boundary_type="region", region_name="nonexistent"
+            )
+
+    def test_region_name_required_for_region_type(self, simple_grid_env):
+        """Test region_name is required when boundary_type='region'."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.array([[5.0, 5.0]])
+
+        with pytest.raises(ValueError, match=r"region_name.*required"):
+            distance_to_boundary(env, positions, boundary_type="region")
+
+    def test_empty_positions(self, simple_grid_env):
+        """Test empty positions returns empty array."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.empty((0, 2))
+
+        result = distance_to_boundary(env, positions, boundary_type="edge")
+
+        assert len(result) == 0
+
+    def test_output_dtype_is_float64(self, simple_grid_env):
+        """Test output dtype is float64."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.array([[5.0, 5.0]])
+
+        result = distance_to_boundary(env, positions, boundary_type="edge")
+
+        assert result.dtype == np.float64
+
+    def test_geodesic_vs_euclidean(self, simple_grid_env):
+        """Test geodesic and euclidean metrics give different results."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.array([[5.0, 5.0]])
+
+        result_geodesic = distance_to_boundary(
+            env, positions, boundary_type="edge", metric="geodesic"
+        )
+
+        result_euclidean = distance_to_boundary(
+            env, positions, boundary_type="edge", metric="euclidean"
+        )
+
+        # Both should return valid distances
+        assert not np.isnan(result_geodesic[0])
+        assert not np.isnan(result_euclidean[0])
+
+    def test_invalid_boundary_type_raises(self, simple_grid_env):
+        """Test invalid boundary_type raises ValueError."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        positions = np.array([[5.0, 5.0]])
+
+        with pytest.raises(ValueError, match=r"boundary_type"):
+            distance_to_boundary(env, positions, boundary_type="invalid")
+
+    def test_position_outside_env_returns_nan(self, simple_grid_env):
+        """Test positions outside environment return NaN."""
+        from neurospatial.events.regressors import distance_to_boundary
+
+        env = simple_grid_env
+
+        # Position far outside the 10x10 grid
+        positions = np.array([[100.0, 100.0]])
+
+        result = distance_to_boundary(env, positions, boundary_type="edge")
+
+        # Position outside env → invalid bin → NaN
+        assert np.isnan(result[0])

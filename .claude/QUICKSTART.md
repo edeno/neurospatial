@@ -383,6 +383,37 @@ n_rewards = event_count_in_window(
 )
 ```
 
+**Spatial distance regressors:**
+
+```python
+from neurospatial import distance_to_reward, distance_to_boundary
+
+# Distance to reward location (requires Environment)
+dist_to_reward = distance_to_reward(
+    env, positions, times, reward_times,
+    mode="next",      # Distance to upcoming reward
+    metric="geodesic" # Respects walls/obstacles
+)
+
+# Distance to environment boundaries
+dist_to_wall = distance_to_boundary(
+    env, positions, boundary_type="edge"
+)
+
+# Distance to named region boundary
+dist_to_goal = distance_to_boundary(
+    env, positions, boundary_type="region", region_name="goal"
+)
+
+# Build GLM design matrix
+import numpy as np
+X = np.column_stack([
+    time_to_nearest_event(times, reward_times, max_time=5.0),
+    dist_to_reward,
+    dist_to_wall,
+])
+```
+
 **Add spatial positions to events:**
 
 ```python

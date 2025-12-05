@@ -196,10 +196,14 @@ from neurospatial import (
     align_events,                     # Align events to reference events
     plot_peri_event_histogram,        # Plot PSTH results
 
-    # GLM regressors
+    # GLM regressors (temporal)
     time_to_nearest_event,            # Signed time to nearest event
     event_count_in_window,            # Count events in window
     event_indicator,                  # Binary presence indicator
+
+    # GLM regressors (spatial)
+    distance_to_reward,               # Distance to reward location
+    distance_to_boundary,             # Distance to walls/obstacles/regions
 
     # Spatial utilities
     add_positions,                    # Add x, y columns to events

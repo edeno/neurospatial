@@ -100,8 +100,12 @@
   * `time_to_nearest_event()` - signed peri-event time
   * `event_count_in_window()` - count events in window
   * `event_indicator()` - binary presence indicator
-* [ ] Distance to reward (Euclidean or cost-distance).
-* [ ] Distance to walls, obstacles, region boundaries.
+* [x] Distance to reward (Euclidean or cost-distance).
+  * `distance_to_reward()` - distance to reward location with mode='nearest/last/next'
+  * Supports geodesic (graph-based) and Euclidean metrics
+* [x] Distance to walls, obstacles, region boundaries.
+  * `distance_to_boundary()` - distance to environment boundaries
+  * boundary_type='edge' (walls), 'obstacle', or 'region' (named region boundary)
 * [x] Head direction, speed, acceleration, behavioral phase.
   * `circular_basis()` for circular predictors (HD, phase, direction)
   * `circular_basis_metrics()` to interpret GLM coefficients

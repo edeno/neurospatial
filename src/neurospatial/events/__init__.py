@@ -26,6 +26,8 @@ GLM Regressors:
     time_to_nearest_event : Signed time to nearest event (peri-event time)
     event_count_in_window : Count events in time window
     event_indicator : Binary indicator of event presence
+    distance_to_reward : Distance to reward location (spatial regressor)
+    distance_to_boundary : Distance to environment boundaries (spatial regressor)
 
 Peri-Event Analysis:
     align_spikes_to_events : Get per-trial spike times
@@ -85,10 +87,13 @@ _LAZY_IMPORTS: dict[str, str] = {
     "intervals_to_events": "neurospatial.events.intervals:intervals_to_events",
     "events_to_intervals": "neurospatial.events.intervals:events_to_intervals",
     "filter_by_intervals": "neurospatial.events.intervals:filter_by_intervals",
-    # GLM regressors
+    # GLM regressors (temporal)
     "time_to_nearest_event": "neurospatial.events.regressors:time_to_nearest_event",
     "event_count_in_window": "neurospatial.events.regressors:event_count_in_window",
     "event_indicator": "neurospatial.events.regressors:event_indicator",
+    # GLM regressors (spatial)
+    "distance_to_reward": "neurospatial.events.regressors:distance_to_reward",
+    "distance_to_boundary": "neurospatial.events.regressors:distance_to_boundary",
     # Peri-event analysis
     "align_spikes_to_events": "neurospatial.events.alignment:align_spikes_to_events",
     "peri_event_histogram": "neurospatial.events.alignment:peri_event_histogram",
@@ -125,10 +130,13 @@ __all__ = [
     "events_to_intervals",
     "filter_by_intervals",
     "intervals_to_events",
-    # GLM regressors
+    # GLM regressors (temporal)
     "event_count_in_window",
     "event_indicator",
     "time_to_nearest_event",
+    # GLM regressors (spatial)
+    "distance_to_boundary",
+    "distance_to_reward",
     # Peri-event analysis
     "align_events",
     "align_spikes_to_events",
