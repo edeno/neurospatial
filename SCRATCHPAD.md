@@ -1,7 +1,7 @@
 # Events Module Implementation - Scratchpad
 
 **Last Updated**: 2025-12-04
-**Current Status**: Milestone 2 In Progress (M2.1 Complete)
+**Current Status**: Milestone 6 Complete
 
 ---
 
@@ -270,9 +270,72 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 - All pass mypy, ruff, pytest
 - Total events module: 164 tests passing
 
+---
+
+### 2025-12-04: M6 Complete - Peri-Event Analysis
+
+**Completed Tasks:**
+
+- M6.1: Implemented `align_spikes_to_events()` in `alignment.py`
+  - Parameters: `spike_times`, `event_times`, `window`
+  - Returns list of arrays with relative spike times per event
+  - Efficient O(n log m) using `np.searchsorted()` for binary search
+  - Handles unsorted inputs, empty arrays, boundary inclusion
+
+- M6.2: Implemented `peri_event_histogram()` in `alignment.py`
+  - Parameters: `spike_times`, `event_times`, `window`, `bin_size`
+  - Uses `align_spikes_to_events()` internally
+  - Computes mean ± SEM across events
+  - Returns `PeriEventResult` dataclass
+  - Warns when single event (SEM undefined → NaN)
+
+- M6.3: Implemented `population_peri_event_histogram()` in `alignment.py`
+  - Parameters: `spike_trains`, `event_times`, `window`, `bin_size`
+  - Processes multiple units simultaneously
+  - Returns `PopulationPeriEventResult` with per-unit and population stats
+
+- M6.4: Implemented `align_events()` in `alignment.py`
+  - Parameters: `events`, `reference_events`, `window`, `event_column`, `reference_column`
+  - Extracts events within window of each reference
+  - Adds `relative_time` and `reference_index` columns
+  - Preserves all original event columns
+
+- M6.5: Verified `plot_peri_event_histogram()` in `_core.py`
+  - Already implemented with full functionality
+  - Added 4 tests for basic plotting
+
+- M6.6: Created comprehensive test suite
+  - TestAlignSpikesToEvents: 24 tests
+  - TestPeriEventHistogram: 16 tests
+  - TestPopulationPeriEventHistogram: 10 tests
+  - TestAlignEvents: 14 tests
+  - TestPlotPeriEventHistogram: 4 tests
+  - Total: 68 tests
+
+- M6.7: Verified milestone completion
+  - All 68 tests pass
+  - mypy: Success
+  - ruff: All checks pass
+
+**Key Decisions:**
+
+1. **Sign convention**: Relative times follow PSTH convention (negative before, positive after)
+2. **Inclusive boundaries**: Events at exact window edges are included
+3. **Single event warning**: SEM is NaN with UserWarning instead of error
+4. **Default bin_size**: 25ms (0.025s) for typical neural data
+5. **align_events preserves columns**: All original columns preserved, events can appear multiple times if in overlapping windows
+
+**Milestone 6 Status: COMPLETE**
+
+- 4 peri-event functions implemented
+- 68 tests in `tests/test_events_alignment.py`
+- All pass mypy, ruff, pytest
+- Total events module: 232 tests passing
+
 **Next Steps:**
 
-- Milestone 5: Spatial Distance Regressors (or continue to M6 if M5 is less priority)
+- Milestone 7: NWB Integration (if needed)
+- Milestone 8: Top-Level Exports and Documentation
 
 ---
 
