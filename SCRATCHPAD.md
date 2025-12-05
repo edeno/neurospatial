@@ -1,15 +1,15 @@
 # SCRATCHPAD: Behavioral Trajectory Metrics Implementation
 
 **Started**: 2025-12-05
-**Current Phase**: M3 COMPLETE - Ready for M4 (VTE Metrics)
+**Current Phase**: M4 COMPLETE - Ready for M5 (Integration)
 
 ---
 
 ## Current Task
 
-**COMPLETED**: M3 - Decision Analysis
+**COMPLETED**: M4 - VTE Metrics
 
-Next: **M4 - VTE Metrics**
+Next: **M5 - Integration and Documentation**
 
 ---
 
@@ -122,5 +122,35 @@ None currently.
   - Circular statistics computed directly (not via private functions)
   - Out-of-bounds bins handled gracefully (NaN distance)
   - Single-goal case returns inf for boundary distance
+- ruff check: PASSED
+- mypy check: PASSED
+
+### Session 4 (M4 - VTE Metrics)
+
+- `src/neurospatial/metrics/vte.py` - NEW (~760 LOC)
+- `tests/metrics/test_vte.py` - NEW (40 tests)
+- `src/neurospatial/metrics/__init__.py` - Added 11 exports
+
+#### M4 Completion Notes
+
+- All 40 tests pass
+- Implemented 8 functions and 2 dataclasses:
+  - `VTETrialResult` - single trial VTE metrics with IdPhi aliases
+  - `VTESessionResult` - session-level VTE analysis
+  - `wrap_angle` - wrap angles to (-pi, pi]
+  - `head_sweep_magnitude` - sum of |delta_theta| (IdPhi)
+  - `integrated_absolute_rotation` - alias for head_sweep_magnitude
+  - `head_sweep_from_positions` - IdPhi from trajectory
+  - `normalize_vte_scores` - z-score VTE metrics across trials
+  - `compute_vte_index` - combined VTE index
+  - `classify_vte` - VTE classification by threshold
+  - `compute_vte_trial` - single trial analysis (no z-scores)
+  - `compute_vte_session` - full session analysis with z-scoring
+- Code review: APPROVED with no critical issues
+- Key design decisions:
+  - Property aliases (`idphi`, `z_idphi`) for domain terminology
+  - std=0 triggers warning but returns zeros (not NaN)
+  - Single trial analysis returns None for z-scores
+  - Proper angle wrapping for head sweep calculation
 - ruff check: PASSED
 - mypy check: PASSED

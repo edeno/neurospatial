@@ -320,95 +320,95 @@ path_efficiency.py (no internal dependencies)
 
 ### M4.1: Module Setup
 
-- [ ] Create `vte.py` with module docstring
-- [ ] Add terminology glossary (IdPhi, zIdPhi, VTE index)
-- [ ] Add imports from `neurospatial.reference_frames`, `neurospatial.metrics.decision_analysis`
+- [x] Create `vte.py` with module docstring
+- [x] Add terminology glossary (IdPhi, zIdPhi, VTE index)
+- [x] Add imports from `neurospatial.reference_frames`, `neurospatial.metrics.decision_analysis`
 
 ### M4.2: Data Structures
 
-- [ ] Implement `VTETrialResult` frozen dataclass
-  - [ ] Fields: `head_sweep_magnitude`, `z_head_sweep`, `mean_speed`, `min_speed`, `z_speed_inverse`, `vte_index`, `is_vte`, `window_start`, `window_end`
-  - [ ] Property aliases: `idphi`, `z_idphi`
-  - [ ] Method: `summary() -> str`
-- [ ] Implement `VTESessionResult` frozen dataclass
-  - [ ] Fields: `trial_results`, `mean_head_sweep`, `std_head_sweep`, `mean_speed`, `std_speed`, `n_vte_trials`, `vte_fraction`
-  - [ ] Property aliases: `mean_idphi`, `std_idphi`
-  - [ ] Method: `summary() -> str`
-  - [ ] Method: `get_vte_trials() -> list[VTETrialResult]`
+- [x] Implement `VTETrialResult` frozen dataclass
+  - [x] Fields: `head_sweep_magnitude`, `z_head_sweep`, `mean_speed`, `min_speed`, `z_speed_inverse`, `vte_index`, `is_vte`, `window_start`, `window_end`
+  - [x] Property aliases: `idphi`, `z_idphi`
+  - [x] Method: `summary() -> str`
+- [x] Implement `VTESessionResult` frozen dataclass
+  - [x] Fields: `trial_results`, `mean_head_sweep`, `std_head_sweep`, `mean_speed`, `std_speed`, `n_vte_trials`, `vte_fraction`
+  - [x] Property aliases: `mean_idphi`, `std_idphi`
+  - [x] Method: `summary() -> str`
+  - [x] Method: `get_vte_trials() -> list[VTETrialResult]`
 
 ### M4.3: Core Functions
 
-- [ ] Implement `wrap_angle(angle) -> NDArray[np.float64]`
-  - [ ] Wrap to (-pi, pi]
-  - [ ] Formula: `(angle + pi) % (2 * pi) - pi`
-- [ ] Implement `head_sweep_magnitude(headings) -> float`
-  - [ ] Sum of `|delta_theta|` with angle wrapping
-  - [ ] Return 0.0 for < 2 valid samples
-  - [ ] Filter NaN values
-- [ ] Add `integrated_absolute_rotation = head_sweep_magnitude` alias
-- [ ] Implement `head_sweep_from_positions(positions, times, *, min_speed=5.0) -> float`
-  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
-  - [ ] Get headings and compute magnitude
+- [x] Implement `wrap_angle(angle) -> NDArray[np.float64]`
+  - [x] Wrap to (-pi, pi]
+  - [x] Formula: `(angle + pi) % (2 * pi) - pi`
+- [x] Implement `head_sweep_magnitude(headings) -> float`
+  - [x] Sum of `|delta_theta|` with angle wrapping
+  - [x] Return 0.0 for < 2 valid samples
+  - [x] Filter NaN values
+- [x] Add `integrated_absolute_rotation = head_sweep_magnitude` alias
+- [x] Implement `head_sweep_from_positions(positions, times, *, min_speed=5.0) -> float`
+  - [x] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [x] Get headings and compute magnitude
 
 ### M4.4: Z-Scoring Functions
 
-- [ ] Implement `normalize_vte_scores(head_sweeps, speeds) -> tuple[NDArray, NDArray]`
-  - [ ] Z-score head sweeps
-  - [ ] Z-score inverse speed (higher = slower = more VTE-like)
-  - [ ] Warn if std=0 with helpful message about adjusting parameters
-  - [ ] Return zeros (not NaN) when std=0
+- [x] Implement `normalize_vte_scores(head_sweeps, speeds) -> tuple[NDArray, NDArray]`
+  - [x] Z-score head sweeps
+  - [x] Z-score inverse speed (higher = slower = more VTE-like)
+  - [x] Warn if std=0 with helpful message about adjusting parameters
+  - [x] Return zeros (not NaN) when std=0
 
 ### M4.5: Classification Functions
 
-- [ ] Implement `compute_vte_index(z_head_sweep, z_speed_inv, *, alpha=0.5) -> float`
-  - [ ] Formula: `alpha * z_head_sweep + (1 - alpha) * z_speed_inverse`
-- [ ] Implement `classify_vte(vte_index, *, threshold=0.5) -> bool`
-  - [ ] Return `vte_index > threshold`
+- [x] Implement `compute_vte_index(z_head_sweep, z_speed_inv, *, alpha=0.5) -> float`
+  - [x] Formula: `alpha * z_head_sweep + (1 - alpha) * z_speed_inverse`
+- [x] Implement `classify_vte(vte_index, *, threshold=0.5) -> bool`
+  - [x] Return `vte_index > threshold`
 
 ### M4.6: Composite Functions
 
-- [ ] Implement `compute_vte_trial(positions, times, entry_time, window_duration, ...) -> VTETrialResult`
-  - [ ] Single trial analysis (z-scores are None)
-- [ ] Implement `compute_vte_session(positions, times, trials, decision_region, env, ...) -> VTESessionResult`
-  - [ ] Loop over trials
-  - [ ] Compute session statistics
-  - [ ] Z-score and classify each trial
+- [x] Implement `compute_vte_trial(positions, times, entry_time, window_duration, ...) -> VTETrialResult`
+  - [x] Single trial analysis (z-scores are None)
+- [x] Implement `compute_vte_session(positions, times, trials, decision_region, env, ...) -> VTESessionResult`
+  - [x] Loop over trials
+  - [x] Compute session statistics
+  - [x] Z-score and classify each trial
 
 ### M4.7: Tests
 
 **File**: `tests/metrics/test_vte.py`
 
-- [ ] Test `wrap_angle()` wraps correctly around boundaries
-- [ ] Test `head_sweep_magnitude()` for stationary vs scanning trajectory
-- [ ] Test `head_sweep_from_positions()` with known trajectory
-- [ ] Test `normalize_vte_scores()` z-scoring correctness
-- [ ] Test `normalize_vte_scores()` warning when std=0
-- [ ] Test `compute_vte_index()` weighting
-- [ ] Test `compute_vte_session()` classifies correctly
-- [ ] Test high head sweep + low speed → VTE
-- [ ] Test low head sweep + high speed → non-VTE
+- [x] Test `wrap_angle()` wraps correctly around boundaries
+- [x] Test `head_sweep_magnitude()` for stationary vs scanning trajectory
+- [x] Test `head_sweep_from_positions()` with known trajectory
+- [x] Test `normalize_vte_scores()` z-scoring correctness
+- [x] Test `normalize_vte_scores()` warning when std=0
+- [x] Test `compute_vte_index()` weighting
+- [x] Test `compute_vte_session()` classifies correctly
+- [x] Test high head sweep + low speed → VTE
+- [x] Test low head sweep + high speed → non-VTE
 
 ### M4.8: Exports
 
-- [ ] Add to `src/neurospatial/metrics/__init__.py`:
-  - [ ] `VTETrialResult`
-  - [ ] `VTESessionResult`
-  - [ ] `wrap_angle`
-  - [ ] `head_sweep_magnitude`
-  - [ ] `integrated_absolute_rotation`
-  - [ ] `head_sweep_from_positions`
-  - [ ] `normalize_vte_scores`
-  - [ ] `compute_vte_index`
-  - [ ] `classify_vte`
-  - [ ] `compute_vte_trial`
-  - [ ] `compute_vte_session`
+- [x] Add to `src/neurospatial/metrics/__init__.py`:
+  - [x] `VTETrialResult`
+  - [x] `VTESessionResult`
+  - [x] `wrap_angle`
+  - [x] `head_sweep_magnitude`
+  - [x] `integrated_absolute_rotation`
+  - [x] `head_sweep_from_positions`
+  - [x] `normalize_vte_scores`
+  - [x] `compute_vte_index`
+  - [x] `classify_vte`
+  - [x] `compute_vte_trial`
+  - [x] `compute_vte_session`
 
 **Success criteria**:
 
-- [ ] High head sweep + low speed → classified as VTE
-- [ ] Low head sweep + high speed → not classified as VTE
-- [ ] std=0 triggers warning, not error
-- [ ] All tests pass: `uv run pytest tests/metrics/test_vte.py -v`
+- [x] High head sweep + low speed → classified as VTE
+- [x] Low head sweep + high speed → not classified as VTE
+- [x] std=0 triggers warning, not error
+- [x] All tests pass: `uv run pytest tests/metrics/test_vte.py -v`
 
 ---
 

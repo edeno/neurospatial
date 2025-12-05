@@ -22,6 +22,8 @@ goal_directed
     Goal-directed navigation metrics (goal bias, approach rate).
 decision_analysis
     Spatial decision analysis at choice points (pre-decision metrics, boundary crossings).
+vte
+    Vicarious Trial and Error (VTE) detection and analysis.
 
 """
 
@@ -141,6 +143,19 @@ from neurospatial.metrics.trajectory import (
     compute_turn_angles,
     mean_square_displacement,
 )
+from neurospatial.metrics.vte import (
+    VTESessionResult,
+    VTETrialResult,
+    classify_vte,
+    compute_vte_index,
+    compute_vte_session,
+    compute_vte_trial,
+    head_sweep_from_positions,
+    head_sweep_magnitude,
+    integrated_absolute_rotation,
+    normalize_vte_scores,
+    wrap_angle,
+)
 
 __all__ = [
     "CircularBasisResult",
@@ -156,6 +171,8 @@ __all__ = [
     "PreDecisionMetrics",
     "SpatialViewMetrics",
     "SubgoalEfficiencyResult",
+    "VTESessionResult",
+    "VTETrialResult",
     "angular_efficiency",
     "approach_rate",
     "border_score",
@@ -163,6 +180,7 @@ __all__ = [
     "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
+    "classify_vte",
     "compute_decision_analysis",
     "compute_field_emd",
     "compute_goal_directed_metrics",
@@ -173,6 +191,9 @@ __all__ = [
     "compute_region_coverage",
     "compute_step_lengths",
     "compute_turn_angles",
+    "compute_vte_index",
+    "compute_vte_session",
+    "compute_vte_trial",
     "count_place_cells",
     "decision_region_entry_time",
     "detect_boundary_crossings",
@@ -197,15 +218,19 @@ __all__ = [
     "has_phase_precession",
     "head_direction_metrics",
     "head_direction_tuning_curve",
+    "head_sweep_from_positions",
+    "head_sweep_magnitude",
     "in_out_field_ratio",
     "information_per_second",
     "instantaneous_goal_alignment",
+    "integrated_absolute_rotation",
     "is_head_direction_cell",
     "is_modulated",
     "is_object_vector_cell",
     "is_spatial_view_cell",
     "mean_square_displacement",
     "mutual_information",
+    "normalize_vte_scores",
     "object_vector_score",
     "path_efficiency",
     "periodicity_score",
@@ -232,4 +257,5 @@ __all__ = [
     "subgoal_efficiency",
     "time_efficiency",
     "traveled_path_length",
+    "wrap_angle",
 ]
