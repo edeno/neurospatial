@@ -725,26 +725,51 @@ def _gaussian_kde(
     # Compute dt for trajectory (use precomputed if provided)
     dt_computed = np.diff(times, prepend=times[0]) if dt is None else dt
 
-    # For each bin center, compute KDE
-    firing_rate = np.zeros(env.n_bins, dtype=np.float64)
+    # Vectorized KDE computation using broadcasting for all pairwise distances
     two_sigma_sq = 2 * bandwidth**2
+    bin_centers = env.bin_centers  # shape: (n_bins, n_dims)
 
-    for i, bin_center in enumerate(env.bin_centers):
-        # Spike density: sum of Gaussian weights
-        if len(spike_positions) > 0:
-            spike_distances_sq = np.sum((spike_positions - bin_center) ** 2, axis=1)
-            spike_weights = np.exp(-spike_distances_sq / two_sigma_sq)
-            spike_density = np.sum(spike_weights)
-        else:
-            spike_density = 0.0
+    # Memory warning for large computations
+    # spike_dists_sq and traj_dists_sq are (n_points, n_bins) float64 arrays
+    n_spikes = len(spike_positions)
+    n_positions = len(positions)
+    n_bins = env.n_bins
+    max_elements = max(n_spikes * n_bins, n_positions * n_bins)
+    if max_elements > 50_000_000:  # ~400 MB threshold
+        warnings.warn(
+            f"Large gaussian_kde computation: {n_spikes} spikes x {n_bins} bins "
+            f"and {n_positions} positions x {n_bins} bins will allocate "
+            f"~{max_elements * 8 / 1e6:.0f} MB. Consider using "
+            f"method='diffusion_kde' or 'binned' for large datasets.",
+            UserWarning,
+            stacklevel=3,  # Point to compute_place_field call
+        )
 
-        # Occupancy density: use precomputed or compute
-        if occupancy_density is not None:
-            occ_dens = occupancy_density[i]
-        else:
-            traj_distances_sq = np.sum((positions - bin_center) ** 2, axis=1)
-            traj_weights = np.exp(-traj_distances_sq / two_sigma_sq)
-            occ_dens = np.sum(traj_weights * dt_computed)
+    # Compute spike density for all bins at once
+    if len(spike_positions) > 0:
+        # Compute squared distances: (n_spikes, n_bins)
+        spike_dists_sq = (
+            np.sum(spike_positions**2, axis=1, keepdims=True)
+            + np.sum(bin_centers**2, axis=1)
+            - 2 * spike_positions @ bin_centers.T
+        )
+        spike_weights = np.exp(-spike_dists_sq / two_sigma_sq)
+        spike_density = np.sum(spike_weights, axis=0)  # shape: (n_bins,)
+    else:
+        spike_density = np.zeros(env.n_bins, dtype=np.float64)
+
+    # Compute occupancy density for all bins at once
+    if occupancy_density is not None:
+        occ_dens = occupancy_density
+    else:
+        # Compute squared distances: (n_positions, n_bins)
+        traj_dists_sq = (
+            np.sum(positions**2, axis=1, keepdims=True)
+            + np.sum(bin_centers**2, axis=1)
+            - 2 * positions @ bin_centers.T
+        )
+        traj_weights = np.exp(-traj_dists_sq / two_sigma_sq)
+        occ_dens = np.sum(traj_weights * dt_computed[:, np.newaxis], axis=0)
 
     # Compute firing rate with safe division
     firing_rate = np.where(occ_dens > 0, spike_density / occ_dens, np.nan)
