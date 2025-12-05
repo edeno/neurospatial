@@ -181,6 +181,52 @@ from neurospatial import (
 
 ---
 
+## Events and Peri-Event Analysis (v0.16.0+)
+
+```python
+from neurospatial import (
+    # Result dataclasses
+    PeriEventResult,                  # PSTH result container
+    PopulationPeriEventResult,        # Population PSTH result
+
+    # Peri-event analysis
+    peri_event_histogram,             # Compute PSTH
+    population_peri_event_histogram,  # Population PSTH
+    align_spikes_to_events,           # Get per-trial spike times
+    align_events,                     # Align events to reference events
+    plot_peri_event_histogram,        # Plot PSTH results
+
+    # GLM regressors
+    time_to_nearest_event,            # Signed time to nearest event
+    event_count_in_window,            # Count events in window
+    event_indicator,                  # Binary presence indicator
+
+    # Spatial utilities
+    add_positions,                    # Add x, y columns to events
+
+    # Interval utilities
+    intervals_to_events,              # Convert intervals to point events
+    events_to_intervals,              # Pair start/stop events
+    filter_by_intervals,              # Filter events by intervals
+
+    # Validation
+    validate_events_dataframe,        # Validate events DataFrame
+    validate_spatial_columns,         # Check for spatial columns
+)
+```
+
+**Full events module API:**
+
+```python
+from neurospatial.events import (
+    # All of the above, plus:
+    PeriEventResult,
+    PopulationPeriEventResult,
+)
+```
+
+---
+
 ## Animation & Visualization (v0.3.0+)
 
 ```python
@@ -245,6 +291,7 @@ from neurospatial.nwb import (
     # Writing
     write_place_field,       # Write to analysis/
     write_occupancy,         # Write to analysis/
+    write_events,            # Write DataFrame to EventsTable
     write_trials,            # Write to intervals/trials/
     write_laps,              # Write to processing/behavior/
     write_region_crossings,  # Write to processing/behavior/

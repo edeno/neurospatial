@@ -46,6 +46,13 @@ Behavioral Segmentation:
     segment_trials : Segment trajectory into behavioral trials
     detect_region_crossings : Detect region entry/exit events
 
+Events and Peri-Event Analysis:
+    peri_event_histogram : Peri-stimulus time histogram (PSTH)
+    population_peri_event_histogram : Population PSTH across units
+    align_spikes_to_events : Align spike times to event times
+    time_to_nearest_event : Time to nearest event (GLM regressor)
+    add_positions : Add spatial positions to events DataFrame
+
 Field Operations:
     normalize_field : Normalize field to sum to 1
     combine_fields : Weighted combination of multiple fields
@@ -236,6 +243,26 @@ from neurospatial.decoding import (
 from neurospatial.differential import divergence, gradient
 from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
 from neurospatial.environment import Environment, EnvironmentNotFittedError
+
+# Events and peri-event analysis
+from neurospatial.events import (
+    PeriEventResult,
+    PopulationPeriEventResult,
+    add_positions,
+    align_events,
+    align_spikes_to_events,
+    event_count_in_window,
+    event_indicator,
+    events_to_intervals,
+    filter_by_intervals,
+    intervals_to_events,
+    peri_event_histogram,
+    plot_peri_event_histogram,
+    population_peri_event_histogram,
+    time_to_nearest_event,
+    validate_events_dataframe,
+    validate_spatial_columns,
+)
 from neurospatial.field_ops import (
     clamp,
     combine_fields,
@@ -359,6 +386,23 @@ __all__ = [
     "path_progress",
     "time_to_goal",
     "trials_to_region_arrays",
+    # Events and peri-event analysis
+    "PeriEventResult",
+    "PopulationPeriEventResult",
+    "add_positions",
+    "align_events",
+    "align_spikes_to_events",
+    "event_count_in_window",
+    "event_indicator",
+    "events_to_intervals",
+    "filter_by_intervals",
+    "intervals_to_events",
+    "peri_event_histogram",
+    "plot_peri_event_histogram",
+    "population_peri_event_histogram",
+    "time_to_nearest_event",
+    "validate_events_dataframe",
+    "validate_spatial_columns",
     # Spatial operations and queries
     "apply_kernel",
     "apply_transform_to_environment",

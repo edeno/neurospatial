@@ -1,7 +1,7 @@
 # Events Module Implementation - Scratchpad
 
 **Last Updated**: 2025-12-04
-**Current Status**: Milestone 7 Complete
+**Current Status**: Milestone 8 Complete (Events Module Done!)
 
 ---
 
@@ -374,12 +374,70 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 2. **Type conversion**: Numpy types (np.int64, np.float64, np.bool_) converted to Python types for NWB compatibility
 3. **Column descriptions**: Auto-generated as "Column: {name}" for custom columns
 
-**Milestone 7 Status: COMPLETE**
+Milestone 7 Status: **COMPLETE**
 
 - 2 NWB functions implemented (`write_events`, `dataframe_to_events_table`)
 - 23 tests in `tests/test_events_nwb.py`
 - All pass mypy, ruff, pytest
 - Total events module: 255 tests passing
+
+---
+
+### 2025-12-04: M8 Complete - Top-Level Exports and Documentation
+
+**Completed Tasks:**
+
+- M8.1: Updated `src/neurospatial/__init__.py`
+  - Added 16 events functions to top-level exports
+  - Functions: `peri_event_histogram`, `population_peri_event_histogram`, `align_spikes_to_events`, `time_to_nearest_event`, `add_positions`, etc.
+
+- M8.2: Updated `src/neurospatial/events/__init__.py`
+  - Cleaned up `__all__` to only export implemented functions
+  - Removed deferred functions from lazy imports
+
+- M8.3: Updated `.claude/QUICKSTART.md`
+  - Added "Events and Peri-Event Analysis" section with examples
+  - PSTH, population PSTH, GLM regressors, interval utilities
+
+- M8.4: Updated `.claude/API_REFERENCE.md`
+  - Added events module section with all import patterns
+  - Added `write_events` to NWB section
+
+- M8.5: Updated `CLAUDE.md`
+  - Added PSTH to "Most Common Patterns" (#5)
+  - Added events to Quick Navigation tables
+
+- M8.6: Final verification
+  - All 255 events tests pass
+  - mypy passes
+  - ruff passes
+
+Milestone 8 Status: **COMPLETE**
+
+---
+
+## Events Module Summary
+
+**Total Implementation:**
+- 8 milestones completed (M1-M8, with M3 and M5 partially deferred)
+- 255 tests passing
+- 16 functions exported at top level
+- Full NWB integration with `write_events()`
+
+**Implemented Functions:**
+- Result dataclasses: `PeriEventResult`, `PopulationPeriEventResult`
+- Validation: `validate_events_dataframe`, `validate_spatial_columns`
+- Spatial: `add_positions`
+- Intervals: `intervals_to_events`, `events_to_intervals`, `filter_by_intervals`
+- GLM regressors: `time_to_nearest_event`, `event_count_in_window`, `event_indicator`
+- Peri-event: `align_spikes_to_events`, `peri_event_histogram`, `population_peri_event_histogram`, `align_events`
+- Visualization: `plot_peri_event_histogram`
+- NWB: `write_events`, `dataframe_to_events_table`
+
+**Deferred Functions (future work):**
+- Detection: `extract_region_crossing_events`, `extract_threshold_crossing_events`, `extract_movement_onset_events`
+- Spatial: `events_in_region`, `spatial_event_rate`
+- Regressors: `exponential_kernel`, `distance_to_event_at_time`
 
 ---
 

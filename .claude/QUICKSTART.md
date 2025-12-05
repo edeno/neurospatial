@@ -323,6 +323,98 @@ plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 - `phase_precession()`: Detect theta phase precession
 - `rayleigh_test()`: Test for circular uniformity
 
+### Events and Peri-Event Analysis
+
+**Peri-event time histogram (PSTH):**
+
+```python
+from neurospatial import peri_event_histogram, plot_peri_event_histogram
+
+# Compute PSTH around reward events
+result = peri_event_histogram(
+    spike_times,          # Array of spike times
+    reward_times,         # Array of event times
+    window=(-1.0, 2.0),   # -1s before to 2s after event
+    bin_size=0.025,       # 25 ms bins
+)
+
+# Access results
+print(f"Peak firing rate: {result.firing_rate().max():.1f} Hz")
+print(f"Number of events: {result.n_events}")
+
+# Plot PSTH
+plot_peri_event_histogram(result, show_sem=True, as_rate=True)
+```
+
+**Population PSTH across multiple neurons:**
+
+```python
+from neurospatial import population_peri_event_histogram
+
+# Analyze multiple neurons
+spike_trains = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = population_peri_event_histogram(
+    spike_trains, event_times, window=(-1.0, 2.0), bin_size=0.025
+)
+
+print(f"Population mean shape: {result.mean_histogram.shape}")
+```
+
+**GLM regressors from events:**
+
+```python
+from neurospatial import time_to_nearest_event, event_indicator, event_count_in_window
+
+# Time to nearest event (for peri-event time covariate)
+peri_event_time = time_to_nearest_event(
+    sample_times, reward_times,
+    max_time=5.0,   # Limit to 5s from event
+    signed=True,    # Negative before, positive after
+)
+
+# Binary indicator of event presence
+is_near_reward = event_indicator(
+    sample_times, reward_times, window=(-0.5, 1.0)
+)
+
+# Count events in sliding window
+n_rewards = event_count_in_window(
+    sample_times, reward_times, window=(-2.0, 0.0)  # Events in past 2s
+)
+```
+
+**Add spatial positions to events:**
+
+```python
+from neurospatial import add_positions
+import pandas as pd
+
+# Create events DataFrame (must have 'timestamp' column)
+events = pd.DataFrame({
+    "timestamp": [1.5, 3.2, 5.8],
+    "label": ["reward", "lick", "reward"],
+})
+
+# Add x, y columns by interpolation from trajectory
+events_with_pos = add_positions(events, trajectory, trajectory_times)
+print(events_with_pos.columns)  # ['timestamp', 'label', 'x', 'y']
+```
+
+**Interval utilities:**
+
+```python
+from neurospatial import intervals_to_events, events_to_intervals, filter_by_intervals
+
+# Convert intervals to point events
+intervals = pd.DataFrame({"start_time": [0, 10], "stop_time": [5, 15]})
+events = intervals_to_events(intervals, which="start")  # Get start times
+
+# Filter events to keep only those within intervals
+valid_events = filter_by_intervals(
+    all_events, intervals, include=True  # Set to False to exclude
+)
+```
+
 ### NWB Integration (Optional)
 
 Requires: `pip install neurospatial[nwb-full]`

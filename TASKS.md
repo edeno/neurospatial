@@ -291,33 +291,36 @@ Milestone 3 Status: PARTIALLY COMPLETE
 
 ### Tasks
 
-- [ ] **M8.1**: Update `src/neurospatial/__init__.py`
+- [x] **M8.1**: Update `src/neurospatial/__init__.py`
   - Add events module imports (lazy)
-  - Export: `add_positions`, `events_in_region`, `spatial_event_rate`, etc.
-  - Note: `add_spatial_columns` renamed to `add_positions`
+  - Export: `add_positions`, `peri_event_histogram`, `time_to_nearest_event`, etc.
+  - 16 functions exported from events module
 
-- [ ] **M8.2**: Update `src/neurospatial/events/__init__.py`
-  - Create `__all__` list with all public exports
-  - Implement lazy imports for optional dependencies
+- [x] **M8.2**: Update `src/neurospatial/events/__init__.py`
+  - Create `__all__` list with all public exports (16 items)
+  - Remove deferred functions from exports
+  - Implement lazy imports
 
-- [ ] **M8.3**: Update `.claude/QUICKSTART.md`
-  - Add "Events" section with common patterns
-  - Include GLM regressor example
-  - Include PSTH example
+- [x] **M8.3**: Update `.claude/QUICKSTART.md`
+  - Add "Events and Peri-Event Analysis" section
+  - Include PSTH, population PSTH, GLM regressors examples
+  - Include interval utilities example
 
-- [ ] **M8.4**: Update `.claude/API_REFERENCE.md`
-  - Add events module imports section
-  - List all functions with signatures
+- [x] **M8.4**: Update `.claude/API_REFERENCE.md`
+  - Add events module imports section with all functions
+  - Add `write_events` to NWB section
 
-- [ ] **M8.5**: Update `CLAUDE.md`
+- [x] **M8.5**: Update `CLAUDE.md`
+  - Add PSTH to "Most Common Patterns" (#5)
   - Add events to "Quick Navigation" tables
-  - Add common event patterns to "Most Common Patterns"
 
-- [ ] **M8.6**: Final verification
-  - Run full test suite: `uv run pytest`
-  - Run type checking: `uv run mypy src/neurospatial/`
-  - Run linting: `uv run ruff check . && uv run ruff format .`
-  - Verify imports work: `uv run python -c "from neurospatial.events import peri_event_histogram"`
+- [x] **M8.6**: Final verification
+  - Run full test suite: `uv run pytest tests/test_events*.py` ✓ (255 tests pass)
+  - Run type checking: `uv run mypy src/neurospatial/events/` ✓
+  - Run linting: `uv run ruff check . && uv run ruff format .` ✓
+  - Verify imports work: `uv run python -c "from neurospatial import peri_event_histogram"` ✓
+
+**Milestone 8 Status: COMPLETE**
 
 ---
 

@@ -14,15 +14,8 @@ Validation Helpers:
     validate_events_dataframe : Validate events DataFrame structure
     validate_spatial_columns : Check for spatial columns (x, y)
 
-Detection Functions:
-    extract_region_crossing_events : Detect region entry/exit events
-    extract_threshold_crossing_events : Detect signal threshold crossings
-    extract_movement_onset_events : Detect movement onset from position
-
 Spatial Utilities:
     add_positions : Add x, y columns to events by interpolation
-    events_in_region : Filter events to those within a region
-    spatial_event_rate : Compute spatial rate map of events
 
 Interval Utilities:
     intervals_to_events : Convert intervals to point events
@@ -33,8 +26,6 @@ GLM Regressors:
     time_to_nearest_event : Signed time to nearest event (peri-event time)
     event_count_in_window : Count events in time window
     event_indicator : Binary indicator of event presence
-    exponential_kernel : Convolve events with exponential kernel
-    distance_to_event_at_time : Distance to last/next event location
 
 Peri-Event Analysis:
     align_spikes_to_events : Get per-trial spike times
@@ -60,12 +51,12 @@ Computing a peri-event time histogram (PSTH):
 
 Creating GLM regressors:
 
->>> from neurospatial.events import time_to_nearest_event, exponential_kernel
+>>> from neurospatial.events import time_to_nearest_event, event_indicator
 >>> peri_event_time = time_to_nearest_event(  # doctest: +SKIP
 ...     sample_times, reward_times, max_time=2.0
 ... )
->>> reward_signal = exponential_kernel(  # doctest: +SKIP
-...     sample_times, reward_times, tau=2.0
+>>> is_near_event = event_indicator(  # doctest: +SKIP
+...     sample_times, reward_times, window=(-0.5, 1.0)
 ... )
 """
 
@@ -88,13 +79,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "validate_spatial_columns": "neurospatial.events._core:validate_spatial_columns",
     # Visualization
     "plot_peri_event_histogram": "neurospatial.events._core:plot_peri_event_histogram",
-    # Detection functions
-    "extract_region_crossing_events": "neurospatial.events.detection:extract_region_crossing_events",
-    "extract_threshold_crossing_events": "neurospatial.events.detection:extract_threshold_crossing_events",
-    "extract_movement_onset_events": "neurospatial.events.detection:extract_movement_onset_events",
+    # Spatial utilities
     "add_positions": "neurospatial.events.detection:add_positions",
-    "events_in_region": "neurospatial.events.detection:events_in_region",
-    "spatial_event_rate": "neurospatial.events.detection:spatial_event_rate",
     # Interval utilities
     "intervals_to_events": "neurospatial.events.intervals:intervals_to_events",
     "events_to_intervals": "neurospatial.events.intervals:events_to_intervals",
@@ -103,8 +89,6 @@ _LAZY_IMPORTS: dict[str, str] = {
     "time_to_nearest_event": "neurospatial.events.regressors:time_to_nearest_event",
     "event_count_in_window": "neurospatial.events.regressors:event_count_in_window",
     "event_indicator": "neurospatial.events.regressors:event_indicator",
-    "exponential_kernel": "neurospatial.events.regressors:exponential_kernel",
-    "distance_to_event_at_time": "neurospatial.events.regressors:distance_to_event_at_time",
     # Peri-event analysis
     "align_spikes_to_events": "neurospatial.events.alignment:align_spikes_to_events",
     "peri_event_histogram": "neurospatial.events.alignment:peri_event_histogram",
@@ -127,28 +111,29 @@ def __getattr__(name: str) -> Any:
     return value
 
 
+# ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
+    # Result dataclasses
     "PeriEventResult",
     "PopulationPeriEventResult",
-    "add_positions",
-    "align_events",
-    "align_spikes_to_events",
-    "distance_to_event_at_time",
-    "event_count_in_window",
-    "event_indicator",
-    "events_in_region",
-    "events_to_intervals",
-    "exponential_kernel",
-    "extract_movement_onset_events",
-    "extract_region_crossing_events",
-    "extract_threshold_crossing_events",
-    "filter_by_intervals",
-    "intervals_to_events",
-    "peri_event_histogram",
-    "plot_peri_event_histogram",
-    "population_peri_event_histogram",
-    "spatial_event_rate",
-    "time_to_nearest_event",
+    # Validation helpers
     "validate_events_dataframe",
     "validate_spatial_columns",
+    # Spatial utilities
+    "add_positions",
+    # Interval utilities
+    "events_to_intervals",
+    "filter_by_intervals",
+    "intervals_to_events",
+    # GLM regressors
+    "event_count_in_window",
+    "event_indicator",
+    "time_to_nearest_event",
+    # Peri-event analysis
+    "align_events",
+    "align_spikes_to_events",
+    "peri_event_histogram",
+    "population_peri_event_histogram",
+    # Visualization
+    "plot_peri_event_histogram",
 ]

@@ -131,7 +131,26 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
 
 **Need pose tracking or events?** See [QUICKSTART.md - Overlays](.claude/QUICKSTART.md#visualization--animation)
 
-### 5. Save and Load Environments
+### 5. Compute Peri-Event Histogram (PSTH)
+
+```python
+from neurospatial import peri_event_histogram
+
+# Compute PSTH around reward events
+result = peri_event_histogram(
+    spike_times, reward_times,
+    window=(-1.0, 2.0),  # -1s before to 2s after event
+    bin_size=0.025,      # 25 ms bins
+)
+
+# Access results
+firing_rates = result.firing_rate()  # Convert to Hz
+print(f"Peak: {firing_rates.max():.1f} Hz at {result.bin_centers[firing_rates.argmax()]:.2f}s")
+```
+
+**Need GLM regressors?** See [QUICKSTART.md - Events](.claude/QUICKSTART.md#events-and-peri-event-analysis)
+
+### 6. Save and Load Environments
 
 ```python
 # Save environment (creates .json + .npz files)
@@ -342,6 +361,8 @@ This documentation is organized into focused modules:
 | Create first environment | "Most Common Patterns" above |
 | Compute place fields | "Most Common Patterns" above |
 | Animate fields | "Most Common Patterns" above |
+| Compute PSTH | "Most Common Patterns" above |
+| Create GLM regressors from events | [QUICKSTART.md - Events](.claude/QUICKSTART.md#events-and-peri-event-analysis) |
 | Find import statement | [API_REFERENCE.md](.claude/API_REFERENCE.md) |
 | Run tests | "Essential Commands" above |
 | Fix error | "When Things Break" above |
