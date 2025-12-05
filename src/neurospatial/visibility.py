@@ -913,6 +913,21 @@ def visible_cues(
         Distances to all cues (NaN for not visible).
     bearings : NDArray[np.float64], shape (n_cues,)
         Egocentric bearings to all cues (NaN for not visible).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.visibility import visible_cues
+
+    Create environment and check cue visibility:
+
+    >>> positions = np.random.rand(100, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> cues = np.array([[50, 50], [80, 20]])  # 2 cues
+    >>> visible, distances, bearings = visible_cues(
+    ...     env, position=np.array([25, 25]), heading=0.0, cue_positions=cues
+    ... )  # doctest: +SKIP
     """
     from neurospatial.reference_frames import compute_egocentric_bearing
 
