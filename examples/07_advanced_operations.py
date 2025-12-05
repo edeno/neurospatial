@@ -84,7 +84,7 @@ right_arm = np.random.uniform(low=[40, 0], high=[60, 60], size=(600, 2))
 
 u_maze_data = np.vstack([left_arm, bottom, right_arm])
 
-env_u = Environment.from_samples(data_samples=u_maze_data, bin_size=4.0, name="U_Maze")
+env_u = Environment.from_samples(positions=u_maze_data, bin_size=4.0, name="U_Maze")
 
 print(f"U-Maze Environment: {env_u.n_bins} bins")
 
@@ -252,7 +252,7 @@ for i, test_point in enumerate(test_points):
 # Create a simple square environment
 square_data = np.random.uniform(0, 40, size=(1000, 2))
 env_original = Environment.from_samples(
-    data_samples=square_data, bin_size=5.0, name="Original"
+    positions=square_data, bin_size=5.0, name="Original"
 )
 
 print(f"Original environment: {env_original.n_bins} bins")
@@ -535,7 +535,7 @@ rotated_centers = rotation(env_fine.bin_centers)
 # Create environment from rotated bin centers
 # (In practice, you'd have new data from Session 2)
 env_rotated = Environment.from_samples(
-    data_samples=rotated_centers, bin_size=3.0, name="Session2_Rotated"
+    positions=rotated_centers, bin_size=3.0, name="Session2_Rotated"
 )
 
 print(f"\nRotated environment: {env_rotated.n_bins} bins")

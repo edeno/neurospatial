@@ -79,17 +79,13 @@ n_samples_room1 = 2000
 room1_data = np.random.randn(n_samples_room1, 2) * 8 + np.array([25, 25])
 room1_data = np.clip(room1_data, 5, 45)
 
-env_room1 = Environment.from_samples(
-    data_samples=room1_data, bin_size=4.0, name="Room1"
-)
+env_room1 = Environment.from_samples(positions=room1_data, bin_size=4.0, name="Room1")
 
 # Room 2: Different location, 40x60 cm rectangular arena
 n_samples_room2 = 1500
 room2_data = np.random.uniform(low=[60, 10], high=[95, 65], size=(n_samples_room2, 2))
 
-env_room2 = Environment.from_samples(
-    data_samples=room2_data, bin_size=4.0, name="Room2"
-)
+env_room2 = Environment.from_samples(positions=room2_data, bin_size=4.0, name="Room2")
 
 print(f"Room 1: {env_room1.n_bins} bins, range {env_room1.dimension_ranges}")
 print(f"Room 2: {env_room2.n_bins} bins, range {env_room2.dimension_ranges}")
@@ -383,25 +379,25 @@ plt.show()
 # Start box (bottom)
 start_box_data = np.random.uniform(low=[45, 0], high=[55, 30], size=(600, 2))
 env_start = Environment.from_samples(
-    data_samples=start_box_data, bin_size=3.0, name="StartBox"
+    positions=start_box_data, bin_size=3.0, name="StartBox"
 )
 
 # Left arm
 left_arm_data = np.random.uniform(low=[10, 30], high=[45, 40], size=(500, 2))
 env_left = Environment.from_samples(
-    data_samples=left_arm_data, bin_size=3.0, name="LeftArm"
+    positions=left_arm_data, bin_size=3.0, name="LeftArm"
 )
 
 # Right arm
 right_arm_data = np.random.uniform(low=[55, 30], high=[90, 40], size=(500, 2))
 env_right = Environment.from_samples(
-    data_samples=right_arm_data, bin_size=3.0, name="RightArm"
+    positions=right_arm_data, bin_size=3.0, name="RightArm"
 )
 
 # Center junction
 junction_data = np.random.uniform(low=[40, 28], high=[60, 35], size=(400, 2))
 env_junction = Environment.from_samples(
-    data_samples=junction_data, bin_size=3.0, name="Junction"
+    positions=junction_data, bin_size=3.0, name="Junction"
 )
 
 print("T-Maze Compartments:")

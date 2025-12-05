@@ -530,6 +530,7 @@ if NAPARI_AVAILABLE:
     env_2d.animate_fields(
         fields_animated,
         overlays=overlays,
+        frame_times=times_subsampled,
         backend="napari",
         colormap="hot",
         title=f"Unit {best_unit} Place Field - Interactive",

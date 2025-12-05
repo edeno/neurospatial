@@ -185,5 +185,7 @@ nav:
       - Video Overlay: examples/18_video_overlay.ipynb
       - Real Data Bandit Task: examples/19_real_data_bandit_task.ipynb
       - Bayesian Decoding: examples/20_bayesian_decoding.ipynb
+      - Directional Place Fields: examples/21_directional_place_fields.ipynb
+      - Spatial View Cells: examples/22_spatial_view_cells.ipynb
   - Contributing: contributing.md
   - Changelog: changelog.md

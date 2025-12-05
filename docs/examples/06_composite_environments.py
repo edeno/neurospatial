@@ -689,6 +689,178 @@ if not is_connected:
     )
 
 # %% [markdown]
+# ## Example 4: CompositeEnvironment Methods
+#
+# `CompositeEnvironment` has full API parity with `Environment` class, including:
+# - Region queries: `bins_in_region()`, `mask_for_region()`
+# - Pathfinding: `path_between()`
+# - Diagnostics: `info()`
+# - Serialization: `save()` and `load()`
+
+# %% [markdown]
+# ### Diagnostic Information with `.info()`
+
+# %%
+# Get comprehensive information about the composite environment
+print("=== Composite Environment Information ===\n")
+tmaze_composite.info()
+
+# You can also get info as a string for logging
+info_str = tmaze_composite.info(return_string=True)
+# print(info_str)  # Uncomment to see string output
+
+# %% [markdown]
+# ### Region Queries Across Composite
+#
+# Region queries work seamlessly across all sub-environments in the composite.
+
+# %%
+# Add regions to sub-environments - these will be accessible in composite
+junction_center = env_junction.bin_centers[len(env_junction.bin_centers) // 2]
+env_junction.regions.add("junction_center", point=junction_center.tolist())
+
+left_goal = env_left.bin_centers[0]
+env_left.regions.add("left_goal", point=left_goal.tolist())
+
+# Recreate composite to include the regions
+tmaze_with_regions = CompositeEnvironment(
+    subenvs=[env_start, env_junction, env_left, env_right],
+    auto_bridge=True,
+    max_mnn_distance=6.0,
+)
+
+print("Regions available in composite:")
+for region_name in tmaze_with_regions.regions:
+    print(f"  - {region_name}")
+
+# Query bins in a specific region
+junction_bins = tmaze_with_regions.bins_in_region("junction_center")
+print(f"\nBins in 'junction_center' region: {len(junction_bins)} bins")
+
+# Get boolean mask for a region
+junction_mask = tmaze_with_regions.mask_for_region("junction_center")
+print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
+
+# %% [markdown]
+# ### Pathfinding with `.path_between()`
+#
+# Find the shortest path between any two bins in the composite, even across bridges.
+
+# %%
+# Import pairwise for edge iteration (more efficient than zip)
+from itertools import pairwise  # noqa: E402
+
+# Find path from start to right arm (crosses bridges through junction)
+source_bin = 0  # First bin in start box
+target_bin = tmaze_with_regions.n_bins - 5  # Bin in right arm
+
+path = tmaze_with_regions.path_between(source_bin, target_bin)
+
+if path:
+    print(f"\nShortest path from bin {source_bin} to bin {target_bin}:")
+    print(f"  Path length: {len(path)} bins")
+    print("  Path traverses: ", end="")
+
+    # Identify which sub-environments the path crosses
+    start_n_bins = env_start.n_bins
+    junction_n_bins = env_junction.n_bins
+    left_n_bins = env_left.n_bins
+
+    in_start = any(b < start_n_bins for b in path)
+    in_junction = any(start_n_bins <= b < start_n_bins + junction_n_bins for b in path)
+    in_left = any(
+        start_n_bins + junction_n_bins
+        <= b
+        < start_n_bins + junction_n_bins + left_n_bins
+        for b in path
+    )
+    in_right = any(b >= start_n_bins + junction_n_bins + left_n_bins for b in path)
+
+    compartments = []
+    if in_start:
+        compartments.append("Start")
+    if in_junction:
+        compartments.append("Junction")
+    if in_left:
+        compartments.append("Left")
+    if in_right:
+        compartments.append("Right")
+
+    print(" → ".join(compartments))
+
+    # Calculate total path distance using pairwise iteration
+    total_distance = sum(
+        tmaze_with_regions.connectivity[u][v]["distance"] for u, v in pairwise(path)
+    )
+    print(f"  Total distance: {total_distance:.2f} units")
+
+# %% [markdown]
+# ### Pathfinding Example: No Path Between Disconnected Components
+
+# %%
+import warnings  # noqa: E402
+
+# Create a composite without bridges to demonstrate warning
+disconnected_composite = CompositeEnvironment(
+    subenvs=[arena_a, arena_b], auto_bridge=False
+)
+
+# Try to find path between disconnected sub-environments
+source = 0  # In arena_a
+target = arena_a.n_bins + 5  # In arena_b
+
+with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    path = disconnected_composite.path_between(source, target)
+    if len(w) > 0:
+        print(f"⚠ Warning captured: {w[0].message}")
+
+print(f"Path result: {path} (empty list indicates no path exists)")
+
+# %% [markdown]
+# ### Saving and Loading Composite Environments
+
+# %%
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# Save composite environment to file
+with tempfile.TemporaryDirectory() as tmpdir:
+    filepath = Path(tmpdir) / "my_composite_env.pkl"
+
+    # Save
+    tmaze_with_regions.save(str(filepath))
+    print(f"Saved composite to: {filepath}")
+    print(f"File size: {filepath.stat().st_size / 1024:.2f} KB")
+
+    # Load
+    loaded_composite = CompositeEnvironment.load(str(filepath))
+
+    # Verify loaded composite matches original
+    print("\nVerifying loaded composite:")
+    print(
+        f"  n_bins: {loaded_composite.n_bins} (original: {tmaze_with_regions.n_bins})"
+    )
+    print(
+        f"  n_dims: {loaded_composite.n_dims} (original: {tmaze_with_regions.n_dims})"
+    )
+    print(
+        f"  n_sub_envs: {len(loaded_composite._subenvs_info)} (original: {len(tmaze_with_regions._subenvs_info)})"
+    )
+    print(
+        f"  n_bridges: {len(loaded_composite._bridge_list)} (original: {len(tmaze_with_regions._bridge_list)})"
+    )
+    print(f"  Regions preserved: {list(loaded_composite.regions.keys())}")
+
+    # Test that loaded composite works
+    test_points = np.array([[5.0, 5.0]])
+    bins_loaded = loaded_composite.bin_at(test_points)
+    bins_original = tmaze_with_regions.bin_at(test_points)
+    print(f"  bin_at() test: loaded={bins_loaded[0]}, original={bins_original[0]}")
+
+    print("\n✓ Save/load preserves all composite structure and functionality")
+
+# %% [markdown]
 # ## Key Takeaways
 #
 # Congratulations! You now understand composite environments in neurospatial:
@@ -699,7 +871,12 @@ if not is_connected:
 #
 # 3. **`max_mnn_distance` parameter** controls which environments connect (None = no limit)
 #
-# 4. **Same API as Environment**: Use `bin_at()`, `distance_between()`, `path_between()`, etc.
+# 4. **Full API parity with Environment**:
+#    - Spatial queries: `bin_at()`, `distance_between()`, `contains()`
+#    - Region queries: `bins_in_region()`, `mask_for_region()`
+#    - Pathfinding: `path_between()` (works across bridges!)
+#    - Diagnostics: `info()` (shows composite structure and bridge stats)
+#    - Serialization: `save()` and `load()` (persist composite environments)
 #
 # 5. **Use cases**:
 #    - Multi-room experiments
@@ -712,6 +889,8 @@ if not is_connected:
 #    - Check connectivity after creation (`nx.is_connected()`)
 #    - Tune `max_mnn_distance` based on your spatial scale
 #    - Visualize bridges to verify expected connections
+#    - Use `info()` to inspect composite structure
+#    - Save composites to avoid re-computing bridges
 #
 # ## Next Steps
 #

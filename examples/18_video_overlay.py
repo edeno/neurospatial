@@ -194,6 +194,9 @@ for i in range(n_frames):
 
 fields = np.array(fields)
 
+# Create frame_times (required for animate_fields)
+frame_times = np.arange(n_frames) / video_fps  # seconds
+
 print(f"Trajectory: {n_frames} frames")
 print(
     f"Trajectory range: x=[{trajectory[:, 0].min():.1f}, {trajectory[:, 0].max():.1f}], y=[{trajectory[:, 1].min():.1f}, {trajectory[:, 1].max():.1f}]"
@@ -510,6 +513,7 @@ try:
     viewer = env.animate_fields(
         fields,
         overlays=[video_overlay, position_overlay],
+        frame_times=frame_times,
         backend="napari",
         fps=video_fps,
         title="Video + Field Animation",
@@ -551,6 +555,7 @@ if check_ffmpeg_available():
     result = env.animate_fields(
         fields,
         overlays=[video_overlay, position_overlay],
+        frame_times=frame_times,
         backend="video",
         save_path=output_path,
         fps=video_fps,

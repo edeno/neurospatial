@@ -181,7 +181,7 @@ for idx, ax in enumerate(axes):
         spike_times_list[cell_idx],
         times,
         positions,
-        method="diffusion_kde",
+        smoothing_method="diffusion_kde",
         bandwidth=5.0,
     )
 
@@ -220,7 +220,7 @@ encoding_models = np.array(
             spike_times_list[i],
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
         for i in range(n_neurons)
