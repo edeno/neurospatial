@@ -222,89 +222,89 @@ path_efficiency.py (no internal dependencies)
 
 ### M3.1: Module Setup
 
-- [ ] Create `decision_analysis.py` with module docstring
-- [ ] Add imports from `neurospatial.distance`, `neurospatial.reference_frames`
+- [x] Create `decision_analysis.py` with module docstring
+- [x] Add imports from `neurospatial.distance`, `neurospatial.reference_frames`
 
 ### M3.2: Data Structures
 
-- [ ] Implement `PreDecisionMetrics` frozen dataclass
-  - [ ] Fields: `mean_speed`, `min_speed`, `heading_mean_direction`, `heading_circular_variance`, `heading_mean_resultant_length`, `window_duration`, `n_samples`
-  - [ ] Method: `suggests_deliberation(variance_threshold=0.5, speed_threshold=10.0) -> bool`
-- [ ] Implement `DecisionBoundaryMetrics` frozen dataclass
-  - [ ] Fields: `goal_labels`, `distance_to_boundary`, `crossing_times`, `crossing_directions`
-  - [ ] Property: `n_crossings`
-  - [ ] Method: `summary() -> str`
-- [ ] Implement `DecisionAnalysisResult` frozen dataclass
-  - [ ] Fields: `entry_time`, `pre_decision`, `boundary`, `chosen_goal`
-  - [ ] Method: `summary() -> str`
+- [x] Implement `PreDecisionMetrics` frozen dataclass
+  - [x] Fields: `mean_speed`, `min_speed`, `heading_mean_direction`, `heading_circular_variance`, `heading_mean_resultant_length`, `window_duration`, `n_samples`
+  - [x] Method: `suggests_deliberation(variance_threshold=0.5, speed_threshold=10.0) -> bool`
+- [x] Implement `DecisionBoundaryMetrics` frozen dataclass
+  - [x] Fields: `goal_labels`, `distance_to_boundary`, `crossing_times`, `crossing_directions`
+  - [x] Property: `n_crossings`
+  - [x] Method: `summary() -> str`
+- [x] Implement `DecisionAnalysisResult` frozen dataclass
+  - [x] Fields: `entry_time`, `pre_decision`, `boundary`, `chosen_goal`
+  - [x] Method: `summary() -> str`
 
 ### M3.3: Pre-Decision Window Functions
 
-- [ ] Implement `decision_region_entry_time(trajectory_bins, times, env, region) -> float`
-  - [ ] Find first entry to region
-  - [ ] Raise ValueError if never enters
-- [ ] Implement `extract_pre_decision_window(positions, times, entry_time, window_duration) -> tuple[NDArray, NDArray]`
-  - [ ] Slice trajectory before entry
-  - [ ] Handle case where window starts before trajectory
-- [ ] Implement `pre_decision_heading_stats(positions, times, *, min_speed=5.0) -> tuple[float, float, float]`
-  - [ ] Compute `dt = median(diff(times))` for `heading_from_velocity()`
-  - [ ] Compute circular mean, variance, mean resultant length directly
-  - [ ] Do NOT use private `_mean_resultant_length()`
-- [ ] Implement `pre_decision_speed_stats(positions, times) -> tuple[float, float]`
-  - [ ] Return mean and min speed
-- [ ] Implement `compute_pre_decision_metrics(...) -> PreDecisionMetrics`
-  - [ ] Combine window extraction and stats
+- [x] Implement `decision_region_entry_time(trajectory_bins, times, env, region) -> float`
+  - [x] Find first entry to region
+  - [x] Raise ValueError if never enters
+- [x] Implement `extract_pre_decision_window(positions, times, entry_time, window_duration) -> tuple[NDArray, NDArray]`
+  - [x] Slice trajectory before entry
+  - [x] Handle case where window starts before trajectory
+- [x] Implement `pre_decision_heading_stats(positions, times, *, min_speed=5.0) -> tuple[float, float, float]`
+  - [x] Compute `dt = median(diff(times))` for `heading_from_velocity()`
+  - [x] Compute circular mean, variance, mean resultant length directly
+  - [x] Do NOT use private `_mean_resultant_length()`
+- [x] Implement `pre_decision_speed_stats(positions, times) -> tuple[float, float]`
+  - [x] Return mean and min speed
+- [x] Implement `compute_pre_decision_metrics(...) -> PreDecisionMetrics`
+  - [x] Combine window extraction and stats
 
 ### M3.4: Decision Boundary Functions
 
-- [ ] Implement `geodesic_voronoi_labels(env, goal_bins) -> NDArray[np.int_]`
-  - [ ] Compute distance field from each goal
-  - [ ] Label each bin by nearest goal
-  - [ ] Mark unreachable bins as -1
-  - [ ] Add performance note: O(n_goals *n_bins* log(n_bins))
-- [ ] Implement `distance_to_decision_boundary(env, trajectory_bins, goal_bins) -> NDArray[np.float64]`
-  - [ ] For each position, compute distance to nearest boundary
-- [ ] Implement `detect_boundary_crossings(trajectory_bins, voronoi_labels, times) -> tuple[list, list]`
-  - [ ] Find times and directions of label changes
+- [x] Implement `geodesic_voronoi_labels(env, goal_bins) -> NDArray[np.int_]`
+  - [x] Compute distance field from each goal
+  - [x] Label each bin by nearest goal
+  - [x] Mark unreachable bins as -1
+  - [x] Add performance note: O(n_goals *n_bins* log(n_bins))
+- [x] Implement `distance_to_decision_boundary(env, trajectory_bins, goal_bins) -> NDArray[np.float64]`
+  - [x] For each position, compute distance to nearest boundary
+- [x] Implement `detect_boundary_crossings(trajectory_bins, voronoi_labels, times) -> tuple[list, list]`
+  - [x] Find times and directions of label changes
 
 ### M3.5: Composite Function
 
-- [ ] Implement `compute_decision_analysis(env, positions, times, decision_region, goal_regions, ...) -> DecisionAnalysisResult`
-  - [ ] Combine pre-decision metrics and boundary metrics
-  - [ ] Determine chosen goal
+- [x] Implement `compute_decision_analysis(env, positions, times, decision_region, goal_regions, ...) -> DecisionAnalysisResult`
+  - [x] Combine pre-decision metrics and boundary metrics
+  - [x] Determine chosen goal
 
 ### M3.6: Tests
 
 **File**: `tests/metrics/test_decision_analysis.py`
 
-- [ ] Test `decision_region_entry_time()` finds correct entry
-- [ ] Test `extract_pre_decision_window()` slice correctness
-- [ ] Test `pre_decision_heading_stats()` circular variance computation
-- [ ] Test `geodesic_voronoi_labels()` with T-maze (2 goals)
-- [ ] Test `detect_boundary_crossings()` counts correctly
-- [ ] Test `suggests_deliberation()` method
+- [x] Test `decision_region_entry_time()` finds correct entry
+- [x] Test `extract_pre_decision_window()` slice correctness
+- [x] Test `pre_decision_heading_stats()` circular variance computation
+- [x] Test `geodesic_voronoi_labels()` with T-maze (2 goals)
+- [x] Test `detect_boundary_crossings()` counts correctly
+- [x] Test `suggests_deliberation()` method
 
 ### M3.7: Exports
 
-- [ ] Add to `src/neurospatial/metrics/__init__.py`:
-  - [ ] `PreDecisionMetrics`
-  - [ ] `DecisionBoundaryMetrics`
-  - [ ] `DecisionAnalysisResult`
-  - [ ] `decision_region_entry_time`
-  - [ ] `extract_pre_decision_window`
-  - [ ] `pre_decision_heading_stats`
-  - [ ] `pre_decision_speed_stats`
-  - [ ] `compute_pre_decision_metrics`
-  - [ ] `geodesic_voronoi_labels`
-  - [ ] `distance_to_decision_boundary`
-  - [ ] `detect_boundary_crossings`
-  - [ ] `compute_decision_analysis`
+- [x] Add to `src/neurospatial/metrics/__init__.py`:
+  - [x] `PreDecisionMetrics`
+  - [x] `DecisionBoundaryMetrics`
+  - [x] `DecisionAnalysisResult`
+  - [x] `decision_region_entry_time`
+  - [x] `extract_pre_decision_window`
+  - [x] `pre_decision_heading_stats`
+  - [x] `pre_decision_speed_stats`
+  - [x] `compute_pre_decision_metrics`
+  - [x] `geodesic_voronoi_labels`
+  - [x] `distance_to_decision_boundary`
+  - [x] `detect_boundary_crossings`
+  - [x] `compute_decision_analysis`
 
 **Success criteria**:
 
-- [ ] High heading variance + low speed → `suggests_deliberation() == True`
-- [ ] T-maze labels bins correctly to left/right goals
-- [ ] All tests pass: `uv run pytest tests/metrics/test_decision_analysis.py -v`
+- [x] High heading variance + low speed → `suggests_deliberation() == True`
+- [x] T-maze labels bins correctly to left/right goals
+- [x] All tests pass: `uv run pytest tests/metrics/test_decision_analysis.py -v`
 
 ---
 

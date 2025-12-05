@@ -20,6 +20,8 @@ path_efficiency
     Path efficiency metrics for spatial navigation analysis.
 goal_directed
     Goal-directed navigation metrics (goal bias, approach rate).
+decision_analysis
+    Spatial decision analysis at choice points (pre-decision metrics, boundary crossings).
 
 """
 
@@ -38,6 +40,20 @@ from neurospatial.metrics.circular_basis import (
     circular_basis_metrics,
     is_modulated,
     plot_circular_basis_tuning,
+)
+from neurospatial.metrics.decision_analysis import (
+    DecisionAnalysisResult,
+    DecisionBoundaryMetrics,
+    PreDecisionMetrics,
+    compute_decision_analysis,
+    compute_pre_decision_metrics,
+    decision_region_entry_time,
+    detect_boundary_crossings,
+    distance_to_decision_boundary,
+    extract_pre_decision_window,
+    geodesic_voronoi_labels,
+    pre_decision_heading_stats,
+    pre_decision_speed_stats,
 )
 from neurospatial.metrics.goal_directed import (
     GoalDirectedMetrics,
@@ -128,6 +144,8 @@ from neurospatial.metrics.trajectory import (
 
 __all__ = [
     "CircularBasisResult",
+    "DecisionAnalysisResult",
+    "DecisionBoundaryMetrics",
     "GoalDirectedMetrics",
     "GridProperties",
     "HeadDirectionMetrics",
@@ -135,6 +153,7 @@ __all__ = [
     "PathEfficiencyResult",
     "PhasePrecessionResult",
     "PopulationCoverageResult",
+    "PreDecisionMetrics",
     "SpatialViewMetrics",
     "SubgoalEfficiencyResult",
     "angular_efficiency",
@@ -144,16 +163,22 @@ __all__ = [
     "circular_basis_metrics",
     "circular_circular_correlation",
     "circular_linear_correlation",
+    "compute_decision_analysis",
     "compute_field_emd",
     "compute_goal_directed_metrics",
     "compute_home_range",
     "compute_object_vector_tuning",
     "compute_path_efficiency",
+    "compute_pre_decision_metrics",
     "compute_region_coverage",
     "compute_step_lengths",
     "compute_turn_angles",
     "count_place_cells",
+    "decision_region_entry_time",
+    "detect_boundary_crossings",
     "detect_place_fields",
+    "distance_to_decision_boundary",
+    "extract_pre_decision_window",
     "field_centroid",
     "field_density_map",
     "field_overlap",
@@ -161,6 +186,7 @@ __all__ = [
     "field_shift_distance",
     "field_size",
     "field_stability",
+    "geodesic_voronoi_labels",
     "goal_bias",
     "goal_direction",
     "goal_vector",
@@ -192,6 +218,8 @@ __all__ = [
     "plot_population_coverage",
     "population_coverage",
     "population_vector_correlation",
+    "pre_decision_heading_stats",
+    "pre_decision_speed_stats",
     "rate_map_coherence",
     "rayleigh_test",
     "selectivity",

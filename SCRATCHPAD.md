@@ -1,15 +1,15 @@
 # SCRATCHPAD: Behavioral Trajectory Metrics Implementation
 
 **Started**: 2025-12-05
-**Current Phase**: M2 COMPLETE - Starting M3 (Decision Analysis)
+**Current Phase**: M3 COMPLETE - Ready for M4 (VTE Metrics)
 
 ---
 
 ## Current Task
 
-**COMPLETED**: M2 - Goal-Directed Metrics
+**COMPLETED**: M3 - Decision Analysis
 
-Next: **M3 - Decision Analysis**
+Next: **M4 - VTE Metrics**
 
 ---
 
@@ -91,3 +91,36 @@ None currently.
 - `src/neurospatial/metrics/__init__.py` - Added exports
 - `TASKS.md` - Updated M2 checkboxes
 - `SCRATCHPAD.md` - Updated
+
+### Session 3 (M3 - Decision Analysis)
+
+- `src/neurospatial/metrics/decision_analysis.py` - NEW (~890 LOC)
+- `tests/metrics/test_decision_analysis.py` - NEW (31 tests)
+- `src/neurospatial/metrics/__init__.py` - Added 12 exports
+- `TASKS.md` - Updated M3 checkboxes
+- `SCRATCHPAD.md` - Updated
+
+#### M3 Completion Notes
+
+- All 31 tests pass
+- Implemented 12 functions and 3 dataclasses:
+  - `PreDecisionMetrics` - kinematics before entering decision region
+  - `DecisionBoundaryMetrics` - boundary crossing metrics
+  - `DecisionAnalysisResult` - complete analysis for a trial
+  - `decision_region_entry_time` - find first entry to region
+  - `extract_pre_decision_window` - slice trajectory before entry
+  - `pre_decision_heading_stats` - circular mean, variance, MRL
+  - `pre_decision_speed_stats` - mean and min speed
+  - `compute_pre_decision_metrics` - combine all pre-decision metrics
+  - `geodesic_voronoi_labels` - label bins by nearest goal
+  - `distance_to_decision_boundary` - distance to Voronoi edge
+  - `detect_boundary_crossings` - find boundary crossing events
+  - `compute_decision_analysis` - full decision analysis
+- Code review: APPROVED with no blocking issues
+- Key design decisions:
+  - Uses geodesic Voronoi partition for decision boundaries
+  - Circular statistics computed directly (not via private functions)
+  - Out-of-bounds bins handled gracefully (NaN distance)
+  - Single-goal case returns inf for boundary distance
+- ruff check: PASSED
+- mypy check: PASSED
