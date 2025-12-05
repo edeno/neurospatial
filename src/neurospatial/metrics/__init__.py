@@ -16,6 +16,8 @@ boundary_cells
     Boundary cell metrics including border score.
 trajectory
     Trajectory characterization metrics (turn angles, step lengths, home range, MSD).
+path_efficiency
+    Path efficiency metrics for spatial navigation analysis.
 
 """
 
@@ -57,6 +59,17 @@ from neurospatial.metrics.object_vector_cells import (
     is_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
+)
+from neurospatial.metrics.path_efficiency import (
+    PathEfficiencyResult,
+    SubgoalEfficiencyResult,
+    angular_efficiency,
+    compute_path_efficiency,
+    path_efficiency,
+    shortest_path_length,
+    subgoal_efficiency,
+    time_efficiency,
+    traveled_path_length,
 )
 from neurospatial.metrics.phase_precession import (
     PhasePrecessionResult,
@@ -107,9 +120,12 @@ __all__ = [
     "GridProperties",
     "HeadDirectionMetrics",
     "ObjectVectorMetrics",
+    "PathEfficiencyResult",
     "PhasePrecessionResult",
     "PopulationCoverageResult",
     "SpatialViewMetrics",
+    "SubgoalEfficiencyResult",
+    "angular_efficiency",
     "border_score",
     "circular_basis",
     "circular_basis_metrics",
@@ -118,6 +134,7 @@ __all__ = [
     "compute_field_emd",
     "compute_home_range",
     "compute_object_vector_tuning",
+    "compute_path_efficiency",
     "compute_region_coverage",
     "compute_step_lengths",
     "compute_turn_angles",
@@ -146,6 +163,7 @@ __all__ = [
     "mean_square_displacement",
     "mutual_information",
     "object_vector_score",
+    "path_efficiency",
     "periodicity_score",
     "phase_position_correlation",
     "phase_precession",
@@ -159,9 +177,13 @@ __all__ = [
     "rate_map_coherence",
     "rayleigh_test",
     "selectivity",
+    "shortest_path_length",
     "skaggs_information",
     "sparsity",
     "spatial_autocorrelation",
     "spatial_coverage_single_cell",
     "spatial_view_cell_metrics",
+    "subgoal_efficiency",
+    "time_efficiency",
+    "traveled_path_length",
 ]
