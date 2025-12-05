@@ -428,12 +428,71 @@
   - `compute_view_field`, `compute_viewed_location`, `compute_viewshed`
   - `compute_viewshed_trajectory`, `visibility_occupancy`, `visible_cues`
 
+### Completed: M3.2 Spatial View Cell Model (Simulation)
+
+**Files Created:**
+
+- `src/neurospatial/simulation/models/spatial_view_cells.py` - Main implementation (~450 LOC)
+- `tests/simulation/models/test_spatial_view_cells.py` - 30 comprehensive tests
+
+**Implemented:**
+
+- [x] `SpatialViewCellModel` class with parameters:
+  - `env`, `preferred_view_location` - required spatial setup
+  - `view_field_width` - Gaussian tuning width (default 10.0)
+  - `view_distance` - view distance for fixed_distance model (default 20.0)
+  - `gaze_model` - "fixed_distance", "ray_cast", "boundary"
+  - `max_rate`, `baseline_rate` - firing rate parameters
+  - `require_visibility` - optional line-of-sight check
+  - `fov` - optional FieldOfView constraint
+- [x] Parameter validation in `__init__` with clear error messages
+- [x] Warning for preferred_view_location outside environment bounds
+- [x] `firing_rate()` method with:
+  - Computes viewed location via `compute_viewed_location()`
+  - Gaussian distance tuning: `exp(-0.5 * ((d) / width)^2)`
+  - Handles NaN viewed locations (returns baseline)
+  - Optional FOV and visibility checks
+- [x] `ground_truth` property returning all model parameters
+
+**Key Design Decisions:**
+
+- Class-based (not dataclass) following `ObjectVectorCellModel` pattern
+- Uses `compute_viewed_location()` from visibility module for gaze computation
+- Gaussian tuning around preferred viewed location (not animal position)
+- FOV restriction applies to both visibility check and general viewing
+- NaN handling: returns baseline rate when viewing outside environment
+
+**Tests:**
+
+- 30/30 passing
+- Module structure tests (imports, docstring)
+- Parameter validation tests (8 tests for error messages)
+- Firing rate computation tests (shape, non-negative, peaks, Gaussian)
+- Gaze model tests (fixed_distance, ray_cast)
+- Visibility requirement tests
+- FOV integration tests
+- Ground truth tests (completeness, immutability)
+- Protocol compliance (implements NeuralModel)
+- Edge cases (NaN viewing, single position)
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved - high quality scientific code
+- NumPy docstrings with full examples and scientific references
+- Complete type annotations with Literal types
+
+**Module Updated:**
+
+- `src/neurospatial/simulation/models/__init__.py` - Added `SpatialViewCellModel` export
+
 ### Next Task
 
-- **M3.2**: Spatial View Cell Model (Simulation)
-  - Create `src/neurospatial/simulation/models/spatial_view_cells.py`
-  - Implement `SpatialViewCellModel` class
-  - Use visibility module for gaze-based firing rates
+- **M3.3**: Spatial View Field Analysis
+  - Create `src/neurospatial/spatial_view_field.py`
+  - Implement `compute_spatial_view_field()` function
+  - Bin spikes by viewed location (not animal position)
 
 ### Blockers
 

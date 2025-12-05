@@ -350,24 +350,24 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/simulation/models/spatial_view_cells.py`
 
-- [ ] Create module with docstring and references (Rolls et al. 1997)
-- [ ] Implement `SpatialViewCellModel` dataclass
-  - [ ] Required: `env`, `preferred_view_location`
-  - [ ] Tuning: `view_field_width`
-  - [ ] Gaze: `view_distance`, `gaze_model`
-  - [ ] Rate: `max_rate`, `baseline_rate`
-  - [ ] Visibility: `require_visibility`, `fov`
-- [ ] Implement `firing_rate()` method
-  - [ ] Compute viewed location at each timepoint
-  - [ ] Distance from viewed location to preferred
-  - [ ] Gaussian tuning
-  - [ ] Handle NaN (viewing outside environment)
-  - [ ] Optional visibility check
-- [ ] Implement `ground_truth` property
+- [x] Create module with docstring and references (Rolls et al. 1997)
+- [x] Implement `SpatialViewCellModel` dataclass
+  - [x] Required: `env`, `preferred_view_location`
+  - [x] Tuning: `view_field_width`
+  - [x] Gaze: `view_distance`, `gaze_model`
+  - [x] Rate: `max_rate`, `baseline_rate`
+  - [x] Visibility: `require_visibility`, `fov`
+- [x] Implement `firing_rate()` method
+  - [x] Compute viewed location at each timepoint
+  - [x] Distance from viewed location to preferred
+  - [x] Gaussian tuning
+  - [x] Handle NaN (viewing outside environment)
+  - [x] Optional visibility check
+- [x] Implement `ground_truth` property
 
 **Success criteria**:
 
-- Firing rate peaks when viewing `preferred_view_location`
+- [x] Firing rate peaks when viewing `preferred_view_location`
 
 ### M3.3: Spatial View Field Analysis
 
