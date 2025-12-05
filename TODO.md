@@ -372,3 +372,5 @@
 Simulation recipes that include explicit reward structure and policy (e.g., T‑maze alternation with changing contingencies), plus utilities to benchmark decoders and replay/theta metrics against ground truth (are sequences truly prospective/retrospective relative to value?).
 
 * egocentric spatial representations (transformations between allocentric and egocentric frames)
+
+* separately create extension for nwb for spatial analyses
