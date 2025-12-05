@@ -265,25 +265,25 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `tests/test_object_vector_field.py`
 
-- [ ] Test field computation with binned method
-- [ ] Test field computation with diffusion_kde method
-- [ ] Test ego_env returned correctly
-- [ ] Test geodesic distance mode
+- [x] Test field computation with binned method
+- [x] Test field computation with diffusion_kde method
+- [x] Test ego_env returned correctly
+- [x] Test geodesic distance mode
 
 ### M2.6: Integration and Documentation
 
-- [ ] Add exports to `src/neurospatial/__init__.py`
-  - [ ] Export: `compute_object_vector_field`
-- [ ] Add exports to `src/neurospatial/simulation/__init__.py`
-  - [ ] Export: `ObjectVectorCellModel`
+- [x] Add exports to `src/neurospatial/__init__.py`
+  - [x] Export: `compute_object_vector_field`
+- [x] Add exports to `src/neurospatial/simulation/__init__.py`
+  - [x] Export: `ObjectVectorCellModel`
 - [x] Add exports to `src/neurospatial/metrics/__init__.py`
   - [x] Export: `ObjectVectorMetrics`, `compute_object_vector_tuning`
   - [x] Export: `object_vector_score`, `is_object_vector_cell`
   - [x] Export: `plot_object_vector_tuning`
 - [x] Add exports to `src/neurospatial/animation/__init__.py`
   - [x] Export: `ObjectVectorOverlay`, `ObjectVectorData`
-- [ ] Update `.claude/QUICKSTART.md` with object-vector examples
-- [ ] Update `.claude/API_REFERENCE.md` with object-vector imports
+- [x] Update `.claude/QUICKSTART.md` with object-vector examples
+- [x] Update `.claude/API_REFERENCE.md` with object-vector imports
 
 ---
 
@@ -311,7 +311,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Iterative stepping with binary search refinement
 - [ ] Implement `FieldOfView` frozen dataclass
   - [ ] Attributes: `left_angle`, `right_angle`, `binocular_half_angle`, `blind_spot_behind`
-  - [ ] Class methods: `symmetric()`, `rat()`, `mouse()`, `primate()`, `bat()`
+  - [ ] Class methods: `symmetric()`, `rat()`, `mouse()`, `primate()`,
   - [ ] Properties: `total_angle`, `total_angle_degrees`
   - [ ] Method: `contains_angle()` - check if bearing in FOV
   - [ ] Method: `is_binocular()` - check if in binocular region

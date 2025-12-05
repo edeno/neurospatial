@@ -225,6 +225,119 @@ ego_env = Environment.from_polar_egocentric(
 # ego_env.bin_centers[:, 1] = angles
 ```
 
+### Object-Vector Cells
+
+Analyze cells that encode distance and direction to objects in egocentric coordinates:
+
+**Compute object-vector field:**
+
+```python
+from neurospatial import compute_object_vector_field
+
+# Define object positions in allocentric (world) coordinates
+object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
+
+# Compute object-vector field (egocentric polar representation)
+result = compute_object_vector_field(
+    spike_times=spike_times,          # Spike times for one neuron
+    times=times,                       # Trajectory timestamps
+    positions=positions,               # Animal positions (n_time, 2)
+    headings=headings,                 # Animal heading angles (radians)
+    object_positions=object_positions,
+    max_distance=50.0,                 # Max distance to consider (cm)
+    n_distance_bins=10,                # Number of radial bins
+    n_direction_bins=12,               # Number of angular bins
+    method="diffusion_kde",            # or "binned"
+)
+
+# Access results
+field = result.field           # Firing rate in egocentric polar space
+ego_env = result.ego_env       # Egocentric polar environment
+occupancy = result.occupancy   # Time spent in each bin
+
+# Find preferred distance and direction
+peak_idx = np.nanargmax(field)
+preferred_distance = ego_env.bin_centers[peak_idx, 0]
+preferred_direction = ego_env.bin_centers[peak_idx, 1]
+print(f"Preferred: {preferred_distance:.1f} cm at {np.degrees(preferred_direction):.0f}°")
+```
+
+**Classify object-vector cells:**
+
+```python
+from neurospatial.metrics import (
+    compute_object_vector_tuning,
+    is_object_vector_cell,
+    plot_object_vector_tuning,
+)
+
+# Compute tuning metrics
+metrics = compute_object_vector_tuning(
+    spike_times=spike_times,
+    times=times,
+    positions=positions,
+    headings=headings,
+    object_positions=object_positions,
+)
+
+# Check classification
+print(metrics.interpretation())  # Human-readable summary
+print(f"OVC score: {metrics.object_vector_score:.3f}")
+print(f"Peak rate: {metrics.peak_rate:.1f} Hz")
+
+# Classify
+if is_object_vector_cell(metrics, threshold=0.3, min_peak_rate=5.0):
+    print("This is an object-vector cell!")
+
+# Plot polar tuning curve
+fig, ax = plot_object_vector_tuning(metrics, mark_peak=True, colorbar=True)
+```
+
+**Simulate object-vector cells:**
+
+```python
+from neurospatial.simulation import ObjectVectorCellModel, generate_poisson_spikes
+
+# Create OVC model
+ovc = ObjectVectorCellModel(
+    env=env,
+    object_positions=object_positions,
+    preferred_distance=20.0,        # Peak at 20 cm
+    distance_width=8.0,             # Gaussian width
+    preferred_direction=np.pi/4,    # 45° left (optional)
+    direction_kappa=4.0,            # Direction tuning sharpness
+    max_rate=30.0,                  # Peak firing rate (Hz)
+)
+
+# Generate firing rates along trajectory
+rates = ovc.firing_rate(positions, headings=headings)
+
+# Generate spikes
+spike_times = generate_poisson_spikes(rates, times, seed=42)
+
+# Access ground truth parameters
+print(ovc.ground_truth)
+```
+
+**Animate with object-vector overlay:**
+
+```python
+from neurospatial.animation import ObjectVectorOverlay
+
+# Create overlay showing vectors to objects
+overlay = ObjectVectorOverlay(
+    object_positions=object_positions,  # Static object locations
+    animal_positions=trajectory,         # Animal trajectory (n_frames, 2)
+    times=times,                          # Optional: for interpolation
+    firing_rates=rates,                   # Optional: modulate line appearance
+    color="cyan",
+    linewidth=2.0,
+    show_objects=True,                   # Mark object locations
+)
+
+env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
+```
+
 ### Visualization & Animation
 
 **Animate spatial fields:**

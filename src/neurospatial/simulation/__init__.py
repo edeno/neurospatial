@@ -59,6 +59,7 @@ from neurospatial.simulation.models import (
     BoundaryCellModel,
     GridCellModel,
     NeuralModel,  # Protocol
+    ObjectVectorCellModel,
     PlaceCellModel,
 )
 
@@ -93,6 +94,7 @@ __all__ = [
     "BoundaryCellModel",
     "GridCellModel",
     "NeuralModel",
+    "ObjectVectorCellModel",
     "PlaceCellModel",
     "SimulationSession",
     "add_modulation",

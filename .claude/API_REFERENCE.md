@@ -210,6 +210,38 @@ ego_env = Environment.from_polar_egocentric(
 
 ---
 
+## Object-Vector Cells (v0.18.0+)
+
+```python
+from neurospatial import (
+    # Field computation
+    ObjectVectorFieldResult,       # Result container
+    compute_object_vector_field,   # Compute egocentric polar field
+)
+
+# Metrics and classification
+from neurospatial.metrics import (
+    ObjectVectorMetrics,           # Frozen dataclass with tuning metrics
+    compute_object_vector_tuning,  # Compute tuning from spikes
+    object_vector_score,           # Distance × direction selectivity
+    is_object_vector_cell,         # Classifier (score + peak rate)
+    plot_object_vector_tuning,     # Polar heatmap visualization
+)
+
+# Simulation
+from neurospatial.simulation import (
+    ObjectVectorCellModel,         # OVC model with Gaussian/von Mises tuning
+)
+
+# Animation overlay
+from neurospatial.animation import (
+    ObjectVectorOverlay,           # Vectors from animal to objects
+    ObjectVectorData,              # Internal data container
+)
+```
+
+---
+
 ## Behavioral Analysis (v0.7.0+)
 
 ```python

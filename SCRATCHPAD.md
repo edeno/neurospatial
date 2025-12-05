@@ -341,15 +341,32 @@
 - NumPy-style docstrings with complete parameter documentation
 - Full type annotations with Literal types
 
+### Completed: M2.6 Integration and Documentation
+
+**Files Modified:**
+
+- `src/neurospatial/simulation/__init__.py` - Added `ObjectVectorCellModel` export
+- `.claude/QUICKSTART.md` - Added "Object-Vector Cells" section with:
+  - `compute_object_vector_field()` usage example
+  - Metrics and classification examples
+  - Simulation example with `ObjectVectorCellModel`
+  - Animation with `ObjectVectorOverlay` example
+- `.claude/API_REFERENCE.md` - Added "Object-Vector Cells (v0.18.0+)" section with:
+  - All exports from `neurospatial` top-level
+  - `neurospatial.metrics` exports
+  - `neurospatial.simulation` exports
+  - `neurospatial.animation` exports
+
+**Milestone 2 Complete!** All tasks in M2 (Object-Vector Cells) are now done.
+
+**All Tests:** 137/137 passing for object-vector modules
+
 ### Next Task
 
-- **M2.5**: Tests for Object-Vector Cells (remaining unchecked items)
-  - tests/test_object_vector_field.py tests
-- **M2.6**: Integration and Documentation
-  - Add exports to `src/neurospatial/__init__.py`
-  - Add exports to `src/neurospatial/simulation/__init__.py`
-  - Update `.claude/QUICKSTART.md`
-  - Update `.claude/API_REFERENCE.md`
+- **M3.1**: Visibility/Gaze Computation
+  - Create `src/neurospatial/visibility.py` module
+  - Implement `compute_viewed_location()`, `FieldOfView`, `ViewshedResult`
+  - Implement `compute_viewshed()`, `visible_cues()`, etc.
 
 ### Blockers
 
