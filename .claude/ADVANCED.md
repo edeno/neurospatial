@@ -418,6 +418,200 @@ for i, label in enumerate(result.node_labels):
 
 ---
 
+## Gaze Analysis and Visibility (v0.19.0+)
+
+Advanced analysis of what the animal can see and where it's looking.
+
+### Field of View and Visibility
+
+```python
+from neurospatial import (
+    FieldOfView,
+    compute_viewshed,
+    compute_view_field,
+    visible_cues,
+    visibility_occupancy,
+)
+
+# Species-specific field of view presets
+fov_rat = FieldOfView.rat()        # ~320° total, ~40° binocular
+fov_mouse = FieldOfView.mouse()    # ~310° total
+fov_primate = FieldOfView.primate()  # ~180° total, ~120° binocular
+
+# Custom FOV
+fov_custom = FieldOfView.symmetric(total_angle=270.0)  # Degrees
+
+# FOV properties
+print(f"Total angle: {fov_rat.total_angle_degrees:.0f}°")
+print(f"Binocular region: {fov_rat.binocular_half_angle * 2 * 180 / np.pi:.0f}°")
+print(f"Blind spot behind: {fov_rat.blind_spot_behind * 180 / np.pi:.0f}°")
+
+# Check if direction is in FOV
+in_fov = fov_rat.contains_angle(bearing)  # bearing relative to heading
+```
+
+### Viewshed Analysis (What's Visible)
+
+```python
+# Compute visible bins from a position
+viewshed = compute_viewshed(
+    env,
+    position=np.array([50.0, 50.0]),
+    heading=0.0,  # Facing East
+    fov=fov_rat,  # Species-specific FOV
+    n_rays=360,   # Angular resolution
+)
+
+# Access results
+print(f"Visible bins: {viewshed.n_visible_bins}")
+print(f"Visibility fraction: {viewshed.visibility_fraction:.1%}")
+visible_centers = viewshed.visible_bin_centers(env)
+
+# Occlusion map (which bins block line of sight)
+occlusion = viewshed.occlusion_map  # Shape: (n_bins,)
+```
+
+### Cue/Landmark Visibility
+
+```python
+# Check which cues/landmarks are visible from position
+cue_positions = np.array([[80, 50], [20, 80], [50, 90]])
+
+viewshed = compute_viewshed(
+    env, position=np.array([50, 50]),
+    heading=np.pi/4,  # Facing NE
+    fov=fov_rat,
+    cue_positions=cue_positions,
+)
+
+# Filter visible cues
+visible_cues_result = viewshed.filter_cues(visible_only=True)
+print(f"Visible cues: {viewshed.n_visible_cues} / {len(cue_positions)}")
+
+# Get distances and bearings to visible cues
+distances = viewshed.cue_distances  # NaN if not visible
+bearings = viewshed.cue_bearings    # Egocentric angles
+```
+
+### Visibility Along Trajectory
+
+```python
+# Compute viewshed at each timepoint
+viewsheds = compute_viewshed_trajectory(
+    env,
+    positions=trajectory,    # (n_time, 2)
+    headings=headings,       # (n_time,)
+    fov=fov_rat,
+    n_rays=180,
+)
+
+# Accumulate time each bin was visible
+view_occupancy = visibility_occupancy(
+    env, viewsheds, times=timestamps  # Weighted by time spent
+)
+```
+
+### Gaze Computation
+
+```python
+from neurospatial import compute_viewed_location
+
+# Compute where animal is looking at each timepoint
+viewed_locations = compute_viewed_location(
+    positions=trajectory,
+    headings=headings,
+    view_distance=15.0,  # Fixed viewing distance (cm)
+    method="fixed_distance",
+)
+# Shape: (n_time, 2) - NaN where viewing outside environment
+
+# Methods for compute_viewed_location:
+# - "fixed_distance": Look at point `view_distance` ahead (default)
+# - "ray_cast": Cast ray until hitting boundary (requires env)
+# - "boundary": Look at nearest boundary point (requires env)
+
+# With ray casting (finds first obstacle)
+viewed_locations = compute_viewed_location(
+    positions=trajectory,
+    headings=headings,
+    method="ray_cast",
+    env=env,  # Required for ray_cast and boundary
+)
+```
+
+### Spatial View Cell Analysis
+
+```python
+from neurospatial import (
+    compute_spatial_view_field,
+    spatial_view_cell_metrics,
+    is_spatial_view_cell,
+    SpatialViewCellModel,
+)
+
+# Compute view field (firing rate by *viewed location*)
+result = compute_spatial_view_field(
+    env, spike_times, times, positions, headings,
+    view_distance=15.0,
+    gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    method="diffusion_kde",
+)
+
+# Key insight: view field differs from place field for true SVCs
+# - Place field: binned by animal position
+# - View field: binned by viewed location
+
+# Compare view vs place field
+metrics = spatial_view_cell_metrics(
+    env, spike_times, times, positions, headings,
+    view_distance=15.0,
+    info_ratio=1.5,        # View info must be 1.5x place info
+    max_correlation=0.7,   # Fields must be dissimilar
+)
+
+print(metrics.interpretation())
+# Output:
+# *** SPATIAL VIEW CELL ***
+# View field info: 1.85 bits/spike
+# Place field info: 0.62 bits/spike
+# View/Place info ratio: 2.98
+# View-place correlation: 0.32
+```
+
+### Simulate Spatial View Cells
+
+```python
+# Model that fires when looking at specific location
+svc = SpatialViewCellModel(
+    env=env,
+    preferred_view_location=np.array([50.0, 50.0]),
+    view_field_width=10.0,   # Gaussian tuning width
+    view_distance=15.0,
+    gaze_model="fixed_distance",
+    max_rate=20.0,
+    baseline_rate=0.5,
+    require_visibility=True,  # Only fire if view is unobstructed
+    fov=fov_rat,             # Apply FOV constraint
+)
+
+# Generate firing rates
+rates = svc.firing_rate(positions, times=times, headings=headings)
+
+# Ground truth parameters
+print(svc.ground_truth)
+```
+
+### Classification Criteria
+
+A neuron is classified as a spatial view cell if both criteria are met:
+
+1. **Information ratio**: `view_info > ratio × place_info` (default ratio=1.5)
+2. **Field dissimilarity**: `correlation < max_corr` (default max_corr=0.7)
+
+This ensures the cell encodes *viewed location*, not just *position*.
+
+---
+
 ## Large Session Workflow
 
 Optimize napari for datasets with hundreds of thousands of frames.

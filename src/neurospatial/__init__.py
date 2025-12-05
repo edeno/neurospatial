@@ -279,13 +279,16 @@ from neurospatial.layout.validation import validate_environment
 
 # Neuroscience metrics and behavioral analysis
 from neurospatial.metrics import (
+    SpatialViewMetrics,
     border_score,
     detect_place_fields,
     grid_score,
+    is_spatial_view_cell,
     population_vector_correlation,
     selectivity,
     skaggs_information,
     sparsity,
+    spatial_view_cell_metrics,
 )
 
 # Object-vector field analysis
@@ -315,6 +318,9 @@ from neurospatial.segmentation import (
     segment_by_velocity,
     segment_trials,
 )
+
+# Spatial view cell simulation model
+from neurospatial.simulation import SpatialViewCellModel
 from neurospatial.spatial import (
     TieBreakStrategy,
     map_points_to_bins,
@@ -390,13 +396,16 @@ __all__ = [
     "to_dict",
     "to_file",
     # Neuroscience metrics
+    "SpatialViewMetrics",
     "border_score",
     "detect_place_fields",
     "grid_score",
+    "is_spatial_view_cell",
     "population_vector_correlation",
     "selectivity",
     "skaggs_information",
     "sparsity",
+    "spatial_view_cell_metrics",
     # Basis functions for GLMs
     "chebyshev_filter_basis",
     "geodesic_rbf_basis",
@@ -478,6 +487,8 @@ __all__ = [
     # Object-vector field analysis
     "ObjectVectorFieldResult",
     "compute_object_vector_field",
+    # Spatial view cell simulation
+    "SpatialViewCellModel",
     # Spatial view field analysis
     "SpatialViewFieldResult",
     "compute_spatial_view_field",

@@ -242,6 +242,59 @@ from neurospatial.animation import (
 
 ---
 
+## Spatial View Cells (v0.19.0+)
+
+```python
+from neurospatial import (
+    # Field computation
+    SpatialViewFieldResult,        # Result container
+    compute_spatial_view_field,    # Compute view field (by viewed location)
+
+    # Metrics and classification
+    SpatialViewMetrics,            # Frozen dataclass with metrics
+    spatial_view_cell_metrics,     # Compute view vs place metrics
+    is_spatial_view_cell,          # Quick classifier
+
+    # Simulation
+    SpatialViewCellModel,          # Gaze-based firing model
+)
+```
+
+**Visibility and gaze analysis:**
+
+```python
+from neurospatial import (
+    # Field of view
+    FieldOfView,                   # Species-specific FOV (rat, primate, etc.)
+    ViewshedResult,                # Visible bins from position
+
+    # Gaze computation
+    compute_viewed_location,       # Where is animal looking?
+    compute_viewshed,              # What bins are visible?
+    compute_view_field,            # Binary visibility mask
+    compute_viewshed_trajectory,   # Viewshed along trajectory
+    visibility_occupancy,          # Time each bin was visible
+    visible_cues,                  # Check cue visibility
+)
+```
+
+**Full visibility module API:**
+
+```python
+from neurospatial.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_view_field,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
+```
+
+---
+
 ## Behavioral Analysis (v0.7.0+)
 
 ```python

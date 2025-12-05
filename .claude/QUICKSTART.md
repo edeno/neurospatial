@@ -338,6 +338,131 @@ overlay = ObjectVectorOverlay(
 env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 ```
 
+### Spatial View Cells
+
+Analyze cells that fire when the animal is *looking at* a specific location (not *at* that location):
+
+**Compute spatial view field:**
+
+```python
+from neurospatial import compute_spatial_view_field
+
+# Compute view field (binned by *viewed location*, not position)
+result = compute_spatial_view_field(
+    env=env,
+    spike_times=spike_times,
+    times=times,
+    positions=positions,
+    headings=headings,
+    view_distance=15.0,      # Fixed viewing distance
+    gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    method="diffusion_kde",  # or "binned", "gaussian_kde"
+)
+
+# Access results
+view_field = result.field          # Firing rate by viewed location
+view_occupancy = result.view_occupancy  # Time viewing each bin
+
+# Compare to place field (binned by position)
+from neurospatial import compute_place_field
+place_field = compute_place_field(env, spike_times, times, positions)
+
+# For spatial view cells: view_field differs from place_field
+```
+
+**Classify spatial view cells:**
+
+```python
+from neurospatial import (
+    spatial_view_cell_metrics,
+    is_spatial_view_cell,
+    SpatialViewMetrics,
+)
+
+# Compute metrics comparing view field vs place field
+metrics = spatial_view_cell_metrics(
+    env=env,
+    spike_times=spike_times,
+    times=times,
+    positions=positions,
+    headings=headings,
+    view_distance=15.0,
+)
+
+# Human-readable interpretation
+print(metrics.interpretation())
+# Shows: view info, place info, correlation, classification reasoning
+
+# Access individual metrics
+print(f"View field info: {metrics.view_field_skaggs_info:.3f} bits/spike")
+print(f"Place field info: {metrics.place_field_skaggs_info:.3f} bits/spike")
+print(f"View-place correlation: {metrics.view_place_correlation:.3f}")
+
+# Quick classification
+if is_spatial_view_cell(env, spike_times, times, positions, headings):
+    print("Spatial view cell detected!")
+```
+
+**Simulate spatial view cells:**
+
+```python
+from neurospatial import SpatialViewCellModel
+from neurospatial.simulation import generate_poisson_spikes
+
+# Create model that fires when looking at specific location
+svc = SpatialViewCellModel(
+    env=env,
+    preferred_view_location=np.array([50.0, 50.0]),  # Fires when viewing here
+    view_field_width=10.0,   # Gaussian tuning width
+    view_distance=15.0,       # Fixed viewing distance
+    gaze_model="fixed_distance",
+    max_rate=20.0,
+)
+
+# Generate firing rates
+rates = svc.firing_rate(positions, times=times, headings=headings)
+
+# Generate spikes
+spike_times = generate_poisson_spikes(rates, times, seed=42)
+```
+
+**Visibility and gaze analysis:**
+
+```python
+from neurospatial import (
+    compute_viewed_location,
+    compute_viewshed,
+    FieldOfView,
+    visible_cues,
+)
+
+# Compute where animal is looking
+viewed_locations = compute_viewed_location(
+    positions, headings, view_distance=15.0,
+    method="fixed_distance",  # or "ray_cast", "boundary"
+)
+
+# Species-specific field of view
+fov = FieldOfView.rat()   # ~320° total FOV
+fov = FieldOfView.primate()  # ~180° total FOV
+
+# Compute visible bins from a position
+viewshed = compute_viewshed(
+    env, position=np.array([50, 50]),
+    heading=0.0,  # Facing East
+    fov=fov,
+    n_rays=360,
+)
+print(f"Visible bins: {viewshed.n_visible_bins}")
+
+# Check which cues/landmarks are visible
+cue_positions = np.array([[80, 50], [20, 80]])
+visible, distances, bearings = visible_cues(
+    env, observer_position=np.array([50, 50]),
+    observer_heading=0.0, cue_positions=cue_positions
+)
+```
+
 ### Visualization & Animation
 
 **Animate spatial fields:**

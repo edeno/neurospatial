@@ -633,14 +633,49 @@ All tests for M3.5 already exist and pass (implemented in previous milestones):
 
 **Total: 128 tests passing for M3 spatial view modules**
 
+### Completed: M3.6 Integration and Documentation
+
+**Files Modified:**
+
+- `src/neurospatial/__init__.py` - Added top-level exports:
+  - `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`
+  - `SpatialViewCellModel`
+- `.claude/QUICKSTART.md` - Added "Spatial View Cells" section with:
+  - `compute_spatial_view_field()` usage example
+  - Metrics and classification examples
+  - Simulation example with `SpatialViewCellModel`
+  - Visibility and gaze analysis examples
+- `.claude/API_REFERENCE.md` - Added "Spatial View Cells (v0.19.0+)" section with:
+  - All exports from `neurospatial` top-level
+  - Visibility module exports
+- `.claude/ADVANCED.md` - Added "Gaze Analysis and Visibility (v0.19.0+)" section with:
+  - Field of view and visibility analysis
+  - Viewshed analysis
+  - Cue/landmark visibility
+  - Visibility along trajectory
+  - Gaze computation
+  - Spatial view cell analysis
+  - Simulation examples
+- `examples/20_spatial_view_cells.py` - New comprehensive example:
+  - Simulating spatial view cells
+  - Computing view fields vs place fields
+  - Comparing and classifying cells
+  - Field of view analysis
+
+**Milestone 3 Complete!** All tasks in M3 (Spatial View Cells) are now done.
+
+**Total M3 Tests:** 128 tests passing across:
+- `tests/test_visibility.py` (45 tests)
+- `tests/simulation/models/test_spatial_view_cells.py` (30 tests)
+- `tests/metrics/test_spatial_view_cells.py` (23 tests)
+- `tests/test_spatial_view_field.py` (30 tests)
+
 ### Next Task
 
-- **M3.6**: Integration and Documentation
-  - Add exports to `src/neurospatial/__init__.py`
-  - Update `.claude/QUICKSTART.md` with spatial view examples
-  - Update `.claude/API_REFERENCE.md` with spatial view imports
-  - Update `.claude/ADVANCED.md` with gaze analysis section
-  - Create example: `examples/spatial_view_cells.py`
+- **Final Integration**: Documentation Updates
+  - Update CLAUDE.md with new module summaries
+  - Add examples to notebooks directory (optional)
+  - Update CHANGELOG with new features
 
 ### Blockers
 

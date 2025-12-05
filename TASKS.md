@@ -445,21 +445,23 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 ### M3.6: Integration and Documentation
 
-- [ ] Add exports to `src/neurospatial/__init__.py`
-  - [ ] Export: `compute_spatial_view_field`
-- [ ] Add exports to `src/neurospatial/visibility.py` `__all__`
-  - [ ] Export: `compute_viewed_location`, `compute_viewshed`, `compute_view_field`
-  - [ ] Export: `visible_boundaries`, `visible_cues`, `visibility_occupancy`
-  - [ ] Export: `FieldOfView`, `ViewshedResult`
-- [ ] Add exports to `src/neurospatial/simulation/__init__.py`
-  - [ ] Export: `SpatialViewCellModel`
-- [ ] Add exports to `src/neurospatial/metrics/__init__.py`
-  - [ ] Export: `SpatialViewMetrics`, `spatial_view_cell_metrics`
-  - [ ] Export: `is_spatial_view_cell`
-- [ ] Update `.claude/QUICKSTART.md` with spatial view examples
-- [ ] Update `.claude/API_REFERENCE.md` with spatial view imports
-- [ ] Update `.claude/ADVANCED.md` with gaze analysis section
-- [ ] Create example: `examples/spatial_view_cells.py`
+- [x] Add exports to `src/neurospatial/__init__.py`
+  - [x] Export: `compute_spatial_view_field`
+  - [x] Export: `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`
+  - [x] Export: `SpatialViewCellModel`
+- [x] Add exports to `src/neurospatial/visibility.py` `__all__`
+  - [x] Export: `compute_viewed_location`, `compute_viewshed`, `compute_view_field`
+  - [x] Export: `visible_cues`, `visibility_occupancy`
+  - [x] Export: `FieldOfView`, `ViewshedResult`
+- [x] Add exports to `src/neurospatial/simulation/__init__.py`
+  - [x] Export: `SpatialViewCellModel`
+- [x] Add exports to `src/neurospatial/metrics/__init__.py`
+  - [x] Export: `SpatialViewMetrics`, `spatial_view_cell_metrics`
+  - [x] Export: `is_spatial_view_cell`
+- [x] Update `.claude/QUICKSTART.md` with spatial view examples
+- [x] Update `.claude/API_REFERENCE.md` with spatial view imports
+- [x] Update `.claude/ADVANCED.md` with gaze analysis section
+- [x] Create example: `examples/spatial_view_cells.py`
 
 ---
 
