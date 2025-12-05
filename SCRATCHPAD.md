@@ -160,12 +160,82 @@
 
 - `src/neurospatial/simulation/models/__init__.py` - Added `ObjectVectorCellModel` export
 
+### Completed: M2.2 Object-Vector Metrics
+
+**Files Created:**
+
+- `src/neurospatial/metrics/object_vector_cells.py` - Main implementation (520 LOC)
+- `tests/metrics/test_object_vector_cells.py` - 53 comprehensive tests
+
+**Implemented:**
+
+- [x] `ObjectVectorMetrics` frozen dataclass with fields:
+  - `preferred_distance`, `preferred_direction` - peak tuning location
+  - `distance_selectivity`, `direction_selectivity` - individual selectivity metrics
+  - `object_vector_score` - combined selectivity score [0, 1]
+  - `peak_rate`, `mean_rate` - firing rate statistics
+  - `tuning_curve`, `distance_bins`, `direction_bins` - full 2D tuning data
+  - `interpretation()` method returning human-readable string
+  - `__str__()` returns interpretation
+- [x] `compute_object_vector_tuning()` function:
+  - Bins spikes by egocentric (distance, direction) to nearest object
+  - Uses `compute_egocentric_bearing()` from M1
+  - Computes occupancy-normalized firing rates
+  - Applies `min_occupancy_seconds` threshold (default 0.1s)
+  - Returns `ObjectVectorMetrics` dataclass
+- [x] `object_vector_score()` function:
+  - Distance selectivity: `s_d = peak / mean`
+  - Direction selectivity: uses `_mean_resultant_length` from `metrics.circular`
+  - Combined: `s_OV = ((s_d - 1) / (s_d* - 1)) * s_θ`
+  - Validates `max_distance_selectivity > 1`
+- [x] `is_object_vector_cell()` classifier:
+  - Checks `score >= threshold` and `peak_rate >= min_rate`
+  - Default thresholds: score=0.3, min_peak=5.0 Hz
+- [x] `plot_object_vector_tuning()` visualization:
+  - Polar heatmap (distance=radial, direction=angular)
+  - Optional peak location marker
+  - Optional colorbar
+  - Configurable colormap
+
+**Key Design Decisions:**
+
+- API pattern mirrors `head_direction.py` (dataclass + compute + classifier + plot)
+- Uses frozen dataclass for immutable metrics
+- Egocentric coordinate convention: 0=ahead, π/2=left, -π/2=right
+- Nearest object used by default (consistent with biological OVCs)
+- Combined score formula from Hoydal et al. (2019)
+
+**Tests:**
+
+- 53/53 passing
+- Module structure tests
+- Dataclass tests (fields, frozen, interpretation)
+- Tuning computation tests (binning, occupancy, normalization)
+- Score computation tests (distance, direction, combined)
+- Classifier tests (thresholds, edge cases)
+- Visualization tests (polar projection, peak marking)
+- Ground truth recovery tests (simulated OVC → metrics → classification)
+
+**Code Quality:**
+
+- ruff: All checks pass
+- mypy: No issues found
+- Code review: Approved - excellent scientific code
+- NumPy docstrings with full examples
+- Complete type annotations
+
+**Module Updated:**
+
+- `src/neurospatial/metrics/__init__.py` - Added all exports:
+  - `ObjectVectorMetrics`, `compute_object_vector_tuning`
+  - `object_vector_score`, `is_object_vector_cell`, `plot_object_vector_tuning`
+
 ### Next Task
 
-- **M2.2**: Object-Vector Metrics
-  - Create `src/neurospatial/metrics/object_vector_cells.py`
-  - Implement `ObjectVectorMetrics` dataclass
-  - Implement `compute_object_vector_tuning()` function
+- **M2.3**: Object-Vector Field Computation
+  - Create `src/neurospatial/object_vector_field.py`
+  - Implement `ObjectVectorFieldResult` dataclass
+  - Implement `compute_object_vector_field()` function
 
 ### Blockers
 

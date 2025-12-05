@@ -181,30 +181,30 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/metrics/object_vector_cells.py`
 
-- [ ] Create module with docstring and references
-- [ ] Implement `ObjectVectorMetrics` frozen dataclass
-  - [ ] Fields: `preferred_distance`, `preferred_direction`
-  - [ ] Fields: `distance_selectivity`, `direction_selectivity`, `object_vector_score`
-  - [ ] Fields: `peak_rate`, `mean_rate`
-  - [ ] Fields: `tuning_curve`, `distance_bins`, `direction_bins`
-  - [ ] Method: `interpretation()` → human-readable string
-- [ ] Implement `compute_object_vector_tuning()` function
-  - [ ] Bin spikes by egocentric (distance, direction) to nearest object
-  - [ ] Compute occupancy in each bin
-  - [ ] Normalize by occupancy
-  - [ ] Apply `min_occupancy_seconds` threshold (default 0.1s)
-  - [ ] Return `ObjectVectorMetrics`
-- [ ] Implement `object_vector_score()` function
-  - [ ] Distance selectivity: `s_d = peak / mean`
-  - [ ] Direction selectivity: reuse `_mean_resultant_length` from `metrics.circular`
-  - [ ] Combined: `s_OV = ((s_d - 1) / (s_d* - 1)) * s_θ`
-  - [ ] Document `max_distance_selectivity` parameter (default 10.0)
-  - [ ] Validate `max_distance_selectivity > 1`
-- [ ] Implement `is_object_vector_cell()` classifier
-  - [ ] Check `score >= threshold` and `peak_rate >= min_rate`
-- [ ] Implement `plot_object_vector_tuning()` visualization
-  - [ ] Polar heatmap: distance on radial axis, angle on angular axis
-  - [ ] Optional: mark peak location
+- [x] Create module with docstring and references
+- [x] Implement `ObjectVectorMetrics` frozen dataclass
+  - [x] Fields: `preferred_distance`, `preferred_direction`
+  - [x] Fields: `distance_selectivity`, `direction_selectivity`, `object_vector_score`
+  - [x] Fields: `peak_rate`, `mean_rate`
+  - [x] Fields: `tuning_curve`, `distance_bins`, `direction_bins`
+  - [x] Method: `interpretation()` → human-readable string
+- [x] Implement `compute_object_vector_tuning()` function
+  - [x] Bin spikes by egocentric (distance, direction) to nearest object
+  - [x] Compute occupancy in each bin
+  - [x] Normalize by occupancy
+  - [x] Apply `min_occupancy_seconds` threshold (default 0.1s)
+  - [x] Return `ObjectVectorMetrics`
+- [x] Implement `object_vector_score()` function
+  - [x] Distance selectivity: `s_d = peak / mean`
+  - [x] Direction selectivity: reuse `_mean_resultant_length` from `metrics.circular`
+  - [x] Combined: `s_OV = ((s_d - 1) / (s_d* - 1)) * s_θ`
+  - [x] Document `max_distance_selectivity` parameter (default 10.0)
+  - [x] Validate `max_distance_selectivity > 1`
+- [x] Implement `is_object_vector_cell()` classifier
+  - [x] Check `score >= threshold` and `peak_rate >= min_rate`
+- [x] Implement `plot_object_vector_tuning()` visualization
+  - [x] Polar heatmap: distance on radial axis, angle on angular axis
+  - [x] Optional: mark peak location
 
 ### M2.3: Object-Vector Field Computation
 
@@ -254,11 +254,11 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `tests/metrics/test_object_vector_cells.py`
 
-- [ ] Test `compute_object_vector_tuning()` binning
-- [ ] Test `object_vector_score()` formulas
-- [ ] Test `is_object_vector_cell()` classification
-- [ ] Test recovery of ground truth from simulated cell
-- [ ] Test `min_occupancy_seconds` filtering
+- [x] Test `compute_object_vector_tuning()` binning
+- [x] Test `object_vector_score()` formulas
+- [x] Test `is_object_vector_cell()` classification
+- [x] Test recovery of ground truth from simulated cell
+- [x] Test `min_occupancy_seconds` filtering
 
 **File**: `tests/test_object_vector_field.py`
 
@@ -273,9 +273,10 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Export: `compute_object_vector_field`
 - [ ] Add exports to `src/neurospatial/simulation/__init__.py`
   - [ ] Export: `ObjectVectorCellModel`
-- [ ] Add exports to `src/neurospatial/metrics/__init__.py`
-  - [ ] Export: `ObjectVectorMetrics`, `compute_object_vector_tuning`
-  - [ ] Export: `object_vector_score`, `is_object_vector_cell`
+- [x] Add exports to `src/neurospatial/metrics/__init__.py`
+  - [x] Export: `ObjectVectorMetrics`, `compute_object_vector_tuning`
+  - [x] Export: `object_vector_score`, `is_object_vector_cell`
+  - [x] Export: `plot_object_vector_tuning`
 - [ ] Add exports to `src/neurospatial/animation/overlays/__init__.py`
   - [ ] Export: `ObjectVectorOverlay`
 - [ ] Update `.claude/QUICKSTART.md` with object-vector examples
