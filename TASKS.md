@@ -150,27 +150,27 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/simulation/models/object_vector_cells.py`
 
-- [ ] Create module with docstring and references (Hoydal et al. 2019)
-- [ ] Implement `ObjectVectorCellModel` dataclass
-  - [ ] Required: `env`, `object_positions`
-  - [ ] Tuning parameters: `preferred_distance`, `distance_width`
-  - [ ] Direction parameters: `preferred_direction` (optional), `direction_kappa`
-  - [ ] Selectivity: `object_selectivity` ("any", "nearest", "specific")
-  - [ ] Rate parameters: `max_rate`, `baseline_rate`
-  - [ ] Distance: `distance_metric` ("euclidean", "geodesic")
-- [ ] Implement `__post_init__` validation
-  - [ ] Validate positive rates, widths
-  - [ ] Ensure object_positions is 2D
-  - [ ] Warn if objects outside environment bounds
-  - [ ] Precompute geodesic distance fields if metric="geodesic"
-- [ ] Implement `firing_rate()` method
-  - [ ] Compute distances to all objects (Euclidean or geodesic)
-  - [ ] Distance tuning: Gaussian `exp(-0.5 * ((d - pref) / width)^2)`
-  - [ ] Direction tuning: von Mises `exp(κ * cos(θ - pref_θ)) / exp(κ)`
-  - [ ] Vectorized bearing computation via `allocentric_to_egocentric()`
-  - [ ] Aggregate by selectivity mode (any/nearest/specific)
-  - [ ] Return: `baseline + (max - baseline) * response`
-- [ ] Implement `ground_truth` property
+- [x] Create module with docstring and references (Hoydal et al. 2019)
+- [x] Implement `ObjectVectorCellModel` dataclass
+  - [x] Required: `env`, `object_positions`
+  - [x] Tuning parameters: `preferred_distance`, `distance_width`
+  - [x] Direction parameters: `preferred_direction` (optional), `direction_kappa`
+  - [x] Selectivity: `object_selectivity` ("any", "nearest", "specific")
+  - [x] Rate parameters: `max_rate`, `baseline_rate`
+  - [x] Distance: `distance_metric` ("euclidean", "geodesic")
+- [x] Implement `__post_init__` validation
+  - [x] Validate positive rates, widths
+  - [x] Ensure object_positions is 2D
+  - [x] Warn if objects outside environment bounds
+  - [x] Precompute geodesic distance fields if metric="geodesic"
+- [x] Implement `firing_rate()` method
+  - [x] Compute distances to all objects (Euclidean or geodesic)
+  - [x] Distance tuning: Gaussian `exp(-0.5 * ((d - pref) / width)^2)`
+  - [x] Direction tuning: von Mises `exp(κ * cos(θ - pref_θ)) / exp(κ)`
+  - [x] Vectorized bearing computation via `compute_egocentric_bearing()`
+  - [x] Aggregate by selectivity mode (any/nearest/specific)
+  - [x] Return: `baseline + (max - baseline) * response`
+- [x] Implement `ground_truth` property
 
 **Success criteria**:
 
@@ -244,13 +244,13 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `tests/simulation/models/test_object_vector_cells.py`
 
-- [ ] Test model parameter validation
-- [ ] Test firing rate with distance tuning only (no direction)
-- [ ] Test firing rate with direction tuning
-- [ ] Test object selectivity modes: any, nearest, specific
-- [ ] Test geodesic vs Euclidean distances
-- [ ] Test warning for objects outside environment
-- [ ] Test `ground_truth` property matches parameters
+- [x] Test model parameter validation
+- [x] Test firing rate with distance tuning only (no direction)
+- [x] Test firing rate with direction tuning
+- [x] Test object selectivity modes: any, nearest, specific
+- [x] Test geodesic vs Euclidean distances
+- [x] Test warning for objects outside environment
+- [x] Test `ground_truth` property matches parameters
 
 **File**: `tests/metrics/test_object_vector_cells.py`
 

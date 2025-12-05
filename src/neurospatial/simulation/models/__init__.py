@@ -4,23 +4,29 @@ This module provides implementations of various spatially tuned neural models:
 - PlaceCellModel: Gaussian place fields
 - BoundaryCellModel: Boundary-distance tuned cells
 - GridCellModel: Hexagonal grid patterns
-- HeadDirectionCellModel: Directional tuning
-- SpeedCellModel: Speed-modulated firing
+- ObjectVectorCellModel: Object-distance and direction tuned cells
+- HeadDirectionCellModel: Directional tuning (planned)
+- SpeedCellModel: Speed-modulated firing (planned)
 
 All models implement the NeuralModel protocol.
 """
 
-# Milestone 1: Place cells
+# Base protocol
 from neurospatial.simulation.models.base import NeuralModel
 
-# Milestone 2: Boundary cells
+# Boundary cells
 from neurospatial.simulation.models.boundary_cells import BoundaryCellModel
 
-# Milestone 3: Grid cells
+# Grid cells
 from neurospatial.simulation.models.grid_cells import GridCellModel
+
+# Object-vector cells
+from neurospatial.simulation.models.object_vector_cells import ObjectVectorCellModel
+
+# Place cells
 from neurospatial.simulation.models.place_cells import PlaceCellModel
 
-# Optional Phase 4: Additional cell types
+# Planned: Additional cell types
 # from neurospatial.simulation.models.head_direction import HeadDirectionCellModel
 # from neurospatial.simulation.models.speed_cells import SpeedCellModel
 
@@ -28,5 +34,6 @@ __all__ = [
     "BoundaryCellModel",
     "GridCellModel",
     "NeuralModel",
+    "ObjectVectorCellModel",
     "PlaceCellModel",
 ]
