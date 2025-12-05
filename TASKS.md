@@ -147,30 +147,32 @@ Milestone 3 Status: PARTIALLY COMPLETE
 
 ### Tasks
 
-- [ ] **M4.1**: Implement `intervals_to_events()` in `intervals.py`
+- [x] **M4.1**: Implement `intervals_to_events()` in `intervals.py`
   - Parameters: `intervals`, `which`, `start_column`, `stop_column`, `preserve_columns`
   - Support `which`: "start", "stop", "both"
   - When "both", add `boundary` column
 
-- [ ] **M4.2**: Implement `events_to_intervals()` in `intervals.py`
+- [x] **M4.2**: Implement `events_to_intervals()` in `intervals.py`
   - Parameters: `start_events`, `stop_events`, `match_by`, `max_duration`
   - Sequential pairing when `match_by` is None
   - Match by column value when `match_by` specified
   - Return DataFrame with: `start_time`, `stop_time`, `duration`
 
-- [ ] **M4.3**: Implement `filter_by_intervals()` in `intervals.py`
+- [x] **M4.3**: Implement `filter_by_intervals()` in `intervals.py`
   - Parameters: `events`, `intervals`, `include`, `timestamp_column`, `start_column`, `stop_column`
   - Use efficient interval overlap detection
   - Support both inclusion and exclusion filtering
 
-- [ ] **M4.4**: Create `tests/test_events_intervals.py`
+- [x] **M4.4**: Create `tests/test_events_intervals.py`
   - Test round-trip: intervals → events → intervals
   - Test filtering with overlapping intervals
   - Test edge cases: empty intervals, single interval, adjacent intervals
 
-- [ ] **M4.5**: Verify milestone completion
-  - Run `uv run pytest tests/test_events_intervals.py -v`
-  - Run `uv run mypy src/neurospatial/events/intervals.py`
+- [x] **M4.5**: Verify milestone completion
+  - Run `uv run pytest tests/test_events_intervals.py -v` ✓ (45 tests pass)
+  - Run `uv run mypy src/neurospatial/events/intervals.py` ✓
+
+**Milestone 4 Status: COMPLETE**
 
 ---
 

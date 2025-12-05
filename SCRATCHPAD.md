@@ -223,6 +223,59 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 
 ---
 
+### 2025-12-04: M4 Complete - Interval Utilities
+
+**Completed Tasks:**
+
+- M4.1: Implemented `intervals_to_events()` in `intervals.py`
+  - Parameters: `intervals`, `which`, `start_column`, `stop_column`, `preserve_columns`
+  - Support `which`: "start", "stop", "both"
+  - When "both", adds `boundary` column indicating "start" or "stop"
+  - Output sorted by timestamp with reset index
+
+- M4.2: Implemented `events_to_intervals()` in `intervals.py`
+  - Parameters: `start_events`, `stop_events`, `match_by`, `max_duration`
+  - Sequential pairing when `match_by` is None (sorts both, pairs in order)
+  - Match by column value when `match_by` specified
+  - Returns DataFrame with: `start_time`, `stop_time`, `duration`
+  - Warns about negative durations (stop before start)
+
+- M4.3: Implemented `filter_by_intervals()` in `intervals.py`
+  - Parameters: `events`, `intervals`, `include`, `timestamp_column`, `start_column`, `stop_column`
+  - Efficient vectorized interval overlap detection using numpy broadcasting
+  - Supports both inclusion and exclusion filtering
+  - Preserves original index
+
+- M4.4: Created `tests/test_events_intervals.py` with 45 tests
+  - TestIntervalsToEvents: 17 tests
+  - TestEventsToIntervals: 14 tests
+  - TestFilterByIntervals: 13 tests
+  - TestRoundTrip: 1 test
+
+- M4.5: Verified milestone completion
+  - All 45 tests pass
+  - mypy: Success
+  - ruff: All checks pass
+
+**Key Decisions:**
+
+1. **Sequential pairing sorts both arrays**: When `match_by=None`, both start and stop events are sorted by timestamp before pairing (1st start → 1st stop, etc.)
+2. **Boundary events included**: Events exactly at interval boundaries are included in filtering
+3. **Negative durations allowed**: Function warns but doesn't error on negative durations (users may want to filter themselves)
+4. **Original index preserved**: `filter_by_intervals()` preserves the original DataFrame index
+
+**Milestone 4 Status: COMPLETE**
+
+- 3 interval utilities implemented (45 tests)
+- All pass mypy, ruff, pytest
+- Total events module: 164 tests passing
+
+**Next Steps:**
+
+- Milestone 5: Spatial Distance Regressors (or continue to M6 if M5 is less priority)
+
+---
+
 ## Open Questions
 
 None currently.
