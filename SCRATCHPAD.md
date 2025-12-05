@@ -620,12 +620,27 @@
   - `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`
 - `src/neurospatial/simulation/__init__.py` - Added `SpatialViewCellModel` export
 
+### Verified: M3.5 Tests for Spatial View Cells
+
+All tests for M3.5 already exist and pass (implemented in previous milestones):
+
+**Test Summary:**
+
+- `tests/test_visibility.py` - 45 tests passing
+- `tests/simulation/models/test_spatial_view_cells.py` - 30 tests passing
+- `tests/metrics/test_spatial_view_cells.py` - 23 tests passing
+- `tests/test_spatial_view_field.py` - 30 tests passing
+
+**Total: 128 tests passing for M3 spatial view modules**
+
 ### Next Task
 
-- **M3.5**: Tests for Spatial View Cells
-  - Create/update visibility tests
-  - Create/update spatial view cell model tests
-  - Create/update spatial view field tests
+- **M3.6**: Integration and Documentation
+  - Add exports to `src/neurospatial/__init__.py`
+  - Update `.claude/QUICKSTART.md` with spatial view examples
+  - Update `.claude/API_REFERENCE.md` with spatial view imports
+  - Update `.claude/ADVANCED.md` with gaze analysis section
+  - Create example: `examples/spatial_view_cells.py`
 
 ### Blockers
 

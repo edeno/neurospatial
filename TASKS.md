@@ -414,34 +414,34 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `tests/test_visibility.py`
 
-- [ ] Test `compute_viewed_location()` with fixed_distance method
-- [ ] Test `compute_viewed_location()` with ray_cast method
-- [ ] Test `FieldOfView` dataclass and presets
-- [ ] Test `FieldOfView.contains_angle()` with various bearings
-- [ ] Test `compute_viewshed()` returns correct visible bins
-- [ ] Test `visible_cues()` occlusion detection
-- [ ] Test `visibility_occupancy()` integration
+- [x] Test `compute_viewed_location()` with fixed_distance method
+- [x] Test `compute_viewed_location()` with ray_cast method
+- [x] Test `FieldOfView` dataclass and presets
+- [x] Test `FieldOfView.contains_angle()` with various bearings
+- [x] Test `compute_viewshed()` returns correct visible bins
+- [x] Test `visible_cues()` occlusion detection
+- [x] Test `visibility_occupancy()` integration
 
 **File**: `tests/simulation/models/test_spatial_view_cells.py`
 
-- [ ] Test model creation and validation
-- [ ] Test firing rate computation
-- [ ] Test with different gaze models
-- [ ] Test `require_visibility` flag
-- [ ] Test `ground_truth` property
+- [x] Test model creation and validation
+- [x] Test firing rate computation
+- [x] Test with different gaze models
+- [x] Test `require_visibility` flag
+- [x] Test `ground_truth` property
 
 **File**: `tests/metrics/test_spatial_view_cells.py`
 
-- [ ] Test `spatial_view_cell_metrics()` computation
-- [ ] Test classification: spatial view cell vs place cell
-- [ ] Test recovery of ground truth from simulation
+- [x] Test `spatial_view_cell_metrics()` computation
+- [x] Test classification: spatial view cell vs place cell
+- [x] Test recovery of ground truth from simulation
 
 **File**: `tests/test_spatial_view_field.py`
 
-- [ ] Test field computation
-- [ ] Test NaN handling
-- [ ] Test occupancy normalization
-- [ ] Test smoothing methods
+- [x] Test field computation
+- [x] Test NaN handling
+- [x] Test occupancy normalization
+- [x] Test smoothing methods
 
 ### M3.6: Integration and Documentation
 
