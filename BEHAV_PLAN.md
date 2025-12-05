@@ -1604,6 +1604,7 @@ vte.py
 ### Unit Tests
 
 Each function tested independently with:
+
 - Basic functionality with known inputs/outputs
 - Edge cases (empty arrays, single points, NaN handling)
 - Parameter validation (error messages are helpful)
@@ -1617,18 +1618,21 @@ Each function tested independently with:
 ### Regression Tests
 
 **Path Efficiency**:
+
 - Straight path: efficiency should be 1.0
 - Random walk: efficiency < 0.5
 - U-turn path: efficiency ~ 0.5 (doubles length)
 - < 2 positions: returns NaN efficiency
 
 **Goal-Directed**:
+
 - Straight approach to goal: goal_bias > 0.8
 - Moving away from goal: goal_bias < -0.5
 - Circular path around goal: goal_bias ~ 0.0
 - Stationary: goal_bias is NaN
 
 **VTE Detection**:
+
 - High head sweep + low speed: classified as VTE
 - Low head sweep + high speed: not classified as VTE
 - All identical trials: z-scores are 0, warning issued
