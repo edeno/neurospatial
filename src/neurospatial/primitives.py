@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
 
 
 def neighbor_reduce(
@@ -308,28 +307,19 @@ def convolve(
     # Determine kernel type and compute kernel matrix if needed
     if callable(kernel):
         # Callable kernel: compute distance-based weights for each bin
-        # Build kernel matrix (n_bins × n_bins)
+        # Use geodesic_distance_matrix for efficient all-pairs shortest paths
+        from neurospatial.distance import geodesic_distance_matrix
+
+        # Compute all pairwise geodesic distances at once: O(n_bins * E log V)
+        # This is much faster than O(n_bins^2 * E log V) from individual Dijkstra calls
+        dist_matrix = geodesic_distance_matrix(
+            env.connectivity, env.n_bins, weight="distance"
+        )
+
+        # Apply kernel function to each row of distances
         kernel_matrix = np.zeros((env.n_bins, env.n_bins), dtype=np.float64)
-
-        # Compute pairwise distances for all bins
         for i in range(env.n_bins):
-            # Get distances from bin i to all other bins
-            distances = np.zeros(env.n_bins, dtype=np.float64)
-            for j in range(env.n_bins):
-                if i == j:
-                    distances[j] = 0.0
-                else:
-                    # Use graph distance between bin centers
-                    dist: float = cast("EnvironmentProtocol", env).distance_between(
-                        env.bin_centers[i], env.bin_centers[j]
-                    )
-                    distances[j] = dist
-
-            # Apply kernel function to get weights
-            weights = kernel(distances)
-
-            # Store in kernel matrix (row i receives contributions from all bins)
-            kernel_matrix[i, :] = weights
+            kernel_matrix[i, :] = kernel(dist_matrix[i, :])
     else:
         # Precomputed kernel matrix
         kernel_matrix = kernel
