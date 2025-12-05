@@ -94,7 +94,7 @@ neurospatial is designed for researchers working with spatial data in neuroscien
 
 ## Project Status
 
-**Status**: Alpha (v0.1.0) - API may change. Contributions and feedback welcome!
+**Status**: Alpha (v0.3.0) - API may change. Contributions and feedback welcome!
 
 ## Citation
 

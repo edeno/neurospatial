@@ -114,6 +114,3 @@ __all__ = [
     "tmaze_alternation_session",
     "validate_simulation",
 ]
-
-# Version for tracking API changes
-__version__ = "0.1.0"

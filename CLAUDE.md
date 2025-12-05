@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-12-01 (v0.9.0 - Added performance profiling guide)
+**Last Updated**: 2025-12-05 (v0.3.0 - Added egocentric frames, object-vector cells, spatial view cells)
 
 ---
 
@@ -163,6 +163,67 @@ loaded_env = Environment.from_file("my_environment")
 
 **Need NWB integration?** See [ADVANCED.md - NWB Integration](.claude/ADVANCED.md#nwb-integration-v070)
 
+### 7. Compute Egocentric Bearing and Distance
+
+```python
+from neurospatial import (
+    heading_from_velocity,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+)
+
+# Compute heading from movement direction
+headings = heading_from_velocity(positions, times, min_speed=5.0)
+
+# Compute egocentric bearing to objects (0=ahead, π/2=left, -π/2=right)
+object_positions = np.array([[50, 50], [75, 25]])  # 2 objects
+bearings = compute_egocentric_bearing(positions, headings, object_positions)
+
+# Compute egocentric distance (Euclidean or geodesic)
+distances = compute_egocentric_distance(
+    positions, object_positions, metric="euclidean"
+)
+```
+
+**Need body orientation?** Use `heading_from_body_orientation(nose_pos, tail_pos)`
+
+### 8. Compute Object-Vector Field
+
+```python
+from neurospatial import compute_object_vector_field
+
+# Compute firing field in egocentric polar coordinates
+result = compute_object_vector_field(
+    spike_times, times, positions, headings, object_positions,
+    distance_range=(0, 50),  # cm from object
+    angle_range=(-np.pi, np.pi),  # full circle
+    distance_bin_size=5.0,  # 5 cm bins
+    angle_bin_size=np.pi/12,  # 15° bins
+)
+# result.field: firing rate in egocentric polar bins
+# result.ego_env: the egocentric polar environment
+# result.occupancy: time spent in each bin
+```
+
+**Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)
+
+### 9. Compute Spatial View Field
+
+```python
+from neurospatial import compute_spatial_view_field
+
+# Compute firing field indexed by VIEWED location (not animal position)
+result = compute_spatial_view_field(
+    env, spike_times, times, positions, headings,
+    view_distance=20.0,  # cm ahead
+    gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+)
+# result.field: firing rate at each spatial bin (indexed by where animal looked)
+# result.view_occupancy: time spent viewing each bin
+```
+
+**Need classification?** See [QUICKSTART.md - Spatial View Cells](.claude/QUICKSTART.md#spatial-view-cells)
+
 ---
 
 ## ⚠️ Common Gotchas (Fix These First)
@@ -299,12 +360,17 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
 2. **Environment** (`src/neurospatial/environment/`)
    - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
    - Mixins: core, factories, queries, trajectory, transforms, fields, metrics, regions, serialization, visualization
-   - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`
+   - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`, `from_polar_egocentric()`
 
 3. **Regions** (`src/neurospatial/regions/`)
    - Immutable `Region` dataclass (points or polygons)
    - `Regions` container with dict-like interface
    - JSON serialization with versioned schema
+
+4. **Cell Type Modules** (v0.17.0+)
+   - **Reference Frames** (`reference_frames.py`): Allocentric↔egocentric transforms, heading computation
+   - **Object-Vector Cells** (`object_vector_field.py`, `metrics/object_vector_cells.py`): Simulation, tuning analysis
+   - **Spatial View Cells** (`spatial_view_field.py`, `visibility.py`, `metrics/spatial_view_cells.py`): Gaze, visibility, view fields
 
 **Need architecture details?** See [ARCHITECTURE.md](.claude/ARCHITECTURE.md)
 
@@ -362,7 +428,14 @@ This documentation is organized into focused modules:
 | Compute place fields | "Most Common Patterns" above |
 | Animate fields | "Most Common Patterns" above |
 | Compute PSTH | "Most Common Patterns" above |
+| Compute egocentric bearing/distance | "Most Common Patterns" above |
+| Analyze object-vector cells | "Most Common Patterns" above |
+| Analyze spatial view cells | "Most Common Patterns" above |
 | Create GLM regressors from events | [QUICKSTART.md - Events](.claude/QUICKSTART.md#events-and-peri-event-analysis) |
+| Transform allocentric↔egocentric | [QUICKSTART.md - Egocentric Frames](.claude/QUICKSTART.md#egocentric-reference-frames) |
+| Simulate object-vector cells | [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells) |
+| Compute visibility/viewshed | [ADVANCED.md - Gaze Analysis](.claude/ADVANCED.md#gaze-analysis-and-visibility-v0190) |
+| Classify spatial view cells | [QUICKSTART.md - Spatial View Cells](.claude/QUICKSTART.md#spatial-view-cells) |
 | Find import statement | [API_REFERENCE.md](.claude/API_REFERENCE.md) |
 | Run tests | "Essential Commands" above |
 | Fix error | "When Things Break" above |
@@ -470,10 +543,13 @@ uv run pytest -m "not slow"
 - Flexible discretization (regular grids, hexagonal, triangular, masked, polygon-bounded)
 - 1D linearization (track-based environments like T-maze, linear track)
 - Neural analysis (place fields, Bayesian decoding, trajectory analysis)
+- Egocentric reference frames (allocentric↔egocentric transforms, heading computation)
+- Object-vector cells (simulation, metrics, field computation, visualization)
+- Spatial view cells (visibility, gaze models, view fields, classification)
 - Visualization (interactive animation with napari, video export, HTML players)
 - NWB integration (read/write NeurodataWithoutBorders files - optional)
 
-**Current Version:** v0.9.0 (Track graph annotation for 1D environments)
+**Current Version:** v0.3.0 (Spatial view cells, object-vector cells, egocentric frames)
 
 ---
 
