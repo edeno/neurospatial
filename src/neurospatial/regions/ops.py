@@ -247,7 +247,7 @@ def regions_containing_points(
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
     point_tolerance: float = POINT_TOLERANCE,
-) -> list[list[Region]] | pd.DataFrame:
+) -> list[list[str]] | pd.DataFrame:
     """For each point, identify all Regions that contain it.
 
     Parameters
@@ -332,8 +332,8 @@ def regions_containing_points(
                 point_tolerance,
             )
         return df
-    # Build list of lists of Region objects
-    output: list[list[Region]] = [[] for _ in range(n_points)]
+    # Build list of lists of region names
+    output: list[list[str]] = [[] for _ in range(n_points)]
     for region in selected_regions:
         point_mask = _get_points_in_single_region_mask(
             transformed_pts,
