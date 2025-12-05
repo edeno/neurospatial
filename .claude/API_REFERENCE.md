@@ -163,6 +163,53 @@ from neurospatial.metrics import (
 
 ---
 
+## Egocentric Reference Frames (v0.17.0+)
+
+```python
+from neurospatial import (
+    # Core transforms
+    EgocentricFrame,              # Single-timepoint frame dataclass
+    allocentric_to_egocentric,    # Batch transform to egocentric
+    egocentric_to_allocentric,    # Batch transform to allocentric
+
+    # Bearing and distance
+    compute_egocentric_bearing,   # Angle to targets relative to heading
+    compute_egocentric_distance,  # Distance to targets (Euclidean or geodesic)
+
+    # Heading computation
+    heading_from_velocity,        # Heading from position timeseries
+    heading_from_body_orientation, # Heading from nose/tail keypoints
+)
+
+# Full reference frames API
+from neurospatial.reference_frames import (
+    EgocentricFrame,
+    allocentric_to_egocentric,
+    egocentric_to_allocentric,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+    heading_from_velocity,
+    heading_from_body_orientation,
+)
+```
+
+**Egocentric polar environment:**
+
+```python
+from neurospatial import Environment
+
+# Create polar grid in egocentric space (for object-vector cells)
+ego_env = Environment.from_polar_egocentric(
+    distance_range=(0, 50),
+    angle_range=(-np.pi, np.pi),
+    distance_bin_size=5.0,
+    angle_bin_size=np.pi / 8,
+    circular_angle=True,
+)
+```
+
+---
+
 ## Behavioral Analysis (v0.7.0+)
 
 ```python

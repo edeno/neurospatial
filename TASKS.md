@@ -133,8 +133,8 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [x] Export: `EgocentricFrame`, `allocentric_to_egocentric`, `egocentric_to_allocentric`
   - [x] Export: `compute_egocentric_bearing`, `compute_egocentric_distance`
   - [x] Export: `heading_from_velocity`, `heading_from_body_orientation`
-- [ ] Update `.claude/QUICKSTART.md` with egocentric transform examples
-- [ ] Update `.claude/API_REFERENCE.md` with `reference_frames` imports
+- [x] Update `.claude/QUICKSTART.md` with egocentric transform examples
+- [x] Update `.claude/API_REFERENCE.md` with `reference_frames` imports
 
 ---
 

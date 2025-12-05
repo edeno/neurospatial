@@ -157,6 +157,74 @@ for t in trials:
     print(f"{t.start_region} -> {t.end_region}: {'success' if t.success else 'timeout'}")
 ```
 
+### Egocentric Reference Frames
+
+Transform between allocentric (world-centered) and egocentric (animal-centered) coordinates:
+
+```python
+from neurospatial import (
+    allocentric_to_egocentric,
+    egocentric_to_allocentric,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+    heading_from_velocity,
+    heading_from_body_orientation,
+    EgocentricFrame,
+)
+import numpy as np
+
+# Compute heading from trajectory
+positions = np.column_stack([x, y])  # Shape: (n_time, 2)
+dt = times[1] - times[0]
+headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
+
+# Or from pose tracking keypoints
+headings = heading_from_body_orientation(nose_positions, tail_positions)
+
+# Transform landmarks to egocentric coordinates
+landmarks = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 landmarks
+ego_landmarks = allocentric_to_egocentric(landmarks, positions, headings)
+# ego_landmarks shape: (n_time, n_landmarks, 2)
+# ego_landmarks[t, i, :] = landmark i in animal's reference frame at time t
+
+# Compute bearing (angle) to targets
+bearings = compute_egocentric_bearing(landmarks, positions, headings)
+# bearings shape: (n_time, n_landmarks)
+# 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
+
+# Compute distances (Euclidean or geodesic)
+distances = compute_egocentric_distance(
+    landmarks, positions, headings,
+    metric="euclidean"  # or "geodesic" with env parameter
+)
+
+# For geodesic distances (respects walls/obstacles)
+distances = compute_egocentric_distance(
+    landmarks, positions, headings,
+    metric="geodesic", env=env
+)
+```
+
+**Coordinate conventions:**
+
+- Allocentric: 0=East, π/2=North (standard math convention)
+- Egocentric: 0=ahead, π/2=left, -π/2=right, ±π=behind
+
+**Create egocentric polar environment (for object-vector cells):**
+
+```python
+# Create polar grid in egocentric space
+ego_env = Environment.from_polar_egocentric(
+    distance_range=(0, 50),     # 0-50 cm from animal
+    angle_range=(-np.pi, np.pi), # Full 360° around animal
+    distance_bin_size=5.0,       # 5 cm radial bins
+    angle_bin_size=np.pi / 8,    # 22.5° angular bins
+    circular_angle=True,         # Wrap angles at ±π
+)
+# ego_env.bin_centers[:, 0] = distances
+# ego_env.bin_centers[:, 1] = angles
+```
+
 ### Visualization & Animation
 
 **Animate spatial fields:**
