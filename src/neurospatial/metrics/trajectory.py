@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -294,28 +293,20 @@ def compute_step_lengths(
         assert env is not None  # Already checked above, but satisfy type checker
         trajectory_bins = env.bin_at(positions)
 
-        # Compute geodesic distances between consecutive bins
+        # Optimization: Precompute geodesic distance matrix
+        # This is O(V*E*log(V)) once vs O(n_steps * V*log(V)) per-step Dijkstra
+        from neurospatial.distance import geodesic_distance_matrix
+
+        # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
+        dist_matrix = geodesic_distance_matrix(
+            env.connectivity, env.n_bins, weight="distance"
+        )
+
+        # Look up distances from precomputed matrix
         for i in range(n_steps):
             bin_i = trajectory_bins[i]
             bin_j = trajectory_bins[i + 1]
-
-            # Handle same bin (stationary) case
-            if bin_i == bin_j:
-                step_lengths[i] = 0.0
-            else:
-                # Compute graph geodesic distance between bins
-                try:
-                    step_lengths[i] = float(
-                        nx.shortest_path_length(
-                            env.connectivity,
-                            source=int(bin_i),
-                            target=int(bin_j),
-                            weight="distance",
-                        )
-                    )
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    # Bins are disconnected - distance is infinite
-                    step_lengths[i] = np.inf
+            step_lengths[i] = dist_matrix[bin_i, bin_j]
 
     return step_lengths
 
@@ -617,7 +608,15 @@ def mean_square_displacement(
         assert env is not None  # Already checked above
         trajectory_bins = env.bin_at(positions)
 
-        # Compute MSD for each lag time using graph distances
+        # Optimization: Precompute geodesic distance matrix ONCE
+        # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
+        from neurospatial.distance import geodesic_distance_matrix
+
+        dist_matrix = geodesic_distance_matrix(
+            env.connectivity, env.n_bins, weight="distance"
+        )
+
+        # Compute MSD for each lag time using precomputed distances
         for i, tau in enumerate(tau_values):
             # Find all pairs of time points separated by approximately tau
             squared_displacements = []
@@ -629,27 +628,14 @@ def mean_square_displacement(
 
                 for f_idx in future_idx:
                     if f_idx < n_samples:
-                        # Compute squared displacement
+                        # Look up distance from precomputed matrix
                         bin_i = trajectory_bins[t_idx]
                         bin_j = trajectory_bins[f_idx]
+                        distance = dist_matrix[bin_i, bin_j]
 
-                        # Handle same bin case (stationary)
-                        if bin_i == bin_j:
-                            distance = 0.0
-                        else:
-                            # Compute graph geodesic distance between bins
-                            try:
-                                distance = float(
-                                    nx.shortest_path_length(
-                                        env.connectivity,
-                                        source=int(bin_i),
-                                        target=int(bin_j),
-                                        weight="distance",
-                                    )
-                                )
-                            except (nx.NetworkXNoPath, nx.NodeNotFound):
-                                # Bins are disconnected - skip this pair
-                                continue
+                        # Skip disconnected bins (inf distance)
+                        if np.isinf(distance):
+                            continue
 
                         squared_displacements.append(distance**2)
 

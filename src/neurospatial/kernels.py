@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import warnings
 from typing import Literal
 
 import networkx as nx
 import numpy as np
+import scipy.sparse
 import scipy.sparse.linalg
 from numpy.typing import NDArray
+
+# Threshold for warning about large kernel computation
+# Matrix exponential is O(n³) and dense, so warn for large environments
+_LARGE_KERNEL_THRESHOLD = 3000
 
 
 def _assign_gaussian_weights_from_distance(
@@ -65,6 +71,10 @@ def compute_diffusion_kernels(
     -----
     Performance warning: Matrix exponential has O(n³) complexity where n is the
     number of bins. For large environments (>1000 bins), computation may be slow.
+
+    A UserWarning is issued when n_bins > 3000. For very large environments,
+    consider using ``method="binned"`` in higher-level functions or reducing
+    bin_size to decrease the number of bins.
     """
     # 1) Validate bandwidth is positive
     if bandwidth_sigma <= 0:
@@ -72,23 +82,38 @@ def compute_diffusion_kernels(
 
     n_bins = graph.number_of_nodes()
 
-    # 2) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
+    # 2) Issue warning for large environments
+    if n_bins > _LARGE_KERNEL_THRESHOLD:
+        warnings.warn(
+            f"Computing diffusion kernel for {n_bins} bins. "
+            f"Matrix exponential has O(n³) complexity and O(n²) memory. "
+            f"This may be slow and memory-intensive (estimated "
+            f"{n_bins * n_bins * 8 / 1e9:.1f} GB for kernel matrix). "
+            f"Consider using method='binned' or reducing bin_size to decrease "
+            f"the number of bins.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # 3) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
     _assign_gaussian_weights_from_distance(graph, bandwidth_sigma)
 
-    # 3) Build unnormalized Laplacian L = D - W
+    # 4) Build unnormalized Laplacian L = D - W
     laplacian = nx.laplacian_matrix(graph, nodelist=range(n_bins), weight="weight")
 
-    # 4) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
+    # 5) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
     #    then replace L ← M⁻¹ @ L (so we solve du/dt = - M⁻¹ L u).
+    #    IMPORTANT: Use sparse diagonal matrix to avoid O(n²) dense matrix creation
     if bin_sizes is not None:
         if bin_sizes.shape != (n_bins,):
             raise ValueError(
                 f"bin_sizes must have shape ({n_bins},), but got {bin_sizes.shape}."
             )
-        mass_inv = np.diag(1.0 / bin_sizes)  # shape = (n_bins, n_bins)
-        laplacian = mass_inv @ laplacian  # now L = M⁻¹ (D - W)
+        # Use scipy.sparse.diags for O(n) memory instead of np.diag's O(n²)
+        mass_inv = scipy.sparse.diags(1.0 / bin_sizes, format="csr")
+        laplacian = mass_inv @ laplacian  # Sparse @ Sparse = Sparse
 
-    # 5) Exponentiate: kernel = exp( - (σ^2 / 2) * L )
+    # 6) Exponentiate: kernel = exp( - (σ^2 / 2) * L )
     t = bandwidth_sigma**2 / 2.0
     # expm returns a dense numpy array
     kernel = scipy.sparse.linalg.expm(-t * laplacian)
@@ -97,10 +122,10 @@ def compute_diffusion_kernels(
     if hasattr(kernel, "toarray"):
         kernel = kernel.toarray()
 
-    # 6) Clip tiny negative noise to zero
+    # 7) Clip tiny negative noise to zero
     kernel = np.clip(kernel, a_min=0.0, a_max=None)
 
-    # 7) Final normalization:
+    # 8) Final normalization:
     #   - If mode="transition":  ∑_i K[i,j] = 1  (pure discrete)
     #   - If mode="density":     ∑_i [K[i,j] * areas[i]] = 1  (continuous KDE)
     match mode:

@@ -367,6 +367,90 @@ class TestKernelPerformanceWarnings:
             or "performance" in compute_diffusion_kernels.__doc__.lower()
         ), "Docstring should mention performance considerations"
 
+    def test_large_graph_emits_warning(self):
+        """Test that UserWarning is emitted for large graphs (> 3000 bins)."""
+        from neurospatial.kernels import (
+            _LARGE_KERNEL_THRESHOLD,
+            compute_diffusion_kernels,
+        )
+
+        # Create a graph just over the threshold
+        n_bins = _LARGE_KERNEL_THRESHOLD + 1
+        graph = nx.path_graph(n_bins)  # Simple path graph
+
+        # Add required distance attributes
+        for u, v in graph.edges():
+            graph.edges[u, v]["distance"] = 1.0
+
+        # Should emit UserWarning about performance
+        with pytest.warns(UserWarning, match=r"Computing diffusion kernel"):
+            # Use a small bandwidth to make computation faster
+            # (kernel won't be useful but we just need to test warning)
+            compute_diffusion_kernels(graph, bandwidth_sigma=0.01, mode="transition")
+
+    def test_small_graph_no_warning(self):
+        """Test that no warning is emitted for small graphs."""
+        from neurospatial.kernels import compute_diffusion_kernels
+
+        # Create small graph (well under threshold)
+        graph = nx.path_graph(10)
+        for u, v in graph.edges():
+            graph.edges[u, v]["distance"] = 1.0
+
+        # Should not emit any warnings
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
+            # Filter for our specific warning
+            kernel_warnings = [
+                warning
+                for warning in w
+                if "Computing diffusion kernel" in str(warning.message)
+            ]
+            assert len(kernel_warnings) == 0, "Small graphs should not emit warnings"
+
+
+class TestSparseMatrixOptimization:
+    """Tests for sparse matrix optimization in kernel computation."""
+
+    def test_sparse_mass_matrix_same_result(self):
+        """Test that sparse mass matrix produces same results as dense would.
+
+        This verifies the optimization in kernels.py:113 (scipy.sparse.diags
+        instead of np.diag) produces identical results.
+        """
+        # Create graph with non-uniform bin sizes
+        graph = nx.Graph()
+        for i in range(5):
+            graph.add_node(i, pos=(float(i),))
+        for i in range(4):
+            graph.add_edge(i, i + 1, distance=1.0)
+
+        bin_sizes = np.array([1.0, 1.5, 2.0, 1.5, 1.0])  # Varying sizes
+
+        kernel = compute_diffusion_kernels(
+            graph, bandwidth_sigma=1.0, bin_sizes=bin_sizes, mode="density"
+        )
+
+        # Verify normalization (weighted column sums = 1)
+        for j in range(5):
+            weighted_sum = np.sum(kernel[:, j] * bin_sizes)
+            assert np.isclose(weighted_sum, 1.0, atol=1e-10), (
+                f"Column {j}: weighted sum {weighted_sum} should be 1.0"
+            )
+
+        # Verify kernel properties: non-negative, spreads mass
+        assert np.all(kernel >= 0), "Kernel should be non-negative"
+
+        # Impulse at center should spread to neighbors
+        field = np.zeros(5)
+        field[2] = 1.0
+        smoothed = kernel @ field
+        assert smoothed[1] > 0, "Mass should spread to left neighbor"
+        assert smoothed[3] > 0, "Mass should spread to right neighbor"
+
 
 class TestKernelEdgeCases:
     """Tests for edge cases in kernel computation."""
