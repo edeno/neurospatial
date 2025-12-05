@@ -13,6 +13,18 @@ Common Use Cases
 
 Coordinate Conventions
 ----------------------
+::
+
+    Allocentric (world):              Egocentric (animal-centered):
+          North                              Left
+           π/2                                π/2
+            |                                  |
+    West----+----East                 Back----+----Ahead
+      π     |     0                    ±π     |      0
+            |                                  |
+          South                              Right
+          -π/2                               -π/2
+
 **Allocentric (world-centered)**:
 - 0 radians = East (+x direction)
 - pi/2 radians = North (+y direction)
@@ -23,6 +35,10 @@ Coordinate Conventions
 - +x axis = forward (heading direction)
 - +y axis = left (90 degrees counterclockwise from heading)
 - Angles: 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
+
+**Example**: Animal at (0,0) facing East (heading=0), object at (10, 10):
+- Allocentric bearing to object: π/4 (45° from East toward North)
+- Egocentric bearing to object: π/4 (45° left of ahead)
 
 Examples
 --------
@@ -526,32 +542,29 @@ def compute_egocentric_distance(
     else:  # geodesic
         from neurospatial.distance import distance_field as compute_distance_field
 
-        # env is guaranteed non-None here (validated at line 471-472)
+        # env is guaranteed non-None here (validated above)
         assert env is not None
 
         # Use geodesic distance field for graph-based distances
-        distances = np.zeros((n_time, n_targets), dtype=np.float64)
+        distances = np.full((n_time, n_targets), np.nan, dtype=np.float64)
+
+        # Vectorized: get bin indices for all positions at once
+        pos_bins = env.bin_at(positions)
 
         for i, target in enumerate(targets_3d[0]):  # Assume same targets over time
             # Find the bin containing the target (bin_at expects 2D input)
             target_bins = env.bin_at(target.reshape(1, -1))
             target_bin = int(target_bins[0])
             if target_bin < 0:
-                # Target outside environment
-                distances[:, i] = np.nan
+                # Target outside environment - already NaN from initialization
                 continue
 
             # Get distance field from this target bin
             dist_field = compute_distance_field(env.connectivity, sources=[target_bin])
 
-            for t in range(n_time):
-                # Find distance at animal's position
-                pos_bins = env.bin_at(positions[t].reshape(1, -1))
-                bin_idx = int(pos_bins[0])
-                if bin_idx >= 0 and bin_idx < len(dist_field):
-                    distances[t, i] = float(dist_field[bin_idx])
-                else:
-                    distances[t, i] = np.nan
+            # Vectorized lookup: get distances at all animal positions
+            valid_pos = (pos_bins >= 0) & (pos_bins < len(dist_field))
+            distances[valid_pos, i] = dist_field[pos_bins[valid_pos]]
 
     return distances
 
