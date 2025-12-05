@@ -420,39 +420,39 @@ path_efficiency.py (no internal dependencies)
 
 ### M5.1: Full Test Suite
 
-- [ ] Run all tests: `uv run pytest tests/metrics/ -v`
-- [ ] Run type checker: `uv run mypy src/neurospatial/metrics/`
-- [ ] Run linter: `uv run ruff check src/neurospatial/metrics/`
-- [ ] Fix any issues
+- [x] Run all tests: `uv run pytest tests/metrics/ -v`
+- [x] Run type checker: `uv run mypy src/neurospatial/metrics/`
+- [x] Run linter: `uv run ruff check src/neurospatial/metrics/`
+- [x] Fix any issues
 
 ### M5.2: Integration Tests
 
-- [ ] Test cross-module consistency (VTE uses decision_analysis functions correctly)
-- [ ] Test round-trip: simulated VTE trial → compute_vte_session → correct classification
-- [ ] Test path_efficiency consistent with existing path_progress
+- [x] Test cross-module consistency (VTE uses decision_analysis functions correctly)
+- [x] Test round-trip: simulated VTE trial → compute_vte_session → correct classification
+- [x] Test path_efficiency consistent with existing path_progress
 
 ### M5.3: Documentation Updates
 
-- [ ] Update `.claude/QUICKSTART.md` with behavioral metrics examples
-  - [ ] Path efficiency example
-  - [ ] Goal-directed metrics example
-  - [ ] VTE detection example
-- [ ] Update `.claude/API_REFERENCE.md` with new imports
-  - [ ] List all new functions and dataclasses
-  - [ ] Group by module
+- [x] Update `.claude/QUICKSTART.md` with behavioral metrics examples
+  - [x] Path efficiency example
+  - [x] Goal-directed metrics example
+  - [x] VTE detection example
+- [x] Update `.claude/API_REFERENCE.md` with new imports
+  - [x] List all new functions and dataclasses
+  - [x] Group by module
 
 ### M5.4: Final Validation
 
-- [ ] All tests pass
-- [ ] No type errors
-- [ ] No linting errors
-- [ ] Examples in docstrings work
+- [x] All tests pass
+- [x] No type errors
+- [x] No linting errors
+- [x] Examples in docstrings work
 
 **Success criteria**:
 
-- [ ] `uv run pytest tests/metrics/ -v` all pass
-- [ ] `uv run mypy src/neurospatial/metrics/` no errors
-- [ ] `uv run ruff check src/neurospatial/metrics/` no errors
+- [x] `uv run pytest tests/metrics/ -v` all pass
+- [x] `uv run mypy src/neurospatial/metrics/` no errors
+- [x] `uv run ruff check src/neurospatial/metrics/` no errors
 
 ---
 

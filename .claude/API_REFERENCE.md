@@ -313,6 +313,101 @@ from neurospatial import (
 
 ---
 
+## Behavioral Trajectory Metrics
+
+**Path efficiency:**
+
+```python
+from neurospatial.metrics import (
+    # Result dataclasses
+    PathEfficiencyResult,       # Path efficiency metrics
+    SubgoalEfficiencyResult,    # Multi-waypoint efficiency
+
+    # Core functions
+    traveled_path_length,       # Total distance traveled
+    shortest_path_length,       # Geodesic/Euclidean distance
+    path_efficiency,            # Ratio: shortest / traveled
+    time_efficiency,            # Ratio: T_optimal / T_actual
+    angular_efficiency,         # 1 - mean(|delta_theta|) / pi
+    subgoal_efficiency,         # Per-segment efficiency
+
+    # Combined analysis
+    compute_path_efficiency,    # All metrics in one call
+)
+```
+
+**Goal-directed metrics:**
+
+```python
+from neurospatial.metrics import (
+    # Result dataclass
+    GoalDirectedMetrics,        # Goal-directed navigation metrics
+
+    # Core functions
+    goal_vector,                # Vector from position to goal
+    goal_direction,             # Angle to goal
+    instantaneous_goal_alignment,  # Cos(velocity, goal direction)
+    goal_bias,                  # Mean alignment over trajectory
+    approach_rate,              # d/dt of distance to goal
+
+    # Combined analysis
+    compute_goal_directed_metrics,  # All metrics in one call
+)
+```
+
+**Decision point analysis:**
+
+```python
+from neurospatial.metrics import (
+    # Result dataclasses
+    PreDecisionMetrics,         # Kinematics before decision region
+    DecisionBoundaryMetrics,    # Boundary crossing metrics
+    DecisionAnalysisResult,     # Complete trial analysis
+
+    # Pre-decision functions
+    decision_region_entry_time,     # First entry to region
+    extract_pre_decision_window,    # Slice trajectory before entry
+    pre_decision_heading_stats,     # Circular mean, variance, MRL
+    pre_decision_speed_stats,       # Mean and min speed
+    compute_pre_decision_metrics,   # Combined pre-decision metrics
+
+    # Decision boundary functions
+    geodesic_voronoi_labels,        # Label bins by nearest goal
+    distance_to_decision_boundary,  # Distance to Voronoi edge
+    detect_boundary_crossings,      # Find boundary crossing events
+
+    # Combined analysis
+    compute_decision_analysis,      # Full decision analysis
+)
+```
+
+**VTE (Vicarious Trial and Error) metrics:**
+
+```python
+from neurospatial.metrics import (
+    # Result dataclasses
+    VTETrialResult,             # Single trial VTE metrics
+    VTESessionResult,           # Session-level VTE analysis
+
+    # Core functions
+    wrap_angle,                 # Wrap angle to (-pi, pi]
+    head_sweep_magnitude,       # Sum of |delta_theta| (IdPhi)
+    integrated_absolute_rotation,  # Alias for head_sweep_magnitude
+    head_sweep_from_positions,  # IdPhi from trajectory
+
+    # Z-scoring and classification
+    normalize_vte_scores,       # Z-score across trials
+    compute_vte_index,          # Combined VTE index
+    classify_vte,               # VTE if index > threshold
+
+    # Combined analysis
+    compute_vte_trial,          # Single trial analysis
+    compute_vte_session,        # Full session analysis
+)
+```
+
+---
+
 ## Events and Peri-Event Analysis
 
 ```python

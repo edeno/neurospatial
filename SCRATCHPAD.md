@@ -1,15 +1,15 @@
 # SCRATCHPAD: Behavioral Trajectory Metrics Implementation
 
 **Started**: 2025-12-05
-**Current Phase**: M4 COMPLETE - Ready for M5 (Integration)
+**Current Phase**: M5 COMPLETE - All Milestones Done!
 
 ---
 
 ## Current Task
 
-**COMPLETED**: M4 - VTE Metrics
+**COMPLETED**: M5 - Integration and Documentation
 
-Next: **M5 - Integration and Documentation**
+All milestones complete! Ready for commit.
 
 ---
 
@@ -154,3 +154,27 @@ None currently.
   - Proper angle wrapping for head sweep calculation
 - ruff check: PASSED
 - mypy check: PASSED
+
+### Session 5 (M5 - Integration and Documentation)
+
+- `tests/metrics/test_behavioral_integration.py` - NEW (11 tests)
+- `.claude/QUICKSTART.md` - Added "Behavioral Trajectory Metrics" section
+- `.claude/API_REFERENCE.md` - Added "Behavioral Trajectory Metrics" section
+- `TASKS.md` - Updated M5 checkboxes
+
+#### M5 Completion Notes
+
+- All 718 tests pass (707 existing + 11 new integration tests)
+- Integration tests verify:
+  - Cross-module consistency (VTE uses decision_analysis correctly)
+  - Round-trip: simulated VTE trial → compute_vte_session → classification
+  - path_efficiency consistent with existing path_progress
+  - Goal-directed metrics consistency
+  - Decision analysis consistency
+- Documentation updates:
+  - QUICKSTART.md: Added behavioral metrics examples (path efficiency, goal-directed, VTE, decision analysis)
+  - API_REFERENCE.md: Added all new imports grouped by module
+- Final validation:
+  - pytest tests/metrics/: 718 passed
+  - mypy: no issues found in 16 source files
+  - ruff: all checks passed

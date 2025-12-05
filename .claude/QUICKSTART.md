@@ -157,6 +157,121 @@ for t in trials:
     print(f"{t.start_region} -> {t.end_region}: {'success' if t.success else 'timeout'}")
 ```
 
+### Behavioral Trajectory Metrics
+
+Analyze path efficiency, goal-directed behavior, and vicarious trial and error (VTE).
+
+**Path efficiency:**
+
+```python
+from neurospatial.metrics import compute_path_efficiency
+
+# Compute path efficiency for a trajectory
+result = compute_path_efficiency(
+    env, positions, times, goal_position,
+    metric="geodesic",       # Respects walls/obstacles
+    reference_speed=20.0,    # Optional: for time efficiency
+)
+
+# Access results
+print(f"Path efficiency: {result.efficiency:.1%}")
+print(f"Traveled: {result.traveled_length:.1f} cm")
+print(f"Shortest: {result.shortest_length:.1f} cm")
+print(result.summary())
+
+# Quick classification
+if result.is_efficient(threshold=0.8):
+    print("Efficient navigation!")
+```
+
+**Goal-directed metrics:**
+
+```python
+from neurospatial.metrics import compute_goal_directed_metrics, goal_bias
+
+# Compute full goal-directed analysis
+result = compute_goal_directed_metrics(env, positions, times, goal_position)
+
+# Access results
+print(f"Goal bias: {result.goal_bias:.2f}")  # Range [-1, 1]
+print(f"Approach rate: {result.mean_approach_rate:.1f} cm/s")
+print(result.summary())
+
+if result.is_goal_directed(threshold=0.3):
+    print("Goal-directed navigation detected!")
+
+# Quick goal bias calculation
+bias = goal_bias(positions, times, goal_position, min_speed=5.0)
+# bias > 0: approaching goal; bias < 0: moving away
+```
+
+**VTE (Vicarious Trial and Error) detection:**
+
+```python
+from neurospatial.metrics import compute_vte_session, compute_vte_trial
+
+# Analyze VTE behavior at decision points across a session
+result = compute_vte_session(
+    positions, times, trials,
+    decision_region="center",  # Region name in env.regions
+    env=env,
+    window_duration=1.0,       # Pre-decision window (seconds)
+    vte_threshold=0.5,         # Classification threshold
+)
+
+# Session-level summary
+print(f"VTE trials: {result.n_vte_trials}/{len(result.trial_results)}")
+print(f"VTE fraction: {result.vte_fraction:.1%}")
+print(result.summary())
+
+# Per-trial analysis
+for trial in result.trial_results:
+    if trial.is_vte:
+        print(f"  VTE at {trial.window_end:.1f}s: IdPhi={trial.idphi:.2f} rad")
+
+# Single trial analysis (no z-scoring)
+single_result = compute_vte_trial(
+    positions, times,
+    entry_time=5.0,        # Time of decision region entry
+    window_duration=1.0,
+    min_speed=5.0,
+)
+print(f"Head sweep: {single_result.head_sweep_magnitude:.2f} rad")
+```
+
+**Decision point analysis:**
+
+```python
+from neurospatial.metrics import (
+    compute_decision_analysis,
+    compute_pre_decision_metrics,
+    geodesic_voronoi_labels,
+)
+
+# Full decision analysis for a trial
+result = compute_decision_analysis(
+    env, positions, times,
+    decision_region="center",
+    goal_regions=["left", "right"],
+    pre_window=1.0,
+)
+
+# Pre-decision metrics
+print(f"Entry time: {result.entry_time:.2f}s")
+print(f"Heading variance: {result.pre_decision.heading_circular_variance:.2f}")
+if result.pre_decision.suggests_deliberation():
+    print("High heading variance + low speed → possible deliberation")
+
+# Decision boundary crossings
+if result.boundary is not None:
+    print(f"Boundary crossings: {result.boundary.n_crossings}")
+
+# Geodesic Voronoi partition (label bins by nearest goal)
+goal_bins = [env.bin_at(left_goal), env.bin_at(right_goal)]
+labels = geodesic_voronoi_labels(env, goal_bins)
+# Each bin labeled 0 or 1 based on nearest goal
+```
+
 ### Egocentric Reference Frames
 
 Transform between allocentric (world-centered) and egocentric (animal-centered) coordinates:
