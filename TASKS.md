@@ -469,18 +469,18 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 ### Documentation Updates
 
-- [ ] Update CLAUDE.md with new module summaries
+- [x] Update CLAUDE.md with new module summaries
 - [ ] Add examples to notebooks directory (optional)
-- [ ] Update CHANGELOG with new features
+- [x] Update CHANGELOG with new features
 
 ### Quality Checks
 
-- [ ] Run full test suite: `uv run pytest`
-- [ ] Run type checker: `uv run mypy src/neurospatial/`
-- [ ] Run linter: `uv run ruff check .`
-- [ ] Run formatter: `uv run ruff format .`
-- [ ] Verify all docstrings follow NumPy format
-- [ ] Verify all new functions have examples in docstrings
+- [x] Run full test suite: `uv run pytest` (6842 pass, 16 pre-existing failures unrelated to M1-M3)
+- [x] Run type checker: `uv run mypy src/neurospatial/` (no issues in 171 files)
+- [x] Run linter: `uv run ruff check .` (all checks passed)
+- [x] Run formatter: `uv run ruff format .` (516 files formatted)
+- [x] Verify all docstrings follow NumPy format (all functions have Parameters/Returns or Attributes)
+- [x] Verify all new functions have examples in docstrings (added example to visible_cues)
 
 ---
 

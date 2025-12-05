@@ -230,38 +230,73 @@ def compute_spatial_view_field(
     # Validate inputs
     if len(spike_times) == 0:
         raise ValueError(
-            "spike_times cannot be empty. Need at least one spike "
-            "to compute spatial view field."
+            "Cannot compute spatial view field: no spikes.\n\n"
+            "WHAT: spike_times array is empty\n"
+            "WHY: Need at least one spike to compute firing rate\n\n"
+            "HOW to fix:\n"
+            "1. Check spike extraction - verify this neuron fired during session\n"
+            "2. Verify time window overlaps with behavioral data\n"
+            "3. Check that spike_times and times are in same units (seconds)\n"
+            "4. Filter neurons by minimum spike count before analysis"
         )
 
     if len(times) != len(positions):
         raise ValueError(
-            f"times and positions must have the same length. "
-            f"Got times: {len(times)}, positions: {len(positions)}."
+            f"Times/positions length mismatch.\n\n"
+            f"WHAT: times has {len(times)} samples, positions has {len(positions)}\n"
+            f"WHY: Need synchronized behavioral data at each timepoint\n\n"
+            f"HOW to fix:\n"
+            f"1. Ensure times and positions are aligned to same sampling\n"
+            f"2. Check for dropped frames in position tracking\n"
+            f"3. Interpolate to common timebase if needed"
         )
 
     if len(times) != len(headings):
         raise ValueError(
-            f"times and headings must have the same length. "
-            f"Got times: {len(times)}, headings: {len(headings)}."
+            f"Times/headings length mismatch.\n\n"
+            f"WHAT: times has {len(times)} samples, headings has {len(headings)}\n"
+            f"WHY: Need heading at each behavioral timepoint for gaze computation\n\n"
+            f"HOW to fix:\n"
+            f"1. Compute headings from same positions array:\n"
+            f"   headings = heading_from_velocity(positions, dt=times[1]-times[0])\n"
+            f"2. Check for dropped frames or different sampling rates"
         )
 
     valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
     if method not in valid_methods:
-        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+        raise ValueError(
+            f"Invalid smoothing method: '{method}'.\n\n"
+            f"WHAT: method must be one of {sorted(valid_methods)}\n"
+            f"WHY: Each method uses different spatial smoothing algorithms\n\n"
+            f"HOW to choose:\n"
+            f"1. 'diffusion_kde' (default) - Graph-based smoothing respecting boundaries\n"
+            f"2. 'gaussian_kde' - Standard Gaussian kernel (Euclidean distance)\n"
+            f"3. 'binned' - No smoothing (histogram-based, noisier)"
+        )
 
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
     if gaze_model not in valid_gaze_models:
         raise ValueError(
-            f"gaze_model must be one of {valid_gaze_models}, got '{gaze_model}'"
+            f"Invalid gaze model: '{gaze_model}'.\n\n"
+            f"WHAT: gaze_model must be one of {sorted(valid_gaze_models)}\n"
+            f"WHY: Gaze model determines how viewed location is computed\n\n"
+            f"HOW to choose:\n"
+            f"1. 'fixed_distance' - View point at fixed distance ahead (default)\n"
+            f"2. 'ray_cast' - Nearest boundary intersection along gaze direction\n"
+            f"3. 'boundary' - Nearest boundary point in gaze direction"
         )
 
     if gaze_offsets is not None:
         gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64).ravel()
         if len(gaze_offsets) != len(times):
             raise ValueError(
-                f"gaze_offsets and times must have the same length. "
-                f"Got gaze_offsets: {len(gaze_offsets)}, times: {len(times)}."
+                f"Gaze offsets length mismatch.\n\n"
+                f"WHAT: gaze_offsets has {len(gaze_offsets)} samples, "
+                f"times has {len(times)}\n"
+                f"WHY: Need one gaze offset per timepoint for eye tracking\n\n"
+                f"HOW to fix:\n"
+                f"1. Interpolate gaze_offsets to match behavioral sampling\n"
+                f"2. Or omit gaze_offsets to use heading direction"
             )
 
     n_time = len(times)

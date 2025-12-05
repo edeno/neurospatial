@@ -670,15 +670,64 @@ All tests for M3.5 already exist and pass (implemented in previous milestones):
 - `tests/metrics/test_spatial_view_cells.py` (23 tests)
 - `tests/test_spatial_view_field.py` (30 tests)
 
-### Next Task
+### Completed: Final Integration - Documentation Updates
 
-- **Final Integration**: Documentation Updates
-  - Update CLAUDE.md with new module summaries
-  - Add examples to notebooks directory (optional)
-  - Update CHANGELOG with new features
+**Files Modified:**
+
+- `CLAUDE.md` - Updated with:
+  - Version updated to v0.19.0
+  - New "Most Common Patterns" sections 7-9 (egocentric, object-vector, spatial view)
+  - Updated Key Features list
+  - Updated Quick Navigation tables
+  - Updated Architecture Overview with Cell Type Modules section
+- `CHANGELOG.md` - Added under [Unreleased]:
+  - Spatial View Cells (v0.19.0) - 83 new tests
+  - Visibility and Gaze Analysis (v0.19.0) - 45 new tests
+  - Object-Vector Cells (v0.18.0) - 84 new tests
+  - Egocentric Reference Frames (v0.17.0) - 56 new tests
+- `TASKS.md` - Marked documentation tasks complete
+
+**Quality Checks Completed:**
+
+- ruff check: All checks passed
+- ruff format: All 516 files formatted
+- mypy: No issues in 171 source files
+- pytest: 6842 tests pass, 16 pre-existing failures (unrelated to M1-M3):
+  - `test_repeated_mazes.py`: API mismatch in RepeatedTDims tests
+  - `test_properties.py`: Flaky hypothesis test for sparsity edge cases
+  - `test_validation_sim.py`: Warning count assertion
+  - `test_transforms.py`: Passes individually (race condition in parallel)
+
+### Completed: UX Improvements (per reviewer feedback)
+
+**CLAUDE.md Updates:**
+
+- Added Critical Rule #8: Egocentric coordinate convention (0=ahead, π/2=left)
+- Added coordinate convention diagram (allocentric vs egocentric visual)
+- Added unit comments to example code (cm, cm/s)
+
+**Error Message Enhancements (WHAT/WHY/HOW format):**
+
+- `reference_frames.py`: 7 error messages enhanced
+- `object_vector_field.py`: 6 error messages enhanced
+- `spatial_view_field.py`: 6 error messages enhanced
+- Updated test `test_positions_headings_length_mismatch` to match new format
+
+**All UX issues addressed:**
+
+- [x] Add egocentric convention to Critical Rules
+- [x] Add unit comments to examples
+- [x] Add coordinate convention diagram
+- [x] Enhance error messages in reference_frames.py
+- [x] Enhance error messages in object_vector_field.py
+- [x] Enhance error messages in spatial_view_field.py
+
+### Implementation Complete
+
+All milestones (M1, M2, M3) and UX improvements are done.
 
 ### Blockers
 
-None currently.
+None.
 
 ---

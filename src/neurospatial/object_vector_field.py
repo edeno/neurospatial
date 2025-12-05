@@ -222,35 +222,73 @@ def compute_object_vector_field(
     # Validate inputs
     if len(spike_times) == 0:
         raise ValueError(
-            "spike_times cannot be empty. Need at least one spike "
-            "to compute object-vector field."
+            "Cannot compute object-vector field: no spikes.\n\n"
+            "WHAT: spike_times array is empty\n"
+            "WHY: Need at least one spike to compute firing rate\n\n"
+            "HOW to fix:\n"
+            "1. Check spike extraction - verify this neuron fired during session\n"
+            "2. Verify time window overlaps with behavioral data\n"
+            "3. Check that spike_times and times are in same units (seconds)\n"
+            "4. Filter neurons by minimum spike count before analysis"
         )
 
     if len(times) != len(positions):
         raise ValueError(
-            f"times and positions must have the same length. "
-            f"Got times: {len(times)}, positions: {len(positions)}."
+            f"Times/positions length mismatch.\n\n"
+            f"WHAT: times has {len(times)} samples, positions has {len(positions)}\n"
+            f"WHY: Need synchronized behavioral data at each timepoint\n\n"
+            f"HOW to fix:\n"
+            f"1. Ensure times and positions are aligned to same sampling\n"
+            f"2. Check for dropped frames in position tracking\n"
+            f"3. Interpolate to common timebase if needed"
         )
 
     if len(times) != len(headings):
         raise ValueError(
-            f"times and headings must have the same length. "
-            f"Got times: {len(times)}, headings: {len(headings)}."
+            f"Times/headings length mismatch.\n\n"
+            f"WHAT: times has {len(times)} samples, headings has {len(headings)}\n"
+            f"WHY: Need heading at each behavioral timepoint\n\n"
+            f"HOW to fix:\n"
+            f"1. Compute headings from same positions array:\n"
+            f"   headings = heading_from_velocity(positions, dt=times[1]-times[0])\n"
+            f"2. Check for dropped frames or different sampling rates"
         )
 
     if method not in ("binned", "diffusion_kde"):
-        raise ValueError(f"method must be 'binned' or 'diffusion_kde', got '{method}'")
+        raise ValueError(
+            f"Invalid smoothing method: '{method}'.\n\n"
+            f"WHAT: method must be 'binned' or 'diffusion_kde'\n"
+            f"WHY: These are the supported spatial smoothing algorithms\n\n"
+            f"HOW to choose:\n"
+            f"1. 'binned' - Simple histogram (faster, noisier)\n"
+            f"2. 'diffusion_kde' - Graph-based smoothing (default, respects boundaries)"
+        )
 
     # Validate distance_metric values first
     if distance_metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"distance_metric must be 'euclidean' or 'geodesic', "
-            f"got '{distance_metric}'"
+            f"Invalid distance metric: '{distance_metric}'.\n\n"
+            f"WHAT: distance_metric must be 'euclidean' or 'geodesic'\n"
+            f"WHY: These are the supported distance algorithms\n\n"
+            f"HOW to choose:\n"
+            f"1. 'euclidean' - Straight-line distances (default, faster)\n"
+            f"2. 'geodesic' - Boundary-respecting distances (requires allocentric_env)"
         )
 
     # Then validate parameter dependencies
     if distance_metric == "geodesic" and allocentric_env is None:
-        raise ValueError("allocentric_env is required when distance_metric='geodesic'")
+        raise ValueError(
+            "Cannot compute geodesic distances: missing environment.\n\n"
+            "WHAT: distance_metric='geodesic' requires allocentric_env parameter\n"
+            "WHY: Geodesic distances follow paths that respect environment boundaries\n\n"
+            "HOW to fix:\n"
+            "1. Pass the environment:\n"
+            "   result = compute_object_vector_field(\n"
+            "       ..., distance_metric='geodesic', allocentric_env=env\n"
+            "   )\n"
+            "2. Or use Euclidean distances (straight-line):\n"
+            "   result = compute_object_vector_field(..., distance_metric='euclidean')"
+        )
 
     n_time = len(times)
 

@@ -19,6 +19,24 @@ When working with this codebase, you MUST follow these rules:
 7. **Use `@check_fitted` decorator** - methods requiring fitted state must use this decorator
 8. **Egocentric angles use animal-centered convention** - 0=ahead, π/2=left, -π/2=right (NOT allocentric 0=East)
 
+### Coordinate Convention Diagram
+
+```
+Allocentric (world):              Egocentric (animal-centered):
+      North                              Left
+       π/2                                π/2
+        |                                  |
+West----+----East                 Back----+----Ahead
+  π     |     0                    ±π     |      0
+        |                                  |
+      South                              Right
+      -π/2                               -π/2
+```
+
+**Example:** Animal at (0,0) facing East (heading=0), object at (10, 10):
+- Allocentric bearing to object: π/4 (45° from East toward North)
+- Egocentric bearing to object: π/4 (45° left of ahead)
+
 ---
 
 ## 📦 Package Management

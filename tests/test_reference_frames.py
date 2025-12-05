@@ -198,7 +198,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 timepoints
         headings = np.array([0.0])  # 1 timepoint
 
-        with pytest.raises(ValueError, match=r"positions.*headings"):
+        with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
             allocentric_to_egocentric(points, positions, headings)
 
 

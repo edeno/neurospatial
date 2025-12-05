@@ -218,19 +218,34 @@ def allocentric_to_egocentric(
     # Validate shapes
     if points.ndim < 2:
         raise ValueError(
-            f"points must be at least 2D with shape (n_points, 2), "
-            f"got shape {points.shape}"
+            f"Cannot transform points: invalid shape {points.shape}.\n\n"
+            f"WHAT: points must be 2D array with shape (n_points, 2)\n"
+            f"WHY: Each point needs (x, y) coordinates for transformation\n\n"
+            f"HOW to fix:\n"
+            f"1. Reshape your array: points.reshape(-1, 2)\n"
+            f"2. Check data loading - array may have been squeezed\n"
+            f"3. Verify you're passing an array of points, not a single point"
         )
 
     if positions.ndim != 2 or positions.shape[1] != 2:
         raise ValueError(
-            f"positions must have shape (n_time, 2), got {positions.shape}"
+            f"Cannot transform: invalid positions shape {positions.shape}.\n\n"
+            f"WHAT: positions must have shape (n_time, 2)\n"
+            f"WHY: Need (x, y) position at each timepoint for the transform origin\n\n"
+            f"HOW to fix:\n"
+            f"1. Reshape: positions.reshape(-1, 2)\n"
+            f"2. For single position: positions.reshape(1, 2)"
         )
 
     if headings.ndim != 1 or len(headings) != len(positions):
         raise ValueError(
-            f"headings must have shape (n_time,) matching positions length. "
-            f"Got headings shape {headings.shape}, positions shape {positions.shape}"
+            f"Headings/positions length mismatch.\n\n"
+            f"WHAT: headings shape {headings.shape} != positions length {len(positions)}\n"
+            f"WHY: Need one heading per timepoint for coordinate rotation\n\n"
+            f"HOW to fix:\n"
+            f"1. Ensure headings and positions are aligned to same timepoints\n"
+            f"2. Check for off-by-one errors in slicing\n"
+            f"3. Interpolate headings to match positions if sampled differently"
         )
 
     n_time = len(positions)
@@ -240,8 +255,13 @@ def allocentric_to_egocentric(
         points = np.broadcast_to(points, (n_time, points.shape[0], 2)).copy()
     elif points.ndim != 3:
         raise ValueError(
-            f"points must have shape (n_points, 2) or (n_time, n_points, 2), "
-            f"got {points.shape}"
+            f"Invalid points dimensionality: got {points.ndim}D array.\n\n"
+            f"WHAT: points must be 2D (n_points, 2) or 3D (n_time, n_points, 2)\n"
+            f"WHY: 2D broadcasts same points to all timepoints; 3D allows time-varying\n\n"
+            f"HOW to fix:\n"
+            f"1. Static points: use shape (n_points, 2)\n"
+            f"2. Time-varying: use shape (n_time, n_points, 2)\n"
+            f"Got shape: {points.shape}"
         )
 
     # Center points around animal position
@@ -464,10 +484,25 @@ def compute_egocentric_distance(
     positions = np.asarray(positions, dtype=np.float64)
 
     if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+        raise ValueError(
+            f"Invalid distance metric: '{metric}'.\n\n"
+            f"WHAT: metric must be 'euclidean' or 'geodesic'\n"
+            f"WHY: These are the supported distance algorithms\n\n"
+            f"HOW to fix:\n"
+            f"1. Use 'euclidean' for straight-line distances (default, faster)\n"
+            f"2. Use 'geodesic' for boundary-respecting distances (requires env)"
+        )
 
     if metric == "geodesic" and env is None:
-        raise ValueError("env is required when metric='geodesic'")
+        raise ValueError(
+            "Cannot compute geodesic distances: missing environment.\n\n"
+            "WHAT: metric='geodesic' requires env parameter\n"
+            "WHY: Geodesic distances follow paths that respect environment boundaries\n\n"
+            "HOW to fix:\n"
+            "1. Pass the environment: compute_egocentric_distance(..., env=env)\n"
+            "2. Or use 'euclidean' for straight-line distances:\n"
+            "   compute_egocentric_distance(..., metric='euclidean')"
+        )
 
     n_time = len(positions)
 
@@ -582,7 +617,13 @@ def heading_from_velocity(
 
     if len(positions) < 2:
         raise ValueError(
-            f"positions must have at least 2 samples, got {len(positions)}"
+            f"Cannot compute heading: insufficient trajectory data.\n\n"
+            f"WHAT: Need at least 2 position samples, got {len(positions)}\n"
+            f"WHY: Heading is computed from velocity (position change over time)\n\n"
+            f"HOW to fix:\n"
+            f"1. Check data filtering - may have removed too many frames\n"
+            f"2. Verify trajectory isn't empty after quality control\n"
+            f"3. For short events, use heading_from_body_orientation() instead"
         )
 
     # Compute velocity via finite differences
@@ -714,7 +755,15 @@ def heading_from_body_orientation(
     nan_mask = np.any(np.isnan(body_vector), axis=1)
 
     if np.all(nan_mask):
-        raise ValueError("All keypoints are NaN. Cannot compute heading.")
+        raise ValueError(
+            "Cannot compute heading: all keypoints are NaN.\n\n"
+            "WHAT: Both nose and tail positions are NaN at all timepoints\n"
+            "WHY: Need at least one valid (nose, tail) pair for body orientation\n\n"
+            "HOW to fix:\n"
+            "1. Check pose estimation output for tracking failures\n"
+            "2. Verify keypoint extraction completed successfully\n"
+            "3. Consider using heading_from_velocity() if pose data unavailable"
+        )
 
     # Compute heading where valid
     heading = np.arctan2(body_vector[:, 1], body_vector[:, 0])
