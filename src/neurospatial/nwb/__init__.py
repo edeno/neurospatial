@@ -21,6 +21,7 @@ Reading Functions:
 Writing Functions:
     write_place_field : Write place field to NWB analysis/
     write_occupancy : Write occupancy map to NWB analysis/
+    write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write lap events to NWB processing/behavior/
     write_region_crossings : Write region crossing events
     write_environment : Write Environment to NWB scratch space
@@ -99,8 +100,10 @@ _LAZY_IMPORTS: dict[str, str] = {
     # Writing functions
     "write_place_field": "neurospatial.nwb._fields:write_place_field",
     "write_occupancy": "neurospatial.nwb._fields:write_occupancy",
+    "write_events": "neurospatial.nwb._events:write_events",
     "write_laps": "neurospatial.nwb._events:write_laps",
     "write_region_crossings": "neurospatial.nwb._events:write_region_crossings",
+    "dataframe_to_events_table": "neurospatial.nwb._events:dataframe_to_events_table",
     "write_environment": "neurospatial.nwb._environment:write_environment",
     "write_trials": "neurospatial.nwb._events:write_trials",
     # Factory functions
@@ -127,6 +130,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "bodypart_overlay_from_nwb",
+    "dataframe_to_events_table",
     "environment_from_position",
     "head_direction_overlay_from_nwb",
     "position_overlay_from_nwb",
@@ -138,6 +142,7 @@ __all__ = [
     "read_position",
     "read_trials",
     "write_environment",
+    "write_events",
     "write_laps",
     "write_occupancy",
     "write_place_field",

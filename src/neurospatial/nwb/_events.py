@@ -17,6 +17,7 @@ from numpy.typing import NDArray
 from neurospatial.nwb._adapters import events_table_to_dataframe
 
 if TYPE_CHECKING:
+    import ndx_events
     from pynwb import NWBFile
 
 
@@ -865,3 +866,225 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     read_intervals : Read generic TimeIntervals.
     """
     return read_intervals(nwbfile, "trials")
+
+
+def dataframe_to_events_table(
+    df: pd.DataFrame,
+    name: str,
+    description: str = "Events",
+) -> ndx_events.EventsTable:
+    """
+    Convert a pandas DataFrame to an ndx-events EventsTable.
+
+    This function creates an EventsTable with the same columns as the input
+    DataFrame. The DataFrame must have a 'timestamp' column.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Events DataFrame. Must have a 'timestamp' column with numeric values.
+        Additional columns become EventsTable columns.
+    name : str
+        Name for the EventsTable.
+    description : str, default "Events"
+        Description for the EventsTable.
+
+    Returns
+    -------
+    ndx_events.EventsTable
+        EventsTable containing the events data.
+
+    Raises
+    ------
+    TypeError
+        If df is not a DataFrame.
+    ValueError
+        If DataFrame is missing timestamp column or contains invalid timestamps.
+    ImportError
+        If ndx-events is not installed.
+
+    Examples
+    --------
+    >>> import pandas as pd  # doctest: +SKIP
+    >>> df = pd.DataFrame(
+    ...     {  # doctest: +SKIP
+    ...         "timestamp": [1.0, 2.0, 3.0],
+    ...         "label": ["a", "b", "c"],
+    ...     }
+    ... )
+    >>> events_table = dataframe_to_events_table(df, "my_events")  # doctest: +SKIP
+    """
+    from neurospatial.nwb._core import _require_ndx_events
+
+    # Verify ndx-events is installed
+    ndx_events_module = _require_ndx_events()
+
+    # Validate input
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(
+            f"Expected pd.DataFrame, got {type(df).__name__}.\n"
+            "  WHY: Events must be a pandas DataFrame.\n"
+            "  HOW: Convert using pd.DataFrame({'timestamp': times})"
+        )
+
+    if "timestamp" not in df.columns:
+        raise ValueError(
+            "DataFrame is missing required 'timestamp' column.\n"
+            "  WHY: EventsTable requires timestamp for each event.\n"
+            f"  HOW: Add timestamp column. Available columns: {list(df.columns)}"
+        )
+
+    # Validate timestamps if not empty
+    if len(df) > 0:
+        timestamps = df["timestamp"].values
+        if not np.all(np.isfinite(timestamps)):
+            raise ValueError(
+                "timestamp column contains non-finite values (NaN or Inf).\n"
+                "  WHY: EventsTable requires valid numeric timestamps.\n"
+                "  HOW: Remove or replace NaN/Inf values in timestamp column."
+            )
+        if np.any(timestamps < 0):
+            raise ValueError(
+                "timestamp column contains negative values.\n"
+                "  WHY: NWB timestamps should be non-negative (seconds from session start).\n"
+                "  HOW: Adjust timestamps to be relative to session start."
+            )
+
+    # Create EventsTable
+    events_table = ndx_events_module.EventsTable(name=name, description=description)
+
+    # Add additional columns (excluding timestamp which is built-in)
+    extra_columns = [col for col in df.columns if col != "timestamp"]
+    for col in extra_columns:
+        events_table.add_column(name=col, description=f"Column: {col}")
+
+    # Add rows
+    for _, row in df.iterrows():
+        row_data = {"timestamp": float(row["timestamp"])}
+        for col in extra_columns:
+            value = row[col]
+            # Convert numpy types to Python types for NWB compatibility
+            if isinstance(value, (np.integer, np.floating)):
+                value = value.item()
+            elif isinstance(value, np.bool_):
+                value = bool(value)
+            row_data[col] = value
+        events_table.add_row(**row_data)
+
+    return events_table
+
+
+def write_events(
+    nwbfile: NWBFile,
+    events: pd.DataFrame,
+    name: str,
+    *,
+    description: str = "Event data",
+    processing_module: str = "behavior",
+    overwrite: bool = False,
+) -> None:
+    """
+    Write generic events DataFrame to NWB EventsTable.
+
+    Creates an EventsTable in a processing module containing event timestamps
+    and any additional columns from the DataFrame.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to write to.
+    events : pd.DataFrame
+        Events DataFrame. Must have a 'timestamp' column with numeric values.
+        Additional columns (e.g., 'label', 'value', 'x', 'y') are preserved.
+    name : str
+        Name for the EventsTable in NWB.
+    description : str, default "Event data"
+        Description for the EventsTable.
+    processing_module : str, default "behavior"
+        Processing module to store events in.
+    overwrite : bool, default False
+        If True, replace existing EventsTable with same name.
+        If False, raise ValueError on duplicate name.
+
+    Raises
+    ------
+    TypeError
+        If events is not a DataFrame.
+    ValueError
+        If EventsTable with same name exists and overwrite=False.
+        If DataFrame is missing timestamp column.
+        If timestamps contain non-finite or negative values.
+    ImportError
+        If ndx-events is not installed.
+
+    Notes
+    -----
+    The EventsTable is stored in the specified processing module. Common
+    column conventions:
+
+    - ``timestamp``: Required. Event time in seconds from session start.
+    - ``label``: String category/type for event.
+    - ``value``: Numeric value associated with event.
+    - ``x``, ``y``, ``z``: Spatial position columns.
+
+    All additional columns are preserved as EventsTable columns.
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> import pandas as pd  # doctest: +SKIP
+    >>> events = pd.DataFrame(
+    ...     {  # doctest: +SKIP
+    ...         "timestamp": [1.0, 2.5, 5.0],
+    ...         "label": ["reward", "lick", "reward"],
+    ...         "x": [10.0, 15.0, 20.0],
+    ...         "y": [5.0, 8.0, 12.0],
+    ...     }
+    ... )
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     write_events(nwbfile, events, name="behavioral_events")
+    ...     io.write(nwbfile)
+
+    See Also
+    --------
+    read_events : Read events from NWB EventsTable.
+    write_laps : Write lap events (specialized format).
+    write_region_crossings : Write region crossing events (specialized format).
+    """
+    from neurospatial.nwb._core import (
+        _get_or_create_processing_module,
+        _require_ndx_events,
+        logger,
+    )
+
+    # Verify ndx-events is installed
+    _require_ndx_events()
+
+    # Get or create processing module
+    module = _get_or_create_processing_module(
+        nwbfile, processing_module, f"{processing_module.capitalize()} data"
+    )
+
+    # Check for existing table with same name
+    if name in module.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"EventsTable '{name}' already exists in processing/{processing_module}. "
+                "Use overwrite=True to replace."
+            )
+        # Remove existing table for replacement (in-memory only)
+        del module.data_interfaces[name]
+        logger.info("Overwriting existing EventsTable '%s'", name)
+
+    # Convert DataFrame to EventsTable
+    events_table = dataframe_to_events_table(events, name=name, description=description)
+
+    # Add to processing module
+    module.add(events_table)
+    logger.debug(
+        "Wrote EventsTable '%s' with %d events to processing/%s",
+        name,
+        len(events),
+        processing_module,
+    )

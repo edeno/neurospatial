@@ -253,29 +253,33 @@ Milestone 3 Status: PARTIALLY COMPLETE
 
 ### Tasks
 
-- [ ] **M7.1**: Implement `write_events()` in `nwb/_events.py`
+- [x] **M7.1**: Implement `write_events()` in `nwb/_events.py`
   - Parameters: `nwbfile`, `events`, `name`, `description`, `processing_module`, `overwrite`
   - Convert DataFrame columns to EventsTable columns
   - Handle spatial columns (x, y, bin_index, region)
   - Support overwrite mode
 
-- [ ] **M7.2**: Implement `dataframe_to_events_table()` in `nwb/_events.py`
+- [x] **M7.2**: Implement `dataframe_to_events_table()` in `nwb/_events.py`
   - Convert standard DataFrame to ndx-events EventsTable
   - Map column types appropriately
   - Handle optional columns
 
-- [ ] **M7.3**: Update `nwb/__init__.py` exports
+- [x] **M7.3**: Update `nwb/__init__.py` exports
   - Export `write_events` and `dataframe_to_events_table`
   - Maintain lazy import pattern
 
-- [ ] **M7.4**: Create `tests/test_events_nwb.py`
+- [x] **M7.4**: Create `tests/test_events_nwb.py`
   - Test round-trip: DataFrame → NWB → DataFrame
   - Test with spatial columns
   - Test with custom columns
-  - Test overwrite behavior
+  - Test overwrite behavior (23 tests total)
 
-- [ ] **M7.5**: Verify milestone completion
-  - Run `uv run pytest tests/test_events_nwb.py -v`
+- [x] **M7.5**: Verify milestone completion
+  - Run `uv run pytest tests/test_events_nwb.py -v` ✓ (23 tests pass)
+  - Run `uv run mypy src/neurospatial/nwb/_events.py` ✓
+  - Run `uv run ruff check src/neurospatial/nwb/_events.py` ✓
+
+**Milestone 7 Status: COMPLETE**
 
 ---
 

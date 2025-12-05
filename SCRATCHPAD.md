@@ -1,7 +1,7 @@
 # Events Module Implementation - Scratchpad
 
 **Last Updated**: 2025-12-04
-**Current Status**: Milestone 6 Complete
+**Current Status**: Milestone 7 Complete
 
 ---
 
@@ -334,8 +334,52 @@ User feedback: "We usually study the time around an event" - the peri-event wind
 
 **Next Steps:**
 
-- Milestone 7: NWB Integration (if needed)
 - Milestone 8: Top-Level Exports and Documentation
+
+---
+
+### 2025-12-04: M7 Complete - NWB Integration
+
+**Completed Tasks:**
+
+- M7.1: Implemented `write_events()` in `nwb/_events.py`
+  - Parameters: `nwbfile`, `events`, `name`, `description`, `processing_module`, `overwrite`
+  - Converts DataFrame columns to EventsTable columns
+  - Handles spatial columns (x, y) and custom columns
+  - Support overwrite mode for replacing existing tables
+
+- M7.2: Implemented `dataframe_to_events_table()` in `nwb/_events.py`
+  - Helper function to convert DataFrame to ndx-events EventsTable
+  - Handles type conversion (numpy types to Python types)
+  - Validates timestamps (non-negative, finite)
+
+- M7.3: Updated `nwb/__init__.py` exports
+  - Added `write_events` and `dataframe_to_events_table` to lazy imports
+  - Updated `__all__` list
+
+- M7.4: Created `tests/test_events_nwb.py` with 23 tests
+  - TestWriteEvents: 16 tests (basic, labels, spatial, custom, validation)
+  - TestDataframeToEventsTable: 2 tests
+  - TestRoundTrip: 3 tests
+  - TestIntegrationWithEventsModule: 2 tests
+
+- M7.5: Verified milestone completion
+  - All 23 tests pass
+  - mypy: Success
+  - ruff: All checks pass
+
+**Key Decisions:**
+
+1. **Validation in dataframe_to_events_table()**: All validation (type, timestamp column, finite values, non-negative) happens in the helper function, not duplicated in `write_events()`
+2. **Type conversion**: Numpy types (np.int64, np.float64, np.bool_) converted to Python types for NWB compatibility
+3. **Column descriptions**: Auto-generated as "Column: {name}" for custom columns
+
+**Milestone 7 Status: COMPLETE**
+
+- 2 NWB functions implemented (`write_events`, `dataframe_to_events_table`)
+- 23 tests in `tests/test_events_nwb.py`
+- All pass mypy, ruff, pytest
+- Total events module: 255 tests passing
 
 ---
 
