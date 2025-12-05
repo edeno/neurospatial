@@ -162,16 +162,16 @@ Tests mirror source structure:
 
 ## Animation System Architecture
 
-### Overlay System (v0.4.0+)
+### Overlay System
 
 **Public overlay dataclasses:**
 
 - `PositionOverlay` - Trajectory tracking with trails
 - `BodypartOverlay` - Pose tracking with skeleton
 - `HeadDirectionOverlay` - Orientation arrows
-- `EventOverlay` - Spikes, licks, rewards (v0.13.0+)
-- `TimeSeriesOverlay` - Continuous variables (v0.14.0+)
-- `VideoOverlay` - Recorded video behind/above fields (v0.5.0+)
+- `EventOverlay` - Spikes, licks, rewards
+- `TimeSeriesOverlay` - Continuous variables
+- `VideoOverlay` - Recorded video behind/above fields
 
 **Conversion funnel:**
 
@@ -191,7 +191,7 @@ Tests mirror source structure:
 
 (⚠️ = Skipped with warning, ✗ = Not supported)
 
-### Playback Control (v0.15.0+)
+### Playback Control
 
 Speed-based API separates data sample rate from playback speed:
 

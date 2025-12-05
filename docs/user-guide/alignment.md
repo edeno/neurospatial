@@ -21,7 +21,7 @@ transform = T @ R @ S
 transformed_points = transform(points_2d)
 ```
 
-## 3D Affine Transformations (v0.3.0+)
+## 3D Affine Transformations
 
 For 3D environments, use `AffineND` or the convenience alias `Affine3D`:
 
@@ -113,7 +113,7 @@ aligned_probs_2d = map_probabilities(
     source_scale=1.2
 )
 
-# 3D alignment with rotation (v0.3.0+)
+# 3D alignment with rotation
 R_3d = Rotation.from_euler('xyz', [45, 30, 60], degrees=True).as_matrix()
 aligned_probs_3d = map_probabilities(
     source_env=env_3d_1,

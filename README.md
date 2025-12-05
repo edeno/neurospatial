@@ -29,7 +29,7 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 - python-native with no matlab dependencies
 - gpu acceleration
 
-### Spatial Analysis Operations (v0.2.0+)
+### Spatial Analysis Operations
 
 - **Trajectory Analysis**: Convert trajectories to bin sequences, compute empirical transition matrices with adjacency filtering
 - **Occupancy Mapping**: Time-in-bin computation with speed filtering, gap handling, and optional kernel smoothing (including linear time allocation for accurate boundary handling)
@@ -39,7 +39,7 @@ Whether you're analyzing animal navigation data, modeling place cells, or workin
 - **Field Utilities**: Normalize, clamp, combine fields; compute KL/JS divergence and cosine distance
 - **Environment Operations**: Subset/crop environments by regions or polygons, rebin grids, copy with cache management
 
-### Field Animation (v0.3.0+)
+### Field Animation
 
 - **Multi-Backend Animation**: Visualize spatial fields over time with 4 specialized backends
   - **Napari**: GPU-accelerated interactive viewer with lazy loading (100K+ frames)
@@ -100,7 +100,7 @@ These versions represent the tested configuration. neurospatial likely works wit
 
 ### Optional Dependencies
 
-For animation features (v0.3.0+), install optional dependencies:
+For animation features, install optional dependencies:
 
 ```bash
 # Napari backend (GPU-accelerated interactive viewer)
@@ -230,7 +230,7 @@ env = Environment.from_samples(
     name="Experiment1_OpenField"
 )
 
-# Compute occupancy with speed filtering (v0.2.0+)
+# Compute occupancy with speed filtering
 occupancy = env.occupancy(
     times=times,
     positions=position,
@@ -239,7 +239,7 @@ occupancy = env.occupancy(
     kernel_bandwidth=10.0  # cm - smooth the occupancy map
 )
 
-# Analyze movement patterns (v0.2.0+)
+# Analyze movement patterns
 transitions = env.transitions(times=times, positions=position, normalize=True)
 bin_sequence = env.bin_sequence(times=times, positions=position, dedup=True)
 ```
@@ -325,7 +325,7 @@ center = env.regions.region_center("RewardZone1")
 print(f"RewardZone1 area: {area:.2f}, center: {center}")
 ```
 
-## Simulation (v0.2.0+)
+## Simulation
 
 neurospatial includes a comprehensive simulation subpackage for generating synthetic spatial data, neural activity, and spike trains. This is essential for testing analysis pipelines, validating algorithms against ground truth, and creating educational examples.
 
@@ -407,7 +407,7 @@ See the comprehensive tutorial: **[Simulation Workflows Notebook](examples/15_si
 - Validation and visualization
 - Performance tips and customization
 
-## Animation (v0.3.0+)
+## Animation
 
 Visualize how spatial fields evolve over time with multi-backend animation support.
 
@@ -500,7 +500,7 @@ neurospatial/
 │   │   ├── regions.py         # Region operations
 │   │   ├── visualization.py   # Plotting methods (includes animate_fields)
 │   │   └── decorators.py      # check_fitted decorator
-│   ├── animation/              # Field animation (v0.3.0+)
+│   ├── animation/              # Field animation
 │   │   ├── core.py            # Main dispatcher and subsample_frames utility
 │   │   ├── rendering.py       # Rendering utilities (colormap, RGB conversion)
 │   │   ├── _parallel.py       # Parallel frame rendering for video backend

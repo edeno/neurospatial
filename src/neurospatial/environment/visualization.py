@@ -818,7 +818,7 @@ class EnvironmentVisualization:
         ...     n_workers=8,
         ... )  # doctest: +SKIP
 
-        **Overlay Examples (v0.4.0+):**
+        **Overlay Examples:**
 
         Position overlay with trail:
 

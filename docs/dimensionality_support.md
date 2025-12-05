@@ -1,10 +1,10 @@
 # Dimensionality Support in neurospatial
 
-**Last Updated:** 2025-11-08 (v0.3.0)
+**Last Updated:** 2025-12-05
 
 ## Summary
 
-**neurospatial supports 1D, 2D, and 3D spatial environments.** Full 3D support including affine transformations added in v0.3.0.
+**neurospatial supports 1D, 2D, and 3D spatial environments.** Full 3D support including affine transformations.
 
 ---
 
@@ -110,7 +110,7 @@ dist = env_3d.distance_between(bin1, bin2)
 
 ✅ **Composite environments** - Merging 3D environments
 
-✅ **3D affine transforms** (v0.3.0+)
+✅ **3D affine transforms**
 ```python
 from neurospatial.transforms import translate_3d, scale_3d, from_rotation_matrix
 from scipy.spatial.transform import Rotation
@@ -170,7 +170,7 @@ bins = env_3d.bins_in_region("goal")  # ValueError: Polygon regions only support
 | **Regions** |
 | Point regions | ✅ | ✅ | ✅ | |
 | Polygon regions | ❌ | ✅ | ❌ | 2D only |
-| **Transforms (v0.3.0+)** |
+| **Transforms** | | | | |
 | AffineND | ❌ | ✅ | ✅ | N-D transforms |
 | Affine2D | ❌ | ✅ | ❌ | 2D only (legacy) |
 | Rotation matrices | ❌ | ✅ | ✅ | scipy integration |
@@ -188,7 +188,7 @@ bins = env_3d.bins_in_region("goal")  # ValueError: Polygon regions only support
 | **Visualization** |
 | plot() | ✅ | ✅ | ❌ | |
 | plot_1d() | ✅ | ❌ | ❌ | 1D only |
-| **Alignment (v0.3.0+)** |
+| **Alignment** | | | | |
 | Probability mapping | ✅ | ✅ | ✅ | N-D rotation matrices |
 | Transform estimation | ❌ | ✅ | ✅ | Procrustes analysis |
 
@@ -242,7 +242,7 @@ else:
 
 ## 3D Support Status
 
-**Implemented in v0.3.0:**
+**Implemented:**
 - ✅ 3D affine transformations (`AffineND`, `Affine3D`)
 - ✅ 3D rotation matrices (scipy integration)
 - ✅ Transform estimation from point pairs (Procrustes analysis)

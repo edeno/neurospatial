@@ -171,7 +171,7 @@ overlay = HeadDirectionOverlay(
 - `color`: Arrow color (default: `"yellow"`)
 - `length`: Arrow length in environment units (default: `20.0`)
 
-### Video Overlay (v0.5.0+)
+### Video Overlay
 
 Display raw behavioral video frames as a background or foreground layer with spatial calibration.
 
@@ -373,7 +373,7 @@ env.animate_fields(
 # → Animation proceeds with only position_overlay rendered
 ```
 
-## Video Overlay Coordinate Systems (v0.5.0+)
+## Video Overlay Coordinate Systems
 
 VideoOverlay requires calibration to align video pixels to environment coordinates.
 
@@ -1006,7 +1006,7 @@ class HeadDirectionOverlay:
     length: float = 20.0
 ```
 
-### VideoOverlay (v0.5.0+)
+### VideoOverlay
 
 ```python
 @dataclass
@@ -1021,7 +1021,7 @@ class VideoOverlay:
     downsample: int = 1
 ```
 
-### VideoCalibration (v0.5.0+)
+### VideoCalibration
 
 ```python
 @dataclass(frozen=True)
@@ -1058,7 +1058,7 @@ def animate_fields(
     """Animate spatial fields with optional behavior overlays."""
 ```
 
-**New parameters (v0.4.0):**
+**New parameters:**
 
 - `overlays`: List of overlay instances to render
 - `frame_times`: Explicit frame timestamps for temporal alignment (optional)
@@ -1069,48 +1069,3 @@ def animate_fields(
 
 - [Field Animation](examples/16_field_animation.ipynb) - Core animation features
 - [Regions](examples/04_regions_of_interest.ipynb) - Defining spatial zones
-
-## Migration from v0.3.x
-
-**Note**: v0.3.x had limited trajectory overlay support. v0.4.0 introduces a completely new overlay system with three overlay types.
-
-**Old approach (v0.3.x - if you used custom trajectory rendering):**
-```python
-# v0.3.x: Limited trajectory support (backend-specific)
-env.animate_fields(
-    fields,
-    backend="napari"
-    # No standard overlay API
-)
-```
-
-**New approach (v0.4.0+):**
-```python
-from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
-
-# Position overlay with trail
-overlay = PositionOverlay(
-    data=trajectory,
-    color="red",
-    size=10.0,
-    trail_length=5  # NEW: trail support
-)
-
-env.animate_fields(
-    fields,
-    overlays=[overlay],  # NEW: standardized overlay API
-    backend="napari"
-)
-```
-
-**What's new in v0.4.0:**
-
-- **Standardized overlay API** across all backends
-- **Three overlay types**: Position, Bodypart, HeadDirection
-- **Multi-animal support** (multiple overlays)
-- **Pose tracking** (bodyparts + skeleton)
-- **Head direction visualization** (orientation arrows)
-- **Temporal alignment** with automatic interpolation
-- **Regions overlay** with transparency control
-- Backend-specific capabilities
-- Comprehensive validation and error messages

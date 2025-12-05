@@ -693,9 +693,9 @@ if not is_connected:
     )
 
 # %% [markdown]
-# ## Example 4: New CompositeEnvironment Methods (v0.1.0)
+# ## Example 4: CompositeEnvironment Methods
 #
-# In v0.1.0, `CompositeEnvironment` gained full API parity with `Environment` class, including:
+# `CompositeEnvironment` has full API parity with `Environment` class, including:
 # - Region queries: `bins_in_region()`, `mask_for_region()`
 # - Pathfinding: `path_between()`
 # - Diagnostics: `info()`
@@ -875,7 +875,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # 3. **`max_mnn_distance` parameter** controls which environments connect (None = no limit)
 #
-# 4. **Full API parity with Environment** (v0.1.0):
+# 4. **Full API parity with Environment**:
 #    - Spatial queries: `bin_at()`, `distance_between()`, `contains()`
 #    - Region queries: `bins_in_region()`, `mask_for_region()`
 #    - Pathfinding: `path_between()` (works across bridges!)

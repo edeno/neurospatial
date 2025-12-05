@@ -4,7 +4,7 @@ Advanced features and integrations.
 
 ---
 
-## NWB Integration (v0.7.0+)
+## NWB Integration
 
 Full reference for NeurodataWithoutBorders format support.
 
@@ -158,7 +158,7 @@ Spatial queries still work identically after round-trip.
 
 ---
 
-## Video Overlay (v0.5.0+)
+## Video Overlay
 
 Display recorded video behind or above spatial fields.
 
@@ -228,7 +228,7 @@ The video itself validates calibration - if inverted, toggle `flip_y`.
 
 ---
 
-## Video Annotation (v0.6.0+)
+## Video Annotation
 
 Interactive annotation of environment boundaries and regions.
 
@@ -322,7 +322,7 @@ regions = regions_from_cvat("cvat_export.xml", calibration=calib)
 
 ---
 
-## Track Graph Annotation (v0.9.0+)
+## Track Graph Annotation
 
 Interactive annotation for 1D linearized environments (T-maze, linear track, etc.).
 
@@ -418,7 +418,7 @@ for i, label in enumerate(result.node_labels):
 
 ---
 
-## Gaze Analysis and Visibility (v0.19.0+)
+## Gaze Analysis and Visibility
 
 Advanced analysis of what the animal can see and where it's looking.
 
@@ -645,7 +645,7 @@ env.animate_fields(
 
 ---
 
-## Scale Bars on Visualizations (v0.11.0+)
+## Scale Bars on Visualizations
 
 Add visual scale bars to plots and animations.
 
@@ -698,7 +698,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 
 ---
 
-## Animation Playback Control (v0.15.0+)
+## Animation Playback Control
 
 The animation system uses a speed-based API that separates data sample rate from playback speed.
 

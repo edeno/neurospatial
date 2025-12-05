@@ -1171,7 +1171,7 @@ __all__ = [
 Add to main package imports:
 
 ```python
-# Transition matrix construction (v0.3.0+)
+# Transition matrix construction
 from neurospatial.transitions import (
     empirical_transition_matrix,
     uniform_transition_matrix,
@@ -1259,7 +1259,7 @@ T_smooth = smooth_transition_matrix(T_emp, T_prior, prior_weight=0.2)
        T[trajectory[i+1], trajectory[i]] += 1
    T /= T.sum(axis=0, keepdims=True)
 
-   # New way (v0.3.0+)
+   # New way
    from neurospatial import empirical_transition_matrix
    T = empirical_transition_matrix(trajectory, n_bins)
    ```

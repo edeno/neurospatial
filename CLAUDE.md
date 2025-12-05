@@ -17,6 +17,7 @@ When working with this codebase, you MUST follow these rules:
 5. **Check `is_1d` before linearization** - only 1D environments have `to_linear()` method
 6. **Regions are immutable** - use `env.regions.update_region()`, never modify in place
 7. **Use `@check_fitted` decorator** - methods requiring fitted state must use this decorator
+8. **Egocentric angles use animal-centered convention** - 0=ahead, π/2=left, -π/2=right (NOT allocentric 0=East)
 
 ---
 
@@ -172,11 +173,11 @@ from neurospatial import (
     compute_egocentric_distance,
 )
 
-# Compute heading from movement direction
-headings = heading_from_velocity(positions, times, min_speed=5.0)
+# Compute heading from movement direction (min_speed in cm/s)
+headings = heading_from_velocity(positions, times, min_speed=5.0)  # cm/s
 
 # Compute egocentric bearing to objects (0=ahead, π/2=left, -π/2=right)
-object_positions = np.array([[50, 50], [75, 25]])  # 2 objects
+object_positions = np.array([[50, 50], [75, 25]])  # 2 objects, coordinates in cm
 bearings = compute_egocentric_bearing(positions, headings, object_positions)
 
 # Compute egocentric distance (Euclidean or geodesic)
@@ -367,7 +368,7 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
    - `Regions` container with dict-like interface
    - JSON serialization with versioned schema
 
-4. **Cell Type Modules** (v0.17.0+)
+4. **Cell Type Modules**
    - **Reference Frames** (`reference_frames.py`): Allocentric↔egocentric transforms, heading computation
    - **Object-Vector Cells** (`object_vector_field.py`, `metrics/object_vector_cells.py`): Simulation, tuning analysis
    - **Spatial View Cells** (`spatial_view_field.py`, `visibility.py`, `metrics/spatial_view_cells.py`): Gaze, visibility, view fields

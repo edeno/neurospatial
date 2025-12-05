@@ -142,7 +142,7 @@ def foo(x, y):
     """
 ```
 
-### 8. Memory safety checks (v0.2.1+)
+### 8. Memory safety checks
 
 ⚠️ **Creates large grid** (will warn but succeed):
 
@@ -164,7 +164,7 @@ env = Environment.from_samples(positions, bin_size=1.0, infer_active_bins=True)
 env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
 ```
 
-### 9. Overlay temporal alignment (v0.4.0+)
+### 9. Overlay temporal alignment
 
 ❌ **Wrong** (missing frame_times):
 
@@ -188,7 +188,7 @@ env.animate_fields(
 )
 ```
 
-### 10. HTML backend overlay limitations (v0.4.0+)
+### 10. HTML backend overlay limitations
 
 ⚠️ **Will warn:**
 
@@ -240,7 +240,7 @@ positions = np.column_stack([x_coords, y_coords])
 overlay = PositionOverlay(data=positions)
 ```
 
-### 12. VideoOverlay requires 2D environments (v0.5.0+)
+### 12. VideoOverlay requires 2D environments
 
 ❌ **Wrong:**
 
@@ -257,29 +257,6 @@ env_2d = Environment.from_samples(positions, bin_size=2.0)  # 2D grid
 video = VideoOverlay(source="session.mp4", calibration=calib)
 env_2d.animate_fields(fields, frame_times=frame_times, overlays=[video])
 ```
-
-### 13. Animation API migration (v0.15.0+)
-
-❌ **Old code** (v0.14.x):
-
-```python
-env.animate_fields(fields, fps=30)
-```
-
-✅ **New code** (v0.15.0+):
-
-```python
-frame_times = np.arange(len(fields)) / 30.0  # Create timestamps
-env.animate_fields(fields, frame_times=frame_times)  # speed=1.0 default
-env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # Slow motion
-```
-
-**Migration:**
-
-1. Add `frame_times` parameter (use timestamps from your data)
-2. Replace `fps=X` with `speed=Y` where `speed = X / sample_rate_hz`
-3. For slow motion: use `speed < 1.0`
-4. For fast forward: use `speed > 1.0`
 
 ---
 
@@ -378,7 +355,7 @@ git add .
 git commit -m "message"
 ```
 
-### `ResourceWarning: Creating large grid` (v0.2.1+)
+### `ResourceWarning: Creating large grid`
 
 **Cause**: Grid estimated to use >100MB memory.
 
@@ -395,7 +372,7 @@ env = Environment.from_samples(positions, bin_size=1.0, infer_active_bins=True)
 env = Environment.from_samples(positions, bin_size=1.0, warn_threshold_mb=float('inf'))
 ```
 
-### `ImportError: pynwb is required for NWB integration` (v0.7.0+)
+### `ImportError: pynwb is required for NWB integration`
 
 **Cause**: NWB dependencies are optional.
 
@@ -407,7 +384,7 @@ pip install neurospatial[nwb-full]
 uv add neurospatial[nwb-full]
 ```
 
-### TimeSeriesOverlay not showing in HTML backend (v0.14.0+)
+### TimeSeriesOverlay not showing in HTML backend
 
 **Cause**: HTML backend does not support TimeSeriesOverlay.
 
@@ -423,7 +400,7 @@ env.animate_fields(
 )
 ```
 
-### `KeyError: No Position found` when reading NWB (v0.7.0+)
+### `KeyError: No Position found` when reading NWB
 
 **Cause**: NWB file doesn't contain Position data in expected location.
 
@@ -443,7 +420,7 @@ positions, timestamps = read_position(nwbfile, processing_module="custom_module"
 positions, timestamps = read_position(nwbfile, position_name="position_xy")
 ```
 
-### `ValueError: Place field '{name}' already exists` when writing to NWB (v0.7.0+)
+### `ValueError: Place field '{name}' already exists` when writing to NWB
 
 **Cause**: Attempting to write a place field with a name that already exists.
 
@@ -459,7 +436,7 @@ write_place_field(nwbfile, env, field, name="cell_001", overwrite=True)
 write_place_field(nwbfile, env, field, name="cell_001_v2")
 ```
 
-### Environment round-trip loses some properties (v0.7.0+)
+### Environment round-trip loses some properties
 
 **Cause**: NWB storage uses reconstructed layout, not original layout engine.
 
@@ -481,7 +458,7 @@ write_place_field(nwbfile, env, field, name="cell_001_v2")
 
 Spatial queries still work identically after round-trip.
 
-### "No start node set" warning in track graph annotation (v0.9.0+)
+### "No start node set" warning in track graph annotation
 
 **Cause**: Saving a track graph without explicitly setting a start node.
 
@@ -491,7 +468,7 @@ Spatial queries still work identically after round-trip.
 2. Press Shift+S to set it as start
 3. The start node is marked with ★ in the list
 
-### Track graph edge order seems wrong (v0.9.0+)
+### Track graph edge order seems wrong
 
 **Cause**: Automatic edge ordering via DFS may not match expected linearization.
 
@@ -507,7 +484,7 @@ Spatial queries still work identically after round-trip.
 env = result.to_environment(bin_size=2.0, edge_spacing=[0.0, 10.0, 0.0])
 ```
 
-### `ValueError: Cannot create Environment: no track graph` (v0.9.0+)
+### `ValueError: Cannot create Environment: no track graph`
 
 **Cause**: Calling `result.to_environment()` when track graph is empty or invalid.
 
@@ -526,7 +503,7 @@ else:
     print(f"Edges: {len(result.edges)}")
 ```
 
-### Track graph coordinates don't match video (v0.9.0+)
+### Track graph coordinates don't match video
 
 **Cause**: Calibration not applied or incorrect calibration parameters.
 
@@ -617,4 +594,4 @@ env.animate_fields(
 
 **Cause**: May be using outdated type stubs or IDE not recognizing runtime checks.
 
-**Note**: This project includes a `py.typed` marker (v0.2.1+) for type checking support. IDE warnings may be false positives that can be ignored if tests pass.
+**Note**: This project includes a `py.typed` marker for type checking support. IDE warnings may be false positives that can be ignored if tests pass.

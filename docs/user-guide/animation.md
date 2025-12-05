@@ -50,7 +50,7 @@ Choose the right backend for your workflow:
 \* Limited only by disk space (lazy loading with LRU cache)
 \** Pre-renders first 500 frames, rest on-demand
 
-### Overlay Support by Backend (v0.5.0+)
+### Overlay Support by Backend
 
 | Backend | Position | Bodypart | HeadDirection | Video | Regions |
 |---------|----------|----------|---------------|-------|---------|

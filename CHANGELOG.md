@@ -4,7 +4,51 @@
 
 ### Added
 
-- **3D Transform Support (v0.3.0)**: Full N-dimensional affine transformation capabilities
+- **Spatial View Cells**: Complete spatial view cell analysis infrastructure
+  - `compute_spatial_view_field()` - Compute firing fields indexed by viewed location (not position)
+  - `SpatialViewFieldResult` frozen dataclass with field, view_occupancy
+  - `SpatialViewMetrics` frozen dataclass with Skaggs info, sparsity, coherence, classification
+  - `spatial_view_cell_metrics()` - Compare view fields vs place fields
+  - `is_spatial_view_cell()` - Classify based on view info > place info
+  - `SpatialViewCellModel` simulation model with gaze models (fixed_distance, ray_cast, boundary)
+  - 83 new tests for spatial view cell modules
+
+- **Visibility and Gaze Analysis**: Ray-casting visibility for spatial view cells
+  - `FieldOfView` frozen dataclass with species presets (rat ~320°, primate ~180°)
+  - `ViewshedResult` frozen dataclass with visible bins, cues, occlusion map
+  - `compute_viewed_location()` - Gaze-directed location computation
+  - `compute_viewshed()` - Ray-casting visibility analysis from observer position
+  - `compute_view_field()` - Binary visibility mask
+  - `visible_cues()` - Check line-of-sight to cue/landmark positions
+  - `compute_viewshed_trajectory()` - Viewshed analysis along trajectory
+  - `visibility_occupancy()` - Time each bin was visible during trajectory
+  - 45 new tests for visibility module
+
+- **Object-Vector Cells**: Complete object-vector cell analysis infrastructure
+  - `compute_object_vector_field()` - Compute firing fields in egocentric polar coordinates
+  - `ObjectVectorFieldResult` frozen dataclass with field, ego_env, occupancy
+  - `ObjectVectorMetrics` frozen dataclass with tuning curve, selectivity scores
+  - `compute_object_vector_tuning()` - Bin spikes by egocentric distance/direction to objects
+  - `object_vector_score()` - Combined distance and direction selectivity metric
+  - `is_object_vector_cell()` - Classify based on score threshold
+  - `plot_object_vector_tuning()` - Polar heatmap visualization
+  - `ObjectVectorCellModel` simulation model with distance/direction tuning
+  - `ObjectVectorOverlay` for animation with object-animal vectors
+  - 84 new tests for object-vector cell modules
+
+- **Egocentric Reference Frames**: Foundation for object-vector and spatial view cells
+  - `EgocentricFrame` dataclass with `to_egocentric()` / `to_allocentric()` transforms
+  - `allocentric_to_egocentric()` - Batch transform world→animal coordinates
+  - `egocentric_to_allocentric()` - Batch inverse transform
+  - `compute_egocentric_bearing()` - Angle to targets relative to heading (0=ahead, π/2=left)
+  - `compute_egocentric_distance()` - Euclidean and geodesic distance metrics
+  - `heading_from_velocity()` - Compute heading from position timeseries with smoothing
+  - `heading_from_body_orientation()` - Compute heading from pose keypoints (nose-tail)
+  - `Environment.from_polar_egocentric()` - Create egocentric polar coordinate environment
+  - Circular connectivity option for full-circle polar environments
+  - 56 new tests for reference frame and polar environment modules
+
+- **3D Transform Support**: Full N-dimensional affine transformation capabilities
   - New `AffineND` class for N-dimensional affine transforms using (N+1)×(N+1) homogeneous matrices
   - `Affine3D` type alias for convenience (equivalent to `AffineND` with n_dims=3)
   - 3D factory functions: `translate_3d()`, `scale_3d()`, `from_rotation_matrix()`

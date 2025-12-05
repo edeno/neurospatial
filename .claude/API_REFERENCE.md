@@ -13,7 +13,7 @@ from neurospatial.regions import Region, Regions
 
 ---
 
-## Spatial Analysis (v0.1.0+)
+## Spatial Analysis
 
 ```python
 from neurospatial import (
@@ -28,12 +28,12 @@ from neurospatial import (
 
 ---
 
-## Neural Analysis (v0.2.0+)
+## Neural Analysis
 
 ```python
 from neurospatial import (
     compute_place_field,                    # Place field estimation
-    compute_directional_place_fields,       # Directional tuning (v0.10.0+)
+    compute_directional_place_fields,       # Directional tuning
     goal_pair_direction_labels,             # Trial-based direction labels
     heading_direction_labels,               # Heading-based direction labels
 )
@@ -41,7 +41,7 @@ from neurospatial import (
 
 ---
 
-## Bayesian Decoding (v0.12.0+)
+## Bayesian Decoding
 
 ```python
 from neurospatial import (
@@ -97,7 +97,7 @@ from neurospatial.decoding import (
 
 ---
 
-## Basis Functions for GLMs (v0.15.0+)
+## Basis Functions for GLMs
 
 ```python
 from neurospatial import (
@@ -163,7 +163,7 @@ from neurospatial.metrics import (
 
 ---
 
-## Egocentric Reference Frames (v0.17.0+)
+## Egocentric Reference Frames
 
 ```python
 from neurospatial import (
@@ -210,7 +210,7 @@ ego_env = Environment.from_polar_egocentric(
 
 ---
 
-## Object-Vector Cells (v0.18.0+)
+## Object-Vector Cells
 
 ```python
 from neurospatial import (
@@ -242,7 +242,7 @@ from neurospatial.animation import (
 
 ---
 
-## Spatial View Cells (v0.19.0+)
+## Spatial View Cells
 
 ```python
 from neurospatial import (
@@ -295,7 +295,7 @@ from neurospatial.visibility import (
 
 ---
 
-## Behavioral Analysis (v0.7.0+)
+## Behavioral Analysis
 
 ```python
 from neurospatial.segmentation import segment_trials
@@ -313,7 +313,7 @@ from neurospatial import (
 
 ---
 
-## Events and Peri-Event Analysis (v0.16.0+)
+## Events and Peri-Event Analysis
 
 ```python
 from neurospatial import (
@@ -363,7 +363,7 @@ from neurospatial.events import (
 
 ---
 
-## Animation & Visualization (v0.3.0+)
+## Animation & Visualization
 
 ```python
 from neurospatial.animation import subsample_frames
@@ -372,14 +372,14 @@ from neurospatial import (
     PositionOverlay,        # Trajectory with trail
     BodypartOverlay,        # Pose tracking with skeleton
     HeadDirectionOverlay,   # Orientation arrows
-    EventOverlay,           # Spikes, licks, rewards (v0.13.0+)
+    EventOverlay,           # Spikes, licks, rewards
     SpikeOverlay,           # Alias for EventOverlay
-    TimeSeriesOverlay,      # Continuous variables (v0.14.0+)
-    ScaleBarConfig,         # Scale bar configuration (v0.11.0+)
+    TimeSeriesOverlay,      # Continuous variables
+    ScaleBarConfig,         # Scale bar configuration
 )
 
 from neurospatial.animation import (
-    VideoOverlay,                           # Video behind/above fields (v0.5.0+)
+    VideoOverlay,                           # Video behind/above fields
     calibrate_video,                        # Video calibration helper
     estimate_colormap_range_from_subset,    # Large session helper
     large_session_napari_config,            # Napari config for large data
@@ -390,7 +390,7 @@ from neurospatial.transforms import VideoCalibration, calibrate_from_landmarks
 
 ---
 
-## Video Annotation (v0.6.0+)
+## Video Annotation
 
 ```python
 from neurospatial import (
@@ -400,7 +400,7 @@ from neurospatial import (
 )
 
 from neurospatial.annotation import (
-    annotate_track_graph,    # 1D track annotation (v0.9.0+)
+    annotate_track_graph,    # 1D track annotation
     TrackGraphResult,        # Track graph annotation result
     BoundaryConfig,          # Boundary inference config
     boundary_from_positions, # Auto-infer boundary from positions
@@ -409,7 +409,7 @@ from neurospatial.annotation import (
 
 ---
 
-## NWB Integration (v0.7.0+)
+## NWB Integration
 
 **Requires:** `pip install neurospatial[nwb-full]`
 
@@ -443,7 +443,7 @@ from neurospatial.nwb import (
 
 ---
 
-## Serialization (v0.1.0+)
+## Serialization
 
 ```python
 from neurospatial.io import to_file, from_file, to_dict, from_dict
