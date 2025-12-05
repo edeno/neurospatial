@@ -358,6 +358,12 @@ warn_unused_ignores = true
 module = "neurospatial.animation.backends.napari_backend"
 warn_unused_ignores = false
 
+# annotation widget: Disable warn_unused_ignores due to magicgui stubs inconsistency
+# between Python versions (3.11 vs 3.13 have different type hints for RadioButtons)
+[[tool.mypy.overrides]]
+module = "neurospatial.annotation._napari_widget"
+warn_unused_ignores = false
+
 # Test files can be less strict
 # Note: Type errors in tests are often false positives from the Protocol/TypeVar
 # mixin pattern. Tests verify correctness at runtime.
