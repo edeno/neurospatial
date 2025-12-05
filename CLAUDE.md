@@ -106,7 +106,7 @@ from neurospatial import compute_place_field
 # Compute place field for one neuron
 firing_rate = compute_place_field(
     env, spike_times, times, positions,
-    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0  # Smoothing bandwidth (cm)
 )
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
