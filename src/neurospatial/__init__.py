@@ -288,6 +288,17 @@ from neurospatial.metrics import (
     sparsity,
 )
 from neurospatial.primitives import convolve, neighbor_reduce
+
+# Reference frame transformations (egocentric/allocentric)
+from neurospatial.reference_frames import (
+    EgocentricFrame,
+    allocentric_to_egocentric,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+    egocentric_to_allocentric,
+    heading_from_body_orientation,
+    heading_from_velocity,
+)
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.segmentation import (
@@ -432,4 +443,12 @@ __all__ = [
     "resample_field",
     "spikes_to_field",
     "validate_environment",
+    # Reference frame transformations (egocentric/allocentric)
+    "EgocentricFrame",
+    "allocentric_to_egocentric",
+    "compute_egocentric_bearing",
+    "compute_egocentric_distance",
+    "egocentric_to_allocentric",
+    "heading_from_body_orientation",
+    "heading_from_velocity",
 ]

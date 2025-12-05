@@ -24,26 +24,26 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/reference_frames.py`
 
-- [ ] Create `reference_frames.py` module with module-level docstring
-- [ ] Implement `EgocentricFrame` dataclass
-  - [ ] `position` and `heading` attributes
-  - [ ] `to_egocentric()` method (2x2 rotation matrix)
-  - [ ] `to_allocentric()` method (inverse transform)
-  - [ ] Docstring with coordinate convention (0=East, π/2=North, egocentric 0=ahead)
-- [ ] Implement `allocentric_to_egocentric()` batch function
-  - [ ] Handle shape normalization: `(n_points, 2)` → `(n_time, n_points, 2)`
-  - [ ] Use `np.einsum('tij,tpj->tpi', rot, centered)` for vectorized rotation
-  - [ ] Document broadcasting behavior
-- [ ] Implement `egocentric_to_allocentric()` inverse batch function
-- [ ] Implement `compute_egocentric_bearing()` function
-  - [ ] Use `allocentric_to_egocentric()` internally
-  - [ ] Extract bearing via `np.arctan2(ego[..., 1], ego[..., 0])`
-  - [ ] Wrap angles to `(-π, π]` using `(θ + π) % 2π - π`
-- [ ] Implement distance functions:
-  - [ ] `compute_egocentric_distance_euclidean()` - pure geometry
-  - [ ] `compute_egocentric_distance_geodesic()` - uses `distance_field()`
-  - [ ] `compute_egocentric_distance()` - dispatcher function
-- [ ] Define `__all__` exports
+- [x] Create `reference_frames.py` module with module-level docstring
+- [x] Implement `EgocentricFrame` dataclass
+  - [x] `position` and `heading` attributes
+  - [x] `to_egocentric()` method (2x2 rotation matrix)
+  - [x] `to_allocentric()` method (inverse transform)
+  - [x] Docstring with coordinate convention (0=East, π/2=North, egocentric 0=ahead)
+- [x] Implement `allocentric_to_egocentric()` batch function
+  - [x] Handle shape normalization: `(n_points, 2)` → `(n_time, n_points, 2)`
+  - [x] Use `np.einsum('tij,tpj->tpi', rot, centered)` for vectorized rotation
+  - [x] Document broadcasting behavior
+- [x] Implement `egocentric_to_allocentric()` inverse batch function
+- [x] Implement `compute_egocentric_bearing()` function
+  - [x] Use `allocentric_to_egocentric()` internally
+  - [x] Extract bearing via `np.arctan2(ego[..., 1], ego[..., 0])`
+  - [x] Wrap angles to `(-π, π]` using `(θ + π) % 2π - π`
+- [x] Implement distance functions:
+  - [x] `compute_egocentric_distance_euclidean()` - pure geometry
+  - [x] `compute_egocentric_distance_geodesic()` - uses `distance_field()`
+  - [x] `compute_egocentric_distance()` - dispatcher function
+- [x] Define `__all__` exports
 
 **Success criteria**:
 - Round-trip test: `allocentric → egocentric → allocentric` preserves coordinates
@@ -54,32 +54,32 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `src/neurospatial/reference_frames.py` (continued)
 
-- [ ] Implement `heading_from_velocity()` function
-  - [ ] Compute velocity via finite differences
-  - [ ] Gaussian smoothing with configurable window
-  - [ ] Compute `heading = atan2(vy, vx)`
-  - [ ] Mask low-speed periods (`speed < min_speed`)
-  - [ ] Circular interpolation via unit vectors for masked periods
-  - [ ] Warning when all speeds below threshold
-  - [ ] Handle edge case: `n_time < 2` → raise ValueError
-- [ ] Implement `heading_from_body_orientation()` function
-  - [ ] Compute body vector: `nose - tail`
-  - [ ] Extract heading via `atan2`
-  - [ ] Handle NaN keypoints with circular interpolation
-  - [ ] Raise ValueError when all keypoints NaN
+- [x] Implement `heading_from_velocity()` function
+  - [x] Compute velocity via finite differences
+  - [x] Gaussian smoothing with configurable window
+  - [x] Compute `heading = atan2(vy, vx)`
+  - [x] Mask low-speed periods (`speed < min_speed`)
+  - [x] Circular interpolation via unit vectors for masked periods
+  - [x] Warning when all speeds below threshold
+  - [x] Handle edge case: `n_time < 2` → raise ValueError
+- [x] Implement `heading_from_body_orientation()` function
+  - [x] Compute body vector: `nose - tail`
+  - [x] Extract heading via `atan2`
+  - [x] Handle NaN keypoints with circular interpolation
+  - [x] Raise ValueError when all keypoints NaN
 
 **Success criteria**:
 - Stationary periods produce smooth interpolated headings (no jumps)
 - NaN keypoints are filled without discontinuities at ±π boundary
 
-### M1.3: Egocentric Environment Grid
+### M1.3: Egocentric Polar Environment
 
 **File**: `src/neurospatial/environment/factories.py`
 
-- [ ] Add `from_egocentric_grid()` classmethod to Environment
+- [ ] Add `from_polar_egocentric()` classmethod to Environment
   - [ ] Parameters: `distance_range`, `angle_range`, `distance_bin_size`, `angle_bin_size`
   - [ ] Parameter: `circular_angle=True` for periodic connectivity
-  - [ ] Create polar grid using existing RegularGrid machinery
+  - [ ] Create polar environment using existing RegularGrid machinery
   - [ ] Document: "This environment lives in egocentric polar coordinates"
   - [ ] Return Environment with bin_centers[:, 0] = distances, [:, 1] = angles
 
@@ -91,45 +91,45 @@ This task list breaks down the implementation plan into actionable tasks organiz
 
 **File**: `tests/test_reference_frames.py`
 
-- [ ] `TestModuleSetup` class
-  - [ ] Test imports work
-  - [ ] Test `__all__` contains expected exports
-  - [ ] Test module docstring exists
-- [ ] `TestEgocentricFrame` class
-  - [ ] Test dataclass creation
-  - [ ] Test `to_egocentric()` for heading=0 (identity rotation)
-  - [ ] Test `to_egocentric()` for heading=π/2 (90° rotation)
-  - [ ] Test `to_allocentric()` inverse
-  - [ ] Test round-trip preserves coordinates
-- [ ] `TestAllocentricToEgocentric` class
-  - [ ] Test batch transform with multiple timepoints
-  - [ ] Test broadcasting: 2D points → 3D output
-  - [ ] Test shape validation error messages
-- [ ] `TestComputeEgocentricBearing` class
-  - [ ] Test bearing=0 when target is ahead
-  - [ ] Test bearing=π/2 when target is left
-  - [ ] Test bearing=-π/2 when target is right
-  - [ ] Test angle wrapping near ±π
-- [ ] `TestComputeEgocentricDistance` class
-  - [ ] Test Euclidean distances
-  - [ ] Test geodesic distances with Environment
-  - [ ] Test dispatcher with invalid metric
-- [ ] `TestHeadingFromVelocity` class
-  - [ ] Test smooth trajectory
-  - [ ] Test stationary periods get interpolated
-  - [ ] Test warning when all speeds low
-  - [ ] Test `n_time < 2` raises ValueError
-- [ ] `TestHeadingFromBodyOrientation` class
-  - [ ] Test with valid keypoints
-  - [ ] Test NaN interpolation
-  - [ ] Test all-NaN raises ValueError
+- [x] `TestModuleSetup` class
+  - [x] Test imports work
+  - [x] Test `__all__` contains expected exports
+  - [x] Test module docstring exists
+- [x] `TestEgocentricFrame` class
+  - [x] Test dataclass creation
+  - [x] Test `to_egocentric()` for heading=0 (identity rotation)
+  - [x] Test `to_egocentric()` for heading=π/2 (90° rotation)
+  - [x] Test `to_allocentric()` inverse
+  - [x] Test round-trip preserves coordinates
+- [x] `TestAllocentricToEgocentric` class
+  - [x] Test batch transform with multiple timepoints
+  - [x] Test broadcasting: 2D points → 3D output
+  - [x] Test shape validation error messages
+- [x] `TestComputeEgocentricBearing` class
+  - [x] Test bearing=0 when target is ahead
+  - [x] Test bearing=π/2 when target is left
+  - [x] Test bearing=-π/2 when target is right
+  - [x] Test angle wrapping near ±π
+- [x] `TestComputeEgocentricDistance` class
+  - [x] Test Euclidean distances
+  - [x] Test geodesic distances with Environment
+  - [x] Test dispatcher with invalid metric
+- [x] `TestHeadingFromVelocity` class
+  - [x] Test smooth trajectory
+  - [x] Test stationary periods get interpolated
+  - [x] Test warning and NaN return when all speeds low
+  - [x] Test `n_time < 2` raises ValueError
+- [x] `TestHeadingFromBodyOrientation` class
+  - [x] Test with valid keypoints
+  - [x] Test NaN interpolation
+  - [x] Test all-NaN raises ValueError
 
 ### M1.5: Integration and Documentation
 
-- [ ] Add exports to `src/neurospatial/__init__.py`
-  - [ ] Export: `EgocentricFrame`, `allocentric_to_egocentric`, `egocentric_to_allocentric`
-  - [ ] Export: `compute_egocentric_bearing`, `compute_egocentric_distance`
-  - [ ] Export: `heading_from_velocity`, `heading_from_body_orientation`
+- [x] Add exports to `src/neurospatial/__init__.py`
+  - [x] Export: `EgocentricFrame`, `allocentric_to_egocentric`, `egocentric_to_allocentric`
+  - [x] Export: `compute_egocentric_bearing`, `compute_egocentric_distance`
+  - [x] Export: `heading_from_velocity`, `heading_from_body_orientation`
 - [ ] Update `.claude/QUICKSTART.md` with egocentric transform examples
 - [ ] Update `.claude/API_REFERENCE.md` with `reference_frames` imports
 
@@ -192,7 +192,7 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Return `ObjectVectorMetrics`
 - [ ] Implement `object_vector_score()` function
   - [ ] Distance selectivity: `s_d = peak / mean`
-  - [ ] Direction selectivity: reuse `_mean_resultant_length` from `circular.py`
+  - [ ] Direction selectivity: reuse `_mean_resultant_length` from `metrics.circular`
   - [ ] Combined: `s_OV = ((s_d - 1) / (s_d* - 1)) * s_θ`
   - [ ] Document `max_distance_selectivity` parameter (default 10.0)
   - [ ] Validate `max_distance_selectivity > 1`
@@ -210,12 +210,13 @@ This task list breaks down the implementation plan into actionable tasks organiz
 - [ ] Implement `ObjectVectorFieldResult` frozen dataclass
   - [ ] Fields: `field`, `ego_env`, `occupancy`
 - [ ] Implement `compute_object_vector_field()` function
-  - [ ] Create egocentric polar environment via `from_egocentric_grid()`
+  - [ ] Create egocentric polar environment via `from_polar_egocentric()`
   - [ ] Compute distance and bearing to nearest object at each timepoint
   - [ ] Support geodesic distance when `allocentric_env` provided
-  - [ ] Map to egocentric bins
+  - [ ] Compute occupancy in egocentric polar space (time per bin)
+  - [ ] Bin spikes by egocentric position at spike time (interpolate)
+  - [ ] Normalize by occupancy, apply `min_occupancy_seconds` threshold
   - [ ] Support methods: "binned", "diffusion_kde"
-  - [ ] Apply `min_occupancy_seconds` threshold
   - [ ] Return `ObjectVectorFieldResult`
 
 **Success criteria**:
@@ -307,10 +308,12 @@ This task list breaks down the implementation plan into actionable tasks organiz
   - [ ] Method: `is_binocular()` - check if in binocular region
   - [ ] Validation in `__post_init__`
 - [ ] Implement `ViewshedResult` frozen dataclass
-  - [ ] Fields: `visible_bins`, `visible_boundary_segments`
+  - [ ] Fields: `visible_bins`, `visible_boundary_segments` (list of NDArrays)
   - [ ] Fields: `visible_cues`, `cue_distances`, `cue_bearings`
-  - [ ] Field: `occlusion_map`
+  - [ ] Field: `occlusion_map` (per-bin score [0,1]: fraction of rays unobstructed)
   - [ ] Properties: `n_visible_bins`, `visibility_fraction`, `n_visible_cues`
+  - [ ] Method: `filter_cues(cue_ids)` → visible IDs, distances, bearings
+  - [ ] Method: `visible_bin_centers(env)` → allocentric positions of visible bins
 - [ ] Implement `compute_viewshed()` function
   - [ ] Cast n_rays from observer position
   - [ ] Find intersection with boundary for each ray
