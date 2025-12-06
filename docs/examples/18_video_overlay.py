@@ -68,10 +68,10 @@ from pathlib import Path
 
 import numpy as np
 
-from neurospatial import Environment, PositionOverlay
-from neurospatial.animation import VideoOverlay, calibrate_video
+from neurospatial import Environment
+from neurospatial.animation import PositionOverlay, VideoOverlay, calibrate_video
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     VideoCalibration,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
@@ -215,7 +215,7 @@ print(f"Fields: {fields.shape}")
 # - `duration`: Video length in seconds
 
 # %%
-from neurospatial.animation._video_io import VideoReader
+from neurospatial.animation._video_io import VideoReader  # noqa: E402
 
 print("Example 1: Inspecting Video Metadata")
 print("=" * 50)
@@ -577,6 +577,7 @@ print("-" * 50)
 
 try:
     from IPython import get_ipython
+    from IPython.display import display
 
     if get_ipython() is not None:
         # Clear cache before rendering
@@ -610,7 +611,7 @@ try:
             fps=10,
         )
         print("Widget created - use slider to navigate")
-        display(widget)  # noqa: F821
+        display(widget)
     else:
         print("Not in Jupyter notebook environment")
 
@@ -635,7 +636,7 @@ except ImportError:
 # 3. **Clear Cache**: Always call `env.clear_cache()` before parallel rendering
 
 # %%
-from neurospatial.animation import subsample_frames
+from neurospatial.animation import subsample_frames  # noqa: E402
 
 print("Example 7: Performance Optimization")
 print("=" * 50)

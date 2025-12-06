@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.metrics import (
+from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_step_lengths,
     compute_turn_angles,

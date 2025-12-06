@@ -40,21 +40,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import (
-    Environment,
-    compute_place_field,
-    decode_position,
-    decoding_error,
-    median_decoding_error,
-)
+from neurospatial import Environment
 from neurospatial.decoding import (
     compute_shuffle_pvalue,
     confusion_matrix,
+    decode_position,
     decoding_correlation,
+    decoding_error,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    median_decoding_error,
     shuffle_time_bins,
 )
+from neurospatial.encoding.place import compute_place_field
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,

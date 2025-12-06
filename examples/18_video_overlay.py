@@ -68,10 +68,10 @@ from pathlib import Path
 
 import numpy as np
 
-from neurospatial import Environment, PositionOverlay
-from neurospatial.animation import VideoOverlay, calibrate_video
+from neurospatial import Environment
+from neurospatial.animation import PositionOverlay, VideoOverlay, calibrate_video
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     VideoCalibration,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
@@ -577,6 +577,7 @@ print("-" * 50)
 
 try:
     from IPython import get_ipython
+    from IPython.display import display
 
     if get_ipython() is not None:
         # Clear cache before rendering
@@ -610,7 +611,7 @@ try:
             fps=10,
         )
         print("Widget created - use slider to navigate")
-        display(widget)  # noqa: F821
+        display(widget)
     else:
         print("Not in Jupyter notebook environment")
 

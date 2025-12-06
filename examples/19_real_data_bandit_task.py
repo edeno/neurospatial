@@ -46,13 +46,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import (
-    Environment,
-    HeadDirectionOverlay,
-    PositionOverlay,
+from neurospatial import Environment
+from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
+from neurospatial.encoding.place import (
     compute_place_field,
-)
-from neurospatial.metrics import (
     detect_place_fields,
     field_centroid,
     field_size,

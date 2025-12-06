@@ -43,8 +43,8 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import Environment, regions_to_mask
-from neurospatial.segmentation import (
+from neurospatial import Environment
+from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     detect_laps,
     detect_region_crossings,
@@ -52,6 +52,7 @@ from neurospatial.segmentation import (
     segment_trials,
     trajectory_similarity,
 )
+from neurospatial.ops.binning import regions_to_mask
 
 # Set random seed for reproducibility
 np.random.seed(42)

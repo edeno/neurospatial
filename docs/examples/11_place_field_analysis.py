@@ -42,8 +42,9 @@ from shapely.geometry import box
 from shapely.ops import unary_union
 
 # Neurospatial imports
-from neurospatial import Environment, compute_place_field
-from neurospatial.metrics import (
+from neurospatial import Environment
+from neurospatial.encoding.place import (
+    compute_place_field,
     detect_place_fields,
     field_centroid,
     field_shift_distance,

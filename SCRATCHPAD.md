@@ -1,11 +1,57 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 11 IN PROGRESS - Update Documentation
+**Current Status**: Milestone 12 IN PROGRESS - Update Example Notebooks
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 37)
+
+**Starting Point**: Milestone 12 - Update Example Notebooks
+
+**Completed**: Import path updates for all notebooks
+
+**Work Done**:
+
+1. Updated import paths in all example notebooks:
+   - `examples/07_advanced_operations.ipynb` (alignment → ops.alignment, transforms → ops.transforms)
+   - `examples/08_spike_field_basics.ipynb` (spike_field → encoding.place, reward → behavior.reward)
+   - `examples/10_signal_processing_primitives.ipynb` (primitives → ops.graph)
+   - `examples/11_place_field_analysis.ipynb` (metrics → encoding.place)
+   - `examples/12_boundary_cell_analysis.ipynb` (metrics → encoding.border)
+   - `examples/13_trajectory_analysis.ipynb` (metrics → behavior.trajectory)
+   - `examples/14_behavioral_segmentation.ipynb` (segmentation → behavior.segmentation)
+   - `examples/17_animation_with_overlays.ipynb` (overlays → animation module)
+   - `examples/18_video_overlay.ipynb` (transforms → ops.transforms)
+   - `examples/19_real_data_bandit_task.ipynb` (metrics → encoding.place, overlays → animation)
+   - `examples/20_bayesian_decoding.ipynb` (decoding functions consolidated)
+   - `examples/22_spatial_view_cells.ipynb` (spatial_view_field → encoding.spatial_view)
+
+2. Synced all notebooks with their .py files using jupytext
+
+3. Copied updated .py files to docs/examples/ and synced corresponding notebooks
+
+4. Verified all imports work correctly via Python test script
+
+5. Ran test suite to verify changes don't break existing tests
+
+**Files Modified**:
+
+- 12 examples/*.py files (import paths updated)
+- 12 examples/*.ipynb files (synced via jupytext)
+- 12 docs/examples/*.py files (copied from examples/)
+- 12 docs/examples/*.ipynb files (synced via jupytext)
+- TASKS.md (marked 12.1, 12.2 tasks complete)
+
+**Remaining for M12**:
+
+- Verify notebooks execute without errors (task 12.3)
+
+**Next Task**: Continue Milestone 12 - Verify notebooks execute
+
+---
 
 ### 2025-12-06 (Session 36)
 

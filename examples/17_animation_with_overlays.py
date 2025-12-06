@@ -61,13 +61,13 @@ from pathlib import Path
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import (
+from neurospatial import Environment
+from neurospatial.animation import (
     BodypartOverlay,
-    Environment,
     HeadDirectionOverlay,
     PositionOverlay,
+    Skeleton,
 )
-from neurospatial.animation import Skeleton
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 
 # Set random seed for reproducibility

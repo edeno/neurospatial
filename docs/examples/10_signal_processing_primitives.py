@@ -45,8 +45,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.primitives import convolve, neighbor_reduce
 from neurospatial.encoding.place import compute_place_field
+from neurospatial.ops.graph import convolve, neighbor_reduce
 
 # Random seed for reproducibility
 rng = np.random.default_rng(42)

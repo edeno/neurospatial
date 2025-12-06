@@ -40,21 +40,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import (
-    Environment,
-    compute_place_field,
-    decode_position,
-    decoding_error,
-    median_decoding_error,
-)
+from neurospatial import Environment
 from neurospatial.decoding import (
     compute_shuffle_pvalue,
     confusion_matrix,
+    decode_position,
     decoding_correlation,
+    decoding_error,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
+    median_decoding_error,
     shuffle_time_bins,
 )
+from neurospatial.encoding.place import compute_place_field
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -181,7 +179,7 @@ for idx, ax in enumerate(axes):
         spike_times_list[cell_idx],
         times,
         positions,
-        method="diffusion_kde",
+        smoothing_method="diffusion_kde",
         bandwidth=5.0,
     )
 
@@ -220,7 +218,7 @@ encoding_models = np.array(
             spike_times_list[i],
             times,
             positions,
-            method="diffusion_kde",
+            smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
         for i in range(n_neurons)

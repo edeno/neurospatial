@@ -61,13 +61,13 @@ from pathlib import Path
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import (
+from neurospatial import Environment
+from neurospatial.animation import (
     BodypartOverlay,
-    Environment,
     HeadDirectionOverlay,
     PositionOverlay,
+    Skeleton,
 )
-from neurospatial.animation import Skeleton
 from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 
 # Set random seed for reproducibility
@@ -157,6 +157,7 @@ skeleton = Skeleton(
     nodes=("nose", "body", "tail"),
     edges=(("tail", "body"), ("body", "nose")),
     edge_color="white",
+    edge_width=2.0,
 )
 
 print("Pose: 3 keypoints (nose, body, tail)")
@@ -186,6 +187,11 @@ for i in range(n_frames):
 
 fields = np.array(fields)
 print(f"Fields: {fields.shape} (frames x bins)")
+
+# Create frame_times (required for animate_fields)
+# Using 10 Hz frame rate (100ms per frame)
+frame_times = np.arange(n_frames) / 10.0  # seconds
+print(f"Frame times: {frame_times[0]:.2f}s to {frame_times[-1]:.2f}s (10 Hz)")
 
 # %% [markdown]
 # ## Example 1: Position Overlay with Trail
@@ -219,6 +225,7 @@ try:
     viewer = env.animate_fields(
         fields,
         overlays=[position_overlay],
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Position Overlay with Trail",
@@ -269,6 +276,7 @@ try:
     viewer = env.animate_fields(
         fields,
         overlays=[bodypart_overlay],
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Pose Tracking with Skeleton",
@@ -315,6 +323,7 @@ try:
     viewer = env.animate_fields(
         fields,
         overlays=[position_overlay, head_direction_overlay],
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Position + Head Direction",
@@ -367,6 +376,7 @@ try:
     viewer = env.animate_fields(
         fields,
         overlays=[animal1_overlay, animal2_overlay],  # Multiple overlays
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Multi-Animal Tracking",
@@ -407,6 +417,7 @@ try:
         overlays=[position_overlay],
         show_regions=True,  # Show all regions
         region_alpha=0.3,  # 30% transparent
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Position + Reward Region",
@@ -541,6 +552,7 @@ try:
         fields,
         overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
         show_regions=True,
+        frame_times=frame_times,
         backend="napari",
         fps=10,
         title="Napari: All Overlays",
@@ -563,6 +575,7 @@ if check_ffmpeg_available():
         fields,
         overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
         show_regions=True,
+        frame_times=frame_times,
         backend="video",
         save_path=output_dir / "17_all_overlays.mp4",
         fps=10,
@@ -582,6 +595,7 @@ html_path = env.animate_fields(
     fields,
     overlays=[position_overlay],  # Only position overlay
     show_regions=True,
+    frame_times=frame_times,
     backend="html",
     save_path=output_dir / "17_position_only.html",
     fps=10,
@@ -602,6 +616,7 @@ try:
             fields,
             overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
             show_regions=True,
+            frame_times=frame_times,
             backend="widget",
             fps=10,
         )

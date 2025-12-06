@@ -47,17 +47,20 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from neurospatial import (
-    Environment,
+from neurospatial import Environment
+from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding.spatial_view import (
     FieldOfView,
-    SpatialViewCellModel,
-    compute_place_field,
     compute_spatial_view_field,
     compute_viewed_location,
-    heading_from_velocity,
     spatial_view_cell_metrics,
 )
-from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+from neurospatial.ops.egocentric import heading_from_velocity
+from neurospatial.simulation import (
+    PlaceCellModel,
+    SpatialViewCellModel,
+    generate_poisson_spikes,
+)
 
 # Set random seed for reproducibility
 rng = np.random.default_rng(42)

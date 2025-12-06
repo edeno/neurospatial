@@ -37,7 +37,7 @@ import numpy as np
 from matplotlib.patches import Patch
 
 from neurospatial import Environment
-from neurospatial.metrics import border_score
+from neurospatial.encoding.border import border_score
 from neurospatial.simulation import simulate_trajectory_ou
 
 # Set random seed for reproducibility

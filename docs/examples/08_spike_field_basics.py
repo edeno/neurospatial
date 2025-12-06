@@ -39,13 +39,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import (
-    Environment,
-    compute_place_field,
-    goal_reward_field,
-    region_reward_field,
-    spikes_to_field,
-)
+from neurospatial import Environment
+from neurospatial.behavior.reward import goal_reward_field, region_reward_field
+from neurospatial.encoding.place import compute_place_field, spikes_to_field
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -295,7 +291,7 @@ place_field = compute_place_field(
     spike_times,
     times,
     positions,
-    method="diffusion_kde",  # Boundary-aware smoothing (recommended)
+    smoothing_method="diffusion_kde",  # Boundary-aware smoothing (recommended)
     bandwidth=8.0,  # Smoothing bandwidth in cm
     min_occupancy_seconds=0.5,  # Exclude bins with <0.5s occupancy
 )

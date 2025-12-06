@@ -448,18 +448,18 @@ uv run pytest --doctest-modules src/neurospatial/
 
 #### 12.1: Key Notebooks Requiring Updates
 
-- [ ] Update `examples/08_spike_field_basics.ipynb` (spike_field → encoding.place)
-- [ ] Update `examples/11_place_field_analysis.ipynb` (metrics.place_fields → encoding.place)
-- [ ] Update `examples/12_boundary_cell_analysis.ipynb` (metrics.boundary_cells → encoding.border)
-- [ ] Update `examples/13_trajectory_analysis.ipynb` (metrics.trajectory → behavior.trajectory)
-- [ ] Update `examples/14_behavioral_segmentation.ipynb` (segmentation → behavior.segmentation)
-- [ ] Update `examples/20_bayesian_decoding.ipynb` (verify decoding exports)
-- [ ] Update `examples/22_spatial_view_cells.ipynb` (spatial_view_field → encoding.spatial_view)
+- [x] Update `examples/08_spike_field_basics.ipynb` (spike_field → encoding.place)
+- [x] Update `examples/11_place_field_analysis.ipynb` (metrics.place_fields → encoding.place)
+- [x] Update `examples/12_boundary_cell_analysis.ipynb` (metrics.boundary_cells → encoding.border)
+- [x] Update `examples/13_trajectory_analysis.ipynb` (metrics.trajectory → behavior.trajectory)
+- [x] Update `examples/14_behavioral_segmentation.ipynb` (segmentation → behavior.segmentation)
+- [x] Update `examples/20_bayesian_decoding.ipynb` (verify decoding exports)
+- [x] Update `examples/22_spatial_view_cells.ipynb` (spatial_view_field → encoding.spatial_view)
 
 #### 12.2: Update Remaining Notebooks
 
-- [ ] Grep all notebooks for old import paths and update
-- [ ] Update corresponding `docs/examples/` notebooks (mirrors)
+- [x] Grep all notebooks for old import paths and update
+- [x] Update corresponding `docs/examples/` notebooks (mirrors)
 
 #### 12.3: Verify Notebooks Execute
 
@@ -625,6 +625,6 @@ If circular imports occur:
 | M9: Top-Level **init**.py | Complete | Sparse exports (5 core classes), circular import fixes, test updates |
 | M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
 | M11: Update Documentation | Complete | All .claude/ docs, docstring import examples updated |
-| M12: Update Notebooks | Not Started | |
+| M12: Update Notebooks | In Progress | Import paths updated, execution verification pending |
 | M13: Import Tests | Not Started | |
 | M14: Final Verification | Not Started | |

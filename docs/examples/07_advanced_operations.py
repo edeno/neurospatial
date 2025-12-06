@@ -52,11 +52,8 @@ import numpy as np
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
-from neurospatial.alignment import (
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
-from neurospatial.transforms import Affine2D, scale_2d, translate
+from neurospatial.ops.alignment import get_2d_rotation_matrix, map_probabilities
+from neurospatial.ops.transforms import Affine2D, scale_2d, translate
 
 np.random.seed(42)
 plt.rcParams["figure.figsize"] = (14, 10)
