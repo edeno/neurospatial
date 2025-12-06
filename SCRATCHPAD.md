@@ -1,11 +1,48 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - transforms.py → ops/transforms.py DONE
+**Current Status**: Milestone 2 in progress - alignment.py → ops/alignment.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 9)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `alignment.py` → `ops/alignment.py`
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_alignment.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `alignment.py` → `ops/alignment.py` using `git mv` to preserve history
+4. Updated module docstring in alignment.py to document new import paths
+5. Added `__all__` export list to alignment.py with 4 exports:
+   - `ProbabilityMappingParams`, `get_2d_rotation_matrix`, `apply_similarity_transform`, `map_probabilities`
+6. Updated `ops/__init__.py` to export all alignment functions (4 new exports)
+7. Created backward-compatibility shim at `src/neurospatial/alignment.py`
+8. Updated internal imports (3 files):
+   - `src/neurospatial/__init__.py`
+   - `tests/test_alignment.py`
+   - `tests/test_properties.py`
+9. Updated docstring examples in alignment.py (3 locations)
+10. All tests pass:
+    - `tests/ops/test_ops_alignment.py`: 20 passed
+    - `tests/test_alignment.py`: 17 passed
+    - Total alignment-related: 37 passed
+11. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/alignment.py` (moved from alignment.py)
+- `src/neurospatial/ops/__init__.py` (added 4 alignment exports)
+- `src/neurospatial/alignment.py` (new backward-compat shim)
+- `src/neurospatial/__init__.py` (updated import path)
+- `tests/ops/test_ops_alignment.py` (new file)
+- `tests/test_alignment.py` (updated imports)
+- `tests/test_properties.py` (updated import)
+
+**Next Task**: Move `reference_frames.py` → `ops/egocentric.py`
 
 ### 2025-12-05 (Session 8)
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from neurospatial.alignment import (
+from neurospatial.ops.alignment import (
     apply_similarity_transform,
     get_2d_rotation_matrix,
     map_probabilities,

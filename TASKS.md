@@ -56,7 +56,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [x] Move `differential.py` → `ops/calculus.py`
 - [x] Move `transforms.py` → `ops/transforms.py` (then merge calibration.py into it)
 - [x] Merge `calibration.py` into `ops/transforms.py`
-- [ ] Move `alignment.py` → `ops/alignment.py`
+- [x] Move `alignment.py` → `ops/alignment.py`
 - [ ] Move `reference_frames.py` → `ops/egocentric.py`
 - [ ] Move `visibility.py` → `ops/visibility.py`
 - [ ] Move `basis.py` → `ops/basis.py`
@@ -85,7 +85,7 @@ grep -r "from neurospatial.field_ops import" src/ tests/
 - [ ] Update imports for `differential` → `ops.calculus`
 - [x] Update imports for `transforms` → `ops.transforms`
 - [x] Update imports for `calibration` → `ops.transforms`
-- [ ] Update imports for `alignment` → `ops.alignment`
+- [x] Update imports for `alignment` → `ops.alignment`
 - [ ] Update imports for `reference_frames` → `ops.egocentric`
 - [ ] Update imports for `visibility` → `ops.visibility`
 - [ ] Update imports for `basis` → `ops.basis`

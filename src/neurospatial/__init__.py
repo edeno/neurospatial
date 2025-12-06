@@ -194,10 +194,6 @@ Create environment from polygon::
 
 import logging
 
-from neurospatial.alignment import (
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
 from neurospatial.animation.overlays import (
     BodypartOverlay,
     EventOverlay,
@@ -287,6 +283,10 @@ from neurospatial.metrics import (
 from neurospatial.object_vector_field import (
     ObjectVectorFieldResult,
     compute_object_vector_field,
+)
+from neurospatial.ops.alignment import (
+    get_2d_rotation_matrix,
+    map_probabilities,
 )
 from neurospatial.ops.binning import (
     TieBreakStrategy,

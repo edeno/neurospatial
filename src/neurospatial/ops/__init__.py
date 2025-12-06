@@ -20,6 +20,13 @@ basis : GLM spatial basis functions
 """
 
 # Binning operations
+# Alignment operations
+from neurospatial.ops.alignment import (
+    ProbabilityMappingParams,
+    apply_similarity_transform,
+    get_2d_rotation_matrix,
+    map_probabilities,
+)
 from neurospatial.ops.binning import (
     TieBreakStrategy,
     clear_kdtree_cache,
@@ -91,6 +98,11 @@ from neurospatial.ops.transforms import (
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
+    # Alignment
+    "ProbabilityMappingParams",
+    "apply_similarity_transform",
+    "get_2d_rotation_matrix",
+    "map_probabilities",
     # Binning
     "TieBreakStrategy",
     "clear_kdtree_cache",
