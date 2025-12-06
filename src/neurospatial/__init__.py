@@ -128,9 +128,10 @@ Create environment from position data::
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> positions = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0, units='cm')
-    >>> env.n_bins
-    400
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env.units = 'cm'
+    >>> env.n_bins > 0  # Number of bins depends on data coverage
+    True
 
 Map trajectory to bins::
 

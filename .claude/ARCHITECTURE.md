@@ -2,13 +2,35 @@
 
 **neurospatial** is a Python library for discretizing continuous N-dimensional spatial environments into bins/nodes with connectivity graphs.
 
+**Updated** - Domain-centric package reorganization.
+
 ---
 
-## Three-Layer Design
+## Domain-Centric Architecture
 
-The codebase follows a three-layer architecture:
+The codebase follows a tiered, domain-centric architecture:
 
-### 1. Layout Engines (`src/neurospatial/layout/`)
+### Dependency Tiers
+
+```text
+Tier 1 (Foundation):  layout/, regions/, stats/
+                           ↓
+Tier 2 (Core):        environment/
+                           ↓
+Tier 3 (Primitives):  ops/
+                           ↓
+Tier 4 (Domains):     encoding/, decoding/, behavior/, events/
+                           ↓
+Tier 5 (Leaf Nodes):  animation/, simulation/, io/
+```
+
+**Key principle**: Lower tiers never import from higher tiers.
+
+---
+
+## Module Overview
+
+### layout/ - Layout Engines
 
 Protocol-based design with `LayoutEngine` interface. Available engines:
 
@@ -28,22 +50,36 @@ Protocol-based design with `LayoutEngine` interface. Available engines:
 - Graph has mandatory node/edge attributes (see [PATTERNS.md - Graph Metadata](PATTERNS.md#graph-metadata-requirements))
 - Factory pattern via `create_layout()` in [layout/factories.py](../src/neurospatial/layout/factories.py)
 
-### 2. Environment (`src/neurospatial/environment/`)
+### regions/ - Spatial Regions
+
+- **Immutable** `Region` dataclass (points or polygons)
+- `Regions` container with dict-like interface
+- JSON serialization with versioned schema
+
+### stats/ - Statistical Methods
+
+- `circular.py` - Circular statistics, basis functions for GLMs
+- `shuffle.py` - Shuffle controls for null distributions
+- `surrogates.py` - Surrogate data generation
+
+### Tier 2: Core
+
+### environment/ - Main User-Facing Class
 
 Main user-facing class wrapping a `LayoutEngine`. Uses **mixin pattern** for organization:
 
-| Mixin Module | Responsibility | Lines |
-|--------------|----------------|-------|
-| `core.py` | Dataclass definition, state, properties | 1,023 |
-| `factories.py` | Factory classmethods (`from_samples`, etc.) | 630 |
-| `queries.py` | Spatial queries (`bin_at`, `neighbors`, etc.) | 897 |
-| `trajectory.py` | Occupancy, bin sequences, transitions | 1,222 |
-| `transforms.py` | Rebin, subset operations | 634 |
-| `fields.py` | Kernel smoothing, interpolation | 564 |
-| `metrics.py` | Boundary bins, linearization | 469 |
-| `regions.py` | Region operations | 398 |
-| `serialization.py` | Save/load methods | 315 |
-| `visualization.py` | Plotting methods | 211 |
+| Mixin Module | Responsibility |
+|--------------|----------------|
+| `core.py` | Dataclass definition, state, properties |
+| `factories.py` | Factory classmethods (`from_samples`, etc.) |
+| `queries.py` | Spatial queries (`bin_at`, `neighbors`, etc.) |
+| `trajectory.py` | Occupancy, bin sequences, transitions |
+| `transforms.py` | Rebin, subset operations |
+| `fields.py` | Kernel smoothing, interpolation |
+| `metrics.py` | Boundary bins, linearization |
+| `regions.py` | Region operations |
+| `serialization.py` | Save/load methods |
+| `visualization.py` | Plotting methods |
 
 **Mixin pattern constraints:**
 
@@ -53,11 +89,85 @@ Main user-facing class wrapping a `LayoutEngine`. Uses **mixin pattern** for org
 
 **See [PATTERNS.md - Mixin Pattern](PATTERNS.md#mixin-pattern-for-environment) for details.**
 
-### 3. Regions (`src/neurospatial/regions/`)
+### Tier 3: Primitives
 
-- **Immutable** `Region` dataclass (points or polygons)
-- `Regions` container with dict-like interface
-- JSON serialization with versioned schema
+### ops/ - Low-Level Operations
+
+Power-user utilities for spatial operations:
+
+| Module | Purpose |
+|--------|---------|
+| `binning.py` | Point-to-bin mapping (`map_points_to_bins`) |
+| `distance.py` | Distance fields, pairwise distances |
+| `egocentric.py` | Allocentric↔egocentric transforms, heading |
+| `visibility.py` | Viewshed, gaze, line-of-sight |
+| `transforms.py` | Affine transforms, calibration |
+| `smoothing.py` | Diffusion kernels, apply kernel |
+| `normalize.py` | Field normalization, clamping |
+| `graph.py` | Graph convolution, neighbor reduce |
+| `calculus.py` | Spatial gradient, divergence |
+| `alignment.py` | Cross-environment alignment |
+| `basis.py` | Spatial basis functions for GLMs |
+
+### Tier 4: Domains
+
+### encoding/ - Neural Encoding
+
+How neurons represent space:
+
+| Module | Purpose |
+|--------|---------|
+| `place.py` | Place field computation and metrics |
+| `grid.py` | Grid cell analysis |
+| `head_direction.py` | Head direction cell analysis |
+| `border.py` | Boundary/border cell analysis |
+| `object_vector.py` | Object-vector cell fields and metrics |
+| `spatial_view.py` | Spatial view cell fields and metrics |
+| `phase_precession.py` | Theta phase precession |
+| `population.py` | Population-level metrics |
+
+### decoding/ - Neural Decoding
+
+Read out from population activity:
+
+- Bayesian decoding, likelihood, posterior
+- Trajectory analysis (isotonic, linear, Radon)
+- Quality metrics, shuffle tests
+
+### behavior/ - Behavioral Analysis
+
+| Module | Purpose |
+|--------|---------|
+| `trajectory.py` | Step lengths, turn angles, curvature |
+| `segmentation.py` | Trial, lap, crossing detection |
+| `navigation.py` | Path efficiency, goal-directed metrics |
+| `decisions.py` | Decision analysis, VTE detection |
+| `reward.py` | Reward field computation |
+
+### events/ - Peri-Event Analysis
+
+- PSTH computation and plotting
+- GLM regressors (temporal and spatial)
+- Interval utilities
+
+### Tier 5: Leaf Nodes
+
+### animation/ - Visualization
+
+- Overlay system (Position, Bodypart, HeadDirection, Event, Video)
+- Napari viewer integration
+- Video export with parallel rendering
+
+### simulation/ - Neural and Trajectory Simulation
+
+- Cell models (ObjectVectorCellModel, SpatialViewCellModel)
+- Poisson spike generation
+- Trajectory simulation
+
+### io/ - File I/O
+
+- `files.py` - Environment serialization
+- `nwb/` - NWB integration (optional)
 
 ---
 
@@ -146,15 +256,21 @@ else:
 
 ## Testing Structure
 
-Tests mirror source structure:
+Tests mirror the new source structure:
 
-- `tests/test_environment.py` - Core `Environment` tests
-- `tests/test_composite.py` - `CompositeEnvironment` tests
-- `tests/test_alignment.py` - Alignment/transformation tests
-- `tests/layout/` - Layout engine-specific tests
-- `tests/regions/` - Region functionality tests
-- `tests/nwb/` - NWB integration tests (requires nwb-full extra)
-- `tests/conftest.py` - Shared fixtures
+| Test Directory | What It Tests |
+|----------------|---------------|
+| `tests/test_environment.py` | Core `Environment` tests |
+| `tests/test_composite.py` | `CompositeEnvironment` tests |
+| `tests/test_sparse_init_exports.py` | Sparse top-level exports |
+| `tests/layout/` | Layout engine-specific tests |
+| `tests/regions/` | Region functionality tests |
+| `tests/ops/` | Operations module tests |
+| `tests/encoding/` | Neural encoding module tests |
+| `tests/behavior/` | Behavioral analysis tests |
+| `tests/stats/` | Statistical methods tests |
+| `tests/nwb/` | NWB integration tests (requires nwb-full extra) |
+| `tests/conftest.py` | Shared fixtures |
 
 **NWB fixtures** use `pytest.importorskip()` for graceful skipping when dependencies not installed.
 

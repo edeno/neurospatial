@@ -2,6 +2,8 @@
 
 Essential patterns for daily use. Copy-paste and modify for your needs.
 
+**Updated** - Domain-centric package reorganization.
+
 ---
 
 ## Your First Environment
@@ -99,7 +101,7 @@ nd_pos = env.linear_to_nd(linear_pos)
 **Place fields:**
 
 ```python
-from neurospatial import compute_place_field
+from neurospatial.encoding.place import compute_place_field
 
 # Compute place field for one neuron
 firing_rate = compute_place_field(
@@ -113,7 +115,7 @@ firing_rate = compute_place_field(
 **Bayesian decoding:**
 
 ```python
-from neurospatial import decode_position, decoding_error
+from neurospatial.decoding import decode_position, decoding_error
 
 # Build encoding models (one per neuron)
 encoding_models = np.array([
@@ -143,7 +145,7 @@ result.plot(show_map=True, colorbar=True)
 **Trajectory analysis:**
 
 ```python
-from neurospatial.segmentation import segment_trials
+from neurospatial.behavior.segmentation import segment_trials
 
 # Segment trials from trajectory
 trials = segment_trials(
@@ -164,7 +166,7 @@ Analyze path efficiency, goal-directed behavior, and vicarious trial and error (
 **Path efficiency:**
 
 ```python
-from neurospatial.metrics import compute_path_efficiency
+from neurospatial.behavior.navigation import compute_path_efficiency
 
 # Compute path efficiency for a trajectory
 result = compute_path_efficiency(
@@ -187,7 +189,7 @@ if result.is_efficient(threshold=0.8):
 **Goal-directed metrics:**
 
 ```python
-from neurospatial.metrics import compute_goal_directed_metrics, goal_bias
+from neurospatial.behavior.navigation import compute_goal_directed_metrics, goal_bias
 
 # Compute full goal-directed analysis
 result = compute_goal_directed_metrics(env, positions, times, goal_position)
@@ -208,7 +210,7 @@ bias = goal_bias(positions, times, goal_position, min_speed=5.0)
 **VTE (Vicarious Trial and Error) detection:**
 
 ```python
-from neurospatial.metrics import compute_vte_session, compute_vte_trial
+from neurospatial.behavior.decisions import compute_vte_session, compute_vte_trial
 
 # Analyze VTE behavior at decision points across a session
 result = compute_vte_session(
@@ -242,7 +244,7 @@ print(f"Head sweep: {single_result.head_sweep_magnitude:.2f} rad")
 **Decision point analysis:**
 
 ```python
-from neurospatial.metrics import (
+from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     compute_pre_decision_metrics,
     geodesic_voronoi_labels,
@@ -277,7 +279,7 @@ labels = geodesic_voronoi_labels(env, goal_bins)
 Transform between allocentric (world-centered) and egocentric (animal-centered) coordinates:
 
 ```python
-from neurospatial import (
+from neurospatial.ops.egocentric import (
     allocentric_to_egocentric,
     egocentric_to_allocentric,
     compute_egocentric_bearing,
@@ -347,7 +349,7 @@ Analyze cells that encode distance and direction to objects in egocentric coordi
 **Compute object-vector field:**
 
 ```python
-from neurospatial import compute_object_vector_field
+from neurospatial.encoding.object_vector import compute_object_vector_field
 
 # Define object positions in allocentric (world) coordinates
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
@@ -380,7 +382,7 @@ print(f"Preferred: {preferred_distance:.1f} cm at {np.degrees(preferred_directio
 **Classify object-vector cells:**
 
 ```python
-from neurospatial.metrics import (
+from neurospatial.encoding.object_vector import (
     compute_object_vector_tuning,
     is_object_vector_cell,
     plot_object_vector_tuning,
@@ -460,7 +462,7 @@ Analyze cells that fire when the animal is *looking at* a specific location (not
 **Compute spatial view field:**
 
 ```python
-from neurospatial import compute_spatial_view_field
+from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
 # Compute view field (binned by *viewed location*, not position)
 result = compute_spatial_view_field(
@@ -479,7 +481,7 @@ view_field = result.field          # Firing rate by viewed location
 view_occupancy = result.view_occupancy  # Time viewing each bin
 
 # Compare to place field (binned by position)
-from neurospatial import compute_place_field
+from neurospatial.encoding.place import compute_place_field
 place_field = compute_place_field(env, spike_times, times, positions)
 
 # For spatial view cells: view_field differs from place_field
@@ -488,7 +490,7 @@ place_field = compute_place_field(env, spike_times, times, positions)
 **Classify spatial view cells:**
 
 ```python
-from neurospatial import (
+from neurospatial.encoding.spatial_view import (
     spatial_view_cell_metrics,
     is_spatial_view_cell,
     SpatialViewMetrics,
@@ -521,8 +523,7 @@ if is_spatial_view_cell(env, spike_times, times, positions, headings):
 **Simulate spatial view cells:**
 
 ```python
-from neurospatial import SpatialViewCellModel
-from neurospatial.simulation import generate_poisson_spikes
+from neurospatial.simulation import SpatialViewCellModel, generate_poisson_spikes
 
 # Create model that fires when looking at specific location
 svc = SpatialViewCellModel(
@@ -544,7 +545,7 @@ spike_times = generate_poisson_spikes(rates, times, seed=42)
 **Visibility and gaze analysis:**
 
 ```python
-from neurospatial import (
+from neurospatial.ops.visibility import (
     compute_viewed_location,
     compute_viewshed,
     FieldOfView,
@@ -604,7 +605,7 @@ env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed
 **Add trajectory overlays:**
 
 ```python
-from neurospatial import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
+from neurospatial.animation import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
@@ -666,7 +667,8 @@ env.regions.update_region("goal", point=(55.0, 55.0))  # No warning
 Create maze-aware basis functions that respect walls and barriers for spatial regression:
 
 ```python
-from neurospatial import Environment, geodesic_rbf_basis, spatial_basis
+from neurospatial import Environment
+from neurospatial.ops.basis import geodesic_rbf_basis, spatial_basis
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.0)
@@ -709,7 +711,7 @@ env.plot_field(place_field, title="Fitted Place Field")
 For circular predictors (head direction, theta phase, running direction):
 
 ```python
-from neurospatial.metrics import (
+from neurospatial.stats.circular import (
     circular_basis,
     circular_basis_metrics,
     plot_circular_basis_tuning,
@@ -738,7 +740,7 @@ amplitude, preferred_direction, p_value = circular_basis_metrics(
 plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 ```
 
-**Related functions:**
+**Related functions:** (from `neurospatial.encoding` and `neurospatial.stats.circular`)
 
 - `head_direction_metrics()`: Complete head direction cell analysis
 - `phase_precession()`: Detect theta phase precession
@@ -749,7 +751,7 @@ plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 **Peri-event time histogram (PSTH):**
 
 ```python
-from neurospatial import peri_event_histogram, plot_peri_event_histogram
+from neurospatial.events import peri_event_histogram, plot_peri_event_histogram
 
 # Compute PSTH around reward events
 result = peri_event_histogram(
@@ -770,7 +772,7 @@ plot_peri_event_histogram(result, show_sem=True, as_rate=True)
 **Population PSTH across multiple neurons:**
 
 ```python
-from neurospatial import population_peri_event_histogram
+from neurospatial.events import population_peri_event_histogram
 
 # Analyze multiple neurons
 spike_trains = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
@@ -784,7 +786,7 @@ print(f"Population mean shape: {result.mean_histogram.shape}")
 **GLM regressors from events:**
 
 ```python
-from neurospatial import time_to_nearest_event, event_indicator, event_count_in_window
+from neurospatial.events import time_to_nearest_event, event_indicator, event_count_in_window
 
 # Time to nearest event (for peri-event time covariate)
 peri_event_time = time_to_nearest_event(
@@ -807,7 +809,7 @@ n_rewards = event_count_in_window(
 **Spatial distance regressors:**
 
 ```python
-from neurospatial import distance_to_reward, distance_to_boundary
+from neurospatial.events import distance_to_reward, distance_to_boundary
 
 # Distance to reward location (requires Environment)
 dist_to_reward = distance_to_reward(
@@ -838,7 +840,7 @@ X = np.column_stack([
 **Add spatial positions to events:**
 
 ```python
-from neurospatial import add_positions
+from neurospatial.events import add_positions
 import pandas as pd
 
 # Create events DataFrame (must have 'timestamp' column)
@@ -855,7 +857,7 @@ print(events_with_pos.columns)  # ['timestamp', 'label', 'x', 'y']
 **Interval utilities:**
 
 ```python
-from neurospatial import intervals_to_events, events_to_intervals, filter_by_intervals
+from neurospatial.events import intervals_to_events, events_to_intervals, filter_by_intervals
 
 # Convert intervals to point events
 intervals = pd.DataFrame({"start_time": [0, 10], "stop_time": [5, 15]})
@@ -869,11 +871,11 @@ valid_events = filter_by_intervals(
 
 ### NWB Integration (Optional)
 
-Requires: `pip install neurospatial[nwb-full]`
+Requires: `uv add neurospatial[nwb-full]`
 
 ```python
 from pynwb import NWBHDF5IO
-from neurospatial.nwb import (
+from neurospatial.io.nwb import (
     read_position, environment_from_position,
     write_place_field, write_environment,
 )

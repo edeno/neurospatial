@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-12-05 (v0.3.0 - Added egocentric frames, object-vector cells, spatial view cells)
+**Last Updated**: 2025-12-06 (Package reorganization with domain-centric structure)
 
 ---
 
@@ -101,7 +101,7 @@ neighbors = env.neighbors(bin_idx)
 ### 2. Compute Place Fields
 
 ```python
-from neurospatial import compute_place_field
+from neurospatial.encoding.place import compute_place_field
 
 # Compute place field for one neuron
 firing_rate = compute_place_field(
@@ -136,7 +136,7 @@ env.animate_fields(
 ### 4. Add Trajectory Overlays
 
 ```python
-from neurospatial import PositionOverlay
+from neurospatial.animation import PositionOverlay
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
@@ -153,7 +153,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
 ### 5. Compute Peri-Event Histogram (PSTH)
 
 ```python
-from neurospatial import peri_event_histogram
+from neurospatial.events import peri_event_histogram
 
 # Compute PSTH around reward events
 result = peri_event_histogram(
@@ -185,7 +185,7 @@ loaded_env = Environment.from_file("my_environment")
 ### 7. Compute Egocentric Bearing and Distance
 
 ```python
-from neurospatial import (
+from neurospatial.ops.egocentric import (
     heading_from_velocity,
     compute_egocentric_bearing,
     compute_egocentric_distance,
@@ -209,7 +209,7 @@ distances = compute_egocentric_distance(
 ### 8. Compute Object-Vector Field
 
 ```python
-from neurospatial import compute_object_vector_field
+from neurospatial.encoding.object_vector import compute_object_vector_field
 
 # Compute firing field in egocentric polar coordinates
 result = compute_object_vector_field(
@@ -229,7 +229,7 @@ result = compute_object_vector_field(
 ### 9. Compute Spatial View Field
 
 ```python
-from neurospatial import compute_spatial_view_field
+from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
 # Compute firing field indexed by VIEWED location (not animal position)
 result = compute_spatial_view_field(
@@ -369,27 +369,43 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
 
 ## 🏗️ Architecture Overview
 
-**neurospatial** uses a three-layer architecture:
+**neurospatial** uses a domain-centric architecture with clear dependency tiers:
 
-1. **Layout Engines** (`src/neurospatial/layout/`)
-   - Protocol-based design with `LayoutEngine` interface
-   - Available engines: RegularGrid, Hexagonal, Graph (1D), Masked, ImageMask, ShapelyPolygon, TriangularMesh
-   - All engines produce: `bin_centers`, `connectivity` graph, `dimension_ranges`
+### Tier 1 - Foundation (Zero internal deps)
 
-2. **Environment** (`src/neurospatial/environment/`)
-   - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
-   - Mixins: core, factories, queries, trajectory, transforms, fields, metrics, regions, serialization, visualization
-   - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`, `from_polar_egocentric()`
+- **`layout/`** - Layout engines: RegularGrid, Hexagonal, Graph (1D), Masked, ImageMask, ShapelyPolygon, TriangularMesh
+- **`regions/`** - Immutable `Region` dataclass, `Regions` container with dict-like interface
+- **`stats/`** - Statistical methods: circular statistics, shuffle controls, surrogates
 
-3. **Regions** (`src/neurospatial/regions/`)
-   - Immutable `Region` dataclass (points or polygons)
-   - `Regions` container with dict-like interface
-   - JSON serialization with versioned schema
+### Tier 2 - Core
 
-4. **Cell Type Modules**
-   - **Reference Frames** (`reference_frames.py`): Allocentric↔egocentric transforms, heading computation
-   - **Object-Vector Cells** (`object_vector_field.py`, `metrics/object_vector_cells.py`): Simulation, tuning analysis
-   - **Spatial View Cells** (`spatial_view_field.py`, `visibility.py`, `metrics/spatial_view_cells.py`): Gaze, visibility, view fields
+- **`environment/`** - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
+  - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`, `from_polar_egocentric()`
+
+### Tier 3 - Primitives
+
+- **`ops/`** - Low-level operations (power users)
+  - `binning.py` - Point-to-bin mapping (`map_points_to_bins`)
+  - `distance.py` - Distance fields and pairwise distances
+  - `egocentric.py` - Allocentric↔egocentric transforms, heading computation
+  - `visibility.py` - Viewshed, gaze, line-of-sight
+  - `transforms.py`, `smoothing.py`, `graph.py`, `calculus.py`, `basis.py`
+
+### Tier 4 - Domains
+
+- **`encoding/`** - Neural encoding (how neurons represent space)
+  - `place.py`, `grid.py`, `head_direction.py`, `border.py`
+  - `object_vector.py`, `spatial_view.py`, `phase_precession.py`, `population.py`
+- **`decoding/`** - Neural decoding (read out from population)
+- **`behavior/`** - Behavioral analysis
+  - `trajectory.py`, `segmentation.py`, `navigation.py`, `decisions.py`, `reward.py`
+- **`events/`** - Peri-event analysis, GLM regressors
+
+### Tier 5 - Leaf Nodes
+
+- **`animation/`** - Napari viewer, video export, overlays
+- **`simulation/`** - Neural and trajectory simulation
+- **`io/`** - File I/O, NWB integration
 
 **Need architecture details?** See [ARCHITECTURE.md](.claude/ARCHITECTURE.md)
 
@@ -568,7 +584,7 @@ uv run pytest -m "not slow"
 - Visualization (interactive animation with napari, video export, HTML players)
 - NWB integration (read/write NeurodataWithoutBorders files - optional)
 
-**Current Version:** v0.3.0 (Spatial view cells, object-vector cells, egocentric frames)
+**Current Version:** v0.3.x (Domain-centric package reorganization)
 
 ---
 

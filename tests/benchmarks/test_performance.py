@@ -22,15 +22,15 @@ Generate histogram:
 import numpy as np
 import pytest
 
-from neurospatial import (
-    Environment,
+from neurospatial import Environment
+from neurospatial.encoding.place import (
     compute_place_field,
     detect_place_fields,
-    map_points_to_bins,
-    pairwise_distances,
     skaggs_information,
     sparsity,
 )
+from neurospatial.ops.binning import map_points_to_bins
+from neurospatial.ops.distance import pairwise_distances
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 # =============================================================================

@@ -1,11 +1,63 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 10 COMPLETE - Delete old files and consolidate encoding modules
+**Current Status**: Milestone 11 IN PROGRESS - Update Documentation
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 35)
+
+**Starting Point**: Milestone 11 - Update Documentation
+
+**Completed**: Main documentation files updated with new import paths
+
+**Work Done**:
+
+1. Updated `CLAUDE.md`:
+   - Updated "Most Common Patterns" section (9 import path updates)
+   - Updated "Architecture Overview" section (complete rewrite for tiered structure)
+   - Updated version reference
+2. Updated `.claude/API_REFERENCE.md`:
+   - Complete rewrite organized by new module structure
+   - All import examples updated to new paths (encoding/, decoding/, behavior/, events/, ops/, stats/, animation/, io/)
+3. Updated `.claude/QUICKSTART.md`:
+   - Updated all import examples (~20 locations)
+   - encoding.place, decoding, behavior.segmentation, behavior.navigation, behavior.decisions
+   - ops.egocentric, ops.visibility, ops.basis, stats.circular, events, animation, io.nwb
+4. Updated `.claude/ARCHITECTURE.md`:
+   - Complete rewrite with tiered dependency diagram
+   - New module overview organized by tier
+   - Updated testing structure section
+5. Fixed `animation/__init__.py` exports:
+   - Added missing exports: `PositionOverlay`, `BodypartOverlay`, `HeadDirectionOverlay`
+6. Fixed `tests/benchmarks/test_performance.py` imports:
+   - Updated to use new submodule paths
+
+**Files Modified**:
+
+- `CLAUDE.md` (import paths, architecture section, version)
+- `.claude/API_REFERENCE.md` (complete rewrite)
+- `.claude/QUICKSTART.md` (20+ import path updates)
+- `.claude/ARCHITECTURE.md` (complete rewrite)
+- `src/neurospatial/animation/__init__.py` (added 3 overlay exports)
+- `src/neurospatial/__init__.py` (fixed docstring example)
+- `tests/benchmarks/test_performance.py` (updated imports)
+- `TASKS.md` (marked 11.1, 11.2 tasks complete)
+
+**Remaining for M11**:
+
+- [ ] Update `.claude/PATTERNS.md` if needed
+- [ ] Update `.claude/TROUBLESHOOTING.md` if needed
+- [ ] Update `.claude/ADVANCED.md` if needed
+- [ ] Update `mkdocs.yml` navigation
+- [ ] Update docstring import examples in moved modules
+- [ ] Run doctests to verify
+
+**Next Task**: Continue Milestone 11 - remaining documentation files
+
+---
 
 ### 2025-12-06 (Session 34)
 

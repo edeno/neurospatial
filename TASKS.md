@@ -402,18 +402,18 @@ uv run mypy src/neurospatial/
 
 #### 11.1: Update CLAUDE.md
 
-- [ ] Update "Most Common Patterns" section with new import paths
-- [ ] Update "Quick Navigation" tables
-- [ ] Update "Architecture Overview" section
+- [x] Update "Most Common Patterns" section with new import paths
+- [x] Update "Quick Navigation" tables
+- [x] Update "Architecture Overview" section
 
 #### 11.2: Update .claude/ Documentation
 
-- [ ] Update `.claude/QUICKSTART.md` with new import paths
-- [ ] Update `.claude/API_REFERENCE.md` with new module structure
+- [x] Update `.claude/QUICKSTART.md` with new import paths
+- [x] Update `.claude/API_REFERENCE.md` with new module structure
 - [ ] Update `.claude/PATTERNS.md` if needed
 - [ ] Update `.claude/TROUBLESHOOTING.md` if needed
 - [ ] Update `.claude/ADVANCED.md` if needed
-- [ ] Update `.claude/ARCHITECTURE.md` with new structure
+- [x] Update `.claude/ARCHITECTURE.md` with new structure
 
 #### 11.3: Update mkdocs.yml
 
@@ -424,6 +424,11 @@ uv run mypy src/neurospatial/
 
 - [ ] Update docstring import examples in moved modules
 - [ ] Run doctests to verify: `uv run pytest --doctest-modules src/neurospatial/`
+
+#### 11.5: Additional Fixes
+
+- [x] Export `PositionOverlay`, `BodypartOverlay`, `HeadDirectionOverlay` from `animation/__init__.py`
+- [x] Update `tests/benchmarks/test_performance.py` imports
 
 **Verification**:
 

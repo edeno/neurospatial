@@ -2,57 +2,214 @@
 
 Import patterns organized by feature area.
 
+**Updated** - Domain-centric package reorganization.
+
 ---
 
 ## Core Classes
 
 ```python
-from neurospatial import Environment
+from neurospatial import Environment, EnvironmentNotFittedError
 from neurospatial.regions import Region, Regions
+from neurospatial import CompositeEnvironment
 ```
 
 ---
 
-## Spatial Analysis
+## Spatial Operations (ops/)
 
 ```python
-from neurospatial import (
-    validate_environment,           # Validate environment structure
+from neurospatial.ops import (
+    # Binning
     map_points_to_bins,             # Batch point-to-bin mapping with KDTree
-    estimate_transform,             # Estimate transform from point pairs
-    apply_transform_to_environment, # Transform entire environment
+    regions_to_mask,                # Convert regions to binary mask
+    resample_field,                 # Resample field to different grid
+    TieBreakStrategy,               # Enum for tie-breaking
+
+    # Distance
     distance_field,                 # Multi-source geodesic distances
     pairwise_distances,             # Distances between node subsets
+    euclidean_distance_matrix,      # Euclidean distance matrix
+    geodesic_distance_matrix,       # Geodesic distance matrix
+    geodesic_distance_between_points,  # Point-to-point geodesic
+    neighbors_within,               # Neighbors within range
+
+    # Transforms
+    estimate_transform,             # Estimate transform from point pairs
+    apply_transform_to_environment, # Transform entire environment
+    Affine2D,                       # 2D affine transform
+    AffineND,                       # ND affine transform
+    translate,                      # Translation transform
+    scale_2d,                       # 2D scale transform
+
+    # Smoothing
+    compute_diffusion_kernels,      # Diffusion kernels
+    apply_kernel,                   # Apply kernel to field
+
+    # Normalization
+    normalize_field,                # Normalize field to sum=1
+    clamp,                          # Clamp to range
+    combine_fields,                 # Weighted combination
+
+    # Graph operations
+    convolve,                       # Graph convolution
+    neighbor_reduce,                # Neighborhood reduce
+
+    # Calculus
+    gradient,                       # Spatial gradient
+    divergence,                     # Spatial divergence
+    compute_differential_operator,  # Build differential operator
 )
 ```
 
 ---
 
-## Neural Analysis
+## Neural Encoding (encoding/)
+
+### Place Cells
 
 ```python
-from neurospatial import (
+from neurospatial.encoding.place import (
+    # Field computation
     compute_place_field,                    # Place field estimation
     compute_directional_place_fields,       # Directional tuning
-    goal_pair_direction_labels,             # Trial-based direction labels
-    heading_direction_labels,               # Heading-based direction labels
+    spikes_to_field,                        # Convert spikes to firing rate
+    DirectionalPlaceFields,                 # Container for directional fields
+
+    # Place field metrics
+    detect_place_fields,                    # Detect fields from rate map
+    skaggs_information,                     # Spatial info (bits/spike)
+    sparsity,                               # Spatial sparsity
+    selectivity,                            # Place field selectivity
+    field_centroid,                         # Field centroid
+    field_size,                             # Field size
+    field_stability,                        # Temporal stability
+    field_shape_metrics,                    # Shape metrics
+    field_shift_distance,                   # Shift between sessions
+    in_out_field_ratio,                     # In/out firing ratio
+    information_per_second,                 # Bits/second
+    mutual_information,                     # MI between fields
+    rate_map_coherence,                     # Spatial coherence
+    spatial_coverage_single_cell,           # Coverage fraction
+    compute_field_emd,                      # Earth mover distance
+)
+```
+
+### Grid Cells
+
+```python
+from neurospatial.encoding.grid import (
+    grid_score,                             # Grid cell grid score
+    spatial_autocorrelation,                # Autocorrelation of field
+    grid_orientation,                       # Grid orientation
+    grid_scale,                             # Grid spacing
+    grid_properties,                        # Comprehensive properties
+    periodicity_score,                      # Periodicity measure
+    GridProperties,                         # Properties dataclass
+)
+```
+
+### Head Direction Cells
+
+```python
+from neurospatial.encoding.head_direction import (
+    head_direction_tuning_curve,            # HD tuning curve
+    head_direction_metrics,                 # Comprehensive HD metrics
+    is_head_direction_cell,                 # HD cell classification
+    plot_head_direction_tuning,             # Polar plot
+    HeadDirectionMetrics,                   # Metrics dataclass
+
+    # Re-exported from stats.circular
+    rayleigh_test,
+    mean_resultant_length,
+    circular_mean,
+)
+```
+
+### Border/Boundary Cells
+
+```python
+from neurospatial.encoding.border import (
+    border_score,                           # Border score
+    compute_region_coverage,                # Region coverage stats
+)
+```
+
+### Object-Vector Cells
+
+```python
+from neurospatial.encoding.object_vector import (
+    # Field computation
+    ObjectVectorFieldResult,                # Result container
+    compute_object_vector_field,            # Compute egocentric polar field
+
+    # Metrics and classification
+    ObjectVectorMetrics,                    # Frozen dataclass with tuning metrics
+    compute_object_vector_tuning,           # Compute tuning from spikes
+    object_vector_score,                    # Distance × direction selectivity
+    is_object_vector_cell,                  # Classifier (score + peak rate)
+    plot_object_vector_tuning,              # Polar heatmap visualization
+)
+```
+
+### Spatial View Cells
+
+```python
+from neurospatial.encoding.spatial_view import (
+    # Field computation
+    SpatialViewFieldResult,                 # Result container
+    compute_spatial_view_field,             # Compute view field
+
+    # Metrics and classification
+    SpatialViewMetrics,                     # Frozen dataclass with metrics
+    spatial_view_cell_metrics,              # Compute view vs place metrics
+    is_spatial_view_cell,                   # Quick classifier
+
+    # Re-exported from ops.visibility
+    compute_viewed_location,
+    compute_viewshed,
+    visibility_occupancy,
+    FieldOfView,
+)
+```
+
+### Phase Precession
+
+```python
+from neurospatial.encoding.phase_precession import (
+    phase_precession,                       # Phase precession analysis
+    has_phase_precession,                   # Significance test
+    plot_phase_precession,                  # Phase-position plot
+    PhasePrecessionResult,                  # Result dataclass
+)
+```
+
+### Population Metrics
+
+```python
+from neurospatial.encoding.population import (
+    population_vector_correlation,          # PVC metric
+    population_coverage,                    # Coverage by population
+    count_place_cells,                      # Count by threshold
+    field_density_map,                      # Field center density
+    field_overlap,                          # Pairwise field overlap
+    plot_population_coverage,               # Coverage visualization
+    PopulationCoverageResult,               # Result dataclass
 )
 ```
 
 ---
 
-## Bayesian Decoding
+## Neural Decoding (decoding/)
 
 ```python
-from neurospatial import (
-    DecodingResult,          # Result container class
-    decode_position,         # Main entry point
-    decoding_error,          # Per-time-bin position error
-    median_decoding_error,   # Summary statistic
-)
-
-# Full decoding API
 from neurospatial.decoding import (
+    # Main entry point
+    DecodingResult,                         # Result container class
+    decode_position,                        # Main entry point
+    decoding_error,                         # Per-time-bin position error
+    median_decoding_error,                  # Summary statistic
+
     # Likelihood
     log_poisson_likelihood,
     poisson_likelihood,
@@ -70,7 +227,7 @@ from neurospatial.decoding import (
     # Trajectory analysis
     fit_isotonic_trajectory,
     fit_linear_trajectory,
-    detect_trajectory_radon,  # Requires scikit-image
+    detect_trajectory_radon,                # Requires scikit-image
     IsotonicFitResult,
     LinearFitResult,
     RadonDetectionResult,
@@ -79,28 +236,21 @@ from neurospatial.decoding import (
     confusion_matrix,
     decoding_correlation,
 
-    # Shuffle testing
+    # Shuffle testing (re-exported from stats)
     shuffle_time_bins,
-    shuffle_time_bins_coherent,
     shuffle_cell_identity,
-    shuffle_place_fields_circular,
-    shuffle_place_fields_circular_2d,
-    shuffle_posterior_circular,
-    shuffle_posterior_weighted_circular,
-    generate_poisson_surrogates,
-    generate_inhomogeneous_poisson_surrogates,
     compute_shuffle_pvalue,
-    compute_shuffle_zscore,
     ShuffleTestResult,
+    generate_poisson_surrogates,
 )
 ```
 
 ---
 
-## Basis Functions for GLMs
+## Basis Functions for GLMs (ops/basis)
 
 ```python
-from neurospatial import (
+from neurospatial.ops.basis import (
     # Convenience function (recommended starting point)
     spatial_basis,              # Automatic parameter selection
 
@@ -119,54 +269,75 @@ from neurospatial import (
 
 ---
 
-## Circular Basis Functions for GLMs
+## Statistical Methods (stats/)
+
+### Circular Statistics
 
 ```python
-from neurospatial.metrics import (
-    # Design matrix creation
-    circular_basis,             # sin/cos basis for circular predictors
-    CircularBasisResult,        # Result container with design_matrix property
+from neurospatial.stats.circular import (
+    # Core statistics
+    rayleigh_test,                  # Rayleigh test for uniformity
+    circular_mean,                  # Circular mean direction
+    circular_variance,              # Circular variance
+    mean_resultant_length,          # Mean resultant length
 
-    # Interpretation helpers
-    circular_basis_metrics,     # Extract amplitude, phase, p-value from GLM
-    is_modulated,               # Quick significance check (True/False)
+    # Correlations
+    circular_linear_correlation,    # Circular-linear correlation
+    circular_circular_correlation,  # Circular-circular correlation
+    phase_position_correlation,     # Phase-position correlation
 
-    # Visualization
-    plot_circular_basis_tuning, # Polar or linear tuning curve plots
+    # Utilities
+    wrap_angle,                     # Wrap angle to [-π, π]
+
+    # GLM circular basis
+    circular_basis,                 # sin/cos basis for circular predictors
+    CircularBasisResult,            # Result container with design_matrix
+    circular_basis_metrics,         # Extract amplitude, phase, p-value from GLM
+    is_modulated,                   # Quick significance check
+    plot_circular_basis_tuning,     # Polar or linear tuning curve plots
 )
 ```
 
-**Related circular metrics:**
+### Shuffle Controls
 
 ```python
-from neurospatial.metrics import (
-    # Head direction analysis
-    head_direction_tuning_curve,
-    head_direction_metrics,
-    is_head_direction_cell,
-    plot_head_direction_tuning,
-    HeadDirectionMetrics,
+from neurospatial.stats.shuffle import (
+    # Result dataclass
+    ShuffleTestResult,
 
-    # Phase precession
-    phase_precession,
-    has_phase_precession,
-    plot_phase_precession,
-    PhasePrecessionResult,
+    # Shuffle methods
+    shuffle_time_bins,              # Shuffle temporal order
+    shuffle_time_bins_coherent,     # Coherent temporal shuffle
+    shuffle_cell_identity,          # Shuffle cell labels
+    shuffle_place_fields_circular,  # 1D circular place field shuffle
+    shuffle_place_fields_circular_2d,  # 2D circular place field shuffle
+    shuffle_posterior_circular,     # Posterior circular shuffle
+    shuffle_posterior_weighted_circular,  # Weighted circular posterior
+    shuffle_trials,                 # Shuffle trial labels
+    shuffle_spikes_isi,             # Shuffle inter-spike intervals
 
-    # Circular statistics
-    rayleigh_test,
-    circular_linear_correlation,
-    circular_circular_correlation,
-    phase_position_correlation,
+    # P-value computation
+    compute_shuffle_pvalue,         # P-value from null distribution
+    compute_shuffle_zscore,         # Z-score from null distribution
+)
+```
+
+### Surrogate Data Generation
+
+```python
+from neurospatial.stats.surrogates import (
+    generate_poisson_surrogates,              # Homogeneous Poisson surrogates
+    generate_inhomogeneous_poisson_surrogates,  # Inhomogeneous Poisson
+    generate_jittered_spikes,                 # Temporal jitter surrogates
 )
 ```
 
 ---
 
-## Egocentric Reference Frames
+## Egocentric Reference Frames (ops/egocentric)
 
 ```python
-from neurospatial import (
+from neurospatial.ops.egocentric import (
     # Core transforms
     EgocentricFrame,              # Single-timepoint frame dataclass
     allocentric_to_egocentric,    # Batch transform to egocentric
@@ -179,17 +350,6 @@ from neurospatial import (
     # Heading computation
     heading_from_velocity,        # Heading from position timeseries
     heading_from_body_orientation, # Heading from nose/tail keypoints
-)
-
-# Full reference frames API
-from neurospatial.reference_frames import (
-    EgocentricFrame,
-    allocentric_to_egocentric,
-    egocentric_to_allocentric,
-    compute_egocentric_bearing,
-    compute_egocentric_distance,
-    heading_from_velocity,
-    heading_from_body_orientation,
 )
 ```
 
@@ -210,60 +370,10 @@ ego_env = Environment.from_polar_egocentric(
 
 ---
 
-## Object-Vector Cells
+## Visibility and Gaze (ops/visibility)
 
 ```python
-from neurospatial import (
-    # Field computation
-    ObjectVectorFieldResult,       # Result container
-    compute_object_vector_field,   # Compute egocentric polar field
-)
-
-# Metrics and classification
-from neurospatial.metrics import (
-    ObjectVectorMetrics,           # Frozen dataclass with tuning metrics
-    compute_object_vector_tuning,  # Compute tuning from spikes
-    object_vector_score,           # Distance × direction selectivity
-    is_object_vector_cell,         # Classifier (score + peak rate)
-    plot_object_vector_tuning,     # Polar heatmap visualization
-)
-
-# Simulation
-from neurospatial.simulation import (
-    ObjectVectorCellModel,         # OVC model with Gaussian/von Mises tuning
-)
-
-# Animation overlay
-from neurospatial.animation import (
-    ObjectVectorOverlay,           # Vectors from animal to objects
-    ObjectVectorData,              # Internal data container
-)
-```
-
----
-
-## Spatial View Cells
-
-```python
-from neurospatial import (
-    # Field computation
-    SpatialViewFieldResult,        # Result container
-    compute_spatial_view_field,    # Compute view field (by viewed location)
-
-    # Metrics and classification
-    SpatialViewMetrics,            # Frozen dataclass with metrics
-    spatial_view_cell_metrics,     # Compute view vs place metrics
-    is_spatial_view_cell,          # Quick classifier
-
-    # Simulation
-    SpatialViewCellModel,          # Gaze-based firing model
-)
-```
-
-**Visibility and gaze analysis:**
-
-```python
-from neurospatial import (
+from neurospatial.ops.visibility import (
     # Field of view
     FieldOfView,                   # Species-specific FOV (rat, primate, etc.)
     ViewshedResult,                # Visible bins from position
@@ -278,91 +388,105 @@ from neurospatial import (
 )
 ```
 
-**Full visibility module API:**
+---
+
+## Simulation
 
 ```python
-from neurospatial.visibility import (
-    FieldOfView,
-    ViewshedResult,
-    compute_viewed_location,
-    compute_viewshed,
-    compute_view_field,
-    compute_viewshed_trajectory,
-    visibility_occupancy,
-    visible_cues,
+from neurospatial.simulation import (
+    # Cell models
+    ObjectVectorCellModel,         # OVC model with Gaussian/von Mises tuning
+    SpatialViewCellModel,          # Gaze-based firing model
+)
+
+# Animation overlays for simulation
+from neurospatial.animation import (
+    ObjectVectorOverlay,           # Vectors from animal to objects
+    ObjectVectorData,              # Internal data container
 )
 ```
 
 ---
 
-## Behavioral Analysis
+## Behavioral Analysis (behavior/)
+
+### Trajectory Metrics
 
 ```python
-from neurospatial.segmentation import segment_trials
+from neurospatial.behavior.trajectory import (
+    compute_step_lengths,           # Step lengths
+    compute_turn_angles,            # Turn angles
+    compute_home_range,             # MCP home range
+    mean_square_displacement,       # MSD vs lag
+    compute_trajectory_curvature,   # Continuous curvature
+)
+```
 
-from neurospatial import (
+### Segmentation
+
+```python
+from neurospatial.behavior.segmentation import (
+    # Dataclasses
+    Trial,                          # Trial dataclass
+    Crossing,                       # Crossing dataclass
+    Lap,                            # Lap dataclass
+    Run,                            # Run dataclass
+
+    # Segmentation functions
+    detect_laps,                    # Lap detection
+    detect_region_crossings,        # Entry/exit events
+    detect_runs_between_regions,    # Source→target runs
+    detect_goal_directed_runs,      # Goal-directed segments
+    segment_by_velocity,            # Movement/rest
+    segment_trials,                 # Behavioral trials
+    trajectory_similarity,          # Path similarity
+)
+```
+
+### Navigation
+
+```python
+from neurospatial.behavior.navigation import (
+    # Navigation functions
     path_progress,                  # Normalized progress (0→1) along path
     distance_to_region,             # Distance to goal over time
     cost_to_goal,                   # RL cost with terrain/avoidance
     time_to_goal,                   # Time until goal arrival
-    compute_trajectory_curvature,   # Continuous curvature
     graph_turn_sequence,            # Discrete turn labels
     trials_to_region_arrays,        # Helper for trial arrays
-)
-```
+    goal_pair_direction_labels,     # Trial-based direction labels
+    heading_direction_labels,       # Heading-based direction labels
 
----
+    # Path efficiency
+    PathEfficiencyResult,           # Path efficiency metrics
+    SubgoalEfficiencyResult,        # Multi-waypoint efficiency
+    traveled_path_length,           # Total distance traveled
+    shortest_path_length,           # Geodesic/Euclidean distance
+    path_efficiency,                # Ratio: shortest / traveled
+    time_efficiency,                # Ratio: T_optimal / T_actual
+    angular_efficiency,             # 1 - mean(|delta_theta|) / pi
+    subgoal_efficiency,             # Per-segment efficiency
+    compute_path_efficiency,        # All metrics in one call
 
-## Behavioral Trajectory Metrics
-
-**Path efficiency:**
-
-```python
-from neurospatial.metrics import (
-    # Result dataclasses
-    PathEfficiencyResult,       # Path efficiency metrics
-    SubgoalEfficiencyResult,    # Multi-waypoint efficiency
-
-    # Core functions
-    traveled_path_length,       # Total distance traveled
-    shortest_path_length,       # Geodesic/Euclidean distance
-    path_efficiency,            # Ratio: shortest / traveled
-    time_efficiency,            # Ratio: T_optimal / T_actual
-    angular_efficiency,         # 1 - mean(|delta_theta|) / pi
-    subgoal_efficiency,         # Per-segment efficiency
-
-    # Combined analysis
-    compute_path_efficiency,    # All metrics in one call
-)
-```
-
-**Goal-directed metrics:**
-
-```python
-from neurospatial.metrics import (
-    # Result dataclass
-    GoalDirectedMetrics,        # Goal-directed navigation metrics
-
-    # Core functions
-    goal_vector,                # Vector from position to goal
-    goal_direction,             # Angle to goal
-    instantaneous_goal_alignment,  # Cos(velocity, goal direction)
-    goal_bias,                  # Mean alignment over trajectory
-    approach_rate,              # d/dt of distance to goal
-
-    # Combined analysis
+    # Goal-directed metrics
+    GoalDirectedMetrics,            # Goal-directed navigation metrics
+    goal_vector,                    # Vector from position to goal
+    goal_direction,                 # Angle to goal
+    instantaneous_goal_alignment,   # Cos(velocity, goal direction)
+    goal_bias,                      # Mean alignment over trajectory
+    approach_rate,                  # d/dt of distance to goal
     compute_goal_directed_metrics,  # All metrics in one call
 )
 ```
 
-**Decision point analysis:**
+### Decisions and VTE
 
 ```python
-from neurospatial.metrics import (
-    # Result dataclasses
-    PreDecisionMetrics,         # Kinematics before decision region
-    DecisionBoundaryMetrics,    # Boundary crossing metrics
-    DecisionAnalysisResult,     # Complete trial analysis
+from neurospatial.behavior.decisions import (
+    # Decision analysis dataclasses
+    PreDecisionMetrics,             # Kinematics before decision region
+    DecisionBoundaryMetrics,        # Boundary crossing metrics
+    DecisionAnalysisResult,         # Complete trial analysis
 
     # Pre-decision functions
     decision_region_entry_time,     # First entry to region
@@ -375,43 +499,39 @@ from neurospatial.metrics import (
     geodesic_voronoi_labels,        # Label bins by nearest goal
     distance_to_decision_boundary,  # Distance to Voronoi edge
     detect_boundary_crossings,      # Find boundary crossing events
-
-    # Combined analysis
     compute_decision_analysis,      # Full decision analysis
+
+    # VTE dataclasses
+    VTETrialResult,                 # Single trial VTE metrics
+    VTESessionResult,               # Session-level VTE analysis
+
+    # VTE functions
+    head_sweep_magnitude,           # Sum of |delta_theta| (IdPhi)
+    integrated_absolute_rotation,   # Alias for head_sweep_magnitude
+    head_sweep_from_positions,      # IdPhi from trajectory
+    normalize_vte_scores,           # Z-score across trials
+    compute_vte_index,              # Combined VTE index
+    classify_vte,                   # VTE if index > threshold
+    compute_vte_trial,              # Single trial analysis
+    compute_vte_session,            # Full session analysis
 )
 ```
 
-**VTE (Vicarious Trial and Error) metrics:**
+### Reward
 
 ```python
-from neurospatial.metrics import (
-    # Result dataclasses
-    VTETrialResult,             # Single trial VTE metrics
-    VTESessionResult,           # Session-level VTE analysis
-
-    # Core functions
-    wrap_angle,                 # Wrap angle to (-pi, pi]
-    head_sweep_magnitude,       # Sum of |delta_theta| (IdPhi)
-    integrated_absolute_rotation,  # Alias for head_sweep_magnitude
-    head_sweep_from_positions,  # IdPhi from trajectory
-
-    # Z-scoring and classification
-    normalize_vte_scores,       # Z-score across trials
-    compute_vte_index,          # Combined VTE index
-    classify_vte,               # VTE if index > threshold
-
-    # Combined analysis
-    compute_vte_trial,          # Single trial analysis
-    compute_vte_session,        # Full session analysis
+from neurospatial.behavior.reward import (
+    goal_reward_field,              # Point goal reward
+    region_reward_field,            # Region reward
 )
 ```
 
 ---
 
-## Events and Peri-Event Analysis
+## Events and Peri-Event Analysis (events/)
 
 ```python
-from neurospatial import (
+from neurospatial.events import (
     # Result dataclasses
     PeriEventResult,                  # PSTH result container
     PopulationPeriEventResult,        # Population PSTH result
@@ -446,55 +566,49 @@ from neurospatial import (
 )
 ```
 
-**Full events module API:**
-
-```python
-from neurospatial.events import (
-    # All of the above, plus:
-    PeriEventResult,
-    PopulationPeriEventResult,
-)
-```
-
 ---
 
-## Animation & Visualization
+## Animation & Visualization (animation/)
 
 ```python
-from neurospatial.animation import subsample_frames
-
-from neurospatial import (
-    PositionOverlay,        # Trajectory with trail
-    BodypartOverlay,        # Pose tracking with skeleton
-    HeadDirectionOverlay,   # Orientation arrows
-    EventOverlay,           # Spikes, licks, rewards
-    SpikeOverlay,           # Alias for EventOverlay
-    TimeSeriesOverlay,      # Continuous variables
-    ScaleBarConfig,         # Scale bar configuration
-)
-
 from neurospatial.animation import (
+    # Overlays
+    PositionOverlay,                        # Trajectory with trail
+    BodypartOverlay,                        # Pose tracking with skeleton
+    HeadDirectionOverlay,                   # Orientation arrows
+    EventOverlay,                           # Spikes, licks, rewards
+    SpikeOverlay,                           # Alias for EventOverlay
+    TimeSeriesOverlay,                      # Continuous variables
+    ObjectVectorOverlay,                    # Vectors from animal to objects
+
+    # Video
     VideoOverlay,                           # Video behind/above fields
     calibrate_video,                        # Video calibration helper
+
+    # Configuration
+    ScaleBarConfig,                         # Scale bar configuration
     estimate_colormap_range_from_subset,    # Large session helper
     large_session_napari_config,            # Napari config for large data
+
+    # Utilities
+    subsample_frames,                       # Subsample frame arrays
 )
 
-from neurospatial.transforms import VideoCalibration, calibrate_from_landmarks
+from neurospatial.ops.transforms import (
+    VideoCalibration,                       # Video calibration transform
+    calibrate_from_landmarks,               # Calibrate from point pairs
+)
 ```
 
 ---
 
-## Video Annotation
+## Video Annotation (annotation/)
 
 ```python
-from neurospatial import (
+from neurospatial.annotation import (
     annotate_video,          # Interactive annotation
     regions_from_labelme,    # Import from LabelMe
     regions_from_cvat,       # Import from CVAT
-)
-
-from neurospatial.annotation import (
     annotate_track_graph,    # 1D track annotation
     TrackGraphResult,        # Track graph annotation result
     BoundaryConfig,          # Boundary inference config
@@ -504,12 +618,23 @@ from neurospatial.annotation import (
 
 ---
 
-## NWB Integration
-
-**Requires:** `pip install neurospatial[nwb-full]`
+## I/O and Serialization (io/)
 
 ```python
-from neurospatial.nwb import (
+from neurospatial.io import (
+    to_file,                 # Save environment to file
+    from_file,               # Load environment from file
+    to_dict,                 # Convert to dictionary
+    from_dict,               # Load from dictionary
+)
+```
+
+### NWB Integration
+
+**Requires:** `uv add neurospatial[nwb-full]`
+
+```python
+from neurospatial.io.nwb import (
     # Reading
     read_position,           # Position → (positions, timestamps)
     read_head_direction,     # CompassDirection → (angles, timestamps)
@@ -538,30 +663,14 @@ from neurospatial.nwb import (
 
 ---
 
-## Serialization
-
-```python
-from neurospatial.io import to_file, from_file, to_dict, from_dict
-```
-
----
-
-## Layout Engines & Transforms
+## Layout Engines (layout/)
 
 ```python
 from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-from neurospatial.alignment import get_2d_rotation_matrix, map_probabilities
-from neurospatial.transforms import Affine2D, translate, scale_2d
-```
-
----
-
-## Composite Environments
-
-```python
-from neurospatial import CompositeEnvironment
+from neurospatial.ops.alignment import get_2d_rotation_matrix, map_probabilities
+from neurospatial.ops.transforms import Affine2D, translate, scale_2d
 ```
 
 ---
