@@ -53,7 +53,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [x] Move `field_ops.py` → `ops/normalize.py`
 - [x] Move `kernels.py` → `ops/smoothing.py`
 - [x] Move `primitives.py` → `ops/graph.py`
-- [ ] Move `differential.py` → `ops/calculus.py`
+- [x] Move `differential.py` → `ops/calculus.py`
 - [ ] Move `transforms.py` → `ops/transforms.py` (then merge calibration.py into it)
 - [ ] Merge `calibration.py` into `ops/transforms.py`
 - [ ] Move `alignment.py` → `ops/alignment.py`

@@ -28,6 +28,13 @@ from neurospatial.ops.binning import (
     resample_field,
 )
 
+# Calculus operations (gradient, divergence)
+from neurospatial.ops.calculus import (
+    compute_differential_operator,
+    divergence,
+    gradient,
+)
+
 # Distance operations
 from neurospatial.ops.distance import (
     distance_field,
@@ -63,12 +70,15 @@ __all__ = [
     "clamp",
     "clear_kdtree_cache",
     "combine_fields",
+    "compute_differential_operator",
     "compute_diffusion_kernels",
     "convolve",
     "distance_field",
+    "divergence",
     "euclidean_distance_matrix",
     "geodesic_distance_between_points",
     "geodesic_distance_matrix",
+    "gradient",
     "map_points_to_bins",
     "neighbor_reduce",
     "neighbors_within",

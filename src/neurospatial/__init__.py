@@ -240,7 +240,6 @@ from neurospatial.decoding import (
     decoding_error,
     median_decoding_error,
 )
-from neurospatial.differential import divergence, gradient
 from neurospatial.environment import Environment, EnvironmentNotFittedError
 
 # Events and peri-event analysis
@@ -295,6 +294,7 @@ from neurospatial.ops.binning import (
     regions_to_mask,
     resample_field,
 )
+from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.distance import (
     distance_field,
     neighbors_within,

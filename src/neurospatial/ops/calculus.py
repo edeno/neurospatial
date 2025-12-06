@@ -8,6 +8,17 @@ The differential operator D is a sparse matrix (n_bins × n_edges) that encodes
 the oriented edge structure of the connectivity graph. It satisfies the fundamental
 relationship: L = D @ D.T, where L is the graph Laplacian.
 
+Import paths
+------------
+Functions are accessible from both locations:
+
+    # Preferred (canonical location)
+    from neurospatial.ops.calculus import gradient, divergence
+    from neurospatial.ops import gradient, divergence
+
+    # Top-level convenience (if exported)
+    from neurospatial import gradient, divergence
+
 References
 ----------
 .. [1] PyGSP: Graph Signal Processing in Python
@@ -17,6 +28,12 @@ References
 """
 
 from __future__ import annotations
+
+__all__ = [
+    "compute_differential_operator",
+    "divergence",
+    "gradient",
+]
 
 from typing import TYPE_CHECKING
 
@@ -72,7 +89,7 @@ def compute_differential_operator(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.differential import compute_differential_operator
+    >>> from neurospatial.ops.calculus import compute_differential_operator
     >>> # Create a simple 1D chain environment
     >>> data = np.array([[0.0], [1.0], [2.0], [3.0]])
     >>> env = Environment.from_samples(data, bin_size=1.0)
@@ -198,7 +215,7 @@ def gradient(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.differential import gradient
+    >>> from neurospatial.ops.calculus import gradient
     >>> # Create 1D chain environment
     >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
     >>> env = Environment.from_samples(data, bin_size=1.0)
@@ -314,7 +331,7 @@ def divergence(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.differential import gradient, divergence
+    >>> from neurospatial.ops.calculus import gradient, divergence
     >>> # Create 1D chain environment
     >>> data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
     >>> env = Environment.from_samples(data, bin_size=1.0)

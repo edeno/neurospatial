@@ -9,7 +9,7 @@ import numpy as np
 from scipy import sparse
 
 from neurospatial import Environment
-from neurospatial.differential import compute_differential_operator
+from neurospatial.ops.calculus import compute_differential_operator
 
 
 class TestDifferentialOperatorComputation:
@@ -209,7 +209,7 @@ class TestGradientOperator:
         field = rng.random(env.n_bins)
 
         # Import gradient function (will fail initially - this is TDD RED phase)
-        from neurospatial.differential import gradient
+        from neurospatial.ops.calculus import gradient
 
         # Compute gradient
         grad_field = gradient(env, field)
@@ -228,7 +228,7 @@ class TestGradientOperator:
         # Create constant field
         field = np.ones(env.n_bins) * 5.0
 
-        from neurospatial.differential import gradient
+        from neurospatial.ops.calculus import gradient
 
         # Gradient should be all zeros
         grad_field = gradient(env, field)
@@ -245,7 +245,7 @@ class TestGradientOperator:
         # Bins at x = 0, 1, 2, 3, 4
         field = np.array([0.0, 2.0, 4.0, 6.0, 8.0])
 
-        from neurospatial.differential import gradient
+        from neurospatial.ops.calculus import gradient
 
         # Compute gradient
         grad_field = gradient(env, field)
@@ -264,7 +264,7 @@ class TestGradientOperator:
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        from neurospatial.differential import gradient
+        from neurospatial.ops.calculus import gradient
 
         # Wrong shape: too few elements
         field_too_small = np.array([1.0, 2.0])
@@ -298,7 +298,7 @@ class TestDivergenceOperator:
         edge_field = rng.random(n_edges)
 
         # Import divergence function (will fail initially - this is TDD RED phase)
-        from neurospatial.differential import divergence
+        from neurospatial.ops.calculus import divergence
 
         # Compute divergence
         div_field = divergence(env, edge_field)
@@ -316,7 +316,7 @@ class TestDivergenceOperator:
         # Create test field
         field = np.array([1.0, 3.0, 2.0, 5.0, 4.0])
 
-        from neurospatial.differential import divergence, gradient
+        from neurospatial.ops.calculus import divergence, gradient
 
         # Compute div(grad(f))
         grad_field = gradient(env, field)
@@ -341,7 +341,7 @@ class TestDivergenceOperator:
         n_edges = len(env.connectivity.edges)
         edge_field = np.zeros(n_edges)
 
-        from neurospatial.differential import divergence
+        from neurospatial.ops.calculus import divergence
 
         # Divergence should be all zeros
         div_field = divergence(env, edge_field)
@@ -354,7 +354,7 @@ class TestDivergenceOperator:
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        from neurospatial.differential import divergence
+        from neurospatial.ops.calculus import divergence
 
         # Wrong shape: too few elements
         edge_field_too_small = np.array([1.0, 2.0])

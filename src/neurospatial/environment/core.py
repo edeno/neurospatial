@@ -32,7 +32,6 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from neurospatial._logging import log_environment_created, log_graph_validation
-from neurospatial.differential import compute_differential_operator
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.fields import EnvironmentFields
@@ -48,6 +47,7 @@ from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
 )
+from neurospatial.ops.calculus import compute_differential_operator
 from neurospatial.regions import Regions
 
 logger = logging.getLogger(__name__)

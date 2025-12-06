@@ -1,11 +1,47 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - primitives.py → ops/graph.py DONE
+**Current Status**: Milestone 2 in progress - differential.py → ops/calculus.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 7)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `differential.py` → `ops/calculus.py`
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_calculus.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `differential.py` → `ops/calculus.py` using `git mv` to preserve history
+4. Updated module docstring in calculus.py to document new import paths
+5. Added `__all__` export list to calculus.py:
+   - `compute_differential_operator`, `gradient`, `divergence`
+6. Updated `ops/__init__.py` to export public API
+7. Updated internal imports (3 files):
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/environment/core.py`
+   - `tests/test_differential.py`
+8. Updated docstring examples in calculus.py (3 locations)
+9. Fixed `__future__` import order (must be at beginning of file)
+10. All tests pass:
+    - `tests/ops/test_ops_calculus.py`: 12 passed
+    - `tests/test_differential.py`: 21 passed
+    - Total calculus-related: 33 passed
+11. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/calculus.py` (moved from differential.py)
+- `src/neurospatial/ops/__init__.py` (added calculus exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/environment/core.py` (updated import)
+- `tests/ops/test_ops_calculus.py` (new file)
+- `tests/test_differential.py` (updated imports)
+
+**Next Task**: Move `transforms.py` → `ops/transforms.py`
 
 ### 2025-12-05 (Session 6)
 
