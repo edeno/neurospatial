@@ -1,11 +1,67 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 3 COMPLETE - io/ module fully consolidated
+**Current Status**: Milestone 4 IN PROGRESS - Task 4.2 (stats/shuffle.py) COMPLETE
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 15)
+
+**Starting Point**: Milestone 4 - Move stats/ Module (Task 4.2: Create stats/shuffle.py)
+
+**Completed**: Move shuffle functions to stats/shuffle.py (NO backward compatibility per user request)
+
+**Work Done**:
+1. Created test file `tests/stats/test_stats_shuffle.py` following TDD (RED phase)
+   - Tests for all existing shuffle functions importable from new location
+   - Tests for new functions: `shuffle_trials()`, `shuffle_spikes_isi()`
+2. Verified tests FAIL before implementation (import error expected)
+3. Moved `decoding/shuffle.py` → `stats/shuffle.py` using `git mv` to preserve history
+4. Updated module docstring with new import paths
+5. Added two new functions per PLAN.md:
+   - `shuffle_trials()` - shuffles trial labels for testing trial identity significance
+   - `shuffle_spikes_isi()` - shuffles inter-spike intervals for testing ISI ordering
+6. Updated `stats/__init__.py` to export all 14 shuffle symbols:
+   - ShuffleTestResult, shuffle_time_bins, shuffle_time_bins_coherent, shuffle_cell_identity
+   - shuffle_place_fields_circular, shuffle_place_fields_circular_2d
+   - shuffle_posterior_circular, shuffle_posterior_weighted_circular
+   - generate_poisson_surrogates, generate_inhomogeneous_poisson_surrogates
+   - compute_shuffle_pvalue, compute_shuffle_zscore
+   - shuffle_trials, shuffle_spikes_isi (NEW)
+7. NO backward-compatibility wrapper created (user explicitly said not needed)
+8. Updated `decoding/__init__.py`:
+   - Removed all shuffle function imports
+   - Updated `__all__` to remove shuffle exports
+   - Updated module docstring to remove shuffle documentation
+9. Updated `decoding/trajectory.py` to import `_ensure_rng` from `stats.shuffle`
+10. Updated all test imports:
+    - `tests/decoding/test_shuffle.py` (batch sed update)
+    - `tests/decoding/test_imports.py` (removed shuffle tests, updated expected exports)
+11. All tests pass:
+    - `tests/stats/test_stats_shuffle.py`: 33 passed
+    - `tests/decoding/test_shuffle.py`: 163 passed
+    - `tests/decoding/`: 568 passed total
+12. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/stats/shuffle.py` (moved from decoding/shuffle.py, added 2 new functions)
+- `src/neurospatial/stats/__init__.py` (added 14 shuffle exports)
+- `src/neurospatial/decoding/__init__.py` (removed shuffle exports and documentation)
+- `src/neurospatial/decoding/trajectory.py` (updated _ensure_rng import)
+- `tests/stats/test_stats_shuffle.py` (existing file updated with shuffle tests)
+- `tests/decoding/test_shuffle.py` (updated imports)
+- `tests/decoding/test_imports.py` (removed shuffle tests, updated expected exports)
+
+**Milestone 4 Status**: Task 4.2 COMPLETE
+Task 4.1 (Create stats/circular.py) is complete.
+Task 4.2 (Create stats/shuffle.py) is complete.
+Remaining: Task 4.3 (surrogates.py)
+
+**Next Task**: Milestone 4, Task 4.3 - Create stats/surrogates.py
+
+---
 
 ### 2025-12-06 (Session 14)
 

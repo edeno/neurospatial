@@ -1,4 +1,4 @@
-"""Tests for neurospatial.decoding.shuffle module.
+"""Tests for neurospatial.stats.shuffle module.
 
 Tests cover temporal shuffles for significance testing in Bayesian decoding.
 """
@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-from neurospatial.decoding.shuffle import (
+from neurospatial.stats.shuffle import (
     shuffle_time_bins,
     shuffle_time_bins_coherent,
 )
@@ -358,7 +358,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Should yield exactly n_shuffles tuples."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         n_shuffles = 10
         shuffles = list(
@@ -372,7 +372,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Should yield (shuffled_counts, encoding_models) tuples."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         for shuffled_counts, models in shuffle_cell_identity(
             spike_counts, encoding_models, n_shuffles=5, rng=42
@@ -384,7 +384,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Encoding models should be returned unchanged (same object)."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         for _, models in shuffle_cell_identity(
             spike_counts, encoding_models, n_shuffles=5, rng=42
@@ -395,7 +395,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Shuffled counts should have same shape as input."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         for shuffled_counts, _ in shuffle_cell_identity(
             spike_counts, encoding_models, n_shuffles=5, rng=42
@@ -406,7 +406,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Shuffled counts should preserve dtype."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         for shuffled_counts, _ in shuffle_cell_identity(
             spike_counts, encoding_models, n_shuffles=5, rng=42
@@ -417,7 +417,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Total spike count should be preserved."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         total_original = spike_counts.sum()
         for shuffled_counts, _ in shuffle_cell_identity(
@@ -429,7 +429,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Total spikes per time bin should be preserved (columns permuted)."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         spikes_per_time_bin = spike_counts.sum(axis=1)
         for shuffled_counts, _ in shuffle_cell_identity(
@@ -441,7 +441,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Columns (neurons) should be permutations of original columns."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         original_cols = {
             tuple(spike_counts[:, i]) for i in range(spike_counts.shape[1])
@@ -458,7 +458,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Same seed should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         shuffles1 = list(
             shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=42)
@@ -473,7 +473,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Same generator state should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -490,7 +490,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Different seeds should produce different shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         shuffles1 = list(
             shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=42)
@@ -508,7 +508,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """rng=None should still produce valid shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         shuffles = list(
             shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=5, rng=None)
@@ -521,7 +521,7 @@ class TestShuffleCellIdentity:
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         gen = shuffle_cell_identity(
             spike_counts, encoding_models, n_shuffles=1000, rng=42
@@ -531,7 +531,7 @@ class TestShuffleCellIdentity:
 
     def test_single_neuron(self, encoding_models: np.ndarray) -> None:
         """Should handle single neuron (trivial shuffle)."""
-        from neurospatial.decoding.shuffle import shuffle_cell_identity
+        from neurospatial.stats.shuffle import shuffle_cell_identity
 
         single_neuron_counts = np.array([[1], [2], [3]], dtype=np.int64)
         single_neuron_models = encoding_models[:1, :]
@@ -565,7 +565,7 @@ class TestShufflePlaceFieldsCircular:
         self, encoding_models: np.ndarray
     ) -> None:
         """Should yield exactly n_shuffles arrays."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         n_shuffles = 10
         shuffles = list(
@@ -577,7 +577,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_yields_correct_shape(self, encoding_models: np.ndarray) -> None:
         """Each shuffled array should have same shape as input."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
             encoding_models, n_shuffles=5, rng=42
@@ -586,7 +586,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_preserves_dtype(self, encoding_models: np.ndarray) -> None:
         """Shuffled arrays should preserve input dtype."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
             encoding_models, n_shuffles=5, rng=42
@@ -598,7 +598,7 @@ class TestShufflePlaceFieldsCircular:
 
         Circular shift preserves the shape of each place field.
         """
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
             encoding_models, n_shuffles=10, rng=42
@@ -613,7 +613,7 @@ class TestShufflePlaceFieldsCircular:
 
         A circular shift means the row values appear in the same cyclic order.
         """
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
             encoding_models, n_shuffles=10, rng=42
@@ -632,7 +632,7 @@ class TestShufflePlaceFieldsCircular:
         self, encoding_models: np.ndarray
     ) -> None:
         """Different neurons should get different shift amounts."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         # With enough shuffles, different neurons should have different shifts
         # at least sometimes
@@ -658,7 +658,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_reproducibility_with_seed_int(self, encoding_models: np.ndarray) -> None:
         """Same seed should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles1 = list(
             shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=42)
@@ -671,7 +671,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_reproducibility_with_generator(self, encoding_models: np.ndarray) -> None:
         """Same generator state should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -688,7 +688,7 @@ class TestShufflePlaceFieldsCircular:
         self, encoding_models: np.ndarray
     ) -> None:
         """Different seeds should produce different shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles1 = list(
             shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=42)
@@ -704,7 +704,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_none_rng_produces_shuffles(self, encoding_models: np.ndarray) -> None:
         """rng=None should still produce valid shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles = list(
             shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=None)
@@ -715,7 +715,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_generator_is_lazy(self, encoding_models: np.ndarray) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         gen = shuffle_place_fields_circular(encoding_models, n_shuffles=1000, rng=42)
         first_three = [next(gen) for _ in range(3)]
@@ -723,7 +723,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_single_bin(self) -> None:
         """Should handle single bin (trivial shuffle)."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         single_bin = np.array([[5.0], [3.0]], dtype=np.float64)
         for shuffled in shuffle_place_fields_circular(single_bin, n_shuffles=5, rng=42):
@@ -731,7 +731,7 @@ class TestShufflePlaceFieldsCircular:
 
     def test_single_neuron(self) -> None:
         """Should work with single neuron."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         single_neuron = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float64)
         for shuffled in shuffle_place_fields_circular(
@@ -779,7 +779,7 @@ class TestShufflePlaceFieldsCircular2D:
         self, encoding_models_2d: np.ndarray, env_2d
     ) -> None:
         """Should yield exactly n_shuffles arrays."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         n_shuffles = 10
         shuffles = list(
@@ -791,7 +791,7 @@ class TestShufflePlaceFieldsCircular2D:
 
     def test_yields_correct_shape(self, encoding_models_2d: np.ndarray, env_2d) -> None:
         """Each shuffled array should have same shape as input."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         for shuffled in shuffle_place_fields_circular_2d(
             encoding_models_2d, env_2d, n_shuffles=5, rng=42
@@ -800,7 +800,7 @@ class TestShufflePlaceFieldsCircular2D:
 
     def test_preserves_dtype(self, encoding_models_2d: np.ndarray, env_2d) -> None:
         """Shuffled arrays should preserve input dtype."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         for shuffled in shuffle_place_fields_circular_2d(
             encoding_models_2d, env_2d, n_shuffles=5, rng=42
@@ -812,7 +812,7 @@ class TestShufflePlaceFieldsCircular2D:
 
         2D circular shift preserves the shape of each place field.
         """
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         for shuffled in shuffle_place_fields_circular_2d(
             encoding_models_2d, env_2d, n_shuffles=10, rng=42
@@ -826,7 +826,7 @@ class TestShufflePlaceFieldsCircular2D:
         self, encoding_models_2d: np.ndarray, env_2d
     ) -> None:
         """Same seed should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
@@ -845,7 +845,7 @@ class TestShufflePlaceFieldsCircular2D:
         self, encoding_models_2d: np.ndarray, env_2d
     ) -> None:
         """Same generator state should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -866,7 +866,7 @@ class TestShufflePlaceFieldsCircular2D:
         self, encoding_models_2d: np.ndarray, env_2d
     ) -> None:
         """Different seeds should produce different shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         shuffles1 = list(
             shuffle_place_fields_circular_2d(
@@ -888,7 +888,7 @@ class TestShufflePlaceFieldsCircular2D:
         self, encoding_models_2d: np.ndarray, env_2d
     ) -> None:
         """rng=None should still produce valid shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         shuffles = list(
             shuffle_place_fields_circular_2d(
@@ -901,7 +901,7 @@ class TestShufflePlaceFieldsCircular2D:
 
     def test_generator_is_lazy(self, encoding_models_2d: np.ndarray, env_2d) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         gen = shuffle_place_fields_circular_2d(
             encoding_models_2d, env_2d, n_shuffles=1000, rng=42
@@ -912,7 +912,7 @@ class TestShufflePlaceFieldsCircular2D:
     def test_requires_2d_environment(self) -> None:
         """Should raise ValueError for non-2D environments."""
         from neurospatial import Environment
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         # Create a 1D environment
         positions = np.linspace(0, 10, 50).reshape(-1, 1)
@@ -929,7 +929,7 @@ class TestShufflePlaceFieldsCircular2D:
     def test_rejects_masked_grid(self) -> None:
         """Should raise ValueError if environment has inactive bins (masked grid)."""
         from neurospatial import Environment
-        from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
         # Create 2D environment with inactive bins (default behavior)
         positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
@@ -964,7 +964,7 @@ class TestShufflePosteriorCircular:
 
     def test_yields_correct_number_of_shuffles(self, posterior: np.ndarray) -> None:
         """Should yield exactly n_shuffles arrays."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         n_shuffles = 10
         shuffles = list(
@@ -974,21 +974,21 @@ class TestShufflePosteriorCircular:
 
     def test_yields_correct_shape(self, posterior: np.ndarray) -> None:
         """Each shuffled array should have same shape as input."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         for shuffled in shuffle_posterior_circular(posterior, n_shuffles=5, rng=42):
             assert shuffled.shape == posterior.shape
 
     def test_preserves_dtype(self, posterior: np.ndarray) -> None:
         """Shuffled arrays should preserve input dtype."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         for shuffled in shuffle_posterior_circular(posterior, n_shuffles=5, rng=42):
             assert shuffled.dtype == posterior.dtype
 
     def test_preserves_normalization(self, posterior: np.ndarray) -> None:
         """Each row should still sum to 1.0 after shuffle."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
             row_sums = shuffled.sum(axis=1)
@@ -999,7 +999,7 @@ class TestShufflePosteriorCircular:
 
         Circular shift preserves the shape of each posterior.
         """
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
             for i in range(posterior.shape[0]):
@@ -1011,7 +1011,7 @@ class TestShufflePosteriorCircular:
 
     def test_rows_are_circular_shifts(self, posterior: np.ndarray) -> None:
         """Each row should be a circular shift of the original."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
             for i in range(posterior.shape[0]):
@@ -1025,7 +1025,7 @@ class TestShufflePosteriorCircular:
 
     def test_each_time_bin_shifted_independently(self, posterior: np.ndarray) -> None:
         """Different time bins should get different shift amounts."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         # With enough shuffles, different time bins should have different shifts
         # at least sometimes
@@ -1049,7 +1049,7 @@ class TestShufflePosteriorCircular:
 
     def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
         """Same seed should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
         shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
@@ -1058,7 +1058,7 @@ class TestShufflePosteriorCircular:
 
     def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
         """Same generator state should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -1071,7 +1071,7 @@ class TestShufflePosteriorCircular:
         self, posterior: np.ndarray
     ) -> None:
         """Different seeds should produce different shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
         shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=123))
@@ -1083,7 +1083,7 @@ class TestShufflePosteriorCircular:
 
     def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
         """rng=None should still produce valid shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         shuffles = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=None))
         assert len(shuffles) == 5
@@ -1092,7 +1092,7 @@ class TestShufflePosteriorCircular:
 
     def test_generator_is_lazy(self, posterior: np.ndarray) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         gen = shuffle_posterior_circular(posterior, n_shuffles=1000, rng=42)
         first_three = [next(gen) for _ in range(3)]
@@ -1100,7 +1100,7 @@ class TestShufflePosteriorCircular:
 
     def test_empty_posterior(self) -> None:
         """Should handle empty posterior gracefully."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         empty = np.zeros((0, 5), dtype=np.float64)
         shuffles = list(shuffle_posterior_circular(empty, n_shuffles=5, rng=42))
@@ -1110,7 +1110,7 @@ class TestShufflePosteriorCircular:
 
     def test_single_time_bin(self) -> None:
         """Should handle single time bin."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
         for shuffled in shuffle_posterior_circular(single, n_shuffles=5, rng=42):
@@ -1124,7 +1124,7 @@ class TestShufflePosteriorCircular:
 
     def test_single_bin(self) -> None:
         """Should handle single spatial bin (trivial shuffle)."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         single_bin = np.array([[1.0], [1.0], [1.0]], dtype=np.float64)
         for shuffled in shuffle_posterior_circular(single_bin, n_shuffles=5, rng=42):
@@ -1157,7 +1157,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_yields_correct_number_of_shuffles(self, posterior: np.ndarray) -> None:
         """Should yield exactly n_shuffles arrays."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         n_shuffles = 10
         shuffles = list(
@@ -1169,7 +1169,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_yields_correct_shape(self, posterior: np.ndarray) -> None:
         """Each shuffled array should have same shape as input."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
             posterior, n_shuffles=5, rng=42
@@ -1178,7 +1178,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_preserves_dtype(self, posterior: np.ndarray) -> None:
         """Shuffled arrays should preserve input dtype."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
             posterior, n_shuffles=5, rng=42
@@ -1187,7 +1187,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_preserves_normalization(self, posterior: np.ndarray) -> None:
         """Each row should still sum to 1.0 after shuffle."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
             posterior, n_shuffles=10, rng=42
@@ -1197,7 +1197,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_preserves_row_values(self, posterior: np.ndarray) -> None:
         """Each row should contain same values (multiset) as original."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
             posterior, n_shuffles=10, rng=42
@@ -1211,7 +1211,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_rows_are_circular_shifts(self, posterior: np.ndarray) -> None:
         """Each row should be a circular shift of the original."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
             posterior, n_shuffles=10, rng=42
@@ -1231,7 +1231,7 @@ class TestShufflePosteriorWeightedCircular:
         When the MAP position is near an edge, the shift should be limited
         to avoid wrapping probability mass to the other end.
         """
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         # Create a posterior with clear edge positions
         # First row: peak at bin 2 (near left edge)
@@ -1267,7 +1267,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_edge_buffer_zero_allows_full_shifts(self, posterior: np.ndarray) -> None:
         """With edge_buffer=0, should behave like standard circular shuffle."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         # With edge_buffer=0, any shift should be possible
         for shuffled in shuffle_posterior_weighted_circular(
@@ -1278,7 +1278,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_reproducibility_with_seed_int(self, posterior: np.ndarray) -> None:
         """Same seed should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles1 = list(
             shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
@@ -1291,7 +1291,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_reproducibility_with_generator(self, posterior: np.ndarray) -> None:
         """Same generator state should produce same shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -1308,7 +1308,7 @@ class TestShufflePosteriorWeightedCircular:
         self, posterior: np.ndarray
     ) -> None:
         """Different seeds should produce different shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles1 = list(
             shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
@@ -1324,7 +1324,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_none_rng_produces_shuffles(self, posterior: np.ndarray) -> None:
         """rng=None should still produce valid shuffles."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles = list(
             shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=None)
@@ -1335,7 +1335,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_generator_is_lazy(self, posterior: np.ndarray) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         gen = shuffle_posterior_weighted_circular(posterior, n_shuffles=1000, rng=42)
         first_three = [next(gen) for _ in range(3)]
@@ -1343,7 +1343,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_empty_posterior(self) -> None:
         """Should handle empty posterior gracefully."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         empty = np.zeros((0, 5), dtype=np.float64)
         shuffles = list(
@@ -1355,7 +1355,7 @@ class TestShufflePosteriorWeightedCircular:
 
     def test_single_time_bin(self) -> None:
         """Should handle single time bin."""
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
         for shuffled in shuffle_posterior_weighted_circular(
@@ -1375,7 +1375,7 @@ class TestShufflePosteriorWeightedCircular:
         When edge_buffer is very large relative to n_bins, the allowed
         shift range becomes very restricted.
         """
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         # Small posterior (5 bins), large edge_buffer (4)
         small = np.array(
@@ -1391,7 +1391,7 @@ class TestShufflePosteriorWeightedCircular:
         """Default edge_buffer should be 5."""
         import inspect
 
-        from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+        from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         sig = inspect.signature(shuffle_posterior_weighted_circular)
         assert sig.parameters["edge_buffer"].default == 5
@@ -1421,7 +1421,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         n_surrogates = 10
         surrogates = list(
@@ -1433,7 +1433,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_yields_correct_shape(self, spike_counts: np.ndarray, dt: float) -> None:
         """Each surrogate should have same shape as input."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
             spike_counts, dt, n_surrogates=5, rng=42
@@ -1442,7 +1442,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_yields_correct_dtype(self, spike_counts: np.ndarray, dt: float) -> None:
         """Surrogate arrays should be int64."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
             spike_counts, dt, n_surrogates=5, rng=42
@@ -1453,7 +1453,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Surrogate spike counts should be non-negative."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
             spike_counts, dt, n_surrogates=10, rng=42
@@ -1468,7 +1468,7 @@ class TestGeneratePoissonSurrogates:
         Surrogates are generated from mean rates, so average across many
         surrogates should approximate original mean.
         """
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         # Compute original mean rate per neuron
         original_mean_per_neuron = spike_counts.mean(axis=0)
@@ -1496,7 +1496,7 @@ class TestGeneratePoissonSurrogates:
 
         Each time bin is independently sampled, so temporal patterns are lost.
         """
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         # This is a statistical property test - surrogates should not replicate
         # the exact temporal pattern of the original
@@ -1511,7 +1511,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Same seed should produce same surrogates."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates1 = list(
             generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
@@ -1526,7 +1526,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Same generator state should produce same surrogates."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -1543,7 +1543,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Different seeds should produce different surrogates."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates1 = list(
             generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
@@ -1561,7 +1561,7 @@ class TestGeneratePoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """rng=None should still produce valid surrogates."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates = list(
             generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=None)
@@ -1572,7 +1572,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_generator_is_lazy(self, spike_counts: np.ndarray, dt: float) -> None:
         """Generator should be lazy - not all surrogates computed at once."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         gen = generate_poisson_surrogates(spike_counts, dt, n_surrogates=1000, rng=42)
         first_three = [next(gen) for _ in range(3)]
@@ -1580,7 +1580,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_empty_spike_counts(self, dt: float) -> None:
         """Should handle empty spike counts gracefully."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         empty = np.zeros((0, 3), dtype=np.int64)
         surrogates = list(
@@ -1592,7 +1592,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_single_time_bin(self, dt: float) -> None:
         """Should handle single time bin."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         single = np.array([[5, 3, 2]], dtype=np.int64)
         for surrogate in generate_poisson_surrogates(
@@ -1603,7 +1603,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_single_neuron(self, dt: float) -> None:
         """Should work with single neuron."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
         for surrogate in generate_poisson_surrogates(
@@ -1614,7 +1614,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_zero_spike_counts(self, dt: float) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         zeros = np.zeros((5, 3), dtype=np.int64)
         for surrogate in generate_poisson_surrogates(zeros, dt, n_surrogates=5, rng=42):
@@ -1624,7 +1624,7 @@ class TestGeneratePoissonSurrogates:
 
     def test_high_firing_rate(self, dt: float) -> None:
         """Should handle high firing rates."""
-        from neurospatial.decoding.shuffle import generate_poisson_surrogates
+        from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         high_rate = np.full((5, 3), 50, dtype=np.int64)  # 50 spikes per bin
         for surrogate in generate_poisson_surrogates(
@@ -1664,7 +1664,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1678,7 +1678,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_yields_correct_shape(self, spike_counts: np.ndarray, dt: float) -> None:
         """Each surrogate should have same shape as input."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1689,7 +1689,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_yields_correct_dtype(self, spike_counts: np.ndarray, dt: float) -> None:
         """Surrogate arrays should be int64."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1702,7 +1702,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Surrogate spike counts should be non-negative."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1721,7 +1721,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         # Compute smoothed rates from original (what surrogate should match)
         from scipy.ndimage import uniform_filter1d
 
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1748,7 +1748,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Same seed should produce same surrogates."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1769,7 +1769,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Same generator state should produce same surrogates."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1792,7 +1792,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Different seeds should produce different surrogates."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1816,7 +1816,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """rng=None should still produce valid surrogates."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1831,7 +1831,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_generator_is_lazy(self, spike_counts: np.ndarray, dt: float) -> None:
         """Generator should be lazy."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1845,7 +1845,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         self, spike_counts: np.ndarray, dt: float
     ) -> None:
         """Different smoothing windows should produce different rate estimates."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1873,7 +1873,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         """Default smoothing_window should be 3."""
         import inspect
 
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1882,7 +1882,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_empty_spike_counts(self, dt: float) -> None:
         """Should handle empty spike counts gracefully."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1896,7 +1896,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_single_time_bin(self, dt: float) -> None:
         """Should handle single time bin (smoothing has no effect)."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1909,7 +1909,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_single_neuron(self, dt: float) -> None:
         """Should work with single neuron."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1922,7 +1922,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
     def test_zero_spike_counts(self, dt: float) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
-        from neurospatial.decoding.shuffle import (
+        from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
@@ -1944,7 +1944,7 @@ class TestComputeShufflePvalue:
 
     def test_basic_greater_tail(self) -> None:
         """P-value for observed > all null should be minimal (1/(n+1))."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 10.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All less than observed
@@ -1955,7 +1955,7 @@ class TestComputeShufflePvalue:
 
     def test_basic_less_tail(self) -> None:
         """P-value for observed < all null should be minimal."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 0.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])  # All greater than observed
@@ -1966,7 +1966,7 @@ class TestComputeShufflePvalue:
 
     def test_observed_in_null_distribution_greater(self) -> None:
         """P-value when observed is in the middle of null distribution."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 5.0, 6.0, 10.0 >= observed
@@ -1977,7 +1977,7 @@ class TestComputeShufflePvalue:
 
     def test_observed_in_null_distribution_less(self) -> None:
         """P-value when observed is in the middle of null distribution (less tail)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 5.0, 6.0, 10.0])  # 1.0, 2.0, 5.0 <= observed
@@ -1988,7 +1988,7 @@ class TestComputeShufflePvalue:
 
     def test_two_sided_tail(self) -> None:
         """Two-sided p-value should be 2 * min(p_greater, p_less)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 8.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -2001,7 +2001,7 @@ class TestComputeShufflePvalue:
 
     def test_two_sided_capped_at_one(self) -> None:
         """Two-sided p-value should not exceed 1.0."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 3.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -2014,7 +2014,7 @@ class TestComputeShufflePvalue:
 
     def test_all_null_equal_observed_greater(self) -> None:
         """When all null values equal observed (greater tail)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
@@ -2025,7 +2025,7 @@ class TestComputeShufflePvalue:
 
     def test_all_null_equal_observed_less(self) -> None:
         """When all null values equal observed (less tail)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([5.0, 5.0, 5.0])  # All equal observed
@@ -2036,7 +2036,7 @@ class TestComputeShufflePvalue:
 
     def test_single_null_value(self) -> None:
         """Should work with single null value."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([3.0])
@@ -2052,7 +2052,7 @@ class TestComputeShufflePvalue:
 
     def test_large_null_distribution(self) -> None:
         """Should work with many null values."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         rng = np.random.default_rng(42)
         null_scores = rng.normal(0, 1, 10000)
@@ -2064,7 +2064,7 @@ class TestComputeShufflePvalue:
 
     def test_returns_float(self) -> None:
         """Should return a float."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])
@@ -2075,14 +2075,14 @@ class TestComputeShufflePvalue:
         """Default tail parameter should be 'greater'."""
         import inspect
 
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         sig = inspect.signature(compute_shuffle_pvalue)
         assert sig.parameters["tail"].default == "greater"
 
     def test_pvalue_range(self) -> None:
         """P-value should always be in (0, 1]."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         # Various test cases
         test_cases = [
@@ -2099,7 +2099,7 @@ class TestComputeShufflePvalue:
 
     def test_invalid_tail_raises_error(self) -> None:
         """Invalid tail parameter should raise ValueError."""
-        from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+        from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0])
@@ -2117,7 +2117,7 @@ class TestComputeShuffleZscore:
 
     def test_basic_zscore(self) -> None:
         """Z-score should be (observed - mean) / std."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -2128,7 +2128,7 @@ class TestComputeShuffleZscore:
 
     def test_observed_equals_mean(self) -> None:
         """Z-score should be 0 when observed equals null mean."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         null_scores = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         observed = np.mean(null_scores)
@@ -2137,7 +2137,7 @@ class TestComputeShuffleZscore:
 
     def test_positive_zscore(self) -> None:
         """Z-score should be positive when observed > mean."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 10.0
         null_scores = np.array([1.0, 2.0, 3.0])  # mean = 2.0
@@ -2146,7 +2146,7 @@ class TestComputeShuffleZscore:
 
     def test_negative_zscore(self) -> None:
         """Z-score should be negative when observed < mean."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 0.0
         null_scores = np.array([1.0, 2.0, 3.0])  # mean = 2.0
@@ -2155,7 +2155,7 @@ class TestComputeShuffleZscore:
 
     def test_zero_variance_returns_nan(self) -> None:
         """Z-score should be NaN when null distribution has zero variance."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 5.0
         null_scores = np.array([3.0, 3.0, 3.0])  # All equal, std = 0
@@ -2164,7 +2164,7 @@ class TestComputeShuffleZscore:
 
     def test_single_null_value_returns_nan(self) -> None:
         """Z-score should be NaN with single null value (undefined std)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 5.0
         null_scores = np.array([3.0])
@@ -2173,7 +2173,7 @@ class TestComputeShuffleZscore:
 
     def test_large_null_distribution(self) -> None:
         """Should work with many null values."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         rng = np.random.default_rng(42)
         null_scores = rng.normal(0, 1, 10000)
@@ -2185,7 +2185,7 @@ class TestComputeShuffleZscore:
 
     def test_returns_float(self) -> None:
         """Should return a float."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])
@@ -2194,7 +2194,7 @@ class TestComputeShuffleZscore:
 
     def test_uses_sample_std(self) -> None:
         """Should use sample standard deviation (ddof=0 by default for numpy)."""
-        from neurospatial.decoding.shuffle import compute_shuffle_zscore
+        from neurospatial.stats.shuffle import compute_shuffle_zscore
 
         observed = 5.0
         null_scores = np.array([1.0, 2.0, 3.0, 4.0])
@@ -2213,7 +2213,7 @@ class TestShuffleTestResult:
 
     def test_creation(self) -> None:
         """Should create result with all required fields."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2232,7 +2232,7 @@ class TestShuffleTestResult:
 
     def test_is_frozen(self) -> None:
         """ShuffleTestResult should be a frozen dataclass."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2248,7 +2248,7 @@ class TestShuffleTestResult:
 
     def test_is_significant_property_true(self) -> None:
         """is_significant should be True when p < 0.05."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2262,7 +2262,7 @@ class TestShuffleTestResult:
 
     def test_is_significant_property_false(self) -> None:
         """is_significant should be False when p >= 0.05."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2276,7 +2276,7 @@ class TestShuffleTestResult:
 
     def test_is_significant_at_boundary(self) -> None:
         """is_significant should be False when p == 0.05 exactly."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2290,7 +2290,7 @@ class TestShuffleTestResult:
 
     def test_null_scores_preserved(self) -> None:
         """null_scores array should be preserved correctly."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         result = ShuffleTestResult(
@@ -2305,7 +2305,7 @@ class TestShuffleTestResult:
 
     def test_shuffle_type_string(self) -> None:
         """shuffle_type should be stored as string."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,
@@ -2320,7 +2320,7 @@ class TestShuffleTestResult:
 
     def test_has_plot_method(self) -> None:
         """Should have a plot method."""
-        from neurospatial.decoding.shuffle import ShuffleTestResult
+        from neurospatial.stats.shuffle import ShuffleTestResult
 
         result = ShuffleTestResult(
             observed_score=5.0,

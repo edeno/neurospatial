@@ -61,32 +61,6 @@ fit_linear_trajectory : Linear trajectory fitting
 detect_trajectory_radon : Radon transform trajectory detection
     Detect linear trajectories in posterior images.
 
-Shuffle-Based Significance Testing
-----------------------------------
-shuffle_time_bins : Temporal order shuffle
-    Test sequential structure within events.
-
-shuffle_cell_identity : Cell identity shuffle
-    Test spatial code coherence.
-
-shuffle_posterior_circular : Posterior circular shuffle
-    Test trajectory detection bias.
-
-generate_poisson_surrogates : Homogeneous Poisson surrogates
-    Test against constant rate-based null hypothesis.
-
-generate_inhomogeneous_poisson_surrogates : Inhomogeneous Poisson surrogates
-    Test against time-varying rate-based null hypothesis.
-
-compute_shuffle_pvalue : P-value from shuffle null distribution
-    Monte Carlo p-value with correction.
-
-compute_shuffle_zscore : Z-score from shuffle null distribution
-    Standard score relative to null distribution.
-
-ShuffleTestResult : Container for shuffle test results
-    Frozen dataclass with p-value, z-score, and plotting.
-
 Cell Assembly Detection
 -----------------------
 detect_assemblies : Detect cell assemblies from population spike counts
@@ -186,20 +160,6 @@ from neurospatial.decoding.posterior import (
     decode_position,
     normalize_to_posterior,
 )
-from neurospatial.decoding.shuffle import (
-    ShuffleTestResult,
-    compute_shuffle_pvalue,
-    compute_shuffle_zscore,
-    generate_inhomogeneous_poisson_surrogates,
-    generate_poisson_surrogates,
-    shuffle_cell_identity,
-    shuffle_place_fields_circular,
-    shuffle_place_fields_circular_2d,
-    shuffle_posterior_circular,
-    shuffle_posterior_weighted_circular,
-    shuffle_time_bins,
-    shuffle_time_bins_coherent,
-)
 from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
@@ -222,12 +182,8 @@ __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
-    "ShuffleTestResult",
     # Cell assembly detection
     "assembly_activation",
-    # Shuffle tests
-    "compute_shuffle_pvalue",
-    "compute_shuffle_zscore",
     # Metrics
     "confusion_matrix",
     "credible_region",
@@ -242,9 +198,6 @@ __all__ = [
     "explained_variance_reactivation",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
-    # Surrogate generation
-    "generate_inhomogeneous_poisson_surrogates",
-    "generate_poisson_surrogates",
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
@@ -257,12 +210,4 @@ __all__ = [
     "pairwise_correlations",
     "poisson_likelihood",
     "reactivation_strength",
-    # Shuffle methods
-    "shuffle_cell_identity",
-    "shuffle_place_fields_circular",
-    "shuffle_place_fields_circular_2d",
-    "shuffle_posterior_circular",
-    "shuffle_posterior_weighted_circular",
-    "shuffle_time_bins",
-    "shuffle_time_bins_coherent",
 ]

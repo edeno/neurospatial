@@ -1,9 +1,9 @@
-"""Shuffle-based significance testing for Bayesian decoding.
+"""Shuffle-based significance testing for statistical analysis.
 
 This module provides statistical shuffling procedures to establish null
-distributions and test the significance of decoded sequences. These methods
-are essential for replay analysis to rule out non-specific factors like
-firing rate biases.
+distributions and test the significance of neural and behavioral data.
+These methods are essential for replay analysis, decoding validation, and
+behavioral analysis to rule out non-specific factors like rate biases.
 
 Design Principles
 -----------------
@@ -22,11 +22,18 @@ Shuffle Categories
 | **Cell Identity** | Spatial code coherence is not significant |
 | **Posterior** | Trajectory detection is not biased |
 | **Surrogate** | Structure exceeds rate-based expectations |
+| **Trial** | Trial identity is not significant |
+| **ISI** | Inter-spike interval ordering is not significant |
+
+Imports
+-------
+>>> from neurospatial.stats.shuffle import shuffle_time_bins
+>>> from neurospatial.stats import shuffle_time_bins, compute_shuffle_pvalue
 
 Examples
 --------
 >>> import numpy as np
->>> from neurospatial.decoding import shuffle_time_bins, decode_position
+>>> from neurospatial.stats.shuffle import shuffle_time_bins
 
 >>> # Typical usage pattern
 >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
@@ -38,8 +45,8 @@ Examples
 
 See Also
 --------
-neurospatial.decoding.trajectory : Trajectory fitting functions
-neurospatial.decoding.metrics : Decoding quality metrics
+neurospatial.stats.circular : Circular statistics
+neurospatial.stats.surrogates : Surrogate data generation
 """
 
 from __future__ import annotations
@@ -127,7 +134,7 @@ def shuffle_time_bins(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_time_bins
+    >>> from neurospatial.stats.shuffle import shuffle_time_bins
 
     >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
     >>> for i, shuffled in enumerate(
@@ -199,7 +206,7 @@ def shuffle_time_bins_coherent(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_time_bins_coherent
+    >>> from neurospatial.stats.shuffle import shuffle_time_bins_coherent
 
     >>> spike_counts = np.array([[0, 1, 2], [2, 0, 1], [1, 2, 0]], dtype=np.int64)
     >>> for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=2, rng=42):
@@ -289,7 +296,7 @@ def shuffle_cell_identity(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_cell_identity
+    >>> from neurospatial.stats.shuffle import shuffle_cell_identity
 
     >>> spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
     >>> encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
@@ -363,7 +370,7 @@ def shuffle_place_fields_circular(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_place_fields_circular
+    >>> from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
     >>> encoding_models = np.array(
     ...     [
@@ -442,7 +449,7 @@ def shuffle_place_fields_circular_2d(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.decoding.shuffle import shuffle_place_fields_circular_2d
+    >>> from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
     >>> positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
     >>> env = Environment.from_samples(positions, bin_size=2.0)
@@ -563,7 +570,7 @@ def shuffle_posterior_circular(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_posterior_circular
+    >>> from neurospatial.stats.shuffle import shuffle_posterior_circular
 
     >>> # Create a normalized posterior (3 time bins, 5 spatial bins)
     >>> raw = np.array(
@@ -664,7 +671,7 @@ def shuffle_posterior_weighted_circular(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import shuffle_posterior_weighted_circular
+    >>> from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
     >>> # Create a normalized posterior (3 time bins, 10 spatial bins)
     >>> raw = np.random.default_rng(42).random((3, 10))
@@ -790,7 +797,7 @@ def generate_poisson_surrogates(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import generate_poisson_surrogates
+    >>> from neurospatial.stats.shuffle import generate_poisson_surrogates
 
     >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
     >>> for i, surrogate in enumerate(
@@ -883,7 +890,7 @@ def generate_inhomogeneous_poisson_surrogates(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import (
+    >>> from neurospatial.stats.shuffle import (
     ...     generate_inhomogeneous_poisson_surrogates,
     ... )
 
@@ -974,7 +981,7 @@ class ShuffleTestResult:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import ShuffleTestResult
+    >>> from neurospatial.stats.shuffle import ShuffleTestResult
 
     >>> result = ShuffleTestResult(
     ...     observed_score=5.0,
@@ -1034,7 +1041,7 @@ class ShuffleTestResult:
         Examples
         --------
         >>> import numpy as np
-        >>> from neurospatial.decoding.shuffle import ShuffleTestResult
+        >>> from neurospatial.stats.shuffle import ShuffleTestResult
 
         >>> result = ShuffleTestResult(
         ...     observed_score=5.0,
@@ -1141,7 +1148,7 @@ def compute_shuffle_pvalue(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import compute_shuffle_pvalue
+    >>> from neurospatial.stats.shuffle import compute_shuffle_pvalue
 
     >>> # Observed score higher than all null values
     >>> observed = 10.0
@@ -1224,7 +1231,7 @@ def compute_shuffle_zscore(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.shuffle import compute_shuffle_zscore
+    >>> from neurospatial.stats.shuffle import compute_shuffle_zscore
 
     >>> null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     >>> observed = 5.0
@@ -1249,3 +1256,159 @@ def compute_shuffle_zscore(
         return float("nan")
 
     return float((observed - mean_null) / std_null)
+
+
+# =============================================================================
+# VI. Trial and Behavioral Shuffles
+# =============================================================================
+
+
+def shuffle_trials(
+    trial_labels: NDArray[np.int64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.int64], None, None]:
+    """Shuffle trial labels to test trial identity significance.
+
+    Randomly permutes trial labels to create a null distribution for testing
+    whether observed effects depend on trial identity. Useful for testing
+    learning effects, trial-type differences, or temporal dependencies.
+
+    Parameters
+    ----------
+    trial_labels : NDArray[np.int64], shape (n_samples,)
+        Array of trial labels/indices for each sample (e.g., timepoint).
+        Labels can be any integers (e.g., 0, 1, 2 or trial IDs).
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_labels : NDArray[np.int64], shape (n_samples,)
+        Trial labels with permuted order.
+
+    Notes
+    -----
+    - Permutes the entire label array (all samples)
+    - Preserves the distribution of labels (same counts per label)
+    - Destroys the temporal association between samples and trials
+    - Useful for testing trial-type effects or learning-related changes
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.stats.shuffle import shuffle_trials
+
+    >>> trial_labels = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2])
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_trials(trial_labels, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(
+    ...         f"Shuffle {i}: unique values preserved = {set(shuffled) == set(trial_labels)}"
+    ...     )
+    Shuffle 0: unique values preserved = True
+    Shuffle 1: unique values preserved = True
+    Shuffle 2: unique values preserved = True
+
+    See Also
+    --------
+    shuffle_time_bins : Shuffle temporal order of spike counts.
+    shuffle_cell_identity : Shuffle neuron-to-place-field mapping.
+    """
+    generator = _ensure_rng(rng)
+    n_samples = len(trial_labels)
+
+    for _ in range(n_shuffles):
+        # Generate a random permutation of all sample indices
+        perm = generator.permutation(n_samples)
+        yield trial_labels[perm].copy()
+
+
+def shuffle_spikes_isi(
+    spike_times: NDArray[np.float64],
+    *,
+    n_shuffles: int = 1000,
+    rng: np.random.Generator | int | None = None,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Shuffle inter-spike intervals to test ISI ordering significance.
+
+    Creates surrogate spike trains by randomly permuting the inter-spike
+    intervals (ISIs). The first spike time is preserved, and ISIs are
+    shuffled and cumulatively summed to create new spike times. This
+    preserves the ISI distribution while destroying temporal correlations.
+
+    Parameters
+    ----------
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Sorted array of spike times for a single neuron.
+    n_shuffles : int, default=1000
+        Number of shuffled versions to generate.
+    rng : np.random.Generator | int | None, default=None
+        Random number generator for reproducibility.
+
+        - If Generator: Use directly
+        - If int: Seed for ``np.random.default_rng()``
+        - If None: Use default RNG (not reproducible)
+
+    Yields
+    ------
+    shuffled_times : NDArray[np.float64], shape (n_spikes,)
+        Spike times with shuffled ISIs (same first spike time).
+
+    Notes
+    -----
+    - Preserves the first spike time exactly
+    - Preserves the ISI distribution (same ISI values, different order)
+    - Destroys temporal correlations between consecutive ISIs
+    - Output spike times are always sorted (monotonically increasing)
+    - Useful for testing ISI-dependent effects (e.g., burst detection,
+      adaptation)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.stats.shuffle import shuffle_spikes_isi
+
+    >>> spike_times = np.array([0.1, 0.15, 0.25, 0.4, 0.45, 0.7])
+    >>> for i, shuffled in enumerate(
+    ...     shuffle_spikes_isi(spike_times, n_shuffles=3, rng=42)
+    ... ):
+    ...     print(
+    ...         f"Shuffle {i}: first spike preserved = {shuffled[0] == spike_times[0]}"
+    ...     )
+    Shuffle 0: first spike preserved = True
+    Shuffle 1: first spike preserved = True
+    Shuffle 2: first spike preserved = True
+
+    See Also
+    --------
+    shuffle_time_bins : Shuffle temporal order of binned spike counts.
+    generate_poisson_surrogates : Generate Poisson surrogate spike trains.
+    """
+    generator = _ensure_rng(rng)
+
+    # Handle edge cases
+    if len(spike_times) <= 1:
+        for _ in range(n_shuffles):
+            yield spike_times.copy()
+        return
+
+    # Compute inter-spike intervals
+    isis = np.diff(spike_times)
+    first_spike = spike_times[0]
+
+    for _ in range(n_shuffles):
+        # Shuffle the ISIs
+        shuffled_isis = generator.permutation(isis)
+        # Reconstruct spike times from shuffled ISIs
+        shuffled_times = np.concatenate(
+            [[first_spike], first_spike + np.cumsum(shuffled_isis)]
+        )
+        yield shuffled_times

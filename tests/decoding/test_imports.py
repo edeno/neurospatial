@@ -81,14 +81,13 @@ class TestPublicAPICompleteness:
             IsotonicFitResult,
             LinearFitResult,
             RadonDetectionResult,
-            ShuffleTestResult,
         )
 
         assert isinstance(DecodingResult, type)
         assert isinstance(IsotonicFitResult, type)
         assert isinstance(LinearFitResult, type)
         assert isinstance(RadonDetectionResult, type)
-        assert isinstance(ShuffleTestResult, type)
+        # NOTE: ShuffleTestResult moved to neurospatial.stats.shuffle
 
     def test_decoding_subpackage_likelihood_functions(self):
         """Test that likelihood functions are exported from decoding subpackage."""
@@ -152,59 +151,8 @@ class TestPublicAPICompleteness:
         assert callable(decoding_error)
         assert callable(median_decoding_error)
 
-    def test_decoding_subpackage_shuffle_temporal(self):
-        """Test that temporal shuffle functions are exported from decoding subpackage."""
-        from neurospatial.decoding import (
-            shuffle_time_bins,
-            shuffle_time_bins_coherent,
-        )
-
-        assert callable(shuffle_time_bins)
-        assert callable(shuffle_time_bins_coherent)
-
-    def test_decoding_subpackage_shuffle_cell_identity(self):
-        """Test that cell identity shuffle functions are exported from decoding subpackage."""
-        from neurospatial.decoding import (
-            shuffle_cell_identity,
-            shuffle_place_fields_circular,
-            shuffle_place_fields_circular_2d,
-        )
-
-        assert callable(shuffle_cell_identity)
-        assert callable(shuffle_place_fields_circular)
-        assert callable(shuffle_place_fields_circular_2d)
-
-    def test_decoding_subpackage_shuffle_posterior(self):
-        """Test that posterior shuffle functions are exported from decoding subpackage."""
-        from neurospatial.decoding import (
-            shuffle_posterior_circular,
-            shuffle_posterior_weighted_circular,
-        )
-
-        assert callable(shuffle_posterior_circular)
-        assert callable(shuffle_posterior_weighted_circular)
-
-    def test_decoding_subpackage_shuffle_surrogates(self):
-        """Test that surrogate generation functions are exported from decoding subpackage."""
-        from neurospatial.decoding import (
-            generate_inhomogeneous_poisson_surrogates,
-            generate_poisson_surrogates,
-        )
-
-        assert callable(generate_inhomogeneous_poisson_surrogates)
-        assert callable(generate_poisson_surrogates)
-
-    def test_decoding_subpackage_shuffle_significance(self):
-        """Test that significance testing functions are exported from decoding subpackage."""
-        from neurospatial.decoding import (
-            ShuffleTestResult,
-            compute_shuffle_pvalue,
-            compute_shuffle_zscore,
-        )
-
-        assert callable(compute_shuffle_pvalue)
-        assert callable(compute_shuffle_zscore)
-        assert isinstance(ShuffleTestResult, type)
+    # NOTE: Shuffle functions have been moved to neurospatial.stats.shuffle
+    # See tests/stats/test_stats_shuffle.py for shuffle function tests
 
     def test_decoding_all_list_completeness(self):
         """Test that __all__ contains all expected exports."""
@@ -212,11 +160,20 @@ class TestPublicAPICompleteness:
 
         expected_exports = [
             # Result containers
+            "AssemblyDetectionResult",
+            "AssemblyPattern",
             "DecodingResult",
+            "ExplainedVarianceResult",
             "IsotonicFitResult",
             "LinearFitResult",
             "RadonDetectionResult",
-            "ShuffleTestResult",
+            # Cell assembly detection
+            "assembly_activation",
+            "detect_assemblies",
+            "explained_variance_reactivation",
+            "marchenko_pastur_threshold",
+            "pairwise_correlations",
+            "reactivation_strength",
             # Main entry point
             "decode_position",
             # Likelihood
@@ -239,22 +196,7 @@ class TestPublicAPICompleteness:
             "decoding_correlation",
             "decoding_error",
             "median_decoding_error",
-            # Shuffles - Temporal
-            "shuffle_time_bins",
-            "shuffle_time_bins_coherent",
-            # Shuffles - Cell Identity
-            "shuffle_cell_identity",
-            "shuffle_place_fields_circular",
-            "shuffle_place_fields_circular_2d",
-            # Shuffles - Posterior
-            "shuffle_posterior_circular",
-            "shuffle_posterior_weighted_circular",
-            # Shuffles - Surrogates
-            "generate_inhomogeneous_poisson_surrogates",
-            "generate_poisson_surrogates",
-            # Shuffles - Significance
-            "compute_shuffle_pvalue",
-            "compute_shuffle_zscore",
+            # NOTE: Shuffle functions moved to neurospatial.stats.shuffle
         ]
 
         actual_all = set(neurospatial.decoding.__all__)

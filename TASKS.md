@@ -139,8 +139,8 @@ uv run pytest tests/nwb/ -v  # If NWB tests exist
 
 #### 4.2: Create stats/shuffle.py
 
-- [ ] Move shuffle functions from `decoding/shuffle.py` → `stats/shuffle.py`
-- [ ] Add new functions: `shuffle_trials()`, `shuffle_spikes_isi()` (per PLAN.md)
+- [x] Move shuffle functions from `decoding/shuffle.py` → `stats/shuffle.py`
+- [x] Add new functions: `shuffle_trials()`, `shuffle_spikes_isi()` (per PLAN.md)
 
 #### 4.3: Create stats/surrogates.py
 
@@ -151,7 +151,7 @@ uv run pytest tests/nwb/ -v  # If NWB tests exist
 
 - [x] Update imports for `metrics.circular` → `stats.circular`
 - [x] Update imports for `metrics.circular_basis` → `stats.circular` (backward compat wrapper retained)
-- [ ] Update imports for `decoding.shuffle` → `stats.shuffle`
+- [x] Update imports for `decoding.shuffle` → `stats.shuffle`
 
 **Verification**:
 
@@ -610,7 +610,7 @@ If circular imports occur:
 | M1: Directory Structure | Complete | Also moved io.py → io/files.py early |
 | M2: ops/ Modules | Complete | All 12 modules moved: binning, distance, normalize, smoothing, graph, calculus, transforms, alignment, egocentric, visibility, basis |
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
-| M4: stats/ Module | In Progress | Task 4.1 (circular.py) complete; 4.2, 4.3 pending |
+| M4: stats/ Module | In Progress | Task 4.1 (circular.py), 4.2 (shuffle.py) complete; 4.3 pending |
 | M5: behavior/ Module | Not Started | |
 | M6: encoding/ Module | Not Started | |
 | M7: decoding/ Cleanup | Not Started | |

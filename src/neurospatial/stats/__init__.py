@@ -13,7 +13,9 @@ surrogates : Surrogate data generation
 Imports
 -------
 >>> from neurospatial.stats import rayleigh_test, circular_mean
+>>> from neurospatial.stats import shuffle_time_bins, compute_shuffle_pvalue
 >>> from neurospatial.stats.circular import circular_basis
+>>> from neurospatial.stats.shuffle import ShuffleTestResult
 """
 
 from neurospatial.stats.circular import (
@@ -30,6 +32,22 @@ from neurospatial.stats.circular import (
     plot_circular_basis_tuning,
     rayleigh_test,
     wrap_angle,
+)
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    compute_shuffle_zscore,
+    generate_inhomogeneous_poisson_surrogates,
+    generate_poisson_surrogates,
+    shuffle_cell_identity,
+    shuffle_place_fields_circular,
+    shuffle_place_fields_circular_2d,
+    shuffle_posterior_circular,
+    shuffle_posterior_weighted_circular,
+    shuffle_spikes_isi,
+    shuffle_time_bins,
+    shuffle_time_bins_coherent,
+    shuffle_trials,
 )
 
 __all__ = [  # noqa: RUF022
@@ -50,4 +68,19 @@ __all__ = [  # noqa: RUF022
     "circular_basis_metrics",
     "is_modulated",
     "plot_circular_basis_tuning",
+    # Shuffle functions
+    "ShuffleTestResult",
+    "compute_shuffle_pvalue",
+    "compute_shuffle_zscore",
+    "generate_inhomogeneous_poisson_surrogates",
+    "generate_poisson_surrogates",
+    "shuffle_cell_identity",
+    "shuffle_place_fields_circular",
+    "shuffle_place_fields_circular_2d",
+    "shuffle_posterior_circular",
+    "shuffle_posterior_weighted_circular",
+    "shuffle_spikes_isi",
+    "shuffle_time_bins",
+    "shuffle_time_bins_coherent",
+    "shuffle_trials",
 ]
