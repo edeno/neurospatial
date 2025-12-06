@@ -1,11 +1,86 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 9 COMPLETE - Sparse top-level exports (5 core classes)
+**Current Status**: Milestone 10 COMPLETE - Delete old files and consolidate encoding modules
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 34)
+
+**Starting Point**: Milestone 10 - Delete Old Files
+
+**Completed**: Delete backward-compatibility wrappers and move implementations to encoding modules
+
+**Work Done**:
+
+1. Deleted `src/neurospatial/behavioral.py` (was a re-export wrapper for behavior.navigation)
+2. Moved `spike_field.py` implementation INTO `encoding/place.py` (prior session)
+3. Moved `object_vector_field.py` implementation INTO `encoding/object_vector.py`:
+   - Added full implementation (~400 lines) to encoding/object_vector.py
+   - Updated `__all__` to include all exports
+   - Deleted original object_vector_field.py
+4. Moved `spatial_view_field.py` implementation INTO `encoding/spatial_view.py`:
+   - Added full implementation (~370 lines) to encoding/spatial_view.py
+   - Updated `__all__` to include all exports
+   - Deleted original spatial_view_field.py
+5. Deleted metrics/ re-export wrappers:
+   - `metrics/decision_analysis.py` (re-exported from behavior.decisions)
+   - `metrics/goal_directed.py` (re-exported from behavior.navigation)
+   - `metrics/path_efficiency.py` (re-exported from behavior.navigation)
+   - `metrics/vte.py` (re-exported from behavior.decisions)
+6. Updated `metrics/__init__.py` to import directly from behavior.decisions and behavior.navigation
+7. Fixed circular import in `metrics/spatial_view_cells.py`:
+   - Moved `compute_place_field` import inside `spatial_view_cell_metrics()` function
+   - Added explanatory comment matching the pattern used for `compute_spatial_view_field`
+8. Updated test files:
+   - `tests/test_object_vector_field.py::TestModuleSetup` now tests `encoding.object_vector`
+   - `tests/test_spatial_view_field.py::TestModuleSetup` now tests `encoding.spatial_view`
+   - Updated all test imports for metrics modules
+9. Code review identified circular import issue - fixed before commit
+10. All M10-specific tests pass: 10 passed (TestModuleSetup), 57 passed (object_vector + spatial_view full)
+11. Ran ruff check/format and mypy - no issues
+
+**Files Deleted**:
+
+- `src/neurospatial/behavioral.py`
+- `src/neurospatial/spike_field.py` (prior session)
+- `src/neurospatial/object_vector_field.py`
+- `src/neurospatial/spatial_view_field.py`
+- `src/neurospatial/metrics/decision_analysis.py`
+- `src/neurospatial/metrics/goal_directed.py`
+- `src/neurospatial/metrics/path_efficiency.py`
+- `src/neurospatial/metrics/vte.py`
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/object_vector.py` (added full implementation)
+- `src/neurospatial/encoding/spatial_view.py` (added full implementation)
+- `src/neurospatial/metrics/__init__.py` (updated imports)
+- `src/neurospatial/metrics/spatial_view_cells.py` (fixed circular import)
+- `tests/test_object_vector_field.py` (updated TestModuleSetup)
+- `tests/test_spatial_view_field.py` (updated TestModuleSetup)
+- `tests/metrics/test_decision_analysis.py` (updated imports)
+- `tests/metrics/test_goal_directed.py` (updated imports)
+- `tests/metrics/test_path_efficiency.py` (updated imports)
+- `tests/metrics/test_vte.py` (updated imports)
+- `tests/metrics/test_behavioral_integration.py` (updated imports)
+- `tests/encoding/test_encoding_object_vector.py` (updated imports)
+- `tests/encoding/test_encoding_spatial_view.py` (updated imports)
+
+**Milestone 10 Status**: COMPLETE
+
+All tasks done:
+
+- Deleted backward-compatibility re-export wrappers
+- Moved implementations into encoding modules
+- Fixed circular imports
+- Updated test files
+
+**Next Task**: Milestone 11 - Update Documentation
+
+---
 
 ### 2025-12-06 (Session 33)
 

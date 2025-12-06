@@ -362,30 +362,26 @@ uv run pytest tests/ -x -v  # ~7700 tests pass
 
 Delete files (in order):
 
-- [ ] Delete `src/neurospatial/behavioral.py`
-- [ ] Delete `src/neurospatial/spatial.py`
-- [ ] Delete `src/neurospatial/distance.py` (if moved, not if original)
-- [ ] Delete `src/neurospatial/field_ops.py`
-- [ ] Delete `src/neurospatial/kernels.py`
-- [ ] Delete `src/neurospatial/primitives.py`
-- [ ] Delete `src/neurospatial/differential.py`
-- [ ] Delete `src/neurospatial/transforms.py` (original, not ops/)
-- [ ] Delete `src/neurospatial/alignment.py` (original, not ops/)
-- [ ] Delete `src/neurospatial/calibration.py`
-- [ ] Delete `src/neurospatial/basis.py` (original, not ops/)
-- [ ] Delete `src/neurospatial/reward.py`
-- [ ] Delete `src/neurospatial/reference_frames.py`
-- [ ] Delete `src/neurospatial/spike_field.py`
-- [ ] Delete `src/neurospatial/object_vector_field.py`
-- [ ] Delete `src/neurospatial/spatial_view_field.py`
-- [ ] Delete `src/neurospatial/visibility.py` (original, not ops/)
-- [ ] Delete `src/neurospatial/io.py` (original, not io/files.py)
+- [x] Delete `src/neurospatial/behavioral.py` (deleted, was re-export wrapper)
+- [x] Delete `src/neurospatial/spike_field.py` (moved to encoding/place.py)
+- [x] Delete `src/neurospatial/object_vector_field.py` (moved to encoding/object_vector.py)
+- [x] Delete `src/neurospatial/spatial_view_field.py` (moved to encoding/spatial_view.py)
+- [x] Delete `src/neurospatial/metrics/decision_analysis.py` (re-exports from behavior.decisions)
+- [x] Delete `src/neurospatial/metrics/goal_directed.py` (re-exports from behavior.navigation)
+- [x] Delete `src/neurospatial/metrics/path_efficiency.py` (re-exports from behavior.navigation)
+- [x] Delete `src/neurospatial/metrics/vte.py` (re-exports from behavior.decisions)
 
-Delete directories:
+Note: The following files were already moved/deleted in prior milestones:
 
-- [ ] Delete `src/neurospatial/visualization/` directory
-- [ ] Delete `src/neurospatial/segmentation/` directory (after flattening to behavior/)
-- [ ] Delete `src/neurospatial/metrics/` directory (after distributing contents)
+- `spatial.py`, `distance.py`, `field_ops.py`, `kernels.py`, `primitives.py`, `differential.py`
+- `transforms.py`, `alignment.py`, `calibration.py`, `basis.py`, `reward.py`
+- `reference_frames.py`, `visibility.py`, `io.py`
+- `visualization/`, `segmentation/` directories
+
+Note: `metrics/` directory retained with actual implementation modules:
+
+- `boundary_cells.py`, `grid_cells.py`, `head_direction.py`, `phase_precession.py`
+- `place_fields.py`, `population.py`, `object_vector_cells.py`, `spatial_view_cells.py`
 
 **Verification**:
 
@@ -622,7 +618,7 @@ If circular imports occur:
 | M7: decoding/ Cleanup | Complete | Re-exports added from stats.shuffle and stats.surrogates |
 | M8: animation/ Consolidation | Complete | visualization/scale_bar.py → animation/config.py; visualization/ deleted |
 | M9: Top-Level **init**.py | Complete | Sparse exports (5 core classes), circular import fixes, test updates |
-| M10: Delete Old Files | Not Started | |
+| M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
 | M11: Update Documentation | Not Started | |
 | M12: Update Notebooks | Not Started | |
 | M13: Import Tests | Not Started | |
