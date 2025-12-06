@@ -30,7 +30,7 @@ class TestPackageImports:
 
     def test_top_level_imports(self):
         """Test that main exports are available from neurospatial."""
-        from neurospatial import DecodingResult, decode_position
+        from neurospatial.decoding import DecodingResult, decode_position
 
         assert callable(decode_position)
         assert isinstance(DecodingResult, type)
@@ -62,7 +62,7 @@ class TestPublicAPICompleteness:
         - decoding_error
         - median_decoding_error
         """
-        from neurospatial import (
+        from neurospatial.decoding import (
             DecodingResult,
             decode_position,
             decoding_error,
@@ -211,18 +211,38 @@ class TestPublicAPICompleteness:
         missing = expected_set - actual_all
         assert not missing, f"Missing from __all__: {missing}"
 
-    def test_main_package_all_includes_decoding_exports(self):
-        """Test that main neurospatial.__all__ includes decoding exports."""
+    def test_main_package_sparse_exports(self):
+        """Test that main neurospatial.__all__ has only sparse exports.
+
+        Per Milestone 9, the top-level neurospatial package now only exports
+        5 core classes. Decoding exports must be imported from the submodule.
+        """
         import neurospatial
 
-        # These should be in the main __all__
-        expected_in_main = [
+        # Main __all__ should only have 5 core classes
+        expected_in_main = {
+            "Environment",
+            "EnvironmentNotFittedError",
+            "Region",
+            "Regions",
+            "CompositeEnvironment",
+        }
+
+        actual_all = set(neurospatial.__all__)
+        assert actual_all == expected_in_main, (
+            f"Expected only core classes in main __all__, got: {actual_all}"
+        )
+
+        # Decoding exports should be in decoding submodule, not main
+        expected_in_decoding = [
             "DecodingResult",
             "decode_position",
             "decoding_error",
             "median_decoding_error",
         ]
 
-        actual_all = set(neurospatial.__all__)
-        for name in expected_in_main:
-            assert name in actual_all, f"'{name}' not in neurospatial.__all__"
+        for name in expected_in_decoding:
+            assert name not in actual_all, (
+                f"'{name}' should not be in neurospatial.__all__, "
+                f"use neurospatial.decoding instead"
+            )

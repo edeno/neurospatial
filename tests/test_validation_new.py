@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, validate_environment
-from neurospatial.layout.validation import GraphValidationError
+from neurospatial import Environment
+from neurospatial.layout.validation import GraphValidationError, validate_environment
 
 
 class TestValidateEnvironment:

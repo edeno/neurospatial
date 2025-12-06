@@ -264,7 +264,7 @@ class DecodingResult:
             env.animate_fields(result.posterior, backend="napari")
 
             # With position overlay
-            from neurospatial import PositionOverlay
+            from neurospatial.animation.overlays import PositionOverlay
 
             overlay = PositionOverlay(data=positions, times=times)
             env.animate_fields(result.posterior, overlays=[overlay])

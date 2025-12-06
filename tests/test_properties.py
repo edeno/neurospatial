@@ -17,13 +17,14 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 from numpy.typing import NDArray
 
-from neurospatial import Environment, normalize_field
+from neurospatial import Environment
 from neurospatial.metrics import (
     rate_map_coherence,
     selectivity,
     skaggs_information,
     sparsity,
 )
+from neurospatial.ops import normalize_field
 from neurospatial.ops.alignment import get_2d_rotation_matrix
 from neurospatial.ops.transforms import AffineND, from_rotation_matrix
 

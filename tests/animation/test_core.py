@@ -10,10 +10,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from neurospatial import (
-    Environment,
-    PositionOverlay,
-)
+from neurospatial import Environment
+from neurospatial.animation.overlays import PositionOverlay
 
 
 class TestPlaybackConstants:

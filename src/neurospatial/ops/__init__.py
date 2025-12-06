@@ -20,6 +20,12 @@ basis : GLM spatial basis functions
 """
 
 # Alignment operations
+# Visibility operations - imported lazily to avoid circular imports
+# These modules depend on Environment, which creates a circular import when
+# ops/__init__.py is imported during Environment initialization.
+# Use direct imports: from neurospatial.ops.visibility import FieldOfView
+import importlib as _importlib
+
 from neurospatial.ops.alignment import (
     ProbabilityMappingParams,
     apply_similarity_transform,
@@ -118,17 +124,25 @@ from neurospatial.ops.transforms import (
     translate_3d,
 )
 
-# Visibility operations
-from neurospatial.ops.visibility import (
-    FieldOfView,
-    ViewshedResult,
-    compute_view_field,
-    compute_viewed_location,
-    compute_viewshed,
-    compute_viewshed_trajectory,
-    visibility_occupancy,
-    visible_cues,
-)
+
+def __getattr__(name: str):
+    """Lazy import for visibility module to avoid circular imports."""
+    _visibility_exports = {
+        "FieldOfView",
+        "ViewshedResult",
+        "compute_view_field",
+        "compute_viewed_location",
+        "compute_viewshed",
+        "compute_viewshed_trajectory",
+        "visibility_occupancy",
+        "visible_cues",
+    }
+    if name in _visibility_exports:
+        _visibility = _importlib.import_module("neurospatial.ops.visibility")
+        return getattr(_visibility, name)
+    msg = f"module 'neurospatial.ops' has no attribute {name!r}"
+    raise AttributeError(msg)
+
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [

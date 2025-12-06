@@ -29,9 +29,9 @@ from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path as MplPath
 from shapely.geometry import Polygon
 
-from neurospatial import (
+from neurospatial import Environment
+from neurospatial.animation.overlays import (
     BodypartOverlay,
-    Environment,
     HeadDirectionOverlay,
     PositionOverlay,
 )

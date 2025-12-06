@@ -37,7 +37,7 @@ class TestRegionRewardField:
         assert reward.shape == (env.n_bins,)
 
         # Get region mask to identify goal bins
-        from neurospatial import regions_to_mask
+        from neurospatial.ops import regions_to_mask
 
         goal_mask = regions_to_mask(env, "goal")
 
@@ -66,7 +66,7 @@ class TestRegionRewardField:
             env, "goal", reward_value=reward_value, decay="constant"
         )
 
-        from neurospatial import regions_to_mask
+        from neurospatial.ops import regions_to_mask
 
         goal_mask = regions_to_mask(env, "goal")
 
@@ -94,7 +94,7 @@ class TestRegionRewardField:
         assert reward.shape == (env.n_bins,)
 
         # Check that reward decreases with distance from region boundary
-        from neurospatial import regions_to_mask
+        from neurospatial.ops import regions_to_mask
 
         goal_mask = regions_to_mask(env, "goal")
 
@@ -132,7 +132,7 @@ class TestRegionRewardField:
         assert reward.shape == (env.n_bins,)
 
         # Check that reward is smoothly varying
-        from neurospatial import regions_to_mask
+        from neurospatial.ops import regions_to_mask
 
         goal_mask = regions_to_mask(env, "goal")
 

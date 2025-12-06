@@ -16,12 +16,12 @@ class TestTopLevelImports:
         assert CompositeEnvironment is not None
 
     def test_serialization_functions_import(self):
-        """Test that I/O functions can be imported from top level.
+        """Test that I/O functions can be imported from io submodule.
 
         These are documented in CLAUDE.md §13 (Import Patterns):
-        from neurospatial import to_file, from_file, to_dict, from_dict
+        from neurospatial.io import to_file, from_file, to_dict, from_dict
         """
-        from neurospatial import from_dict, from_file, to_dict, to_file
+        from neurospatial.io import from_dict, from_file, to_dict, to_file
 
         assert to_file is not None
         assert from_file is not None
@@ -40,25 +40,22 @@ class TestTopLevelImports:
         assert Regions is not None
 
     def test_public_api_functions_import(self):
-        """Test that public API functions can be imported from top level.
+        """Test that public API functions can be imported from submodules.
 
         These are documented in CLAUDE.md §13 (Import Patterns):
-        from neurospatial import (
-            validate_environment,
-            map_points_to_bins,
-            estimate_transform,
-            apply_transform_to_environment,
+        from neurospatial.ops import map_points_to_bins, distance_field, pairwise_distances
+        from neurospatial.ops.transforms import estimate_transform, apply_transform_to_environment
+        from neurospatial.layout.validation import validate_environment
+        """
+        from neurospatial.layout.validation import validate_environment
+        from neurospatial.ops import (
             distance_field,
+            map_points_to_bins,
             pairwise_distances,
         )
-        """
-        from neurospatial import (
+        from neurospatial.ops.transforms import (
             apply_transform_to_environment,
-            distance_field,
             estimate_transform,
-            map_points_to_bins,
-            pairwise_distances,
-            validate_environment,
         )
 
         assert validate_environment is not None
@@ -75,21 +72,17 @@ class TestTopLevelImports:
         statement to verify the complete documented API is available.
         """
         # Test the exact import pattern from CLAUDE.md
-        from neurospatial import (
-            CompositeEnvironment,
-            Environment,
-            Region,
-            Regions,
-            apply_transform_to_environment,
+        from neurospatial import CompositeEnvironment, Environment, Region, Regions
+        from neurospatial.io import from_dict, from_file, to_dict, to_file
+        from neurospatial.layout.validation import validate_environment
+        from neurospatial.ops import (
             distance_field,
-            estimate_transform,
-            from_dict,
-            from_file,
             map_points_to_bins,
             pairwise_distances,
-            to_dict,
-            to_file,
-            validate_environment,
+        )
+        from neurospatial.ops.transforms import (
+            apply_transform_to_environment,
+            estimate_transform,
         )
 
         # Verify all are not None
@@ -138,22 +131,14 @@ class TestDunderAll:
         """Test that all documented imports are in __all__."""
         import neurospatial
 
-        # Core documented imports from CLAUDE.md
+        # Core documented imports from CLAUDE.md - only the 5 core classes
+        # are exported from top-level neurospatial
         documented_imports = [
             "Environment",
             "CompositeEnvironment",
             "Region",
             "Regions",
-            "to_file",
-            "from_file",
-            "to_dict",
-            "from_dict",
-            "validate_environment",
-            "map_points_to_bins",
-            "estimate_transform",
-            "apply_transform_to_environment",
-            "distance_field",
-            "pairwise_distances",
+            "EnvironmentNotFittedError",
         ]
 
         for symbol in documented_imports:

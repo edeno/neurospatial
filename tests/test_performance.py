@@ -18,7 +18,8 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment, map_points_to_bins
+from neurospatial import Environment
+from neurospatial.ops import map_points_to_bins
 
 
 @pytest.mark.slow

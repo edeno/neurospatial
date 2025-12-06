@@ -7,7 +7,7 @@ import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.spike_field import compute_place_field, spikes_to_field
+from neurospatial.encoding.place import compute_place_field, spikes_to_field
 
 
 class TestSpikesToField:

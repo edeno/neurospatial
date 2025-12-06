@@ -363,7 +363,7 @@ class TestSimulateTrajectoryLaps:
 
         # Use map_points_to_bins to check - this is more efficient than calling
         # contains() in a loop, and it validates that positions can be mapped
-        from neurospatial import map_points_to_bins
+        from neurospatial.ops import map_points_to_bins
 
         bin_indices = map_points_to_bins(positions, simple_2d_env)
 

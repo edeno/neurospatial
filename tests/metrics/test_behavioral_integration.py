@@ -266,7 +266,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_path_progress_reaches_one_at_goal(self) -> None:
         """Path progress should reach 1.0 when at goal."""
-        from neurospatial.behavioral import path_progress
+        from neurospatial.behavior.navigation import path_progress
 
         # Create dense environment to ensure trajectory bins exist
         np.random.seed(42)

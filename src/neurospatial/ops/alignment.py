@@ -55,10 +55,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
-from neurospatial.environment import Environment
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
+
+    from neurospatial.environment import Environment
 
 __all__ = [
     "ProbabilityMappingParams",

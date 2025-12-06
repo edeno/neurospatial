@@ -73,13 +73,13 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
+from neurospatial.encoding.place import compute_place_field
 from neurospatial.metrics.place_fields import (
     rate_map_coherence,
     skaggs_information,
     sparsity,
 )
 from neurospatial.spatial_view_field import compute_spatial_view_field
-from neurospatial.spike_field import compute_place_field
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -264,7 +264,7 @@ def spatial_view_cell_metrics(
     --------
     is_spatial_view_cell : Quick boolean classifier.
     neurospatial.spatial_view_field.compute_spatial_view_field : View field computation.
-    neurospatial.spike_field.compute_place_field : Place field computation.
+    neurospatial.encoding.place.compute_place_field : Place field computation.
 
     Examples
     --------

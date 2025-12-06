@@ -321,7 +321,7 @@ class TestPlotField:
 
     def test_integration_with_compute_place_field(self):
         """Integration test: visualize computed place field."""
-        from neurospatial import compute_place_field
+        from neurospatial.encoding.place import compute_place_field
 
         # Generate synthetic data
         rng = np.random.default_rng(42)

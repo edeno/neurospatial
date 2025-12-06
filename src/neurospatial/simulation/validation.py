@@ -168,7 +168,7 @@ def validate_simulation(
     - 'binned': Simple binning without smoothing (noisy but unbiased)
     """
     # Import here to avoid circular dependency
-    from neurospatial import compute_place_field
+    from neurospatial.encoding.place import compute_place_field
 
     # Parse input parameters
     if session is not None:
@@ -520,7 +520,7 @@ def plot_session_summary(
     from matplotlib.gridspec import GridSpec
 
     # Import here to avoid circular dependency
-    from neurospatial import compute_place_field
+    from neurospatial.encoding.place import compute_place_field
     from neurospatial.simulation.session import SimulationSession
 
     # Validate session type

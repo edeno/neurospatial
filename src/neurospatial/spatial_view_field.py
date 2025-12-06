@@ -72,7 +72,7 @@ Rolls, E. T., et al. (1997). Spatial view cells in the primate hippocampus.
 See Also
 --------
 neurospatial.visibility : Visibility and gaze computation
-neurospatial.spike_field.compute_place_field : Standard place field computation
+neurospatial.encoding.place.compute_place_field : Standard place field computation
 """
 
 from __future__ import annotations
@@ -201,7 +201,7 @@ def compute_spatial_view_field(
 
     See Also
     --------
-    neurospatial.spike_field.compute_place_field : Standard place field computation.
+    neurospatial.encoding.place.compute_place_field : Standard place field computation.
     neurospatial.visibility.compute_viewed_location : Gaze computation.
 
     Examples

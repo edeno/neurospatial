@@ -435,10 +435,10 @@ class TestWindowedLoadingIntegration:
     def test_large_dataset_uses_windowed_loading(self, simple_env):
         """Test that datasets above threshold use windowed loading."""
 
-        from neurospatial import PositionOverlay
         from neurospatial.animation.backends.napari_backend import (
             WINDOWED_OVERLAY_THRESHOLD,
         )
+        from neurospatial.animation.overlays import PositionOverlay
 
         # Create data above threshold
         n_frames = WINDOWED_OVERLAY_THRESHOLD + 10000
@@ -484,7 +484,7 @@ class TestWindowedLoadingIntegration:
     def test_small_dataset_does_not_use_windowed_loading(self, simple_env):
         """Test that datasets below threshold don't use windowed loading."""
 
-        from neurospatial import PositionOverlay
+        from neurospatial.animation.overlays import PositionOverlay
 
         # Create data below threshold
         n_frames = 1000  # Well below 50K threshold
@@ -526,10 +526,10 @@ class TestWindowedLoadingIntegration:
     def test_windowed_manager_disconnect_on_cleanup(self, simple_env):
         """Test that windowed managers can be disconnected for cleanup."""
 
-        from neurospatial import PositionOverlay
         from neurospatial.animation.backends.napari_backend import (
             WINDOWED_OVERLAY_THRESHOLD,
         )
+        from neurospatial.animation.overlays import PositionOverlay
 
         n_frames = WINDOWED_OVERLAY_THRESHOLD + 1000
         trajectory = np.column_stack(

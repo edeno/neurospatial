@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, Mock, patch
 import numpy as np
 import pytest
 
-from neurospatial import (
+from neurospatial import Environment
+from neurospatial.animation.overlays import (
     BodypartOverlay,
-    Environment,
     HeadDirectionOverlay,
     PositionOverlay,
 )

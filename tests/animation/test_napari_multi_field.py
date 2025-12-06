@@ -412,7 +412,7 @@ class TestDispatcherMultiFieldIntegration:
     )
     def test_multi_field_with_overlays(self, simple_env, multi_field_sequences):
         """Multi-field with overlays should work through dispatcher."""
-        from neurospatial import PositionOverlay
+        from neurospatial.animation.overlays import PositionOverlay
 
         n_frames = 10  # Same as multi_field_sequences
         rng = np.random.default_rng(42)
@@ -451,7 +451,7 @@ class TestDispatcherMultiFieldIntegration:
     )
     def test_multi_field_with_frame_times(self, simple_env, multi_field_sequences):
         """Multi-field with frame_times should align overlays correctly."""
-        from neurospatial import PositionOverlay
+        from neurospatial.animation.overlays import PositionOverlay
 
         n_frames = 10  # Same as multi_field_sequences
 

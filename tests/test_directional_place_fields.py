@@ -6,11 +6,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
-from neurospatial import Environment, compute_place_field
-from neurospatial.spike_field import (
+from neurospatial import Environment
+from neurospatial.encoding.place import (
     DirectionalPlaceFields,
     _subset_spikes_by_time_mask,
     compute_directional_place_fields,
+    compute_place_field,
 )
 
 

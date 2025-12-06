@@ -64,14 +64,14 @@ class TestSpatialViewFieldResultDataclass:
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that SpatialViewFieldResult can be imported."""
-        from neurospatial.spatial_view_field import SpatialViewFieldResult
+        from neurospatial.encoding.spatial_view import SpatialViewFieldResult
 
         assert SpatialViewFieldResult is not None
 
     def test_dataclass_is_frozen(self) -> None:
         """Test that SpatialViewFieldResult is a frozen dataclass."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import SpatialViewFieldResult
+        from neurospatial.encoding.spatial_view import SpatialViewFieldResult
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -92,7 +92,7 @@ class TestSpatialViewFieldResultDataclass:
     def test_dataclass_has_all_fields(self) -> None:
         """Test that SpatialViewFieldResult has all required fields."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import SpatialViewFieldResult
+        from neurospatial.encoding.spatial_view import SpatialViewFieldResult
 
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (500, 2))
@@ -119,14 +119,14 @@ class TestComputeSpatialViewField:
 
     def test_function_exists(self) -> None:
         """Test that compute_spatial_view_field can be imported."""
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         assert callable(compute_spatial_view_field)
 
     def test_returns_spatial_view_field_result(self) -> None:
         """Test that function returns SpatialViewFieldResult instance."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import (
+        from neurospatial.encoding.spatial_view import (
             SpatialViewFieldResult,
             compute_spatial_view_field,
         )
@@ -158,7 +158,7 @@ class TestComputeSpatialViewField:
     def test_field_shape_matches_env(self) -> None:
         """Test that field has same number of bins as environment."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -185,7 +185,7 @@ class TestComputeSpatialViewField:
     def test_view_occupancy_computed(self) -> None:
         """Test that view_occupancy is computed and has correct shape."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -214,7 +214,7 @@ class TestComputeSpatialViewField:
     def test_handles_viewing_outside_environment(self) -> None:
         """Test that NaN viewed locations are handled correctly."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         # Create a small environment
         rng = np.random.default_rng(42)
@@ -247,7 +247,7 @@ class TestComputeSpatialViewField:
     def test_binned_method(self) -> None:
         """Test field computation with binned method."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -275,7 +275,7 @@ class TestComputeSpatialViewField:
     def test_diffusion_kde_method(self) -> None:
         """Test field computation with diffusion_kde method."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -304,7 +304,7 @@ class TestComputeSpatialViewField:
     def test_gaussian_kde_method(self) -> None:
         """Test field computation with gaussian_kde method."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -333,7 +333,7 @@ class TestComputeSpatialViewField:
     def test_min_occupancy_filtering(self) -> None:
         """Test that low-occupancy bins are set to NaN."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -363,7 +363,7 @@ class TestComputeSpatialViewField:
     def test_gaze_model_fixed_distance(self) -> None:
         """Test field computation with fixed_distance gaze model."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -391,7 +391,7 @@ class TestComputeSpatialViewField:
     def test_gaze_model_ray_cast(self) -> None:
         """Test field computation with ray_cast gaze model."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -418,7 +418,7 @@ class TestComputeSpatialViewField:
     def test_gaze_offsets_parameter(self) -> None:
         """Test field computation with gaze offsets (eye tracking)."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -452,7 +452,7 @@ class TestValidation:
     def test_validation_empty_spike_times(self) -> None:
         """Test that empty spike times raises ValueError."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -477,7 +477,7 @@ class TestValidation:
     def test_validation_times_positions_mismatch(self) -> None:
         """Test validation when times and positions have different lengths."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -500,7 +500,7 @@ class TestValidation:
     def test_validation_times_headings_mismatch(self) -> None:
         """Test validation when times and headings have different lengths."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -523,7 +523,7 @@ class TestValidation:
     def test_validation_invalid_method(self) -> None:
         """Test validation for invalid smoothing method."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -548,7 +548,7 @@ class TestValidation:
     def test_validation_invalid_gaze_model(self) -> None:
         """Test validation for invalid gaze model."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -573,7 +573,7 @@ class TestValidation:
     def test_validation_gaze_offsets_length_mismatch(self) -> None:
         """Test validation when gaze_offsets has wrong length."""
         from neurospatial import Environment
-        from neurospatial.spatial_view_field import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -602,10 +602,10 @@ class TestRecoverGroundTruthFromSimulation:
     def test_view_field_peaks_at_preferred_view_location(self) -> None:
         """Test that view field peaks at preferred view location."""
         from neurospatial import Environment
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
-        from neurospatial.spatial_view_field import compute_spatial_view_field
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -666,11 +666,12 @@ class TestRecoverGroundTruthFromSimulation:
 
     def test_view_field_differs_from_place_field_for_svc(self) -> None:
         """Test that view field differs from place field for spatial view cells."""
-        from neurospatial import Environment, compute_place_field
+        from neurospatial import Environment
+        from neurospatial.encoding.place import compute_place_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
-        from neurospatial.spatial_view_field import compute_spatial_view_field
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -751,12 +752,12 @@ class TestExportsAndIntegration:
 
     def test_exported_from_neurospatial(self) -> None:
         """Test that compute_spatial_view_field is exported from neurospatial."""
-        from neurospatial import compute_spatial_view_field
+        from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
         assert callable(compute_spatial_view_field)
 
     def test_result_exported_from_neurospatial(self) -> None:
         """Test that SpatialViewFieldResult is exported from neurospatial."""
-        from neurospatial import SpatialViewFieldResult
+        from neurospatial.encoding.spatial_view import SpatialViewFieldResult
 
         assert SpatialViewFieldResult is not None

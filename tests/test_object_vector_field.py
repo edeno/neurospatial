@@ -63,14 +63,14 @@ class TestObjectVectorFieldResultDataclass:
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that ObjectVectorFieldResult can be imported."""
-        from neurospatial.object_vector_field import ObjectVectorFieldResult
+        from neurospatial.encoding.object_vector import ObjectVectorFieldResult
 
         assert ObjectVectorFieldResult is not None
 
     def test_dataclass_is_frozen(self) -> None:
         """Test that ObjectVectorFieldResult is a frozen dataclass."""
         from neurospatial import Environment
-        from neurospatial.object_vector_field import ObjectVectorFieldResult
+        from neurospatial.encoding.object_vector import ObjectVectorFieldResult
 
         # Create a simple egocentric environment
         ego_env = Environment.from_polar_egocentric(
@@ -94,7 +94,7 @@ class TestObjectVectorFieldResultDataclass:
     def test_dataclass_has_all_fields(self) -> None:
         """Test that ObjectVectorFieldResult has all required fields."""
         from neurospatial import Environment
-        from neurospatial.object_vector_field import ObjectVectorFieldResult
+        from neurospatial.encoding.object_vector import ObjectVectorFieldResult
 
         ego_env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
@@ -124,13 +124,13 @@ class TestComputeObjectVectorField:
 
     def test_function_exists(self) -> None:
         """Test that compute_object_vector_field can be imported."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         assert callable(compute_object_vector_field)
 
     def test_returns_object_vector_field_result(self) -> None:
         """Test that function returns ObjectVectorFieldResult instance."""
-        from neurospatial.object_vector_field import (
+        from neurospatial.encoding.object_vector import (
             ObjectVectorFieldResult,
             compute_object_vector_field,
         )
@@ -160,7 +160,7 @@ class TestComputeObjectVectorField:
 
     def test_field_shape_matches_ego_env(self) -> None:
         """Test that field has same number of bins as ego_env."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -188,7 +188,7 @@ class TestComputeObjectVectorField:
 
     def test_ego_env_has_polar_coordinates(self) -> None:
         """Test that ego_env has proper polar coordinate structure."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -217,7 +217,7 @@ class TestComputeObjectVectorField:
 
     def test_occupancy_computed_correctly(self) -> None:
         """Test that occupancy reflects time spent in each bin."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -243,7 +243,7 @@ class TestComputeObjectVectorField:
 
     def test_uses_nearest_object(self) -> None:
         """Test that field is computed using nearest object."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -273,7 +273,7 @@ class TestComputeObjectVectorField:
 
     def test_binned_method(self) -> None:
         """Test field computation with binned method."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -298,7 +298,7 @@ class TestComputeObjectVectorField:
 
     def test_diffusion_kde_method(self) -> None:
         """Test field computation with diffusion_kde method."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 1000
@@ -323,7 +323,7 @@ class TestComputeObjectVectorField:
 
     def test_min_occupancy_filtering(self) -> None:
         """Test that low-occupancy bins are set to NaN."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 100  # Short trajectory
@@ -350,7 +350,7 @@ class TestComputeObjectVectorField:
 
     def test_validation_empty_spike_times(self) -> None:
         """Test validation when no spikes provided."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 100
@@ -372,7 +372,7 @@ class TestComputeObjectVectorField:
 
     def test_validation_times_positions_mismatch(self) -> None:
         """Test validation when times and positions have different lengths."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         times = np.linspace(0, 10, 100)
@@ -392,7 +392,7 @@ class TestComputeObjectVectorField:
 
     def test_validation_times_headings_mismatch(self) -> None:
         """Test validation when times and headings have different lengths."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         times = np.linspace(0, 10, 100)
@@ -412,7 +412,7 @@ class TestComputeObjectVectorField:
 
     def test_validation_invalid_method(self) -> None:
         """Test validation for invalid smoothing method."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 100
@@ -439,7 +439,7 @@ class TestGeodesicDistanceSupport:
     def test_geodesic_with_allocentric_env(self) -> None:
         """Test field computation with geodesic distance."""
         from neurospatial import Environment
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         # Create allocentric environment
         rng = np.random.default_rng(42)
@@ -469,7 +469,7 @@ class TestGeodesicDistanceSupport:
 
     def test_geodesic_requires_allocentric_env(self) -> None:
         """Test that geodesic mode requires allocentric_env."""
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         rng = np.random.default_rng(42)
         n_time = 100
@@ -497,7 +497,7 @@ class TestRecoverGroundTruthFromSimulation:
     def test_field_peaks_at_preferred_distance(self) -> None:
         """Test that field peaks at preferred distance for simulated OVC."""
         from neurospatial import Environment
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
@@ -561,7 +561,7 @@ class TestRecoverGroundTruthFromSimulation:
     def test_field_peaks_at_preferred_direction(self) -> None:
         """Test that field peaks at preferred direction for directional OVC."""
         from neurospatial import Environment
-        from neurospatial.object_vector_field import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
@@ -627,12 +627,12 @@ class TestExportsAndIntegration:
 
     def test_exported_from_neurospatial(self) -> None:
         """Test that compute_object_vector_field is exported from neurospatial."""
-        from neurospatial import compute_object_vector_field
+        from neurospatial.encoding.object_vector import compute_object_vector_field
 
         assert callable(compute_object_vector_field)
 
     def test_result_exported_from_neurospatial(self) -> None:
         """Test that ObjectVectorFieldResult is exported from neurospatial."""
-        from neurospatial import ObjectVectorFieldResult
+        from neurospatial.encoding.object_vector import ObjectVectorFieldResult
 
         assert ObjectVectorFieldResult is not None

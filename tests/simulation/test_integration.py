@@ -8,7 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import Environment, compute_place_field
+from neurospatial import Environment
+from neurospatial.encoding.place import compute_place_field
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,

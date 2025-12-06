@@ -1,11 +1,69 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 8 COMPLETE - animation/ consolidation done
+**Current Status**: Milestone 9 COMPLETE - Sparse top-level exports (5 core classes)
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 33)
+
+**Starting Point**: Milestone 9 - Update Top-Level __init__.py
+
+**Completed**: Reduce top-level exports from ~115 to 5 core classes
+
+**Work Done**:
+
+1. Created TDD test file `tests/test_sparse_init_exports.py` (RED phase)
+   - 75 tests total: import tests for core classes, `__all__` tests, old exports NOT in `__all__` tests, submodule import tests
+   - Tests verify only 5 exports: Environment, EnvironmentNotFittedError, Region, Regions, CompositeEnvironment
+2. Verified tests FAIL before implementation (expected - old __init__.py has 115+ exports)
+3. Updated `src/neurospatial/__init__.py`:
+   - Reduced to 5 core exports only
+   - Updated module docstring with explicit submodule import patterns
+   - Documented all submodules (encoding, decoding, behavior, events, ops, stats, io, animation, simulation, layout, annotation)
+4. Fixed circular import issues:
+   - `ops/alignment.py`: Moved Environment import to TYPE_CHECKING
+   - `ops/__init__.py`: Added lazy import via `__getattr__` for visibility module (which depends on Environment)
+5. Updated all test files to use new submodule import paths (~15 files)
+6. Updated source files with runtime imports:
+   - `simulation/validation.py`: `from neurospatial import compute_place_field` → `from neurospatial.encoding.place import ...`
+   - `simulation/trajectory.py`: `from neurospatial import map_points_to_bins` → `from neurospatial.ops import ...`
+   - `decoding/_result.py`: `from neurospatial import PositionOverlay` → `from neurospatial.animation.overlays import ...`
+7. Updated tests testing old API behavior:
+   - `tests/test_api.py`: Updated to use submodule imports, verify sparse `__all__`
+   - `tests/test_behavioral.py::test_all_functions_exported`: Updated to check behavior submodule
+   - `tests/test_segmentation.py`: Updated to check behavior submodule exports
+   - `tests/decoding/test_imports.py::test_main_package_sparse_exports`: Renamed test to verify sparse exports
+8. All M9-specific tests pass: 75 passed
+9. Ran ruff check/format (3 auto-fixes) and mypy - no issues
+
+**Files Created**:
+
+- `tests/test_sparse_init_exports.py` (new - 75 tests for sparse exports)
+
+**Files Modified**:
+
+- `src/neurospatial/__init__.py` (reduced to 5 exports, updated docstring)
+- `src/neurospatial/ops/__init__.py` (added lazy import for visibility)
+- `src/neurospatial/ops/alignment.py` (moved Environment import to TYPE_CHECKING)
+- `src/neurospatial/simulation/validation.py` (updated compute_place_field import)
+- `src/neurospatial/simulation/trajectory.py` (updated map_points_to_bins import)
+- `src/neurospatial/decoding/_result.py` (updated PositionOverlay import)
+- ~15 test files (updated imports to use submodules)
+
+**Milestone 9 Status**: COMPLETE
+All tasks done:
+- Sparse top-level exports (5 classes only)
+- Module docstring with explicit import patterns
+- Circular import fixes
+- Test file import updates
+- Source file import updates
+
+**Next Task**: Milestone 10 - Delete Old Files
+
+---
 
 ### 2025-12-06 (Session 32)
 

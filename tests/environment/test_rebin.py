@@ -343,7 +343,7 @@ class TestRebinIntegration:
         coarse = env.rebin(factor=2)
 
         # All original bin centers should map to some bin in coarse
-        from neurospatial import map_points_to_bins
+        from neurospatial.ops import map_points_to_bins
 
         indices = map_points_to_bins(env.bin_centers, coarse)
 

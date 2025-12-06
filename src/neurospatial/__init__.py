@@ -5,11 +5,13 @@ environments into bins/nodes with connectivity graphs. It enables spatial analys
 for neuroscience applications including place fields, position tracking, and
 spatial navigation.
 
-Core Classes
-------------
+Core Classes (Top-Level Exports)
+--------------------------------
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
     Factory methods: from_samples, from_polygon, from_graph, from_mask, from_image.
+EnvironmentNotFittedError : Exception for unfitted environments
+    Raised when methods requiring fitted state are called on unfitted environment.
 Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
@@ -17,97 +19,107 @@ Regions : Container for multiple named regions
 CompositeEnvironment : Multi-environment composition
     Merges multiple environments with automatic bridge inference.
 
-Key Functions by Category
---------------------------
+Submodule Organization
+----------------------
+All other functionality is accessed via explicit submodule imports. This design
+follows Raymond Hettinger's "sparse top-level" principle for better autocomplete
+and clearer import patterns.
 
-Spatial Queries and Mapping:
-    map_points_to_bins : Batch point-to-bin mapping with KDTree caching
-    distance_field : Multi-source geodesic distance computation
-    pairwise_distances : Distances between node subsets
-    neighbors_within : Find nodes within distance threshold
+encoding : Neural encoding analysis
+    Place cells, grid cells, head direction cells, border cells, object-vector
+    cells, spatial view cells, phase precession, and population metrics.
 
-Trajectory Analysis:
-    compute_place_field : Place field estimation from spike data
-    spikes_to_field : Convert spike times to spatial firing rate
-    Environment.occupancy : Compute spatial occupancy from trajectory
-    Environment.bin_sequence : Extract bin sequence from positions
+    >>> from neurospatial.encoding import place, grid, head_direction
+    >>> from neurospatial.encoding.place import compute_place_field, detect_place_fields
 
-Neuroscience Metrics:
-    detect_place_fields : Detect place fields from firing rate map
-    skaggs_information : Spatial information content (bits/spike)
-    sparsity : Measure of spatial selectivity
-    selectivity : Place field selectivity metric
-    border_score : Boundary cell border score
-    grid_score : Grid cell grid score
-    population_vector_correlation : Correlation between population vectors
+decoding : Neural decoding
+    Bayesian position decoding, trajectory detection, cell assemblies.
 
-Behavioral Segmentation:
-    detect_laps : Detect laps on circular tracks
-    segment_trials : Segment trajectory into behavioral trials
-    detect_region_crossings : Detect region entry/exit events
+    >>> from neurospatial.decoding import decode_position, DecodingResult
 
-Events and Peri-Event Analysis:
-    peri_event_histogram : Peri-stimulus time histogram (PSTH)
-    population_peri_event_histogram : Population PSTH across units
-    align_spikes_to_events : Align spike times to event times
-    time_to_nearest_event : Time to nearest event (GLM regressor)
-    add_positions : Add spatial positions to events DataFrame
+behavior : Behavioral analysis
+    Trajectory metrics, segmentation (laps, trials), navigation metrics,
+    decision analysis (VTE), reward fields.
 
-Field Operations:
-    normalize_field : Normalize field to sum to 1
-    combine_fields : Weighted combination of multiple fields
-    clamp : Clamp field values to range
-    Environment.smooth : Graph-based field smoothing
-    Environment.interpolate : Interpolate field values
+    >>> from neurospatial.behavior import segmentation, navigation, trajectory
+    >>> from neurospatial.behavior.segmentation import detect_laps, segment_trials
 
-Transforms and Alignment:
-    estimate_transform : Estimate affine transform from point pairs
-    apply_transform_to_environment : Transform entire environment
-    get_2d_rotation_matrix : Create 2D rotation matrix
-    map_probabilities : Align probability distributions
+events : Peri-event analysis
+    PSTH, event alignment, GLM regressors.
 
-Regions:
-    Environment.region_membership : Compute region membership for bins
-    regions_to_mask : Convert regions to boolean mask
-    goal_reward_field : Gaussian reward field centered at goal
-    region_reward_field : Reward field for region
+    >>> from neurospatial.events import peri_event_histogram, align_spikes_to_events
 
-Kernels and Convolution:
-    compute_diffusion_kernels : Graph-based diffusion kernels
-    apply_kernel : Apply kernel to field
-    convolve : Graph-based convolution
-    neighbor_reduce : Reduce over graph neighborhoods
+ops : Low-level operations
+    Binning, distance, smoothing, graph operations, calculus (gradient/divergence),
+    transforms, alignment, egocentric reference frames, visibility, basis functions.
 
-Graph Operations:
-    gradient : Spatial gradient on graph
-    divergence : Spatial divergence on graph
-    Environment.path_between : Find shortest path between bins
-    Environment.neighbors : Get neighboring bins
+    >>> from neurospatial.ops import (
+    ...     distance_field,
+    ...     normalize_field,
+    ...     heading_from_velocity,
+    ... )
 
-I/O and Serialization:
-    to_file : Save environment to .json + .npz files
-    from_file : Load environment from files
-    to_dict : Serialize to dictionary
-    from_dict : Deserialize from dictionary
+stats : Statistical methods
+    Circular statistics, shuffle controls, surrogate generation.
 
-Validation and Utilities:
-    validate_environment : Validate environment structure
-    list_available_layouts : List all available layout types
-    get_layout_parameters : Get parameters for layout type
+    >>> from neurospatial.stats import rayleigh_test, shuffle_time_bins
+
+io : File I/O and NWB integration
+    Save/load environments, NWB file integration.
+
+    >>> from neurospatial.io import to_file, from_file
+
+animation : Visualization
+    Napari viewer, video export, overlays (position, spike, event, HD, bodypart).
+
+    >>> from neurospatial.animation import PositionOverlay, SpikeOverlay
+
+simulation : Neural and trajectory simulation
+    Cell models (place, grid, HD, border, OVC, SVC), trajectory generation.
+
+    >>> from neurospatial.simulation import PlaceCellModel, simulate_session
+
+layout : Layout engines
+    Regular grid, hexagonal, graph-based, masked, polygon, triangular mesh.
+
+    >>> from neurospatial.layout import list_available_layouts, get_layout_parameters
+
+annotation : Video annotation tools
+    Environment annotation from video, CVAT/LabelMe format support.
+
+    >>> from neurospatial.annotation import annotate_video
 
 Import Patterns
 ---------------
-Import core classes and functions::
+Core classes only at top level::
 
     from neurospatial import Environment, Region, Regions, CompositeEnvironment
-    from neurospatial import (
-        map_points_to_bins,
-        distance_field,
-        compute_place_field,
-        to_file,
-        from_file,
-        validate_environment,
-    )
+
+Explicit submodule imports for all else (recommended)::
+
+    # Neural encoding
+    from neurospatial.encoding.place import compute_place_field, skaggs_information
+    from neurospatial.encoding.grid import grid_score
+
+    # Neural decoding
+    from neurospatial.decoding import decode_position
+
+    # Behavioral analysis
+    from neurospatial.behavior.segmentation import detect_laps
+    from neurospatial.behavior.navigation import path_efficiency
+
+    # Events
+    from neurospatial.events import peri_event_histogram
+
+    # Operations
+    from neurospatial.ops.distance import distance_field
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    # I/O
+    from neurospatial.io import to_file, from_file
+
+    # Animation
+    from neurospatial.animation import PositionOverlay
 
 Common Usage
 ------------
@@ -129,11 +141,11 @@ Map trajectory to bins::
 
 Compute place field from spikes::
 
-    >>> from neurospatial import compute_place_field
+    >>> from neurospatial.encoding.place import compute_place_field
     >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])
     >>> firing_rate = compute_place_field(
     ...     env, spike_times, times, trajectory,
-    ...     method='diffusion_kde', bandwidth=5.0
+    ...     smoothing_method='diffusion_kde', bandwidth=5.0
     ... )
 
 Add and query regions::
@@ -144,7 +156,7 @@ Add and query regions::
 
 Save and load::
 
-    >>> from neurospatial import to_file, from_file
+    >>> from neurospatial.io import to_file, from_file
     >>> to_file(env, 'my_environment')
     >>> loaded = from_file('my_environment')
 
@@ -152,8 +164,9 @@ See Also
 --------
 Environment : Core environment class with detailed documentation
 Region : Region of interest documentation
-compute_place_field : Place field computation methods
-distance_field : Graph-based distance computation
+neurospatial.encoding : Neural encoding analysis
+neurospatial.decoding : Neural decoding
+neurospatial.behavior : Behavioral analysis
 
 Notes
 -----
@@ -194,319 +207,17 @@ Create environment from polygon::
 
 import logging
 
-from neurospatial.animation.config import ScaleBarConfig
-from neurospatial.animation.overlays import (
-    BodypartOverlay,
-    EventOverlay,
-    HeadDirectionOverlay,
-    PositionOverlay,
-    SpikeOverlay,
-    VideoOverlay,
-)
-from neurospatial.annotation import (
-    AnnotationResult,
-    annotate_video,
-    regions_from_cvat,
-    regions_from_labelme,
-)
-from neurospatial.behavior.navigation import (
-    cost_to_goal,
-    distance_to_region,
-    goal_pair_direction_labels,
-    graph_turn_sequence,
-    heading_direction_labels,
-    path_progress,
-    time_to_goal,
-    trials_to_region_arrays,
-)
-from neurospatial.behavior.reward import goal_reward_field, region_reward_field
-from neurospatial.behavior.segmentation import (
-    detect_goal_directed_runs,
-    detect_laps,
-    detect_region_crossings,
-    detect_runs_between_regions,
-    segment_by_velocity,
-    segment_trials,
-)
-from neurospatial.behavior.trajectory import (
-    compute_trajectory_curvature,
-)
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.decoding import (
-    DecodingResult,
-    decode_position,
-    decoding_error,
-    median_decoding_error,
-)
-
-# Neuroscience metrics - now from encoding module
-from neurospatial.encoding import (
-    SpatialViewMetrics,
-    border_score,
-    detect_place_fields,
-    grid_score,
-    is_spatial_view_cell,
-    population_vector_correlation,
-    selectivity,
-    skaggs_information,
-    sparsity,
-    spatial_view_cell_metrics,
-)
-
-# Object-vector field analysis - now from encoding module
-from neurospatial.encoding.object_vector import (
-    ObjectVectorFieldResult,
-    compute_object_vector_field,
-)
-
-# Place cell analysis - now from encoding module
-from neurospatial.encoding.place import (
-    DirectionalPlaceFields,
-    compute_directional_place_fields,
-    compute_place_field,
-    spikes_to_field,
-)
-
-# Spatial view field analysis - now from encoding module
-from neurospatial.encoding.spatial_view import (
-    SpatialViewFieldResult,
-    compute_spatial_view_field,
-)
 from neurospatial.environment import Environment, EnvironmentNotFittedError
-
-# Events and peri-event analysis
-from neurospatial.events import (
-    PeriEventResult,
-    PopulationPeriEventResult,
-    add_positions,
-    align_events,
-    align_spikes_to_events,
-    event_count_in_window,
-    event_indicator,
-    events_to_intervals,
-    filter_by_intervals,
-    intervals_to_events,
-    peri_event_histogram,
-    plot_peri_event_histogram,
-    population_peri_event_histogram,
-    time_to_nearest_event,
-    validate_events_dataframe,
-    validate_spatial_columns,
-)
-from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.layout.factories import (
-    LayoutType,
-    get_layout_parameters,
-    list_available_layouts,
-)
-from neurospatial.layout.validation import validate_environment
-from neurospatial.ops.alignment import (
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
-
-# Basis functions for spatial regression (GLMs)
-from neurospatial.ops.basis import (
-    chebyshev_filter_basis,
-    geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
-    plot_basis_functions,
-    select_basis_centers,
-    spatial_basis,
-)
-from neurospatial.ops.binning import (
-    TieBreakStrategy,
-    map_points_to_bins,
-    regions_to_mask,
-    resample_field,
-)
-from neurospatial.ops.calculus import divergence, gradient
-from neurospatial.ops.distance import (
-    distance_field,
-    neighbors_within,
-    pairwise_distances,
-)
-
-# Reference frame transformations (egocentric/allocentric)
-from neurospatial.ops.egocentric import (
-    EgocentricFrame,
-    allocentric_to_egocentric,
-    compute_egocentric_bearing,
-    compute_egocentric_distance,
-    egocentric_to_allocentric,
-    heading_from_body_orientation,
-    heading_from_velocity,
-)
-from neurospatial.ops.graph import convolve, neighbor_reduce
-from neurospatial.ops.normalize import (
-    clamp,
-    combine_fields,
-    normalize_field,
-)
-from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
-from neurospatial.ops.transforms import (
-    apply_transform_to_environment,
-    estimate_transform,
-)
-
-# Visibility and gaze analysis
-from neurospatial.ops.visibility import (
-    FieldOfView,
-    ViewshedResult,
-    compute_view_field,
-    compute_viewed_location,
-    compute_viewshed,
-    compute_viewshed_trajectory,
-    visibility_occupancy,
-    visible_cues,
-)
 from neurospatial.regions import Region, Regions
-
-# Spatial view cell simulation model
-from neurospatial.simulation import SpatialViewCellModel
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-# ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
-    # Core classes
     "CompositeEnvironment",
     "Environment",
     "EnvironmentNotFittedError",
     "Region",
     "Regions",
-    # Decoding (Bayesian population analysis)
-    "DecodingResult",
-    "decode_position",
-    "decoding_error",
-    "median_decoding_error",
-    # Animation overlays
-    "BodypartOverlay",
-    "EventOverlay",
-    "HeadDirectionOverlay",
-    "PositionOverlay",
-    "SpikeOverlay",
-    "VideoOverlay",
-    # Visualization config
-    "ScaleBarConfig",
-    # Annotation tools
-    "AnnotationResult",
-    "annotate_video",
-    "regions_from_cvat",
-    "regions_from_labelme",
-    # Enums and types
-    "LayoutType",
-    "TieBreakStrategy",
-    # I/O functions
-    "from_dict",
-    "from_file",
-    "to_dict",
-    "to_file",
-    # Neuroscience metrics
-    "SpatialViewMetrics",
-    "border_score",
-    "detect_place_fields",
-    "grid_score",
-    "is_spatial_view_cell",
-    "population_vector_correlation",
-    "selectivity",
-    "skaggs_information",
-    "sparsity",
-    "spatial_view_cell_metrics",
-    # Basis functions for GLMs
-    "chebyshev_filter_basis",
-    "geodesic_rbf_basis",
-    "heat_kernel_wavelet_basis",
-    "plot_basis_functions",
-    "select_basis_centers",
-    "spatial_basis",
-    # Behavioral segmentation
-    "detect_goal_directed_runs",
-    "detect_laps",
-    "detect_region_crossings",
-    "detect_runs_between_regions",
-    "segment_by_velocity",
-    "segment_trials",
-    # Behavioral analysis
-    "compute_trajectory_curvature",
-    "cost_to_goal",
-    "distance_to_region",
-    "goal_pair_direction_labels",
-    "graph_turn_sequence",
-    "heading_direction_labels",
-    "path_progress",
-    "time_to_goal",
-    "trials_to_region_arrays",
-    # Events and peri-event analysis
-    "PeriEventResult",
-    "PopulationPeriEventResult",
-    "add_positions",
-    "align_events",
-    "align_spikes_to_events",
-    "event_count_in_window",
-    "event_indicator",
-    "events_to_intervals",
-    "filter_by_intervals",
-    "intervals_to_events",
-    "peri_event_histogram",
-    "plot_peri_event_histogram",
-    "population_peri_event_histogram",
-    "time_to_nearest_event",
-    "validate_events_dataframe",
-    "validate_spatial_columns",
-    # Spatial operations and queries
-    "apply_kernel",
-    "apply_transform_to_environment",
-    "clamp",
-    "combine_fields",
-    "compute_diffusion_kernels",
-    "compute_directional_place_fields",
-    "compute_place_field",
-    "convolve",
-    "DirectionalPlaceFields",
-    "distance_field",
-    "divergence",
-    "estimate_transform",
-    "get_2d_rotation_matrix",
-    "get_layout_parameters",
-    "goal_reward_field",
-    "gradient",
-    "list_available_layouts",
-    "map_points_to_bins",
-    "map_probabilities",
-    "neighbor_reduce",
-    "neighbors_within",
-    "normalize_field",
-    "pairwise_distances",
-    "region_reward_field",
-    "regions_to_mask",
-    "resample_field",
-    "spikes_to_field",
-    "validate_environment",
-    # Reference frame transformations (egocentric/allocentric)
-    "EgocentricFrame",
-    "allocentric_to_egocentric",
-    "compute_egocentric_bearing",
-    "compute_egocentric_distance",
-    "egocentric_to_allocentric",
-    "heading_from_body_orientation",
-    "heading_from_velocity",
-    # Object-vector field analysis
-    "ObjectVectorFieldResult",
-    "compute_object_vector_field",
-    # Spatial view cell simulation
-    "SpatialViewCellModel",
-    # Spatial view field analysis
-    "SpatialViewFieldResult",
-    "compute_spatial_view_field",
-    # Visibility and gaze analysis
-    "FieldOfView",
-    "ViewshedResult",
-    "compute_view_field",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "compute_viewshed_trajectory",
-    "visibility_occupancy",
-    "visible_cues",
 ]

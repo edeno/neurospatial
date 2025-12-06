@@ -328,20 +328,26 @@ uv run pytest tests/ -x -v
 
 ### Tasks
 
-- [ ] Update `src/neurospatial/__init__.py` to export only:
+- [x] Update `src/neurospatial/__init__.py` to export only:
   - `Environment`
   - `EnvironmentNotFittedError`
   - `Region`
   - `Regions`
   - `CompositeEnvironment`
-- [ ] Remove all other top-level exports
-- [ ] Update module docstring with new import patterns
+- [x] Remove all other top-level exports
+- [x] Update module docstring with new import patterns
+- [x] Fix circular import in `ops/alignment.py` (moved Environment import to TYPE_CHECKING)
+- [x] Fix circular import in `ops/visibility.py` (added lazy import via `__getattr__`)
+- [x] Update all test files to use new submodule import paths
+- [x] Update source files (`simulation/validation.py`, `simulation/trajectory.py`, `decoding/_result.py`) to use new import paths
+- [x] Create comprehensive test suite for sparse exports (`tests/test_sparse_init_exports.py`)
 
 **Verification**:
 
 ```bash
 uv run python -c "from neurospatial import Environment, Region, Regions, CompositeEnvironment, EnvironmentNotFittedError; print('Core imports OK')"
-uv run pytest tests/ -x -v
+uv run pytest tests/test_sparse_init_exports.py -v  # All 75 tests pass
+uv run pytest tests/ -x -v  # ~7700 tests pass
 ```
 
 ---
@@ -615,7 +621,7 @@ If circular imports occur:
 | M6: encoding/ Module | Complete | All tasks 6.1-6.9 complete; imports updated in **init**.py |
 | M7: decoding/ Cleanup | Complete | Re-exports added from stats.shuffle and stats.surrogates |
 | M8: animation/ Consolidation | Complete | visualization/scale_bar.py → animation/config.py; visualization/ deleted |
-| M9: Top-Level **init**.py | Not Started | |
+| M9: Top-Level **init**.py | Complete | Sparse exports (5 core classes), circular import fixes, test updates |
 | M10: Delete Old Files | Not Started | |
 | M11: Update Documentation | Not Started | |
 | M12: Update Notebooks | Not Started | |

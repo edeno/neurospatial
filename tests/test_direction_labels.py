@@ -11,8 +11,11 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from neurospatial.behavior.navigation import (
+    goal_pair_direction_labels,
+    heading_direction_labels,
+)
 from neurospatial.behavior.segmentation import Trial
-from neurospatial.behavioral import goal_pair_direction_labels, heading_direction_labels
 
 # -----------------------------------------------------------------------------
 # Fixtures

@@ -7,8 +7,8 @@ import pytest
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
-from neurospatial.behavioral import trials_to_region_arrays
 
 # =============================================================================
 # Test Fixtures
@@ -221,7 +221,7 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
 
 def test_path_progress_single_trial_geodesic(simple_environment_with_regions):
     """Test path progress with single trial and geodesic metric."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     env = simple_environment_with_regions
 
@@ -256,7 +256,7 @@ def test_path_progress_single_trial_geodesic(simple_environment_with_regions):
 
 def test_path_progress_multiple_trials(simple_environment_with_regions):
     """Test path progress with multiple trials (varying start/goal)."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     env = simple_environment_with_regions
 
@@ -326,7 +326,7 @@ def test_path_progress_multiple_trials(simple_environment_with_regions):
 
 def test_path_progress_euclidean(simple_environment_with_regions):
     """Test path progress with euclidean metric."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     env = simple_environment_with_regions
 
@@ -354,7 +354,7 @@ def test_path_progress_euclidean(simple_environment_with_regions):
 
 def test_path_progress_edge_case_same_start_goal(simple_environment_with_regions):
     """Test edge case: start_bin == goal_bin (should return 1.0)."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     env = simple_environment_with_regions
 
@@ -373,7 +373,7 @@ def test_path_progress_edge_case_same_start_goal(simple_environment_with_regions
 
 def test_path_progress_edge_case_invalid_bins(simple_environment_with_regions):
     """Test edge case: invalid bins -1 (should return NaN)."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     env = simple_environment_with_regions
 
@@ -392,7 +392,7 @@ def test_path_progress_edge_case_invalid_bins(simple_environment_with_regions):
 
 def test_path_progress_edge_case_disconnected():
     """Test edge case: disconnected paths (should return NaN)."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     # Create environment with two disconnected components
     positions = np.array(
@@ -427,7 +427,7 @@ def test_path_progress_edge_case_disconnected():
 
 def test_path_progress_large_environment():
     """Test path progress with large environment (n_bins > 5000, test fallback)."""
-    from neurospatial.behavioral import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     # Create large environment with >5000 bins using deterministic grid
     # 101x101 grid = 10,201 bins
@@ -469,7 +469,7 @@ def test_path_progress_large_environment():
 
 def test_distance_to_region_scalar_target(simple_environment_with_regions):
     """Test distance to region with scalar target (constant goal)."""
-    from neurospatial.behavioral import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     env = simple_environment_with_regions
 
@@ -501,7 +501,7 @@ def test_distance_to_region_scalar_target(simple_environment_with_regions):
 
 def test_distance_to_region_dynamic_target(simple_environment_with_regions):
     """Test distance to region with array of targets (dynamic goal)."""
-    from neurospatial.behavioral import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     env = simple_environment_with_regions
 
@@ -537,7 +537,7 @@ def test_distance_to_region_dynamic_target(simple_environment_with_regions):
 
 def test_distance_to_region_invalid_bins(simple_environment_with_regions):
     """Test distance to region with invalid bins (should return NaN)."""
-    from neurospatial.behavioral import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     env = simple_environment_with_regions
 
@@ -566,7 +566,7 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
 
 def test_distance_to_region_multiple_goal_bins():
     """Test distance to region with multiple goal bins (distance to nearest)."""
-    from neurospatial.behavioral import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     # Create environment with known structure
     positions = np.array(
@@ -605,7 +605,7 @@ def test_distance_to_region_multiple_goal_bins():
 
 def test_distance_to_region_large_environment():
     """Test distance to region with large environment (memory fallback)."""
-    from neurospatial.behavioral import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     # Create large environment with >5000 bins using deterministic grid
     # 101x101 grid = 10,201 bins
@@ -648,8 +648,8 @@ def test_distance_to_region_large_environment():
 
 def test_time_to_goal_successful_trials():
     """Test time to goal for successful trials."""
+    from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.behavioral import time_to_goal
 
     # Create timestamps
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
@@ -699,8 +699,8 @@ def test_time_to_goal_successful_trials():
 
 def test_time_to_goal_failed_trials():
     """Test time to goal for failed trials (should be NaN)."""
+    from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.behavioral import time_to_goal
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 
@@ -726,8 +726,8 @@ def test_time_to_goal_failed_trials():
 
 def test_time_to_goal_outside_trials():
     """Test time to goal outside trials (should be NaN)."""
+    from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.behavioral import time_to_goal
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
@@ -758,8 +758,8 @@ def test_time_to_goal_outside_trials():
 
 def test_time_to_goal_countdown():
     """Test time to goal countdown is correct."""
+    from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.behavioral import time_to_goal
 
     # High-resolution timestamps
     times = np.linspace(0.0, 10.0, 101)  # 0.1s resolution
@@ -791,8 +791,8 @@ def test_time_to_goal_countdown():
 
 def test_time_to_goal_after_goal_reached():
     """Test time to goal after goal reached (should be 0.0)."""
+    from neurospatial.behavior.navigation import time_to_goal
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.behavioral import time_to_goal
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 
@@ -824,7 +824,7 @@ def test_time_to_goal_after_goal_reached():
 
 def test_compute_trajectory_curvature_2d_straight():
     """Test curvature for straight 2D trajectory (should be ~0)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create straight line trajectory
     positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
@@ -841,7 +841,7 @@ def test_compute_trajectory_curvature_2d_straight():
 
 def test_compute_trajectory_curvature_2d_left_turn():
     """Test curvature for left turn in 2D (positive)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create trajectory with 90-degree left turn (counterclockwise)
     # Move right [0,0] → [10,0], then up [10,0] → [10,10]
@@ -867,7 +867,7 @@ def test_compute_trajectory_curvature_2d_left_turn():
 
 def test_compute_trajectory_curvature_2d_right_turn():
     """Test curvature for right turn in 2D (negative)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create trajectory with 90-degree right turn (clockwise)
     # Move right [0,0] → [10,0], then down [10,0] → [10,-10]
@@ -893,7 +893,7 @@ def test_compute_trajectory_curvature_2d_right_turn():
 
 def test_compute_trajectory_curvature_3d():
     """Test curvature for 3D trajectory (uses first 2 dims)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create 3D trajectory with left turn in XY plane, constant Z
     positions_3d = np.array(
@@ -916,7 +916,7 @@ def test_compute_trajectory_curvature_3d():
 
 def test_compute_trajectory_curvature_smoothing():
     """Test curvature with temporal smoothing."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create noisy trajectory with underlying sinusoidal path
     t = np.linspace(0, 2 * np.pi, 100)
@@ -940,7 +940,7 @@ def test_compute_trajectory_curvature_smoothing():
 
 def test_compute_trajectory_curvature_output_length():
     """Test curvature output length matches input (n_samples, not n_samples-2)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create trajectory with varying lengths - random needed for varied test data
     rng = np.random.default_rng(42)
@@ -958,7 +958,7 @@ def test_compute_trajectory_curvature_output_length():
 
 def test_compute_trajectory_curvature_multiple_turns():
     """Test curvature with multiple consecutive turns (square path)."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create square path with 4 right turns (clockwise)
     # Start at origin, move right, down, left, up
@@ -990,7 +990,7 @@ def test_compute_trajectory_curvature_multiple_turns():
 
 def test_compute_trajectory_curvature_circular_arc():
     """Test curvature on circular arc with known constant curvature."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create circular arc: quarter circle, radius=10
     # Arc from 0° to 90° (π/2 radians)
@@ -1024,7 +1024,7 @@ def test_compute_trajectory_curvature_circular_arc():
 
 def test_compute_trajectory_curvature_s_curve():
     """Test curvature on S-curve with alternating turns."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create S-curve: left turn followed by right turn
     positions = np.array(
@@ -1062,7 +1062,7 @@ def test_compute_trajectory_curvature_s_curve():
 
 def test_compute_trajectory_curvature_zigzag():
     """Test curvature on zigzag pattern with multiple sharp turns."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Create zigzag pattern: right, left, right, left
     positions = np.array(
@@ -1100,7 +1100,7 @@ def test_compute_trajectory_curvature_zigzag():
 
 def test_cost_to_goal_uniform(simple_environment_with_regions):
     """Test cost to goal with uniform cost (equivalent to geodesic distance)."""
-    from neurospatial.behavioral import cost_to_goal, distance_to_region
+    from neurospatial.behavior.navigation import cost_to_goal, distance_to_region
 
     env = simple_environment_with_regions
 
@@ -1129,7 +1129,7 @@ def test_cost_to_goal_uniform(simple_environment_with_regions):
 
 def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     """Test cost to goal with cost map (punishment zones)."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1159,7 +1159,7 @@ def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
 
 def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
     """Test cost to goal with terrain difficulty (narrow passages)."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1195,7 +1195,7 @@ def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
 
 def test_cost_to_goal_combined(simple_environment_with_regions):
     """Test cost to goal with cost map + terrain combined."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1234,7 +1234,7 @@ def test_cost_to_goal_combined(simple_environment_with_regions):
 
 def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
     """Test cost to goal with array of goal bins (dynamic)."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1268,7 +1268,7 @@ def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
 
 def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
     """Test cost to goal with invalid bins (should handle gracefully)."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1302,7 +1302,7 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 
 def test_graph_turn_sequence_ymaze_left(ymaze_env):
     """Test turn sequence for Y-maze left choice."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
@@ -1352,7 +1352,7 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
 
 def test_graph_turn_sequence_ymaze_right(ymaze_env):
     """Test turn sequence for Y-maze right choice."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
@@ -1401,7 +1401,7 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
 
 def test_graph_turn_sequence_grid_multiple(small_2d_env):
     """Test turn sequence with multiple turns on grid environment."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = small_2d_env
 
@@ -1452,7 +1452,7 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
 
 def test_graph_turn_sequence_straight(ymaze_env):
     """Test turn sequence for straight path (no turns, empty string)."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
@@ -1493,7 +1493,7 @@ def test_graph_turn_sequence_straight(ymaze_env):
 
 def test_graph_turn_sequence_min_samples_filter(ymaze_env):
     """Test turn sequence filters brief crossings (min_samples_per_edge)."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
@@ -1537,7 +1537,7 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
 
 def test_graph_turn_sequence_3d(simple_3d_env):
     """Test turn sequence for 3D environment."""
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = simple_3d_env
 
@@ -1573,25 +1573,36 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 
 
 def test_all_functions_exported():
-    """Verify all 7 behavioral functions are exported to public API."""
-    import neurospatial
+    """Verify all 7 behavioral functions are exported from behavior submodule.
 
-    # Check all functions are importable from top-level
+    Per Milestone 9, behavioral functions are in behavior submodule, not top-level.
+    """
+    from neurospatial.behavior import navigation, trajectory
 
-    # Check all are in __all__
-    expected = [
-        "compute_trajectory_curvature",
+    # These should be in behavior.navigation
+    expected_navigation = [
         "cost_to_goal",
         "distance_to_region",
-        "graph_turn_sequence",
         "path_progress",
         "time_to_goal",
-        "trials_to_region_arrays",
     ]
 
-    for func_name in expected:
-        assert func_name in neurospatial.__all__, f"{func_name} missing from __all__"
-        assert callable(getattr(neurospatial, func_name))
+    # These should be in behavior.trajectory
+    expected_trajectory = [
+        "compute_trajectory_curvature",
+    ]
+
+    for func_name in expected_navigation:
+        assert hasattr(navigation, func_name), (
+            f"{func_name} missing from behavior.navigation"
+        )
+        assert callable(getattr(navigation, func_name))
+
+    for func_name in expected_trajectory:
+        assert hasattr(trajectory, func_name), (
+            f"{func_name} missing from behavior.trajectory"
+        )
+        assert callable(getattr(trajectory, func_name))
 
 
 # =============================================================================
@@ -1603,7 +1614,8 @@ def test_path_progress_unfitted_environment():
     """Test path_progress raises error for unfitted environment."""
     import pytest
 
-    from neurospatial import Environment, EnvironmentNotFittedError, path_progress
+    from neurospatial import Environment, EnvironmentNotFittedError
+    from neurospatial.behavior.navigation import path_progress
 
     # Create environment and manually mark as unfitted - deterministic grid
     x = np.linspace(0, 10, 6)
@@ -1626,7 +1638,7 @@ def test_path_progress_array_length_mismatch():
     """Test path_progress raises error for mismatched array lengths."""
     import pytest
 
-    from neurospatial import path_progress
+    from neurospatial.behavior.navigation import path_progress
 
     # Deterministic grid - no randomness needed
     x = np.linspace(0, 10, 6)
@@ -1648,7 +1660,8 @@ def test_distance_to_region_unfitted_environment():
     """Test distance_to_region raises error for unfitted environment."""
     import pytest
 
-    from neurospatial import Environment, EnvironmentNotFittedError, distance_to_region
+    from neurospatial import Environment, EnvironmentNotFittedError
+    from neurospatial.behavior.navigation import distance_to_region
 
     # Create environment and manually mark as unfitted - deterministic grid
     x = np.linspace(0, 10, 6)
@@ -1671,7 +1684,7 @@ def test_graph_turn_sequence_unfitted_environment():
     import pytest
 
     from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavioral import graph_turn_sequence
+    from neurospatial.behavior.navigation import graph_turn_sequence
 
     # Create environment and manually mark as unfitted - deterministic grid
     x = np.linspace(0, 10, 6)
@@ -1692,7 +1705,7 @@ def test_graph_turn_sequence_unfitted_environment():
 
 def test_compute_trajectory_curvature_edge_case_few_positions():
     """Test curvature with < 3 unique positions returns zeros."""
-    from neurospatial.behavioral import compute_trajectory_curvature
+    from neurospatial.behavior.trajectory import compute_trajectory_curvature
 
     # Only 2 unique positions (straight line)
     positions = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])  # All same
@@ -1707,7 +1720,7 @@ def test_compute_trajectory_curvature_edge_case_few_positions():
 
 def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions):
     """Test cost_to_goal with dynamic goals AND cost_map."""
-    from neurospatial.behavioral import cost_to_goal
+    from neurospatial.behavior.navigation import cost_to_goal
 
     env = simple_environment_with_regions
 
@@ -1740,7 +1753,7 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
 
 def test_distance_to_region_invalid_scalar_target():
     """Test distance_to_region with invalid scalar target (-1)."""
-    from neurospatial import distance_to_region
+    from neurospatial.behavior.navigation import distance_to_region
 
     # Deterministic grid - no randomness needed
     x = np.linspace(0, 10, 6)

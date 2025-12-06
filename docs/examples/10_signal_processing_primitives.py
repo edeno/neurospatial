@@ -46,7 +46,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.primitives import convolve, neighbor_reduce
-from neurospatial.spike_field import compute_place_field
+from neurospatial.encoding.place import compute_place_field
 
 # Random seed for reproducibility
 rng = np.random.default_rng(42)
