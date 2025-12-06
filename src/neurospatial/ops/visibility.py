@@ -4,6 +4,24 @@ Provides tools for computing what an animal can see from any position in
 an environment, including field-of-view constraints, line-of-sight checks,
 and viewshed analysis.
 
+Import Paths
+------------
+After package reorganization (v0.4.0+), use::
+
+    from neurospatial.ops.visibility import (
+        FieldOfView,
+        ViewshedResult,
+        compute_viewed_location,
+        compute_viewshed,
+        compute_view_field,
+        compute_viewshed_trajectory,
+        visibility_occupancy,
+        visible_cues,
+    )
+
+    # Or import from the ops package
+    from neurospatial.ops import FieldOfView, compute_viewshed
+
 Common Use Cases
 ----------------
 - Spatial view cell analysis (what location is being viewed)
@@ -45,7 +63,7 @@ Coordinate Conventions
 - -pi/2 radians = to the right
 - +/-pi radians = behind
 
-This matches the convention in ``neurospatial.reference_frames``.
+This matches the convention in ``neurospatial.ops.egocentric``.
 
 References
 ----------
@@ -57,7 +75,7 @@ References
 
 See Also
 --------
-neurospatial.reference_frames : Egocentric coordinate transforms
+neurospatial.ops.egocentric : Egocentric coordinate transforms
 neurospatial.spatial_view_field : Spatial view field computation
 """
 
@@ -69,7 +87,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial import Environment
+from neurospatial.environment import Environment
 
 __all__ = [
     "FieldOfView",
@@ -108,7 +126,7 @@ class FieldOfView:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.visibility import FieldOfView
+    >>> from neurospatial.ops.visibility import FieldOfView
 
     Create a 180-degree symmetric field of view:
 
@@ -175,7 +193,7 @@ class FieldOfView:
 
         Examples
         --------
-        >>> from neurospatial.visibility import FieldOfView
+        >>> from neurospatial.ops.visibility import FieldOfView
         >>> import numpy as np
         >>> fov = FieldOfView.symmetric(half_angle=np.pi / 2)
         >>> fov.total_angle_degrees
@@ -288,7 +306,7 @@ class FieldOfView:
 
         Examples
         --------
-        >>> from neurospatial.visibility import FieldOfView
+        >>> from neurospatial.ops.visibility import FieldOfView
         >>> import numpy as np
         >>> fov = FieldOfView.symmetric(half_angle=np.pi / 2)
         >>> fov.contains_angle(0.0)
@@ -333,7 +351,7 @@ class FieldOfView:
 
         Examples
         --------
-        >>> from neurospatial.visibility import FieldOfView
+        >>> from neurospatial.ops.visibility import FieldOfView
         >>> import numpy as np
         >>> fov = FieldOfView(
         ...     left_angle=np.pi / 2,
@@ -380,7 +398,7 @@ class ViewshedResult:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.visibility import ViewshedResult
+    >>> from neurospatial.ops.visibility import ViewshedResult
     >>> result = ViewshedResult(
     ...     visible_bins=np.array([0, 1, 2]),
     ...     visible_cues=np.array([]),
@@ -512,7 +530,7 @@ def compute_viewed_location(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.visibility import compute_viewed_location
+    >>> from neurospatial.ops.visibility import compute_viewed_location
 
     Fixed distance method:
 
@@ -719,7 +737,7 @@ def compute_viewshed(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.visibility import compute_viewshed, FieldOfView
+    >>> from neurospatial.ops.visibility import compute_viewshed, FieldOfView
     >>> rng = np.random.default_rng(42)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
@@ -868,7 +886,7 @@ def compute_view_field(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.visibility import compute_view_field
+    >>> from neurospatial.ops.visibility import compute_view_field
     >>> rng = np.random.default_rng(42)
     >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
@@ -918,7 +936,7 @@ def visible_cues(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.visibility import visible_cues
+    >>> from neurospatial.ops.visibility import visible_cues
 
     Create environment and check cue visibility:
 

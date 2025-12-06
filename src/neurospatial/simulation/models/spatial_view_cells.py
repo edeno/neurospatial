@@ -44,7 +44,7 @@ Create a simple spatial view cell:
 
 Create a spatial view cell with visibility requirements:
 
->>> from neurospatial.visibility import FieldOfView
+>>> from neurospatial.ops.visibility import FieldOfView
 >>> svc_visible = SpatialViewCellModel(
 ...     env=env,
 ...     preferred_view_location=np.array([50.0, 50.0]),
@@ -83,7 +83,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.visibility import (
+from neurospatial.ops.visibility import (
     FieldOfView,
     _line_of_sight_clear,
     compute_viewed_location,

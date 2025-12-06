@@ -322,6 +322,18 @@ from neurospatial.ops.transforms import (
     apply_transform_to_environment,
     estimate_transform,
 )
+
+# Visibility and gaze analysis
+from neurospatial.ops.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
 from neurospatial.segmentation import (
@@ -346,18 +358,6 @@ from neurospatial.spike_field import (
     compute_directional_place_fields,
     compute_place_field,
     spikes_to_field,
-)
-
-# Visibility and gaze analysis
-from neurospatial.visibility import (
-    FieldOfView,
-    ViewshedResult,
-    compute_view_field,
-    compute_viewed_location,
-    compute_viewshed,
-    compute_viewshed_trajectory,
-    visibility_occupancy,
-    visible_cues,
 )
 from neurospatial.visualization.scale_bar import ScaleBarConfig
 

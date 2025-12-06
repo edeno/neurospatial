@@ -89,10 +89,10 @@ class TestSpatialViewCellModelCreation:
 
     def test_custom_parameters(self, env):
         """Custom parameters are stored correctly."""
+        from neurospatial.ops.visibility import FieldOfView
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
-        from neurospatial.visibility import FieldOfView
 
         fov = FieldOfView.rat()
 
@@ -513,10 +513,10 @@ class TestFieldOfViewIntegration:
 
     def test_fov_restricts_viewing(self, env):
         """FOV restricts what can be viewed."""
+        from neurospatial.ops.visibility import FieldOfView
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
-        from neurospatial.visibility import FieldOfView
 
         # Narrow FOV (only forward 60 degrees)
         narrow_fov = FieldOfView.symmetric(half_angle=np.pi / 6)  # 30 degrees each side
@@ -557,10 +557,10 @@ class TestGroundTruth:
 
     def test_ground_truth_contains_all_parameters(self, env):
         """ground_truth contains all model parameters."""
+        from neurospatial.ops.visibility import FieldOfView
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
-        from neurospatial.visibility import FieldOfView
 
         model = SpatialViewCellModel(
             env=env,

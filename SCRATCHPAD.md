@@ -1,11 +1,54 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - reference_frames.py → ops/egocentric.py DONE
+**Current Status**: Milestone 2 in progress - visibility.py → ops/visibility.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 11)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `visibility.py` → `ops/visibility.py`
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_visibility.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `visibility.py` → `ops/visibility.py` using `git mv` to preserve history
+4. Updated module docstring in visibility.py to document new import paths
+5. Updated all docstring examples (9 locations) from old import path to new
+6. Fixed circular import by changing `from neurospatial import Environment` to `from neurospatial.environment import Environment`
+7. Updated `ops/__init__.py` to export all visibility functions (8 exports):
+   - `FieldOfView`, `ViewshedResult`, `compute_view_field`, `compute_viewed_location`,
+   - `compute_viewshed`, `compute_viewshed_trajectory`, `visibility_occupancy`, `visible_cues`
+8. Updated internal imports (4 files in src/):
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/spatial_view_field.py`
+   - `src/neurospatial/simulation/models/spatial_view_cells.py` (import + docstring)
+9. Updated test imports:
+   - `tests/test_visibility.py` (42+ import updates)
+   - `tests/simulation/models/test_spatial_view_cells.py` (3 import updates)
+10. All tests pass:
+    - `tests/ops/test_ops_visibility.py`: 24 passed
+    - `tests/test_visibility.py`: 45 passed
+    - `tests/simulation/models/test_spatial_view_cells.py`: 30 passed
+    - Total visibility-related: 99 passed
+11. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+
+- `src/neurospatial/ops/visibility.py` (moved from visibility.py)
+- `src/neurospatial/ops/__init__.py` (added 8 visibility exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/spatial_view_field.py` (updated import)
+- `src/neurospatial/simulation/models/spatial_view_cells.py` (updated imports)
+- `tests/ops/test_ops_visibility.py` (new file)
+- `tests/test_visibility.py` (updated imports)
+- `tests/simulation/models/test_spatial_view_cells.py` (updated imports)
+
+**Next Task**: Move `basis.py` → `ops/basis.py`
 
 ### 2025-12-05 (Session 10)
 

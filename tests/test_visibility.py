@@ -16,13 +16,13 @@ class TestModuleSetup:
 
     def test_module_imports(self):
         """Module can be imported successfully."""
-        from neurospatial import visibility
+        from neurospatial.ops import visibility
 
         assert visibility is not None
 
     def test_all_exports_defined(self):
         """Module defines __all__ with expected exports."""
-        from neurospatial import visibility
+        from neurospatial.ops import visibility
 
         expected_exports = {
             "FieldOfView",
@@ -39,7 +39,7 @@ class TestModuleSetup:
 
     def test_module_docstring_exists(self):
         """Module has a docstring."""
-        from neurospatial import visibility
+        from neurospatial.ops import visibility
 
         assert visibility.__doc__ is not None
         assert len(visibility.__doc__) > 100  # Non-trivial docstring
@@ -50,7 +50,7 @@ class TestFieldOfView:
 
     def test_dataclass_creation(self):
         """FieldOfView can be created with angle bounds."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView(
             left_angle=np.pi / 2,
@@ -61,7 +61,7 @@ class TestFieldOfView:
 
     def test_symmetric_factory(self):
         """FieldOfView.symmetric() creates symmetric FOV."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         # 180 degree field of view
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
@@ -71,7 +71,7 @@ class TestFieldOfView:
 
     def test_rat_preset(self):
         """FieldOfView.rat() returns ~300 degree FOV."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.rat()
         # Rats have ~300 degree FOV with ~30 degree blind spot behind
@@ -79,7 +79,7 @@ class TestFieldOfView:
 
     def test_mouse_preset(self):
         """FieldOfView.mouse() returns FOV similar to rat."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.mouse()
         # Mice have similar FOV to rats
@@ -87,7 +87,7 @@ class TestFieldOfView:
 
     def test_primate_preset(self):
         """FieldOfView.primate() returns ~180 degree FOV."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.primate()
         # Primates have ~180 degree FOV (forward-facing eyes)
@@ -95,7 +95,7 @@ class TestFieldOfView:
 
     def test_total_angle_property(self):
         """total_angle returns sum of left and right angles."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView(left_angle=np.pi / 3, right_angle=-np.pi / 4)
         expected = np.pi / 3 + np.pi / 4  # Note: right is negative
@@ -103,14 +103,14 @@ class TestFieldOfView:
 
     def test_total_angle_degrees_property(self):
         """total_angle_degrees returns angle in degrees."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
         assert_allclose(fov.total_angle_degrees, 180.0)
 
     def test_contains_angle_within_fov(self):
         """contains_angle() returns True for angles within FOV."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         # 180 degree FOV, -90 to +90 degrees
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
@@ -122,7 +122,7 @@ class TestFieldOfView:
 
     def test_contains_angle_outside_fov(self):
         """contains_angle() returns False for angles outside FOV."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         # 180 degree FOV, -90 to +90 degrees
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
@@ -134,7 +134,7 @@ class TestFieldOfView:
 
     def test_contains_angle_batch(self):
         """contains_angle() handles array input."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
 
@@ -146,7 +146,7 @@ class TestFieldOfView:
 
     def test_is_binocular(self):
         """is_binocular() checks if angle is in binocular region."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         # Create FOV with binocular overlap in front
         fov = FieldOfView(
@@ -164,7 +164,7 @@ class TestFieldOfView:
 
     def test_blind_spot_behind(self):
         """blind_spot_behind excludes rear regions."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         # Rat-like FOV with blind spot behind
         fov = FieldOfView(
@@ -182,14 +182,14 @@ class TestFieldOfView:
 
     def test_validation_left_right_order(self):
         """Validation fails if left_angle < right_angle."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         with pytest.raises(ValueError, match="left_angle"):
             FieldOfView(left_angle=-np.pi / 2, right_angle=np.pi / 2)
 
     def test_frozen_dataclass(self):
         """FieldOfView is immutable (frozen dataclass)."""
-        from neurospatial.visibility import FieldOfView
+        from neurospatial.ops.visibility import FieldOfView
 
         fov = FieldOfView.symmetric(half_angle=np.pi / 2)
 
@@ -202,7 +202,7 @@ class TestViewshedResult:
 
     def test_dataclass_creation(self):
         """ViewshedResult can be created with required fields."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         result = ViewshedResult(
             visible_bins=np.array([0, 1, 2, 3]),
@@ -215,7 +215,7 @@ class TestViewshedResult:
 
     def test_n_visible_bins_property(self):
         """n_visible_bins returns count of visible bins."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         result = ViewshedResult(
             visible_bins=np.array([0, 1, 2, 3, 5]),
@@ -228,7 +228,7 @@ class TestViewshedResult:
 
     def test_visibility_fraction_property(self):
         """visibility_fraction returns fraction of bins visible."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         # 5 out of 10 bins visible
         result = ViewshedResult(
@@ -243,7 +243,7 @@ class TestViewshedResult:
 
     def test_n_visible_cues_property(self):
         """n_visible_cues returns count of visible cues."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         result = ViewshedResult(
             visible_bins=np.array([]),
@@ -256,7 +256,7 @@ class TestViewshedResult:
 
     def test_filter_cues(self):
         """filter_cues() returns subset of cues matching IDs."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         result = ViewshedResult(
             visible_bins=np.array([]),
@@ -276,7 +276,7 @@ class TestViewshedResult:
     def test_visible_bin_centers(self):
         """visible_bin_centers() returns allocentric positions."""
         from neurospatial import Environment
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         # Create simple environment
         rng = np.random.default_rng(42)
@@ -300,7 +300,7 @@ class TestViewshedResult:
 
     def test_frozen_dataclass(self):
         """ViewshedResult is immutable."""
-        from neurospatial.visibility import ViewshedResult
+        from neurospatial.ops.visibility import ViewshedResult
 
         result = ViewshedResult(
             visible_bins=np.array([0, 1]),
@@ -319,7 +319,7 @@ class TestComputeViewedLocation:
 
     def test_fixed_distance_method(self):
         """Fixed distance method returns point at fixed distance in gaze direction."""
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         # Animal at origin, facing East
         positions = np.array([[0.0, 0.0], [0.0, 0.0]])
@@ -337,7 +337,7 @@ class TestComputeViewedLocation:
     def test_ray_cast_method_with_boundary(self):
         """Ray cast method returns intersection with environment boundary."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         # Create square environment
         rng = np.random.default_rng(42)
@@ -360,7 +360,7 @@ class TestComputeViewedLocation:
     def test_boundary_method(self):
         """Boundary method returns nearest boundary point in gaze direction."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -381,7 +381,7 @@ class TestComputeViewedLocation:
 
     def test_gaze_offsets(self):
         """Gaze offsets adjust the viewing angle relative to heading."""
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         # Animal facing East with gaze offset of 90 degrees (looking left)
         positions = np.array([[0.0, 0.0]])
@@ -402,7 +402,7 @@ class TestComputeViewedLocation:
     def test_nan_when_viewing_outside_environment(self):
         """Returns NaN when ray doesn't intersect environment."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         # Create L-shaped environment (missing upper-right quadrant)
         rng = np.random.default_rng(42)
@@ -428,7 +428,7 @@ class TestComputeViewedLocation:
 
     def test_invalid_method_raises(self):
         """Invalid method raises ValueError."""
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         positions = np.array([[0.0, 0.0]])
         headings = np.array([0.0])
@@ -438,7 +438,7 @@ class TestComputeViewedLocation:
 
     def test_ray_cast_without_env_raises(self):
         """ray_cast method without environment raises error."""
-        from neurospatial.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import compute_viewed_location
 
         positions = np.array([[0.0, 0.0]])
         headings = np.array([0.0])
@@ -453,7 +453,7 @@ class TestComputeViewshed:
     def test_basic_viewshed(self):
         """Basic viewshed returns visible bins."""
         from neurospatial import Environment
-        from neurospatial.visibility import ViewshedResult, compute_viewshed
+        from neurospatial.ops.visibility import ViewshedResult, compute_viewshed
 
         # Create simple square environment
         rng = np.random.default_rng(42)
@@ -474,7 +474,7 @@ class TestComputeViewshed:
     def test_viewshed_with_fov_restriction(self):
         """FOV parameter restricts visible region."""
         from neurospatial import Environment
-        from neurospatial.visibility import FieldOfView, compute_viewshed
+        from neurospatial.ops.visibility import FieldOfView, compute_viewshed
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -497,7 +497,7 @@ class TestComputeViewshed:
     def test_viewshed_with_float_fov(self):
         """Float FOV is interpreted as full angle."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewshed
+        from neurospatial.ops.visibility import compute_viewshed
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -515,7 +515,7 @@ class TestComputeViewshed:
     def test_viewshed_cue_visibility(self):
         """Viewshed checks visibility of cue positions."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewshed
+        from neurospatial.ops.visibility import compute_viewshed
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -544,7 +544,7 @@ class TestComputeViewshed:
     def test_viewshed_n_rays_parameter(self):
         """n_rays parameter controls ray density."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewshed
+        from neurospatial.ops.visibility import compute_viewshed
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -567,7 +567,7 @@ class TestComputeViewshed:
     def test_viewshed_occlusion_map(self):
         """Occlusion map has values in [0, 1] range."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewshed
+        from neurospatial.ops.visibility import compute_viewshed
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -592,7 +592,7 @@ class TestComputeViewField:
     def test_returns_binary_mask(self):
         """compute_view_field returns binary visibility mask."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_view_field
+        from neurospatial.ops.visibility import compute_view_field
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -614,7 +614,7 @@ class TestVisibleCues:
     def test_returns_visibility_mask_distances_bearings(self):
         """visible_cues returns mask, distances, and bearings."""
         from neurospatial import Environment
-        from neurospatial.visibility import visible_cues
+        from neurospatial.ops.visibility import visible_cues
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -643,7 +643,7 @@ class TestVisibleCues:
     def test_occluded_cue_not_visible(self):
         """Cue behind obstacle is not visible."""
         from neurospatial import Environment
-        from neurospatial.visibility import visible_cues
+        from neurospatial.ops.visibility import visible_cues
 
         # Create C-shaped environment (obstacle in middle)
         rng = np.random.default_rng(42)
@@ -677,7 +677,7 @@ class TestComputeViewshedTrajectory:
     def test_computes_along_trajectory(self):
         """Computes viewshed at each point along trajectory."""
         from neurospatial import Environment
-        from neurospatial.visibility import compute_viewshed_trajectory
+        from neurospatial.ops.visibility import compute_viewshed_trajectory
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -708,7 +708,7 @@ class TestVisibilityOccupancy:
     def test_returns_time_visible_per_bin(self):
         """Returns time each bin was visible during trajectory."""
         from neurospatial import Environment
-        from neurospatial.visibility import visibility_occupancy
+        from neurospatial.ops.visibility import visibility_occupancy
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -736,7 +736,7 @@ class TestVisibilityOccupancy:
     def test_stationary_observer_accumulates_time(self):
         """Stationary observer accumulates visibility time."""
         from neurospatial import Environment
-        from neurospatial.visibility import visibility_occupancy
+        from neurospatial.ops.visibility import visibility_occupancy
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -761,7 +761,7 @@ class TestLineOfSightClear:
     def test_clear_line_of_sight(self):
         """Line of sight is clear in open environment."""
         from neurospatial import Environment
-        from neurospatial.visibility import _line_of_sight_clear
+        from neurospatial.ops.visibility import _line_of_sight_clear
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -775,7 +775,7 @@ class TestLineOfSightClear:
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
         from neurospatial import Environment
-        from neurospatial.visibility import _line_of_sight_clear
+        from neurospatial.ops.visibility import _line_of_sight_clear
 
         # Create C-shaped environment
         rng = np.random.default_rng(42)

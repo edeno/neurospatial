@@ -83,7 +83,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.visibility import compute_viewed_location
+from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
     from neurospatial import Environment

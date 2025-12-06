@@ -58,7 +58,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [x] Merge `calibration.py` into `ops/transforms.py`
 - [x] Move `alignment.py` → `ops/alignment.py`
 - [x] Move `reference_frames.py` → `ops/egocentric.py`
-- [ ] Move `visibility.py` → `ops/visibility.py`
+- [x] Move `visibility.py` → `ops/visibility.py`
 - [ ] Move `basis.py` → `ops/basis.py`
 
 #### 2.2: Update ops/**init**.py

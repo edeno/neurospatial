@@ -108,6 +108,18 @@ from neurospatial.ops.transforms import (
     translate_3d,
 )
 
+# Visibility operations
+from neurospatial.ops.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
+
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
     # Alignment
@@ -177,4 +189,13 @@ __all__ = [
     # Transforms - Estimation
     "apply_transform_to_environment",
     "estimate_transform",
+    # Visibility
+    "FieldOfView",
+    "ViewshedResult",
+    "compute_view_field",
+    "compute_viewed_location",
+    "compute_viewshed",
+    "compute_viewshed_trajectory",
+    "visibility_occupancy",
+    "visible_cues",
 ]
