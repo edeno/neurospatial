@@ -356,7 +356,7 @@ class SpatialViewCellModel:
 
                 # Check if preferred location is in FOV
                 if self.fov is not None:
-                    from neurospatial.reference_frames import compute_egocentric_bearing
+                    from neurospatial.ops.egocentric import compute_egocentric_bearing
 
                     bearing = compute_egocentric_bearing(
                         self.preferred_view_location[None, :],
@@ -376,7 +376,7 @@ class SpatialViewCellModel:
 
         # Apply FOV restriction (even without visibility requirement)
         if self.fov is not None and not self.require_visibility:
-            from neurospatial.reference_frames import compute_egocentric_bearing
+            from neurospatial.ops.egocentric import compute_egocentric_bearing
 
             # Check if viewed location is in FOV
             for i in range(n_time):

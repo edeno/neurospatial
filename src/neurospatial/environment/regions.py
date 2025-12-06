@@ -8,6 +8,9 @@ container.
 
 from __future__ import annotations
 
+# Conditional import for shapely (optional dependency)
+import importlib.util
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -15,13 +18,7 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 from neurospatial.regions import Regions
 
-# Conditional import for shapely (optional dependency)
-try:
-    import shapely  # noqa: F401
-
-    _HAS_SHAPELY = True
-except ModuleNotFoundError:
-    _HAS_SHAPELY = False
+_HAS_SHAPELY = importlib.util.find_spec("shapely") is not None
 
 
 class EnvironmentRegions:

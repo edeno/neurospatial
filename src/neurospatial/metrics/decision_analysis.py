@@ -392,7 +392,7 @@ def pre_decision_heading_stats(
     >>> if circ_var > 0.5:
     ...     print("High heading variability")
     """
-    from neurospatial.reference_frames import heading_from_velocity
+    from neurospatial.ops.egocentric import heading_from_velocity
 
     positions = np.asarray(positions)
     times = np.asarray(times)

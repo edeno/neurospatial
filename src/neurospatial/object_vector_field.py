@@ -70,7 +70,7 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.reference_frames import compute_egocentric_bearing
+from neurospatial.ops.egocentric import compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial import Environment

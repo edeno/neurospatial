@@ -1,11 +1,62 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - alignment.py → ops/alignment.py DONE
+**Current Status**: Milestone 2 in progress - reference_frames.py → ops/egocentric.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 10)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `reference_frames.py` → `ops/egocentric.py`
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_egocentric.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `reference_frames.py` → `ops/egocentric.py` using `git mv` to preserve history
+4. Updated module docstring in egocentric.py to document new import paths
+5. Updated all docstring examples (7 locations) from old import path to new
+6. Updated `ops/__init__.py` to export all egocentric functions (7 exports):
+   - `EgocentricFrame`, `allocentric_to_egocentric`, `egocentric_to_allocentric`,
+   - `compute_egocentric_bearing`, `compute_egocentric_distance`,
+   - `heading_from_velocity`, `heading_from_body_orientation`
+7. Did NOT create backward-compatibility shim per PLAN.md ("No backward compatibility shims — clean break")
+8. Updated internal imports (10+ files in src/):
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/object_vector_field.py`
+   - `src/neurospatial/visibility.py` (2 locations)
+   - `src/neurospatial/metrics/object_vector_cells.py`
+   - `src/neurospatial/metrics/vte.py`
+   - `src/neurospatial/metrics/decision_analysis.py`
+   - `src/neurospatial/metrics/goal_directed.py`
+   - `src/neurospatial/simulation/models/spatial_view_cells.py` (2 locations)
+   - `src/neurospatial/simulation/models/object_vector_cells.py`
+9. Updated test imports in `tests/test_reference_frames.py` (35 import updates)
+10. All tests pass:
+    - `tests/ops/test_ops_egocentric.py`: 20 passed
+    - `tests/test_reference_frames.py`: 35 passed
+    - Total egocentric-related: 55 passed
+11. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/egocentric.py` (moved from reference_frames.py)
+- `src/neurospatial/ops/__init__.py` (added 7 egocentric exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/object_vector_field.py` (updated import)
+- `src/neurospatial/visibility.py` (updated imports)
+- `src/neurospatial/metrics/object_vector_cells.py` (updated import)
+- `src/neurospatial/metrics/vte.py` (updated import)
+- `src/neurospatial/metrics/decision_analysis.py` (updated import)
+- `src/neurospatial/metrics/goal_directed.py` (updated import)
+- `src/neurospatial/simulation/models/spatial_view_cells.py` (updated imports)
+- `src/neurospatial/simulation/models/object_vector_cells.py` (updated import)
+- `tests/ops/test_ops_egocentric.py` (new file)
+- `tests/test_reference_frames.py` (updated imports)
+
+**Next Task**: Move `visibility.py` → `ops/visibility.py`
 
 ### 2025-12-05 (Session 9)
 

@@ -186,7 +186,7 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(positions, times, min_speed=1.0)  # doctest: +SKIP
     0.0
     """
-    from neurospatial.reference_frames import heading_from_velocity
+    from neurospatial.ops.egocentric import heading_from_velocity
 
     if len(positions) < 2:
         return 0.0

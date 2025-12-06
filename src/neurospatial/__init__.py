@@ -300,6 +300,17 @@ from neurospatial.ops.distance import (
     neighbors_within,
     pairwise_distances,
 )
+
+# Reference frame transformations (egocentric/allocentric)
+from neurospatial.ops.egocentric import (
+    EgocentricFrame,
+    allocentric_to_egocentric,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+    egocentric_to_allocentric,
+    heading_from_body_orientation,
+    heading_from_velocity,
+)
 from neurospatial.ops.graph import convolve, neighbor_reduce
 from neurospatial.ops.normalize import (
     clamp,
@@ -310,17 +321,6 @@ from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
 from neurospatial.ops.transforms import (
     apply_transform_to_environment,
     estimate_transform,
-)
-
-# Reference frame transformations (egocentric/allocentric)
-from neurospatial.reference_frames import (
-    EgocentricFrame,
-    allocentric_to_egocentric,
-    compute_egocentric_bearing,
-    compute_egocentric_distance,
-    egocentric_to_allocentric,
-    heading_from_body_orientation,
-    heading_from_velocity,
 )
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field

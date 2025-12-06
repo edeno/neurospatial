@@ -727,7 +727,7 @@ def compute_viewshed(
     >>> result.n_visible_bins > 0
     True
     """
-    from neurospatial.reference_frames import compute_egocentric_bearing
+    from neurospatial.ops.egocentric import compute_egocentric_bearing
 
     position = np.asarray(position, dtype=np.float64)
 
@@ -929,7 +929,7 @@ def visible_cues(
     ...     env, position=np.array([25, 25]), heading=0.0, cue_positions=cues
     ... )  # doctest: +SKIP
     """
-    from neurospatial.reference_frames import compute_egocentric_bearing
+    from neurospatial.ops.egocentric import compute_egocentric_bearing
 
     position = np.asarray(position, dtype=np.float64)
     cue_positions = np.asarray(cue_positions, dtype=np.float64)

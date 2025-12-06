@@ -17,13 +17,13 @@ class TestModuleSetup:
 
     def test_module_imports(self):
         """Module can be imported successfully."""
-        from neurospatial import reference_frames
+        from neurospatial.ops import egocentric as reference_frames
 
         assert reference_frames is not None
 
     def test_all_exports_defined(self):
         """Module defines __all__ with expected exports."""
-        from neurospatial import reference_frames
+        from neurospatial.ops import egocentric as reference_frames
 
         expected_exports = {
             "EgocentricFrame",
@@ -39,7 +39,7 @@ class TestModuleSetup:
 
     def test_module_docstring_exists(self):
         """Module has a docstring."""
-        from neurospatial import reference_frames
+        from neurospatial.ops import egocentric as reference_frames
 
         assert reference_frames.__doc__ is not None
         assert len(reference_frames.__doc__) > 100  # Non-trivial docstring
@@ -50,7 +50,7 @@ class TestEgocentricFrame:
 
     def test_dataclass_creation(self):
         """EgocentricFrame can be created with position and heading."""
-        from neurospatial.reference_frames import EgocentricFrame
+        from neurospatial.ops.egocentric import EgocentricFrame
 
         frame = EgocentricFrame(
             position=np.array([10.0, 20.0]),
@@ -66,7 +66,7 @@ class TestEgocentricFrame:
         - A point East of the animal is ahead (+x in egocentric)
         - A point North of the animal is to the left (+y in egocentric)
         """
-        from neurospatial.reference_frames import EgocentricFrame
+        from neurospatial.ops.egocentric import EgocentricFrame
 
         # Animal at origin facing East
         frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=0.0)
@@ -88,7 +88,7 @@ class TestEgocentricFrame:
         - A point North of the animal is ahead (+x in egocentric)
         - A point East of the animal is to the right (-y in egocentric)
         """
-        from neurospatial.reference_frames import EgocentricFrame
+        from neurospatial.ops.egocentric import EgocentricFrame
 
         # Animal at origin facing North
         frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=np.pi / 2)
@@ -105,7 +105,7 @@ class TestEgocentricFrame:
 
     def test_to_allocentric_inverse(self):
         """to_allocentric is the inverse of to_egocentric."""
-        from neurospatial.reference_frames import EgocentricFrame
+        from neurospatial.ops.egocentric import EgocentricFrame
 
         frame = EgocentricFrame(
             position=np.array([5.0, 3.0]),
@@ -121,7 +121,7 @@ class TestEgocentricFrame:
 
     def test_round_trip_preserves_coordinates(self):
         """Round-trip transformation preserves coordinates for various headings."""
-        from neurospatial.reference_frames import EgocentricFrame
+        from neurospatial.ops.egocentric import EgocentricFrame
 
         rng = np.random.default_rng(42)
 
@@ -141,7 +141,7 @@ class TestAllocentricToEgocentric:
 
     def test_batch_transform_multiple_timepoints(self):
         """Batch transform handles multiple timepoints correctly."""
-        from neurospatial.reference_frames import allocentric_to_egocentric
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
 
         # 3 timepoints, 2 landmarks
         landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])  # Shape: (2, 2)
@@ -161,7 +161,7 @@ class TestAllocentricToEgocentric:
 
     def test_broadcasting_2d_points_to_3d(self):
         """2D point input broadcasts to 3D output."""
-        from neurospatial.reference_frames import allocentric_to_egocentric
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
 
         # Same landmarks transformed at each timepoint
         landmarks = np.array([[10.0, 0.0]])  # Shape: (1, 2)
@@ -181,7 +181,7 @@ class TestAllocentricToEgocentric:
 
     def test_shape_validation_error_messages(self):
         """Invalid shapes produce clear error messages."""
-        from neurospatial.reference_frames import allocentric_to_egocentric
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
 
         points = np.array([10.0, 0.0])  # Wrong: 1D instead of 2D
         positions = np.array([[0.0, 0.0]])
@@ -192,7 +192,7 @@ class TestAllocentricToEgocentric:
 
     def test_positions_headings_length_mismatch(self):
         """Positions and headings must have matching length."""
-        from neurospatial.reference_frames import allocentric_to_egocentric
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
 
         points = np.array([[10.0, 0.0]])
         positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 timepoints
@@ -207,7 +207,7 @@ class TestEgocentricToAllocentric:
 
     def test_inverse_of_allocentric_to_egocentric(self):
         """egocentric_to_allocentric is the inverse of allocentric_to_egocentric."""
-        from neurospatial.reference_frames import (
+        from neurospatial.ops.egocentric import (
             allocentric_to_egocentric,
             egocentric_to_allocentric,
         )
@@ -234,7 +234,7 @@ class TestComputeEgocentricBearing:
 
     def test_bearing_zero_when_target_ahead(self):
         """Bearing is 0 when target is directly ahead."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (10, 0), animal at origin facing East
         target = np.array([[10.0, 0.0]])
@@ -246,7 +246,7 @@ class TestComputeEgocentricBearing:
 
     def test_bearing_pi_half_when_target_left(self):
         """Bearing is π/2 when target is to the left."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (0, 10), animal at origin facing East
         # Target is 90 degrees left
@@ -259,7 +259,7 @@ class TestComputeEgocentricBearing:
 
     def test_bearing_negative_pi_half_when_target_right(self):
         """Bearing is -π/2 when target is to the right."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (0, -10), animal at origin facing East
         target = np.array([[0.0, -10.0]])
@@ -271,7 +271,7 @@ class TestComputeEgocentricBearing:
 
     def test_bearing_behind_target(self):
         """Bearing is ±π when target is behind."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (-10, 0), animal at origin facing East
         target = np.array([[-10.0, 0.0]])
@@ -284,7 +284,7 @@ class TestComputeEgocentricBearing:
 
     def test_angle_wrapping_near_pi(self):
         """Angles wrap correctly near ±π boundary."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Test points slightly behind, should still give angles near ±π
         target1 = np.array([[-10.0, 0.1]])  # Slightly to the left of behind
@@ -305,7 +305,7 @@ class TestComputeEgocentricBearing:
 
     def test_batch_multiple_targets_and_times(self):
         """Handles multiple targets and timepoints."""
-        from neurospatial.reference_frames import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # 3 targets, 5 timepoints
         targets = np.array([[10.0, 0.0], [0.0, 10.0], [-10.0, 0.0]])
@@ -322,7 +322,7 @@ class TestComputeEgocentricDistance:
 
     def test_euclidean_distance(self):
         """Euclidean distance computed correctly."""
-        from neurospatial.reference_frames import compute_egocentric_distance
+        from neurospatial.ops.egocentric import compute_egocentric_distance
 
         targets = np.array([[10.0, 0.0], [0.0, 10.0]])
         position = np.array([[0.0, 0.0]])
@@ -338,7 +338,7 @@ class TestComputeEgocentricDistance:
     def test_geodesic_distance_with_environment(self):
         """Geodesic distance uses environment's distance_field."""
         from neurospatial import Environment
-        from neurospatial.reference_frames import compute_egocentric_distance
+        from neurospatial.ops.egocentric import compute_egocentric_distance
 
         # Create a simple 2D grid environment
         rng = np.random.default_rng(42)
@@ -366,7 +366,7 @@ class TestComputeEgocentricDistance:
 
     def test_invalid_metric_raises(self):
         """Invalid metric raises ValueError."""
-        from neurospatial.reference_frames import compute_egocentric_distance
+        from neurospatial.ops.egocentric import compute_egocentric_distance
 
         targets = np.array([[10.0, 0.0]])
         position = np.array([[0.0, 0.0]])
@@ -377,7 +377,7 @@ class TestComputeEgocentricDistance:
 
     def test_geodesic_without_env_raises(self):
         """Geodesic metric without environment raises error."""
-        from neurospatial.reference_frames import compute_egocentric_distance
+        from neurospatial.ops.egocentric import compute_egocentric_distance
 
         targets = np.array([[10.0, 0.0]])
         position = np.array([[0.0, 0.0]])
@@ -392,7 +392,7 @@ class TestHeadingFromVelocity:
 
     def test_smooth_trajectory(self):
         """Heading from smooth trajectory matches expected direction."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         # Straight line moving East
         t = np.linspace(0, 10, 100)
@@ -405,7 +405,7 @@ class TestHeadingFromVelocity:
 
     def test_heading_northward(self):
         """Heading is π/2 for northward motion."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         # Straight line moving North
         t = np.linspace(0, 10, 100)
@@ -418,7 +418,7 @@ class TestHeadingFromVelocity:
 
     def test_stationary_periods_interpolated(self):
         """Stationary periods produce smoothly interpolated headings."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         # Moving, then stationary, then moving again
         n = 100
@@ -447,7 +447,7 @@ class TestHeadingFromVelocity:
 
     def test_all_speeds_low_warning_and_nan(self):
         """Warning when all speeds below threshold, returns NaN."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         # Barely moving trajectory
         positions = np.random.RandomState(42).randn(100, 2) * 0.001
@@ -459,7 +459,7 @@ class TestHeadingFromVelocity:
 
     def test_n_time_less_than_2_raises(self):
         """n_time < 2 raises ValueError."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         positions = np.array([[0.0, 0.0]])  # Only 1 point
 
@@ -468,7 +468,7 @@ class TestHeadingFromVelocity:
 
     def test_smoothing_reduces_noise(self):
         """Larger smoothing sigma reduces heading noise."""
-        from neurospatial.reference_frames import heading_from_velocity
+        from neurospatial.ops.egocentric import heading_from_velocity
 
         # Noisy trajectory moving mostly East
         rng = np.random.default_rng(42)
@@ -490,7 +490,7 @@ class TestHeadingFromBodyOrientation:
 
     def test_with_valid_keypoints(self):
         """Heading computed correctly from valid nose/tail keypoints."""
-        from neurospatial.reference_frames import heading_from_body_orientation
+        from neurospatial.ops.egocentric import heading_from_body_orientation
 
         n = 50
         # Nose at (10, 0), tail at (0, 0) → heading = 0 (East)
@@ -504,7 +504,7 @@ class TestHeadingFromBodyOrientation:
 
     def test_heading_northward(self):
         """Heading is π/2 for nose north of tail."""
-        from neurospatial.reference_frames import heading_from_body_orientation
+        from neurospatial.ops.egocentric import heading_from_body_orientation
 
         n = 50
         # Nose at (0, 10), tail at (0, 0) → heading = π/2 (North)
@@ -517,7 +517,7 @@ class TestHeadingFromBodyOrientation:
 
     def test_nan_keypoints_interpolated(self):
         """NaN keypoints are interpolated without discontinuities."""
-        from neurospatial.reference_frames import heading_from_body_orientation
+        from neurospatial.ops.egocentric import heading_from_body_orientation
 
         n = 100
         # Steady heading = 0 (East) with some NaN gaps
@@ -538,7 +538,7 @@ class TestHeadingFromBodyOrientation:
 
     def test_nan_interpolation_near_pi_boundary(self):
         """NaN interpolation handles ±π boundary correctly."""
-        from neurospatial.reference_frames import heading_from_body_orientation
+        from neurospatial.ops.egocentric import heading_from_body_orientation
 
         n = 100
         # Heading smoothly crosses from +π to -π
@@ -564,7 +564,7 @@ class TestHeadingFromBodyOrientation:
 
     def test_all_nan_raises(self):
         """All-NaN keypoints raises ValueError."""
-        from neurospatial.reference_frames import heading_from_body_orientation
+        from neurospatial.ops.egocentric import heading_from_body_orientation
 
         nose = np.full((50, 2), np.nan)
         tail = np.full((50, 2), np.nan)
@@ -578,7 +578,7 @@ class TestComputeEgocentricDistanceFunctions:
 
     def test_euclidean_multiple_timepoints(self):
         """Euclidean distance across multiple timepoints."""
-        from neurospatial.reference_frames import compute_egocentric_distance
+        from neurospatial.ops.egocentric import compute_egocentric_distance
 
         # Single target, multiple animal positions
         targets = np.array([[50.0, 50.0]])

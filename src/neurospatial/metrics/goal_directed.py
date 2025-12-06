@@ -235,7 +235,7 @@ def instantaneous_goal_alignment(
     >>> np.nanmean(alignment) > 0.9  # High alignment
     True
     """
-    from neurospatial.reference_frames import heading_from_velocity
+    from neurospatial.ops.egocentric import heading_from_velocity
 
     positions = np.asarray(positions)
     times = np.asarray(times)

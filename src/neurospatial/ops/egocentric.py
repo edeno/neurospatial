@@ -1,4 +1,11 @@
-"""Coordinate reference frame transformations.
+"""Egocentric coordinate reference frame transformations.
+
+Import paths
+------------
+::
+
+    from neurospatial.ops.egocentric import allocentric_to_egocentric
+    from neurospatial.ops import egocentric
 
 Supports conversions between:
 - Allocentric: World-centered, fixed axes (standard spatial analysis)
@@ -44,7 +51,7 @@ Examples
 --------
 Transform landmark positions to egocentric coordinates:
 
->>> from neurospatial.reference_frames import allocentric_to_egocentric
+>>> from neurospatial.ops.egocentric import allocentric_to_egocentric
 >>> import numpy as np
 >>> landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])  # 2 landmarks
 >>> positions = np.array([[0.0, 0.0]])  # Animal at origin
@@ -110,7 +117,7 @@ class EgocentricFrame:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import EgocentricFrame
+    >>> from neurospatial.ops.egocentric import EgocentricFrame
 
     Animal at origin facing East (heading=0):
 
@@ -201,7 +208,7 @@ def allocentric_to_egocentric(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import allocentric_to_egocentric
+    >>> from neurospatial.ops.egocentric import allocentric_to_egocentric
 
     Transform landmarks at multiple timepoints:
 
@@ -329,7 +336,7 @@ def egocentric_to_allocentric(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import (
+    >>> from neurospatial.ops.egocentric import (
     ...     allocentric_to_egocentric,
     ...     egocentric_to_allocentric,
     ... )
@@ -398,7 +405,7 @@ def compute_egocentric_bearing(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import compute_egocentric_bearing
+    >>> from neurospatial.ops.egocentric import compute_egocentric_bearing
 
     Target directly ahead has bearing 0:
 
@@ -483,7 +490,7 @@ def compute_egocentric_distance(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import compute_egocentric_distance
+    >>> from neurospatial.ops.egocentric import compute_egocentric_distance
 
     Euclidean distance:
 
@@ -609,7 +616,7 @@ def heading_from_velocity(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import heading_from_velocity
+    >>> from neurospatial.ops.egocentric import heading_from_velocity
 
     Trajectory moving East:
 
@@ -747,7 +754,7 @@ def heading_from_body_orientation(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.reference_frames import heading_from_body_orientation
+    >>> from neurospatial.ops.egocentric import heading_from_body_orientation
 
     Heading from nose/tail pointing East:
 

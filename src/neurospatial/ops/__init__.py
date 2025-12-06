@@ -19,7 +19,6 @@ visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
 """
 
-# Binning operations
 # Alignment operations
 from neurospatial.ops.alignment import (
     ProbabilityMappingParams,
@@ -27,6 +26,8 @@ from neurospatial.ops.alignment import (
     get_2d_rotation_matrix,
     map_probabilities,
 )
+
+# Binning operations
 from neurospatial.ops.binning import (
     TieBreakStrategy,
     clear_kdtree_cache,
@@ -50,6 +51,17 @@ from neurospatial.ops.distance import (
     geodesic_distance_matrix,
     neighbors_within,
     pairwise_distances,
+)
+
+# Egocentric operations
+from neurospatial.ops.egocentric import (
+    EgocentricFrame,
+    allocentric_to_egocentric,
+    compute_egocentric_bearing,
+    compute_egocentric_distance,
+    egocentric_to_allocentric,
+    heading_from_body_orientation,
+    heading_from_velocity,
 )
 
 # Graph operations
@@ -120,6 +132,14 @@ __all__ = [
     "geodesic_distance_matrix",
     "neighbors_within",
     "pairwise_distances",
+    # Egocentric
+    "EgocentricFrame",
+    "allocentric_to_egocentric",
+    "compute_egocentric_bearing",
+    "compute_egocentric_distance",
+    "egocentric_to_allocentric",
+    "heading_from_body_orientation",
+    "heading_from_velocity",
     # Graph
     "convolve",
     "neighbor_reduce",
