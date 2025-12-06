@@ -45,11 +45,19 @@ from neurospatial.ops.normalize import (
     normalize_field,
 )
 
+# Smoothing operations
+from neurospatial.ops.smoothing import (
+    apply_kernel,
+    compute_diffusion_kernels,
+)
+
 __all__ = [
     "TieBreakStrategy",
+    "apply_kernel",
     "clamp",
     "clear_kdtree_cache",
     "combine_fields",
+    "compute_diffusion_kernels",
     "distance_field",
     "euclidean_distance_matrix",
     "geodesic_distance_between_points",

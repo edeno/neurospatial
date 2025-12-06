@@ -761,7 +761,7 @@ def resample_field(
     # Step 3: Optionally apply smoothing for diffuse method
     if method == "diffuse":
         # Import here to avoid circular dependency
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Type narrowing: bandwidth is guaranteed to be float at this point
         assert bandwidth is not None  # Already validated above

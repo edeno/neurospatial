@@ -1,3 +1,34 @@
+"""Smoothing operations for spatial fields.
+
+This module provides diffusion-based kernel computation and application
+for smoothing spatial fields on graphs. The main functions are:
+
+- ``compute_diffusion_kernels``: Compute diffusion kernel from graph structure
+- ``apply_kernel``: Apply kernel in forward or adjoint mode
+
+Examples
+--------
+>>> import networkx as nx
+>>> import numpy as np
+>>> from neurospatial.ops.smoothing import compute_diffusion_kernels, apply_kernel
+
+Create a simple graph and compute kernel:
+
+>>> graph = nx.path_graph(5)
+>>> for u, v in graph.edges():
+...     graph.edges[u, v]["distance"] = 1.0
+>>> kernel = compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
+>>> kernel.shape
+(5, 5)
+
+Apply kernel to a field:
+
+>>> field = np.array([0.0, 0.0, 1.0, 0.0, 0.0])
+>>> smoothed = apply_kernel(field, kernel, mode="forward")
+>>> smoothed[2] < 1.0  # Original spike reduced
+True
+"""
+
 from __future__ import annotations
 
 import warnings
@@ -8,6 +39,11 @@ import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
 from numpy.typing import NDArray
+
+__all__ = [
+    "apply_kernel",
+    "compute_diffusion_kernels",
+]
 
 # Threshold for warning about large kernel computation
 # Matrix exponential is O(n³) and dense, so warn for large environments
@@ -256,7 +292,7 @@ def apply_kernel(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.kernels import apply_kernel
+    >>> from neurospatial.ops.smoothing import apply_kernel
 
     Create environment and kernel:
 

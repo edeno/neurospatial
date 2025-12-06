@@ -263,7 +263,6 @@ from neurospatial.events import (
     validate_spatial_columns,
 )
 from neurospatial.io import from_dict, from_file, to_dict, to_file
-from neurospatial.kernels import apply_kernel, compute_diffusion_kernels
 from neurospatial.layout.factories import (
     LayoutType,
     get_layout_parameters,
@@ -306,6 +305,7 @@ from neurospatial.ops.normalize import (
     combine_fields,
     normalize_field,
 )
+from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
 from neurospatial.primitives import convolve, neighbor_reduce
 
 # Reference frame transformations (egocentric/allocentric)

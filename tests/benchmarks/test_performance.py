@@ -31,7 +31,7 @@ from neurospatial import (
     skaggs_information,
     sparsity,
 )
-from neurospatial.kernels import compute_diffusion_kernels
+from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 # =============================================================================
 # Fixtures for Benchmark Data

@@ -111,7 +111,7 @@ class EnvironmentFields:
         >>> smoothed_field = kernel @ field
 
         """
-        from neurospatial.kernels import compute_diffusion_kernels
+        from neurospatial.ops.smoothing import compute_diffusion_kernels
 
         # Initialize cache if it doesn't exist
         # (for backward compatibility with environments deserialized from older versions)

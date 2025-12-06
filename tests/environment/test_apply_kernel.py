@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.kernels import apply_kernel
+from neurospatial.ops.smoothing import apply_kernel
 
 
 class TestApplyKernelForward:

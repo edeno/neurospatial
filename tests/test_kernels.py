@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.kernels import compute_diffusion_kernels
+from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 
 class TestComputeDiffusionKernels:
@@ -359,7 +359,7 @@ class TestKernelPerformanceWarnings:
         # Create graph with many nodes (e.g., 1000+ bins)
         # This test verifies the warning exists in docstring
         # Actual warning emission should be tested if implemented
-        from neurospatial.kernels import compute_diffusion_kernels
+        from neurospatial.ops.smoothing import compute_diffusion_kernels
 
         # Check docstring mentions performance/complexity
         assert (
@@ -369,7 +369,7 @@ class TestKernelPerformanceWarnings:
 
     def test_large_graph_emits_warning(self):
         """Test that UserWarning is emitted for large graphs (> 3000 bins)."""
-        from neurospatial.kernels import (
+        from neurospatial.ops.smoothing import (
             _LARGE_KERNEL_THRESHOLD,
             compute_diffusion_kernels,
         )
@@ -390,7 +390,7 @@ class TestKernelPerformanceWarnings:
 
     def test_small_graph_no_warning(self):
         """Test that no warning is emitted for small graphs."""
-        from neurospatial.kernels import compute_diffusion_kernels
+        from neurospatial.ops.smoothing import compute_diffusion_kernels
 
         # Create small graph (well under threshold)
         graph = nx.path_graph(10)
@@ -557,7 +557,7 @@ class TestApplyKernel:
 
     def test_forward_mode_basic(self, simple_kernel, simple_field):
         """Test basic forward mode application."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(simple_field, simple_kernel, mode="forward")
 
@@ -567,7 +567,7 @@ class TestApplyKernel:
 
     def test_adjoint_mode_no_bin_sizes(self, simple_kernel, simple_field):
         """Test adjoint mode without bin_sizes (simple transpose)."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(simple_field, simple_kernel, mode="adjoint")
 
@@ -579,7 +579,7 @@ class TestApplyKernel:
         self, simple_kernel, simple_field, bin_sizes_3
     ):
         """Test adjoint mode with bin_sizes (mass-weighted)."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(
             simple_field, simple_kernel, mode="adjoint", bin_sizes=bin_sizes_3
@@ -595,14 +595,14 @@ class TestApplyKernel:
 
     def test_invalid_mode_raises(self, simple_kernel, simple_field):
         """Test that invalid mode raises ValueError."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         with pytest.raises(ValueError, match="mode must be"):
             apply_kernel(simple_field, simple_kernel, mode="invalid")
 
     def test_non_square_kernel_raises(self, simple_field):
         """Test that non-square kernel raises ValueError."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Create non-square kernel
         bad_kernel = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64)
@@ -612,7 +612,7 @@ class TestApplyKernel:
 
     def test_field_size_mismatch_raises(self, simple_kernel):
         """Test that field size mismatch raises ValueError."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Field has wrong size
         bad_field = np.array([1.0, 2.0], dtype=np.float64)
@@ -622,7 +622,7 @@ class TestApplyKernel:
 
     def test_bin_sizes_mismatch_raises(self, simple_kernel, simple_field):
         """Test that bin_sizes size mismatch raises ValueError."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # bin_sizes has wrong size
         bad_bin_sizes = np.array([1.0, 2.0], dtype=np.float64)
@@ -634,7 +634,7 @@ class TestApplyKernel:
 
     def test_non_positive_bin_sizes_raises(self, simple_kernel, simple_field):
         """Test that non-positive bin_sizes raises ValueError in adjoint mode."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # bin_sizes with zero/negative values
         bad_bin_sizes = np.array([1.0, 0.0, -1.0], dtype=np.float64)
@@ -646,7 +646,7 @@ class TestApplyKernel:
 
     def test_forward_adjoint_duality_no_bin_sizes(self, simple_kernel):
         """Test that forward and adjoint are dual without bin_sizes."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Create two random fields
         u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
@@ -664,7 +664,7 @@ class TestApplyKernel:
 
     def test_forward_adjoint_duality_with_bin_sizes(self, simple_kernel, bin_sizes_3):
         """Test that forward and adjoint are dual with bin_sizes."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Create two random fields
         u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
@@ -685,7 +685,7 @@ class TestApplyKernel:
         self, simple_kernel, simple_field, bin_sizes_3
     ):
         """Test that bin_sizes is allowed but ignored in forward mode."""
-        from neurospatial.kernels import apply_kernel
+        from neurospatial.ops.smoothing import apply_kernel
 
         # Should not raise error
         result = apply_kernel(
