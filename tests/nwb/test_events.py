@@ -30,7 +30,7 @@ class TestReadEvents:
 
     def test_basic_events_reading(self, sample_nwb_with_events):
         """Test reading events data from NWB file."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         events = read_events(sample_nwb_with_events, "laps")
 
@@ -50,7 +50,7 @@ class TestReadEvents:
 
     def test_events_data_matches_original(self, sample_nwb_with_events):
         """Test that read data matches the original data in the NWB file."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         events = read_events(sample_nwb_with_events, "laps")
 
@@ -66,7 +66,7 @@ class TestReadEvents:
         """Test reading with explicit processing_module parameter."""
         from ndx_events import EventsTable
 
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         nwbfile = empty_nwb
 
@@ -88,21 +88,21 @@ class TestReadEvents:
 
     def test_error_when_table_not_found(self, sample_nwb_with_events):
         """Test KeyError when EventsTable not found."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         with pytest.raises(KeyError, match="nonexistent_table"):
             read_events(sample_nwb_with_events, "nonexistent_table")
 
     def test_error_when_module_not_found(self, empty_nwb):
         """Test KeyError when processing module not found."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         with pytest.raises(KeyError, match="nonexistent_module"):
             read_events(empty_nwb, "events", processing_module="nonexistent_module")
 
     def test_dataframe_output_with_timestamp_column(self, sample_nwb_with_events):
         """Test DataFrame output includes timestamp column."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         events = read_events(sample_nwb_with_events, "laps")
 
@@ -115,7 +115,7 @@ class TestReadEvents:
 
     def test_additional_columns_preserved(self, sample_nwb_with_events):
         """Test that additional columns from EventsTable are preserved."""
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         events = read_events(sample_nwb_with_events, "laps")
 
@@ -133,7 +133,7 @@ class TestReadEvents:
         """Test reading an empty EventsTable."""
         from ndx_events import EventsTable
 
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         nwbfile = empty_nwb
 
@@ -155,7 +155,7 @@ class TestReadEvents:
         """Test reading EventsTable with string columns."""
         from ndx_events import EventsTable
 
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         nwbfile = empty_nwb
 
@@ -184,7 +184,7 @@ class TestReadEvents:
         """Test TypeError when trying to read non-EventsTable with read_events."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_events
+        from neurospatial.io.nwb import read_events
 
         nwbfile = empty_nwb
 
@@ -238,7 +238,7 @@ class TestReadEventsImportError:
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
         try:
-            from neurospatial.nwb._core import _require_ndx_events
+            from neurospatial.io.nwb._core import _require_ndx_events
 
             with pytest.raises(ImportError, match="ndx-events is required"):
                 _require_ndx_events()
@@ -252,7 +252,7 @@ class TestReadIntervals:
 
     def test_read_trials(self, empty_nwb):
         """Test reading trials table from NWB file."""
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -275,7 +275,7 @@ class TestReadIntervals:
         """Test reading epochs table from NWB file."""
         from pynwb.epoch import TimeIntervals
 
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -301,7 +301,7 @@ class TestReadIntervals:
         """Test reading custom intervals table from NWB file."""
         from pynwb.epoch import TimeIntervals
 
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -322,7 +322,7 @@ class TestReadIntervals:
 
     def test_start_stop_time_columns(self, empty_nwb):
         """Test that start_time and stop_time columns are present."""
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -344,7 +344,7 @@ class TestReadIntervals:
 
     def test_error_when_interval_not_found(self, empty_nwb):
         """Test KeyError when interval table not found."""
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         with pytest.raises(KeyError, match="nonexistent"):
             read_intervals(empty_nwb, "nonexistent")
@@ -353,7 +353,7 @@ class TestReadIntervals:
         """Test that additional columns from TimeIntervals are preserved."""
         from pynwb.epoch import TimeIntervals
 
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -378,7 +378,7 @@ class TestReadIntervals:
         """Test reading an empty TimeIntervals table."""
         from pynwb.epoch import TimeIntervals
 
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -397,7 +397,7 @@ class TestReadIntervals:
 
     def test_intervals_data_matches_original(self, empty_nwb):
         """Test that read data matches the original data in the NWB file."""
-        from neurospatial.nwb import read_intervals
+        from neurospatial.io.nwb import read_intervals
 
         nwbfile = empty_nwb
 
@@ -424,7 +424,7 @@ class TestWriteLaps:
 
     def test_basic_lap_times_writing(self, empty_nwb):
         """Test writing basic lap times to NWB file."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
@@ -445,7 +445,7 @@ class TestWriteLaps:
 
     def test_with_lap_types_direction(self, empty_nwb):
         """Test writing laps with direction/lap_types column."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
@@ -465,7 +465,7 @@ class TestWriteLaps:
         """Test EventsTable is created in processing/behavior/ module."""
         from ndx_events import EventsTable
 
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 2.0, 3.0])
@@ -482,7 +482,7 @@ class TestWriteLaps:
 
     def test_custom_description(self, empty_nwb):
         """Test custom description parameter."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 2.0])
@@ -495,7 +495,7 @@ class TestWriteLaps:
 
     def test_default_description(self, empty_nwb):
         """Test default description is used."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0])
@@ -507,7 +507,7 @@ class TestWriteLaps:
 
     def test_duplicate_name_error(self, empty_nwb):
         """Test error when laps table already exists without overwrite."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 2.0])
@@ -521,7 +521,7 @@ class TestWriteLaps:
 
     def test_overwrite_replaces_existing(self, empty_nwb):
         """Test overwrite=True replaces existing laps table."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         original_times = np.array([1.0, 2.0])
@@ -540,7 +540,7 @@ class TestWriteLaps:
 
     def test_empty_lap_times(self, empty_nwb):
         """Test writing empty lap times array."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([])
@@ -553,7 +553,7 @@ class TestWriteLaps:
 
     def test_lap_times_must_be_1d(self, empty_nwb):
         """Test error when lap_times is not 1D."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -563,7 +563,7 @@ class TestWriteLaps:
 
     def test_lap_types_length_mismatch(self, empty_nwb):
         """Test error when lap_types length doesn't match lap_times."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 2.0, 3.0])
@@ -574,7 +574,7 @@ class TestWriteLaps:
 
     def test_data_integrity(self, empty_nwb):
         """Test data integrity after writing."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.5, 3.2, 7.8, 12.1])
@@ -594,7 +594,7 @@ class TestWriteLaps:
         """Test that existing behavior module is reused."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
 
@@ -624,7 +624,7 @@ class TestWriteLaps:
 
     def test_custom_name(self, empty_nwb):
         """Test writing laps with custom table name."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 2.0])
@@ -638,7 +638,7 @@ class TestWriteLaps:
 
     def test_lap_times_with_nan_raises_error(self, empty_nwb):
         """Test error when lap_times contains NaN values."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, np.nan, 3.0])
@@ -648,7 +648,7 @@ class TestWriteLaps:
 
     def test_lap_times_with_inf_raises_error(self, empty_nwb):
         """Test error when lap_times contains Inf values."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, np.inf, 3.0])
@@ -658,7 +658,7 @@ class TestWriteLaps:
 
     def test_lap_times_negative_raises_error(self, empty_nwb):
         """Test error when lap_times contains negative timestamps."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([-1.0, 1.0, 3.0])
@@ -694,7 +694,7 @@ class TestWriteLapsImportError:
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
         try:
-            from neurospatial.nwb._core import _require_ndx_events
+            from neurospatial.io.nwb._core import _require_ndx_events
 
             with pytest.raises(ImportError, match="ndx-events is required"):
                 _require_ndx_events()
@@ -709,7 +709,7 @@ class TestWriteRegionCrossings:
 
     def test_basic_crossing_times_writing(self, empty_nwb):
         """Test writing basic region crossing times to NWB file."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, 2.5, 5.0, 8.2])
@@ -734,7 +734,7 @@ class TestWriteRegionCrossings:
 
     def test_region_name_column(self, empty_nwb):
         """Test that region name column is properly stored."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, 2.0, 3.0])
@@ -753,7 +753,7 @@ class TestWriteRegionCrossings:
 
     def test_event_type_column(self, empty_nwb):
         """Test that event_type column (enter/exit) is properly stored."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, 2.0, 3.0, 4.0])
@@ -779,7 +779,7 @@ class TestWriteRegionCrossings:
         """Test EventsTable is created in processing/behavior/ module."""
         from ndx_events import EventsTable
 
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0])
@@ -797,7 +797,7 @@ class TestWriteRegionCrossings:
 
     def test_custom_description(self, empty_nwb):
         """Test custom description parameter."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0])
@@ -817,7 +817,7 @@ class TestWriteRegionCrossings:
 
     def test_default_description(self, empty_nwb):
         """Test default description is used."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0])
@@ -831,7 +831,7 @@ class TestWriteRegionCrossings:
 
     def test_custom_name(self, empty_nwb):
         """Test writing crossings with custom table name."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0])
@@ -852,7 +852,7 @@ class TestWriteRegionCrossings:
 
     def test_duplicate_name_error(self, empty_nwb):
         """Test error when crossings table already exists without overwrite."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0])
@@ -868,7 +868,7 @@ class TestWriteRegionCrossings:
 
     def test_overwrite_replaces_existing(self, empty_nwb):
         """Test overwrite=True replaces existing crossings table."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         original_times = np.array([1.0])
@@ -896,7 +896,7 @@ class TestWriteRegionCrossings:
 
     def test_empty_crossing_times(self, empty_nwb):
         """Test writing empty crossing times array."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([])
@@ -911,7 +911,7 @@ class TestWriteRegionCrossings:
 
     def test_crossing_times_must_be_1d(self, empty_nwb):
         """Test error when crossing_times is not 1D."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
@@ -925,7 +925,7 @@ class TestWriteRegionCrossings:
 
     def test_region_names_length_mismatch(self, empty_nwb):
         """Test error when region_names length doesn't match crossing_times."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, 2.0, 3.0])
@@ -937,7 +937,7 @@ class TestWriteRegionCrossings:
 
     def test_event_types_length_mismatch(self, empty_nwb):
         """Test error when event_types length doesn't match crossing_times."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, 2.0, 3.0])
@@ -949,7 +949,7 @@ class TestWriteRegionCrossings:
 
     def test_crossing_times_with_nan_raises_error(self, empty_nwb):
         """Test error when crossing_times contains NaN values."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, np.nan, 3.0])
@@ -961,7 +961,7 @@ class TestWriteRegionCrossings:
 
     def test_crossing_times_with_inf_raises_error(self, empty_nwb):
         """Test error when crossing_times contains Inf values."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.0, np.inf, 3.0])
@@ -973,7 +973,7 @@ class TestWriteRegionCrossings:
 
     def test_crossing_times_negative_raises_error(self, empty_nwb):
         """Test error when crossing_times contains negative timestamps."""
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([-1.0, 1.0, 3.0])
@@ -985,7 +985,7 @@ class TestWriteRegionCrossings:
 
     def test_data_integrity(self, empty_nwb):
         """Test data integrity via round-trip with read_events()."""
-        from neurospatial.nwb import read_events, write_region_crossings
+        from neurospatial.io.nwb import read_events, write_region_crossings
 
         nwbfile = empty_nwb
         crossing_times = np.array([1.5, 3.2, 7.8, 12.1])
@@ -1007,7 +1007,7 @@ class TestWriteRegionCrossings:
         """Test that existing behavior module is reused."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import write_region_crossings
+        from neurospatial.io.nwb import write_region_crossings
 
         nwbfile = empty_nwb
 
@@ -1044,7 +1044,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_with_start_regions(self, empty_nwb):
         """Test writing laps with start_regions column."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
@@ -1063,7 +1063,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_with_end_regions(self, empty_nwb):
         """Test writing laps with end_regions column."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
@@ -1082,7 +1082,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_with_stop_times(self, empty_nwb):
         """Test writing laps with stop_times column (interval events)."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
@@ -1101,7 +1101,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_with_all_optional(self, empty_nwb):
         """Test writing laps with all optional columns."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1136,7 +1136,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_start_regions_length_mismatch(self, empty_nwb):
         """Test error when start_regions length doesn't match lap_times."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1147,7 +1147,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_end_regions_length_mismatch(self, empty_nwb):
         """Test error when end_regions length doesn't match lap_times."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1158,7 +1158,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_stop_times_length_mismatch(self, empty_nwb):
         """Test error when stop_times length doesn't match lap_times."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1169,7 +1169,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_stop_times_less_than_lap_times(self, empty_nwb):
         """Test error when stop_times < lap_times for any entry."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1180,7 +1180,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_stop_times_with_nan_raises_error(self, empty_nwb):
         """Test error when stop_times contains NaN values."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1191,7 +1191,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_stop_times_negative_raises_error(self, empty_nwb):
         """Test error when stop_times contains negative timestamps."""
-        from neurospatial.nwb import write_laps
+        from neurospatial.io.nwb import write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2])
@@ -1202,7 +1202,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_regions_with_overwrite(self, empty_nwb):
         """Test overwrite replaces laps with region columns."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
 
@@ -1233,7 +1233,7 @@ class TestWriteLapsRegionColumns:
 
     def test_write_laps_backwards_compatible(self, empty_nwb):
         """Test that write_laps without new parameters still works."""
-        from neurospatial.nwb import read_events, write_laps
+        from neurospatial.io.nwb import read_events, write_laps
 
         nwbfile = empty_nwb
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])

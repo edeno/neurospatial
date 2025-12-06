@@ -1,11 +1,55 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 COMPLETE - All ops/ modules moved
+**Current Status**: Milestone 3 COMPLETE - io/ module fully consolidated
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 13)
+
+**Starting Point**: Continue Milestone 3 - Move nwb/ to io/nwb/
+
+**Completed**: Move `nwb/` → `io/nwb/`
+
+**Work Done**:
+1. Created test file `tests/test_io_nwb_imports.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `nwb/` → `io/nwb/` using `git mv` to preserve history
+4. Updated `io/nwb/__init__.py`:
+   - Updated all docstring examples (5 locations) from `neurospatial.nwb` to `neurospatial.io.nwb`
+   - Updated `_LAZY_IMPORTS` dictionary (22 entries) to use new paths
+5. Updated internal imports in all nwb submodules:
+   - `_behavior.py`, `_pose.py`, `_fields.py`, `_events.py`, `_environment.py`, `_overlays.py`
+6. Updated external references (2 files):
+   - `src/neurospatial/environment/serialization.py` (docstring + import)
+   - `src/neurospatial/environment/factories.py` (docstrings + import)
+7. Updated test file imports (10 test files) using batch sed replace
+8. Moved `tests/nwb/` back from `tests/io/nwb/` to avoid conflict with Python's built-in `io` module
+9. Renamed import test file to `tests/test_io_nwb_imports.py`
+10. All tests pass:
+    - `tests/test_io_nwb_imports.py`: 13 passed (new import verification)
+    - `tests/nwb/`: 408 passed
+    - `tests/test_events_nwb.py`: 23 passed
+    - `tests/test_io.py`: 26 passed
+11. Ran ruff check/format (3 fixes) and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/io/nwb/__init__.py` (moved, updated paths)
+- `src/neurospatial/io/nwb/_*.py` (7 files - updated imports)
+- `src/neurospatial/environment/serialization.py` (updated import + docstring)
+- `src/neurospatial/environment/factories.py` (updated imports + docstrings)
+- `tests/test_io_nwb_imports.py` (new file)
+- `tests/nwb/*.py` (10 files - updated imports)
+- `tests/test_events_nwb.py` (updated imports)
+
+**Milestone 3 Status**: COMPLETE
+Both io/ components have been moved:
+- `io.py` → `io/files.py` (done in M1)
+- `nwb/` → `io/nwb/`
+
+**Next Task**: Milestone 4 - Move stats/ Module
 
 ### 2025-12-05 (Session 12)
 

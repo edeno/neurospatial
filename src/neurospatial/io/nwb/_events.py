@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial.nwb._adapters import events_table_to_dataframe
+from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
 if TYPE_CHECKING:
     import ndx_events
@@ -63,7 +63,7 @@ def read_events(
     ...     laps = read_events(nwbfile, "laps")
     ...     print(f"Found {len(laps)} lap events")
     """
-    from neurospatial.nwb._core import _require_ndx_events, logger
+    from neurospatial.io.nwb._core import _require_ndx_events, logger
 
     # Verify ndx-events is installed BEFORE importing EventsTable
     # This ensures users see the friendly error message
@@ -148,7 +148,7 @@ def read_intervals(
     ...     trials = read_intervals(nwbfile, "trials")
     ...     print(f"Found {len(trials)} trials")
     """
-    from neurospatial.nwb._core import _require_pynwb, logger
+    from neurospatial.io.nwb._core import _require_pynwb, logger
 
     # Verify pynwb is installed
     _require_pynwb()
@@ -268,7 +268,7 @@ def write_laps(
     ...     )
     ...     io.write(nwbfile)
     """
-    from neurospatial.nwb._core import (
+    from neurospatial.io.nwb._core import (
         _get_or_create_processing_module,
         _require_ndx_events,
         logger,
@@ -459,7 +459,7 @@ def write_region_crossings(
     ...     write_region_crossings(nwbfile, crossing_times, region_names, event_types)
     ...     io.write(nwbfile)
     """
-    from neurospatial.nwb._core import (
+    from neurospatial.io.nwb._core import (
         _get_or_create_processing_module,
         _require_ndx_events,
         logger,
@@ -618,7 +618,7 @@ def write_trials(
     read_intervals : Read generic TimeIntervals.
     segment_trials : Segment trajectory into trials.
     """
-    from neurospatial.nwb._core import _require_pynwb, logger
+    from neurospatial.io.nwb._core import _require_pynwb, logger
 
     # Verify pynwb is installed
     _require_pynwb()
@@ -914,7 +914,7 @@ def dataframe_to_events_table(
     ... )
     >>> events_table = dataframe_to_events_table(df, "my_events")  # doctest: +SKIP
     """
-    from neurospatial.nwb._core import _require_ndx_events
+    from neurospatial.io.nwb._core import _require_ndx_events
 
     # Verify ndx-events is installed
     ndx_events_module = _require_ndx_events()
@@ -1052,7 +1052,7 @@ def write_events(
     write_laps : Write lap events (specialized format).
     write_region_crossings : Write region crossing events (specialized format).
     """
-    from neurospatial.nwb._core import (
+    from neurospatial.io.nwb._core import (
         _get_or_create_processing_module,
         _require_ndx_events,
         logger,

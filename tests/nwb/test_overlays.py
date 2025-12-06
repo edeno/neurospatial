@@ -23,7 +23,7 @@ class TestPositionOverlayFromNwb:
     def test_basic_overlay_creation(self, sample_nwb_with_position):
         """Test PositionOverlay creation from NWB Position data."""
         from neurospatial.animation.overlays import PositionOverlay
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position)
 
@@ -43,7 +43,7 @@ class TestPositionOverlayFromNwb:
 
     def test_data_matches_original(self, sample_nwb_with_position):
         """Test that overlay data matches original NWB Position data."""
-        from neurospatial.nwb import position_overlay_from_nwb, read_position
+        from neurospatial.io.nwb import position_overlay_from_nwb, read_position
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position)
 
@@ -55,7 +55,7 @@ class TestPositionOverlayFromNwb:
 
     def test_color_parameter_passed_through(self, sample_nwb_with_position):
         """Test that color parameter is passed to PositionOverlay."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position, color="blue")
 
@@ -63,7 +63,7 @@ class TestPositionOverlayFromNwb:
 
     def test_size_parameter_passed_through(self, sample_nwb_with_position):
         """Test that size parameter is passed to PositionOverlay."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position, size=20.0)
 
@@ -71,7 +71,7 @@ class TestPositionOverlayFromNwb:
 
     def test_trail_length_parameter_passed_through(self, sample_nwb_with_position):
         """Test that trail_length parameter is passed to PositionOverlay."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position, trail_length=15)
 
@@ -79,7 +79,7 @@ class TestPositionOverlayFromNwb:
 
     def test_default_parameters(self, sample_nwb_with_position):
         """Test that default parameters are applied correctly."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(sample_nwb_with_position)
 
@@ -92,7 +92,7 @@ class TestPositionOverlayFromNwb:
         """Test that processing_module parameter is forwarded to read_position."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         nwbfile = empty_nwb
 
@@ -120,7 +120,7 @@ class TestPositionOverlayFromNwb:
 
     def test_position_name_forwarded(self, sample_nwb_with_position_multiple_series):
         """Test that position_name parameter is forwarded to read_position."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         # Request specific series by name
         overlay = position_overlay_from_nwb(
@@ -133,7 +133,7 @@ class TestPositionOverlayFromNwb:
 
     def test_additional_kwargs_passed_through(self, sample_nwb_with_position):
         """Test that additional kwargs are passed to PositionOverlay."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         # interp is a valid PositionOverlay parameter
         overlay = position_overlay_from_nwb(
@@ -145,7 +145,7 @@ class TestPositionOverlayFromNwb:
 
     def test_multiple_parameters_combined(self, sample_nwb_with_position):
         """Test creating overlay with multiple custom parameters."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         overlay = position_overlay_from_nwb(
             sample_nwb_with_position,
@@ -162,7 +162,7 @@ class TestPositionOverlayFromNwb:
 
     def test_error_when_no_position_found(self, empty_nwb):
         """Test KeyError when no Position container found."""
-        from neurospatial.nwb import position_overlay_from_nwb
+        from neurospatial.io.nwb import position_overlay_from_nwb
 
         with pytest.raises(KeyError, match=r"No Position.*found"):
             position_overlay_from_nwb(empty_nwb)
@@ -178,7 +178,7 @@ class TestBodypartOverlayFromNwb:
     def test_basic_overlay_creation(self, sample_nwb_with_pose):
         """Test BodypartOverlay creation from NWB PoseEstimation data."""
         from neurospatial.animation.overlays import BodypartOverlay
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
 
@@ -203,7 +203,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_data_matches_original(self, sample_nwb_with_pose):
         """Test that overlay data matches original NWB PoseEstimation data."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb, read_pose
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb, read_pose
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
 
@@ -220,7 +220,7 @@ class TestBodypartOverlayFromNwb:
     def test_skeleton_auto_extracted(self, sample_nwb_with_pose):
         """Test that skeleton is automatically extracted from PoseEstimation."""
         from neurospatial.animation.skeleton import Skeleton
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
 
@@ -237,7 +237,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_skeleton_matches_read_pose(self, sample_nwb_with_pose):
         """Test that extracted skeleton matches skeleton from read_pose()."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb, read_pose
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb, read_pose
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
         _, _, skeleton = read_pose(sample_nwb_with_pose)
@@ -249,7 +249,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_colors_parameter_passed_through(self, sample_nwb_with_pose):
         """Test that colors parameter is passed to BodypartOverlay."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         custom_colors = {"nose": "yellow", "body": "green", "tail": "blue"}
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose, colors=custom_colors)
@@ -258,7 +258,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_default_colors_none(self, sample_nwb_with_pose):
         """Test that default colors is None (uses skeleton colors)."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         overlay = bodypart_overlay_from_nwb(sample_nwb_with_pose)
 
@@ -267,7 +267,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_pose_estimation_name_forwarded(self, sample_nwb_with_pose):
         """Test that pose_estimation_name parameter is forwarded to read_pose."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         # Request specific pose estimation by name
         overlay = bodypart_overlay_from_nwb(
@@ -280,7 +280,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_additional_kwargs_passed_through(self, sample_nwb_with_pose):
         """Test that additional kwargs are passed to BodypartOverlay."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         # interp is a valid BodypartOverlay parameter
         overlay = bodypart_overlay_from_nwb(
@@ -292,7 +292,7 @@ class TestBodypartOverlayFromNwb:
 
     def test_multiple_parameters_combined(self, sample_nwb_with_pose):
         """Test creating overlay with multiple custom parameters."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         custom_colors = {"nose": "red", "body": "blue", "tail": "green"}
         overlay = bodypart_overlay_from_nwb(
@@ -307,14 +307,14 @@ class TestBodypartOverlayFromNwb:
 
     def test_error_when_no_pose_estimation_found(self, empty_nwb):
         """Test KeyError when no PoseEstimation container found."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         with pytest.raises(KeyError, match=r"No PoseEstimation.*found"):
             bodypart_overlay_from_nwb(empty_nwb)
 
     def test_error_when_named_pose_not_found(self, sample_nwb_with_pose):
         """Test KeyError when specified PoseEstimation name not found."""
-        from neurospatial.nwb import bodypart_overlay_from_nwb
+        from neurospatial.io.nwb import bodypart_overlay_from_nwb
 
         with pytest.raises(KeyError, match=r"not found.*Available"):
             bodypart_overlay_from_nwb(
@@ -329,7 +329,7 @@ class TestHeadDirectionOverlayFromNwb:
     def test_basic_overlay_creation(self, sample_nwb_with_head_direction):
         """Test HeadDirectionOverlay creation from NWB CompassDirection data."""
         from neurospatial.animation.overlays import HeadDirectionOverlay
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
 
@@ -349,7 +349,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_data_matches_original(self, sample_nwb_with_head_direction):
         """Test that overlay data matches original NWB CompassDirection data."""
-        from neurospatial.nwb import (
+        from neurospatial.io.nwb import (
             head_direction_overlay_from_nwb,
             read_head_direction,
         )
@@ -364,7 +364,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_color_parameter_passed_through(self, sample_nwb_with_head_direction):
         """Test that color parameter is passed to HeadDirectionOverlay."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         overlay = head_direction_overlay_from_nwb(
             sample_nwb_with_head_direction, color="cyan"
@@ -374,7 +374,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_length_parameter_passed_through(self, sample_nwb_with_head_direction):
         """Test that length parameter is passed to HeadDirectionOverlay."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         overlay = head_direction_overlay_from_nwb(
             sample_nwb_with_head_direction, length=25.0
@@ -384,7 +384,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_default_parameters(self, sample_nwb_with_head_direction):
         """Test that default parameters are applied correctly."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         overlay = head_direction_overlay_from_nwb(sample_nwb_with_head_direction)
 
@@ -396,7 +396,7 @@ class TestHeadDirectionOverlayFromNwb:
         """Test that processing_module parameter is forwarded to read_head_direction."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         nwbfile = empty_nwb
 
@@ -426,7 +426,7 @@ class TestHeadDirectionOverlayFromNwb:
         """Test that compass_name parameter is forwarded to read_head_direction."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         nwbfile = empty_nwb
 
@@ -464,7 +464,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_additional_kwargs_passed_through(self, sample_nwb_with_head_direction):
         """Test that additional kwargs are passed to HeadDirectionOverlay."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         # interp is a valid HeadDirectionOverlay parameter
         overlay = head_direction_overlay_from_nwb(
@@ -476,7 +476,7 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_multiple_parameters_combined(self, sample_nwb_with_head_direction):
         """Test creating overlay with multiple custom parameters."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         overlay = head_direction_overlay_from_nwb(
             sample_nwb_with_head_direction,
@@ -491,14 +491,14 @@ class TestHeadDirectionOverlayFromNwb:
 
     def test_error_when_no_compass_direction_found(self, empty_nwb):
         """Test KeyError when no CompassDirection container found."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         with pytest.raises(KeyError, match=r"No CompassDirection.*found"):
             head_direction_overlay_from_nwb(empty_nwb)
 
     def test_error_when_named_compass_not_found(self, sample_nwb_with_head_direction):
         """Test KeyError when specified compass_name not found."""
-        from neurospatial.nwb import head_direction_overlay_from_nwb
+        from neurospatial.io.nwb import head_direction_overlay_from_nwb
 
         with pytest.raises(KeyError, match=r"not found.*Available"):
             head_direction_overlay_from_nwb(

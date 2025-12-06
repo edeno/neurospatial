@@ -79,7 +79,7 @@ class TestWriteEvents:
 
     def test_basic_events(self, nwbfile, basic_events_df):
         """Test writing events with only timestamps."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, basic_events_df, name="test_events")
 
@@ -92,7 +92,7 @@ class TestWriteEvents:
 
     def test_events_with_labels(self, nwbfile, events_with_labels_df):
         """Test writing events with label column."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, events_with_labels_df, name="labeled_events")
 
@@ -105,7 +105,7 @@ class TestWriteEvents:
 
     def test_events_with_spatial_columns(self, nwbfile, events_with_spatial_df):
         """Test writing events with x, y spatial columns."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, events_with_spatial_df, name="spatial_events")
 
@@ -122,7 +122,7 @@ class TestWriteEvents:
 
     def test_events_with_value(self, nwbfile, events_with_value_df):
         """Test writing events with numeric value column."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, events_with_value_df, name="value_events")
 
@@ -135,7 +135,7 @@ class TestWriteEvents:
 
     def test_custom_description(self, nwbfile, basic_events_df):
         """Test custom description is stored."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         write_events(
             nwbfile,
@@ -150,7 +150,7 @@ class TestWriteEvents:
 
     def test_custom_processing_module(self, nwbfile, basic_events_df):
         """Test writing to custom processing module."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(
             nwbfile,
@@ -166,7 +166,7 @@ class TestWriteEvents:
 
     def test_overwrite_false_raises(self, nwbfile, basic_events_df):
         """Test that overwrite=False raises on duplicate name."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         write_events(nwbfile, basic_events_df, name="dup_events")
 
@@ -175,7 +175,7 @@ class TestWriteEvents:
 
     def test_overwrite_true_replaces(self, nwbfile, basic_events_df):
         """Test that overwrite=True replaces existing table."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         # Write initial
         write_events(nwbfile, basic_events_df, name="replace_events")
@@ -190,7 +190,7 @@ class TestWriteEvents:
 
     def test_empty_events(self, nwbfile):
         """Test writing empty events DataFrame."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         empty_df = pd.DataFrame({"timestamp": []})
         write_events(nwbfile, empty_df, name="empty_events")
@@ -200,14 +200,14 @@ class TestWriteEvents:
 
     def test_invalid_not_dataframe(self, nwbfile):
         """Test that non-DataFrame input raises TypeError."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         with pytest.raises(TypeError, match="DataFrame"):
             write_events(nwbfile, [1.0, 2.0, 3.0], name="bad_events")
 
     def test_invalid_no_timestamp(self, nwbfile):
         """Test that DataFrame without timestamp column raises ValueError."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         df = pd.DataFrame({"time": [1.0, 2.0]})  # Wrong column name
         with pytest.raises(ValueError, match="timestamp"):
@@ -215,7 +215,7 @@ class TestWriteEvents:
 
     def test_invalid_nan_timestamps(self, nwbfile):
         """Test that NaN timestamps raise ValueError."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         df = pd.DataFrame({"timestamp": [1.0, np.nan, 3.0]})
         with pytest.raises(ValueError, match="non-finite"):
@@ -223,7 +223,7 @@ class TestWriteEvents:
 
     def test_invalid_inf_timestamps(self, nwbfile):
         """Test that Inf timestamps raise ValueError."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         df = pd.DataFrame({"timestamp": [1.0, np.inf, 3.0]})
         with pytest.raises(ValueError, match="non-finite"):
@@ -231,7 +231,7 @@ class TestWriteEvents:
 
     def test_invalid_negative_timestamps(self, nwbfile):
         """Test that negative timestamps raise ValueError."""
-        from neurospatial.nwb import write_events
+        from neurospatial.io.nwb import write_events
 
         df = pd.DataFrame({"timestamp": [-1.0, 2.0, 3.0]})
         with pytest.raises(ValueError, match="negative"):
@@ -239,7 +239,7 @@ class TestWriteEvents:
 
     def test_multiple_custom_columns(self, nwbfile):
         """Test writing events with multiple custom columns."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         df = pd.DataFrame(
             {
@@ -258,7 +258,7 @@ class TestWriteEvents:
 
     def test_preserves_column_order(self, nwbfile):
         """Test that column order is preserved in round-trip."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         df = pd.DataFrame(
             {
@@ -283,7 +283,7 @@ class TestDataframeToEventsTable:
 
     def test_basic_conversion(self, basic_events_df):
         """Test basic DataFrame to EventsTable conversion."""
-        from neurospatial.nwb._events import dataframe_to_events_table
+        from neurospatial.io.nwb._events import dataframe_to_events_table
 
         events_table = dataframe_to_events_table(
             basic_events_df, name="test", description="Test events"
@@ -297,7 +297,7 @@ class TestDataframeToEventsTable:
 
     def test_conversion_with_columns(self, events_with_labels_df):
         """Test conversion preserves additional columns."""
-        from neurospatial.nwb._events import dataframe_to_events_table
+        from neurospatial.io.nwb._events import dataframe_to_events_table
 
         events_table = dataframe_to_events_table(
             events_with_labels_df, name="labeled", description="Labeled events"
@@ -312,7 +312,7 @@ class TestRoundTrip:
 
     def test_basic_roundtrip(self, nwbfile, basic_events_df):
         """Test basic round-trip preserves data."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, basic_events_df, name="roundtrip")
         result = read_events(nwbfile, "roundtrip")
@@ -323,7 +323,7 @@ class TestRoundTrip:
 
     def test_spatial_roundtrip(self, nwbfile, events_with_spatial_df):
         """Test round-trip with spatial columns preserves x, y."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, events_with_spatial_df, name="spatial_roundtrip")
         result = read_events(nwbfile, "spatial_roundtrip")
@@ -340,7 +340,7 @@ class TestRoundTrip:
 
     def test_roundtrip_with_mixed_types(self, nwbfile):
         """Test round-trip with mixed column types."""
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         df = pd.DataFrame(
             {
@@ -365,7 +365,7 @@ class TestIntegrationWithEventsModule:
     def test_write_events_from_add_positions(self, nwbfile):
         """Test writing events after add_positions()."""
         from neurospatial.events import add_positions
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         # Create base events
         events = pd.DataFrame({"timestamp": [0.5, 1.5, 2.5]})
@@ -387,7 +387,7 @@ class TestIntegrationWithEventsModule:
     def test_write_events_from_filter_by_intervals(self, nwbfile):
         """Test writing filtered events."""
         from neurospatial.events import filter_by_intervals
-        from neurospatial.nwb import read_events, write_events
+        from neurospatial.io.nwb import read_events, write_events
 
         # Create events
         events = pd.DataFrame({"timestamp": [1.0, 2.0, 5.0, 8.0, 10.0]})

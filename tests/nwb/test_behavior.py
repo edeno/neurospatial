@@ -21,7 +21,7 @@ class TestReadPosition:
 
     def test_basic_position_reading(self, sample_nwb_with_position):
         """Test reading position data from NWB file."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         positions, timestamps = read_position(sample_nwb_with_position)
 
@@ -41,7 +41,7 @@ class TestReadPosition:
 
     def test_position_data_matches_original(self, sample_nwb_with_position):
         """Test that read data matches the original data in the NWB file."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         positions, timestamps = read_position(sample_nwb_with_position)
 
@@ -56,7 +56,7 @@ class TestReadPosition:
         """Test reading with explicit processing_module parameter."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         nwbfile = empty_nwb
 
@@ -86,7 +86,7 @@ class TestReadPosition:
         self, sample_nwb_with_position_multiple_series
     ):
         """Test reading with explicit position_name parameter."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         # Request specific series by name
         positions, _timestamps = read_position(
@@ -106,7 +106,7 @@ class TestReadPosition:
 
     def test_error_when_no_position_found(self, empty_nwb):
         """Test KeyError when no Position container found."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         with pytest.raises(KeyError, match=r"No Position.*found"):
             read_position(empty_nwb)
@@ -115,7 +115,7 @@ class TestReadPosition:
         self, sample_nwb_with_position_multiple_series
     ):
         """Test KeyError with available list when specific position_name not found."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         with pytest.raises(KeyError, match=r"nonexistent.*not found.*Available"):
             read_position(
@@ -125,7 +125,7 @@ class TestReadPosition:
 
     def test_error_when_processing_module_not_found(self, sample_nwb_with_position):
         """Test KeyError when specified processing_module not found."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         with pytest.raises(KeyError, match=r"Processing module.*not found"):
             read_position(sample_nwb_with_position, processing_module="nonexistent")
@@ -134,7 +134,7 @@ class TestReadPosition:
         self, sample_nwb_with_position_multiple_series, caplog
     ):
         """Test that multiple SpatialSeries uses first alphabetically with INFO log."""
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         # Enable logging capture
         with caplog.at_level(logging.INFO, logger="neurospatial.nwb"):
@@ -163,7 +163,7 @@ class TestReadPosition:
         """Test reading Position from acquisition when not in processing."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -190,7 +190,7 @@ class TestReadPosition:
         """Test that processing/behavior is prioritized over other modules."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         nwbfile = empty_nwb
 
@@ -235,7 +235,7 @@ class TestReadPosition:
         """Test reading 1D position data (single dimension)."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         nwbfile = empty_nwb
 
@@ -263,7 +263,7 @@ class TestReadPosition:
         """Test reading 3D position data."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -292,7 +292,7 @@ class TestReadPosition:
         """Test that timestamps are computed from rate when explicit timestamps not provided."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -325,7 +325,7 @@ class TestReadPosition:
         """Test that starting_time offset is applied correctly."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -358,7 +358,7 @@ class TestReadPosition:
         """Test KeyError when Position container exists but has no SpatialSeries."""
         from pynwb.behavior import Position
 
-        from neurospatial.nwb import read_position
+        from neurospatial.io.nwb import read_position
 
         nwbfile = empty_nwb
 
@@ -378,7 +378,7 @@ class TestReadHeadDirection:
 
     def test_basic_head_direction_reading(self, sample_nwb_with_head_direction):
         """Test reading head direction data from NWB file."""
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
 
@@ -400,7 +400,7 @@ class TestReadHeadDirection:
 
     def test_head_direction_data_matches_original(self, sample_nwb_with_head_direction):
         """Test that read data matches the original data in the NWB file."""
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
 
@@ -417,7 +417,7 @@ class TestReadHeadDirection:
         """Test reading with explicit processing_module parameter."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -447,7 +447,7 @@ class TestReadHeadDirection:
         """Test reading with explicit compass_name parameter."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -486,7 +486,7 @@ class TestReadHeadDirection:
 
     def test_error_when_no_compass_direction_found(self, empty_nwb):
         """Test KeyError when no CompassDirection container found."""
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         with pytest.raises(KeyError, match=r"No CompassDirection.*found"):
             read_head_direction(empty_nwb)
@@ -495,7 +495,7 @@ class TestReadHeadDirection:
         """Test KeyError with available list when specific compass_name not found."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -521,7 +521,7 @@ class TestReadHeadDirection:
         self, sample_nwb_with_head_direction
     ):
         """Test KeyError when specified processing_module not found."""
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         with pytest.raises(KeyError, match=r"Processing module.*not found"):
             read_head_direction(
@@ -532,7 +532,7 @@ class TestReadHeadDirection:
         """Test that multiple SpatialSeries uses first alphabetically with INFO log."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -582,7 +582,7 @@ class TestReadHeadDirection:
         """Test reading CompassDirection from acquisition when not in processing."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -609,7 +609,7 @@ class TestReadHeadDirection:
         """Test that processing/behavior is prioritized over other modules."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -654,7 +654,7 @@ class TestReadHeadDirection:
         """Test that timestamps are computed from rate when explicit timestamps not provided."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -687,7 +687,7 @@ class TestReadHeadDirection:
         """Test that starting_time offset is applied correctly."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -720,7 +720,7 @@ class TestReadHeadDirection:
         """Test KeyError when CompassDirection container exists but has no SpatialSeries."""
         from pynwb.behavior import CompassDirection
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 
@@ -738,7 +738,7 @@ class TestReadHeadDirection:
         """Test reading head direction stored as 2D column vector (n, 1)."""
         from pynwb.behavior import CompassDirection, SpatialSeries
 
-        from neurospatial.nwb import read_head_direction
+        from neurospatial.io.nwb import read_head_direction
 
         nwbfile = empty_nwb
 

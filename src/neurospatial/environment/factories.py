@@ -719,8 +719,8 @@ class EnvironmentFactories:
         See Also
         --------
         to_nwb : Write Environment to NWB file.
-        neurospatial.nwb.read_environment : Low-level NWB reading function.
-        neurospatial.nwb.environment_from_position : Create from Position data.
+        neurospatial.io.nwb.read_environment : Low-level NWB reading function.
+        neurospatial.io.nwb.environment_from_position : Create from Position data.
 
         Examples
         --------
@@ -749,7 +749,7 @@ class EnvironmentFactories:
 
         # Lazy import to keep pynwb optional
         try:
-            from neurospatial.nwb import environment_from_position, read_environment
+            from neurospatial.io.nwb import environment_from_position, read_environment
         except ImportError as e:
             raise ImportError(
                 "pynwb is required for NWB integration. Install with: pip install pynwb"

@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.nwb._adapters import timestamps_from_series
-from neurospatial.nwb._core import _find_containers_by_type, _require_ndx_pose, logger
+from neurospatial.io.nwb._adapters import timestamps_from_series
+from neurospatial.io.nwb._core import (
+    _find_containers_by_type,
+    _require_ndx_pose,
+    logger,
+)
 
 if TYPE_CHECKING:
     from pynwb import NWBFile

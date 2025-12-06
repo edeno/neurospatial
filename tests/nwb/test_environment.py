@@ -20,7 +20,7 @@ class TestEnvironmentFromPosition:
 
     def test_basic_environment_creation(self, sample_nwb_with_position):
         """Test basic Environment creation from Position data."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
 
@@ -31,7 +31,7 @@ class TestEnvironmentFromPosition:
 
     def test_environment_matches_position_data_bounds(self, sample_nwb_with_position):
         """Test Environment extent matches Position data bounds."""
-        from neurospatial.nwb import environment_from_position, read_position
+        from neurospatial.io.nwb import environment_from_position, read_position
 
         # Get position data for comparison
         positions, _ = read_position(sample_nwb_with_position)
@@ -50,7 +50,7 @@ class TestEnvironmentFromPosition:
 
     def test_units_parameter_propagation(self, sample_nwb_with_position):
         """Test units parameter is set on Environment."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env = environment_from_position(
             sample_nwb_with_position, bin_size=5.0, units="cm"
@@ -60,7 +60,7 @@ class TestEnvironmentFromPosition:
 
     def test_units_defaults_from_spatial_series(self, sample_nwb_with_position):
         """Test units are auto-detected from SpatialSeries when not specified."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         # The fixture has unit="cm" in the SpatialSeries
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
@@ -70,7 +70,7 @@ class TestEnvironmentFromPosition:
 
     def test_frame_parameter_propagation(self, sample_nwb_with_position):
         """Test frame parameter is set on Environment."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env = environment_from_position(
             sample_nwb_with_position, bin_size=5.0, frame="session_001"
@@ -80,7 +80,7 @@ class TestEnvironmentFromPosition:
 
     def test_infer_active_bins_parameter(self, sample_nwb_with_position):
         """Test infer_active_bins parameter is forwarded."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         # With infer_active_bins=True, should only include visited bins
         env_active = environment_from_position(
@@ -97,7 +97,7 @@ class TestEnvironmentFromPosition:
 
     def test_kwargs_forwarded_to_from_samples(self, sample_nwb_with_position):
         """Test additional kwargs are forwarded to Environment.from_samples()."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         # Test bin_count_threshold parameter
         env = environment_from_position(
@@ -113,7 +113,7 @@ class TestEnvironmentFromPosition:
 
     def test_processing_module_parameter(self, sample_nwb_with_position):
         """Test processing_module parameter is forwarded to read_position."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         # Should work when specifying the correct module
         env = environment_from_position(
@@ -127,7 +127,7 @@ class TestEnvironmentFromPosition:
 
     def test_position_name_parameter(self, sample_nwb_with_position_multiple_series):
         """Test position_name parameter selects specific SpatialSeries."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         # Select 'head' position (one of the two available)
         env = environment_from_position(
@@ -141,14 +141,14 @@ class TestEnvironmentFromPosition:
 
     def test_error_when_position_not_found(self, empty_nwb):
         """Test KeyError when Position not found in NWB file."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         with pytest.raises(KeyError, match="No Position data found"):
             environment_from_position(empty_nwb, bin_size=5.0)
 
     def test_error_when_processing_module_not_found(self, sample_nwb_with_position):
         """Test KeyError when specified processing module not found."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         with pytest.raises(KeyError, match="Processing module 'nonexistent' not found"):
             environment_from_position(
@@ -159,14 +159,14 @@ class TestEnvironmentFromPosition:
 
     def test_bin_size_required(self, sample_nwb_with_position):
         """Test that bin_size parameter is required."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         with pytest.raises(TypeError):
             environment_from_position(sample_nwb_with_position)  # Missing bin_size
 
     def test_different_bin_sizes(self, sample_nwb_with_position):
         """Test Environment creation with different bin sizes."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env_small = environment_from_position(sample_nwb_with_position, bin_size=2.0)
         env_large = environment_from_position(sample_nwb_with_position, bin_size=10.0)
@@ -176,7 +176,7 @@ class TestEnvironmentFromPosition:
 
     def test_environment_is_fitted(self, sample_nwb_with_position):
         """Test that returned Environment is fitted and ready to use."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
 
@@ -191,7 +191,7 @@ class TestEnvironmentFromPosition:
 
     def test_connectivity_graph_created(self, sample_nwb_with_position):
         """Test that connectivity graph is properly created."""
-        from neurospatial.nwb import environment_from_position
+        from neurospatial.io.nwb import environment_from_position
 
         env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
 
@@ -206,7 +206,7 @@ class TestWriteEnvironment:
 
     def test_basic_environment_writing(self, empty_nwb, sample_environment):
         """Test basic Environment writing to scratch/."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment, name="test_env")
 
@@ -217,7 +217,7 @@ class TestWriteEnvironment:
 
     def test_bin_centers_dataset(self, empty_nwb, sample_environment):
         """Test bin_centers dataset stored with correct shape (n_bins, n_dims)."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -233,7 +233,7 @@ class TestWriteEnvironment:
 
     def test_edges_dataset_as_edge_list(self, empty_nwb, sample_environment):
         """Test edges dataset stored as edge list (n_edges, 2)."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -253,7 +253,7 @@ class TestWriteEnvironment:
 
     def test_edge_weights_dataset(self, empty_nwb, sample_environment):
         """Test edge_weights dataset stored with correct shape (n_edges,)."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -270,7 +270,7 @@ class TestWriteEnvironment:
 
     def test_dimension_ranges_dataset(self, empty_nwb, sample_environment):
         """Test dimension_ranges dataset stored with shape (n_dims, 2)."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -288,7 +288,7 @@ class TestWriteEnvironment:
 
     def test_group_attributes_units(self, empty_nwb, sample_environment):
         """Test units attribute is stored on group."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         sample_environment.units = "cm"
         write_environment(empty_nwb, sample_environment)
@@ -301,7 +301,7 @@ class TestWriteEnvironment:
 
     def test_group_attributes_frame(self, empty_nwb, sample_environment):
         """Test frame attribute is stored on group."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         sample_environment.frame = "session_001"
         write_environment(empty_nwb, sample_environment)
@@ -314,7 +314,7 @@ class TestWriteEnvironment:
 
     def test_group_attributes_n_dims(self, empty_nwb, sample_environment):
         """Test n_dims attribute is stored."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -325,7 +325,7 @@ class TestWriteEnvironment:
 
     def test_group_attributes_layout_type(self, empty_nwb, sample_environment):
         """Test layout_type attribute is stored."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -336,7 +336,7 @@ class TestWriteEnvironment:
 
     def test_default_name(self, empty_nwb, sample_environment):
         """Test default name is 'spatial_environment'."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -344,7 +344,7 @@ class TestWriteEnvironment:
 
     def test_custom_name(self, empty_nwb, sample_environment):
         """Test custom name parameter."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment, name="linear_track")
 
@@ -353,7 +353,7 @@ class TestWriteEnvironment:
 
     def test_duplicate_name_error(self, empty_nwb, sample_environment):
         """Test ValueError when writing duplicate name without overwrite."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         write_environment(empty_nwb, sample_environment)
 
@@ -362,7 +362,7 @@ class TestWriteEnvironment:
 
     def test_overwrite_replaces_existing(self, empty_nwb, sample_environment):
         """Test overwrite=True replaces existing environment."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Write initial environment
         write_environment(empty_nwb, sample_environment)
@@ -380,7 +380,7 @@ class TestWriteEnvironment:
 
     def test_point_regions_stored(self, empty_nwb, sample_environment):
         """Test point regions are stored correctly."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Ensure we have point regions
         sample_environment.regions.add("center", point=(50.0, 50.0))
@@ -396,7 +396,7 @@ class TestWriteEnvironment:
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Create environment with polygon region
         rng = np.random.default_rng(42)
@@ -415,7 +415,7 @@ class TestWriteEnvironment:
     def test_empty_regions(self, empty_nwb):
         """Test environment with no regions."""
         from neurospatial import Environment
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (1000, 2))
@@ -430,7 +430,7 @@ class TestWriteEnvironment:
 
     def test_metadata_json_stored(self, empty_nwb, sample_environment):
         """Test metadata.json stored for extra attributes."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         sample_environment.name = "test_arena"
 
@@ -442,7 +442,7 @@ class TestWriteEnvironment:
 
     def test_data_integrity_bin_centers(self, empty_nwb, sample_environment):
         """Test bin_centers data integrity after write."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         original_bin_centers = sample_environment.bin_centers.copy()
 
@@ -456,7 +456,7 @@ class TestWriteEnvironment:
 
     def test_data_integrity_edges(self, empty_nwb, sample_environment):
         """Test edges data integrity after write."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Get original edges from connectivity graph
         original_edges = np.array(list(sample_environment.connectivity.edges()))
@@ -481,7 +481,7 @@ class TestWriteEnvironment:
     def test_alternative_2d_environment(self, empty_nwb):
         """Test writing environment created with different parameters."""
         from neurospatial import Environment
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Create 2D environment with different parameters
         rng = np.random.default_rng(42)
@@ -495,7 +495,7 @@ class TestWriteEnvironment:
 
     def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
         """Test ValueError when writing unfitted Environment."""
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         # Manually mark environment as unfitted to test validation
         sample_environment._is_fitted = False
@@ -509,7 +509,7 @@ class TestReadEnvironment:
 
     def test_basic_environment_reading(self, empty_nwb, sample_environment):
         """Test basic Environment reading from scratch/."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -519,7 +519,7 @@ class TestReadEnvironment:
 
     def test_bin_centers_reconstruction(self, empty_nwb, sample_environment):
         """Test bin_centers are correctly reconstructed."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -530,7 +530,7 @@ class TestReadEnvironment:
 
     def test_connectivity_graph_reconstruction(self, empty_nwb, sample_environment):
         """Test connectivity graph is reconstructed from edge list."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -547,7 +547,7 @@ class TestReadEnvironment:
 
     def test_edge_weights_applied(self, empty_nwb, sample_environment):
         """Test edge weights (distances) are restored on graph."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -559,7 +559,7 @@ class TestReadEnvironment:
 
     def test_dimension_ranges_reconstruction(self, empty_nwb, sample_environment):
         """Test dimension_ranges are correctly reconstructed."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -570,7 +570,7 @@ class TestReadEnvironment:
 
     def test_units_attribute_restored(self, empty_nwb, sample_environment):
         """Test units attribute is restored."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         sample_environment.units = "cm"
         write_environment(empty_nwb, sample_environment)
@@ -580,7 +580,7 @@ class TestReadEnvironment:
 
     def test_frame_attribute_restored(self, empty_nwb, sample_environment):
         """Test frame attribute is restored."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         sample_environment.frame = "session_001"
         write_environment(empty_nwb, sample_environment)
@@ -590,7 +590,7 @@ class TestReadEnvironment:
 
     def test_point_regions_restored(self, empty_nwb, sample_environment):
         """Test point regions are correctly restored."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # sample_environment already has point regions from fixture
         write_environment(empty_nwb, sample_environment)
@@ -611,7 +611,7 @@ class TestReadEnvironment:
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create environment with polygon region
         rng = np.random.default_rng(42)
@@ -635,14 +635,14 @@ class TestReadEnvironment:
 
     def test_error_when_environment_not_found(self, empty_nwb):
         """Test KeyError when environment not found in scratch/."""
-        from neurospatial.nwb import read_environment
+        from neurospatial.io.nwb import read_environment
 
         with pytest.raises(KeyError, match="not found"):
             read_environment(empty_nwb, name="nonexistent")
 
     def test_custom_name_parameter(self, empty_nwb, sample_environment):
         """Test reading environment with custom name."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment, name="linear_track")
         loaded_env = read_environment(empty_nwb, name="linear_track")
@@ -652,7 +652,7 @@ class TestReadEnvironment:
 
     def test_environment_is_fitted(self, empty_nwb, sample_environment):
         """Test loaded Environment is fitted and ready to use."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -668,7 +668,7 @@ class TestReadEnvironment:
     def test_empty_regions_handled(self, empty_nwb):
         """Test environment with no regions loads correctly."""
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, (1000, 2))
@@ -683,7 +683,7 @@ class TestReadEnvironment:
 
     def test_name_attribute_restored(self, empty_nwb, sample_environment):
         """Test environment name attribute is restored from metadata."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         sample_environment.name = "test_arena"
         write_environment(empty_nwb, sample_environment)
@@ -693,7 +693,7 @@ class TestReadEnvironment:
 
     def test_graph_node_attributes(self, empty_nwb, sample_environment):
         """Test graph nodes have required attributes after loading."""
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         write_environment(empty_nwb, sample_environment)
         loaded_env = read_environment(empty_nwb)
@@ -728,7 +728,7 @@ class TestEnvironmentRoundTrip:
         """Test Environment survives NWB write/read cycle to actual file."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_roundtrip.nwb"
 
@@ -753,7 +753,7 @@ class TestEnvironmentRoundTrip:
         """Test bin_centers are exactly preserved through file round-trip."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_bin_centers.nwb"
 
@@ -775,7 +775,7 @@ class TestEnvironmentRoundTrip:
         """Test connectivity graph structure is preserved through file round-trip."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_connectivity.nwb"
 
@@ -807,7 +807,7 @@ class TestEnvironmentRoundTrip:
         """Test edge weights (distances) are preserved through file round-trip."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_edge_weights.nwb"
 
@@ -830,7 +830,7 @@ class TestEnvironmentRoundTrip:
         """Test regions are preserved through file round-trip."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_regions.nwb"
 
@@ -857,7 +857,7 @@ class TestEnvironmentRoundTrip:
         """Test metadata (units, frame, name) is preserved through file round-trip."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         sample_environment.name = "test_arena"
         sample_environment.units = "cm"
@@ -884,7 +884,7 @@ class TestEnvironmentRoundTrip:
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create environment with polygon region
         rng = np.random.default_rng(42)
@@ -914,7 +914,7 @@ class TestEnvironmentRoundTrip:
         """Test loaded Environment can perform spatial queries."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         nwb_path = tmp_path / "test_queries.nwb"
 
@@ -946,7 +946,7 @@ class TestEnvironmentRoundTrip:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create 3D environment
         rng = np.random.default_rng(42)
@@ -978,7 +978,7 @@ class TestEnvironmentRoundTrip:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create hexagonal layout environment
         env = Environment.from_layout(
@@ -1017,7 +1017,7 @@ class TestEnvironmentRoundTrip:
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create L-shaped polygon boundary
         boundary = Polygon([(0, 0), (50, 0), (50, 25), (25, 25), (25, 50), (0, 50)])
@@ -1049,7 +1049,7 @@ class TestEnvironmentRoundTrip:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create a simple linear track graph
         # Track: node 0 -- node 1 -- node 2 -- node 3 -- node 4
@@ -1108,7 +1108,7 @@ class TestEnvironmentRoundTrip:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create a MaskedGrid layout with active region in the center
         mask = np.zeros((10, 10), dtype=bool)
@@ -1150,7 +1150,7 @@ class TestEnvironmentRoundTrip:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create a binary image mask (circular arena)
         y, x = np.ogrid[:50, :50]
@@ -1191,7 +1191,7 @@ class TestEnvironmentRoundTrip:
         from shapely.geometry import Polygon
 
         from neurospatial import Environment
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         # Create a triangular mesh layout with a simple boundary
         boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
@@ -1357,7 +1357,7 @@ class TestAllLayoutsRoundTrip:
         """Test bin_centers are exactly preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_bin_centers.nwb"
@@ -1384,7 +1384,7 @@ class TestAllLayoutsRoundTrip:
         """Test connectivity graph is preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_connectivity.nwb"
@@ -1418,7 +1418,7 @@ class TestAllLayoutsRoundTrip:
         """Test edge weights (distances) are preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_edge_weights.nwb"
@@ -1446,7 +1446,7 @@ class TestAllLayoutsRoundTrip:
         """Test metadata (units, frame, name) is preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         env.name = f"test_{layout_name}"
@@ -1477,7 +1477,7 @@ class TestAllLayoutsRoundTrip:
         """Test point regions are preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
 
@@ -1522,7 +1522,7 @@ class TestAllLayoutsRoundTrip:
         from pynwb import NWBHDF5IO
         from shapely.geometry import Polygon
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
 
@@ -1580,7 +1580,7 @@ class TestAllLayoutsRoundTrip:
         """
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_queries.nwb"
@@ -1630,7 +1630,7 @@ class TestAllLayoutsRoundTrip:
         """Test dimension_ranges are preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_dim_ranges.nwb"
@@ -1657,7 +1657,7 @@ class TestAllLayoutsRoundTrip:
         """Test layout type is stored and retrievable for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_layout_type.nwb"
@@ -1684,7 +1684,7 @@ class TestAllLayoutsRoundTrip:
         """Test n_dims is preserved for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_n_dims.nwb"
@@ -1707,7 +1707,7 @@ class TestAllLayoutsRoundTrip:
         """Test loaded environment is fitted and usable for all layout types."""
         from pynwb import NWBHDF5IO
 
-        from neurospatial.nwb import read_environment, write_environment
+        from neurospatial.io.nwb import read_environment, write_environment
 
         env = env_factory()
         nwb_path = tmp_path / f"test_{layout_name}_fitted.nwb"
@@ -1737,7 +1737,7 @@ class TestEnvironmentFromNwb:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         nwb_path = tmp_path / "test_from_nwb_scratch.nwb"
 
@@ -1818,7 +1818,7 @@ class TestEnvironmentFromNwb:
         from pynwb import NWBHDF5IO
 
         from neurospatial import Environment
-        from neurospatial.nwb import write_environment
+        from neurospatial.io.nwb import write_environment
 
         nwb_path = tmp_path / "test_precedence.nwb"
 
@@ -1897,7 +1897,7 @@ class TestEnvironmentToNwb:
 
     def test_to_nwb_preserves_metadata(self, empty_nwb, sample_environment):
         """Test that to_nwb preserves environment metadata."""
-        from neurospatial.nwb import read_environment
+        from neurospatial.io.nwb import read_environment
 
         sample_environment.name = "test_arena"
         sample_environment.units = "cm"

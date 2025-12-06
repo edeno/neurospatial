@@ -95,7 +95,7 @@ class TestReadPose:
 
     def test_basic_pose_reading(self, sample_nwb_with_pose):
         """Test reading pose estimation data from NWB file."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         bodyparts, timestamps, skeleton = read_pose(sample_nwb_with_pose)
 
@@ -128,7 +128,7 @@ class TestReadPose:
 
     def test_pose_data_matches_original(self, sample_nwb_with_pose):
         """Test that read data matches the original data in the NWB file."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         bodyparts, timestamps, _skeleton = read_pose(sample_nwb_with_pose)
 
@@ -149,7 +149,7 @@ class TestReadPose:
         """Test reading with explicit pose_estimation_name parameter."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         nwbfile = empty_nwb
 
@@ -235,21 +235,21 @@ class TestReadPose:
 
     def test_error_when_no_pose_estimation_found(self, empty_nwb):
         """Test KeyError when no PoseEstimation container found."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         with pytest.raises(KeyError, match=r"No PoseEstimation.*found"):
             read_pose(empty_nwb)
 
     def test_error_when_named_pose_not_found(self, sample_nwb_with_pose):
         """Test KeyError with available list when specific pose_estimation_name not found."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         with pytest.raises(KeyError, match=r"nonexistent.*not found.*Available"):
             read_pose(sample_nwb_with_pose, pose_estimation_name="nonexistent")
 
     def test_skeleton_extraction(self, sample_nwb_with_pose):
         """Test that skeleton is correctly extracted and converted."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         _bodyparts, _timestamps, skeleton = read_pose(sample_nwb_with_pose)
 
@@ -262,7 +262,7 @@ class TestReadPose:
 
     def test_multiple_bodyparts_to_dict(self, sample_nwb_with_pose):
         """Test that all bodyparts are converted to dict correctly."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         bodyparts, _timestamps, _skeleton = read_pose(sample_nwb_with_pose)
 
@@ -281,7 +281,7 @@ class TestReadPose:
         """Test that multiple PoseEstimation uses first alphabetically with INFO log."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         nwbfile = empty_nwb
 
@@ -373,7 +373,7 @@ class TestReadPose:
         """Test that processing/behavior is prioritized over other modules."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         nwbfile = empty_nwb
 
@@ -442,7 +442,7 @@ class TestReadPose:
         """Test that timestamps are computed from rate when explicit timestamps not provided."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -494,7 +494,7 @@ class TestReadPose:
         """Test that starting_time offset is applied correctly."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -546,7 +546,7 @@ class TestReadPose:
         """Test reading 3D pose data."""
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -608,7 +608,7 @@ class TestReadPose:
         """
         from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
 
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         rng = np.random.default_rng(42)
         nwbfile = empty_nwb
@@ -691,7 +691,7 @@ class TestReadPoseImportError:
         # This test verifies the error message format exists.
         # Since ndx_pose IS installed (otherwise this file wouldn't run),
         # we test the helper function directly.
-        from neurospatial.nwb._core import _require_ndx_pose
+        from neurospatial.io.nwb._core import _require_ndx_pose
 
         # Should not raise when ndx_pose is installed
         result = _require_ndx_pose()
@@ -707,7 +707,7 @@ class TestSkeletonRoundTrip:
 
     def test_skeleton_name_preserved(self, empty_nwb):
         """Test that skeleton name is preserved through conversion."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         nwbfile = _create_nwb_with_pose(
             empty_nwb,
@@ -723,7 +723,7 @@ class TestSkeletonRoundTrip:
 
     def test_skeleton_nodes_preserved(self, empty_nwb):
         """Test that all skeleton nodes are preserved through conversion."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         node_names = ["nose", "left_ear", "right_ear", "neck", "body", "tail"]
         nwbfile = _create_nwb_with_pose(
@@ -743,7 +743,7 @@ class TestSkeletonRoundTrip:
 
     def test_skeleton_edges_preserved(self, empty_nwb):
         """Test that all skeleton edges are preserved through conversion."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         # Create skeleton with specific edges: a-b, b-c, c-d (chain structure)
         node_names = ["a", "b", "c", "d"]
@@ -768,7 +768,7 @@ class TestSkeletonRoundTrip:
 
     def test_skeleton_no_edges(self, empty_nwb):
         """Test skeleton with no edges (isolated nodes) is converted correctly."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         # Create skeleton with no edges
         node_names = ["point1", "point2", "point3"]
@@ -788,7 +788,7 @@ class TestSkeletonRoundTrip:
 
     def test_skeleton_complex_graph(self, empty_nwb):
         """Test skeleton with complex branching structure (not just chain)."""
-        from neurospatial.nwb import read_pose
+        from neurospatial.io.nwb import read_pose
 
         # Create skeleton with branching (star topology from center)
         # center connects to: nose, left_ear, right_ear, tail

@@ -19,7 +19,7 @@ class TestWritePlaceField:
 
     def test_basic_field_writing(self, empty_nwb, sample_environment):
         """Test basic place field writing to analysis/ module."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -39,7 +39,7 @@ class TestWritePlaceField:
 
     def test_field_metadata(self, empty_nwb, sample_environment):
         """Test that field metadata (description, units) is stored correctly."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -65,7 +65,7 @@ class TestWritePlaceField:
 
     def test_field_data_matches_input(self, empty_nwb, sample_environment):
         """Test that stored field data matches the input array."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -85,7 +85,7 @@ class TestWritePlaceField:
 
     def test_shape_validation_1d_field(self, empty_nwb, sample_environment):
         """Test shape validation for 1D field (n_bins,)."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -98,7 +98,7 @@ class TestWritePlaceField:
 
     def test_shape_validation_2d_field(self, empty_nwb, sample_environment):
         """Test shape validation for 2D field (n_time, n_bins)."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -116,7 +116,7 @@ class TestWritePlaceField:
 
     def test_shape_validation_wrong_n_bins(self, empty_nwb, sample_environment):
         """Test error when field n_bins doesn't match environment."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -131,7 +131,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test ValueError when field with same name exists and overwrite=False."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -146,7 +146,7 @@ class TestWritePlaceField:
 
     def test_overwrite_replaces_existing(self, empty_nwb, sample_environment):
         """Test overwrite=True replaces existing field."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -165,7 +165,7 @@ class TestWritePlaceField:
 
     def test_bin_centers_reference_stored(self, empty_nwb, sample_environment):
         """Test that bin_centers reference is stored with the field."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -193,7 +193,7 @@ class TestWritePlaceField:
 
     def test_multiple_fields_same_environment(self, empty_nwb, sample_environment):
         """Test writing multiple place fields for the same environment."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -211,7 +211,7 @@ class TestWritePlaceField:
 
     def test_default_name(self, empty_nwb, sample_environment):
         """Test default name 'place_field' when no name provided."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -223,7 +223,7 @@ class TestWritePlaceField:
 
     def test_empty_description_allowed(self, empty_nwb, sample_environment):
         """Test that empty description is allowed."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -237,7 +237,7 @@ class TestWritePlaceField:
 
     def test_analysis_module_reused(self, empty_nwb, sample_environment):
         """Test that existing analysis module is reused, not recreated."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -256,7 +256,7 @@ class TestWritePlaceField:
 
     def test_field_with_nan_values(self, empty_nwb, sample_environment):
         """Test writing field containing NaN values (unvisited bins)."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -276,7 +276,7 @@ class TestWritePlaceField:
 
     def test_field_units_stored(self, empty_nwb, sample_environment):
         """Test that field units default to reasonable value."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -291,7 +291,7 @@ class TestWritePlaceField:
 
     def test_custom_unit_parameter(self, empty_nwb, sample_environment):
         """Test that custom unit parameter is stored correctly."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -306,7 +306,7 @@ class TestWritePlaceField:
 
     def test_shape_validation_3d_field_rejected(self, empty_nwb, sample_environment):
         """Test that 3D fields are rejected with ValueError."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -321,7 +321,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test that bin_centers are stored only once when writing multiple fields."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -347,7 +347,7 @@ class TestWritePlaceField:
 
     def test_bin_centers_data_matches_environment(self, empty_nwb, sample_environment):
         """Test that stored bin_centers match the environment's bin_centers."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -368,7 +368,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test time-varying field with explicit physical timestamps."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -392,7 +392,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test time-varying field uses sequential indices when no timestamps provided."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -413,7 +413,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test that static 1D field ignores timestamps parameter."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -437,7 +437,7 @@ class TestWritePlaceField:
         self, empty_nwb, sample_environment
     ):
         """Test that mismatched timestamps length raises ValueError."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -454,7 +454,7 @@ class TestWritePlaceField:
 
     def test_timestamps_must_be_1d(self, empty_nwb, sample_environment):
         """Test that 2D timestamps array raises ValueError."""
-        from neurospatial.nwb import write_place_field
+        from neurospatial.io.nwb import write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -475,7 +475,7 @@ class TestWriteOccupancy:
 
     def test_basic_occupancy_writing(self, empty_nwb, sample_environment):
         """Test basic occupancy writing to analysis/ module."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -495,7 +495,7 @@ class TestWriteOccupancy:
 
     def test_occupancy_metadata(self, empty_nwb, sample_environment):
         """Test that occupancy metadata (description, units) is stored correctly."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -521,7 +521,7 @@ class TestWriteOccupancy:
 
     def test_occupancy_data_matches_input(self, empty_nwb, sample_environment):
         """Test that stored occupancy data matches the input array."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -541,7 +541,7 @@ class TestWriteOccupancy:
 
     def test_unit_seconds(self, empty_nwb, sample_environment):
         """Test occupancy with unit='seconds' (default)."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -554,7 +554,7 @@ class TestWriteOccupancy:
 
     def test_unit_probability(self, empty_nwb, sample_environment):
         """Test occupancy with unit='probability' for normalized maps."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -573,7 +573,7 @@ class TestWriteOccupancy:
 
     def test_unit_counts(self, empty_nwb, sample_environment):
         """Test occupancy with unit='counts' for raw bin visit counts."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -589,7 +589,7 @@ class TestWriteOccupancy:
 
     def test_shape_validation_correct_shape(self, empty_nwb, sample_environment):
         """Test shape validation passes for correct 1D shape (n_bins,)."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -604,7 +604,7 @@ class TestWriteOccupancy:
 
     def test_shape_validation_wrong_size(self, empty_nwb, sample_environment):
         """Test shape validation fails for wrong number of bins."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -617,7 +617,7 @@ class TestWriteOccupancy:
 
     def test_shape_validation_2d_rejected(self, empty_nwb, sample_environment):
         """Test that 2D arrays are rejected (occupancy should be 1D only)."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -632,7 +632,7 @@ class TestWriteOccupancy:
         self, empty_nwb, sample_environment
     ):
         """Test ValueError when occupancy with same name exists and overwrite=False."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -647,7 +647,7 @@ class TestWriteOccupancy:
 
     def test_overwrite_replaces_existing(self, empty_nwb, sample_environment):
         """Test overwrite=True replaces existing occupancy."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -668,7 +668,7 @@ class TestWriteOccupancy:
 
     def test_bin_centers_reference_stored(self, empty_nwb, sample_environment):
         """Test that bin_centers reference is stored with the occupancy."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -688,7 +688,7 @@ class TestWriteOccupancy:
 
     def test_default_name(self, empty_nwb, sample_environment):
         """Test default name 'occupancy' when no name provided."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -700,7 +700,7 @@ class TestWriteOccupancy:
 
     def test_empty_description_allowed(self, empty_nwb, sample_environment):
         """Test that empty description is allowed."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -714,7 +714,7 @@ class TestWriteOccupancy:
 
     def test_analysis_module_reused(self, empty_nwb, sample_environment):
         """Test that existing analysis module is reused, not recreated."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -733,7 +733,7 @@ class TestWriteOccupancy:
 
     def test_occupancy_with_nan_values(self, empty_nwb, sample_environment):
         """Test writing occupancy containing NaN values (unvisited bins)."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -753,7 +753,7 @@ class TestWriteOccupancy:
 
     def test_occupancy_with_zero_values(self, empty_nwb, sample_environment):
         """Test writing occupancy with zero values (briefly visited bins)."""
-        from neurospatial.nwb import write_occupancy
+        from neurospatial.io.nwb import write_occupancy
 
         nwbfile = empty_nwb
         env = sample_environment
@@ -773,7 +773,7 @@ class TestWriteOccupancy:
 
     def test_bin_centers_shared_with_place_field(self, empty_nwb, sample_environment):
         """Test that bin_centers are shared between occupancy and place fields."""
-        from neurospatial.nwb import write_occupancy, write_place_field
+        from neurospatial.io.nwb import write_occupancy, write_place_field
 
         nwbfile = empty_nwb
         env = sample_environment

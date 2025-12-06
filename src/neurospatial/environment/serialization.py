@@ -359,7 +359,7 @@ class EnvironmentSerialization:
         See Also
         --------
         from_nwb : Load Environment from NWB file.
-        neurospatial.nwb.write_environment : Low-level NWB writing function.
+        neurospatial.io.nwb.write_environment : Low-level NWB writing function.
 
         Examples
         --------
@@ -396,7 +396,7 @@ class EnvironmentSerialization:
         """
         # Lazy import to keep pynwb optional
         try:
-            from neurospatial.nwb import write_environment
+            from neurospatial.io.nwb import write_environment
         except ImportError as e:
             raise ImportError(
                 "pynwb is required for NWB integration. Install with: pip install pynwb"

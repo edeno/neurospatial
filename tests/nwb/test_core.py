@@ -22,7 +22,7 @@ class TestFindContainersByType:
         """Test finding Position container in processing/behavior/."""
         from pynwb.behavior import Position
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         found = _find_containers_by_type(sample_nwb_with_position, Position)
 
@@ -37,7 +37,7 @@ class TestFindContainersByType:
         """Test finding CompassDirection container in processing/behavior/."""
         from pynwb.behavior import CompassDirection
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         found = _find_containers_by_type(
             sample_nwb_with_head_direction, CompassDirection
@@ -52,7 +52,7 @@ class TestFindContainersByType:
         """Test that empty NWB file returns empty list."""
         from pynwb.behavior import Position
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         found = _find_containers_by_type(empty_nwb, Position)
 
@@ -62,7 +62,7 @@ class TestFindContainersByType:
         """Test that requesting a type not in the file returns empty list."""
         from pynwb.behavior import CompassDirection
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         # File has Position but not CompassDirection
         found = _find_containers_by_type(sample_nwb_with_position, CompassDirection)
@@ -73,7 +73,7 @@ class TestFindContainersByType:
         """Test that processing/behavior/ has priority over other modules."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         nwbfile = empty_nwb
 
@@ -121,7 +121,7 @@ class TestFindContainersByType:
         """Test that processing/ has priority over acquisition/."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         nwbfile = empty_nwb
 
@@ -166,7 +166,7 @@ class TestFindContainersByType:
         """Test full priority order: behavior > other processing > acquisition."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         nwbfile = empty_nwb
 
@@ -249,7 +249,7 @@ class TestFindContainersByType:
         """Test finding multiple containers of same type in same module."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         nwbfile = empty_nwb
 
@@ -286,7 +286,7 @@ class TestFindContainersByType:
         """Test that returned containers are the actual NWB objects."""
         from pynwb.behavior import Position
 
-        from neurospatial.nwb._core import _find_containers_by_type
+        from neurospatial.io.nwb._core import _find_containers_by_type
 
         found = _find_containers_by_type(sample_nwb_with_position, Position)
 
@@ -300,7 +300,7 @@ class TestRequirePynwb:
 
     def test_returns_pynwb_module(self):
         """Test that _require_pynwb returns the pynwb module."""
-        from neurospatial.nwb._core import _require_pynwb
+        from neurospatial.io.nwb._core import _require_pynwb
 
         module = _require_pynwb()
         assert module.__name__ == "pynwb"
@@ -313,7 +313,7 @@ class TestRequireNdxPose:
         """Test that _require_ndx_pose returns the ndx_pose module."""
         pytest.importorskip("ndx_pose")
 
-        from neurospatial.nwb._core import _require_ndx_pose
+        from neurospatial.io.nwb._core import _require_ndx_pose
 
         module = _require_ndx_pose()
         assert module.__name__ == "ndx_pose"
@@ -326,7 +326,7 @@ class TestRequireNdxEvents:
         """Test that _require_ndx_events returns the ndx_events module."""
         pytest.importorskip("ndx_events")
 
-        from neurospatial.nwb._core import _require_ndx_events
+        from neurospatial.io.nwb._core import _require_ndx_events
 
         module = _require_ndx_events()
         assert module.__name__ == "ndx_events"
@@ -337,7 +337,7 @@ class TestGetOrCreateProcessingModule:
 
     def test_creates_new_module(self, empty_nwb):
         """Test creating a new processing module."""
-        from neurospatial.nwb._core import _get_or_create_processing_module
+        from neurospatial.io.nwb._core import _get_or_create_processing_module
 
         module = _get_or_create_processing_module(
             empty_nwb, "test_module", "Test description"
@@ -348,7 +348,7 @@ class TestGetOrCreateProcessingModule:
 
     def test_returns_existing_module(self, empty_nwb):
         """Test returning existing processing module."""
-        from neurospatial.nwb._core import _get_or_create_processing_module
+        from neurospatial.io.nwb._core import _get_or_create_processing_module
 
         # Create module first
         original = empty_nwb.create_processing_module(
@@ -368,12 +368,12 @@ class TestNwbLogger:
 
     def test_logger_is_properly_named(self):
         """Test that the NWB module logger has the correct name."""
-        from neurospatial.nwb._core import logger
+        from neurospatial.io.nwb._core import logger
 
         assert logger.name == "neurospatial.nwb"
 
     def test_logger_is_logging_logger(self):
         """Test that logger is a proper logging.Logger instance."""
-        from neurospatial.nwb._core import logger
+        from neurospatial.io.nwb._core import logger
 
         assert isinstance(logger, logging.Logger)

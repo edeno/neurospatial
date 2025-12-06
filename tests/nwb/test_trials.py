@@ -20,7 +20,7 @@ class TestWriteTrialsFromTrialObjects:
 
     def test_basic_trial_writing(self, empty_nwb):
         """Test writing Trial objects to NWB file."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -49,7 +49,7 @@ class TestWriteTrialsFromTrialObjects:
 
     def test_trial_fields_written_correctly(self, empty_nwb):
         """Test that all Trial fields are written to NWB."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -80,7 +80,7 @@ class TestWriteTrialsFromTrialObjects:
 
     def test_trial_with_none_end_region(self, empty_nwb):
         """Test that None end_region is handled correctly."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -106,7 +106,7 @@ class TestWriteTrialsFromTrialObjects:
         Note: NWB doesn't create trials table until at least one trial is added.
         Empty trials list results in no trials table.
         """
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
 
@@ -121,7 +121,7 @@ class TestWriteTrialsFromArrays:
 
     def test_basic_array_writing(self, empty_nwb):
         """Test writing trials from raw arrays."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, 10.0, 20.0])
@@ -139,7 +139,7 @@ class TestWriteTrialsFromArrays:
 
     def test_arrays_with_all_optional_columns(self, empty_nwb):
         """Test writing trials with all optional columns."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, 10.0])
@@ -164,7 +164,7 @@ class TestWriteTrialsFromArrays:
 
     def test_arrays_with_partial_optional_columns(self, empty_nwb):
         """Test writing trials with only some optional columns."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, 10.0])
@@ -191,7 +191,7 @@ class TestWriteTrialsValidation:
 
     def test_mixed_args_error(self, empty_nwb):
         """Test error when both trials and arrays provided."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -214,7 +214,7 @@ class TestWriteTrialsValidation:
 
     def test_missing_required_arrays_error(self, empty_nwb):
         """Test error when required arrays are missing."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
 
@@ -228,7 +228,7 @@ class TestWriteTrialsValidation:
 
     def test_length_mismatch_error(self, empty_nwb):
         """Test error when array lengths don't match."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, 10.0, 20.0])
@@ -239,7 +239,7 @@ class TestWriteTrialsValidation:
 
     def test_optional_array_length_mismatch_error(self, empty_nwb):
         """Test error when optional arrays have wrong length."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, 10.0])
@@ -256,7 +256,7 @@ class TestWriteTrialsValidation:
 
     def test_stop_before_start_error(self, empty_nwb):
         """Test error when stop_time < start_time."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([10.0])
@@ -267,7 +267,7 @@ class TestWriteTrialsValidation:
 
     def test_nan_timestamps_error(self, empty_nwb):
         """Test error when timestamps contain NaN."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([0.0, np.nan])
@@ -278,7 +278,7 @@ class TestWriteTrialsValidation:
 
     def test_negative_timestamps_error(self, empty_nwb):
         """Test error when timestamps are negative."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
         start_times = np.array([-1.0, 10.0])
@@ -289,7 +289,7 @@ class TestWriteTrialsValidation:
 
     def test_no_input_error(self, empty_nwb):
         """Test error when no input provided."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
 
@@ -302,7 +302,7 @@ class TestWriteTrialsOverwrite:
 
     def test_overwrite_false_error(self, empty_nwb):
         """Test error when trials exist and overwrite=False."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -325,7 +325,7 @@ class TestWriteTrialsOverwrite:
 
     def test_overwrite_true_replaces(self, empty_nwb):
         """Test that overwrite=True replaces existing trials."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -370,7 +370,7 @@ class TestReadTrials:
 
     def test_basic_reading(self, empty_nwb):
         """Test basic trial reading."""
-        from neurospatial.nwb import read_trials, write_trials
+        from neurospatial.io.nwb import read_trials, write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -401,7 +401,7 @@ class TestReadTrials:
 
     def test_read_trials_not_found(self, empty_nwb):
         """Test KeyError when no trials table exists."""
-        from neurospatial.nwb import read_trials
+        from neurospatial.io.nwb import read_trials
 
         nwbfile = empty_nwb
 
@@ -410,7 +410,7 @@ class TestReadTrials:
 
     def test_read_trials_with_custom_columns(self, empty_nwb):
         """Test reading trials with custom columns (start/end regions)."""
-        from neurospatial.nwb import read_trials, write_trials
+        from neurospatial.io.nwb import read_trials, write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -446,7 +446,7 @@ class TestReadTrials:
 
     def test_roundtrip_data_integrity(self, empty_nwb):
         """Test data integrity through write/read round-trip."""
-        from neurospatial.nwb import read_trials, write_trials
+        from neurospatial.io.nwb import read_trials, write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -515,7 +515,7 @@ class TestWriteTrialsDescription:
         Custom descriptions only work when using overwrite=True because
         NWB creates the trials table with a fixed description on first add_trial.
         """
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb
@@ -549,7 +549,7 @@ class TestWriteTrialsDescription:
 
     def test_default_description(self, empty_nwb):
         """Test default description is used."""
-        from neurospatial.nwb import write_trials
+        from neurospatial.io.nwb import write_trials
         from neurospatial.segmentation import Trial
 
         nwbfile = empty_nwb

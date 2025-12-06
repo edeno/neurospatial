@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.nwb._core import (
+from neurospatial.io.nwb._core import (
     _get_or_create_processing_module,
     _require_pynwb,
     logger,

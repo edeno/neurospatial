@@ -63,7 +63,7 @@ def position_overlay_from_nwb(
     >>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import PositionOverlay
-    from neurospatial.nwb._behavior import read_position
+    from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
     positions, timestamps = read_position(
@@ -136,7 +136,7 @@ def bodypart_overlay_from_nwb(
     ... )
     """
     from neurospatial.animation.overlays import BodypartOverlay
-    from neurospatial.nwb._pose import read_pose
+    from neurospatial.io.nwb._pose import read_pose
 
     # Read pose data from NWB
     bodyparts, timestamps, skeleton = read_pose(
@@ -203,7 +203,7 @@ def head_direction_overlay_from_nwb(
     >>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import HeadDirectionOverlay
-    from neurospatial.nwb._behavior import read_head_direction
+    from neurospatial.io.nwb._behavior import read_head_direction
 
     # Read head direction data from NWB
     angles, timestamps = read_head_direction(

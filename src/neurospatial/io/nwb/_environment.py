@@ -15,7 +15,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.nwb._core import _require_pynwb, logger
+from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
@@ -1045,12 +1045,12 @@ def environment_from_position(
     ...     bin_count_threshold=5,
     ... )
     """
-    from neurospatial.nwb._core import _require_pynwb
+    from neurospatial.io.nwb._core import _require_pynwb
 
     _require_pynwb()
 
     from neurospatial import Environment
-    from neurospatial.nwb._behavior import read_position
+    from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
     positions, _timestamps = read_position(
@@ -1115,7 +1115,7 @@ def _get_position_units(
     """
     from pynwb.behavior import Position as PositionType
 
-    from neurospatial.nwb._behavior import (
+    from neurospatial.io.nwb._behavior import (
         _get_behavior_container,
         _get_spatial_series,
     )

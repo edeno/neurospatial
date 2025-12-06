@@ -49,7 +49,7 @@ class TestTimestampsFromSeries:
 
     def test_returns_explicit_timestamps(self):
         """Test that explicit timestamps are returned when present."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         expected_timestamps = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
         mock_series = MockTimeSeries(
@@ -64,7 +64,7 @@ class TestTimestampsFromSeries:
 
     def test_computes_timestamps_from_rate(self):
         """Test timestamp computation from sampling rate."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         mock_series = MockTimeSeries(
             data=np.zeros((5, 2)),
@@ -80,7 +80,7 @@ class TestTimestampsFromSeries:
 
     def test_computes_timestamps_with_starting_time(self):
         """Test timestamp computation with non-zero starting time."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         mock_series = MockTimeSeries(
             data=np.zeros((5, 2)),
@@ -96,7 +96,7 @@ class TestTimestampsFromSeries:
 
     def test_handles_none_starting_time(self):
         """Test that None starting_time defaults to 0.0."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         mock_series = MockTimeSeries(
             data=np.zeros((3, 2)),
@@ -112,7 +112,7 @@ class TestTimestampsFromSeries:
 
     def test_raises_when_neither_timestamps_nor_rate(self):
         """Test ValueError when neither timestamps nor rate are available."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         mock_series = MockTimeSeries(
             data=np.zeros((5, 2)),
@@ -125,7 +125,7 @@ class TestTimestampsFromSeries:
 
     def test_prefers_explicit_timestamps_over_rate(self):
         """Test that explicit timestamps take precedence over rate."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         explicit_timestamps = np.array([0.0, 0.5, 1.5, 3.0])  # Non-uniform
         mock_series = MockTimeSeries(
@@ -141,7 +141,7 @@ class TestTimestampsFromSeries:
 
     def test_output_dtype_is_float64(self):
         """Test that output is always float64."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         # Even with float32 input
         mock_series = MockTimeSeries(
@@ -159,7 +159,7 @@ class TestEventsTableToDataframe:
 
     def test_returns_dataframe_with_timestamp(self):
         """Test successful conversion with timestamp column."""
-        from neurospatial.nwb._adapters import events_table_to_dataframe
+        from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
         df = pd.DataFrame(
             {
@@ -175,7 +175,7 @@ class TestEventsTableToDataframe:
 
     def test_raises_when_timestamp_missing(self):
         """Test KeyError when timestamp column is missing."""
-        from neurospatial.nwb._adapters import events_table_to_dataframe
+        from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
         df = pd.DataFrame(
             {
@@ -190,7 +190,7 @@ class TestEventsTableToDataframe:
 
     def test_error_message_includes_table_name(self):
         """Test that error message includes the table name."""
-        from neurospatial.nwb._adapters import events_table_to_dataframe
+        from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
         df = pd.DataFrame({"value": [1, 2, 3]})
         mock_table = MockEventsTable(df)
@@ -200,7 +200,7 @@ class TestEventsTableToDataframe:
 
     def test_preserves_additional_columns(self):
         """Test that additional columns are preserved."""
-        from neurospatial.nwb._adapters import events_table_to_dataframe
+        from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
         df = pd.DataFrame(
             {
@@ -218,7 +218,7 @@ class TestEventsTableToDataframe:
 
     def test_preserves_index(self):
         """Test that DataFrame index is preserved."""
-        from neurospatial.nwb._adapters import events_table_to_dataframe
+        from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
         df = pd.DataFrame(
             {"timestamp": [0.0, 1.0, 2.0], "label": ["a", "b", "c"]},
@@ -236,7 +236,7 @@ class TestIntegrationWithPynwb:
 
     def test_timestamps_from_spatial_series(self, sample_nwb_with_position):
         """Test timestamps_from_series with real SpatialSeries."""
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         spatial_series = sample_nwb_with_position.processing["behavior"]["Position"][
             "position"
@@ -252,7 +252,7 @@ class TestIntegrationWithPynwb:
         """Test timestamps computation from rate-based SpatialSeries."""
         from pynwb.behavior import Position, SpatialSeries
 
-        from neurospatial.nwb._adapters import timestamps_from_series
+        from neurospatial.io.nwb._adapters import timestamps_from_series
 
         rng = np.random.default_rng(42)
 

@@ -107,11 +107,11 @@ uv run mypy src/neurospatial/
 
 ### Tasks
 
-- [ ] Move `io.py` → `io/files.py`
-- [ ] Move `nwb/` → `io/nwb/`
-- [ ] Update `io/__init__.py` with re-exports: `to_file`, `from_file`, `to_dict`, `from_dict`
-- [ ] Update internal imports for `io` → `io.files`
-- [ ] Update internal imports for `nwb` → `io.nwb`
+- [x] Move `io.py` → `io/files.py` (done in M1 to avoid import conflict)
+- [x] Move `nwb/` → `io/nwb/`
+- [x] Update `io/__init__.py` with re-exports: `to_file`, `from_file`, `to_dict`, `from_dict`
+- [x] Update internal imports for `io` → `io.files` (done in M1)
+- [x] Update internal imports for `nwb` → `io.nwb`
 
 **Verification**:
 
@@ -609,7 +609,7 @@ If circular imports occur:
 |-----------|--------|-------|
 | M1: Directory Structure | Complete | Also moved io.py → io/files.py early |
 | M2: ops/ Modules | Complete | All 12 modules moved: binning, distance, normalize, smoothing, graph, calculus, transforms, alignment, egocentric, visibility, basis |
-| M3: io/ Module | Partial | io.py → io/files.py done in M1; nwb/ still pending |
+| M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
 | M4: stats/ Module | Not Started | |
 | M5: behavior/ Module | Not Started | |
 | M6: encoding/ Module | Not Started | |

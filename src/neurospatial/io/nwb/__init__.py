@@ -37,21 +37,21 @@ Examples
 Reading position data:
 
 >>> from pynwb import NWBHDF5IO
->>> from neurospatial.nwb import read_position
+>>> from neurospatial.io.nwb import read_position
 >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     positions, timestamps = read_position(nwbfile)
 
 Creating an environment from NWB position data:
 
->>> from neurospatial.nwb import environment_from_position
+>>> from neurospatial.io.nwb import environment_from_position
 >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     env = environment_from_position(nwbfile, bin_size=2.0, units="cm")
 
 Writing analysis results:
 
->>> from neurospatial.nwb import write_place_field, write_occupancy
+>>> from neurospatial.io.nwb import write_place_field, write_occupancy
 >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     write_place_field(nwbfile, env, place_field, name="cell_001")
@@ -60,7 +60,7 @@ Writing analysis results:
 
 Environment round-trip (save and reload):
 
->>> from neurospatial.nwb import write_environment, read_environment
+>>> from neurospatial.io.nwb import write_environment, read_environment
 >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     write_environment(nwbfile, env, name="linear_track")
@@ -71,7 +71,7 @@ Environment round-trip (save and reload):
 
 Creating animation overlays from NWB:
 
->>> from neurospatial.nwb import position_overlay_from_nwb
+>>> from neurospatial.io.nwb import position_overlay_from_nwb
 >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     overlay = position_overlay_from_nwb(nwbfile, trail_length=10)
@@ -90,27 +90,27 @@ from typing import Any
 # Format: "name": "module_path:attribute_name"
 _LAZY_IMPORTS: dict[str, str] = {
     # Reading functions
-    "read_position": "neurospatial.nwb._behavior:read_position",
-    "read_head_direction": "neurospatial.nwb._behavior:read_head_direction",
-    "read_pose": "neurospatial.nwb._pose:read_pose",
-    "read_events": "neurospatial.nwb._events:read_events",
-    "read_intervals": "neurospatial.nwb._events:read_intervals",
-    "read_environment": "neurospatial.nwb._environment:read_environment",
-    "read_trials": "neurospatial.nwb._events:read_trials",
+    "read_position": "neurospatial.io.nwb._behavior:read_position",
+    "read_head_direction": "neurospatial.io.nwb._behavior:read_head_direction",
+    "read_pose": "neurospatial.io.nwb._pose:read_pose",
+    "read_events": "neurospatial.io.nwb._events:read_events",
+    "read_intervals": "neurospatial.io.nwb._events:read_intervals",
+    "read_environment": "neurospatial.io.nwb._environment:read_environment",
+    "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
-    "write_place_field": "neurospatial.nwb._fields:write_place_field",
-    "write_occupancy": "neurospatial.nwb._fields:write_occupancy",
-    "write_events": "neurospatial.nwb._events:write_events",
-    "write_laps": "neurospatial.nwb._events:write_laps",
-    "write_region_crossings": "neurospatial.nwb._events:write_region_crossings",
-    "dataframe_to_events_table": "neurospatial.nwb._events:dataframe_to_events_table",
-    "write_environment": "neurospatial.nwb._environment:write_environment",
-    "write_trials": "neurospatial.nwb._events:write_trials",
+    "write_place_field": "neurospatial.io.nwb._fields:write_place_field",
+    "write_occupancy": "neurospatial.io.nwb._fields:write_occupancy",
+    "write_events": "neurospatial.io.nwb._events:write_events",
+    "write_laps": "neurospatial.io.nwb._events:write_laps",
+    "write_region_crossings": "neurospatial.io.nwb._events:write_region_crossings",
+    "dataframe_to_events_table": "neurospatial.io.nwb._events:dataframe_to_events_table",
+    "write_environment": "neurospatial.io.nwb._environment:write_environment",
+    "write_trials": "neurospatial.io.nwb._events:write_trials",
     # Factory functions
-    "environment_from_position": "neurospatial.nwb._environment:environment_from_position",
-    "position_overlay_from_nwb": "neurospatial.nwb._overlays:position_overlay_from_nwb",
-    "bodypart_overlay_from_nwb": "neurospatial.nwb._overlays:bodypart_overlay_from_nwb",
-    "head_direction_overlay_from_nwb": "neurospatial.nwb._overlays:head_direction_overlay_from_nwb",
+    "environment_from_position": "neurospatial.io.nwb._environment:environment_from_position",
+    "position_overlay_from_nwb": "neurospatial.io.nwb._overlays:position_overlay_from_nwb",
+    "bodypart_overlay_from_nwb": "neurospatial.io.nwb._overlays:bodypart_overlay_from_nwb",
+    "head_direction_overlay_from_nwb": "neurospatial.io.nwb._overlays:head_direction_overlay_from_nwb",
 }
 
 
