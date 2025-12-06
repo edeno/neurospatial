@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from neurospatial.visualization.scale_bar import (
+from neurospatial.animation.config import (
     ScaleBarConfig,
     add_scale_bar_to_axes,
     compute_nice_length,
@@ -120,7 +120,7 @@ class TestAutoContrast:
 
     def test_dark_background_selects_white(self):
         """Dark background should select white text."""
-        from neurospatial.visualization.scale_bar import _auto_contrast_color
+        from neurospatial.animation.config import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor("black")
@@ -129,7 +129,7 @@ class TestAutoContrast:
 
     def test_light_background_selects_black(self):
         """Light background should select black text."""
-        from neurospatial.visualization.scale_bar import _auto_contrast_color
+        from neurospatial.animation.config import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor("white")
@@ -138,7 +138,7 @@ class TestAutoContrast:
 
     def test_gray_background(self):
         """Mid-gray background (luminance ~0.5) should pick one."""
-        from neurospatial.visualization.scale_bar import _auto_contrast_color
+        from neurospatial.animation.config import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor((0.5, 0.5, 0.5))  # RGB gray
@@ -344,7 +344,7 @@ class TestAnimateFieldsWithScaleBar:
 
     def test_animate_fields_accepts_scale_bar_config(self, small_2d_env):
         """Test animate_fields() accepts ScaleBarConfig parameter."""
-        from neurospatial.visualization.scale_bar import ScaleBarConfig
+        from neurospatial.animation.config import ScaleBarConfig
 
         fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second

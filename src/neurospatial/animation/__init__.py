@@ -51,6 +51,13 @@ ObjectVectorOverlay : class
 
 from neurospatial.animation._video_io import VideoReaderProtocol
 from neurospatial.animation.calibration import calibrate_video
+from neurospatial.animation.config import (
+    ScaleBarConfig,
+    add_scale_bar_to_axes,
+    compute_nice_length,
+    configure_napari_scale_bar,
+    format_scale_label,
+)
 from neurospatial.animation.core import (
     estimate_colormap_range_from_subset,
     large_session_napari_config,
@@ -91,6 +98,7 @@ __all__: list[str] = [
     "ObjectVectorOverlay",
     "OverlayProtocol",
     "PositionData",
+    "ScaleBarConfig",
     "Skeleton",
     "SpikeOverlay",
     "TimeSeriesData",
@@ -99,8 +107,12 @@ __all__: list[str] = [
     "VideoData",
     "VideoOverlay",
     "VideoReaderProtocol",
+    "add_scale_bar_to_axes",
     "calibrate_video",
+    "compute_nice_length",
+    "configure_napari_scale_bar",
     "estimate_colormap_range_from_subset",
+    "format_scale_label",
     "large_session_napari_config",
     "subsample_frames",
 ]

@@ -307,10 +307,10 @@ uv run pytest tests/ -x -v
 
 ### Tasks
 
-- [ ] Move `visualization/scale_bar.py` → `animation/config.py`
-- [ ] Update imports for `visualization.scale_bar` → `animation.config`
-- [ ] Delete empty `visualization/` directory
-- [ ] Verify animation/ structure matches PLAN.md specification
+- [x] Move `visualization/scale_bar.py` → `animation/config.py`
+- [x] Update imports for `visualization.scale_bar` → `animation.config`
+- [x] Delete empty `visualization/` directory
+- [x] Verify animation/ structure matches PLAN.md specification
 
 **Verification**:
 
@@ -614,7 +614,7 @@ If circular imports occur:
 | M5: behavior/ Module | Complete | All tasks complete: trajectory.py, segmentation.py, navigation.py, decisions.py, reward.py |
 | M6: encoding/ Module | Complete | All tasks 6.1-6.9 complete; imports updated in **init**.py |
 | M7: decoding/ Cleanup | Complete | Re-exports added from stats.shuffle and stats.surrogates |
-| M8: animation/ Consolidation | Not Started | |
+| M8: animation/ Consolidation | Complete | visualization/scale_bar.py → animation/config.py; visualization/ deleted |
 | M9: Top-Level **init**.py | Not Started | |
 | M10: Delete Old Files | Not Started | |
 | M11: Update Documentation | Not Started | |

@@ -34,8 +34,8 @@ from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
+    from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.visualization.scale_bar import ScaleBarConfig
 else:
     # Runtime import handled lazily in methods
     ScaleBarConfig = "ScaleBarConfig"  # For type annotations only
@@ -70,8 +70,8 @@ def _add_scale_bar_if_requested(
     if not scale_bar:
         return
 
-    from neurospatial.visualization.scale_bar import ScaleBarConfig as _ScaleBarConfig
-    from neurospatial.visualization.scale_bar import add_scale_bar_to_axes
+    from neurospatial.animation.config import ScaleBarConfig as _ScaleBarConfig
+    from neurospatial.animation.config import add_scale_bar_to_axes
 
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 

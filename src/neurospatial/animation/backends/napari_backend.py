@@ -3282,7 +3282,7 @@ def render_napari(
 
     # Configure napari's native scale bar if requested
     if scale_bar:
-        from neurospatial.visualization.scale_bar import (
+        from neurospatial.animation.config import (
             ScaleBarConfig,
             configure_napari_scale_bar,
         )
@@ -3613,7 +3613,7 @@ def _render_multi_field_napari(
 
     # Configure napari's native scale bar if requested
     if scale_bar:
-        from neurospatial.visualization.scale_bar import (
+        from neurospatial.animation.config import (
             ScaleBarConfig,
             configure_napari_scale_bar,
         )

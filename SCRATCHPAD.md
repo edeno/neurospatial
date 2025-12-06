@@ -1,11 +1,73 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 7 COMPLETE - Re-exports added to decoding/
+**Current Status**: Milestone 8 COMPLETE - animation/ consolidation done
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 32)
+
+**Starting Point**: Milestone 8 - Consolidate animation/ Module
+
+**Completed**: Move visualization/scale_bar.py → animation/config.py; delete visualization/
+
+**Work Done**:
+
+1. Created TDD test file `tests/animation/test_animation_config.py` (RED phase)
+   - 20 tests: import tests, re-export tests, module structure tests, functionality tests
+   - Tests FAIL before implementation (import error expected)
+2. Moved `visualization/scale_bar.py` → `animation/config.py` using `git mv` (preserve history)
+3. Updated `animation/config.py` docstring with import examples
+4. Updated `animation/__init__.py`:
+   - Added imports: ScaleBarConfig, add_scale_bar_to_axes, compute_nice_length, configure_napari_scale_bar, format_scale_label
+   - Updated `__all__` to include all 5 exports
+5. Updated all imports from `visualization.scale_bar` → `animation.config`:
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/environment/visualization.py` (2 locations + TYPE_CHECKING)
+   - `src/neurospatial/animation/backends/napari_backend.py` (2 locations)
+   - `tests/visualization/test_scale_bar.py` (4 locations)
+6. Deleted `src/neurospatial/visualization/` directory
+7. All tests pass:
+   - `tests/animation/test_animation_config.py`: 20 passed
+   - `tests/visualization/test_scale_bar.py`: 36 passed
+   - Total: 56 passed
+8. Ran ruff check/format and mypy - no issues
+9. Code review APPROVED
+
+**Files Created**:
+
+- `tests/animation/test_animation_config.py` (new)
+
+**Files Moved**:
+
+- `visualization/scale_bar.py` → `animation/config.py` (git mv)
+
+**Files Modified**:
+
+- `src/neurospatial/animation/__init__.py` (added re-exports)
+- `src/neurospatial/__init__.py` (updated import)
+- `src/neurospatial/environment/visualization.py` (updated imports)
+- `src/neurospatial/animation/backends/napari_backend.py` (updated imports)
+- `tests/visualization/test_scale_bar.py` (updated imports)
+
+**Files Deleted**:
+
+- `src/neurospatial/visualization/__init__.py`
+- `src/neurospatial/visualization/` directory
+
+**Milestone 8 Status**: COMPLETE
+All tasks done:
+
+- visualization/scale_bar.py → animation/config.py (moved)
+- All imports updated to new paths
+- visualization/ directory deleted
+- animation/ structure verified against PLAN.md
+
+**Next Task**: Milestone 9 - Update Top-Level __init__.py
+
+---
 
 ### 2025-12-06 (Session 31)
 

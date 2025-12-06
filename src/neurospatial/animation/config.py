@@ -1,4 +1,11 @@
-"""Scale bar utilities for spatial visualizations.
+"""Scale bar and visualization configuration utilities.
+
+Imports
+-------
+Functions and classes can be imported from either location:
+
+>>> from neurospatial.animation.config import ScaleBarConfig  # Direct
+>>> from neurospatial.animation import ScaleBarConfig  # Via animation package
 
 This module provides scale bar functionality for matplotlib and napari visualizations,
 including automatic "nice" length calculation using the 1-2-5 rule.

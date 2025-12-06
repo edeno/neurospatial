@@ -194,6 +194,7 @@ Create environment from polygon::
 
 import logging
 
+from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.overlays import (
     BodypartOverlay,
     EventOverlay,
@@ -363,7 +364,6 @@ from neurospatial.regions import Region, Regions
 
 # Spatial view cell simulation model
 from neurospatial.simulation import SpatialViewCellModel
-from neurospatial.visualization.scale_bar import ScaleBarConfig
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
