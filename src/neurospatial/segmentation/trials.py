@@ -256,7 +256,7 @@ def segment_trials(
         return []
 
     # Get region masks using existing functionality
-    from neurospatial.spatial import regions_to_mask
+    from neurospatial.ops.binning import regions_to_mask
 
     start_mask = regions_to_mask(env, [start_region])
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}

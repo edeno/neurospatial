@@ -149,7 +149,7 @@ def detect_region_crossings(
         return []
 
     # Get bins in region using existing regions_to_mask functionality
-    from neurospatial.spatial import regions_to_mask
+    from neurospatial.ops.binning import regions_to_mask
 
     region_mask = regions_to_mask(env, [region_name])
 
@@ -308,7 +308,7 @@ def detect_runs_between_regions(
     trajectory_bins = env.bin_at(trajectory_positions)
 
     # Get region masks
-    from neurospatial.spatial import regions_to_mask
+    from neurospatial.ops.binning import regions_to_mask
 
     source_mask = regions_to_mask(env, [source])
     target_mask = regions_to_mask(env, [target])

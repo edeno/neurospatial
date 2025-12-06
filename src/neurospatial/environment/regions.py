@@ -531,7 +531,7 @@ class EnvironmentRegions:
         from typing import cast
 
         from neurospatial.environment.core import Environment
-        from neurospatial.spatial import regions_to_mask
+        from neurospatial.ops.binning import regions_to_mask
 
         # Delegate to the free function (cast for mypy compatibility)
         return regions_to_mask(

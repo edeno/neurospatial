@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.spatial import map_points_to_bins
+from neurospatial.ops.binning import map_points_to_bins
 
 # ============================================================================
 # Test Suite 1: Deterministic Behavior (Reproducibility)

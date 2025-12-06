@@ -1,10 +1,11 @@
-"""spatial.py - Spatial query utilities for neurospatial
-========================================================
+"""binning.py - Point-to-bin mapping utilities for neurospatial.
+================================================================
 
 This module provides high-performance spatial query utilities including:
 - Batch mapping of points to bins with KD-tree caching
 - Deterministic tie-breaking on bin boundaries
-- Distance calculations
+- Region rasterization to bin masks
+- Field resampling between environments
 
 These are core primitives used throughout neurospatial and by downstream packages.
 """
@@ -40,7 +41,7 @@ class TieBreakStrategy(Enum):
 
     Examples
     --------
-    >>> from neurospatial import TieBreakStrategy, map_points_to_bins
+    >>> from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
     >>> import numpy as np
     >>> # Use enum for autocomplete and type safety
     >>> result = map_points_to_bins(
@@ -151,7 +152,7 @@ def map_points_to_bins(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.spatial import map_points_to_bins
+    >>> from neurospatial.ops.binning import map_points_to_bins
     >>> data = np.random.randn(1000, 2) * 10
     >>> env = Environment.from_samples(data, bin_size=2.0)
     >>> points = np.array([[0.0, 0.0], [10.0, 10.0], [50.0, 50.0]])
@@ -344,7 +345,7 @@ def clear_kdtree_cache(env: Environment) -> None:
 
     Examples
     --------
-    >>> from neurospatial.spatial import clear_kdtree_cache
+    >>> from neurospatial.ops.binning import clear_kdtree_cache
     >>> clear_kdtree_cache(env)
 
     """
@@ -432,7 +433,7 @@ def regions_to_mask(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.spatial import regions_to_mask
+    >>> from neurospatial.ops.binning import regions_to_mask
     >>> from neurospatial.regions import Regions
 
     Create environment and regions:
@@ -686,7 +687,8 @@ def resample_field(
     Basic nearest-neighbor resampling:
 
     >>> import numpy as np
-    >>> from neurospatial import Environment, resample_field
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops.binning import resample_field
     >>> # Source: coarse resolution
     >>> src_data = np.array([[i, j] for i in range(21) for j in range(21)])
     >>> src_env = Environment.from_samples(src_data, bin_size=4.0)

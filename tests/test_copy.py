@@ -178,7 +178,7 @@ class TestCopyCacheInvalidation:
         env = sample_2d_grid
 
         # Trigger KDTree cache creation (by calling a method that uses it)
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         points = np.array([[5.0, 5.0]])
         _ = map_points_to_bins(points, env)
@@ -215,7 +215,7 @@ class TestCopyCacheInvalidation:
     def test_copy_with_deep_clears_both_caches(self, sample_2d_grid):
         """deep=True copy clears all caches."""
         env = sample_2d_grid
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         # Populate both caches
         points = np.array([[5.0, 5.0]])

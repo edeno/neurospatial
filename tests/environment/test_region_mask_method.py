@@ -18,8 +18,8 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
+from neurospatial.ops.binning import regions_to_mask
 from neurospatial.regions import Region, Regions
-from neurospatial.spatial import regions_to_mask
 
 
 class TestRegionMaskBasic:

@@ -14,8 +14,8 @@ from numpy.typing import NDArray
 from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
+from neurospatial.ops.binning import regions_to_mask
 from neurospatial.segmentation.regions import Run
-from neurospatial.spatial import regions_to_mask
 
 if TYPE_CHECKING:
     from neurospatial import Environment

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 from neurospatial.distance import distance_field
-from neurospatial.spatial import regions_to_mask
+from neurospatial.ops.binning import regions_to_mask
 
 
 def region_reward_field(

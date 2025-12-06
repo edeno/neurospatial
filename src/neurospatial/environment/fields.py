@@ -461,7 +461,7 @@ class EnvironmentFields:
         """
         from typing import cast
 
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         # Map points to bins (-1 for outside points)
         # With return_dist=False, we get just the indices (not a tuple)

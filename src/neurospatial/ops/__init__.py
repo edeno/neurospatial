@@ -19,4 +19,20 @@ visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
 """
 
-# Re-exports will be added as modules are moved here
+# Binning operations
+from neurospatial.ops.binning import (
+    TieBreakStrategy,
+    clear_kdtree_cache,
+    map_points_to_bins,
+    regions_to_mask,
+    resample_field,
+)
+
+__all__ = [
+    # binning
+    "TieBreakStrategy",
+    "clear_kdtree_cache",
+    "map_points_to_bins",
+    "regions_to_mask",
+    "resample_field",
+]

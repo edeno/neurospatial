@@ -181,7 +181,7 @@ class EnvironmentTrajectory:
         ... )
 
         """
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         # Input validation
         times = np.asarray(times, dtype=np.float64)

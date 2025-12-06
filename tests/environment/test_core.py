@@ -1267,7 +1267,7 @@ class TestCacheManagement:
 
     def test_clear_cache_clears_kdtree(self, cache_test_env):
         """Test that clear_cache() clears the KDTree cache."""
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         # Create KDTree cache by calling map_points_to_bins
         points = np.array([[5.0, 5.0]])
@@ -1357,7 +1357,7 @@ class TestCacheManagement:
     def test_clear_cache_with_all_cached_properties(self, cache_test_env):
         """Test clearing when ALL cached properties are populated."""
         # Populate ALL caches (not just some)
-        from neurospatial.spatial import map_points_to_bins
+        from neurospatial.ops.binning import map_points_to_bins
 
         _ = cache_test_env.boundary_bins
         _ = cache_test_env.bin_sizes

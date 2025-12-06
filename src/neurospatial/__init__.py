@@ -296,6 +296,12 @@ from neurospatial.object_vector_field import (
     ObjectVectorFieldResult,
     compute_object_vector_field,
 )
+from neurospatial.ops.binning import (
+    TieBreakStrategy,
+    map_points_to_bins,
+    regions_to_mask,
+    resample_field,
+)
 from neurospatial.primitives import convolve, neighbor_reduce
 
 # Reference frame transformations (egocentric/allocentric)
@@ -321,12 +327,6 @@ from neurospatial.segmentation import (
 
 # Spatial view cell simulation model
 from neurospatial.simulation import SpatialViewCellModel
-from neurospatial.spatial import (
-    TieBreakStrategy,
-    map_points_to_bins,
-    regions_to_mask,
-    resample_field,
-)
 
 # Spatial view field analysis
 from neurospatial.spatial_view_field import (
