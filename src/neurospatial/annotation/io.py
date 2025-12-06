@@ -42,7 +42,10 @@ def regions_from_labelme(
     Examples
     --------
     >>> from neurospatial.annotation import regions_from_labelme
-    >>> from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+    >>> from neurospatial.ops.transforms import (
+    ...     VideoCalibration,
+    ...     calibrate_from_scale_bar,
+    ... )
     >>> # Without calibration (pixel coordinates)
     >>> regions = regions_from_labelme("annotations.json")
     >>> # With calibration (cm coordinates)

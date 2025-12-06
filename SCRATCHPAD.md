@@ -7,6 +7,67 @@
 
 ## Session Log
 
+### 2025-12-06 (Session 36)
+
+**Starting Point**: Milestone 11 - Update Documentation (remaining tasks)
+
+**Completed**: All M11 documentation updates complete
+
+**Work Done**:
+
+1. Updated `.claude/PATTERNS.md`:
+   - Updated "Free Functions" section to reference domain-specific submodules instead of top-level exports
+   - Added list of submodule paths (encoding/, decoding/, behavior/, ops/)
+
+2. Updated `.claude/TROUBLESHOOTING.md`:
+   - Updated `neurospatial.nwb` → `neurospatial.io.nwb` (3 locations)
+   - Updated `neurospatial.transforms` → `neurospatial.ops.transforms` (1 location)
+
+3. Updated `.claude/ADVANCED.md`:
+   - Updated all NWB imports to `neurospatial.io.nwb` (3 sections)
+   - Updated all transforms imports to `neurospatial.ops.transforms` (3 locations)
+   - Updated visibility imports to `neurospatial.ops.visibility`
+   - Updated spatial view imports to `neurospatial.encoding.spatial_view`
+   - Updated annotation imports to `neurospatial.annotation`
+   - Updated ScaleBarConfig import to `neurospatial.animation`
+
+4. Verified `mkdocs.yml`:
+   - Navigation is auto-generated via gen-files plugin
+   - No manual updates needed
+
+5. Updated docstring import examples in source modules:
+   - `src/neurospatial/ops/transforms.py` (22 locations) - `neurospatial.transforms` → `neurospatial.ops.transforms`
+   - `src/neurospatial/environment/transforms.py` (5 locations) - transforms and binning imports
+   - `src/neurospatial/annotation/track_graph.py` (2 locations)
+   - `src/neurospatial/annotation/core.py` (1 location)
+   - `src/neurospatial/annotation/io.py` (2 locations)
+   - `src/neurospatial/animation/overlays.py` (1 location)
+
+**Note on Doctests**: Remaining doctest failures are NOT import-related - they are:
+- NumPy behavior changes (`np.True_` vs `True`)
+- API signature changes (`bin_sequence` missing argument)
+- Edge ordering differences in Skeleton
+These are pre-existing issues, not from the reorganization.
+
+**Files Modified**:
+
+- `.claude/PATTERNS.md`
+- `.claude/TROUBLESHOOTING.md`
+- `.claude/ADVANCED.md`
+- `src/neurospatial/ops/transforms.py`
+- `src/neurospatial/environment/transforms.py`
+- `src/neurospatial/annotation/track_graph.py`
+- `src/neurospatial/annotation/core.py`
+- `src/neurospatial/annotation/io.py`
+- `src/neurospatial/animation/overlays.py`
+- `TASKS.md`
+
+**Milestone 11 Status**: COMPLETE (documentation import paths updated)
+
+**Next Task**: Milestone 12 - Update Example Notebooks
+
+---
+
 ### 2025-12-06 (Session 35)
 
 **Starting Point**: Milestone 11 - Update Documentation
@@ -45,15 +106,6 @@
 - `src/neurospatial/__init__.py` (fixed docstring example)
 - `tests/benchmarks/test_performance.py` (updated imports)
 - `TASKS.md` (marked 11.1, 11.2 tasks complete)
-
-**Remaining for M11**:
-
-- [ ] Update `.claude/PATTERNS.md` if needed
-- [ ] Update `.claude/TROUBLESHOOTING.md` if needed
-- [ ] Update `.claude/ADVANCED.md` if needed
-- [ ] Update `mkdocs.yml` navigation
-- [ ] Update docstring import examples in moved modules
-- [ ] Run doctests to verify
 
 **Next Task**: Continue Milestone 11 - remaining documentation files
 

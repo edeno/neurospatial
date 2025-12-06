@@ -115,7 +115,7 @@ class AffineND(SpatialTransform):
     3D translation:
 
     >>> import numpy as np
-    >>> from neurospatial.transforms import translate_3d
+    >>> from neurospatial.ops.transforms import translate_3d
     >>> transform = translate_3d(10, 20, 30)
     >>> points = np.array([[0, 0, 0], [1, 1, 1]])
     >>> transformed = transform(points)
@@ -126,7 +126,7 @@ class AffineND(SpatialTransform):
     3D rotation using scipy:
 
     >>> from scipy.spatial.transform import Rotation
-    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> from neurospatial.ops.transforms import from_rotation_matrix
     >>> R = Rotation.from_euler("z", 90, degrees=True).as_matrix()
     >>> transform = from_rotation_matrix(R)
     >>> points = np.array([[1, 0, 0]])
@@ -171,7 +171,7 @@ class AffineND(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate_3d
+        >>> from neurospatial.ops.transforms import translate_3d
         >>> transform = translate_3d(10, 20, 30)
         >>> points = np.array([[0, 0, 0], [1, 1, 1]])
         >>> transform(points)
@@ -220,7 +220,7 @@ class AffineND(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate_3d
+        >>> from neurospatial.ops.transforms import translate_3d
         >>> transform = translate_3d(10, 20, 30)
         >>> inv = transform.inverse()
         >>> points = np.array([[10, 20, 30]])
@@ -249,7 +249,7 @@ class AffineND(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate_3d, scale_3d
+        >>> from neurospatial.ops.transforms import translate_3d, scale_3d
         >>> t1 = translate_3d(10, 0, 0)
         >>> t2 = scale_3d(2.0)
         >>> combined = t1.compose(t2)
@@ -286,7 +286,7 @@ class Affine2D(SpatialTransform):
     Create a transform that scales then translates:
 
     >>> import numpy as np
-    >>> from neurospatial.transforms import translate, scale_2d
+    >>> from neurospatial.ops.transforms import translate, scale_2d
     >>> transform = translate(10, 20) @ scale_2d(2.0)
     >>> points = np.array([[0, 0], [1, 1]])
     >>> transformed = transform(points)
@@ -314,7 +314,7 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate
+        >>> from neurospatial.ops.transforms import translate
         >>> transform = translate(10, 20)
         >>> points = np.array([[0, 0], [1, 1]])
         >>> transform(points)
@@ -344,7 +344,7 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate
+        >>> from neurospatial.ops.transforms import translate
         >>> transform = translate(10, 20)
         >>> inv = transform.inverse()
         >>> points = np.array([[10, 20]])
@@ -374,7 +374,7 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate
+        >>> from neurospatial.ops.transforms import translate
         >>> t1 = translate(10, 0)
         >>> t2 = translate(0, 20)
         >>> combined = t1.compose(t2)
@@ -405,7 +405,7 @@ class Affine2D(SpatialTransform):
 
         Examples
         --------
-        >>> from neurospatial.transforms import translate, scale_2d
+        >>> from neurospatial.ops.transforms import translate, scale_2d
         >>> t1 = translate(10, 0)
         >>> t2 = scale_2d(2.0)
         >>> combined = t1 @ t2
@@ -585,7 +585,7 @@ def calibrate_from_scale_bar(
 
     Examples
     --------
-    >>> from neurospatial.transforms import calibrate_from_scale_bar
+    >>> from neurospatial.ops.transforms import calibrate_from_scale_bar
     >>> # Scale bar from (100, 200) to (300, 200) represents 50 cm
     >>> transform = calibrate_from_scale_bar(
     ...     p1_px=(100.0, 200.0),
@@ -681,7 +681,7 @@ def calibrate_from_landmarks(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.transforms import calibrate_from_landmarks
+    >>> from neurospatial.ops.transforms import calibrate_from_landmarks
     >>> # Arena corners in video pixels and environment cm
     >>> corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]], dtype=float)
     >>> corners_cm = np.array([[0, 80], [100, 80], [100, 0], [0, 0]], dtype=float)
@@ -795,7 +795,10 @@ class VideoCalibration:
 
     Examples
     --------
-    >>> from neurospatial.transforms import calibrate_from_scale_bar, VideoCalibration
+    >>> from neurospatial.ops.transforms import (
+    ...     calibrate_from_scale_bar,
+    ...     VideoCalibration,
+    ... )
     >>> transform = calibrate_from_scale_bar(
     ...     p1_px=(0.0, 0.0),
     ...     p2_px=(100.0, 0.0),
@@ -900,7 +903,7 @@ def translate_3d(tx: float = 0.0, ty: float = 0.0, tz: float = 0.0) -> AffineND:
 
     Examples
     --------
-    >>> from neurospatial.transforms import translate_3d
+    >>> from neurospatial.ops.transforms import translate_3d
     >>> transform = translate_3d(10, 20, 30)
     >>> points = np.array([[0, 0, 0], [1, 1, 1]])
     >>> transform(points)
@@ -935,7 +938,7 @@ def scale_3d(
     --------
     Uniform scaling:
 
-    >>> from neurospatial.transforms import scale_3d
+    >>> from neurospatial.ops.transforms import scale_3d
     >>> transform = scale_3d(2.0)
     >>> points = np.array([[1, 2, 3]])
     >>> transform(points)
@@ -979,7 +982,7 @@ def from_rotation_matrix(
 
     >>> import numpy as np
     >>> from scipy.spatial.transform import Rotation
-    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> from neurospatial.ops.transforms import from_rotation_matrix
     >>> # 90-degree rotation around z-axis
     >>> rot_mat = Rotation.from_euler("z", 90, degrees=True).as_matrix()
     >>> transform = from_rotation_matrix(rot_mat)
@@ -1029,7 +1032,7 @@ def identity_nd(n_dims: int = 2) -> AffineND:
 
     Examples
     --------
-    >>> from neurospatial.transforms import identity_nd
+    >>> from neurospatial.ops.transforms import identity_nd
     >>> transform = identity_nd(n_dims=3)
     >>> points = np.array([[1, 2, 3]])
     >>> transform(points)
@@ -1184,7 +1187,7 @@ def estimate_transform(
     2D transformation:
 
     >>> import numpy as np
-    >>> from neurospatial.transforms import estimate_transform
+    >>> from neurospatial.ops.transforms import estimate_transform
     >>> # Define corresponding 2D points
     >>> src_pts = np.array([[0, 0], [10, 0], [10, 10], [0, 10]])
     >>> # Rotated 45 degrees and translated
@@ -1375,7 +1378,7 @@ def apply_transform_to_environment(
     2D transformation (backward compatible):
 
     >>> from neurospatial import Environment
-    >>> from neurospatial.transforms import (
+    >>> from neurospatial.ops.transforms import (
     ...     estimate_transform,
     ...     apply_transform_to_environment,
     ... )
@@ -1394,7 +1397,7 @@ def apply_transform_to_environment(
 
     >>> import numpy as np
     >>> from scipy.spatial.transform import Rotation
-    >>> from neurospatial.transforms import from_rotation_matrix
+    >>> from neurospatial.ops.transforms import from_rotation_matrix
     >>> # Create 3D environment
     >>> positions_3d = np.random.randn(1000, 3) * 20
     >>> env_3d = Environment.from_samples(positions_3d, bin_size=5.0)

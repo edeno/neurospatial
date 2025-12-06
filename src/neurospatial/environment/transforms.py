@@ -74,7 +74,7 @@ class EnvironmentTransforms:
         aggregate field values (occupancy, spike counts, etc.) from the original
         grid to the coarsened grid, map the original bin centers and aggregate:
 
-            >>> from neurospatial import map_points_to_bins
+            >>> from neurospatial.ops.binning import map_points_to_bins
             >>> coarse = env.rebin(factor=2)
             >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
             >>> coarse_field = np.bincount(
@@ -122,7 +122,7 @@ class EnvironmentTransforms:
         (5, 2)
         >>>
         >>> # Aggregate a field to the coarsened grid
-        >>> from neurospatial import map_points_to_bins
+        >>> from neurospatial.ops.binning import map_points_to_bins
         >>> occupancy = np.random.rand(env.n_bins) * 100
         >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
         >>> coarse_occupancy = np.bincount(
@@ -778,7 +778,7 @@ class EnvironmentTransforms:
         Translation (2D):
 
         >>> from neurospatial import Environment
-        >>> from neurospatial.transforms import translate
+        >>> from neurospatial.ops.transforms import translate
         >>> import numpy as np
         >>> # Create 2D environment
         >>> data = np.random.rand(200, 2) * 100
@@ -792,7 +792,7 @@ class EnvironmentTransforms:
 
         Rotation (2D):
 
-        >>> from neurospatial.transforms import Affine2D
+        >>> from neurospatial.ops.transforms import Affine2D
         >>> # 45-degree rotation
         >>> angle = np.pi / 4
         >>> R = np.array(
@@ -809,14 +809,14 @@ class EnvironmentTransforms:
 
         Composed transforms (scale → rotate → translate):
 
-        >>> from neurospatial.transforms import scale_2d, translate
+        >>> from neurospatial.ops.transforms import scale_2d, translate
         >>> # Build transformation pipeline
         >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
         >>> env_aligned = env.apply_transform(T, name="aligned")
 
         Cross-session alignment using landmarks:
 
-        >>> from neurospatial.transforms import estimate_transform
+        >>> from neurospatial.ops.transforms import estimate_transform
         >>> # Session 1 landmarks (e.g., arena corners)
         >>> landmarks_s1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]])
         >>> # Session 2 landmarks (same physical locations, different coordinates)
@@ -829,7 +829,7 @@ class EnvironmentTransforms:
         3D transformation:
 
         >>> from scipy.spatial.transform import Rotation
-        >>> from neurospatial.transforms import from_rotation_matrix, translate_3d
+        >>> from neurospatial.ops.transforms import from_rotation_matrix, translate_3d
         >>> # Create 3D environment
         >>> data_3d = np.random.randn(500, 3) * 20
         >>> env_3d = Environment.from_samples(data_3d, bin_size=3.0)

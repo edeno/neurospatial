@@ -152,7 +152,10 @@ def annotate_video(
     >>> print(result.regions)  # Named regions
 
     >>> # With calibration (cm coordinates)
-    >>> from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+    >>> from neurospatial.ops.transforms import (
+    ...     VideoCalibration,
+    ...     calibrate_from_scale_bar,
+    ... )
     >>> transform = calibrate_from_scale_bar((0, 0), (200, 0), 100.0, (640, 480))
     >>> calib = VideoCalibration(transform, (640, 480))
     >>> result = annotate_video("experiment.mp4", calibration=calib, bin_size=2.0)

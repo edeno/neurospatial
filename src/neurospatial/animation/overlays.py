@@ -2000,7 +2000,10 @@ class VideoOverlay:
     Video overlay with calibration:
 
     >>> import numpy as np
-    >>> from neurospatial.transforms import calibrate_from_scale_bar, VideoCalibration
+    >>> from neurospatial.ops.transforms import (
+    ...     calibrate_from_scale_bar,
+    ...     VideoCalibration,
+    ... )
     >>> # Create calibration from scale bar in video
     >>> transform = calibrate_from_scale_bar(
     ...     p1_px=(100.0, 200.0),

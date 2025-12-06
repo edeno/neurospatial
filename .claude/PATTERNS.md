@@ -288,7 +288,12 @@ Take environments/graphs/fields as input and perform higher-level analysis:
 - **Examples**: `distance_field()`, `map_points_to_bins()`, `estimate_transform()`, `compute_place_field()`
 - **Use when**: Cross-environment operations, neural/behavioral analysis, or batch processing
 
-**If you're unsure:** Start from the object you have (Environment, field array, graph) and use autocomplete. If it's about cross-environment, neural, or behavioral analysis, look under the free functions in `neurospatial.__init__`.
+**If you're unsure:** Start from the object you have (Environment, field array, graph) and use autocomplete. If it's about cross-environment, neural, or behavioral analysis, look in the domain-specific submodules:
+
+- **Neural encoding**: `neurospatial.encoding` (place, grid, head_direction, etc.)
+- **Neural decoding**: `neurospatial.decoding`
+- **Behavioral analysis**: `neurospatial.behavior` (trajectory, segmentation, navigation, etc.)
+- **Low-level operations**: `neurospatial.ops` (distance_field, map_points_to_bins, etc.)
 
 **Design principle:** This separation keeps the `Environment` class focused on spatial structure while providing specialized functions for domain-specific analyses (neuroscience, navigation, etc.).
 

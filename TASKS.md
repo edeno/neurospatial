@@ -410,19 +410,19 @@ uv run mypy src/neurospatial/
 
 - [x] Update `.claude/QUICKSTART.md` with new import paths
 - [x] Update `.claude/API_REFERENCE.md` with new module structure
-- [ ] Update `.claude/PATTERNS.md` if needed
-- [ ] Update `.claude/TROUBLESHOOTING.md` if needed
-- [ ] Update `.claude/ADVANCED.md` if needed
+- [x] Update `.claude/PATTERNS.md` if needed
+- [x] Update `.claude/TROUBLESHOOTING.md` if needed
+- [x] Update `.claude/ADVANCED.md` if needed
 - [x] Update `.claude/ARCHITECTURE.md` with new structure
 
 #### 11.3: Update mkdocs.yml
 
-- [ ] Update navigation structure in `mkdocs.yml`
-- [ ] Verify API reference generation points to new paths
+- [x] Update navigation structure in `mkdocs.yml` (auto-generated from source)
+- [x] Verify API reference generation points to new paths (auto-generated)
 
 #### 11.4: Update Docstrings
 
-- [ ] Update docstring import examples in moved modules
+- [x] Update docstring import examples in moved modules
 - [ ] Run doctests to verify: `uv run pytest --doctest-modules src/neurospatial/`
 
 #### 11.5: Additional Fixes

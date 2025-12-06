@@ -14,7 +14,7 @@ Examples
 >>> env = result.to_environment(bin_size=2.0)  # doctest: +SKIP
 
 >>> # With calibration for pixel-to-cm conversion
->>> from neurospatial.transforms import VideoCalibration
+>>> from neurospatial.ops.transforms import VideoCalibration
 >>> result = annotate_track_graph("maze.mp4", calibration=calib)  # doctest: +SKIP
 >>> # node_positions now in cm
 
@@ -124,7 +124,7 @@ def annotate_track_graph(
     >>> result = annotate_track_graph(image=img)  # doctest: +SKIP
 
     >>> # With calibration (convert pixels to cm)
-    >>> from neurospatial.transforms import VideoCalibration
+    >>> from neurospatial.ops.transforms import VideoCalibration
     >>> result = annotate_track_graph("maze.mp4", calibration=calib)  # doctest: +SKIP
     >>> # node_positions now in cm
 

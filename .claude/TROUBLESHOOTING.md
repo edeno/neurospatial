@@ -407,7 +407,7 @@ env.animate_fields(
 **Solution**: Check where Position data is stored:
 
 ```python
-from neurospatial.nwb import read_position
+from neurospatial.io.nwb import read_position
 
 # Check what's in the NWB file
 print(nwbfile.processing.keys())
@@ -427,7 +427,7 @@ positions, timestamps = read_position(nwbfile, position_name="position_xy")
 **Solution**:
 
 ```python
-from neurospatial.nwb import write_place_field
+from neurospatial.io.nwb import write_place_field
 
 # Replace existing place field
 write_place_field(nwbfile, env, field, name="cell_001", overwrite=True)
@@ -515,7 +515,7 @@ result = annotate_track_graph("maze.mp4")
 print(result.node_positions)  # Pixel values
 
 # With calibration: coordinates in cm
-from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 
 transform = calibrate_from_scale_bar(
     point1=(100, 300),

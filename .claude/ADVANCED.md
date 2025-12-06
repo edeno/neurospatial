@@ -25,7 +25,7 @@ uv add neurospatial[nwb-full]
 
 ```python
 from pynwb import NWBHDF5IO
-from neurospatial.nwb import (
+from neurospatial.io.nwb import (
     read_position,
     read_head_direction,
     read_pose,
@@ -59,7 +59,7 @@ with NWBHDF5IO("session.nwb", "r") as io:
 ### Writing to NWB
 
 ```python
-from neurospatial.nwb import (
+from neurospatial.io.nwb import (
     write_place_field,
     write_occupancy,
     write_trials,
@@ -99,7 +99,7 @@ with NWBHDF5IO("session.nwb", "r+") as io:
 ### Factory Functions
 
 ```python
-from neurospatial.nwb import (
+from neurospatial.io.nwb import (
     environment_from_position,
     position_overlay_from_nwb,
     bodypart_overlay_from_nwb,
@@ -166,7 +166,7 @@ Display recorded video behind or above spatial fields.
 
 ```python
 from neurospatial.animation import calibrate_video, VideoOverlay
-from neurospatial.transforms import VideoCalibration, calibrate_from_landmarks
+from neurospatial.ops.transforms import VideoCalibration, calibrate_from_landmarks
 
 # Method 1: Scale bar calibration (recommended)
 calibration = calibrate_video(
@@ -235,8 +235,7 @@ Interactive annotation of environment boundaries and regions.
 ### Basic Annotation
 
 ```python
-from neurospatial import annotate_video
-from neurospatial.annotation import boundary_from_positions, BoundaryConfig
+from neurospatial.annotation import annotate_video, boundary_from_positions, BoundaryConfig
 
 # Interactive annotation - draw environment boundary and regions
 result = annotate_video("experiment.mp4", bin_size=2.0)
@@ -244,7 +243,7 @@ env = result.environment  # Environment from boundary polygon
 regions = result.regions   # Named regions
 
 # With calibration (pixel -> cm coordinates)
-from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 transform = calibrate_from_scale_bar((0, 0), (200, 0), 100.0, (640, 480))
 calib = VideoCalibration(transform, (640, 480))
 result = annotate_video("experiment.mp4", calibration=calib, bin_size=2.0)
@@ -311,7 +310,7 @@ result = annotate_video("experiment.mp4", bin_size=2.0, initial_boundary=boundar
 ### Import from External Tools
 
 ```python
-from neurospatial import regions_from_labelme, regions_from_cvat
+from neurospatial.annotation import regions_from_labelme, regions_from_cvat
 
 # Import from LabelMe
 regions = regions_from_labelme("labelme_export.json", calibration=calib)
@@ -340,7 +339,7 @@ img = plt.imread("track_photo.png")
 result = annotate_track_graph(image=img)
 
 # With calibration (convert pixels to cm)
-from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 transform = calibrate_from_scale_bar((0, 0), (200, 0), 100.0, (640, 480))
 calib = VideoCalibration(transform, (640, 480))
 result = annotate_track_graph("maze.mp4", calibration=calib)
@@ -425,7 +424,7 @@ Advanced analysis of what the animal can see and where it's looking.
 ### Field of View and Visibility
 
 ```python
-from neurospatial import (
+from neurospatial.ops.visibility import (
     FieldOfView,
     compute_viewshed,
     compute_view_field,
@@ -514,7 +513,7 @@ view_occupancy = visibility_occupancy(
 ### Gaze Computation
 
 ```python
-from neurospatial import compute_viewed_location
+from neurospatial.ops.visibility import compute_viewed_location
 
 # Compute where animal is looking at each timepoint
 viewed_locations = compute_viewed_location(
@@ -542,12 +541,12 @@ viewed_locations = compute_viewed_location(
 ### Spatial View Cell Analysis
 
 ```python
-from neurospatial import (
+from neurospatial.encoding.spatial_view import (
     compute_spatial_view_field,
     spatial_view_cell_metrics,
     is_spatial_view_cell,
-    SpatialViewCellModel,
 )
+from neurospatial.simulation.models import SpatialViewCellModel
 
 # Compute view field (firing rate by *viewed location*)
 result = compute_spatial_view_field(
@@ -650,7 +649,7 @@ env.animate_fields(
 Add visual scale bars to plots and animations.
 
 ```python
-from neurospatial import ScaleBarConfig
+from neurospatial.animation import ScaleBarConfig
 
 # Static plots with scale bar
 ax = env.plot_field(field, scale_bar=True)  # Auto-sized based on extent
