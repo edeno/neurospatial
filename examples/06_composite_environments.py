@@ -57,8 +57,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import Environment
-from neurospatial.composite import CompositeEnvironment
+from neurospatial import CompositeEnvironment, Environment
 
 np.random.seed(42)
 plt.rcParams["figure.figsize"] = (14, 10)

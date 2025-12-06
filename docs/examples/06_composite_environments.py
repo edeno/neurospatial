@@ -57,8 +57,7 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Point
 
-from neurospatial import Environment
-from neurospatial.composite import CompositeEnvironment
+from neurospatial import CompositeEnvironment, Environment
 
 np.random.seed(42)
 plt.rcParams["figure.figsize"] = (14, 10)
@@ -748,7 +747,7 @@ print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
 
 # %%
 # Import pairwise for edge iteration (more efficient than zip)
-from itertools import pairwise
+from itertools import pairwise  # noqa: E402
 
 # Find path from start to right arm (crosses bridges through junction)
 source_bin = 0  # First bin in start box
@@ -798,7 +797,7 @@ if path:
 # ### Pathfinding Example: No Path Between Disconnected Components
 
 # %%
-import warnings
+import warnings  # noqa: E402
 
 # Create a composite without bridges to demonstrate warning
 disconnected_composite = CompositeEnvironment(
@@ -821,8 +820,8 @@ print(f"Path result: {path} (empty list indicates no path exists)")
 # ### Saving and Loading Composite Environments
 
 # %%
-import tempfile
-from pathlib import Path
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 # Save composite environment to file
 with tempfile.TemporaryDirectory() as tmpdir:

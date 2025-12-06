@@ -51,7 +51,9 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment, distance_field, divergence, gradient
+from neurospatial import Environment
+from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.distance import distance_field
 
 # Set random seed for reproducibility
 np.random.seed(42)
