@@ -7,6 +7,51 @@
 
 ## Session Log
 
+### 2025-12-06 (Session 20)
+
+**Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.4: Create behavior/decisions.py)
+
+**Completed**: Create behavior/decisions.py by combining decision_analysis.py and vte.py
+
+**Work Done**:
+1. Created test file `tests/behavior/test_behavior_decisions.py` following TDD (RED phase)
+   - 42 tests for all decision analysis and VTE functions, dataclasses, and re-exports
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `behavior/decisions.py` by combining two source modules:
+   - From metrics/decision_analysis.py: `PreDecisionMetrics`, `DecisionBoundaryMetrics`, `DecisionAnalysisResult`,
+     `compute_decision_analysis`, `compute_pre_decision_metrics`, `decision_region_entry_time`,
+     `detect_boundary_crossings`, `distance_to_decision_boundary`, `extract_pre_decision_window`,
+     `geodesic_voronoi_labels`, `pre_decision_heading_stats`, `pre_decision_speed_stats`
+   - From metrics/vte.py: `VTETrialResult`, `VTESessionResult`, `compute_vte_index`, `compute_vte_trial`,
+     `compute_vte_session`, `classify_vte`, `head_sweep_from_positions`, `head_sweep_magnitude`,
+     `integrated_absolute_rotation`, `normalize_vte_scores`, `wrap_angle`
+4. Updated `behavior/__init__.py` to export all 23 decision/VTE symbols
+5. Created re-export wrappers for backward compatibility:
+   - `src/neurospatial/metrics/decision_analysis.py` (re-exports from behavior.decisions)
+   - `src/neurospatial/metrics/vte.py` (re-exports from behavior.decisions)
+6. All tests pass:
+   - `tests/behavior/test_behavior_decisions.py`: 42 passed
+   - `tests/metrics/test_decision_analysis.py`: 37 passed
+   - `tests/metrics/test_vte.py`: 34 passed
+   - Total decision/VTE related: 113 passed
+7. Ran ruff check/format and mypy - no issues
+
+**Files Created**:
+- `src/neurospatial/behavior/decisions.py` (new - combined decision_analysis.py and vte.py)
+- `tests/behavior/test_behavior_decisions.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/behavior/__init__.py` (added 23 decision/VTE exports)
+- `src/neurospatial/metrics/decision_analysis.py` (now re-export wrapper)
+- `src/neurospatial/metrics/vte.py` (now re-export wrapper)
+
+**Milestone 5 Status**: Tasks 5.1, 5.2, 5.3, 5.4 COMPLETE
+Remaining: Tasks 5.5-5.6
+
+**Next Task**: Milestone 5, Task 5.5 - Create behavior/reward.py
+
+---
+
 ### 2025-12-06 (Session 19)
 
 **Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.3: Create behavior/navigation.py)

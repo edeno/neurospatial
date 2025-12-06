@@ -14,6 +14,31 @@ decisions : VTE, decision analysis, choice points
 reward : Reward field computations
 """
 
+from neurospatial.behavior.decisions import (
+    DecisionAnalysisResult,
+    DecisionBoundaryMetrics,
+    PreDecisionMetrics,
+    VTESessionResult,
+    VTETrialResult,
+    classify_vte,
+    compute_decision_analysis,
+    compute_pre_decision_metrics,
+    compute_vte_index,
+    compute_vte_session,
+    compute_vte_trial,
+    decision_region_entry_time,
+    detect_boundary_crossings,
+    distance_to_decision_boundary,
+    extract_pre_decision_window,
+    geodesic_voronoi_labels,
+    head_sweep_from_positions,
+    head_sweep_magnitude,
+    integrated_absolute_rotation,
+    normalize_vte_scores,
+    pre_decision_heading_stats,
+    pre_decision_speed_stats,
+    wrap_angle,
+)
 from neurospatial.behavior.navigation import (
     GoalDirectedMetrics,
     PathEfficiencyResult,
@@ -62,6 +87,30 @@ from neurospatial.behavior.trajectory import (
 )
 
 __all__ = [  # noqa: RUF022
+    # decisions module
+    "DecisionAnalysisResult",
+    "DecisionBoundaryMetrics",
+    "PreDecisionMetrics",
+    "VTESessionResult",
+    "VTETrialResult",
+    "classify_vte",
+    "compute_decision_analysis",
+    "compute_pre_decision_metrics",
+    "compute_vte_index",
+    "compute_vte_session",
+    "compute_vte_trial",
+    "decision_region_entry_time",
+    "detect_boundary_crossings",
+    "distance_to_decision_boundary",
+    "extract_pre_decision_window",
+    "geodesic_voronoi_labels",
+    "head_sweep_from_positions",
+    "head_sweep_magnitude",
+    "integrated_absolute_rotation",
+    "normalize_vte_scores",
+    "pre_decision_heading_stats",
+    "pre_decision_speed_stats",
+    "wrap_angle",
     # navigation module
     "GoalDirectedMetrics",
     "PathEfficiencyResult",

@@ -186,8 +186,8 @@ uv run pytest tests/ -x -v
 
 #### 5.4: Create behavior/decisions.py
 
-- [ ] Move functions from `metrics/decision_analysis.py` → `behavior/decisions.py`
-- [ ] Move functions from `metrics/vte.py` → `behavior/decisions.py`
+- [x] Move functions from `metrics/decision_analysis.py` → `behavior/decisions.py`
+- [x] Move functions from `metrics/vte.py` → `behavior/decisions.py`
 
 #### 5.5: Create behavior/reward.py
 
@@ -200,8 +200,8 @@ uv run pytest tests/ -x -v
 - [x] Update imports for `behavioral` → `behavior.navigation`
 - [x] Update imports for `metrics.path_efficiency` → `behavior.navigation`
 - [x] Update imports for `metrics.goal_directed` → `behavior.navigation`
-- [ ] Update imports for `metrics.decision_analysis` → `behavior.decisions`
-- [ ] Update imports for `metrics.vte` → `behavior.decisions`
+- [x] Update imports for `metrics.decision_analysis` → `behavior.decisions`
+- [x] Update imports for `metrics.vte` → `behavior.decisions`
 - [ ] Update imports for `reward` → `behavior.reward`
 
 **Verification**:
@@ -611,7 +611,7 @@ If circular imports occur:
 | M2: ops/ Modules | Complete | All 12 modules moved: binning, distance, normalize, smoothing, graph, calculus, transforms, alignment, egocentric, visibility, basis |
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
 | M4: stats/ Module | Complete | All tasks complete: circular.py, shuffle.py, surrogates.py |
-| M5: behavior/ Module | Not Started | |
+| M5: behavior/ Module | In Progress | Tasks 5.1-5.4 complete: trajectory.py, segmentation.py, navigation.py, decisions.py |
 | M6: encoding/ Module | Not Started | |
 | M7: decoding/ Cleanup | Not Started | |
 | M8: animation/ Consolidation | Not Started | |
