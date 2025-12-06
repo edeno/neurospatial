@@ -208,16 +208,6 @@ from neurospatial.annotation import (
     regions_from_cvat,
     regions_from_labelme,
 )
-
-# Basis functions for spatial regression (GLMs)
-from neurospatial.basis import (
-    chebyshev_filter_basis,
-    geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
-    plot_basis_functions,
-    select_basis_centers,
-    spatial_basis,
-)
 from neurospatial.behavioral import (
     compute_trajectory_curvature,
     cost_to_goal,
@@ -287,6 +277,16 @@ from neurospatial.object_vector_field import (
 from neurospatial.ops.alignment import (
     get_2d_rotation_matrix,
     map_probabilities,
+)
+
+# Basis functions for spatial regression (GLMs)
+from neurospatial.ops.basis import (
+    chebyshev_filter_basis,
+    geodesic_rbf_basis,
+    heat_kernel_wavelet_basis,
+    plot_basis_functions,
+    select_basis_centers,
+    spatial_basis,
 )
 from neurospatial.ops.binning import (
     TieBreakStrategy,

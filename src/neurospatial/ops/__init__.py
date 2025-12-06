@@ -27,6 +27,16 @@ from neurospatial.ops.alignment import (
     map_probabilities,
 )
 
+# Basis functions (GLM spatial basis)
+from neurospatial.ops.basis import (
+    chebyshev_filter_basis,
+    geodesic_rbf_basis,
+    heat_kernel_wavelet_basis,
+    plot_basis_functions,
+    select_basis_centers,
+    spatial_basis,
+)
+
 # Binning operations
 from neurospatial.ops.binning import (
     TieBreakStrategy,
@@ -198,4 +208,11 @@ __all__ = [
     "compute_viewshed_trajectory",
     "visibility_occupancy",
     "visible_cues",
+    # Basis functions
+    "chebyshev_filter_basis",
+    "geodesic_rbf_basis",
+    "heat_kernel_wavelet_basis",
+    "plot_basis_functions",
+    "select_basis_centers",
+    "spatial_basis",
 ]

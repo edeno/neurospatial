@@ -1,11 +1,50 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - visibility.py → ops/visibility.py DONE
+**Current Status**: Milestone 2 COMPLETE - All ops/ modules moved
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 12)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `basis.py` → `ops/basis.py` (FINAL ops/ module)
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_basis.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `basis.py` → `ops/basis.py` using `git mv` to preserve history
+4. Updated module docstring with new import paths (4 locations)
+5. `__all__` export list already present (6 exports):
+   - `chebyshev_filter_basis`, `geodesic_rbf_basis`, `heat_kernel_wavelet_basis`,
+   - `plot_basis_functions`, `select_basis_centers`, `spatial_basis`
+6. Updated `ops/__init__.py` to export all basis functions (6 new exports)
+7. Updated internal imports (2 files in src/):
+   - `src/neurospatial/__init__.py`
+   - `tests/test_basis.py`
+8. All tests pass:
+   - `tests/ops/test_ops_basis.py`: 12 passed
+   - `tests/test_basis.py`: 38 passed
+   - Total basis-related: 50 passed
+9. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/basis.py` (moved from basis.py)
+- `src/neurospatial/ops/__init__.py` (added 6 basis exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `tests/ops/test_ops_basis.py` (new file)
+- `tests/test_basis.py` (updated imports)
+
+**Milestone 2 Status**: COMPLETE
+All 12 ops/ modules have been moved and are working:
+- binning.py, distance.py, normalize.py, smoothing.py, graph.py, calculus.py
+- transforms.py (merged calibration.py), alignment.py, egocentric.py
+- visibility.py, basis.py
+
+**Next Task**: Milestone 3 - Move io/ Module (partially done - io.py → io/files.py)
 
 ### 2025-12-05 (Session 11)
 

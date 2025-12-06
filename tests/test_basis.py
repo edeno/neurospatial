@@ -5,7 +5,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
-from neurospatial.basis import (
+from neurospatial.ops.basis import (
     chebyshev_filter_basis,
     geodesic_rbf_basis,
     heat_kernel_wavelet_basis,

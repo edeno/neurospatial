@@ -46,7 +46,7 @@ For example, with 2cm bins and 10cm desired spatial extent:
 Quick Start
 -----------
 >>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.basis import geodesic_rbf_basis  # doctest: +SKIP
+>>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
 >>>
 >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
 >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
@@ -58,7 +58,7 @@ Quick Start
 Full GLM Workflow
 -----------------
 >>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.basis import geodesic_rbf_basis  # doctest: +SKIP
+>>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
 >>> import numpy as np  # doctest: +SKIP
 >>>
 >>> # 1. Create environment and basis
@@ -454,7 +454,7 @@ def geodesic_rbf_basis(
     Examples
     --------
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.basis import geodesic_rbf_basis  # doctest: +SKIP
+    >>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
     >>>
     >>> # Single scale
@@ -1025,7 +1025,7 @@ def spatial_basis(
     Examples
     --------
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.basis import spatial_basis  # doctest: +SKIP
+    >>> from neurospatial.ops.basis import spatial_basis  # doctest: +SKIP
     >>>
     >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
     >>> basis = spatial_basis(env)  # Automatic defaults  # doctest: +SKIP

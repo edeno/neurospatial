@@ -59,12 +59,12 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [x] Move `alignment.py` → `ops/alignment.py`
 - [x] Move `reference_frames.py` → `ops/egocentric.py`
 - [x] Move `visibility.py` → `ops/visibility.py`
-- [ ] Move `basis.py` → `ops/basis.py`
+- [x] Move `basis.py` → `ops/basis.py`
 
 #### 2.2: Update ops/**init**.py
 
-- [ ] Export public API from `ops/__init__.py`
-- [ ] Ensure all moved functions are importable from new paths
+- [x] Export public API from `ops/__init__.py`
+- [x] Ensure all moved functions are importable from new paths
 
 #### 2.3: Update Internal Imports
 
@@ -86,9 +86,9 @@ grep -r "from neurospatial.field_ops import" src/ tests/
 - [x] Update imports for `transforms` → `ops.transforms`
 - [x] Update imports for `calibration` → `ops.transforms`
 - [x] Update imports for `alignment` → `ops.alignment`
-- [ ] Update imports for `reference_frames` → `ops.egocentric`
-- [ ] Update imports for `visibility` → `ops.visibility`
-- [ ] Update imports for `basis` → `ops.basis`
+- [x] Update imports for `reference_frames` → `ops.egocentric`
+- [x] Update imports for `visibility` → `ops.visibility`
+- [x] Update imports for `basis` → `ops.basis`
 
 **Verification**:
 
