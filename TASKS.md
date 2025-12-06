@@ -77,12 +77,12 @@ grep -r "from neurospatial.field_ops import" src/ tests/
 # ... repeat for each moved file
 ```
 
-- [ ] Update imports for `spatial` → `ops.binning`
-- [ ] Update imports for `distance` → `ops.distance`
-- [ ] Update imports for `field_ops` → `ops.normalize`
-- [ ] Update imports for `kernels` → `ops.smoothing`
-- [ ] Update imports for `primitives` → `ops.graph`
-- [ ] Update imports for `differential` → `ops.calculus`
+- [x] Update imports for `spatial` → `ops.binning`
+- [x] Update imports for `distance` → `ops.distance`
+- [x] Update imports for `field_ops` → `ops.normalize`
+- [x] Update imports for `kernels` → `ops.smoothing`
+- [x] Update imports for `primitives` → `ops.graph`
+- [x] Update imports for `differential` → `ops.calculus`
 - [x] Update imports for `transforms` → `ops.transforms`
 - [x] Update imports for `calibration` → `ops.transforms`
 - [x] Update imports for `alignment` → `ops.alignment`
@@ -608,7 +608,7 @@ If circular imports occur:
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | M1: Directory Structure | Complete | Also moved io.py → io/files.py early |
-| M2: ops/ Modules | Not Started | |
+| M2: ops/ Modules | Complete | All 12 modules moved: binning, distance, normalize, smoothing, graph, calculus, transforms, alignment, egocentric, visibility, basis |
 | M3: io/ Module | Partial | io.py → io/files.py done in M1; nwb/ still pending |
 | M4: stats/ Module | Not Started | |
 | M5: behavior/ Module | Not Started | |
