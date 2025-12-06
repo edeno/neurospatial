@@ -1,9 +1,18 @@
 """
-Field math utility functions for spatial analysis.
+Field normalization and combination operations.
 
 This module provides common operations on bin-valued fields (probability
 distributions, rate maps, occupancy, etc.). All functions operate on 1-D
 arrays of shape (n_bins,).
+
+Examples
+--------
+>>> from neurospatial.ops.normalize import normalize_field, clamp, combine_fields
+>>> import numpy as np
+>>> field = np.array([1.0, 2.0, 3.0])
+>>> normalized = normalize_field(field)
+>>> normalized.sum()
+1.0
 """
 
 from collections.abc import Sequence

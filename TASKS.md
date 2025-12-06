@@ -48,7 +48,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 
 - [x] Move `spatial.py` → `ops/binning.py`
 - [x] Move `distance.py` → `ops/distance.py`
-- [ ] Move `field_ops.py` → `ops/normalize.py`
+- [x] Move `field_ops.py` → `ops/normalize.py`
 - [ ] Move `kernels.py` → `ops/smoothing.py`
 - [ ] Move `primitives.py` → `ops/graph.py`
 - [ ] Move `differential.py` → `ops/calculus.py`

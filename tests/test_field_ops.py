@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 # Import the functions we'll be testing
-from neurospatial.field_ops import (
+from neurospatial.ops.normalize import (
     clamp,
     combine_fields,
     normalize_field,

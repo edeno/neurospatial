@@ -262,11 +262,6 @@ from neurospatial.events import (
     validate_events_dataframe,
     validate_spatial_columns,
 )
-from neurospatial.field_ops import (
-    clamp,
-    combine_fields,
-    normalize_field,
-)
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.kernels import apply_kernel, compute_diffusion_kernels
 from neurospatial.layout.factories import (
@@ -305,6 +300,11 @@ from neurospatial.ops.distance import (
     distance_field,
     neighbors_within,
     pairwise_distances,
+)
+from neurospatial.ops.normalize import (
+    clamp,
+    combine_fields,
+    normalize_field,
 )
 from neurospatial.primitives import convolve, neighbor_reduce
 

@@ -38,15 +38,25 @@ from neurospatial.ops.distance import (
     pairwise_distances,
 )
 
+# Normalize operations
+from neurospatial.ops.normalize import (
+    clamp,
+    combine_fields,
+    normalize_field,
+)
+
 __all__ = [
     "TieBreakStrategy",
+    "clamp",
     "clear_kdtree_cache",
+    "combine_fields",
     "distance_field",
     "euclidean_distance_matrix",
     "geodesic_distance_between_points",
     "geodesic_distance_matrix",
     "map_points_to_bins",
     "neighbors_within",
+    "normalize_field",
     "pairwise_distances",
     "regions_to_mask",
     "resample_field",

@@ -1,11 +1,41 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - distance.py → ops/distance.py DONE
+**Current Status**: Milestone 2 in progress - field_ops.py → ops/normalize.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 4)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `field_ops.py` → `ops/normalize.py`
+
+**Work Done**:
+1. Moved `field_ops.py` → `ops/normalize.py` using `git mv` to preserve history
+2. Updated module docstring in normalize.py to reflect new import paths
+3. Updated `ops/__init__.py` to export public API:
+   - `normalize_field`, `clamp`, `combine_fields`
+4. Created new test file `tests/ops/test_ops_normalize.py` following TDD
+5. Updated internal imports:
+   - `src/neurospatial/__init__.py`
+   - `tests/test_field_ops.py`
+6. All tests pass:
+   - `tests/ops/test_ops_normalize.py`: 15 passed
+   - `tests/test_field_ops.py`: 31 passed
+   - Total normalize-related: 46 passed
+7. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/normalize.py` (moved from field_ops.py)
+- `src/neurospatial/ops/__init__.py` (added normalize exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `tests/ops/test_ops_normalize.py` (new file)
+- `tests/test_field_ops.py` (updated import)
+
+**Next Task**: Move `kernels.py` → `ops/smoothing.py`
 
 ### 2025-12-05 (Session 3)
 
