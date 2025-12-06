@@ -208,16 +208,7 @@ from neurospatial.annotation import (
     regions_from_cvat,
     regions_from_labelme,
 )
-from neurospatial.behavior.segmentation import (
-    detect_goal_directed_runs,
-    detect_laps,
-    detect_region_crossings,
-    detect_runs_between_regions,
-    segment_by_velocity,
-    segment_trials,
-)
-from neurospatial.behavioral import (
-    compute_trajectory_curvature,
+from neurospatial.behavior.navigation import (
     cost_to_goal,
     distance_to_region,
     goal_pair_direction_labels,
@@ -226,6 +217,17 @@ from neurospatial.behavioral import (
     path_progress,
     time_to_goal,
     trials_to_region_arrays,
+)
+from neurospatial.behavior.segmentation import (
+    detect_goal_directed_runs,
+    detect_laps,
+    detect_region_crossings,
+    detect_runs_between_regions,
+    segment_by_velocity,
+    segment_trials,
+)
+from neurospatial.behavior.trajectory import (
+    compute_trajectory_curvature,
 )
 from neurospatial.composite import CompositeEnvironment
 from neurospatial.decoding import (

@@ -180,9 +180,9 @@ uv run pytest tests/ -x -v
 
 #### 5.3: Create behavior/navigation.py
 
-- [ ] Move navigation functions from `behavioral.py` → `behavior/navigation.py`
-- [ ] Move functions from `metrics/path_efficiency.py` → `behavior/navigation.py`
-- [ ] Move functions from `metrics/goal_directed.py` → `behavior/navigation.py`
+- [x] Move navigation functions from `behavioral.py` → `behavior/navigation.py`
+- [x] Move functions from `metrics/path_efficiency.py` → `behavior/navigation.py`
+- [x] Move functions from `metrics/goal_directed.py` → `behavior/navigation.py`
 
 #### 5.4: Create behavior/decisions.py
 
@@ -197,9 +197,9 @@ uv run pytest tests/ -x -v
 
 - [x] Update imports for `metrics.trajectory` → `behavior.trajectory`
 - [x] Update imports for `segmentation` → `behavior.segmentation`
-- [ ] Update imports for `behavioral` → `behavior.navigation`
-- [ ] Update imports for `metrics.path_efficiency` → `behavior.navigation`
-- [ ] Update imports for `metrics.goal_directed` → `behavior.navigation`
+- [x] Update imports for `behavioral` → `behavior.navigation`
+- [x] Update imports for `metrics.path_efficiency` → `behavior.navigation`
+- [x] Update imports for `metrics.goal_directed` → `behavior.navigation`
 - [ ] Update imports for `metrics.decision_analysis` → `behavior.decisions`
 - [ ] Update imports for `metrics.vte` → `behavior.decisions`
 - [ ] Update imports for `reward` → `behavior.reward`

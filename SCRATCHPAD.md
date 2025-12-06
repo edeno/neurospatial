@@ -1,11 +1,62 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 5 IN PROGRESS - Tasks 5.1, 5.2 complete
+**Current Status**: Milestone 5 IN PROGRESS - Tasks 5.1, 5.2, 5.3 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 19)
+
+**Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.3: Create behavior/navigation.py)
+
+**Completed**: Move navigation functions from behavioral.py, path_efficiency.py, goal_directed.py → behavior/navigation.py
+
+**Work Done**:
+1. Created test file `tests/behavior/test_behavior_navigation.py` following TDD (RED phase)
+   - 48 tests for all navigation functions, dataclasses, and re-exports
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `behavior/navigation.py` by combining three source modules:
+   - From behavioral.py: `path_progress`, `distance_to_region`, `cost_to_goal`, `time_to_goal`,
+     `trials_to_region_arrays`, `graph_turn_sequence`, `goal_pair_direction_labels`, `heading_direction_labels`
+   - From metrics/path_efficiency.py: `PathEfficiencyResult`, `SubgoalEfficiencyResult`,
+     `traveled_path_length`, `shortest_path_length`, `path_efficiency`, `time_efficiency`,
+     `angular_efficiency`, `subgoal_efficiency`, `compute_path_efficiency`
+   - From metrics/goal_directed.py: `GoalDirectedMetrics`, `goal_vector`, `goal_direction`,
+     `instantaneous_goal_alignment`, `goal_bias`, `approach_rate`, `compute_goal_directed_metrics`
+4. Updated `behavior/__init__.py` to export all 24 navigation symbols
+5. Updated internal imports in `src/neurospatial/__init__.py` and `src/neurospatial/metrics/__init__.py`
+6. Created re-export wrappers for backward compatibility:
+   - `src/neurospatial/behavioral.py` (re-exports from behavior.navigation)
+   - `src/neurospatial/metrics/path_efficiency.py` (re-exports from behavior.navigation)
+   - `src/neurospatial/metrics/goal_directed.py` (re-exports from behavior.navigation)
+7. All tests pass:
+   - `tests/behavior/test_behavior_navigation.py`: 48 passed
+   - `tests/test_behavioral.py`: 51 passed
+   - `tests/metrics/test_path_efficiency.py`: 22 passed
+   - `tests/metrics/test_goal_directed.py`: 24 passed
+   - Total navigation-related: 145 passed
+8. Ran ruff check/format and mypy - no issues
+
+**Files Created**:
+- `src/neurospatial/behavior/navigation.py` (new - combined all navigation modules)
+- `tests/behavior/test_behavior_navigation.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/behavior/__init__.py` (added 24 navigation exports)
+- `src/neurospatial/__init__.py` (updated import paths)
+- `src/neurospatial/metrics/__init__.py` (re-export from behavior.navigation)
+- `src/neurospatial/behavioral.py` (now re-export wrapper)
+- `src/neurospatial/metrics/path_efficiency.py` (now re-export wrapper)
+- `src/neurospatial/metrics/goal_directed.py` (now re-export wrapper)
+
+**Milestone 5 Status**: Tasks 5.1, 5.2, 5.3 COMPLETE
+Remaining: Tasks 5.4-5.6
+
+**Next Task**: Milestone 5, Task 5.4 - Create behavior/decisions.py
+
+---
 
 ### 2025-12-06 (Session 18)
 

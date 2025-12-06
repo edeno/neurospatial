@@ -9,11 +9,37 @@ Submodules
 ----------
 trajectory : Step lengths, turn angles, MSD, home range, curvature
 segmentation : Laps, trials, region crossings, runs
-navigation : Path efficiency, goal-directed metrics
+navigation : Path efficiency, goal-directed metrics, path progress
 decisions : VTE, decision analysis, choice points
 reward : Reward field computations
 """
 
+from neurospatial.behavior.navigation import (
+    GoalDirectedMetrics,
+    PathEfficiencyResult,
+    SubgoalEfficiencyResult,
+    angular_efficiency,
+    approach_rate,
+    compute_goal_directed_metrics,
+    compute_path_efficiency,
+    cost_to_goal,
+    distance_to_region,
+    goal_bias,
+    goal_direction,
+    goal_pair_direction_labels,
+    goal_vector,
+    graph_turn_sequence,
+    heading_direction_labels,
+    instantaneous_goal_alignment,
+    path_efficiency,
+    path_progress,
+    shortest_path_length,
+    subgoal_efficiency,
+    time_efficiency,
+    time_to_goal,
+    traveled_path_length,
+    trials_to_region_arrays,
+)
 from neurospatial.behavior.segmentation import (
     Crossing,
     Lap,
@@ -36,6 +62,31 @@ from neurospatial.behavior.trajectory import (
 )
 
 __all__ = [  # noqa: RUF022
+    # navigation module
+    "GoalDirectedMetrics",
+    "PathEfficiencyResult",
+    "SubgoalEfficiencyResult",
+    "angular_efficiency",
+    "approach_rate",
+    "compute_goal_directed_metrics",
+    "compute_path_efficiency",
+    "cost_to_goal",
+    "distance_to_region",
+    "goal_bias",
+    "goal_direction",
+    "goal_pair_direction_labels",
+    "goal_vector",
+    "graph_turn_sequence",
+    "heading_direction_labels",
+    "instantaneous_goal_alignment",
+    "path_efficiency",
+    "path_progress",
+    "shortest_path_length",
+    "subgoal_efficiency",
+    "time_efficiency",
+    "time_to_goal",
+    "traveled_path_length",
+    "trials_to_region_arrays",
     # segmentation module
     "Crossing",
     "Lap",

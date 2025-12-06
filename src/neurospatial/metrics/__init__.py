@@ -29,6 +29,25 @@ vte
 
 from __future__ import annotations
 
+from neurospatial.behavior.navigation import (
+    GoalDirectedMetrics,
+    PathEfficiencyResult,
+    SubgoalEfficiencyResult,
+    angular_efficiency,
+    approach_rate,
+    compute_goal_directed_metrics,
+    compute_path_efficiency,
+    goal_bias,
+    goal_direction,
+    goal_vector,
+    instantaneous_goal_alignment,
+    path_efficiency,
+    shortest_path_length,
+    subgoal_efficiency,
+    time_efficiency,
+    traveled_path_length,
+)
+
 # Trajectory metrics have been moved to neurospatial.behavior.trajectory
 # Re-export from new location for backward compatibility
 from neurospatial.behavior.trajectory import (
@@ -52,15 +71,6 @@ from neurospatial.metrics.decision_analysis import (
     pre_decision_heading_stats,
     pre_decision_speed_stats,
 )
-from neurospatial.metrics.goal_directed import (
-    GoalDirectedMetrics,
-    approach_rate,
-    compute_goal_directed_metrics,
-    goal_bias,
-    goal_direction,
-    goal_vector,
-    instantaneous_goal_alignment,
-)
 from neurospatial.metrics.grid_cells import (
     GridProperties,
     grid_orientation,
@@ -83,17 +93,6 @@ from neurospatial.metrics.object_vector_cells import (
     is_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
-)
-from neurospatial.metrics.path_efficiency import (
-    PathEfficiencyResult,
-    SubgoalEfficiencyResult,
-    angular_efficiency,
-    compute_path_efficiency,
-    path_efficiency,
-    shortest_path_length,
-    subgoal_efficiency,
-    time_efficiency,
-    traveled_path_length,
 )
 from neurospatial.metrics.phase_precession import (
     PhasePrecessionResult,
