@@ -80,6 +80,19 @@ from neurospatial.encoding.place import (
     spikes_to_field,
 )
 
+# Spatial view cell analysis
+from neurospatial.encoding.spatial_view import (
+    FieldOfView,
+    SpatialViewFieldResult,
+    SpatialViewMetrics,
+    compute_spatial_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    is_spatial_view_cell,
+    spatial_view_cell_metrics,
+    visibility_occupancy,
+)
+
 __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
@@ -109,6 +122,16 @@ __all__ = [  # noqa: RUF022 - organized by category
     "mean_resultant_length",
     "plot_head_direction_tuning",
     "rayleigh_test",
+    # Spatial view cell analysis
+    "SpatialViewFieldResult",
+    "SpatialViewMetrics",
+    "compute_spatial_view_field",
+    "spatial_view_cell_metrics",
+    "is_spatial_view_cell",
+    "compute_viewed_location",
+    "compute_viewshed",
+    "visibility_occupancy",
+    "FieldOfView",
     # Place cell analysis
     "DirectionalPlaceFields",
     "compute_directional_place_fields",

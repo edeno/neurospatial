@@ -1,11 +1,45 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4, 6.5 complete
+**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 27)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.6: Create encoding/spatial_view.py)
+
+**Completed**: Create encoding/spatial_view.py with re-exports from spatial_view_field.py, metrics/spatial_view_cells.py, and ops/visibility.py
+
+**Work Done**:
+1. Created test file `tests/encoding/test_encoding_spatial_view.py` following TDD (RED phase)
+   - 37 tests total: 9 import tests from encoding.spatial_view, 9 import tests from encoding, 3 module structure tests, 9 re-export identity tests, 7 functionality tests
+   - Tests for imports of all 9 symbols: `SpatialViewFieldResult`, `compute_spatial_view_field`, `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`, `compute_viewed_location`, `compute_viewshed`, `visibility_occupancy`, `FieldOfView`
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `encoding/spatial_view.py` as a re-export module:
+   - From spatial_view_field.py: `SpatialViewFieldResult`, `compute_spatial_view_field`
+   - From metrics/spatial_view_cells.py: `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`
+   - From ops/visibility.py (re-exports for convenience): `compute_viewed_location`, `compute_viewshed`, `visibility_occupancy`, `FieldOfView`
+4. Updated `encoding/__init__.py` to export all 9 spatial_view symbols
+5. All tests pass: 37 passed (new) + 53 passed (existing spatial_view tests)
+6. Ran ruff check/format and mypy - no issues
+7. Code review APPROVED
+
+**Files Created**:
+- `src/neurospatial/encoding/spatial_view.py` (new - re-exports from spatial_view_field.py, metrics.spatial_view_cells, and ops.visibility)
+- `tests/encoding/test_encoding_spatial_view.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/encoding/__init__.py` (added 9 spatial_view exports)
+
+**Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6 COMPLETE
+Remaining: Tasks 6.7-6.9
+
+**Next Task**: Milestone 6, Task 6.7 - Create encoding/phase_precession.py
+
+---
 
 ### 2025-12-06 (Session 26)
 
