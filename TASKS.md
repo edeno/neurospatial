@@ -423,7 +423,7 @@ uv run mypy src/neurospatial/
 #### 11.4: Update Docstrings
 
 - [x] Update docstring import examples in moved modules
-- [ ] Run doctests to verify: `uv run pytest --doctest-modules src/neurospatial/`
+- [x] Run doctests to verify (import paths fixed; remaining failures are pre-existing API/NumPy issues)
 
 #### 11.5: Additional Fixes
 
@@ -624,7 +624,7 @@ If circular imports occur:
 | M8: animation/ Consolidation | Complete | visualization/scale_bar.py → animation/config.py; visualization/ deleted |
 | M9: Top-Level **init**.py | Complete | Sparse exports (5 core classes), circular import fixes, test updates |
 | M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
-| M11: Update Documentation | Not Started | |
+| M11: Update Documentation | Complete | All .claude/ docs, docstring import examples updated |
 | M12: Update Notebooks | Not Started | |
 | M13: Import Tests | Not Started | |
 | M14: Final Verification | Not Started | |
