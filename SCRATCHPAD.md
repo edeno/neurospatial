@@ -1,11 +1,69 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 4 COMPLETE - All tasks done
+**Current Status**: Milestone 5 IN PROGRESS - Task 5.1 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 17)
+
+**Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.1: Create behavior/trajectory.py)
+
+**Completed**: Move trajectory functions to behavior/trajectory.py
+
+**Work Done**:
+1. Created test file `tests/behavior/test_behavior_trajectory.py` following TDD (RED phase)
+   - 18 tests for all trajectory functions importable from new location
+   - Tests for imports from both `behavior.trajectory` and `behavior/__init__.py`
+   - Tests for `compute_trajectory_curvature()` (moved from behavioral.py)
+2. Verified tests FAIL before implementation (import error expected)
+3. Moved `metrics/trajectory.py` → `behavior/trajectory.py` using `git mv` to preserve history
+4. Added `compute_trajectory_curvature()` from `behavioral.py` to `behavior/trajectory.py`
+5. Updated `behavior/__init__.py` to export all 5 trajectory functions:
+   - `compute_turn_angles`, `compute_step_lengths`, `compute_home_range`,
+   - `mean_square_displacement`, `compute_trajectory_curvature`
+6. Updated `metrics/__init__.py` to re-export from new location for backward compatibility
+7. Updated internal imports (6 files):
+   - `src/neurospatial/behavioral.py` (import compute_turn_angles from behavior.trajectory)
+   - `src/neurospatial/metrics/path_efficiency.py` (2 imports updated)
+   - `tests/metrics/test_trajectory.py` (import updated)
+   - `tests/environment/test_trajectory_metrics.py` (import updated)
+   - `tests/segmentation/test_integration.py` (import updated)
+8. Updated documentation:
+   - `docs/user-guide/trajectory-and-behavioral-analysis.md` (4 import paths + migration note)
+   - `src/neurospatial/behavioral.py` docstring (fixed reference to old path)
+9. All tests pass:
+   - `tests/behavior/test_behavior_trajectory.py`: 18 passed (new)
+   - `tests/metrics/test_trajectory.py`: 19 passed (existing)
+   - `tests/environment/test_trajectory_metrics.py`: 11 passed
+   - `tests/segmentation/test_integration.py`: 4 passed
+   - `tests/test_behavioral.py`: 51 passed
+   - Total trajectory-related: 103+ passed
+10. Ran ruff check/format (2 fixes) and mypy - no issues
+11. Code review APPROVED
+
+**Files Modified**:
+- `src/neurospatial/behavior/trajectory.py` (moved from metrics/trajectory.py, added curvature function)
+- `src/neurospatial/behavior/__init__.py` (added 5 trajectory exports)
+- `src/neurospatial/metrics/__init__.py` (re-export from new location for backward compat)
+- `src/neurospatial/behavioral.py` (updated import and docstring)
+- `src/neurospatial/metrics/path_efficiency.py` (updated 2 imports)
+- `tests/behavior/__init__.py` (new file)
+- `tests/behavior/test_behavior_trajectory.py` (new file)
+- `tests/metrics/test_trajectory.py` (updated imports)
+- `tests/environment/test_trajectory_metrics.py` (updated imports)
+- `tests/segmentation/test_integration.py` (updated imports)
+- `docs/user-guide/trajectory-and-behavioral-analysis.md` (updated import paths)
+
+**Milestone 5 Status**: Task 5.1 COMPLETE
+Task 5.1 (Create behavior/trajectory.py) is complete.
+Remaining: Task 5.2-5.6
+
+**Next Task**: Milestone 5, Task 5.2 - Create behavior/segmentation.py
+
+---
 
 ### 2025-12-06 (Session 16)
 

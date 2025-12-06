@@ -196,7 +196,7 @@ def traveled_path_length(
     >>> length = traveled_path_length(positions)
     >>> print(f"Animal traveled {length:.1f} cm")
     """
-    from neurospatial.metrics.trajectory import compute_step_lengths
+    from neurospatial.behavior.trajectory import compute_step_lengths
 
     # Input validation
     if positions.ndim != 2:
@@ -420,7 +420,7 @@ def angular_efficiency(
     where delta_theta is the angular deviation between movement direction
     and goal direction at each step.
     """
-    from neurospatial.metrics.trajectory import compute_turn_angles
+    from neurospatial.behavior.trajectory import compute_turn_angles
 
     if len(positions) < 3:
         return 1.0  # No turns possible

@@ -7,7 +7,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
-from neurospatial.metrics.trajectory import (
+from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_step_lengths,
     compute_turn_angles,

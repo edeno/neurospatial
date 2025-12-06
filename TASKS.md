@@ -171,8 +171,8 @@ uv run pytest tests/ -x -v
 
 #### 5.1: Create behavior/trajectory.py
 
-- [ ] Move functions from `metrics/trajectory.py` → `behavior/trajectory.py`
-- [ ] Move `compute_trajectory_curvature()` from `behavioral.py` → `behavior/trajectory.py`
+- [x] Move functions from `metrics/trajectory.py` → `behavior/trajectory.py`
+- [x] Move `compute_trajectory_curvature()` from `behavioral.py` → `behavior/trajectory.py`
 
 #### 5.2: Create behavior/segmentation.py
 
@@ -195,7 +195,7 @@ uv run pytest tests/ -x -v
 
 #### 5.6: Update Internal Imports
 
-- [ ] Update imports for `metrics.trajectory` → `behavior.trajectory`
+- [x] Update imports for `metrics.trajectory` → `behavior.trajectory`
 - [ ] Update imports for `segmentation` → `behavior.segmentation`
 - [ ] Update imports for `behavioral` → `behavior.navigation`
 - [ ] Update imports for `metrics.path_efficiency` → `behavior.navigation`

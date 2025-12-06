@@ -1,6 +1,8 @@
 # Trajectory Metrics & Behavioral Segmentation
 
-This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.metrics.trajectory` and `neurospatial.segmentation` modules.
+This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory` and `neurospatial.segmentation` modules.
+
+> **Note**: Trajectory functions have been moved to `neurospatial.behavior.trajectory`. Old imports from `neurospatial.metrics.trajectory` still work for backward compatibility.
 
 ## Overview
 
@@ -62,7 +64,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
 Turn angles quantify changes in movement direction at each position along the trajectory.
 
 ```python
-from neurospatial.metrics.trajectory import compute_turn_angles
+from neurospatial.behavior.trajectory import compute_turn_angles
 import numpy as np
 
 # Compute turn angles from continuous positions
@@ -98,7 +100,7 @@ print(f"Turn variance: {turn_variance:.3f}")
 Step lengths are the distances between consecutive positions. Supports both Euclidean (straight-line) and geodesic (graph-based) distances.
 
 ```python
-from neurospatial.metrics.trajectory import compute_step_lengths
+from neurospatial.behavior.trajectory import compute_step_lengths
 
 # Euclidean distance (default, ecology standard)
 step_lengths = compute_step_lengths(positions, distance_type="euclidean")
@@ -132,7 +134,7 @@ print(f"Step length CV: {step_cv:.3f}")
 Home range is the set of bins containing a specified percentile of time spent. This metric uses discretized bins (occupancy-based).
 
 ```python
-from neurospatial.metrics.trajectory import compute_home_range
+from neurospatial.behavior.trajectory import compute_home_range
 from neurospatial import Environment
 
 # Create environment and map positions to bins
@@ -170,7 +172,7 @@ print(f"Core area (50%): {len(compute_home_range(trajectory_bins, percentile=50.
 Mean square displacement (MSD) classifies diffusion processes based on scaling exponent α. **Critical**: Uses continuous positions for accurate diffusion exponent estimation.
 
 ```python
-from neurospatial.metrics.trajectory import mean_square_displacement
+from neurospatial.behavior.trajectory import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
 tau_values, msd_values = mean_square_displacement(

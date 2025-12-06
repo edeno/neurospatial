@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial.metrics.trajectory import compute_turn_angles
+from neurospatial.behavior.trajectory import compute_turn_angles
 
 
 class TestComputeTurnAngles:

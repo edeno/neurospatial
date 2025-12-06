@@ -646,3 +646,123 @@ def mean_square_displacement(
                 msd_values[i] = 0.0
 
     return tau_values, msd_values
+
+
+def compute_trajectory_curvature(
+    trajectory_positions: NDArray[np.float64],
+    times: NDArray[np.float64] | None = None,
+    *,
+    smooth_window: float | None = 0.2,
+) -> NDArray[np.float64]:
+    """Compute trajectory curvature from position data.
+
+    Works for any dimensionality (1D, 2D, 3D, N-D). Computes signed
+    angle between consecutive movement direction vectors.
+
+    Parameters
+    ----------
+    trajectory_positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates over time in any dimensional space.
+    times : NDArray[np.float64], shape (n_samples,), optional
+        Timestamps for temporal smoothing. If None, assumes uniform sampling.
+    smooth_window : float, optional
+        Temporal smoothing window in seconds. Default: 0.2s (typical for 30-60 Hz
+        tracking data).
+
+        **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
+        use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
+        to preserve rapid turns.
+
+        Set to None for no smoothing.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+        Heading change at each timepoint in radians:
+        - Positive values: counterclockwise turn (left in 2D top-down view)
+        - Negative values: clockwise turn (right in 2D top-down view)
+        - Zero: straight movement
+
+    Notes
+    -----
+    This function wraps `compute_turn_angles()` and adds:
+    - Padding to match input length (n_samples)
+    - Optional temporal smoothing
+
+    `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
+    filters stationary periods automatically, and returns length (n_samples - 2).
+
+    **Padding Strategy**: The returned curvature array matches input length by symmetric
+    padding with zeros. Since `compute_turn_angles()` filters stationary periods, the
+    actual number of angles may be less than (n_samples - 2). The remaining positions
+    are padded equally at start and end to maintain temporal centering.
+
+    For N-D trajectories where N > 2, only the first 2 dimensions are used
+    (consistent with `compute_turn_angles()` implementation).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior.trajectory import compute_trajectory_curvature
+    >>>
+    >>> # 2D trajectory on any environment (grid, graph, continuous)
+    >>> trajectory_positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
+    >>> curvature = compute_trajectory_curvature(trajectory_positions)
+    >>>
+    >>> # Detect sharp turns (> 45 degrees)
+    >>> sharp_left = np.where(curvature > np.pi / 4)[0]
+    >>> sharp_right = np.where(curvature < -np.pi / 4)[0]
+    >>>
+    >>> # 3D trajectory (e.g., climbing, flying)
+    >>> trajectory_3d = np.column_stack(
+    ...     [np.linspace(0, 100, 20), np.zeros(20), np.linspace(0, 10, 20)]
+    ... )
+    >>> curvature_3d = compute_trajectory_curvature(trajectory_3d)
+    >>>
+    >>> # Smooth for noisy tracking data
+    >>> times = np.linspace(0, 10, 20)
+    >>> curvature_smooth = compute_trajectory_curvature(
+    ...     trajectory_positions, times, smooth_window=0.5
+    ... )
+
+    See Also
+    --------
+    compute_turn_angles : Raw turn angles without padding
+    """
+    # 1. Compute turn angles using existing function
+    # Returns length (n_angles,) where n_angles <= n_samples - 2
+    # Filters stationary periods automatically
+    angles = compute_turn_angles(trajectory_positions)
+
+    # 2. Pad to match input length (n_samples)
+    # compute_turn_angles returns variable length due to duplicate filtering
+    # Pad with 0 at start and end to reach n_samples
+    n_samples = len(trajectory_positions)
+    n_angles = len(angles)
+
+    # Calculate padding needed
+    if n_angles == 0:
+        # Edge case: < 3 unique positions
+        curvature = np.zeros(n_samples, dtype=np.float64)
+    else:
+        # Pad symmetrically: add (n_samples - n_angles) / 2 to each side
+        # If uneven, add extra to the end
+        pad_total = n_samples - n_angles
+        pad_left = pad_total // 2
+        pad_right = pad_total - pad_left
+        curvature = np.pad(
+            angles, (pad_left, pad_right), mode="constant", constant_values=0.0
+        )
+
+    # 3. Optional temporal smoothing
+    if smooth_window is not None and times is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        # Compute sigma from time resolution
+        dt_median = np.median(np.diff(times))
+        sigma = smooth_window / dt_median
+
+        # Apply Gaussian smoothing
+        curvature = gaussian_filter1d(curvature, sigma=sigma)
+
+    return curvature

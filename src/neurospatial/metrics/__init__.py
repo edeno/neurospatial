@@ -14,8 +14,8 @@ population
     Population-level metrics for analyzing spatial representations.
 boundary_cells
     Boundary cell metrics including border score.
-trajectory
-    Trajectory characterization metrics (turn angles, step lengths, home range, MSD).
+(trajectory moved to neurospatial.behavior.trajectory)
+    Trajectory metrics re-exported here for backward compatibility.
 path_efficiency
     Path efficiency metrics for spatial navigation analysis.
 goal_directed
@@ -29,6 +29,14 @@ vte
 
 from __future__ import annotations
 
+# Trajectory metrics have been moved to neurospatial.behavior.trajectory
+# Re-export from new location for backward compatibility
+from neurospatial.behavior.trajectory import (
+    compute_home_range,
+    compute_step_lengths,
+    compute_turn_angles,
+    mean_square_displacement,
+)
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
 from neurospatial.metrics.decision_analysis import (
     DecisionAnalysisResult,
@@ -123,12 +131,6 @@ from neurospatial.metrics.spatial_view_cells import (
     SpatialViewMetrics,
     is_spatial_view_cell,
     spatial_view_cell_metrics,
-)
-from neurospatial.metrics.trajectory import (
-    compute_home_range,
-    compute_step_lengths,
-    compute_turn_angles,
-    mean_square_displacement,
 )
 from neurospatial.metrics.vte import (
     VTESessionResult,

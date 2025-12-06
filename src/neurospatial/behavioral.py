@@ -733,7 +733,7 @@ def compute_trajectory_curvature(
 
     Notes
     -----
-    This function wraps `compute_turn_angles()` from `metrics/trajectory.py`
+    This function wraps `compute_turn_angles()` from `behavior/trajectory.py`
     and adds:
     - Padding to match input length (n_samples)
     - Optional temporal smoothing
@@ -779,7 +779,7 @@ def compute_trajectory_curvature(
     --------
     graph_turn_sequence : Discrete turn labels for graph-based tracks
     """
-    from neurospatial.metrics import compute_turn_angles
+    from neurospatial.behavior.trajectory import compute_turn_angles
 
     # 1. Compute turn angles using existing function
     # Returns length (n_angles,) where n_angles <= n_samples - 2
