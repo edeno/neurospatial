@@ -133,13 +133,13 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     Examples
     --------
     >>> compute_nice_length(100)
-    20
+    20.0
 
     >>> compute_nice_length(50)
-    10
+    10.0
 
     >>> compute_nice_length(73)
-    10
+    10.0
 
     >>> compute_nice_length(0.5)
     0.1
@@ -262,12 +262,12 @@ def add_scale_bar_to_axes(
 
     Examples
     --------
-    >>> import matplotlib.pyplot as plt
-    >>> fig, ax = plt.subplots()
-    >>> ax.set_xlim(0, 100)
-    >>> ax.set_ylim(0, 100)
-    >>> artist = add_scale_bar_to_axes(ax, extent=100, units="cm")
-    >>> plt.close(fig)
+    >>> import matplotlib.pyplot as plt  # doctest: +SKIP
+    >>> fig, ax = plt.subplots()  # doctest: +SKIP
+    >>> ax.set_xlim(0, 100)  # doctest: +SKIP
+    >>> ax.set_ylim(0, 100)  # doctest: +SKIP
+    >>> artist = add_scale_bar_to_axes(ax, extent=100, units="cm")  # doctest: +SKIP
+    >>> plt.close(fig)  # doctest: +SKIP
     """
     if config is None:
         config = ScaleBarConfig()

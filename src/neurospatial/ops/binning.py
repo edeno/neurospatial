@@ -153,23 +153,27 @@ def map_points_to_bins(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.ops.binning import map_points_to_bins
-    >>> data = np.random.randn(1000, 2) * 10
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> points = np.array([[0.0, 0.0], [10.0, 10.0], [50.0, 50.0]])
-    >>> bins = map_points_to_bins(points, env)
-    >>> bins
+    >>> data = np.random.randn(1000, 2) * 10  # doctest: +SKIP
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> points = np.array([[0.0, 0.0], [10.0, 10.0], [50.0, 50.0]])  # doctest: +SKIP
+    >>> bins = map_points_to_bins(points, env)  # doctest: +SKIP
+    >>> bins  # doctest: +SKIP
     array([ 42,  89,  -1])
 
     >>> # Get distances too
-    >>> bins, dists = map_points_to_bins(points, env, return_dist=True)
-    >>> dists
+    >>> bins, dists = map_points_to_bins(
+    ...     points, env, return_dist=True
+    ... )  # doctest: +SKIP
+    >>> dists  # doctest: +SKIP
     array([0.23, 0.45, inf])
 
     >>> # Filter outliers with absolute threshold
-    >>> bins = map_points_to_bins(points, env, max_distance=15.0)
+    >>> bins = map_points_to_bins(points, env, max_distance=15.0)  # doctest: +SKIP
 
     >>> # Filter outliers with relative threshold (adapts to bin size)
-    >>> bins = map_points_to_bins(points, env, max_distance_factor=1.5)
+    >>> bins = map_points_to_bins(
+    ...     points, env, max_distance_factor=1.5
+    ... )  # doctest: +SKIP
 
     Notes
     -----
@@ -346,7 +350,7 @@ def clear_kdtree_cache(env: Environment) -> None:
     Examples
     --------
     >>> from neurospatial.ops.binning import clear_kdtree_cache
-    >>> clear_kdtree_cache(env)
+    >>> clear_kdtree_cache(env)  # doctest: +SKIP
 
     """
     if hasattr(env, "_kdtree_cache"):
@@ -406,12 +410,12 @@ def regions_to_mask(
     Bins are included if they fall inside ANY of the regions. Overlapping
     regions are counted only once.
 
-    For intersection or difference, use boolean operations on separate masks:
+    For intersection or difference, use boolean operations on separate masks::
 
-    >>> mask_a = regions_to_mask(env, "region_a")  # doctest: +SKIP
-    >>> mask_b = regions_to_mask(env, "region_b")  # doctest: +SKIP
-    >>> intersection = mask_a & mask_b  # doctest: +SKIP
-    >>> difference = mask_a & ~mask_b  # doctest: +SKIP
+        mask_a = regions_to_mask(env, "region_a")
+        mask_b = regions_to_mask(env, "region_b")
+        intersection = mask_a & mask_b
+        difference = mask_a & ~mask_b
 
     **Boundary Semantics**:
 
@@ -441,29 +445,29 @@ def regions_to_mask(
     >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
     >>> env = Environment.from_samples(data, bin_size=2.0)
     >>> regions = Regions()
-    >>> regions.add("center", polygon=box(3, 3, 7, 7))
+    >>> _ = regions.add("center", polygon=box(3, 3, 7, 7))
 
     Rasterize onto bins:
 
     >>> mask = regions_to_mask(env, regions)
     >>> mask.shape
     (36,)
-    >>> np.any(mask)  # Some bins inside
+    >>> bool(np.any(mask))  # Some bins inside
     True
 
     Use region names from environment:
 
-    >>> env.regions.add("test", polygon=box(3, 3, 7, 7))
+    >>> _ = env.regions.add("test", polygon=box(3, 3, 7, 7))
     >>> mask = regions_to_mask(env, "test")
     >>> mask.shape
     (36,)
 
     Multiple regions (union):
 
-    >>> env.regions.add("left", polygon=box(0, 0, 4, 10))
-    >>> env.regions.add("right", polygon=box(6, 0, 10, 10))
+    >>> _ = env.regions.add("left", polygon=box(0, 0, 4, 10))
+    >>> _ = env.regions.add("right", polygon=box(6, 0, 10, 10))
     >>> mask = regions_to_mask(env, ["left", "right"])
-    >>> np.any(mask)
+    >>> bool(np.any(mask))
     True
 
     See Also

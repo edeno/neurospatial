@@ -670,10 +670,10 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment([env1, env2])
-        >>> comp.regions.add("goal", point=[10.0, 5.0])
-        >>> goal_bins = comp.bins_in_region("goal")
-        >>> print(f"Goal region contains {len(goal_bins)} bins")
+        >>> comp = CompositeEnvironment([env1, env2])  # doctest: +SKIP
+        >>> comp.regions.add("goal", point=[10.0, 5.0])  # doctest: +SKIP
+        >>> goal_bins = comp.bins_in_region("goal")  # doctest: +SKIP
+        >>> print(f"Goal region contains {len(goal_bins)} bins")  # doctest: +SKIP
 
         """
         region = self.regions[region_name]
@@ -745,10 +745,10 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment([env1, env2])
-        >>> comp.regions.add("arena", polygon=shapely_polygon)
-        >>> arena_mask = comp.mask_for_region("arena")
-        >>> occupancy_in_arena = occupancy[arena_mask]
+        >>> comp = CompositeEnvironment([env1, env2])  # doctest: +SKIP
+        >>> comp.regions.add("arena", polygon=shapely_polygon)  # doctest: +SKIP
+        >>> arena_mask = comp.mask_for_region("arena")  # doctest: +SKIP
+        >>> occupancy_in_arena = occupancy[arena_mask]  # doctest: +SKIP
 
         """
         mask = np.zeros(self.n_bins, dtype=bool)
@@ -794,9 +794,11 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment([env1, env2], auto_bridge=True)
-        >>> path = comp.path_between(0, 100)  # Path from bin 0 to bin 100
-        >>> print(f"Path length: {len(path)} bins")
+        >>> comp = CompositeEnvironment(
+        ...     [env1, env2], auto_bridge=True
+        ... )  # doctest: +SKIP
+        >>> path = comp.path_between(0, 100)  # doctest: +SKIP
+        >>> print(f"Path length: {len(path)} bins")  # doctest: +SKIP
 
         """
         try:
@@ -844,8 +846,10 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment([env1, env2], auto_bridge=True)
-        >>> comp.info()
+        >>> comp = CompositeEnvironment(
+        ...     [env1, env2], auto_bridge=True
+        ... )  # doctest: +SKIP
+        >>> comp.info()  # doctest: +SKIP
         Composite Environment Information
         ==================================
         ...
@@ -929,9 +933,9 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment([env1, env2])
-        >>> comp.save("my_composite_env.pkl")
-        >>> loaded = CompositeEnvironment.load("my_composite_env.pkl")
+        >>> comp = CompositeEnvironment([env1, env2])  # doctest: +SKIP
+        >>> comp.save("my_composite_env.pkl")  # doctest: +SKIP
+        >>> loaded = CompositeEnvironment.load("my_composite_env.pkl")  # doctest: +SKIP
 
         """
         import pickle
@@ -971,8 +975,8 @@ class CompositeEnvironment:
 
         Examples
         --------
-        >>> comp = CompositeEnvironment.load("my_composite_env.pkl")
-        >>> print(f"Loaded composite with {comp.n_bins} bins")
+        >>> comp = CompositeEnvironment.load("my_composite_env.pkl")  # doctest: +SKIP
+        >>> print(f"Loaded composite with {comp.n_bins} bins")  # doctest: +SKIP
 
         """
         import pickle

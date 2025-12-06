@@ -192,32 +192,40 @@ def population_coverage(
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment, compute_place_field
-    >>> from neurospatial.metrics import population_coverage, plot_population_coverage
-
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.encoding.place import compute_place_field  # doctest: +SKIP
+    >>> from neurospatial.encoding.population import (
+    ...     population_coverage,
+    ...     plot_population_coverage,
+    ... )  # doctest: +SKIP
+    >>>
     >>> # 1. Create environment from position samples
-    >>> positions = np.random.rand(1000, 2) * 100  # (n_samples, 2)
-    >>> times = np.arange(1000) * 0.033  # 30 Hz timestamps
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-
+    >>> positions = np.random.rand(1000, 2) * 100  # (n_samples, 2)  # doctest: +SKIP
+    >>> times = np.arange(1000) * 0.033  # 30 Hz timestamps  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+    >>>
     >>> # 2. Compute firing rates for each neuron from spike data
-    >>> spike_times = [...]  # List of spike time arrays, one per neuron
-    >>> firing_rates = np.array(
+    >>> spike_times = [
+    ...     ...
+    ... ]  # List of spike time arrays, one per neuron  # doctest: +SKIP
+    >>> firing_rates = np.array(  # doctest: +SKIP
     ...     [
     ...         compute_place_field(env, spikes, times, positions)
     ...         for spikes in spike_times
     ...     ]
     ... )  # Shape: (n_neurons, n_bins)
-
+    >>>
     >>> # 3. Analyze coverage
-    >>> result = population_coverage(firing_rates, env)
-    >>> print(f"Coverage: {result.coverage_fraction:.1%}")
-    >>> print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")
-    >>> print(f"Gaps: {len(result.uncovered_bins)} bins")
-
+    >>> result = population_coverage(firing_rates, env)  # doctest: +SKIP
+    >>> print(f"Coverage: {result.coverage_fraction:.1%}")  # doctest: +SKIP
+    >>> print(
+    ...     f"Place cells: {result.n_place_cells}/{result.n_neurons}"
+    ... )  # doctest: +SKIP
+    >>> print(f"Gaps: {len(result.uncovered_bins)} bins")  # doctest: +SKIP
+    >>>
     >>> # 4. Visualize
-    >>> plot_population_coverage(env, result)
+    >>> plot_population_coverage(env, result)  # doctest: +SKIP
 
     References
     ----------
@@ -369,11 +377,11 @@ def plot_population_coverage(
 
     Examples
     --------
-    >>> # Basic binary coverage plot
-    >>> ax = plot_population_coverage(env, result)
+    >>> ax = plot_population_coverage(env, result)  # doctest: +SKIP
 
-    >>> # Show field count per bin (redundancy)
-    >>> ax = plot_population_coverage(env, result, show_field_count=True)
+    >>> ax = plot_population_coverage(
+    ...     env, result, show_field_count=True
+    ... )  # doctest: +SKIP
     """
     # Validate environment is fitted
     if not getattr(env, "_is_fitted", False):
@@ -473,7 +481,7 @@ def field_density_map(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.population import field_density_map
+    >>> from neurospatial.encoding.population import field_density_map
     >>> # Three cells with overlapping fields
     >>> all_fields = [
     ...     [np.array([2, 3, 4])],  # Cell 1
@@ -539,7 +547,7 @@ def count_place_cells(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.population import count_place_cells
+    >>> from neurospatial.encoding.population import count_place_cells
     >>> # Population with mix of place cells and non-selective cells
     >>> spatial_info = np.array([0.2, 0.8, 1.5, 0.3, 1.2, 0.1])
     >>> n_place_cells = count_place_cells(spatial_info, threshold=0.5)
@@ -599,7 +607,7 @@ def field_overlap(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.population import field_overlap
+    >>> from neurospatial.encoding.population import field_overlap
     >>> # Identical fields (perfect overlap)
     >>> field1 = np.array([0, 1, 2, 3])
     >>> field2 = np.array([0, 1, 2, 3])
@@ -687,7 +695,7 @@ def population_vector_correlation(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.population import population_vector_correlation
+    >>> from neurospatial.encoding.population import population_vector_correlation
     >>> # Three cells with different firing patterns
     >>> np.random.seed(42)
     >>> population_matrix = np.random.rand(3, 50)

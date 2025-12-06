@@ -74,9 +74,9 @@ class EnvScale:
     Examples
     --------
     >>> from neurospatial.animation.transforms import EnvScale
-    >>> scale = EnvScale.from_env(env)
-    >>> if scale is not None:
-    ...     print(f"Grid shape: {scale.n_x}x{scale.n_y}")
+    >>> scale = EnvScale.from_env(env)  # doctest: +SKIP
+    >>> if scale is not None:  # doctest: +SKIP
+    ...     print(f"Grid shape: {scale.n_x}x{scale.n_y}")  # doctest: +SKIP
     """
 
     __slots__ = ("n_x", "n_y", "x_max", "x_min", "x_scale", "y_max", "y_min", "y_scale")
@@ -117,9 +117,9 @@ class EnvScale:
 
         Examples
         --------
-        >>> scale = EnvScale.from_env(env)
-        >>> if scale is None:
-        ...     print("Using fallback transform")
+        >>> scale = EnvScale.from_env(env)  # doctest: +SKIP
+        >>> if scale is None:  # doctest: +SKIP
+        ...     print("Using fallback transform")  # doctest: +SKIP
         """
         if (
             env is None
@@ -198,15 +198,15 @@ def build_env_to_napari_matrix(scale: EnvScale) -> NDArray[np.float64]:
 
     Examples
     --------
-    >>> from neurospatial.animation.transforms import (
+    >>> from neurospatial.animation.transforms import (  # doctest: +SKIP
     ...     EnvScale,
     ...     build_env_to_napari_matrix,
     ... )
-    >>> scale = EnvScale.from_env(env)
-    >>> matrix = build_env_to_napari_matrix(scale)
+    >>> scale = EnvScale.from_env(env)  # doctest: +SKIP
+    >>> matrix = build_env_to_napari_matrix(scale)  # doctest: +SKIP
     >>> # Transform point (x=5.0, y=5.0)
-    >>> point = np.array([5.0, 5.0, 1.0])
-    >>> napari_coords = matrix @ point  # [row, col, 1]
+    >>> point = np.array([5.0, 5.0, 1.0])  # doctest: +SKIP
+    >>> napari_coords = matrix @ point  # [row, col, 1]  # doctest: +SKIP
 
     See Also
     --------
@@ -290,8 +290,8 @@ def transform_coords_for_napari(
     Examples
     --------
     >>> coords = np.array([[5.0, 5.0]])  # Center of environment
-    >>> napari_coords = transform_coords_for_napari(coords, env)
-    >>> row, col = napari_coords[0]
+    >>> napari_coords = transform_coords_for_napari(coords, env)  # doctest: +SKIP
+    >>> row, col = napari_coords[0]  # doctest: +SKIP
     """
     if coords.shape[-1] == 2:
         # Get or create scale factors
@@ -357,7 +357,7 @@ def transform_direction_for_napari(
     Examples
     --------
     >>> direction = np.array([[1.0, 0.0]])  # Pointing right in env
-    >>> napari_dir = transform_direction_for_napari(direction, env)
+    >>> napari_dir = transform_direction_for_napari(direction, env)  # doctest: +SKIP
     >>> # In napari: positive X -> positive col direction
     """
     if direction.shape[-1] == 2:

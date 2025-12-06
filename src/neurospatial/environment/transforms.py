@@ -74,10 +74,14 @@ class EnvironmentTransforms:
         aggregate field values (occupancy, spike counts, etc.) from the original
         grid to the coarsened grid, map the original bin centers and aggregate:
 
-            >>> from neurospatial.ops.binning import map_points_to_bins
-            >>> coarse = env.rebin(factor=2)
-            >>> coarse_indices = map_points_to_bins(env.bin_centers, coarse)
-            >>> coarse_field = np.bincount(
+            >>> from neurospatial.ops.binning import (
+            ...     map_points_to_bins,
+            ... )  # doctest: +SKIP
+            >>> coarse = env.rebin(factor=2)  # doctest: +SKIP
+            >>> coarse_indices = map_points_to_bins(
+            ...     env.bin_centers, coarse
+            ... )  # doctest: +SKIP
+            >>> coarse_field = np.bincount(  # doctest: +SKIP
             ...     coarse_indices, weights=field, minlength=coarse.n_bins
             ... )
 
@@ -129,7 +133,7 @@ class EnvironmentTransforms:
         ...     coarse_indices, weights=occupancy, minlength=coarse.n_bins
         ... )
         >>> # Total time is preserved
-        >>> np.isclose(occupancy.sum(), coarse_occupancy.sum())
+        >>> bool(np.isclose(occupancy.sum(), coarse_occupancy.sum()))
         True
 
         """
@@ -379,18 +383,20 @@ class EnvironmentTransforms:
         Examples
         --------
         >>> # Extract bins inside 'goal' region
-        >>> goal_env = env.subset(region_names=["goal"])
+        >>> goal_env = env.subset(region_names=["goal"])  # doctest: +SKIP
         >>>
         >>> # Crop to polygon
-        >>> from shapely.geometry import box
-        >>> cropped = env.subset(polygon=box(0, 0, 50, 50))
+        >>> from shapely.geometry import box  # doctest: +SKIP
+        >>> cropped = env.subset(polygon=box(0, 0, 50, 50))  # doctest: +SKIP
         >>>
         >>> # Select bins by boolean mask
-        >>> mask = env.bin_centers[:, 0] < 50  # Left half
-        >>> left_env = env.subset(bins=mask)
+        >>> mask = env.bin_centers[:, 0] < 50  # Left half  # doctest: +SKIP
+        >>> left_env = env.subset(bins=mask)  # doctest: +SKIP
         >>>
         >>> # Inverted selection (everything except region)
-        >>> outside = env.subset(region_names=["obstacle"], invert=True)
+        >>> outside = env.subset(
+        ...     region_names=["obstacle"], invert=True
+        ... )  # doctest: +SKIP
 
         """
         # --- Input Validation ---
@@ -761,8 +767,10 @@ class EnvironmentTransforms:
         **Transformation order**: When composing transforms, use the `@` operator.
         `T1 @ T2` applies T2 first, then T1:
 
-            >>> composed = rotation @ translation  # translation first, then rotation
-            >>> transformed = env.apply_transform(composed)
+            >>> composed = (
+            ...     rotation @ translation
+            ... )  # translation first, then rotation  # doctest: +SKIP
+            >>> transformed = env.apply_transform(composed)  # doctest: +SKIP
 
         **Edge attributes**: After transformation:
 

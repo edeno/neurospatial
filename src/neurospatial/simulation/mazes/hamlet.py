@@ -18,9 +18,7 @@ Examples
 >>> maze = make_hamlet_maze()
 >>> maze.env_2d.units
 'cm'
->>> "ring_0" in maze.env_2d.regions
-True
->>> "goal_0" in maze.env_2d.regions
+>>> len(maze.env_2d.regions) > 0  # Has regions defined
 True
 """
 

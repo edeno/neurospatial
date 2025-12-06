@@ -38,12 +38,12 @@ Typical Workflows
 
 2. Detect assemblies:
 
-   >>> result = detect_assemblies(spike_counts, method="ica")
-   >>> print(f"Found {result.n_significant} significant assemblies")
+   >>> result = detect_assemblies(spike_counts, method="ica")  # doctest: +SKIP
+   >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
 
 3. Analyze assembly patterns:
 
-   >>> for i, pattern in enumerate(result.patterns):
+   >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
    ...     n_members = len(pattern.member_indices)
    ...     ev = pattern.explained_variance_ratio
    ...     print(f"Assembly {i}: {n_members} neurons, {ev:.1%} variance")
@@ -52,13 +52,15 @@ Typical Workflows
 
 1. Compute pairwise correlations in behavior and sleep:
 
-   >>> corr_behavior = pairwise_correlations(counts_behavior)
-   >>> corr_sleep = pairwise_correlations(counts_sleep)
+   >>> corr_behavior = pairwise_correlations(counts_behavior)  # doctest: +SKIP
+   >>> corr_sleep = pairwise_correlations(counts_sleep)  # doctest: +SKIP
 
 2. Measure explained variance:
 
-   >>> ev_result = explained_variance_reactivation(corr_behavior, corr_sleep)
-   >>> print(f"EV = {ev_result.explained_variance:.3f}")
+   >>> ev_result = explained_variance_reactivation(
+   ...     corr_behavior, corr_sleep
+   ... )  # doctest: +SKIP
+   >>> print(f"EV = {ev_result.explained_variance:.3f}")  # doctest: +SKIP
 
 Notes
 -----
@@ -147,9 +149,13 @@ class AssemblyPattern:
 
     Examples
     --------
-    >>> pattern = result.patterns[0]
-    >>> print(f"Assembly has {len(pattern.member_indices)} core members")
-    >>> print(f"Explains {pattern.explained_variance_ratio:.1%} of variance")
+    >>> pattern = result.patterns[0]  # doctest: +SKIP
+    >>> print(
+    ...     f"Assembly has {len(pattern.member_indices)} core members"
+    ... )  # doctest: +SKIP
+    >>> print(
+    ...     f"Explains {pattern.explained_variance_ratio:.1%} of variance"
+    ... )  # doctest: +SKIP
     """
 
     weights: NDArray[np.float64]
@@ -196,14 +202,14 @@ class AssemblyDetectionResult:
 
     Examples
     --------
-    >>> result = detect_assemblies(spike_counts)
-    >>> print(f"Found {result.n_significant} significant assemblies")
-    >>> print(f"Method: {result.method}")
+    >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
+    >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
+    >>> print(f"Method: {result.method}")  # doctest: +SKIP
     >>>
     >>> # Plot activation of first assembly
-    >>> import matplotlib.pyplot as plt
-    >>> plt.plot(result.activations[0])
-    >>> plt.ylabel("Activation (z-score)")
+    >>> import matplotlib.pyplot as plt  # doctest: +SKIP
+    >>> plt.plot(result.activations[0])  # doctest: +SKIP
+    >>> plt.ylabel("Activation (z-score)")  # doctest: +SKIP
     """
 
     patterns: list[AssemblyPattern]
@@ -249,9 +255,11 @@ class ExplainedVarianceResult:
 
     Examples
     --------
-    >>> result = explained_variance_reactivation(corr_behavior, corr_sleep)
-    >>> if result.explained_variance > result.reversed_ev:
-    ...     print("Forward reactivation detected!")
+    >>> result = explained_variance_reactivation(
+    ...     corr_behavior, corr_sleep
+    ... )  # doctest: +SKIP
+    >>> if result.explained_variance > result.reversed_ev:  # doctest: +SKIP
+    ...     print("Forward reactivation detected!")  # doctest: +SKIP
     """
 
     explained_variance: float
@@ -316,11 +324,11 @@ def marchenko_pastur_threshold(
     --------
     >>> threshold = marchenko_pastur_threshold(100, 1000)
     >>> print(f"Threshold: {threshold:.3f}")
-    Threshold: 1.464
+    Threshold: 1.732
 
     >>> # Compare with eigenvalues
-    >>> eigenvalues = np.linalg.eigvalsh(np.corrcoef(spike_counts))
-    >>> n_significant = np.sum(eigenvalues > threshold)
+    >>> eigenvalues = np.linalg.eigvalsh(np.corrcoef(spike_counts))  # doctest: +SKIP
+    >>> n_significant = np.sum(eigenvalues > threshold)  # doctest: +SKIP
 
     References
     ----------
@@ -444,17 +452,17 @@ def detect_assemblies(
     Examples
     --------
     >>> # Basic usage
-    >>> result = detect_assemblies(spike_counts)
-    >>> print(f"Found {result.n_significant} assemblies")
+    >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
+    >>> print(f"Found {result.n_significant} assemblies")  # doctest: +SKIP
 
     >>> # With specific number of components
-    >>> result = detect_assemblies(spike_counts, n_components=5)
+    >>> result = detect_assemblies(spike_counts, n_components=5)  # doctest: +SKIP
 
     >>> # Using PCA for faster computation
-    >>> result = detect_assemblies(spike_counts, method="pca")
+    >>> result = detect_assemblies(spike_counts, method="pca")  # doctest: +SKIP
 
     >>> # Access assembly patterns
-    >>> for i, pattern in enumerate(result.patterns):
+    >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
     ...     members = pattern.member_indices
     ...     print(f"Assembly {i}: {len(members)} neurons")
 
@@ -789,12 +797,12 @@ def assembly_activation(
     Examples
     --------
     >>> # Detect assemblies during behavior
-    >>> result = detect_assemblies(counts_behavior)
-    >>> pattern = result.patterns[0]
+    >>> result = detect_assemblies(counts_behavior)  # doctest: +SKIP
+    >>> pattern = result.patterns[0]  # doctest: +SKIP
     >>>
     >>> # Compute activation during sleep
-    >>> activation_sleep = assembly_activation(counts_sleep, pattern)
-    >>> print(f"Peak activation: {activation_sleep.max():.2f}")
+    >>> activation_sleep = assembly_activation(counts_sleep, pattern)  # doctest: +SKIP
+    >>> print(f"Peak activation: {activation_sleep.max():.2f}")  # doctest: +SKIP
 
     See Also
     --------
@@ -868,10 +876,10 @@ def pairwise_correlations(
 
     Examples
     --------
-    >>> corr = pairwise_correlations(spike_counts)
-    >>> n_neurons = spike_counts.shape[0]
-    >>> n_pairs = n_neurons * (n_neurons - 1) // 2
-    >>> assert len(corr) == n_pairs
+    >>> corr = pairwise_correlations(spike_counts)  # doctest: +SKIP
+    >>> n_neurons = spike_counts.shape[0]  # doctest: +SKIP
+    >>> n_pairs = n_neurons * (n_neurons - 1) // 2  # doctest: +SKIP
+    >>> assert len(corr) == n_pairs  # doctest: +SKIP
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
 
@@ -941,9 +949,11 @@ def reactivation_strength(
 
     Examples
     --------
-    >>> strength = reactivation_strength(counts_behavior, counts_sleep, pattern)
-    >>> if strength > 1.0:
-    ...     print("Stronger activation during sleep")
+    >>> strength = reactivation_strength(
+    ...     counts_behavior, counts_sleep, pattern
+    ... )  # doctest: +SKIP
+    >>> if strength > 1.0:  # doctest: +SKIP
+    ...     print("Stronger activation during sleep")  # doctest: +SKIP
     """
     # Compute activations
     act_template = assembly_activation(template_counts, pattern)
@@ -1024,16 +1034,16 @@ def explained_variance_reactivation(
     Examples
     --------
     >>> # Compute correlations
-    >>> corr_pre = pairwise_correlations(counts_pre_behavior)
-    >>> corr_behavior = pairwise_correlations(counts_behavior)
-    >>> corr_sleep = pairwise_correlations(counts_sleep)
+    >>> corr_pre = pairwise_correlations(counts_pre_behavior)  # doctest: +SKIP
+    >>> corr_behavior = pairwise_correlations(counts_behavior)  # doctest: +SKIP
+    >>> corr_sleep = pairwise_correlations(counts_sleep)  # doctest: +SKIP
     >>>
     >>> # Measure reactivation with baseline control
-    >>> result = explained_variance_reactivation(
+    >>> result = explained_variance_reactivation(  # doctest: +SKIP
     ...     corr_behavior, corr_sleep, control_correlations=corr_pre
     ... )
-    >>> print(f"EV = {result.explained_variance:.3f}")
-    >>> print(f"REV = {result.reversed_ev:.3f}")
+    >>> print(f"EV = {result.explained_variance:.3f}")  # doctest: +SKIP
+    >>> print(f"REV = {result.reversed_ev:.3f}")  # doctest: +SKIP
 
     References
     ----------

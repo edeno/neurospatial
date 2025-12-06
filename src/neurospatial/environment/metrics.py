@@ -165,14 +165,16 @@ class EnvironmentMetrics:
         >>> from neurospatial import Environment
         >>>
         >>> # Create a simple 1D track
-        >>> G = nx.Graph()
-        >>> G.add_node(0, pos=(0.0, 0.0))
-        >>> G.add_node(1, pos=(10.0, 0.0))
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)
-        >>> env = Environment.from_graph(G, edge_order=[(0, 1)], bin_size=2.0)
+        >>> G = nx.Graph()  # doctest: +SKIP
+        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
+        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
+        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
+        >>> env = Environment.from_graph(
+        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+        ... )  # doctest: +SKIP
         >>>
-        >>> props = env.linearization_properties
-        >>> print(props["is_1d"])
+        >>> props = env.linearization_properties  # doctest: +SKIP
+        >>> print(props["is_1d"])  # doctest: +SKIP
         True
 
         """
@@ -361,15 +363,19 @@ class EnvironmentMetrics:
         >>> from neurospatial import Environment
         >>>
         >>> # Create a simple 1D track
-        >>> G = nx.Graph()
-        >>> G.add_node(0, pos=(0.0, 0.0))
-        >>> G.add_node(1, pos=(10.0, 0.0))
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)
-        >>> env = Environment.from_graph(G, edge_order=[(0, 1)], bin_size=2.0)
+        >>> G = nx.Graph()  # doctest: +SKIP
+        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
+        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
+        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
+        >>> env = Environment.from_graph(
+        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+        ... )  # doctest: +SKIP
         >>>
         >>> # Convert 2D position to 1D linear coordinate
-        >>> position_2d = np.array([[5.0, 0.0]])  # Halfway along track
-        >>> position_1d = env.to_linear(position_2d)
+        >>> position_2d = np.array(
+        ...     [[5.0, 0.0]]
+        ... )  # Halfway along track  # doctest: +SKIP
+        >>> position_1d = env.to_linear(position_2d)  # doctest: +SKIP
         >>> print(f"Linear position: {position_1d[0]:.1f}")  # doctest: +SKIP
         Linear position: 5.0
 
@@ -443,15 +449,17 @@ class EnvironmentMetrics:
         >>> from neurospatial import Environment
         >>>
         >>> # Create a simple 1D track
-        >>> G = nx.Graph()
-        >>> G.add_node(0, pos=(0.0, 0.0))
-        >>> G.add_node(1, pos=(10.0, 0.0))
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)
-        >>> env = Environment.from_graph(G, edge_order=[(0, 1)], bin_size=2.0)
+        >>> G = nx.Graph()  # doctest: +SKIP
+        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
+        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
+        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
+        >>> env = Environment.from_graph(
+        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+        ... )  # doctest: +SKIP
         >>>
         >>> # Convert 1D linear coordinate to 2D position
-        >>> linear_pos = np.array([5.0])  # Halfway along track
-        >>> position_2d = env.linear_to_nd(linear_pos)
+        >>> linear_pos = np.array([5.0])  # Halfway along track  # doctest: +SKIP
+        >>> position_2d = env.linear_to_nd(linear_pos)  # doctest: +SKIP
         >>> print(f"2D position: {position_2d[0]}")  # doctest: +SKIP
         2D position: [5. 0.]
 

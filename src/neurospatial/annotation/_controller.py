@@ -78,9 +78,9 @@ class ShapesLayerController:
 
     Examples
     --------
-    >>> controller = ShapesLayerController(shapes_layer, state)
-    >>> controller.apply_mode()  # Sync layer defaults with current state
-    >>> names = controller.get_existing_names()
+    >>> controller = ShapesLayerController(shapes_layer, state)  # doctest: +SKIP
+    >>> controller.apply_mode()  # doctest: +SKIP
+    >>> names = controller.get_existing_names()  # doctest: +SKIP
 
     """
 

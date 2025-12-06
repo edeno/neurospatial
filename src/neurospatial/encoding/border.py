@@ -121,10 +121,10 @@ def border_score(
     >>>
     >>> # Define wall regions (for a 40x40 arena centered at origin)
     >>> wall_width = 5.0  # Width of wall region in cm
-    >>> env.regions.add("north_wall", polygon=box(-20, 15, 20, 20))
-    >>> env.regions.add("south_wall", polygon=box(-20, -20, 20, -15))
-    >>> env.regions.add("east_wall", polygon=box(15, -20, 20, 20))
-    >>> env.regions.add("west_wall", polygon=box(-20, -20, -15, 20))
+    >>> _ = env.regions.add("north_wall", polygon=box(-20, 15, 20, 20))
+    >>> _ = env.regions.add("south_wall", polygon=box(-20, -20, 20, -15))
+    >>> _ = env.regions.add("east_wall", polygon=box(15, -20, 20, 20))
+    >>> _ = env.regions.add("west_wall", polygon=box(-20, -20, -15, 20))
     >>>
     >>> # Compute coverage for each wall
     >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[0]
@@ -329,10 +329,10 @@ def compute_region_coverage(
     >>> # Create environment with wall regions
     >>> positions = np.random.randn(5000, 2) * 20
     >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> env.regions.add("north", polygon=box(-20, 15, 20, 20))
-    >>> env.regions.add("south", polygon=box(-20, -20, 20, -15))
-    >>> env.regions.add("east", polygon=box(15, -20, 20, 20))
-    >>> env.regions.add("west", polygon=box(-20, -20, -15, 20))
+    >>> _ = env.regions.add("north", polygon=box(-20, 15, 20, 20))
+    >>> _ = env.regions.add("south", polygon=box(-20, -20, 20, -15))
+    >>> _ = env.regions.add("east", polygon=box(15, -20, 20, 20))
+    >>> _ = env.regions.add("west", polygon=box(-20, -20, -15, 20))
     >>>
     >>> # Create field along north wall
     >>> firing_rate = np.zeros(env.n_bins)

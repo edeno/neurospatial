@@ -72,34 +72,29 @@ Common Use Cases
 
 >>> r, p = circular_circular_correlation(angles1, angles2)  # doctest: +SKIP
 
-**GLM circular tuning (head direction or theta phase)**:
+**GLM circular tuning (head direction or theta phase)**::
 
->>> # 1. Create design matrix from circular variable
->>> result = circular_basis(head_directions)  # or: circular_basis(theta_phases)
->>> X = result.design_matrix  # shape (n_spikes, 2): [cos, sin]
->>>
->>> # 2. Fit GLM (statsmodels example)
->>> import statsmodels.api as sm  # doctest: +SKIP
->>> X_with_intercept = sm.add_constant(X)  # doctest: +SKIP
->>> model = sm.GLM(
-...     spike_counts, X_with_intercept, family=sm.families.Poisson()
-... ).fit()  # doctest: +SKIP
->>>
->>> # 3. Extract and interpret coefficients
->>> beta_sin, beta_cos = model.params[1], model.params[2]  # doctest: +SKIP
->>> cov = model.cov_params()[1:3, 1:3]  # doctest: +SKIP
->>> amplitude, phase, pval = circular_basis_metrics(
-...     beta_sin, beta_cos, cov
-... )  # doctest: +SKIP
->>>
->>> # 4. Quick significance check
->>> if is_modulated(beta_sin, beta_cos, cov):  # doctest: +SKIP
-...     print(f"Significant modulation: {amplitude:.2f} at {np.degrees(phase):.0f}°")
->>>
->>> # 5. Visualize
->>> plot_circular_basis_tuning(
-...     beta_sin, beta_cos, intercept=model.params[0]
-... )  # doctest: +SKIP
+    # 1. Create design matrix from circular variable
+    result = circular_basis(head_directions)  # or: circular_basis(theta_phases)
+    X = result.design_matrix  # shape (n_spikes, 2): [cos, sin]
+
+    # 2. Fit GLM (statsmodels example)
+    import statsmodels.api as sm
+
+    X_with_intercept = sm.add_constant(X)
+    model = sm.GLM(spike_counts, X_with_intercept, family=sm.families.Poisson()).fit()
+
+    # 3. Extract and interpret coefficients
+    beta_sin, beta_cos = model.params[1], model.params[2]
+    cov = model.cov_params()[1:3, 1:3]
+    amplitude, phase, pval = circular_basis_metrics(beta_sin, beta_cos, cov)
+
+    # 4. Quick significance check
+    if is_modulated(beta_sin, beta_cos, cov):
+        print(f"Significant modulation: {amplitude:.2f} at {np.degrees(phase):.0f}°")
+
+    # 5. Visualize
+    plot_circular_basis_tuning(beta_sin, beta_cos, intercept=model.params[0])
 
 References
 ----------
@@ -926,7 +921,7 @@ def circular_mean(
     >>> from neurospatial.stats.circular import circular_mean
     >>> angles = np.array([0, np.pi / 4, np.pi / 2])
     >>> mean = circular_mean(angles)
-    >>> np.abs(mean - np.pi / 4) < 0.1
+    >>> bool(np.abs(mean - np.pi / 4) < 0.1)
     True
     """
     angles = np.asarray(angles, dtype=np.float64)
@@ -1036,7 +1031,7 @@ def mean_resultant_length(
     >>> from neurospatial.stats.circular import mean_resultant_length
     >>> # All angles identical - R should be 1
     >>> r = mean_resultant_length(np.array([0, 0, 0, 0]))
-    >>> np.abs(r - 1.0) < 0.01
+    >>> bool(np.abs(r - 1.0) < 0.01)
     True
     """
     angles = np.asarray(angles, dtype=np.float64)

@@ -49,7 +49,9 @@ Computing a peri-event time histogram (PSTH):
 ...     window=(-1.0, 2.0),
 ...     bin_size=0.025,
 ... )
->>> print(f"Peak at {result.bin_centers[result.histogram.argmax()]:.2f}s")
+>>> print(
+...     f"Peak at {result.bin_centers[result.histogram.argmax()]:.2f}s"
+... )  # doctest: +SKIP
 
 Creating GLM regressors:
 

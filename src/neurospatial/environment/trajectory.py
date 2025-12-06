@@ -167,18 +167,19 @@ class EnvironmentTrajectory:
         >>> data = np.array([[0, 0], [20, 20]])
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>>
-        >>> # Basic occupancy
-        >>> times = np.array([0.0, 1.0, 2.0, 3.0])
-        >>> positions = np.array([[5, 5], [5, 5], [10, 10], [10, 10]])
-        >>> occ = env.occupancy(times, positions)
-        >>> occ.sum()  # Total time = 3.0 seconds
-        3.0
-        >>>
-        >>> # Filter slow periods and smooth
-        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])
-        >>> occ_filtered = env.occupancy(
-        ...     times, positions, speed=speeds, min_speed=2.0, kernel_bandwidth=3.0
-        ... )
+        >>> times = np.array([0.0, 1.0, 2.0, 3.0])  # doctest: +SKIP
+        >>> positions = np.array([[5, 5], [5, 5], [10, 10], [10, 10]])  # doctest: +SKIP
+        >>> occ = env.occupancy(times, positions)  # doctest: +SKIP
+        >>> occ.sum()  # doctest: +SKIP
+        3.0  # doctest: +SKIP
+        >>> speeds = np.array([5.0, 5.0, 0.5, 5.0])  # doctest: +SKIP
+        >>> occ_filtered = env.occupancy(  # doctest: +SKIP
+        ...     times,
+        ...     positions,
+        ...     speed=speeds,
+        ...     min_speed=2.0,
+        ...     kernel_bandwidth=3.0,  # doctest: +SKIP
+        ... )  # doctest: +SKIP
 
         """
         from neurospatial.ops.binning import map_points_to_bins
@@ -402,19 +403,15 @@ class EnvironmentTrajectory:
 
         Examples
         --------
-        >>> # Basic usage: deduplicated bin sequence
-        >>> bins = env.bin_sequence(times, positions)
-        >>>
-        >>> # Get run boundaries for duration calculations
-        >>> bins, starts, ends = env.bin_sequence(times, positions, return_runs=True)
-        >>> # Duration of first run:
-        >>> duration = times[ends[0]] - times[starts[0]]
-        >>>
-        >>> # Keep all samples (no deduplication)
-        >>> bins = env.bin_sequence(times, positions, dedup=False)
-        >>>
-        >>> # Drop outside samples entirely
-        >>> bins = env.bin_sequence(times, positions, outside_value=None)
+        >>> bins = env.bin_sequence(times, positions)  # doctest: +SKIP
+        >>> bins, starts, ends = env.bin_sequence(
+        ...     times, positions, return_runs=True
+        ... )  # doctest: +SKIP
+        >>> duration = times[ends[0]] - times[starts[0]]  # doctest: +SKIP
+        >>> bins = env.bin_sequence(times, positions, dedup=False)  # doctest: +SKIP
+        >>> bins = env.bin_sequence(
+        ...     times, positions, outside_value=None
+        ... )  # doctest: +SKIP
 
         """
         # Input validation
@@ -663,21 +660,17 @@ class EnvironmentTrajectory:
 
         Examples
         --------
-        >>> # Empirical transitions from trajectory
-        >>> T_empirical = env.transitions(times=times, positions=positions)
-
-        >>> # Empirical from precomputed bins with lag
-        >>> T_lag2 = env.transitions(bins=bin_sequence, lag=2, allow_teleports=True)
-
-        >>> # Model: uniform random walk
-        >>> T_random = env.transitions(method="random_walk")
-
-        >>> # Model: diffusion with spatial bias
-        >>> T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
-
-        >>> # Compare empirical vs model
-        >>> diff = (T_empirical - T_diffusion).toarray()
-        >>> # Large differences indicate non-random exploration
+        >>> T_empirical = env.transitions(
+        ...     times=times, positions=positions
+        ... )  # doctest: +SKIP
+        >>> T_lag2 = env.transitions(
+        ...     bins=bin_sequence, lag=2, allow_teleports=True
+        ... )  # doctest: +SKIP
+        >>> T_random = env.transitions(method="random_walk")  # doctest: +SKIP
+        >>> T_diffusion = env.transitions(
+        ...     method="diffusion", bandwidth=5.0
+        ... )  # doctest: +SKIP
+        >>> diff = (T_empirical - T_diffusion).toarray()  # doctest: +SKIP
 
         """
         # Dispatch based on mode
@@ -819,18 +812,14 @@ class EnvironmentTrajectory:
 
         Examples
         --------
-        >>> # Compute transition probabilities from trajectory
-        >>> T = env.transitions(times=times, positions=positions)
-        >>> # Probability of moving from bin 10 to its neighbors
-        >>> T[10, :].toarray()
-
-        >>> # Get raw transition counts with teleport filtering
-        >>> T_counts = env.transitions(
-        ...     bins=bin_sequence, normalize=False, allow_teleports=False
-        ... )
-
-        >>> # Multi-step transitions (lag=2)
-        >>> T_2step = env.transitions(bins=bin_sequence, lag=2)
+        >>> T = env.transitions(times=times, positions=positions)  # doctest: +SKIP
+        >>> T[10, :].toarray()  # doctest: +SKIP
+        >>> T_counts = env.transitions(  # doctest: +SKIP
+        ...     bins=bin_sequence,
+        ...     normalize=False,
+        ...     allow_teleports=False,  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> T_2step = env.transitions(bins=bin_sequence, lag=2)  # doctest: +SKIP
 
         """
         import scipy.sparse

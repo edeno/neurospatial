@@ -111,20 +111,16 @@ Examples
 --------
 Basic decoding workflow::
 
-    >>> from neurospatial import Environment, compute_place_field
-    >>> from neurospatial.decoding import decode_position
-    >>>
-    >>> # Create environment and compute place fields
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> encoding_models = np.array([
+    >>> from neurospatial import Environment, compute_place_field  # doctest: +SKIP
+    >>> from neurospatial.decoding import decode_position  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+    >>> encoding_models = np.array([  # doctest: +SKIP
     ...     compute_place_field(env, spikes, times, positions)
     ...     for spikes in spike_times_list
     ... ])
-    >>>
-    >>> # Decode position
-    >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)
-    >>> print(f"Decoded positions: {result.map_position[:5]}")
-    >>> print(f"Uncertainty: {result.uncertainty.mean():.2f} bits")
+    >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)  # doctest: +SKIP
+    >>> print(f"Decoded positions: {result.map_position[:5]}")  # doctest: +SKIP
+    >>> print(f"Uncertainty: {result.uncertainty.mean():.2f} bits")  # doctest: +SKIP
 
 See Also
 --------

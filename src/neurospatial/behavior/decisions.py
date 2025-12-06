@@ -879,7 +879,7 @@ def distance_to_decision_boundary(
     >>> distances = distance_to_decision_boundary(
     ...     env, trajectory_bins, goal_bins
     ... )  # doctest: +SKIP
-    >>> commitment_mask = distances > 20.0  # Committed to a goal
+    >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
     """
     from neurospatial.ops.distance import distance_field
 
@@ -1282,7 +1282,7 @@ def normalize_vte_scores(
     >>> head_sweeps = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     >>> speeds = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
     >>> z_hs, z_sp = normalize_vte_scores(head_sweeps, speeds)
-    >>> np.abs(np.mean(z_hs)) < 1e-10  # Mean is ~0
+    >>> bool(np.abs(np.mean(z_hs)) < 1e-10)  # Mean is ~0
     True
     """
     if len(head_sweeps) != len(speeds):

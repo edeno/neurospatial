@@ -78,10 +78,13 @@ class IsotonicFitResult:
 
     Examples
     --------
-    >>> result = fit_isotonic_trajectory(posterior, times)
-    >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
-    R² = 0.923, direction = increasing
-    >>> replay_speed = np.diff(result.fitted_positions) / np.diff(times)
+    >>> result = fit_isotonic_trajectory(posterior, times)  # doctest: +SKIP
+    >>> print(
+    ...     f"R² = {result.r_squared:.3f}, direction = {result.direction}"
+    ... )  # doctest: +SKIP
+    >>> replay_speed = np.diff(result.fitted_positions) / np.diff(
+    ...     times
+    ... )  # doctest: +SKIP
     """
 
     fitted_positions: NDArray[np.float64]
@@ -123,10 +126,13 @@ class LinearFitResult:
 
     Examples
     --------
-    >>> result = fit_linear_trajectory(env, posterior, times, method="sample", rng=42)
-    >>> print(f"slope = {result.slope:.2f} ± {result.slope_std:.2f} bins/s")
-    slope = 15.32 ± 1.24 bins/s
-    >>> replay_speed_cm_s = result.slope * env.bin_size
+    >>> result = fit_linear_trajectory(
+    ...     env, posterior, times, method="sample", rng=42
+    ... )  # doctest: +SKIP
+    >>> print(
+    ...     f"slope = {result.slope:.2f} ± {result.slope_std:.2f} bins/s"
+    ... )  # doctest: +SKIP
+    >>> replay_speed_cm_s = result.slope * env.bin_size  # doctest: +SKIP
     """
 
     slope: float
@@ -174,9 +180,10 @@ class RadonDetectionResult:
 
     Examples
     --------
-    >>> result = detect_trajectory_radon(posterior)
-    >>> print(f"Detected angle: {result.angle_degrees:.1f}°, score: {result.score:.3f}")
-    Detected angle: 42.0°, score: 0.847
+    >>> result = detect_trajectory_radon(posterior)  # doctest: +SKIP
+    >>> print(
+    ...     f"Detected angle: {result.angle_degrees:.1f}°, score: {result.score:.3f}"
+    ... )  # doctest: +SKIP
     """
 
     angle_degrees: float

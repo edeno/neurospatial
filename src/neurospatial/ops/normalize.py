@@ -11,7 +11,7 @@ Examples
 >>> import numpy as np
 >>> field = np.array([1.0, 2.0, 3.0])
 >>> normalized = normalize_field(field)
->>> normalized.sum()
+>>> float(normalized.sum())
 1.0
 """
 
@@ -59,8 +59,8 @@ def normalize_field(
     >>> normalized = normalize_field(field)
     >>> print(normalized.sum())
     1.0
-    >>> print(normalized)
-    [0.166... 0.333... 0.5]
+    >>> np.allclose(normalized, [1 / 6, 1 / 3, 0.5])
+    True
 
     Notes
     -----

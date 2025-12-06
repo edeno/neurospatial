@@ -34,7 +34,7 @@ Typical Workflow
 2. Inspect metrics and classify::
 
     >>> print(metrics)  # Human-readable interpretation  # doctest: +SKIP
-    >>> if is_object_vector_cell(metrics.tuning_curve, metrics.peak_rate):
+    >>> if is_object_vector_cell(metrics.tuning_curve, metrics.peak_rate):  # doctest: +SKIP
     ...     print(f"OVC! Preferred distance: {metrics.preferred_distance:.1f}")
 
 3. Visualize::
@@ -126,7 +126,7 @@ class ObjectVectorMetrics:
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+    >>> from neurospatial.encoding.object_vector import ObjectVectorMetrics
     >>> metrics = ObjectVectorMetrics(
     ...     preferred_distance=10.0,
     ...     preferred_direction=0.0,
@@ -239,7 +239,7 @@ def compute_object_vector_tuning(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.metrics.object_vector_cells import (
+    >>> from neurospatial.encoding.object_vector import (
     ...     compute_object_vector_tuning,
     ... )
     >>> rng = np.random.default_rng(42)
@@ -473,7 +473,7 @@ def object_vector_score(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.object_vector_cells import object_vector_score
+    >>> from neurospatial.encoding.object_vector import object_vector_score
     >>> # Sharp tuning
     >>> tc = np.zeros((10, 12)) + 0.1
     >>> tc[5, 6] = 20.0
@@ -563,7 +563,7 @@ def is_object_vector_cell(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+    >>> from neurospatial.encoding.object_vector import is_object_vector_cell
     >>> # Sharp tuning with high rate
     >>> tc = np.zeros((10, 12)) + 0.1
     >>> tc[5, 6] = 25.0
@@ -630,7 +630,7 @@ def plot_object_vector_tuning(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+    >>> from neurospatial.encoding.object_vector import plot_object_vector_tuning
     >>> tc = np.random.default_rng(42).random((10, 12))
     >>> dist_bins = np.linspace(0, 50, 11)
     >>> dir_bins = np.linspace(-np.pi, np.pi, 13)

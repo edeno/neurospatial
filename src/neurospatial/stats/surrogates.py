@@ -127,8 +127,10 @@ def generate_poisson_surrogates(
     >>> import numpy as np
     >>> from neurospatial.stats.surrogates import generate_poisson_surrogates
 
-    >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
-    >>> for i, surrogate in enumerate(
+    >>> spike_counts = np.array(
+    ...     [[0, 1], [2, 0], [1, 1]], dtype=np.int64
+    ... )  # doctest: +SKIP
+    >>> for i, surrogate in enumerate(  # doctest: +SKIP
     ...     generate_poisson_surrogates(spike_counts, dt=0.025, n_surrogates=3, rng=42)
     ... ):
     ...     print(f"Surrogate {i}: shape={surrogate.shape}, total={surrogate.sum()}")

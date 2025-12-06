@@ -400,10 +400,14 @@ def trials_to_region_arrays(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)
-    >>> start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-    >>> progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
-    >>> dist = distance_to_region(env, trajectory_bins, goal_bins)
+    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> start_bins, goal_bins = trials_to_region_arrays(
+    ...     trials, times, env
+    ... )  # doctest: +SKIP
+    >>> progress = path_progress(
+    ...     env, trajectory_bins, start_bins, goal_bins
+    ... )  # doctest: +SKIP
+    >>> dist = distance_to_region(env, trajectory_bins, goal_bins)  # doctest: +SKIP
 
     See Also
     --------
@@ -493,7 +497,7 @@ def path_progress(
     Examples
     --------
     >>> # Single trial - constant start/goal
-    >>> progress = path_progress(
+    >>> progress = path_progress(  # doctest: +SKIP
     ...     env,
     ...     trajectory_bins,
     ...     start_bins=np.full(len(trajectory_bins), 10),
@@ -501,9 +505,13 @@ def path_progress(
     ... )
 
     >>> # Multiple trials - construct arrays once, compute once
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)
-    >>> start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-    >>> progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> start_bins, goal_bins = trials_to_region_arrays(
+    ...     trials, times, env
+    ... )  # doctest: +SKIP
+    >>> progress = path_progress(
+    ...     env, trajectory_bins, start_bins, goal_bins
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -638,8 +646,8 @@ def distance_to_region(
 
     Examples
     --------
-    >>> goal_bins = env.bins_in_region("reward_zone")
-    >>> dist = distance_to_region(env, trajectory_bins, goal_bins[0])
+    >>> goal_bins = env.bins_in_region("reward_zone")  # doctest: +SKIP
+    >>> dist = distance_to_region(env, trajectory_bins, goal_bins[0])  # doctest: +SKIP
 
     See Also
     --------
@@ -740,12 +748,14 @@ def cost_to_goal(
     Examples
     --------
     >>> # Simple: uniform cost (equivalent to geodesic distance)
-    >>> cost = cost_to_goal(env, trajectory_bins, goal_bin)
+    >>> cost = cost_to_goal(env, trajectory_bins, goal_bin)  # doctest: +SKIP
 
     >>> # Learned avoidance: avoid punishment zone
-    >>> cost_map = np.ones(env.n_bins)
-    >>> cost_map[punishment_bins] = 10.0
-    >>> cost = cost_to_goal(env, trajectory_bins, goal_bin, cost_map=cost_map)
+    >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
+    >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
+    >>> cost = cost_to_goal(
+    ...     env, trajectory_bins, goal_bin, cost_map=cost_map
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -820,9 +830,9 @@ def time_to_goal(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)
-    >>> ttg = time_to_goal(times, trials)
-    >>> approach_mask = (ttg > 0) & (ttg <= 2.0)  # Last 2 seconds
+    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> ttg = time_to_goal(times, trials)  # doctest: +SKIP
+    >>> approach_mask = (ttg > 0) & (ttg <= 2.0)  # Last 2 seconds  # doctest: +SKIP
 
     See Also
     --------
@@ -876,7 +886,7 @@ def graph_turn_sequence(
 
     Examples
     --------
-    >>> for trial in trials:
+    >>> for trial in trials:  # doctest: +SKIP
     ...     mask = (times >= trial.start_time) & (times <= trial.end_time)
     ...     turn_seq = graph_turn_sequence(
     ...         env, trajectory_bins[mask], start_bin, end_bin
@@ -986,9 +996,9 @@ def goal_pair_direction_labels(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)
-    >>> labels = goal_pair_direction_labels(times, trials)
-    >>> result = compute_directional_place_fields(
+    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> labels = goal_pair_direction_labels(times, trials)  # doctest: +SKIP
+    >>> result = compute_directional_place_fields(  # doctest: +SKIP
     ...     env, spike_times, times, positions, labels
     ... )
 
@@ -1046,8 +1056,12 @@ def heading_direction_labels(
 
     Examples
     --------
-    >>> labels = heading_direction_labels(positions=positions, times=times)
-    >>> labels = heading_direction_labels(speed=speed, heading=heading)
+    >>> labels = heading_direction_labels(
+    ...     positions=positions, times=times
+    ... )  # doctest: +SKIP
+    >>> labels = heading_direction_labels(
+    ...     speed=speed, heading=heading
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -1166,8 +1180,8 @@ def traveled_path_length(
 
     Examples
     --------
-    >>> length = traveled_path_length(positions)
-    >>> print(f"Animal traveled {length:.1f} cm")
+    >>> length = traveled_path_length(positions)  # doctest: +SKIP
+    >>> print(f"Animal traveled {length:.1f} cm")  # doctest: +SKIP
     """
     from neurospatial.behavior.trajectory import compute_step_lengths
 
@@ -1227,8 +1241,8 @@ def shortest_path_length(
 
     Examples
     --------
-    >>> dist = shortest_path_length(env, start_pos, goal_pos)
-    >>> print(f"Shortest path: {dist:.1f} cm")
+    >>> dist = shortest_path_length(env, start_pos, goal_pos)  # doctest: +SKIP
+    >>> print(f"Shortest path: {dist:.1f} cm")  # doctest: +SKIP
     """
     start = np.asarray(start)
     goal = np.asarray(goal)
@@ -1275,8 +1289,8 @@ def path_efficiency(
 
     Examples
     --------
-    >>> eff = path_efficiency(env, positions, goal)
-    >>> print(f"Efficiency: {eff:.1%}")
+    >>> eff = path_efficiency(env, positions, goal)  # doctest: +SKIP
+    >>> print(f"Efficiency: {eff:.1%}")  # doctest: +SKIP
     """
     if len(positions) < 2:
         return np.nan
@@ -1322,8 +1336,10 @@ def time_efficiency(
 
     Examples
     --------
-    >>> eff = time_efficiency(positions, times, goal, reference_speed=20.0)
-    >>> print(f"Time efficiency: {eff:.1%}")
+    >>> eff = time_efficiency(
+    ...     positions, times, goal, reference_speed=20.0
+    ... )  # doctest: +SKIP
+    >>> print(f"Time efficiency: {eff:.1%}")  # doctest: +SKIP
     """
     if len(positions) < 2:
         return np.nan
@@ -1534,8 +1550,8 @@ def compute_path_efficiency(
 
     Examples
     --------
-    >>> result = compute_path_efficiency(env, positions, times, goal)
-    >>> print(result.summary())
+    >>> result = compute_path_efficiency(env, positions, times, goal)  # doctest: +SKIP
+    >>> print(result.summary())  # doctest: +SKIP
     """
     if len(positions) != len(times):
         raise ValueError(
@@ -1612,7 +1628,8 @@ def goal_vector(
     >>> positions = np.array([[0.0, 0.0], [10.0, 0.0]])
     >>> goal = np.array([50.0, 0.0])
     >>> goal_vector(positions, goal)
-    array([[50., 0.], [40., 0.]])
+    array([[50.,  0.],
+           [40.,  0.]])
     """
     goal = np.asarray(goal)
     positions = np.asarray(positions)
@@ -1688,7 +1705,7 @@ def instantaneous_goal_alignment(
     >>> times = np.linspace(0, 10, 21)
     >>> goal = np.array([100.0, 0.0])
     >>> alignment = instantaneous_goal_alignment(positions, times, goal, min_speed=0.0)
-    >>> np.nanmean(alignment) > 0.9
+    >>> bool(np.nanmean(alignment) > 0.9)
     True
     """
     from neurospatial.ops.egocentric import heading_from_velocity
@@ -1805,7 +1822,7 @@ def approach_rate(
     >>> times = np.linspace(0, 5, 11)
     >>> goal = np.array([100.0, 0.0])
     >>> rates = approach_rate(positions, times, goal)
-    >>> np.nanmean(rates) < 0  # Negative = approaching
+    >>> bool(np.nanmean(rates) < 0)  # Negative = approaching
     True
     """
     positions = np.asarray(positions)
@@ -1880,8 +1897,10 @@ def compute_goal_directed_metrics(
 
     Examples
     --------
-    >>> result = compute_goal_directed_metrics(env, positions, times, goal)
-    >>> print(result.summary())
+    >>> result = compute_goal_directed_metrics(
+    ...     env, positions, times, goal
+    ... )  # doctest: +SKIP
+    >>> print(result.summary())  # doctest: +SKIP
     """
     positions = np.asarray(positions)
     times = np.asarray(times)

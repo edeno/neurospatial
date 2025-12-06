@@ -68,7 +68,9 @@ class DecodingResult:
     >>> result = DecodingResult(posterior=posterior, env=env)
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
-    >>> print(f"Mean uncertainty: {result.uncertainty.mean():.2f} bits")
+    >>> print(
+    ...     f"Mean uncertainty: {result.uncertainty.mean():.2f} bits"
+    ... )  # doctest: +SKIP
 
     Notes
     -----
@@ -242,14 +244,12 @@ class DecodingResult:
 
         Examples
         --------
-        >>> result = decode_position(env, spike_counts, encoding_models, dt)
-        >>> ax = result.plot()  # Basic heatmap
-
-        >>> # With colorbar and MAP overlay
-        >>> ax = result.plot(colorbar=True, show_map=True)
-
-        >>> # With custom colormap
-        >>> ax = result.plot(cmap="hot", vmin=0, vmax=0.5)
+        >>> result = decode_position(
+        ...     env, spike_counts, encoding_models, dt
+        ... )  # doctest: +SKIP
+        >>> ax = result.plot()  # doctest: +SKIP
+        >>> ax = result.plot(colorbar=True, show_map=True)  # doctest: +SKIP
+        >>> ax = result.plot(cmap="hot", vmin=0, vmax=0.5)  # doctest: +SKIP
 
         Notes
         -----
@@ -373,14 +373,11 @@ class DecodingResult:
 
         Examples
         --------
-        >>> result = decode_position(
+        >>> result = decode_position(  # doctest: +SKIP
         ...     env, spike_counts, encoding_models, dt, times=times
         ... )
-        >>> df = result.to_dataframe()
-        >>> df.head()
-           time  map_bin   map_x   map_y  mean_x  mean_y  uncertainty
-        0  0.000       12  25.5    32.5   24.8    31.2         2.45
-        1  0.025       15  32.5    40.5   33.1    39.8         1.89
+        >>> df = result.to_dataframe()  # doctest: +SKIP
+        >>> df.head()  # doctest: +SKIP
 
         See Also
         --------

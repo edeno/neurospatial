@@ -213,7 +213,7 @@ class Regions(MutableMapping[str, Region]):
 
         To suppress the warning, use `update_region()`:
 
-        >>> regions.update_region("goal", point=[15.0, 25.0])  # No warning
+        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # No warning
 
         See Also
         --------

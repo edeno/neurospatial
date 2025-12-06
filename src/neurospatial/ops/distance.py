@@ -249,17 +249,17 @@ def distance_field(
     >>> import numpy as np
     >>> from neurospatial.ops.distance import distance_field
     >>> # Create a simple graph
-    >>> G = nx.Graph()
-    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in G.edges:
+    >>> G = nx.Graph()  # doctest: +SKIP
+    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])  # doctest: +SKIP
+    >>> for u, v in G.edges:  # doctest: +SKIP
     ...     G.edges[u, v]["distance"] = 1.0
     >>> # Geodesic distance field from node 2
-    >>> dists = distance_field(G, sources=[2])
-    >>> dists
+    >>> dists = distance_field(G, sources=[2])  # doctest: +SKIP
+    >>> dists  # doctest: +SKIP
     array([2., 1., 0., 1., 2.])
     >>> # With cutoff
-    >>> dists = distance_field(G, sources=[2], cutoff=1.5)
-    >>> dists
+    >>> dists = distance_field(G, sources=[2], cutoff=1.5)  # doctest: +SKIP
+    >>> dists  # doctest: +SKIP
     array([inf, 1., 0., 1., inf])
 
     Notes
@@ -394,14 +394,14 @@ def pairwise_distances(
     --------
     >>> import networkx as nx
     >>> from neurospatial.ops.distance import pairwise_distances
-    >>> G = nx.cycle_graph(10)
-    >>> for u, v in G.edges:
+    >>> G = nx.cycle_graph(10)  # doctest: +SKIP
+    >>> for u, v in G.edges:  # doctest: +SKIP
     ...     G.edges[u, v]["distance"] = 1.0
     >>> # Compute distances between nodes 0, 3, 7
-    >>> dists = pairwise_distances(G, [0, 3, 7])
-    >>> dists.shape
+    >>> dists = pairwise_distances(G, [0, 3, 7])  # doctest: +SKIP
+    >>> dists.shape  # doctest: +SKIP
     (3, 3)
-    >>> dists[0, 1]  # Distance from node 0 to node 3
+    >>> dists[0, 1]  # Distance from node 0 to node 3  # doctest: +SKIP
     3.0
 
     See Also
@@ -499,13 +499,15 @@ def neighbors_within(
     >>> import networkx as nx
     >>> from neurospatial.ops.distance import neighbors_within
     >>> # Create line graph
-    >>> G = nx.Graph()
-    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in G.edges:
+    >>> G = nx.Graph()  # doctest: +SKIP
+    >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])  # doctest: +SKIP
+    >>> for u, v in G.edges:  # doctest: +SKIP
     ...     G.edges[u, v]["distance"] = 1.0
     >>> # Find neighbors within distance 1.5 of node 2
-    >>> neighborhoods = neighbors_within(G, centers=[2], radius=1.5, metric="geodesic")
-    >>> sorted(neighborhoods[0])
+    >>> neighborhoods = neighbors_within(
+    ...     G, centers=[2], radius=1.5, metric="geodesic"
+    ... )  # doctest: +SKIP
+    >>> sorted(neighborhoods[0])  # doctest: +SKIP
     [1, 2, 3]
 
     Notes

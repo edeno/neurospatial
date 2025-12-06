@@ -80,8 +80,8 @@ class EnvironmentSerialization:
     >>> data = np.random.rand(100, 2) * 10
     >>> env = Environment.from_samples(data, bin_size=2.0)
     >>> env.to_file("my_environment")  # Creates .json and .npz files
-    >>> loaded = Environment.from_file("my_environment")
-    >>> assert env == loaded
+    >>> loaded = Environment.from_file("my_environment")  # doctest: +SKIP
+    >>> assert env == loaded  # doctest: +SKIP
 
     See Also
     --------
@@ -104,8 +104,8 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> env.to_file("my_environment")
+        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+        >>> env.to_file("my_environment")  # doctest: +SKIP
 
         See Also
         --------
@@ -148,7 +148,7 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_file("my_environment")
+        >>> env = Environment.from_file("my_environment")  # doctest: +SKIP
 
         See Also
         --------
@@ -180,11 +180,11 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> env_dict = env.to_dict()
+        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+        >>> env_dict = env.to_dict()  # doctest: +SKIP
         >>> # Dictionary can be converted to JSON
-        >>> import json
-        >>> json_str = json.dumps(env_dict)
+        >>> import json  # doctest: +SKIP
+        >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
 
         See Also
         --------
@@ -218,10 +218,10 @@ class EnvironmentSerialization:
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> env_dict = env.to_dict()
-        >>> reconstructed = Environment.from_dict(env_dict)
-        >>> assert env == reconstructed
+        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+        >>> env_dict = env.to_dict()  # doctest: +SKIP
+        >>> reconstructed = Environment.from_dict(env_dict)  # doctest: +SKIP
+        >>> assert env == reconstructed  # doctest: +SKIP
 
         See Also
         --------

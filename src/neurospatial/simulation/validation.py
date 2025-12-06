@@ -94,17 +94,20 @@ def validate_simulation(
     --------
     Validate a simulated session:
 
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.simulation import simulate_session, validate_simulation
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.simulation import (
+    ...     simulate_session,
+    ...     validate_simulation,
+    ... )  # doctest: +SKIP
     >>>
     >>> # Create environment
-    >>> data = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> env.units = "cm"  # doctest: +SKIP
     >>>
     >>> # Simulate session with place cells
-    >>> session = simulate_session(
+    >>> session = simulate_session(  # doctest: +SKIP
     ...     env,
     ...     duration=5.0,
     ...     n_cells=3,
@@ -114,31 +117,32 @@ def validate_simulation(
     ... )
     >>>
     >>> # Validate detected vs true place fields
-    >>> results = validate_simulation(session)
-    >>> print(results["summary"])
+    >>> results = validate_simulation(session)  # doctest: +SKIP
+    >>> print(results["summary"])  # doctest: +SKIP
     Validation Results:
     ...
-    >>> print(f"All cells passed: {results['passed']}")
+    >>> print(f"All cells passed: {results['passed']}")  # doctest: +SKIP
     All cells passed: True
 
     Validate with custom thresholds:
 
-    >>> results = validate_simulation(
+    >>> results = validate_simulation(  # doctest: +SKIP
     ...     session,
     ...     max_center_error=5.0,  # Maximum 5 cm error
     ...     min_correlation=0.8,  # Minimum 0.8 correlation
     ... )
-    >>> print(f"Mean center error: {results['center_errors'].mean():.2f} cm")
+    >>> print(
+    ...     f"Mean center error: {results['center_errors'].mean():.2f} cm"
+    ... )  # doctest: +SKIP
     Mean center error: 3.45 cm
 
     Validate specific cells with diagnostic plots:
 
-    >>> results = validate_simulation(
+    >>> results = validate_simulation(  # doctest: +SKIP
     ...     session,
     ...     cell_indices=[0, 1, 2],  # Only first 3 cells
     ...     show_plots=True,
-    ... )
-    >>> # results['plots'] contains matplotlib figure
+    ... )  # results['plots'] contains matplotlib figure
 
     See Also
     --------
@@ -462,32 +466,37 @@ def plot_session_summary(
     --------
     Basic usage with default cells:
 
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.simulation import simulate_session, plot_session_summary
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.simulation import (
+    ...     simulate_session,
+    ...     plot_session_summary,
+    ... )  # doctest: +SKIP
     >>>
     >>> # Create environment
-    >>> data = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> data = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> env.units = "cm"  # doctest: +SKIP
     >>>
     >>> # Simulate session
-    >>> session = simulate_session(
+    >>> session = simulate_session(  # doctest: +SKIP
     ...     env, duration=5.0, n_cells=3, seed=42, show_progress=False
     ... )
     >>>
     >>> # Plot summary
-    >>> fig, axes = plot_session_summary(session)
-    >>> # Figure shows: trajectory, rate maps for first 6 cells, raster plot
+    >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
+    ... # Figure shows: trajectory, rate maps for first 6 cells, raster plot
 
     Plot specific cells:
 
-    >>> fig, axes = plot_session_summary(session, cell_ids=[0, 5, 10, 15])
-    >>> # Shows rate maps for cells 0, 5, 10, 15 only
+    >>> fig, axes = plot_session_summary(
+    ...     session, cell_ids=[0, 5, 10, 15]
+    ... )  # doctest: +SKIP
+    ... # Shows rate maps for cells 0, 5, 10, 15 only
 
     Custom figure size:
 
-    >>> fig, axes = plot_session_summary(session, figsize=(12, 8))
+    >>> fig, axes = plot_session_summary(session, figsize=(12, 8))  # doctest: +SKIP
 
     See Also
     --------

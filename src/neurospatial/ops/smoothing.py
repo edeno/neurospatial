@@ -25,7 +25,7 @@ Apply kernel to a field:
 
 >>> field = np.array([0.0, 0.0, 1.0, 0.0, 0.0])
 >>> smoothed = apply_kernel(field, kernel, mode="forward")
->>> smoothed[2] < 1.0  # Original spike reduced
+>>> bool(smoothed[2] < 1.0)  # Original spike reduced
 True
 """
 

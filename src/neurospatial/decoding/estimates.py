@@ -29,6 +29,7 @@ Examples
 >>> bins = map_estimate(posterior)
 >>> ent = entropy(posterior)
 >>> print(f"Entropy: {ent[0]:.2f} bits")  # log2(100) = 6.64 bits
+Entropy: 6.64 bits
 """
 
 from __future__ import annotations
@@ -251,8 +252,8 @@ def entropy(
     >>> posterior = np.zeros((1, 8))
     >>> posterior[0, 0] = 1.0
     >>> ent = entropy(posterior)
-    >>> print(f"{ent[0]:.2f}")  # 0 bits
-    0.00
+    >>> bool(abs(ent[0]) < 0.01)  # Should be 0 bits (within numerical precision)
+    True
     """
     p = np.clip(posterior, 0.0, 1.0)
     # Vectorized mask-based entropy: avoid log(0) by using np.where

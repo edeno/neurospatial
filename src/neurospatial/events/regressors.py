@@ -570,9 +570,8 @@ def distance_to_reward(
     --------
     >>> import numpy as np
     >>> from neurospatial.events import distance_to_reward
-    >>>
     >>> # Distance to nearest reward (default)
-    >>> dist = distance_to_reward(
+    >>> dist = distance_to_reward(  # doctest: +SKIP
     ...     env,
     ...     positions,
     ...     times,
@@ -582,7 +581,7 @@ def distance_to_reward(
     ... )
     >>>
     >>> # Distance to most recent reward
-    >>> dist_last = distance_to_reward(
+    >>> dist_last = distance_to_reward(  # doctest: +SKIP
     ...     env,
     ...     positions,
     ...     times,
@@ -591,7 +590,7 @@ def distance_to_reward(
     ... )
     >>>
     >>> # Distance to next upcoming reward
-    >>> dist_next = distance_to_reward(
+    >>> dist_next = distance_to_reward(  # doctest: +SKIP
     ...     env,
     ...     positions,
     ...     times,
@@ -600,7 +599,7 @@ def distance_to_reward(
     ... )
     >>>
     >>> # GLM design matrix
-    >>> X = np.column_stack(
+    >>> X = np.column_stack(  # doctest: +SKIP
     ...     [
     ...         time_to_nearest_event(times, reward_times, max_time=5.0),
     ...         distance_to_reward(env, positions, times, reward_times),
@@ -837,20 +836,23 @@ def distance_to_boundary(
     --------
     >>> import numpy as np
     >>> from neurospatial.events import distance_to_boundary
-    >>>
     >>> # Distance to environment walls
-    >>> dist_wall = distance_to_boundary(env, positions, boundary_type="edge")
+    >>> dist_wall = distance_to_boundary(
+    ...     env, positions, boundary_type="edge"
+    ... )  # doctest: +SKIP
     >>>
     >>> # Distance to obstacle
-    >>> dist_obstacle = distance_to_boundary(env, positions, boundary_type="obstacle")
+    >>> dist_obstacle = distance_to_boundary(
+    ...     env, positions, boundary_type="obstacle"
+    ... )  # doctest: +SKIP
     >>>
     >>> # Distance to goal region boundary
-    >>> dist_goal = distance_to_boundary(
+    >>> dist_goal = distance_to_boundary(  # doctest: +SKIP
     ...     env, positions, boundary_type="region", region_name="goal"
     ... )
     >>>
     >>> # GLM design matrix with multiple boundary features
-    >>> X = np.column_stack(
+    >>> X = np.column_stack(  # doctest: +SKIP
     ...     [
     ...         distance_to_boundary(env, positions, boundary_type="edge"),
     ...         distance_to_boundary(

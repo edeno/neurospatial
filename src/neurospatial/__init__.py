@@ -135,31 +135,31 @@ Create environment from position data::
 
 Map trajectory to bins::
 
-    >>> times = np.linspace(0, 10, 100)
-    >>> trajectory = np.random.uniform(0, 100, (100, 2))
-    >>> bin_sequence = env.bin_sequence(trajectory)
-    >>> occupancy = env.occupancy(times, trajectory)
+    >>> times = np.linspace(0, 10, 100)  # doctest: +SKIP
+    >>> trajectory = np.random.uniform(0, 100, (100, 2))  # doctest: +SKIP
+    >>> bin_sequence = env.bin_sequence(trajectory)  # doctest: +SKIP
+    >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
 
 Compute place field from spikes::
 
-    >>> from neurospatial.encoding.place import compute_place_field
-    >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])
-    >>> firing_rate = compute_place_field(
+    >>> from neurospatial.encoding.place import compute_place_field  # doctest: +SKIP
+    >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])  # doctest: +SKIP
+    >>> firing_rate = compute_place_field(  # doctest: +SKIP
     ...     env, spike_times, times, trajectory,
     ...     smoothing_method='diffusion_kde', bandwidth=5.0
     ... )
 
 Add and query regions::
 
-    >>> env.regions.add('goal', point=[50, 50])
-    >>> env.regions.add('start', point=[10, 10])
-    >>> membership = env.region_membership(env.bin_centers)
+    >>> env.regions.add('goal', point=[50, 50])  # doctest: +SKIP
+    >>> env.regions.add('start', point=[10, 10])  # doctest: +SKIP
+    >>> membership = env.region_membership(env.bin_centers)  # doctest: +SKIP
 
 Save and load::
 
-    >>> from neurospatial.io import to_file, from_file
-    >>> to_file(env, 'my_environment')
-    >>> loaded = from_file('my_environment')
+    >>> from neurospatial.io import to_file, from_file  # doctest: +SKIP
+    >>> to_file(env, 'my_environment')  # doctest: +SKIP
+    >>> loaded = from_file('my_environment')  # doctest: +SKIP
 
 See Also
 --------
@@ -181,27 +181,27 @@ Examples
 --------
 Create 2D environment and compute shortest path::
 
-    >>> env = Environment.from_samples(
+    >>> env = Environment.from_samples(  # doctest: +SKIP
     ...     positions, bin_size=5.0, units='cm',
     ...     connect_diagonal_neighbors=True
     ... )
-    >>> path = env.path_between(start_bin=0, goal_bin=100)
-    >>> distance = env.distance_between(0, 100)
+    >>> path = env.path_between(start_bin=0, goal_bin=100)  # doctest: +SKIP
+    >>> distance = env.distance_between(0, 100)  # doctest: +SKIP
 
 Create 3D environment::
 
-    >>> positions_3d = np.random.uniform(0, 100, (1000, 3))
-    >>> env_3d = Environment.from_samples(
+    >>> positions_3d = np.random.uniform(0, 100, (1000, 3))  # doctest: +SKIP
+    >>> env_3d = Environment.from_samples(  # doctest: +SKIP
     ...     positions_3d, bin_size=5.0, units='cm'
     ... )
-    >>> env_3d.n_dims
+    >>> env_3d.n_dims  # doctest: +SKIP
     3
 
 Create environment from polygon::
 
-    >>> from shapely.geometry import box
-    >>> polygon = box(0, 0, 100, 100)
-    >>> env = Environment.from_polygon(
+    >>> from shapely.geometry import box  # doctest: +SKIP
+    >>> polygon = box(0, 0, 100, 100)  # doctest: +SKIP
+    >>> env = Environment.from_polygon(  # doctest: +SKIP
     ...     polygon, bin_size=5.0, units='cm'
     ... )
 """

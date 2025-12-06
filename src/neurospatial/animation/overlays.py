@@ -3330,8 +3330,10 @@ def _validate_video_env(env: Any) -> None:
 
     Examples
     --------
-    >>> env = Environment.from_samples(np.random.rand(100, 2) * 100, bin_size=5)
-    >>> _validate_video_env(env)  # Should not raise
+    >>> env = Environment.from_samples(
+    ...     np.random.rand(100, 2) * 100, bin_size=5
+    ... )  # doctest: +SKIP
+    >>> _validate_video_env(env)  # Should not raise  # doctest: +SKIP
     """
     # Check 2D requirement
     if env.n_dims != 2:
@@ -3405,7 +3407,7 @@ def _validate_frame_times(
 
     >>> custom_times = np.array([0.0, 0.5, 1.0, 1.5])
     >>> times = _validate_frame_times(custom_times, n_frames=4)
-    >>> times[0], times[-1]
+    >>> float(times[0]), float(times[-1])
     (0.0, 1.5)
 
     Single frame passes validation:
@@ -3598,7 +3600,7 @@ def _interp_linear(
 
     >>> t_frame_extrap = np.array([-1.0, 0.5, 3.0])
     >>> result = _interp_linear(t_src, x_src, t_frame_extrap)
-    >>> np.isnan(result[0]), result[1], np.isnan(result[2])
+    >>> bool(np.isnan(result[0])), float(result[1]), bool(np.isnan(result[2]))
     (True, 5.0, True)
     """
     # Handle empty frame times
@@ -3774,7 +3776,7 @@ def _interp_nearest(
 
     >>> t_frame_extrap = np.array([-1.0, 0.4, 3.0])
     >>> result = _interp_nearest(t_src, x_src, t_frame_extrap)
-    >>> np.isnan(result[0]), result[1], np.isnan(result[2])
+    >>> bool(np.isnan(result[0])), float(result[1]), bool(np.isnan(result[2]))
     (True, 0.0, True)
     """
     # Handle empty frame times

@@ -8,10 +8,13 @@ defined in the `neurospatial` package. Supports N-dimensional environments
 Import Paths
 ------------
 New (recommended):
-    >>> from neurospatial.ops.alignment import map_probabilities, get_2d_rotation_matrix
+    >>> from neurospatial.ops.alignment import (
+    ...     map_probabilities,
+    ...     get_2d_rotation_matrix,
+    ... )  # doctest: +SKIP
 
 Legacy (still works):
-    >>> from neurospatial.alignment import map_probabilities
+    >>> from neurospatial.alignment import map_probabilities  # doctest: +SKIP
 
 Core capabilities include:
 

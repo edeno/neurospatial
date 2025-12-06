@@ -188,7 +188,7 @@ class EnvironmentVisualization:
 
         Plot with regions:
 
-        >>> env.regions.add("goal", point=[5.0, 5.0])
+        >>> env.regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
         >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
 
         """
@@ -262,12 +262,13 @@ class EnvironmentVisualization:
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create a 1D track environment
-        >>> from track_linearization import make_track_graph
-        >>> position = np.random.rand(100, 2) * 10
-        >>> track_graph = make_track_graph(position, use_HMM=False)
-        >>> env = Environment.from_graph(track_graph, track_graph_name="test_track")
-        >>> if env.is_1d:
+        >>> from track_linearization import make_track_graph  # doctest: +SKIP
+        >>> position = np.random.rand(100, 2) * 10  # doctest: +SKIP
+        >>> track_graph = make_track_graph(position, use_HMM=False)  # doctest: +SKIP
+        >>> env = Environment.from_graph(
+        ...     track_graph, track_graph_name="test_track"
+        ... )  # doctest: +SKIP
+        >>> if env.is_1d:  # doctest: +SKIP
         ...     ax = env.plot_1d()  # doctest: +SKIP
 
         """
@@ -396,24 +397,36 @@ class EnvironmentVisualization:
         --------
         Plot a firing rate map:
 
-        >>> import numpy as np
-        >>> from neurospatial import Environment, compute_place_field
-        >>> positions = np.random.uniform(0, 100, (1000, 2))
-        >>> times = np.linspace(0, 100, 1000)
-        >>> spike_times = np.random.uniform(0, 100, 50)
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> firing_rate = compute_place_field(
-        ...     env, spike_times, times, positions, bandwidth=8.0
-        ... )
-        >>> ax = env.plot_field(
-        ...     firing_rate, cmap="hot", colorbar_label="Firing Rate (Hz)", vmin=0
+        >>> import numpy as np  # doctest: +SKIP
+        >>> from neurospatial import Environment  # doctest: +SKIP
+        >>> from neurospatial.encoding.place import (
+        ...     compute_place_field,
+        ... )  # doctest: +SKIP
+        >>> positions = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
+        >>> times = np.linspace(0, 100, 1000)  # doctest: +SKIP
+        >>> spike_times = np.random.uniform(0, 100, 50)  # doctest: +SKIP
+        >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+        >>> firing_rate = compute_place_field(  # doctest: +SKIP
+        ...     env,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     bandwidth=8.0,  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> ax = env.plot_field(  # doctest: +SKIP
+        ...     firing_rate,
+        ...     cmap="hot",
+        ...     colorbar_label="Firing Rate (Hz)",
+        ...     vmin=0,  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         Plot decoded probability distribution:
 
-        >>> posterior = np.random.rand(env.n_bins)  # Example posterior
-        >>> ax = env.plot_field(
-        ...     posterior, cmap="Blues", colorbar_label="Probability"
+        >>> posterior = np.random.rand(env.n_bins)  # doctest: +SKIP
+        >>> ax = env.plot_field(  # doctest: +SKIP
+        ...     posterior,
+        ...     cmap="Blues",
+        ...     colorbar_label="Probability",  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         """
@@ -766,19 +779,20 @@ class EnvironmentVisualization:
         >>> from neurospatial import Environment
         >>> positions = np.random.uniform(0, 100, (1000, 2))
         >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> # Simulate place field formation over 20 trials
-        >>> fields = []
-        >>> center_bin = env.n_bins // 2  # Use middle bin
-        >>> for trial in range(20):
-        ...     distances = env.distance_to([center_bin])
-        ...     field = np.exp(-distances / (10 + trial))
-        ...     fields.append(field)
+        >>> fields = []  # doctest: +SKIP
+        >>> center_bin = env.n_bins // 2  # doctest: +SKIP
+        >>> for trial in range(20):  # doctest: +SKIP
+        ...     distances = env.distance_to([center_bin])  # doctest: +SKIP
+        ...     field = np.exp(-distances / (10 + trial))  # doctest: +SKIP
+        ...     fields.append(field)  # doctest: +SKIP
 
         Interactive exploration with Napari:
 
-        >>> frame_times = np.linspace(0, 20, len(fields))  # 20 trials over 20 seconds
-        >>> viewer = env.animate_fields(
-        ...     fields, frame_times=frame_times, backend="napari"
+        >>> frame_times = np.linspace(0, 20, len(fields))  # doctest: +SKIP
+        >>> viewer = env.animate_fields(  # doctest: +SKIP
+        ...     fields,
+        ...     frame_times=frame_times,
+        ...     backend="napari",  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         Video export for publication (slow motion for detailed viewing):
@@ -806,14 +820,14 @@ class EnvironmentVisualization:
 
         Large-scale session (memory-mapped data):
 
-        >>> # For hour-long recording (900K frames at 250 Hz)
-        >>> from neurospatial.animation import subsample_frames
-        >>> # Subsample 250 Hz data to 30 fps for video export
-        >>> fields_sub = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
-        >>> frame_times_sub = np.linspace(0, 3600, len(fields_sub))  # 1 hour
-        >>> env.animate_fields(
-        ...     fields_sub,
-        ...     frame_times=frame_times_sub,
+        >>> from neurospatial.animation import subsample_frames  # doctest: +SKIP
+        >>> fields_sub = subsample_frames(
+        ...     fields_mmap, target_fps=30, source_fps=250
+        ... )  # doctest: +SKIP
+        >>> frame_times_sub = np.linspace(0, 3600, len(fields_sub))  # doctest: +SKIP
+        >>> env.animate_fields(  # doctest: +SKIP
+        ...     fields_sub,  # doctest: +SKIP
+        ...     frame_times=frame_times_sub,  # doctest: +SKIP
         ...     save_path="session_summary.mp4",
         ...     n_workers=8,
         ... )  # doctest: +SKIP
@@ -847,23 +861,23 @@ class EnvironmentVisualization:
         ...     "ear_right": np.random.uniform(0, 100, (100, 2)),
         ...     "tail_base": np.random.uniform(0, 100, (100, 2)),
         ... }
-        >>> bodypart_overlay = BodypartOverlay(
-        ...     data=pose_data,
-        ...     skeleton=[
-        ...         ("nose", "ear_left"),
-        ...         ("nose", "ear_right"),
-        ...         ("nose", "tail_base"),
-        ...     ],
-        ...     colors={
-        ...         "nose": "red",
-        ...         "ear_left": "blue",
-        ...         "ear_right": "blue",
-        ...         "tail_base": "green",
-        ...     },
-        ...     skeleton_color="white",
-        ... )
-        >>> env.animate_fields(
-        ...     fields,
+        >>> bodypart_overlay = BodypartOverlay(  # doctest: +SKIP
+        ...     data=pose_data,  # doctest: +SKIP
+        ...     skeleton=[  # doctest: +SKIP
+        ...         ("nose", "ear_left"),  # doctest: +SKIP
+        ...         ("nose", "ear_right"),  # doctest: +SKIP
+        ...         ("nose", "tail_base"),  # doctest: +SKIP
+        ...     ],  # doctest: +SKIP
+        ...     colors={  # doctest: +SKIP
+        ...         "nose": "red",  # doctest: +SKIP
+        ...         "ear_left": "blue",  # doctest: +SKIP
+        ...         "ear_right": "blue",  # doctest: +SKIP
+        ...         "tail_base": "green",  # doctest: +SKIP
+        ...     },  # doctest: +SKIP
+        ...     skeleton_color="white",  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> env.animate_fields(  # doctest: +SKIP
+        ...     fields,  # doctest: +SKIP
         ...     frame_times=overlay_times,
         ...     overlays=[bodypart_overlay],
         ...     backend="video",
@@ -888,31 +902,41 @@ class EnvironmentVisualization:
 
         Multi-animal tracking (multiple overlays):
 
-        >>> animal1_pos = PositionOverlay(
-        ...     data=trajectory1, color="red", size=12.0, trail_length=10
-        ... )
-        >>> animal2_pos = PositionOverlay(
-        ...     data=trajectory2, color="blue", size=12.0, trail_length=10
-        ... )
-        >>> env.animate_fields(
-        ...     fields,
-        ...     frame_times=overlay_times,
-        ...     overlays=[animal1_pos, animal2_pos],
-        ...     backend="napari",
+        >>> animal1_pos = PositionOverlay(  # doctest: +SKIP
+        ...     data=trajectory1,
+        ...     color="red",
+        ...     size=12.0,
+        ...     trail_length=10,  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> animal2_pos = PositionOverlay(  # doctest: +SKIP
+        ...     data=trajectory2,
+        ...     color="blue",
+        ...     size=12.0,
+        ...     trail_length=10,  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> env.animate_fields(  # doctest: +SKIP
+        ...     fields,  # doctest: +SKIP
+        ...     frame_times=overlay_times,  # doctest: +SKIP
+        ...     overlays=[animal1_pos, animal2_pos],  # doctest: +SKIP
+        ...     backend="napari",  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         All overlay types combined with regions:
 
-        >>> from neurospatial.regions import Region
-        >>> env.regions.add("goal", point=np.array([80.0, 80.0]))
-        >>> env.animate_fields(
-        ...     fields,
-        ...     frame_times=overlay_times,
-        ...     overlays=[position_overlay, bodypart_overlay, direction_overlay],
-        ...     show_regions=True,
-        ...     region_alpha=0.4,
-        ...     backend="video",
-        ...     save_path="comprehensive.mp4",
+        >>> from neurospatial.regions import Region  # doctest: +SKIP
+        >>> env.regions.add("goal", point=np.array([80.0, 80.0]))  # doctest: +SKIP
+        >>> env.animate_fields(  # doctest: +SKIP
+        ...     fields,  # doctest: +SKIP
+        ...     frame_times=overlay_times,  # doctest: +SKIP
+        ...     overlays=[
+        ...         position_overlay,
+        ...         bodypart_overlay,
+        ...         direction_overlay,
+        ...     ],  # doctest: +SKIP
+        ...     show_regions=True,  # doctest: +SKIP
+        ...     region_alpha=0.4,  # doctest: +SKIP
+        ...     backend="video",  # doctest: +SKIP
+        ...     save_path="comprehensive.mp4",  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         Temporal alignment with mixed sampling rates:

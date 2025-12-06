@@ -39,7 +39,7 @@ class VideoReaderProtocol(Protocol):
 
     Examples
     --------
-    >>> def render_video(reader: VideoReaderProtocol) -> None:
+    >>> def render_video(reader: VideoReaderProtocol) -> None:  # doctest: +SKIP
     ...     for i in range(reader.n_frames):
     ...         frame = reader[i]
     ...         # Process frame...
@@ -48,7 +48,9 @@ class VideoReaderProtocol(Protocol):
     -----
     The protocol is runtime-checkable, allowing isinstance() checks:
 
-    >>> isinstance(my_reader, VideoReaderProtocol)  # True if implements protocol
+    >>> isinstance(
+    ...     my_reader, VideoReaderProtocol
+    ... )  # True if implements protocol  # doctest: +SKIP
     """
 
     @property
@@ -149,18 +151,18 @@ class VideoReader:
 
     Examples
     --------
-    >>> reader = VideoReader("video.mp4", cache_size=50)
-    >>> frame = reader[0]  # Load first frame
-    >>> print(frame.shape)  # (height, width, 3)
+    >>> reader = VideoReader("video.mp4", cache_size=50)  # doctest: +SKIP
+    >>> frame = reader[0]  # Load first frame  # doctest: +SKIP
+    >>> print(frame.shape)  # (height, width, 3)  # doctest: +SKIP
 
     >>> # With crop and downsample
-    >>> reader = VideoReader(
+    >>> reader = VideoReader(  # doctest: +SKIP
     ...     "video.mp4",
     ...     crop=(100, 100, 200, 200),  # x, y, width, height
     ...     downsample=2,
     ... )
-    >>> frame = reader[0]
-    >>> print(frame.shape)  # (100, 100, 3)
+    >>> frame = reader[0]  # doctest: +SKIP
+    >>> print(frame.shape)  # (100, 100, 3)  # doctest: +SKIP
     """
 
     def __init__(

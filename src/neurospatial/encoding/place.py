@@ -473,8 +473,8 @@ def spikes_to_field(
     >>> field = spikes_to_field(env, spike_times, times, positions)
     >>> field.shape == (env.n_bins,)
     True
-    >>> np.nanmean(field)  # Should be close to 5 Hz
-    5.0...
+    >>> np.nanmean(field)  # Should be close to 5 Hz  # doctest: +ELLIPSIS
+    np.float64(5.0...)
     """
     # Step 0: Validate inputs
     if len(times) != len(positions):
@@ -1837,7 +1837,7 @@ def skaggs_information(
     >>> firing_rate = np.ones(100) * 3.0
     >>> occupancy = np.ones(100) / 100
     >>> info = skaggs_information(firing_rate, occupancy)
-    >>> np.abs(info) < 1e-6  # Should be ~0
+    >>> bool(np.abs(info) < 1e-6)  # Should be ~0
     True
 
     References
@@ -1997,7 +1997,7 @@ def field_stability(
     >>> # Identical maps → perfect correlation
     >>> rate_map = np.random.rand(100) * 5
     >>> stability = field_stability(rate_map, rate_map, method="pearson")
-    >>> np.abs(stability - 1.0) < 1e-6
+    >>> bool(np.abs(stability - 1.0) < 1e-6)
     True
 
     References
@@ -3186,11 +3186,11 @@ def compute_field_emd(
     >>>
     >>> # Compute EMD with Euclidean distance
     >>> emd_euclidean = compute_field_emd(field1, field2, env, metric="euclidean")
-    >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")
+    >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
     >>>
     >>> # Compute EMD with geodesic distance (respects environment structure)
     >>> emd_geodesic = compute_field_emd(field1, field2, env, metric="geodesic")
-    >>> print(f"Geodesic EMD: {emd_geodesic:.3f}")
+    >>> print(f"Geodesic EMD: {emd_geodesic:.3f}")  # doctest: +SKIP
     >>>
     >>> # For open fields, Euclidean and geodesic should be similar
     >>> # For mazes or complex environments, geodesic can be much larger

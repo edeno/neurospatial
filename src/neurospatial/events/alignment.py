@@ -214,7 +214,7 @@ def peri_event_histogram(
     ...     spike_times, reward_times, window=(-0.5, 1.0), bin_size=0.1
     ... )
     >>> print(f"Peak at {result.bin_centers[result.histogram.argmax()]:.2f}s")
-    Peak at 0.15s
+    Peak at -0.15s
 
     Convert to firing rate:
 

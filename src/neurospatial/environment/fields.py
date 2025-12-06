@@ -104,11 +104,11 @@ class EnvironmentFields:
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
         >>> # Compute kernel for smoothing
-        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
+        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")  # doctest: +SKIP
         >>> # Apply to field
-        >>> smoothed_field = kernel @ field
+        >>> smoothed_field = kernel @ field  # doctest: +SKIP
 
         """
         from neurospatial.ops.smoothing import compute_diffusion_kernels
@@ -213,15 +213,23 @@ class EnvironmentFields:
         Examples
         --------
         >>> # Smooth spike counts (mass-conserving)
-        >>> smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
+        >>> smoothed_counts = env.smooth(
+        ...     spike_counts, bandwidth=5.0, mode="transition"
+        ... )  # doctest: +SKIP
         >>> # Total spikes preserved
-        >>> assert np.isclose(smoothed_counts.sum(), spike_counts.sum())
+        >>> assert np.isclose(
+        ...     smoothed_counts.sum(), spike_counts.sum()
+        ... )  # doctest: +SKIP
 
         >>> # Smooth a rate map (volume-corrected)
-        >>> smoothed_rates = env.smooth(rate_map, bandwidth=3.0, mode="density")
+        >>> smoothed_rates = env.smooth(
+        ...     rate_map, bandwidth=3.0, mode="density"
+        ... )  # doctest: +SKIP
 
         >>> # Smooth a probability distribution
-        >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
+        >>> smoothed_prob = env.smooth(
+        ...     posterior, bandwidth=2.0, mode="transition"
+        ... )  # doctest: +SKIP
 
         """
         # Input validation
@@ -347,17 +355,25 @@ class EnvironmentFields:
         Examples
         --------
         >>> # Nearest-neighbor interpolation (all layouts)
-        >>> field = np.random.rand(env.n_bins)
-        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])
-        >>> values = env.interpolate(field, query_points, mode="nearest")
+        >>> field = np.random.rand(env.n_bins)  # doctest: +SKIP
+        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])  # doctest: +SKIP
+        >>> values = env.interpolate(
+        ...     field, query_points, mode="nearest"
+        ... )  # doctest: +SKIP
 
         >>> # Linear interpolation (grids only)
         >>> # For plane f(x,y) = 2x + 3y, interpolation is exact
-        >>> plane_field = 2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
-        >>> values = env.interpolate(plane_field, query_points, mode="linear")
+        >>> plane_field = (
+        ...     2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
+        ... )  # doctest: +SKIP
+        >>> values = env.interpolate(
+        ...     plane_field, query_points, mode="linear"
+        ... )  # doctest: +SKIP
 
         >>> # Evaluate rate map at trajectory positions
-        >>> rates_at_trajectory = env.interpolate(rate_map, positions, mode="linear")
+        >>> rates_at_trajectory = env.interpolate(
+        ...     rate_map, positions, mode="linear"
+        ... )  # doctest: +SKIP
 
         """
         # Input validation - field

@@ -1377,34 +1377,38 @@ def apply_transform_to_environment(
     --------
     2D transformation (backward compatible):
 
-    >>> from neurospatial import Environment
-    >>> from neurospatial.ops.transforms import (
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.ops.transforms import (  # doctest: +SKIP
     ...     estimate_transform,
     ...     apply_transform_to_environment,
     ... )
     >>> # Create environment from session 1
-    >>> env1 = Environment.from_samples(data1, bin_size=2.0)
+    >>> env1 = Environment.from_samples(data1, bin_size=2.0)  # doctest: +SKIP
     >>> # Estimate transform from landmarks
-    >>> transform = estimate_transform(
+    >>> transform = estimate_transform(  # doctest: +SKIP
     ...     landmarks_session1, landmarks_session2, kind="rigid"
     ... )
     >>> # Transform environment to session 2 coordinates
-    >>> env1_aligned = apply_transform_to_environment(
+    >>> env1_aligned = apply_transform_to_environment(  # doctest: +SKIP
     ...     env1, transform, name="session1_aligned"
     ... )
 
     3D transformation:
 
-    >>> import numpy as np
-    >>> from scipy.spatial.transform import Rotation
-    >>> from neurospatial.ops.transforms import from_rotation_matrix
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from scipy.spatial.transform import Rotation  # doctest: +SKIP
+    >>> from neurospatial.ops.transforms import from_rotation_matrix  # doctest: +SKIP
     >>> # Create 3D environment
-    >>> positions_3d = np.random.randn(1000, 3) * 20
-    >>> env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
+    >>> positions_3d = np.random.randn(1000, 3) * 20  # doctest: +SKIP
+    >>> env_3d = Environment.from_samples(positions_3d, bin_size=5.0)  # doctest: +SKIP
     >>> # Apply 45-degree rotation around z-axis
-    >>> R = Rotation.from_euler("z", 45, degrees=True).as_matrix()
-    >>> transform_3d = from_rotation_matrix(R, translation=[10, 20, 30])
-    >>> env_3d_rotated = apply_transform_to_environment(env_3d, transform_3d)
+    >>> R = Rotation.from_euler("z", 45, degrees=True).as_matrix()  # doctest: +SKIP
+    >>> transform_3d = from_rotation_matrix(
+    ...     R, translation=[10, 20, 30]
+    ... )  # doctest: +SKIP
+    >>> env_3d_rotated = apply_transform_to_environment(
+    ...     env_3d, transform_3d
+    ... )  # doctest: +SKIP
 
     See Also
     --------

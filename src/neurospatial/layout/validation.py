@@ -147,10 +147,10 @@ def validate_dimension_ranges(
     Examples
     --------
     >>> validate_dimension_ranges([(0, 100), (0, 200)])
-    [(0, 100), (0, 200)]
+    [(0.0, 100.0), (0.0, 200.0)]
 
     >>> validate_dimension_ranges([(0, 100), (0, 200)], n_dims=2)
-    [(0, 100), (0, 200)]
+    [(0.0, 100.0), (0.0, 200.0)]
 
     >>> validate_dimension_ranges([(100, 0)])  # doctest: +SKIP
     ValueError: dimension_ranges[0] has min >= max: (100, 0)
@@ -499,13 +499,15 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
 
     Examples
     --------
-    >>> from neurospatial import Environment
-    >>> from neurospatial.layout.validation import validate_environment
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> validate_environment(env)  # Passes if environment is valid
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.layout.validation import (
+    ...     validate_environment,
+    ... )  # doctest: +SKIP
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> validate_environment(env)  # Passes if environment is valid  # doctest: +SKIP
 
     >>> # Catch validation errors
-    >>> try:
+    >>> try:  # doctest: +SKIP
     ...     validate_environment(potentially_invalid_env)
     ... except (GraphValidationError, ValueError) as e:
     ...     print(f"Environment is invalid: {e}")

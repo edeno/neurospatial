@@ -357,7 +357,7 @@ def compute_home_range(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics.trajectory import compute_home_range
+    >>> from neurospatial.behavior.trajectory import compute_home_range
     >>> # Trajectory with known distribution
     >>> trajectory_bins = np.concatenate(
     ...     [
@@ -514,7 +514,7 @@ def mean_square_displacement(
     ... )
     >>> len(tau_values) > 0
     True
-    >>> msd_values[-1] > msd_values[0]  # MSD increases with lag
+    >>> bool(msd_values[-1] > msd_values[0])  # MSD increases with lag
     True
     >>>
     >>> # Estimate diffusion exponent from log-log fit

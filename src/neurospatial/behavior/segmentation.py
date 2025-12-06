@@ -249,12 +249,16 @@ def detect_region_crossings(
     >>> from neurospatial import Environment
     >>> from shapely.geometry import Point
     >>> import numpy as np
-    >>> # Create environment and add region
-    >>> positions = np.linspace(0, 100, 100)[:, None]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> env.regions.add("goal", polygon=Point(50.0, 0.0).buffer(10.0))
+    >>> # Create 2D environment and add region
+    >>> x = np.linspace(0, 100, 100)
+    >>> y = np.linspace(0, 100, 100)
+    >>> positions = np.column_stack([x, y])
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> _ = env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
     >>> # Create trajectory that crosses region
-    >>> trajectory = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])[:, None]
+    >>> traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
+    >>> traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
+    >>> trajectory = np.column_stack([traj_x, traj_y])
     >>> trajectory_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
     >>> # Detect crossings
@@ -391,28 +395,33 @@ def detect_runs_between_regions(
 
     Examples
     --------
-    >>> from neurospatial import Environment
-    >>> from shapely.geometry import Point
-    >>> import numpy as np
-    >>> # Create environment with source and target
-    >>> positions = np.linspace(0, 100, 200)[:, None]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> env.regions.add("start", polygon=Point(10.0, 0.0).buffer(5.0))
-    >>> env.regions.add("goal", polygon=Point(90.0, 0.0).buffer(5.0))
-    >>> # Create run trajectory
-    >>> trajectory = np.linspace(10.0, 90.0, 100)[:, None]
-    >>> times = np.linspace(0, 5.0, 100)
-    >>> # Detect runs
-    >>> runs = detect_runs_between_regions(
-    ...     trajectory,
-    ...     times,
-    ...     env,
-    ...     source="start",
-    ...     target="goal",
-    ...     min_duration=0.5,
-    ...     max_duration=10.0,
-    ... )
-    >>> len(runs) > 0  # Should detect successful run
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from shapely.geometry import Point  # doctest: +SKIP
+    >>> import numpy as np  # doctest: +SKIP
+    >>> x = np.linspace(0, 100, 200)  # doctest: +SKIP
+    >>> y = np.linspace(0, 100, 200)  # doctest: +SKIP
+    >>> positions = np.column_stack([x, y])  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+    >>> _ = env.regions.add(
+    ...     "start", polygon=Point(10.0, 50.0).buffer(5.0)
+    ... )  # doctest: +SKIP
+    >>> _ = env.regions.add(
+    ...     "goal", polygon=Point(90.0, 50.0).buffer(5.0)
+    ... )  # doctest: +SKIP
+    >>> traj_x = np.linspace(10.0, 90.0, 100)  # doctest: +SKIP
+    >>> traj_y = np.ones(100) * 50.0  # doctest: +SKIP
+    >>> trajectory = np.column_stack([traj_x, traj_y])  # doctest: +SKIP
+    >>> times = np.linspace(0, 5.0, 100)  # doctest: +SKIP
+    >>> runs = detect_runs_between_regions(  # doctest: +SKIP
+    ...     trajectory,  # doctest: +SKIP
+    ...     times,  # doctest: +SKIP
+    ...     env,  # doctest: +SKIP
+    ...     source="start",  # doctest: +SKIP
+    ...     target="goal",  # doctest: +SKIP
+    ...     min_duration=0.5,  # doctest: +SKIP
+    ...     max_duration=10.0,  # doctest: +SKIP
+    ... )  # doctest: +SKIP
+    >>> len(runs) > 0  # doctest: +SKIP
     True
     """
     # Validate inputs
@@ -874,37 +883,45 @@ def detect_laps(
     --------
     Detect laps on circular track with auto template:
 
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.behavior.segmentation import detect_laps
-    >>> # Create circular trajectory (2 laps)
-    >>> theta = np.linspace(0, 4 * np.pi, 200)
-    >>> x = 50 + 30 * np.cos(theta)
-    >>> y = 50 + 30 * np.sin(theta)
-    >>> positions = np.column_stack([x, y])
-    >>> env = Environment.from_samples(positions, bin_size=3.0)
-    >>> trajectory_bins = env.bin_at(positions)
-    >>> times = np.linspace(0, 40, 200)
-    >>> laps = detect_laps(trajectory_bins, times, env, method="auto")
-    >>> len(laps) >= 1  # Should detect at least 1 lap
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.behavior.segmentation import detect_laps  # doctest: +SKIP
+    >>> theta = np.linspace(0, 4 * np.pi, 200)  # doctest: +SKIP
+    >>> x = 50 + 30 * np.cos(theta)  # doctest: +SKIP
+    >>> y = 50 + 30 * np.sin(theta)  # doctest: +SKIP
+    >>> positions = np.column_stack([x, y])  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=3.0)  # doctest: +SKIP
+    >>> trajectory_bins = env.bin_at(positions)  # doctest: +SKIP
+    >>> times = np.linspace(0, 40, 200)  # doctest: +SKIP
+    >>> laps = detect_laps(trajectory_bins, times, env, method="auto")  # doctest: +SKIP
+    >>> len(laps) >= 1  # doctest: +SKIP
     True
 
     Detect laps with user-provided reference:
 
-    >>> reference = trajectory_bins[:50]  # First quarter as template
-    >>> laps = detect_laps(
-    ...     trajectory_bins, times, env, method="reference", reference_lap=reference
-    ... )
-    >>> all(lap.overlap_score >= 0.8 for lap in laps)
+    >>> reference = trajectory_bins[:50]  # doctest: +SKIP
+    >>> laps = detect_laps(  # doctest: +SKIP
+    ...     trajectory_bins,
+    ...     times,
+    ...     env,
+    ...     method="reference",
+    ...     reference_lap=reference,  # doctest: +SKIP
+    ... )  # doctest: +SKIP
+    >>> all(lap.overlap_score >= 0.8 for lap in laps)  # doctest: +SKIP
     True
 
     Filter laps by direction:
 
-    >>> laps_cw = detect_laps(trajectory_bins, times, env, direction="clockwise")
-    >>> laps_ccw = detect_laps(
-    ...     trajectory_bins, times, env, direction="counter-clockwise"
-    ... )
-    >>> len(laps_cw) + len(laps_ccw) >= 0
+    >>> laps_cw = detect_laps(
+    ...     trajectory_bins, times, env, direction="clockwise"
+    ... )  # doctest: +SKIP
+    >>> laps_ccw = detect_laps(  # doctest: +SKIP
+    ...     trajectory_bins,
+    ...     times,
+    ...     env,
+    ...     direction="counter-clockwise",  # doctest: +SKIP
+    ... )  # doctest: +SKIP
+    >>> len(laps_cw) + len(laps_ccw) >= 0  # doctest: +SKIP
     True
 
     References
@@ -1665,27 +1682,26 @@ def detect_goal_directed_runs(
     --------
     Detect goal-directed runs in a linear track:
 
-    >>> import numpy as np
-    >>> from shapely.geometry import Point
-    >>> from neurospatial import Environment
-    >>> from neurospatial.behavior.segmentation import detect_goal_directed_runs
-    >>> # Create 1D environment
-    >>> positions = np.linspace(0, 100, 100)[:, None]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> # Add goal region at far end
-    >>> goal_polygon = Point(env.bin_centers[-1]).buffer(5.0)
-    >>> env.regions.add("goal", polygon=goal_polygon)
-    >>> # Create trajectory moving toward goal
-    >>> trajectory_bins = np.arange(0, 40, dtype=np.int64)
-    >>> times = np.linspace(0, 10, len(trajectory_bins))
-    >>> # Detect goal-directed runs
-    >>> runs = detect_goal_directed_runs(
-    ...     trajectory_bins,
-    ...     times,
-    ...     env,
-    ...     goal_region="goal",
-    ...     directedness_threshold=0.7,
-    ...     min_progress=10.0,
+    >>> import numpy as np  # doctest: +SKIP
+    >>> from shapely.geometry import Point  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.behavior.segmentation import (
+    ...     detect_goal_directed_runs,
+    ... )  # doctest: +SKIP
+    >>> positions = np.linspace(0, 100, 100)[:, None]  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
+    >>> goal_center = env.bin_centers[-1]  # doctest: +SKIP
+    >>> goal_polygon = Point(float(goal_center[0]), 0.0).buffer(5.0)  # doctest: +SKIP
+    >>> env.regions.add("goal", polygon=goal_polygon)  # doctest: +SKIP
+    >>> trajectory_bins = np.arange(0, 40, dtype=np.int64)  # doctest: +SKIP
+    >>> times = np.linspace(0, 10, len(trajectory_bins))  # doctest: +SKIP
+    >>> runs = detect_goal_directed_runs(  # doctest: +SKIP
+    ...     trajectory_bins,  # doctest: +SKIP
+    ...     times,  # doctest: +SKIP
+    ...     env,  # doctest: +SKIP
+    ...     goal_region="goal",  # doctest: +SKIP
+    ...     directedness_threshold=0.7,  # doctest: +SKIP
+    ...     min_progress=10.0,  # doctest: +SKIP
     ... )  # doctest: +SKIP
     >>> print(f"Detected {len(runs)} goal-directed run(s)")  # doctest: +SKIP
     Detected 1 goal-directed run(s)

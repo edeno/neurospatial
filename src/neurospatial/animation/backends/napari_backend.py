@@ -208,7 +208,7 @@ class WindowedOverlayManager:
     Examples
     --------
     >>> # Used internally by _render_position_overlay for large datasets
-    >>> manager = WindowedOverlayManager(
+    >>> manager = WindowedOverlayManager(  # doctest: +SKIP
     ...     viewer,
     ...     points_layer,
     ...     full_points_data,
@@ -463,13 +463,15 @@ class PlaybackController:
 
     Examples
     --------
-    >>> import napari
-    >>> viewer = napari.Viewer()
-    >>> controller = PlaybackController(viewer, n_frames=100, fps=30.0)
-    >>> controller.go_to_frame(50)  # Jump to frame 50
-    >>> controller.play()  # Start playback
+    >>> import napari  # doctest: +SKIP
+    >>> viewer = napari.Viewer()  # doctest: +SKIP
+    >>> controller = PlaybackController(
+    ...     viewer, n_frames=100, fps=30.0
+    ... )  # doctest: +SKIP
+    >>> controller.go_to_frame(50)  # Jump to frame 50  # doctest: +SKIP
+    >>> controller.play()  # Start playback  # doctest: +SKIP
     >>> # ... playback runs via QTimer ...
-    >>> controller.pause()  # Stop playback
+    >>> controller.pause()  # Stop playback  # doctest: +SKIP
 
     Notes
     -----
@@ -735,9 +737,9 @@ class PlaybackController:
 
         Examples
         --------
-        >>> def on_frame_change(frame_idx):
+        >>> def on_frame_change(frame_idx):  # doctest: +SKIP
         ...     print(f"Now at frame {frame_idx}")
-        >>> controller.register_callback(on_frame_change)
+        >>> controller.register_callback(on_frame_change)  # doctest: +SKIP
         """
         self._callbacks.append(callback)
 
@@ -897,8 +899,10 @@ def _build_skeleton_vectors(
 
     Examples
     --------
-    >>> vectors, features = _build_skeleton_vectors(bodypart_data, env)
-    >>> viewer.add_vectors(vectors, features=features, ...)
+    >>> vectors, features = _build_skeleton_vectors(
+    ...     bodypart_data, env
+    ... )  # doctest: +SKIP
+    >>> viewer.add_vectors(vectors, features=features, ...)  # doctest: +SKIP
     """
     # Early exit if no skeleton defined
     skeleton = bodypart_data.skeleton

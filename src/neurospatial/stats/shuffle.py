@@ -461,10 +461,12 @@ def shuffle_place_fields_circular_2d(
     >>> from neurospatial import Environment
     >>> from neurospatial.stats.shuffle import shuffle_place_fields_circular_2d
 
-    >>> positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> encoding_models = np.random.default_rng(42).random((3, env.n_bins))
-    >>> for i, shuffled in enumerate(
+    >>> positions = np.random.default_rng(42).uniform(0, 10, (100, 2))  # doctest: +SKIP
+    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
+    >>> encoding_models = np.random.default_rng(42).random(
+    ...     (3, env.n_bins)
+    ... )  # doctest: +SKIP
+    >>> for i, shuffled in enumerate(  # doctest: +SKIP
     ...     shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=3, rng=42)
     ... ):
     ...     print(f"Shuffle {i}: shape={shuffled.shape}")
@@ -1045,7 +1047,7 @@ def compute_shuffle_zscore(
     >>> null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     >>> observed = 5.0
     >>> z = compute_shuffle_zscore(observed, null)
-    >>> np.isclose(z, (5.0 - 3.0) / np.std(null))
+    >>> bool(np.isclose(z, (5.0 - 3.0) / np.std(null)))
     True
 
     >>> # Zero variance returns NaN

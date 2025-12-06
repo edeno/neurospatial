@@ -114,19 +114,24 @@ def calibrate_video(
 
     Examples
     --------
-    >>> from neurospatial.animation import calibrate_video, VideoOverlay
+    >>> from neurospatial.animation import (
+    ...     calibrate_video,
+    ...     VideoOverlay,
+    ... )  # doctest: +SKIP
     >>>
     >>> # Using scale bar method (scientific coordinates, Y-up)
-    >>> calibration = calibrate_video(
+    >>> calibration = calibrate_video(  # doctest: +SKIP
     ...     "session.mp4",
     ...     env,
     ...     scale_bar=((100, 200), (300, 200), 50.0),  # 200px = 50cm
     ... )
     >>>
     >>> # Using landmark correspondences (Y-flip implicit in correspondences)
-    >>> corners_px = np.array([[50, 50], [590, 50], [590, 430], [50, 430]])
-    >>> corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])
-    >>> calibration = calibrate_video(
+    >>> corners_px = np.array(
+    ...     [[50, 50], [590, 50], [590, 430], [50, 430]]
+    ... )  # doctest: +SKIP
+    >>> corners_env = np.array([[0, 0], [100, 0], [100, 80], [0, 80]])  # doctest: +SKIP
+    >>> calibration = calibrate_video(  # doctest: +SKIP
     ...     "session.mp4",
     ...     env,
     ...     landmarks_px=corners_px,
@@ -134,14 +139,14 @@ def calibrate_video(
     ... )
     >>>
     >>> # Using direct scale factor (most common)
-    >>> calibration = calibrate_video(
+    >>> calibration = calibrate_video(  # doctest: +SKIP
     ...     "session.mp4",
     ...     env,
     ...     cm_per_px=0.25,
     ... )
     >>>
     >>> # If overlay appears inverted, toggle flip_y
-    >>> calibration = calibrate_video(
+    >>> calibration = calibrate_video(  # doctest: +SKIP
     ...     "session.mp4",
     ...     env,
     ...     cm_per_px=0.25,
@@ -149,8 +154,10 @@ def calibrate_video(
     ... )
     >>>
     >>> # Use calibration with VideoOverlay
-    >>> video = VideoOverlay(source="session.mp4", calibration=calibration)
-    >>> env.animate_fields(fields, overlays=[video], backend="napari")
+    >>> video = VideoOverlay(
+    ...     source="session.mp4", calibration=calibration
+    ... )  # doctest: +SKIP
+    >>> env.animate_fields(fields, overlays=[video], backend="napari")  # doctest: +SKIP
     """
     # Validate video path exists
     video_path = Path(video_path)

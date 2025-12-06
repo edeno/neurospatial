@@ -41,17 +41,21 @@ def regions_from_labelme(
 
     Examples
     --------
-    >>> from neurospatial.annotation import regions_from_labelme
-    >>> from neurospatial.ops.transforms import (
+    >>> from neurospatial.annotation import regions_from_labelme  # doctest: +SKIP
+    >>> from neurospatial.ops.transforms import (  # doctest: +SKIP
     ...     VideoCalibration,
     ...     calibrate_from_scale_bar,
     ... )
     >>> # Without calibration (pixel coordinates)
-    >>> regions = regions_from_labelme("annotations.json")
+    >>> regions = regions_from_labelme("annotations.json")  # doctest: +SKIP
     >>> # With calibration (cm coordinates)
-    >>> transform = calibrate_from_scale_bar((0, 0), (100, 0), 50.0, (640, 480))
-    >>> calib = VideoCalibration(transform, (640, 480))
-    >>> regions = regions_from_labelme("annotations.json", calibration=calib)
+    >>> transform = calibrate_from_scale_bar(
+    ...     (0, 0), (100, 0), 50.0, (640, 480)
+    ... )  # doctest: +SKIP
+    >>> calib = VideoCalibration(transform, (640, 480))  # doctest: +SKIP
+    >>> regions = regions_from_labelme(
+    ...     "annotations.json", calibration=calib
+    ... )  # doctest: +SKIP
 
     """
     from neurospatial.regions.io import load_labelme_json
@@ -89,8 +93,8 @@ def regions_from_cvat(
 
     Examples
     --------
-    >>> from neurospatial.annotation import regions_from_cvat
-    >>> regions = regions_from_cvat("cvat_export.xml")
+    >>> from neurospatial.annotation import regions_from_cvat  # doctest: +SKIP
+    >>> regions = regions_from_cvat("cvat_export.xml")  # doctest: +SKIP
 
     """
     from neurospatial.regions.io import load_cvat_xml

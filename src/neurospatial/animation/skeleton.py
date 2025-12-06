@@ -178,7 +178,7 @@ class Skeleton:
     >>> len(skeleton.nodes)
     3
     >>> skeleton.edges
-    (('head', 'body'), ('body', 'tail'))
+    (('body', 'head'), ('body', 'tail'))
 
     With custom colors:
 

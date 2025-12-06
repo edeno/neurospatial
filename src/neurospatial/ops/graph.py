@@ -104,7 +104,6 @@ def neighbor_reduce(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
     >>> from neurospatial.ops.graph import neighbor_reduce
     >>> # Create 3x3 grid
     >>> positions = np.array(
@@ -287,7 +286,6 @@ def convolve(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    from neurospatial.environment._protocols import EnvironmentProtocol
     >>> from neurospatial.ops.graph import convolve
     >>> # Create 3x3 grid
     >>> positions = np.array([[i, j] for i in range(3) for j in range(3)])

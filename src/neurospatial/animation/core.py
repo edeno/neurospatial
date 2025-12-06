@@ -847,9 +847,9 @@ def large_session_napari_config(
     >>> env.animate_fields(fields, backend="napari", **config)  # doctest: +SKIP
 
     >>> # Or combine with estimated colormap range
-    >>> vmin, vmax = estimate_colormap_range_from_subset(fields)
-    >>> config = large_session_napari_config(n_frames=len(fields))
-    >>> env.animate_fields(
+    >>> vmin, vmax = estimate_colormap_range_from_subset(fields)  # doctest: +SKIP
+    >>> config = large_session_napari_config(n_frames=len(fields))  # doctest: +SKIP
+    >>> env.animate_fields(  # doctest: +SKIP
     ...     fields, vmin=vmin, vmax=vmax, backend="napari", **config
     ... )  # doctest: +SKIP
 

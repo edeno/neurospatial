@@ -177,10 +177,8 @@ def to_file(env: Environment, path: PathLike) -> None:
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> env.to_file(
-    ...     "my_environment"
-    ... )  # Creates my_environment.json and my_environment.npz
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> env.to_file("my_environment")  # doctest: +SKIP
 
     See Also
     --------
@@ -294,8 +292,8 @@ def from_file(path: PathLike) -> Environment:
 
     Examples
     --------
-    >>> env = from_file("my_environment")
-    >>> print(env.n_bins)
+    >>> env = from_file("my_environment")  # doctest: +SKIP
+    >>> print(env.n_bins)  # doctest: +SKIP
 
     See Also
     --------
@@ -423,11 +421,11 @@ def to_dict(env: Environment) -> dict[str, Any]:
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> env_dict = to_dict(env)
+    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
+    >>> env_dict = to_dict(env)  # doctest: +SKIP
     >>> # Pass to another process or serialize to JSON
-    >>> import json
-    >>> json_str = json.dumps(env_dict)
+    >>> import json  # doctest: +SKIP
+    >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
 
     See Also
     --------
@@ -501,8 +499,8 @@ def from_dict(data: dict[str, Any]) -> Environment:
 
     Examples
     --------
-    >>> env_dict = to_dict(env)
-    >>> env_restored = from_dict(env_dict)
+    >>> env_dict = to_dict(env)  # doctest: +SKIP
+    >>> env_restored = from_dict(env_dict)  # doctest: +SKIP
 
     See Also
     --------

@@ -60,9 +60,9 @@ class PeriEventResult:
     --------
     >>> result = peri_event_histogram(spikes, events, window=(-1, 2))  # doctest: +SKIP
     >>> # Access firing rate
-    >>> rate = result.firing_rate()
+    >>> rate = result.firing_rate()  # doctest: +SKIP
     >>> # Find peak response time
-    >>> peak_time = result.bin_centers[np.argmax(rate)]
+    >>> peak_time = result.bin_centers[np.argmax(rate)]  # doctest: +SKIP
     """
 
     bin_centers: NDArray[np.float64]
@@ -127,9 +127,9 @@ class PopulationPeriEventResult:
     ...     spike_trains, events, window=(-1, 2)
     ... )
     >>> # Get firing rates for all units
-    >>> rates = result.firing_rates()  # shape: (n_units, n_bins)
+    >>> rates = result.firing_rates()  # shape: (n_units, n_bins)  # doctest: +SKIP
     >>> # Get population average
-    >>> pop_rate = result.mean_histogram / result.bin_size
+    >>> pop_rate = result.mean_histogram / result.bin_size  # doctest: +SKIP
     """
 
     bin_centers: NDArray[np.float64]
@@ -348,8 +348,12 @@ def plot_peri_event_histogram(
     Examples
     --------
     >>> result = peri_event_histogram(spikes, events)  # doctest: +SKIP
-    >>> ax = plot_peri_event_histogram(result, title="Reward response")
-    >>> ax.axvline(0, color="k", linestyle="--", alpha=0.5)  # Mark event
+    >>> ax = plot_peri_event_histogram(
+    ...     result, title="Reward response"
+    ... )  # doctest: +SKIP
+    >>> ax.axvline(
+    ...     0, color="k", linestyle="--", alpha=0.5
+    ... )  # Mark event  # doctest: +SKIP
     """
     import matplotlib.pyplot as plt
 

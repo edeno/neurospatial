@@ -122,11 +122,11 @@ class EnvironmentFactories:
 
     Create environment from graph (1D track):
 
-    >>> import networkx as nx
-    >>> graph = nx.path_graph(10)
-    >>> for i, node in enumerate(graph.nodes()):
+    >>> import networkx as nx  # doctest: +SKIP
+    >>> graph = nx.path_graph(10)  # doctest: +SKIP
+    >>> for i, node in enumerate(graph.nodes()):  # doctest: +SKIP
     ...     graph.nodes[node]["pos"] = (i * 10.0, 0.0)
-    >>> env = Environment.from_graph(
+    >>> env = Environment.from_graph(  # doctest: +SKIP
     ...     graph=graph, edge_order=list(graph.edges()), edge_spacing=0.0, bin_size=2.0
     ... )
 
@@ -726,15 +726,15 @@ class EnvironmentFactories:
         --------
         Load a previously stored environment from scratch:
 
-        >>> from pynwb import NWBHDF5IO
-        >>> from neurospatial import Environment
-        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+        >>> from neurospatial import Environment  # doctest: +SKIP
+        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
         ...     nwbfile = io.read()
         ...     env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
 
         Create environment from Position data:
 
-        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
         ...     nwbfile = io.read()
         ...     env = Environment.from_nwb(nwbfile, bin_size=5.0, units="cm")
 

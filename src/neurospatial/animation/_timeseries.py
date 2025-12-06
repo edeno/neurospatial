@@ -50,17 +50,17 @@ def _group_timeseries(
     Examples
     --------
     >>> # Two overlays with same group -> one group
-    >>> data1 = TimeSeriesData(..., group="kinematics")
-    >>> data2 = TimeSeriesData(..., group="kinematics")
-    >>> groups = _group_timeseries([data1, data2])
-    >>> len(groups)  # 1 group with 2 items
+    >>> data1 = TimeSeriesData(..., group="kinematics")  # doctest: +SKIP
+    >>> data2 = TimeSeriesData(..., group="kinematics")  # doctest: +SKIP
+    >>> groups = _group_timeseries([data1, data2])  # doctest: +SKIP
+    >>> len(groups)  # 1 group with 2 items  # doctest: +SKIP
     1
 
     >>> # Two overlays with no group -> two groups
-    >>> data1 = TimeSeriesData(..., group=None)
-    >>> data2 = TimeSeriesData(..., group=None)
-    >>> groups = _group_timeseries([data1, data2])
-    >>> len(groups)  # 2 groups with 1 item each
+    >>> data1 = TimeSeriesData(..., group=None)  # doctest: +SKIP
+    >>> data2 = TimeSeriesData(..., group=None)  # doctest: +SKIP
+    >>> groups = _group_timeseries([data1, data2])  # doctest: +SKIP
+    >>> len(groups)  # 2 groups with 1 item each  # doctest: +SKIP
     2
     """
     if not timeseries_data:
@@ -483,14 +483,14 @@ class TimeSeriesArtistManager:
 
         Examples
         --------
-        >>> from matplotlib.gridspec import GridSpec
-        >>> import matplotlib.pyplot as plt
-        >>> fig = plt.figure()
-        >>> gs = GridSpec(2, 2, width_ratios=[3, 1])
-        >>> ax_field = fig.add_subplot(gs[:, 0])
-        >>> ax_ts1 = fig.add_subplot(gs[0, 1])
-        >>> ax_ts2 = fig.add_subplot(gs[1, 1])
-        >>> manager = TimeSeriesArtistManager.create_from_axes(
+        >>> from matplotlib.gridspec import GridSpec  # doctest: +SKIP
+        >>> import matplotlib.pyplot as plt  # doctest: +SKIP
+        >>> fig = plt.figure()  # doctest: +SKIP
+        >>> gs = GridSpec(2, 2, width_ratios=[3, 1])  # doctest: +SKIP
+        >>> ax_field = fig.add_subplot(gs[:, 0])  # doctest: +SKIP
+        >>> ax_ts1 = fig.add_subplot(gs[0, 1])  # doctest: +SKIP
+        >>> ax_ts2 = fig.add_subplot(gs[1, 1])  # doctest: +SKIP
+        >>> manager = TimeSeriesArtistManager.create_from_axes(  # doctest: +SKIP
         ...     axes=[ax_ts1, ax_ts2],
         ...     timeseries_data=[ts_data1, ts_data2],
         ...     frame_times=frame_times,
@@ -733,15 +733,17 @@ def _setup_video_figure_with_timeseries(
 
     Examples
     --------
-    >>> fig, ax_field, ts_manager = _setup_video_figure_with_timeseries(
-    ...     env=env,
-    ...     timeseries_data=[ts_data1, ts_data2],
-    ...     frame_times=frame_times,
+    >>> fig, ax_field, ts_manager = (
+    ...     _setup_video_figure_with_timeseries(  # doctest: +SKIP
+    ...         env=env,
+    ...         timeseries_data=[ts_data1, ts_data2],
+    ...         frame_times=frame_times,
+    ...     )
     ... )
     >>> # Render field to ax_field
-    >>> env.plot_field(field, ax=ax_field)
+    >>> env.plot_field(field, ax=ax_field)  # doctest: +SKIP
     >>> # Update time series
-    >>> ts_manager.update(frame_idx, [ts_data1, ts_data2])
+    >>> ts_manager.update(frame_idx, [ts_data1, ts_data2])  # doctest: +SKIP
     """
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec

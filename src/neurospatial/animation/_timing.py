@@ -40,7 +40,7 @@ def timing(name: str) -> Generator[None, None, None]:
 
     Examples
     --------
-    >>> with timing("render_frame"):
+    >>> with timing("render_frame"):  # doctest: +SKIP
     ...     result = expensive_operation()
     # Output (when NEUROSPATIAL_TIMING=1):
     # [TIMING] render_frame: 123.45 ms
@@ -75,7 +75,7 @@ def timed(func: Callable[P, T]) -> Callable[P, T]:
 
     Examples
     --------
-    >>> @timed
+    >>> @timed  # doctest: +SKIP
     ... def expensive_function():
     ...     # do work
     ...     pass
