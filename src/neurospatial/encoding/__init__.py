@@ -17,4 +17,48 @@ phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
-# Re-exports will be added as modules are moved here
+# Place cell analysis
+from neurospatial.encoding.place import (
+    DirectionalPlaceFields,
+    compute_directional_place_fields,
+    compute_field_emd,
+    compute_place_field,
+    detect_place_fields,
+    field_centroid,
+    field_shape_metrics,
+    field_shift_distance,
+    field_size,
+    field_stability,
+    in_out_field_ratio,
+    information_per_second,
+    mutual_information,
+    rate_map_coherence,
+    selectivity,
+    skaggs_information,
+    sparsity,
+    spatial_coverage_single_cell,
+    spikes_to_field,
+)
+
+__all__ = [
+    # Place cell analysis
+    "DirectionalPlaceFields",
+    "compute_directional_place_fields",
+    "compute_field_emd",
+    "compute_place_field",
+    "detect_place_fields",
+    "field_centroid",
+    "field_shape_metrics",
+    "field_shift_distance",
+    "field_size",
+    "field_stability",
+    "in_out_field_ratio",
+    "information_per_second",
+    "mutual_information",
+    "rate_map_coherence",
+    "selectivity",
+    "skaggs_information",
+    "sparsity",
+    "spatial_coverage_single_cell",
+    "spikes_to_field",
+]

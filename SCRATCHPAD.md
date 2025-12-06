@@ -1,11 +1,46 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 5 COMPLETE - All tasks done
+**Current Status**: Milestone 6 IN PROGRESS - Task 6.1 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 22)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.1: Create encoding/place.py)
+
+**Completed**: Create encoding/place.py with re-exports from spike_field.py and metrics/place_fields.py
+
+**Work Done**:
+1. Created test file `tests/encoding/__init__.py` (test package init)
+2. Created test file `tests/encoding/test_encoding_place.py` following TDD (RED phase)
+   - 34 tests total: import tests for 19 functions + 1 class, functionality tests for 12 functions
+   - Tests for imports from both `encoding.place` and `encoding/__init__.py`
+3. Verified tests FAIL before implementation (import error expected)
+4. Created `encoding/place.py` as a re-export module:
+   - From spike_field.py: `DirectionalPlaceFields`, `compute_place_field`, `compute_directional_place_fields`, `spikes_to_field`
+   - From metrics/place_fields.py: `detect_place_fields`, `skaggs_information`, `sparsity`, `selectivity`, `field_centroid`, `field_size`, `field_stability`, `field_shape_metrics`, `field_shift_distance`, `in_out_field_ratio`, `information_per_second`, `mutual_information`, `rate_map_coherence`, `spatial_coverage_single_cell`, `compute_field_emd`
+5. Updated `encoding/__init__.py` to export all 20 symbols
+6. All tests pass: 34 passed
+7. Ran ruff check/format and mypy - no issues
+8. Code review APPROVED
+
+**Files Created**:
+- `src/neurospatial/encoding/place.py` (new - re-exports from spike_field and metrics.place_fields)
+- `tests/encoding/__init__.py` (new)
+- `tests/encoding/test_encoding_place.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/encoding/__init__.py` (added 20 exports from place.py)
+
+**Milestone 6 Status**: Task 6.1 COMPLETE
+Remaining: Tasks 6.2-6.9
+
+**Next Task**: Milestone 6, Task 6.2 - Create encoding/grid.py
+
+---
 
 ### 2025-12-06 (Session 21)
 
