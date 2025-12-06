@@ -105,7 +105,7 @@ class TestPhasePrecessionReExportIdentity:
         from neurospatial.encoding.phase_precession import (
             PhasePrecessionResult as EncodingPhasePrecessionResult,
         )
-        from neurospatial.metrics.phase_precession import (
+        from neurospatial.encoding.phase_precession import (
             PhasePrecessionResult as MetricsPhasePrecessionResult,
         )
 
@@ -116,7 +116,7 @@ class TestPhasePrecessionReExportIdentity:
         from neurospatial.encoding.phase_precession import (
             phase_precession as encoding_phase_precession,
         )
-        from neurospatial.metrics.phase_precession import (
+        from neurospatial.encoding.phase_precession import (
             phase_precession as metrics_phase_precession,
         )
 
@@ -127,7 +127,7 @@ class TestPhasePrecessionReExportIdentity:
         from neurospatial.encoding.phase_precession import (
             has_phase_precession as encoding_has_phase_precession,
         )
-        from neurospatial.metrics.phase_precession import (
+        from neurospatial.encoding.phase_precession import (
             has_phase_precession as metrics_has_phase_precession,
         )
 
@@ -138,7 +138,7 @@ class TestPhasePrecessionReExportIdentity:
         from neurospatial.encoding.phase_precession import (
             plot_phase_precession as encoding_plot_phase_precession,
         )
-        from neurospatial.metrics.phase_precession import (
+        from neurospatial.encoding.phase_precession import (
             plot_phase_precession as metrics_plot_phase_precession,
         )
 

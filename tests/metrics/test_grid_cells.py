@@ -17,7 +17,7 @@ class TestSpatialAutocorrelation:
 
     def test_fft_method_on_regular_grid(self):
         """Test FFT method returns 2D autocorrelation on regular grid."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Create regular 2D grid environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -43,7 +43,7 @@ class TestSpatialAutocorrelation:
 
     def test_graph_method_returns_tuple(self):
         """Test graph method returns (distances, correlations) tuple."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -74,7 +74,7 @@ class TestSpatialAutocorrelation:
 
     def test_auto_method_works(self):
         """Test auto method can detect appropriate method."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -95,7 +95,7 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_shape_mismatch(self):
         """Test raises ValueError if firing_rate shape doesn't match env.n_bins."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -110,7 +110,7 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_all_nan(self):
         """Test raises ValueError if all firing rates are NaN."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -125,7 +125,7 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_constant_rates(self):
         """Test raises ValueError if all valid firing rates are constant."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -140,7 +140,7 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_invalid_method(self):
         """Test raises ValueError on invalid method parameter."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -156,7 +156,7 @@ class TestSpatialAutocorrelation:
 
     def test_fft_autocorr_returns_finite_values(self):
         """Test FFT autocorrelation returns finite values."""
-        from neurospatial.metrics.grid_cells import spatial_autocorrelation
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -188,7 +188,7 @@ class TestGridScore:
 
         Reference: Langston et al. (2010) Science
         """
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Create synthetic autocorrelogram with perfect hexagonal peaks
         size = 100
@@ -227,7 +227,7 @@ class TestGridScore:
         - Correlations at all rotation angles are approximately equal
         - Grid score = min(r60, r120) - max(r30, r90, r150) ≈ 0
         """
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Create random autocorrelogram (seeded for reproducibility)
         rng = np.random.default_rng(12345)
@@ -241,7 +241,7 @@ class TestGridScore:
 
     def test_hexagonal_pattern_high_score(self):
         """Test hexagonal grid pattern produces high grid score."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Create synthetic hexagonal autocorrelogram
         # (Simplified: create peaks at 60° and 120° positions)
@@ -271,7 +271,7 @@ class TestGridScore:
 
     def test_place_cell_pattern_low_score(self):
         """Test place cell (single peak) produces low grid score."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Create autocorrelogram with single central peak (place cell)
         size = 50
@@ -291,7 +291,7 @@ class TestGridScore:
 
     def test_random_noise_near_zero_score(self):
         """Test random noise produces near-zero grid score."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Random autocorrelogram with local RNG
         rng = np.random.default_rng(42)
@@ -304,7 +304,7 @@ class TestGridScore:
 
     def test_raises_on_1d_input(self):
         """Test raises ValueError on 1D input."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         rng = np.random.default_rng(42)
         autocorr = rng.standard_normal(50)
@@ -314,7 +314,7 @@ class TestGridScore:
 
     def test_raises_on_invalid_radii(self):
         """Test raises ValueError on invalid radius parameters."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         rng = np.random.default_rng(42)
         autocorr = rng.standard_normal((50, 50))
@@ -329,7 +329,7 @@ class TestGridScore:
 
     def test_returns_nan_on_all_nan_input(self):
         """Test returns NaN if autocorrelation contains NaN."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         autocorr = np.full((50, 50), np.nan)
 
@@ -339,7 +339,7 @@ class TestGridScore:
 
     def test_score_in_valid_range(self):
         """Test grid score is in expected range [-2, 2]."""
-        from neurospatial.metrics.grid_cells import grid_score
+        from neurospatial.encoding.grid import grid_score
 
         # Random autocorrelogram with local RNG
         rng = np.random.default_rng(42)
@@ -363,7 +363,7 @@ class TestPeriodicityScore:
         - Periodicity score = 1 - CV(peak_spacings) where CV = std/mean
         - For perfect periodicity: CV ≈ 0, score ≈ 1.0
         """
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Create perfect sinusoidal correlation profile
         distances = np.linspace(0, 100, 200)
@@ -383,7 +383,7 @@ class TestPeriodicityScore:
         - CV = std/mean will be high when spacing varies
         - Periodicity score = 1 - CV will be low
         """
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Create correlation with irregular peaks (jittered positions)
         distances = np.linspace(0, 100, 200)
@@ -409,7 +409,7 @@ class TestPeriodicityScore:
 
     def test_regular_peaks_high_score(self):
         """Test regular periodic peaks produce high periodicity score."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Create regularly spaced peaks
         distances = np.linspace(0, 100, 100)
@@ -426,7 +426,7 @@ class TestPeriodicityScore:
 
     def test_irregular_peaks_low_score(self):
         """Test irregular peaks produce low periodicity score."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Create irregularly spaced peaks
         distances = np.linspace(0, 100, 100)
@@ -443,7 +443,7 @@ class TestPeriodicityScore:
 
     def test_no_peaks_returns_nan(self):
         """Test returns NaN if no peaks detected."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Flat correlation profile (no peaks)
         distances = np.linspace(0, 100, 100)
@@ -455,7 +455,7 @@ class TestPeriodicityScore:
 
     def test_raises_on_shape_mismatch(self):
         """Test raises ValueError if distances and correlations have different shapes."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         distances = np.linspace(0, 100, 100)
         correlations = np.zeros(50)  # Different size
@@ -465,7 +465,7 @@ class TestPeriodicityScore:
 
     def test_raises_on_empty_input(self):
         """Test raises ValueError on empty input."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         distances = np.array([])
         correlations = np.array([])
@@ -475,7 +475,7 @@ class TestPeriodicityScore:
 
     def test_raises_on_invalid_min_peaks(self):
         """Test raises ValueError on invalid min_peaks parameter."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         distances = np.linspace(0, 100, 100)
         correlations = np.zeros(100)
@@ -485,7 +485,7 @@ class TestPeriodicityScore:
 
     def test_returns_nan_on_all_nan(self):
         """Test returns NaN if all correlations are NaN."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         distances = np.linspace(0, 100, 100)
         correlations = np.full(100, np.nan)
@@ -496,7 +496,7 @@ class TestPeriodicityScore:
 
     def test_score_in_valid_range(self):
         """Test periodicity score is in range [0, 1]."""
-        from neurospatial.metrics.grid_cells import periodicity_score
+        from neurospatial.encoding.grid import periodicity_score
 
         # Create some peaks
         distances = np.linspace(0, 100, 100)
@@ -542,7 +542,7 @@ class TestGridScale:
         - Peaks are placed at radius=20 pixels from center
         - With bin_size=2.0, expected scale = 20 * 2.0 = 40.0 units
         """
-        from neurospatial.metrics.grid_cells import grid_scale
+        from neurospatial.encoding.grid import grid_scale
 
         # Create hexagonal pattern with known radius
         radius_pixels = 20.0
@@ -559,7 +559,7 @@ class TestGridScale:
 
     def test_grid_scale_returns_nan_on_flat_input(self):
         """Test returns NaN when no clear peaks detected (flat data)."""
-        from neurospatial.metrics.grid_cells import grid_scale
+        from neurospatial.encoding.grid import grid_scale
 
         # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
@@ -571,7 +571,7 @@ class TestGridScale:
 
     def test_grid_scale_raises_on_1d_input(self):
         """Test raises ValueError on 1D input."""
-        from neurospatial.metrics.grid_cells import grid_scale
+        from neurospatial.encoding.grid import grid_scale
 
         autocorr = np.zeros(100)
 
@@ -580,7 +580,7 @@ class TestGridScale:
 
     def test_grid_scale_raises_on_invalid_bin_size(self):
         """Test raises ValueError on non-positive bin_size."""
-        from neurospatial.metrics.grid_cells import grid_scale
+        from neurospatial.encoding.grid import grid_scale
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -592,7 +592,7 @@ class TestGridScale:
 
     def test_grid_scale_scales_with_bin_size(self):
         """Test scale output is proportional to bin_size."""
-        from neurospatial.metrics.grid_cells import grid_scale
+        from neurospatial.encoding.grid import grid_scale
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -614,7 +614,7 @@ class TestGridOrientation:
         - First peak at 0° (horizontal)
         - Orientation should be close to 0° (or equivalently ~60°)
         """
-        from neurospatial.metrics.grid_cells import grid_orientation
+        from neurospatial.encoding.grid import grid_orientation
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -628,7 +628,7 @@ class TestGridOrientation:
 
     def test_grid_orientation_anchor_rotated_grid(self):
         """Anchor test: Grid rotated by 30° should have orientation ~30°."""
-        from neurospatial.metrics.grid_cells import grid_orientation
+        from neurospatial.encoding.grid import grid_orientation
 
         # Create hexagonal pattern rotated by 30°
         size = 100
@@ -661,7 +661,7 @@ class TestGridOrientation:
 
     def test_grid_orientation_returns_nan_on_flat_input(self):
         """Test returns NaN when no clear peaks detected (flat data)."""
-        from neurospatial.metrics.grid_cells import grid_orientation
+        from neurospatial.encoding.grid import grid_orientation
 
         # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
@@ -674,7 +674,7 @@ class TestGridOrientation:
 
     def test_grid_orientation_in_valid_range(self):
         """Test orientation is in range [0, 60)."""
-        from neurospatial.metrics.grid_cells import grid_orientation
+        from neurospatial.encoding.grid import grid_orientation
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -684,7 +684,7 @@ class TestGridOrientation:
 
     def test_grid_orientation_raises_on_1d_input(self):
         """Test raises ValueError on 1D input."""
-        from neurospatial.metrics.grid_cells import grid_orientation
+        from neurospatial.encoding.grid import grid_orientation
 
         autocorr = np.zeros(100)
 
@@ -697,7 +697,7 @@ class TestGridProperties:
 
     def test_grid_properties_returns_dataclass(self):
         """Test grid_properties returns GridProperties dataclass."""
-        from neurospatial.metrics.grid_cells import GridProperties, grid_properties
+        from neurospatial.encoding.grid import GridProperties, grid_properties
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -713,7 +713,7 @@ class TestGridProperties:
 
     def test_grid_properties_anchor_hexagonal(self):
         """Anchor test: Hexagonal pattern should have consistent properties."""
-        from neurospatial.metrics.grid_cells import grid_properties
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr(size=100, radius=20.0)
         bin_size = 2.0
@@ -738,7 +738,7 @@ class TestGridProperties:
 
     def test_grid_properties_matches_individual_functions(self):
         """Test grid_properties matches individual function outputs."""
-        from neurospatial.metrics.grid_cells import (
+        from neurospatial.encoding.grid import (
             grid_orientation,
             grid_properties,
             grid_scale,
@@ -767,7 +767,7 @@ class TestGridProperties:
 
     def test_grid_properties_raises_on_invalid_input(self):
         """Test raises ValueError on invalid input."""
-        from neurospatial.metrics.grid_cells import grid_properties
+        from neurospatial.encoding.grid import grid_properties
 
         # 1D input
         with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
@@ -779,7 +779,7 @@ class TestGridProperties:
 
     def test_grid_properties_handles_no_peaks(self):
         """Test handles case with no detectable peaks (flat data)."""
-        from neurospatial.metrics.grid_cells import grid_properties
+        from neurospatial.encoding.grid import grid_properties
 
         # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
@@ -800,7 +800,7 @@ class TestFindAutocorrPeaks:
 
     def test_finds_hexagonal_peaks(self):
         """Test finds 6 peaks in hexagonal pattern."""
-        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+        from neurospatial.encoding.grid import _find_autocorr_peaks
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -811,7 +811,7 @@ class TestFindAutocorrPeaks:
 
     def test_excludes_central_peak(self):
         """Test excludes central peak from results."""
-        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+        from neurospatial.encoding.grid import _find_autocorr_peaks
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -823,7 +823,7 @@ class TestFindAutocorrPeaks:
 
     def test_returns_center_relative_coords(self):
         """Test returns coordinates relative to center."""
-        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+        from neurospatial.encoding.grid import _find_autocorr_peaks
 
         autocorr = _create_hexagonal_autocorr(size=100)
 
@@ -836,7 +836,7 @@ class TestFindAutocorrPeaks:
 
     def test_sorted_by_distance(self):
         """Test peaks are sorted by distance from center."""
-        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+        from neurospatial.encoding.grid import _find_autocorr_peaks
 
         autocorr = _create_hexagonal_autocorr()
 
@@ -849,7 +849,7 @@ class TestFindAutocorrPeaks:
 
     def test_returns_empty_on_flat_input(self):
         """Test returns empty array on flat input (no peaks)."""
-        from neurospatial.metrics.grid_cells import _find_autocorr_peaks
+        from neurospatial.encoding.grid import _find_autocorr_peaks
 
         autocorr = np.ones((50, 50)) * 0.5
 

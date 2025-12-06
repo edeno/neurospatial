@@ -32,7 +32,7 @@ class TestBorderScore:
         - cM (coverage of boundary by field) = 1.0 (full coverage)
         - border_score = cM - dM = 1.0 - 0 = 1.0
         """
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Create a 4x4 grid (16 bins total, 12 boundary bins)
         x = np.linspace(0, 30, 300)
@@ -62,7 +62,7 @@ class TestBorderScore:
         - cM (boundary coverage) = 0 (no boundary bins in field)
         - border_score = cM - dM = 0 - dM < 0
         """
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Create a 5x5 grid (25 bins) - center bin is index 12
         x = np.linspace(0, 50, 500)
@@ -100,7 +100,7 @@ class TestBorderScore:
             else:
                 firing_rate[i] = 0.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -121,7 +121,7 @@ class TestBorderScore:
             distance = np.sqrt((center[0] - 25) ** 2 + (center[1] - 25) ** 2)
             firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 5.0**2))
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -141,7 +141,7 @@ class TestBorderScore:
             if center[0] < 10 and center[1] < 10:
                 firing_rate[i] = 5.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -157,7 +157,7 @@ class TestBorderScore:
         # Uniform firing everywhere
         firing_rate = np.ones(env.n_bins) * 2.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -180,7 +180,7 @@ class TestBorderScore:
         distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
         firing_rate = distances / 25.0  # Normalize
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Lower threshold includes more bins
         score_low = border_score(firing_rate, env, threshold=0.1)
@@ -199,7 +199,7 @@ class TestBorderScore:
         # All NaN
         firing_rate = np.full(env.n_bins, np.nan)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -213,7 +213,7 @@ class TestBorderScore:
         # All zeros
         firing_rate = np.zeros(env.n_bins)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -227,7 +227,7 @@ class TestBorderScore:
         # Wrong shape
         firing_rate = np.ones((env.n_bins, 2))  # 2D instead of 1D
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         with pytest.raises(ValueError, match=r"firing_rate\.shape"):
             border_score(firing_rate, env)
@@ -237,7 +237,7 @@ class TestBorderScore:
         env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Threshold must be in (0, 1)
         with pytest.raises(ValueError, match="threshold must be in"):
@@ -251,7 +251,7 @@ class TestBorderScore:
         env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # min_area must be non-negative
         with pytest.raises(ValueError, match="min_area must be non-negative"):
@@ -262,7 +262,7 @@ class TestBorderScore:
         env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # This should work (firing_rate first)
         score = border_score(firing_rate, env)
@@ -277,7 +277,7 @@ class TestBorderScore:
         boundary = env.boundary_bins
         firing_rate[boundary] = 5.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env)
 
@@ -290,7 +290,7 @@ class TestBorderScore:
         env = dense_rectangular_grid_env
         rng = np.random.default_rng(42)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Test multiple random firing rates on same environment
         for _ in range(5):
@@ -316,7 +316,7 @@ class TestBorderScore:
         boundary = env.boundary_bins
         firing_rate[boundary] = 5.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Explicit geodesic
         score_geodesic = border_score(firing_rate, env, distance_metric="geodesic")
@@ -340,7 +340,7 @@ class TestBorderScore:
         boundary = env.boundary_bins
         firing_rate[boundary] = 5.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env, distance_metric="euclidean")
 
@@ -361,7 +361,7 @@ class TestBorderScore:
             if distance < 8:  # Central field
                 firing_rate[i] = 5.0
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score_geodesic = border_score(firing_rate, env, distance_metric="geodesic")
         score_euclidean = border_score(firing_rate, env, distance_metric="euclidean")
@@ -380,7 +380,7 @@ class TestBorderScore:
         env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         # Invalid distance metric
         with pytest.raises(
@@ -401,7 +401,7 @@ class TestBorderScore:
             distance = np.sqrt((center[0] - 25) ** 2 + (center[1] - 25) ** 2)
             firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 5.0**2))
 
-        from neurospatial.metrics.boundary_cells import border_score
+        from neurospatial.encoding.border import border_score
 
         score = border_score(firing_rate, env, distance_metric="euclidean")
 
@@ -443,7 +443,7 @@ class TestComputeRegionCoverage:
         firing_rate[north_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env)
 
@@ -480,7 +480,7 @@ class TestComputeRegionCoverage:
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         # Only compute for region1 and region2
         coverage = compute_region_coverage(
@@ -508,7 +508,7 @@ class TestComputeRegionCoverage:
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env, regions=None)
 
@@ -530,7 +530,7 @@ class TestComputeRegionCoverage:
         firing_rate[0] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env)
 
@@ -547,7 +547,7 @@ class TestComputeRegionCoverage:
         firing_rate[0] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         with pytest.raises(ValueError, match="Region 'nonexistent' not found"):
             compute_region_coverage(field_bins, env, regions=["nonexistent"])
@@ -566,7 +566,7 @@ class TestComputeRegionCoverage:
         firing_rate[0] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env)
 
@@ -598,7 +598,7 @@ class TestComputeRegionCoverage:
         center_bins = np.where(env.mask_for_region("center"))[0]
         field_bins = center_bins
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env)
 
@@ -625,7 +625,7 @@ class TestComputeRegionCoverage:
         north_bins = np.where(env.mask_for_region("north"))[0]
         field_bins = north_bins
 
-        from neurospatial.metrics.boundary_cells import compute_region_coverage
+        from neurospatial.encoding.border import compute_region_coverage
 
         coverage = compute_region_coverage(field_bins, env)
 

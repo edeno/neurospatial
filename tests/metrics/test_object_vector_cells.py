@@ -21,20 +21,20 @@ class TestModuleSetup:
 
     def test_module_imports(self) -> None:
         """Test that object_vector_cells metrics module can be imported."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         assert object_vector_cells is not None
 
     def test_module_has_docstring(self) -> None:
         """Test that module has a docstring."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         assert object_vector_cells.__doc__ is not None
         assert len(object_vector_cells.__doc__) > 100  # Should be substantial
 
     def test_module_docstring_mentions_object_vector(self) -> None:
         """Test that module docstring mentions object-vector cells."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         docstring = object_vector_cells.__doc__
         assert docstring is not None
@@ -42,14 +42,14 @@ class TestModuleSetup:
 
     def test_module_has_all_attribute(self) -> None:
         """Test that module has __all__ defined."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         assert hasattr(object_vector_cells, "__all__")
         assert isinstance(object_vector_cells.__all__, list)
 
     def test_module_all_contains_expected_exports(self) -> None:
         """Test that __all__ contains expected exports."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         expected = [
             "ObjectVectorMetrics",
@@ -63,7 +63,7 @@ class TestModuleSetup:
 
     def test_module_docstring_has_references(self) -> None:
         """Test that module docstring includes scientific references."""
-        from neurospatial.metrics import object_vector_cells
+        from neurospatial.encoding import object_vector as object_vector_cells
 
         docstring = object_vector_cells.__doc__
         assert docstring is not None
@@ -75,13 +75,13 @@ class TestObjectVectorMetricsDataclass:
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that ObjectVectorMetrics can be imported."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         assert ObjectVectorMetrics is not None
 
     def test_dataclass_is_frozen(self) -> None:
         """Test that ObjectVectorMetrics is a frozen dataclass."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         # Create instance
         metrics = ObjectVectorMetrics(
@@ -103,7 +103,7 @@ class TestObjectVectorMetricsDataclass:
 
     def test_dataclass_has_all_fields(self) -> None:
         """Test that ObjectVectorMetrics has all required fields."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         metrics = ObjectVectorMetrics(
             preferred_distance=10.0,
@@ -131,7 +131,7 @@ class TestObjectVectorMetricsDataclass:
 
     def test_interpretation_method_exists(self) -> None:
         """Test that ObjectVectorMetrics has interpretation() method."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         metrics = ObjectVectorMetrics(
             preferred_distance=10.0,
@@ -152,7 +152,7 @@ class TestObjectVectorMetricsDataclass:
 
     def test_interpretation_shows_preferred_distance(self) -> None:
         """Test that interpretation shows preferred distance."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         metrics = ObjectVectorMetrics(
             preferred_distance=15.5,
@@ -172,7 +172,7 @@ class TestObjectVectorMetricsDataclass:
 
     def test_interpretation_shows_preferred_direction_degrees(self) -> None:
         """Test that interpretation shows preferred direction in degrees."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         metrics = ObjectVectorMetrics(
             preferred_distance=10.0,
@@ -193,7 +193,7 @@ class TestObjectVectorMetricsDataclass:
 
     def test_str_method_returns_interpretation(self) -> None:
         """Test that __str__() returns interpretation()."""
-        from neurospatial.metrics.object_vector_cells import ObjectVectorMetrics
+        from neurospatial.encoding.object_vector import ObjectVectorMetrics
 
         metrics = ObjectVectorMetrics(
             preferred_distance=10.0,
@@ -222,7 +222,7 @@ class TestComputeObjectVectorTuning:
 
     def test_function_exists(self) -> None:
         """Test that compute_object_vector_tuning can be imported."""
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -231,7 +231,7 @@ class TestComputeObjectVectorTuning:
     def test_returns_object_vector_metrics(self) -> None:
         """Test that function returns ObjectVectorMetrics instance."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             ObjectVectorMetrics,
             compute_object_vector_tuning,
         )
@@ -267,7 +267,7 @@ class TestComputeObjectVectorTuning:
     def test_tuning_curve_shape(self) -> None:
         """Test that tuning curve has expected shape."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -303,7 +303,7 @@ class TestComputeObjectVectorTuning:
     def test_bins_spikes_by_nearest_object(self) -> None:
         """Test that spikes are binned by distance/direction to nearest object."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -346,7 +346,7 @@ class TestComputeObjectVectorTuning:
     def test_occupancy_normalization(self) -> None:
         """Test that tuning curve is normalized by occupancy."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -381,7 +381,7 @@ class TestComputeObjectVectorTuning:
     def test_min_occupancy_threshold(self) -> None:
         """Test that min_occupancy_seconds filters low-occupancy bins."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -415,7 +415,7 @@ class TestComputeObjectVectorTuning:
     def test_multiple_objects_nearest(self) -> None:
         """Test that nearest object is used by default."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -449,7 +449,7 @@ class TestComputeObjectVectorTuning:
     def test_validation_empty_spike_times(self) -> None:
         """Test validation when no spikes provided."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -478,7 +478,7 @@ class TestComputeObjectVectorTuning:
     def test_validation_times_positions_mismatch(self) -> None:
         """Test validation when times and positions have different lengths."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
 
@@ -514,13 +514,13 @@ class TestObjectVectorScore:
 
     def test_function_exists(self) -> None:
         """Test that object_vector_score can be imported."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         assert callable(object_vector_score)
 
     def test_returns_float(self) -> None:
         """Test that function returns a float score."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         # Sharp tuning curve - high distance and direction selectivity
         n_dist, n_dir = 10, 12
@@ -533,7 +533,7 @@ class TestObjectVectorScore:
 
     def test_high_selectivity_high_score(self) -> None:
         """Test that sharp tuning produces high score."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         # Very sharp tuning (single peak)
         n_dist, n_dir = 10, 12
@@ -545,7 +545,7 @@ class TestObjectVectorScore:
 
     def test_uniform_tuning_low_score(self) -> None:
         """Test that uniform tuning produces low score."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         # Uniform tuning (no selectivity)
         n_dist, n_dir = 10, 12
@@ -556,7 +556,7 @@ class TestObjectVectorScore:
 
     def test_distance_selectivity_computation(self) -> None:
         """Test that distance selectivity is computed as peak/mean ratio."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         # Tuning with 10x peak/mean ratio
         n_dist, n_dir = 10, 12
@@ -568,7 +568,7 @@ class TestObjectVectorScore:
 
     def test_direction_selectivity_computation(self) -> None:
         """Test that direction selectivity uses mean resultant length."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         # Sharp direction tuning (single direction)
         n_dist, n_dir = 10, 12
@@ -580,7 +580,7 @@ class TestObjectVectorScore:
 
     def test_max_distance_selectivity_parameter(self) -> None:
         """Test that max_distance_selectivity parameter works."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         n_dist, n_dir = 10, 12
         tuning_curve = np.ones((n_dist, n_dir))
@@ -597,7 +597,7 @@ class TestObjectVectorScore:
 
     def test_validation_max_distance_selectivity(self) -> None:
         """Test that max_distance_selectivity > 1 is required."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         tuning_curve = np.ones((10, 12))
 
@@ -606,7 +606,7 @@ class TestObjectVectorScore:
 
     def test_handles_nan_values(self) -> None:
         """Test that NaN values in tuning curve are handled."""
-        from neurospatial.metrics.object_vector_cells import object_vector_score
+        from neurospatial.encoding.object_vector import object_vector_score
 
         n_dist, n_dir = 10, 12
         tuning_curve = np.ones((n_dist, n_dir)) * 5.0
@@ -628,13 +628,13 @@ class TestIsObjectVectorCell:
 
     def test_function_exists(self) -> None:
         """Test that is_object_vector_cell can be imported."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         assert callable(is_object_vector_cell)
 
     def test_returns_bool(self) -> None:
         """Test that function returns a boolean."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         # Create simple tuning curve
         tuning_curve = np.ones((10, 12)) * 5.0
@@ -645,7 +645,7 @@ class TestIsObjectVectorCell:
 
     def test_classifies_high_score_high_rate_as_ovc(self) -> None:
         """Test that high score + high rate is classified as OVC."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         # Sharp tuning with high peak rate
         n_dist, n_dir = 10, 12
@@ -660,7 +660,7 @@ class TestIsObjectVectorCell:
 
     def test_rejects_low_score(self) -> None:
         """Test that low score is not classified as OVC."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         # Uniform tuning (low selectivity)
         tuning_curve = np.ones((10, 12)) * 10.0
@@ -672,7 +672,7 @@ class TestIsObjectVectorCell:
 
     def test_rejects_low_peak_rate(self) -> None:
         """Test that low peak rate is not classified as OVC."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         # Sharp tuning but low rate
         n_dist, n_dir = 10, 12
@@ -686,7 +686,7 @@ class TestIsObjectVectorCell:
 
     def test_threshold_parameters(self) -> None:
         """Test that score_threshold and min_peak_rate parameters work."""
-        from neurospatial.metrics.object_vector_cells import is_object_vector_cell
+        from neurospatial.encoding.object_vector import is_object_vector_cell
 
         n_dist, n_dir = 10, 12
         tuning_curve = np.ones((n_dist, n_dir)) * 2.0
@@ -712,7 +712,7 @@ class TestPlotObjectVectorTuning:
 
     def test_function_exists(self) -> None:
         """Test that plot_object_vector_tuning can be imported."""
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         assert callable(plot_object_vector_tuning)
 
@@ -721,7 +721,7 @@ class TestPlotObjectVectorTuning:
         import matplotlib.pyplot as plt
         from matplotlib.axes import Axes
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 11)
@@ -739,7 +739,7 @@ class TestPlotObjectVectorTuning:
         import matplotlib.pyplot as plt
         from matplotlib.projections.polar import PolarAxes
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 11)
@@ -756,7 +756,7 @@ class TestPlotObjectVectorTuning:
         """Test that function uses provided axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 11)
@@ -778,7 +778,7 @@ class TestPlotObjectVectorTuning:
         """Test that peak location is marked when show_peak=True."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.zeros((10, 12))
         tuning_curve[5, 6] = 1.0  # Clear peak
@@ -802,7 +802,7 @@ class TestPlotObjectVectorTuning:
         """Test that colorbar can be added."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 11)
@@ -828,7 +828,7 @@ class TestPlotObjectVectorTuning:
         """Test that custom colormap is applied."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 11)
@@ -850,7 +850,7 @@ class TestPlotObjectVectorTuning:
         """Test that tuning curve shape is validated against bins."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.object_vector_cells import plot_object_vector_tuning
+        from neurospatial.encoding.object_vector import plot_object_vector_tuning
 
         tuning_curve = np.random.default_rng(42).random((10, 12))
         distance_bins = np.linspace(0, 50, 5)  # Wrong size
@@ -878,7 +878,7 @@ class TestRecoverGroundTruthFromSimulation:
     def test_recover_preferred_distance(self) -> None:
         """Test that preferred distance can be recovered from simulated OVC."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
         from neurospatial.simulation.models.object_vector_cells import (
@@ -937,7 +937,7 @@ class TestRecoverGroundTruthFromSimulation:
     def test_recover_preferred_direction(self) -> None:
         """Test that preferred direction can be recovered from simulated OVC."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
         )
         from neurospatial.simulation.models.object_vector_cells import (
@@ -999,7 +999,7 @@ class TestRecoverGroundTruthFromSimulation:
     def test_simulated_ovc_classified_as_ovc(self) -> None:
         """Test that simulated OVC is classified as OVC."""
         from neurospatial import Environment
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning,
             is_object_vector_cell,
         )

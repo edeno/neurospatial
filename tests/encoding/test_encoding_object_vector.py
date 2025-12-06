@@ -192,7 +192,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             ObjectVectorMetrics as EncodingMetrics,
         )
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             ObjectVectorMetrics as MetricsMetrics,
         )
 
@@ -204,7 +204,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning as encoding_func,
         )
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_tuning as metrics_func,
         )
 
@@ -216,7 +216,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             object_vector_score as encoding_func,
         )
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             object_vector_score as metrics_func,
         )
 
@@ -228,7 +228,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             is_object_vector_cell as encoding_func,
         )
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             is_object_vector_cell as metrics_func,
         )
 
@@ -240,7 +240,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             plot_object_vector_tuning as encoding_func,
         )
-        from neurospatial.metrics.object_vector_cells import (
+        from neurospatial.encoding.object_vector import (
             plot_object_vector_tuning as metrics_func,
         )
 

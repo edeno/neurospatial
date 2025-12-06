@@ -40,7 +40,7 @@ def test_extract_connected_component_scipy_2d_grid():
     seed_idx = np.argmin(distances)  # Closest bin to center
 
     # Import internal functions
-    from neurospatial.metrics.place_fields import (
+    from neurospatial.encoding.place import (
         _extract_connected_component_scipy,
     )
 
@@ -75,7 +75,7 @@ def test_extract_connected_component_scipy_3d_grid():
     mask = distances < 15.0
     seed_idx = np.argmin(distances)
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_scipy
+    from neurospatial.encoding.place import _extract_connected_component_scipy
 
     # Test scipy path on 3D grid
     result_scipy = _extract_connected_component_scipy(seed_idx, mask, env)
@@ -105,7 +105,7 @@ def test_extract_connected_component_scipy_disconnected_regions():
     # Seed in first region
     seed_idx = np.argmin(distances1)
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_scipy
+    from neurospatial.encoding.place import _extract_connected_component_scipy
 
     result = _extract_connected_component_scipy(seed_idx, mask, env)
 
@@ -133,7 +133,7 @@ def test_extract_connected_component_scipy_rejects_non_grid():
     mask = np.ones(env.n_bins, dtype=bool)
     seed_idx = 0
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_scipy
+    from neurospatial.encoding.place import _extract_connected_component_scipy
 
     # Should raise ValueError
     with pytest.raises(ValueError, match="scipy path requires grid_shape"):
@@ -158,7 +158,7 @@ def test_extract_connected_component_graph_2d_grid():
     mask = distances < 20.0
     seed_idx = np.argmin(distances)
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_graph
+    from neurospatial.encoding.place import _extract_connected_component_graph
 
     # Test graph path (should work even on grid)
     result_graph = _extract_connected_component_graph(seed_idx, mask, env)
@@ -182,7 +182,7 @@ def test_extract_connected_component_graph_isolated_seed():
     seed_idx = 10
     mask[seed_idx] = True
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_graph
+    from neurospatial.encoding.place import _extract_connected_component_graph
 
     result = _extract_connected_component_graph(seed_idx, mask, env)
 
@@ -213,7 +213,7 @@ def test_extract_connected_component_routing_grid():
     mask = distances < 20.0
     seed_idx = np.argmin(distances)
 
-    from neurospatial.metrics.place_fields import _extract_connected_component
+    from neurospatial.encoding.place import _extract_connected_component
 
     # Call main function (should route to scipy)
     result = _extract_connected_component(seed_idx, mask, env)
@@ -237,7 +237,7 @@ def test_extract_connected_component_scipy_vs_graph_equivalence():
     mask = distances < 20.0
     seed_idx = np.argmin(distances)
 
-    from neurospatial.metrics.place_fields import (
+    from neurospatial.encoding.place import (
         _extract_connected_component_graph,
         _extract_connected_component_scipy,
     )
@@ -273,7 +273,7 @@ def test_detect_place_fields_uses_scipy_path():
         dist = np.linalg.norm(env.bin_centers[i] - center)
         firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 10.0**2))
 
-    from neurospatial.metrics.place_fields import detect_place_fields
+    from neurospatial.encoding.place import detect_place_fields
 
     # Should use scipy path internally (grid environment)
     fields = detect_place_fields(firing_rate, env)
@@ -297,7 +297,7 @@ def test_detect_place_fields_grid_vs_nongrid_equivalence():
         dist = np.linalg.norm(env_grid.bin_centers[i] - center)
         firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 10.0**2))
 
-    from neurospatial.metrics.place_fields import detect_place_fields
+    from neurospatial.encoding.place import detect_place_fields
 
     # Detect fields (uses scipy path for grid)
     fields_scipy = detect_place_fields(firing_rate, env_grid)
@@ -344,7 +344,7 @@ def test_bfs_ordering_unchanged_after_deque_optimization():
     mask = distances < 15.0
     seed_idx = np.argmin(distances)
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_graph
+    from neurospatial.encoding.place import _extract_connected_component_graph
 
     result = _extract_connected_component_graph(seed_idx, mask, env)
 
@@ -384,7 +384,7 @@ def test_bfs_expansion_order_is_breadth_first():
     mask = np.ones(env.n_bins, dtype=bool)
     seed_idx = 0  # Start from one end
 
-    from neurospatial.metrics.place_fields import _extract_connected_component_graph
+    from neurospatial.encoding.place import _extract_connected_component_graph
 
     # Track discovery order by modifying the function behavior
     # We can't directly observe order since result is sorted, but we can
@@ -432,7 +432,7 @@ def test_connected_component_performance_scipy_vs_graph():
 
     print(f"Mask: {mask.sum()} bins above threshold")
 
-    from neurospatial.metrics.place_fields import (
+    from neurospatial.encoding.place import (
         _extract_connected_component_graph,
         _extract_connected_component_scipy,
     )

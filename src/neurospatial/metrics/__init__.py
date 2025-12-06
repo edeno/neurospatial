@@ -83,11 +83,11 @@ from neurospatial.behavior.trajectory import (
     mean_square_displacement,
 )
 
-# Boundary cell metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
+# Boundary cell metrics - from encoding module (consolidated from metrics.boundary_cells)
+from neurospatial.encoding.border import border_score, compute_region_coverage
 
-# Grid cell metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.grid_cells import (
+# Grid cell metrics - from encoding module (consolidated from metrics.grid_cells)
+from neurospatial.encoding.grid import (
     GridProperties,
     grid_orientation,
     grid_properties,
@@ -97,8 +97,8 @@ from neurospatial.metrics.grid_cells import (
     spatial_autocorrelation,
 )
 
-# Head direction metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.head_direction import (
+# Head direction metrics - from encoding module (consolidated from metrics.head_direction)
+from neurospatial.encoding.head_direction import (
     HeadDirectionMetrics,
     head_direction_metrics,
     head_direction_tuning_curve,
@@ -106,8 +106,8 @@ from neurospatial.metrics.head_direction import (
     plot_head_direction_tuning,
 )
 
-# Object-vector cell metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.object_vector_cells import (
+# Object-vector cell metrics - from encoding module (consolidated from metrics.object_vector_cells)
+from neurospatial.encoding.object_vector import (
     ObjectVectorMetrics,
     compute_object_vector_tuning,
     is_object_vector_cell,
@@ -115,17 +115,20 @@ from neurospatial.metrics.object_vector_cells import (
     plot_object_vector_tuning,
 )
 
-# Phase precession metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.phase_precession import (
+# Phase precession metrics - from encoding module (consolidated from metrics.phase_precession)
+from neurospatial.encoding.phase_precession import (
     PhasePrecessionResult,
     has_phase_precession,
     phase_precession,
     plot_phase_precession,
 )
 
-# Place field metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.place_fields import (
+# Place field metrics - from encoding module (consolidated from metrics.place_fields)
+from neurospatial.encoding.place import (
+    DirectionalPlaceFields,
+    compute_directional_place_fields,
     compute_field_emd,
+    compute_place_field,
     detect_place_fields,
     field_centroid,
     field_shape_metrics,
@@ -140,10 +143,11 @@ from neurospatial.metrics.place_fields import (
     skaggs_information,
     sparsity,
     spatial_coverage_single_cell,
+    spikes_to_field,
 )
 
-# Population metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.population import (
+# Population metrics - from encoding module (consolidated from metrics.population)
+from neurospatial.encoding.population import (
     PopulationCoverageResult,
     count_place_cells,
     field_density_map,
@@ -153,8 +157,8 @@ from neurospatial.metrics.population import (
     population_vector_correlation,
 )
 
-# Spatial view cell metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.spatial_view_cells import (
+# Spatial view cell metrics - from encoding module (consolidated from metrics.spatial_view_cells)
+from neurospatial.encoding.spatial_view import (
     SpatialViewMetrics,
     is_spatial_view_cell,
     spatial_view_cell_metrics,
@@ -166,6 +170,7 @@ from neurospatial.metrics.spatial_view_cells import (
 __all__ = [
     "DecisionAnalysisResult",
     "DecisionBoundaryMetrics",
+    "DirectionalPlaceFields",
     "GoalDirectedMetrics",
     "GridProperties",
     "HeadDirectionMetrics",
@@ -183,11 +188,13 @@ __all__ = [
     "border_score",
     "classify_vte",
     "compute_decision_analysis",
+    "compute_directional_place_fields",
     "compute_field_emd",
     "compute_goal_directed_metrics",
     "compute_home_range",
     "compute_object_vector_tuning",
     "compute_path_efficiency",
+    "compute_place_field",
     "compute_pre_decision_metrics",
     "compute_region_coverage",
     "compute_step_lengths",
@@ -251,6 +258,7 @@ __all__ = [
     "spatial_autocorrelation",
     "spatial_coverage_single_cell",
     "spatial_view_cell_metrics",
+    "spikes_to_field",
     "subgoal_efficiency",
     "time_efficiency",
     "traveled_path_length",

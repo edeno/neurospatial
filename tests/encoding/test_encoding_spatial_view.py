@@ -212,7 +212,7 @@ class TestReexportIdentity:
     def test_SpatialViewMetrics_same_as_original(self):
         """SpatialViewMetrics is same class as original."""
         from neurospatial.encoding.spatial_view import SpatialViewMetrics
-        from neurospatial.metrics.spatial_view_cells import (
+        from neurospatial.encoding.spatial_view import (
             SpatialViewMetrics as Original,
         )
 
@@ -221,7 +221,7 @@ class TestReexportIdentity:
     def test_spatial_view_cell_metrics_same_as_original(self):
         """spatial_view_cell_metrics is same function as original."""
         from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
-        from neurospatial.metrics.spatial_view_cells import (
+        from neurospatial.encoding.spatial_view import (
             spatial_view_cell_metrics as original,
         )
 
@@ -230,7 +230,7 @@ class TestReexportIdentity:
     def test_is_spatial_view_cell_same_as_original(self):
         """is_spatial_view_cell is same function as original."""
         from neurospatial.encoding.spatial_view import is_spatial_view_cell
-        from neurospatial.metrics.spatial_view_cells import (
+        from neurospatial.encoding.spatial_view import (
             is_spatial_view_cell as original,
         )
 

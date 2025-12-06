@@ -92,7 +92,7 @@ class TestBorderReExports:
     def test_border_score_same_as_metrics(self) -> None:
         """Test that encoding.border.border_score is same as metrics."""
         from neurospatial.encoding.border import border_score as encoding_border_score
-        from neurospatial.metrics.boundary_cells import (
+        from neurospatial.encoding.border import (
             border_score as metrics_border_score,
         )
 
@@ -104,7 +104,7 @@ class TestBorderReExports:
         from neurospatial.encoding.border import (
             compute_region_coverage as encoding_compute_region_coverage,
         )
-        from neurospatial.metrics.boundary_cells import (
+        from neurospatial.encoding.border import (
             compute_region_coverage as metrics_compute_region_coverage,
         )
 

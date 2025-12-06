@@ -31,7 +31,7 @@ class TestModuleStructure:
 
     def test_imports_from_spatial_view_cells_module(self):
         """Can import directly from module."""
-        from neurospatial.metrics.spatial_view_cells import (
+        from neurospatial.encoding.spatial_view import (
             SpatialViewMetrics,
             is_spatial_view_cell,
             spatial_view_cell_metrics,
@@ -43,14 +43,14 @@ class TestModuleStructure:
 
     def test_module_docstring(self):
         """Module has docstring."""
-        from neurospatial.metrics import spatial_view_cells
+        from neurospatial.encoding import spatial_view as spatial_view_cells
 
         assert spatial_view_cells.__doc__ is not None
         assert len(spatial_view_cells.__doc__) > 100
 
     def test_all_exports(self):
         """Module exports expected symbols."""
-        from neurospatial.metrics import spatial_view_cells
+        from neurospatial.encoding import spatial_view as spatial_view_cells
 
         assert hasattr(spatial_view_cells, "__all__")
         expected = [
@@ -67,7 +67,7 @@ class TestSpatialViewMetrics:
 
     def test_dataclass_creation(self):
         """Can create SpatialViewMetrics dataclass."""
-        from neurospatial.metrics.spatial_view_cells import SpatialViewMetrics
+        from neurospatial.encoding.spatial_view import SpatialViewMetrics
 
         metrics = SpatialViewMetrics(
             view_field_skaggs_info=1.5,
@@ -87,7 +87,7 @@ class TestSpatialViewMetrics:
 
     def test_dataclass_is_frozen(self):
         """SpatialViewMetrics is immutable."""
-        from neurospatial.metrics.spatial_view_cells import SpatialViewMetrics
+        from neurospatial.encoding.spatial_view import SpatialViewMetrics
 
         metrics = SpatialViewMetrics(
             view_field_skaggs_info=1.5,
@@ -103,7 +103,7 @@ class TestSpatialViewMetrics:
 
     def test_interpretation_method(self):
         """interpretation() returns human-readable string."""
-        from neurospatial.metrics.spatial_view_cells import SpatialViewMetrics
+        from neurospatial.encoding.spatial_view import SpatialViewMetrics
 
         # Spatial view cell
         svc = SpatialViewMetrics(
@@ -122,7 +122,7 @@ class TestSpatialViewMetrics:
 
     def test_interpretation_non_svc(self):
         """interpretation() explains why not classified."""
-        from neurospatial.metrics.spatial_view_cells import SpatialViewMetrics
+        from neurospatial.encoding.spatial_view import SpatialViewMetrics
 
         # Not a spatial view cell
         non_svc = SpatialViewMetrics(
@@ -139,7 +139,7 @@ class TestSpatialViewMetrics:
 
     def test_str_returns_interpretation(self):
         """str() returns interpretation."""
-        from neurospatial.metrics.spatial_view_cells import SpatialViewMetrics
+        from neurospatial.encoding.spatial_view import SpatialViewMetrics
 
         metrics = SpatialViewMetrics(
             view_field_skaggs_info=1.5,
@@ -186,7 +186,7 @@ class TestSpatialViewCellMetrics:
 
     def test_returns_spatial_view_metrics(self, sample_data):
         """Returns SpatialViewMetrics dataclass."""
-        from neurospatial.metrics.spatial_view_cells import (
+        from neurospatial.encoding.spatial_view import (
             SpatialViewMetrics,
             spatial_view_cell_metrics,
         )
@@ -203,7 +203,7 @@ class TestSpatialViewCellMetrics:
 
     def test_view_field_skaggs_info_computed(self, sample_data):
         """View field Skaggs info is computed."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -220,7 +220,7 @@ class TestSpatialViewCellMetrics:
 
     def test_place_field_skaggs_info_computed(self, sample_data):
         """Place field Skaggs info is computed."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -237,7 +237,7 @@ class TestSpatialViewCellMetrics:
 
     def test_view_place_correlation_computed(self, sample_data):
         """View-place correlation is computed."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -253,7 +253,7 @@ class TestSpatialViewCellMetrics:
 
     def test_sparsity_computed(self, sample_data):
         """View field sparsity is computed."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -269,7 +269,7 @@ class TestSpatialViewCellMetrics:
 
     def test_coherence_computed(self, sample_data):
         """View field coherence is computed."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -285,7 +285,7 @@ class TestSpatialViewCellMetrics:
 
     def test_empty_spikes_raises(self, sample_data):
         """Empty spike_times raises ValueError."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         with pytest.raises(ValueError, match="spike_times"):
             spatial_view_cell_metrics(
@@ -298,7 +298,7 @@ class TestSpatialViewCellMetrics:
 
     def test_mismatched_lengths_raises(self, sample_data):
         """Mismatched array lengths raises ValueError."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         # Wrong positions length
         with pytest.raises(ValueError, match="length"):
@@ -312,7 +312,7 @@ class TestSpatialViewCellMetrics:
 
     def test_view_distance_parameter(self, sample_data):
         """view_distance parameter affects computation."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics_short = spatial_view_cell_metrics(
             env=sample_data["env"],
@@ -344,7 +344,7 @@ class TestIsSpatialViewCell:
     def test_returns_bool(self):
         """Returns boolean."""
         from neurospatial import Environment
-        from neurospatial.metrics.spatial_view_cells import is_spatial_view_cell
+        from neurospatial.encoding.spatial_view import is_spatial_view_cell
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -370,7 +370,7 @@ class TestIsSpatialViewCell:
         """Classification depends on view/place info ratio."""
         # We can't easily create a definite SVC, but we can test the function runs
         from neurospatial import Environment
-        from neurospatial.metrics.spatial_view_cells import is_spatial_view_cell
+        from neurospatial.encoding.spatial_view import is_spatial_view_cell
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -409,7 +409,7 @@ class TestIsSpatialViewCell:
     def test_max_correlation_threshold(self):
         """Classification depends on max correlation threshold."""
         from neurospatial import Environment
-        from neurospatial.metrics.spatial_view_cells import is_spatial_view_cell
+        from neurospatial.encoding.spatial_view import is_spatial_view_cell
 
         rng = np.random.default_rng(42)
         samples = rng.uniform(0, 100, (500, 2))
@@ -498,7 +498,7 @@ class TestGroundTruthRecovery:
 
     def test_spatial_view_cell_has_higher_view_info(self, spatial_view_cell_data):
         """Spatial view cell should have higher view field info than place field info."""
-        from neurospatial.metrics.spatial_view_cells import spatial_view_cell_metrics
+        from neurospatial.encoding.spatial_view import spatial_view_cell_metrics
 
         metrics = spatial_view_cell_metrics(
             env=spatial_view_cell_data["env"],
@@ -521,7 +521,7 @@ class TestGroundTruthRecovery:
     def test_place_cell_not_classified_as_svc(self):
         """A place cell should not be classified as a spatial view cell."""
         from neurospatial import Environment
-        from neurospatial.metrics.spatial_view_cells import is_spatial_view_cell
+        from neurospatial.encoding.spatial_view import is_spatial_view_cell
         from neurospatial.simulation import PlaceCellModel
 
         rng = np.random.default_rng(42)

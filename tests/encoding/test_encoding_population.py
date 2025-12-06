@@ -157,7 +157,7 @@ class TestReExportIdentity:
     def test_PopulationCoverageResult_is_same_object(self) -> None:
         """Test PopulationCoverageResult is the same object as in metrics."""
         from neurospatial.encoding.population import PopulationCoverageResult
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             PopulationCoverageResult as OriginalPopulationCoverageResult,
         )
 
@@ -166,7 +166,7 @@ class TestReExportIdentity:
     def test_population_coverage_is_same_function(self) -> None:
         """Test population_coverage is the same function as in metrics."""
         from neurospatial.encoding.population import population_coverage
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             population_coverage as original_population_coverage,
         )
 
@@ -175,7 +175,7 @@ class TestReExportIdentity:
     def test_plot_population_coverage_is_same_function(self) -> None:
         """Test plot_population_coverage is the same function as in metrics."""
         from neurospatial.encoding.population import plot_population_coverage
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             plot_population_coverage as original_plot_population_coverage,
         )
 
@@ -184,7 +184,7 @@ class TestReExportIdentity:
     def test_field_density_map_is_same_function(self) -> None:
         """Test field_density_map is the same function as in metrics."""
         from neurospatial.encoding.population import field_density_map
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             field_density_map as original_field_density_map,
         )
 
@@ -193,7 +193,7 @@ class TestReExportIdentity:
     def test_count_place_cells_is_same_function(self) -> None:
         """Test count_place_cells is the same function as in metrics."""
         from neurospatial.encoding.population import count_place_cells
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             count_place_cells as original_count_place_cells,
         )
 
@@ -202,7 +202,7 @@ class TestReExportIdentity:
     def test_field_overlap_is_same_function(self) -> None:
         """Test field_overlap is the same function as in metrics."""
         from neurospatial.encoding.population import field_overlap
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             field_overlap as original_field_overlap,
         )
 
@@ -211,7 +211,7 @@ class TestReExportIdentity:
     def test_population_vector_correlation_is_same_function(self) -> None:
         """Test population_vector_correlation is the same function as in metrics."""
         from neurospatial.encoding.population import population_vector_correlation
-        from neurospatial.metrics.population import (
+        from neurospatial.encoding.population import (
             population_vector_correlation as original_population_vector_correlation,
         )
 

@@ -38,7 +38,7 @@ def test_place_field_workflow_integration():
     occupancy = np.ones(env.n_bins) / env.n_bins
 
     # Import all functions
-    from neurospatial.metrics.place_fields import (
+    from neurospatial.encoding.place import (
         detect_place_fields,
         field_centroid,
         field_size,
@@ -114,7 +114,7 @@ class TestDetectPlaceFields:
             firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 2.5**2))  # 5 Hz peak
 
         # Import after env creation to test actual import
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         # Detect fields
         fields = detect_place_fields(firing_rate, env)
@@ -147,7 +147,7 @@ class TestDetectPlaceFields:
                 -(dist2**2) / (2 * 2.0**2)
             )
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         # With subfield detection enabled (default)
         fields_with_subfields = detect_place_fields(
@@ -174,7 +174,7 @@ class TestDetectPlaceFields:
         # Create high firing rate everywhere (interneuron-like)
         firing_rate = np.ones(env.n_bins) * 15.0  # 15 Hz everywhere
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         # Should detect no fields (excluded as interneuron)
         fields = detect_place_fields(firing_rate, env, max_mean_rate=10.0)
@@ -196,7 +196,7 @@ class TestDetectPlaceFields:
         # Uniform firing rate everywhere (below interneuron threshold)
         firing_rate = np.ones(env.n_bins) * 5.0  # 5 Hz everywhere
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         fields = detect_place_fields(firing_rate, env)
 
@@ -213,7 +213,7 @@ class TestDetectPlaceFields:
         env = Environment.from_samples(positions, bin_size=2.0)
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         # This should work (firing_rate first)
         fields = detect_place_fields(firing_rate, env)
@@ -233,7 +233,7 @@ class TestFieldMetrics:
         # Select a field (5 bins)
         field_bins = np.array([0, 1, 2, 3, 4])
 
-        from neurospatial.metrics.place_fields import field_size
+        from neurospatial.encoding.place import field_size
 
         size = field_size(field_bins, env)
 
@@ -253,7 +253,7 @@ class TestFieldMetrics:
 
         field_bins = np.array([0])
 
-        from neurospatial.metrics.place_fields import field_size
+        from neurospatial.encoding.place import field_size
 
         size = field_size(field_bins, env)
 
@@ -284,7 +284,7 @@ class TestFieldMetrics:
         threshold = 0.5
         field_bins = np.where(firing_rate > threshold)[0]
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         centroid = field_centroid(firing_rate, field_bins, env)
 
@@ -308,7 +308,7 @@ class TestFieldMetrics:
 
         field_bins = np.where(firing_rate > 1.0)[0]
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         centroid = field_centroid(firing_rate, field_bins, env)
 
@@ -331,7 +331,7 @@ class TestFieldMetrics:
         field_bins = np.array([0, 1, 2, 3, 4])
         firing_rate[field_bins] = 5.0
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         # Graph centroid should be one of the field bins
         centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
@@ -371,7 +371,7 @@ class TestFieldMetrics:
         if len(field_bins) < 3:
             pytest.skip("Not enough field bins for L-shape test")
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         centroid_euclidean = field_centroid(
             firing_rate, field_bins, env, method="euclidean"
@@ -398,7 +398,7 @@ class TestFieldMetrics:
         field_bins = np.array([5])
         firing_rate[5] = 10.0
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         centroid = field_centroid(firing_rate, field_bins, env, method="graph")
         assert_allclose(centroid, env.bin_centers[5])
@@ -426,7 +426,7 @@ class TestSkaggsInformation:
         firing_rate = np.array([0.0, 2.0, 4.0, 2.0])  # Hz
         occupancy = np.array([0.25, 0.25, 0.25, 0.25])  # Equal occupancy
 
-        from neurospatial.metrics.place_fields import skaggs_information
+        from neurospatial.encoding.place import skaggs_information
 
         info = skaggs_information(firing_rate, occupancy, base=2.0)
 
@@ -446,7 +446,7 @@ class TestSkaggsInformation:
         firing_rate = np.ones(env.n_bins) * 3.0  # Constant 3 Hz everywhere
         occupancy = np.ones(env.n_bins) / env.n_bins  # Equal occupancy
 
-        from neurospatial.metrics.place_fields import skaggs_information
+        from neurospatial.encoding.place import skaggs_information
 
         info = skaggs_information(firing_rate, occupancy)
 
@@ -461,7 +461,7 @@ class TestSkaggsInformation:
         firing_rate[env.n_bins // 2] = 100.0  # Very high rate in one bin
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import skaggs_information
+        from neurospatial.encoding.place import skaggs_information
 
         info = skaggs_information(firing_rate, occupancy)
 
@@ -477,7 +477,7 @@ class TestSparsity:
         firing_rate = np.array([0.0, 2.0, 4.0, 2.0])
         occupancy = np.array([0.25, 0.25, 0.25, 0.25])
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         spars = sparsity(firing_rate, occupancy)
 
@@ -501,7 +501,7 @@ class TestSparsity:
 
         occupancy = np.ones(env.n_bins) / env.n_bins  # Equal occupancy
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         for pattern in patterns:
             spars = sparsity(pattern, occupancy)
@@ -516,7 +516,7 @@ class TestSparsity:
         firing_rate[:n_active_bins] = 10.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         spars = sparsity(firing_rate, occupancy)
 
@@ -529,7 +529,7 @@ class TestSparsity:
         firing_rate = np.ones(env.n_bins) * 5.0  # Fires everywhere equally
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         spars = sparsity(firing_rate, occupancy)
 
@@ -546,7 +546,7 @@ class TestFieldStability:
         rate_map_1 = rng.random(100) * 5
         rate_map_2 = rate_map_1.copy()
 
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
 
@@ -559,7 +559,7 @@ class TestFieldStability:
         rate_map_1 = rng.random(100)
         rate_map_2 = rng.random(100)
 
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
 
@@ -571,7 +571,7 @@ class TestFieldStability:
         rate_map_1 = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         rate_map_2 = np.array([1.1, 2.1, 2.9, 4.1, 5.1])  # Slightly noisy
 
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         pearson = field_stability(rate_map_1, rate_map_2, method="pearson")
         spearman = field_stability(rate_map_1, rate_map_2, method="spearman")
@@ -586,7 +586,7 @@ class TestFieldStability:
         rate_map_1 = rng.random(50) * 5
         rate_map_2 = rng.random(50) * 5
 
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         # Should accept 'method' parameter
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
@@ -604,7 +604,7 @@ class TestFieldStability:
         rate_map_1 = np.ones(50) * 5.0  # 5 Hz everywhere
         rate_map_2 = np.ones(50) * 5.0
 
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         # Uniform rate → zero variance → correlation undefined
         stability = field_stability(rate_map_1, rate_map_2, method="pearson")
@@ -653,7 +653,7 @@ class TestRateMapCoherence:
         # Uniform firing rate (constant - no variance)
         firing_rate = np.ones(env.n_bins) * 5.0
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -673,7 +673,7 @@ class TestRateMapCoherence:
         # Random firing rates (no spatial structure)
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -699,7 +699,7 @@ class TestRateMapCoherence:
             distance = np.sqrt((center[0] - 20) ** 2 + (center[1] - 20) ** 2)
             firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 8.0**2))
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -717,7 +717,7 @@ class TestRateMapCoherence:
         # All zeros
         firing_rate = np.zeros(env.n_bins)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -736,7 +736,7 @@ class TestRateMapCoherence:
         firing_rate = rng.random(env.n_bins) * 5.0
         firing_rate[::5] = np.nan  # 20% NaN
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -757,7 +757,7 @@ class TestRateMapCoherence:
         firing_rate = np.ones(env.n_bins) * 5.0
         firing_rate[: len(firing_rate) // 2] = 3.0
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence_pearson = rate_map_coherence(firing_rate, env, method="pearson")
         coherence_spearman = rate_map_coherence(firing_rate, env, method="spearman")
@@ -774,7 +774,7 @@ class TestRateMapCoherence:
 
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         coherence = rate_map_coherence(firing_rate, env)
 
@@ -793,7 +793,7 @@ class TestRateMapCoherence:
             # Random firing rate
             firing_rate = rng.random(env.n_bins) * 5.0
 
-            from neurospatial.metrics.place_fields import rate_map_coherence
+            from neurospatial.encoding.place import rate_map_coherence
 
             coherence = rate_map_coherence(firing_rate, env)
 
@@ -830,7 +830,7 @@ class TestSelectivity:
         firing_rate = np.array([0.0, 2.0, 8.0, 2.0])  # Peak = 8.0
         occupancy = np.array([0.25, 0.25, 0.25, 0.25])  # Equal occupancy
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -848,7 +848,7 @@ class TestSelectivity:
         firing_rate = np.ones(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -863,7 +863,7 @@ class TestSelectivity:
         firing_rate[env.n_bins // 2] = 100.0  # Very high rate in one bin
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -878,7 +878,7 @@ class TestSelectivity:
         firing_rate = np.array([1.0, 1.0, 1.0, 10.0])
         occupancy = np.array([0.4, 0.3, 0.2, 0.1])  # Less time at peak
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -896,7 +896,7 @@ class TestSelectivity:
         firing_rate[50] = 0.0
         occupancy = np.ones(100) / 100
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -908,7 +908,7 @@ class TestSelectivity:
         firing_rate = np.full(100, np.nan)
         occupancy = np.ones(100) / 100
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -920,7 +920,7 @@ class TestSelectivity:
         firing_rate = np.array([1.0, 2.0, np.nan, 8.0, 3.0])
         occupancy = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -941,7 +941,7 @@ class TestSelectivity:
             firing_rate = rng.random(env.n_bins) * 10
             occupancy = np.ones(env.n_bins) / env.n_bins
 
-            from neurospatial.metrics.place_fields import selectivity
+            from neurospatial.encoding.place import selectivity
 
             select = selectivity(firing_rate, occupancy)
 
@@ -956,7 +956,7 @@ class TestSelectivity:
         firing_rate = rng.random(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         select = selectivity(firing_rate, occupancy)
 
@@ -975,7 +975,7 @@ class TestInOutFieldRatio:
         firing_rate[40:50] = 10.0
         field_bins = np.arange(40, 50)
 
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         ratio = in_out_field_ratio(firing_rate, field_bins)
 
@@ -987,7 +987,7 @@ class TestInOutFieldRatio:
         firing_rate = np.ones(100) * 5.0
         field_bins = np.arange(40, 50)
 
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         ratio = in_out_field_ratio(firing_rate, field_bins)
 
@@ -1000,7 +1000,7 @@ class TestInOutFieldRatio:
         firing_rate = rng.random(100) * 5.0
         field_bins = np.array([], dtype=np.int64)
 
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         ratio = in_out_field_ratio(firing_rate, field_bins)
 
@@ -1018,7 +1018,7 @@ class TestInformationMetrics:
         firing_rate[env.n_bins // 2] = 10.0  # 10 Hz in one bin
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import information_per_second
+        from neurospatial.encoding.place import information_per_second
 
         info_rate = information_per_second(firing_rate, occupancy)
 
@@ -1032,7 +1032,7 @@ class TestInformationMetrics:
         firing_rate = np.ones(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import information_per_second
+        from neurospatial.encoding.place import information_per_second
 
         info_rate = information_per_second(firing_rate, occupancy)
 
@@ -1046,7 +1046,7 @@ class TestInformationMetrics:
         firing_rate = rng.random(env.n_bins) * 10.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import (
+        from neurospatial.encoding.place import (
             information_per_second,
             mutual_information,
         )
@@ -1063,7 +1063,7 @@ class TestInformationMetrics:
         firing_rate = np.ones(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
 
-        from neurospatial.metrics.place_fields import mutual_information
+        from neurospatial.encoding.place import mutual_information
 
         mi = mutual_information(firing_rate, occupancy)
 
@@ -1081,7 +1081,7 @@ class TestSpatialCoverage:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[:n_active_bins] = 5.0  # Fires in ~10% of bins
 
-        from neurospatial.metrics.place_fields import spatial_coverage_single_cell
+        from neurospatial.encoding.place import spatial_coverage_single_cell
 
         coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
 
@@ -1093,7 +1093,7 @@ class TestSpatialCoverage:
         env = medium_2d_env
         firing_rate = np.ones(env.n_bins) * 5.0
 
-        from neurospatial.metrics.place_fields import spatial_coverage_single_cell
+        from neurospatial.encoding.place import spatial_coverage_single_cell
 
         coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
 
@@ -1105,7 +1105,7 @@ class TestSpatialCoverage:
         env = medium_2d_env
         firing_rate = np.zeros(env.n_bins)
 
-        from neurospatial.metrics.place_fields import spatial_coverage_single_cell
+        from neurospatial.encoding.place import spatial_coverage_single_cell
 
         coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
 
@@ -1130,7 +1130,7 @@ class TestFieldShapeMetrics:
         field_bins = np.where(circular_mask)[0]
         firing_rate[field_bins] = 10.0
 
-        from neurospatial.metrics.place_fields import field_shape_metrics
+        from neurospatial.encoding.place import field_shape_metrics
 
         shape = field_shape_metrics(firing_rate, field_bins, env)
 
@@ -1162,7 +1162,7 @@ class TestFieldShapeMetrics:
         if len(field_bins) > 0:
             firing_rate[field_bins] = 10.0
 
-            from neurospatial.metrics.place_fields import field_shape_metrics
+            from neurospatial.encoding.place import field_shape_metrics
 
             shape = field_shape_metrics(firing_rate, field_bins, env)
 
@@ -1181,7 +1181,7 @@ class TestFieldShapeMetrics:
         field_bins = np.arange(10)
         firing_rate[field_bins] = 5.0
 
-        from neurospatial.metrics.place_fields import field_shape_metrics
+        from neurospatial.encoding.place import field_shape_metrics
 
         with np.testing.suppress_warnings() as sup:
             sup.filter(UserWarning, "field_shape_metrics currently only supports 2D")
@@ -1214,7 +1214,7 @@ class TestFieldShiftDistance:
         firing_rate_1[field_bins_1] = 10.0
         firing_rate_2[field_bins_2] = 10.0
 
-        from neurospatial.metrics.place_fields import field_shift_distance
+        from neurospatial.encoding.place import field_shift_distance
 
         shift = field_shift_distance(
             firing_rate_1,
@@ -1248,7 +1248,7 @@ class TestFieldShiftDistance:
         firing_rate_1[field_bins_1] = 10.0
         firing_rate_2[field_bins_2] = 10.0
 
-        from neurospatial.metrics.place_fields import field_shift_distance
+        from neurospatial.encoding.place import field_shift_distance
 
         shift = field_shift_distance(
             firing_rate_1,
@@ -1291,7 +1291,7 @@ class TestFieldShiftDistance:
         field_bins_2 = np.arange(mid_bins + 10, mid_bins + 20)
         firing_rate_2[field_bins_2] = 10.0
 
-        from neurospatial.metrics.place_fields import field_shift_distance
+        from neurospatial.encoding.place import field_shift_distance
 
         # Fallback to Euclidean if geodesic fails
         try:
@@ -1334,7 +1334,7 @@ class TestComputeFieldEMD:
 
     def test_emd_identical_distributions(self):
         """Test EMD is zero for identical distributions."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1356,7 +1356,7 @@ class TestComputeFieldEMD:
         This is the baseline case: no spatial structure means no difference
         to measure.
         """
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20
@@ -1381,7 +1381,7 @@ class TestComputeFieldEMD:
 
     def test_emd_euclidean_metric(self):
         """Test EMD with Euclidean metric."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1407,7 +1407,7 @@ class TestComputeFieldEMD:
 
     def test_emd_geodesic_metric(self):
         """Test EMD with geodesic metric."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         # Create denser sampling for better connectivity
@@ -1432,7 +1432,7 @@ class TestComputeFieldEMD:
 
     def test_emd_normalization(self):
         """Test that normalization works correctly."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1462,7 +1462,7 @@ class TestComputeFieldEMD:
 
     def test_emd_nan_handling(self):
         """Test EMD handles NaN values gracefully."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1491,7 +1491,7 @@ class TestComputeFieldEMD:
 
     def test_emd_all_zeros(self):
         """Test EMD with all-zero distributions."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1507,7 +1507,7 @@ class TestComputeFieldEMD:
 
     def test_emd_single_bin(self):
         """Test EMD with single non-zero bin."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1525,7 +1525,7 @@ class TestComputeFieldEMD:
 
     def test_emd_dimension_mismatch_raises_error(self):
         """Test EMD raises error with mismatched dimensions."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1539,7 +1539,7 @@ class TestComputeFieldEMD:
 
     def test_emd_invalid_metric_raises_error(self):
         """Test EMD raises error with invalid metric."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1553,7 +1553,7 @@ class TestComputeFieldEMD:
 
     def test_emd_wrong_n_bins_raises_error(self):
         """Test EMD raises error when arrays don't match env.n_bins."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1568,7 +1568,7 @@ class TestComputeFieldEMD:
 
     def test_emd_sparse_fields(self):
         """Test EMD with sparse fields (few non-zero bins)."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1590,7 +1590,7 @@ class TestComputeFieldEMD:
 
     def test_emd_euclidean_vs_geodesic_open_field(self):
         """Test that Euclidean and geodesic EMD are similar in open field."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         # Dense sampling for good connectivity
@@ -1620,7 +1620,7 @@ class TestComputeFieldEMD:
 
     def test_emd_symmetry(self):
         """Test that EMD is symmetric: EMD(p, q) == EMD(q, p)."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1646,7 +1646,7 @@ class TestComputeFieldEMD:
 
     def test_emd_geodesic_respects_barriers(self):
         """Test that geodesic EMD > Euclidean EMD when barriers present."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         # Create L-shaped environment with barrier in middle
         # This creates a non-convex environment where geodesic != Euclidean
@@ -1692,7 +1692,7 @@ class TestComputeFieldEMD:
 
     def test_emd_geodesic_disconnected_warning(self):
         """Test that disconnected bins trigger aggregated warning."""
-        from neurospatial.metrics import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         # Create sparse environment with disconnected regions
@@ -1739,7 +1739,7 @@ class TestDetectPlaceFieldsValidation:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         wrong_firing_rate = np.zeros(env.n_bins + 10)
 
@@ -1755,7 +1755,7 @@ class TestDetectPlaceFieldsValidation:
         env = Environment.from_samples(positions, bin_size=2.0)
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
             detect_place_fields(firing_rate, env, threshold=0.0)
@@ -1775,7 +1775,7 @@ class TestDetectPlaceFieldsValidation:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         firing_rate = np.full(env.n_bins, np.nan)
 
@@ -1789,7 +1789,7 @@ class TestDetectPlaceFieldsValidation:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         firing_rate = np.zeros(env.n_bins)
         peak_idx = env.n_bins // 2
@@ -1810,7 +1810,7 @@ class TestDetectPlaceFieldsValidation:
 
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import detect_place_fields
+        from neurospatial.encoding.place import detect_place_fields
 
         firing_rate = np.zeros(env.n_bins)
         for i in range(env.n_bins):
@@ -1841,7 +1841,7 @@ class TestFieldCentroidEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import field_centroid
+        from neurospatial.encoding.place import field_centroid
 
         field_bins = np.array([0, 1, 2, 3, 4])
         firing_rate = np.zeros(env.n_bins)
@@ -1862,7 +1862,7 @@ class TestSkaggsInformationEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import skaggs_information
+        from neurospatial.encoding.place import skaggs_information
 
         firing_rate = np.zeros(env.n_bins)
         occupancy = np.ones(env.n_bins)
@@ -1876,7 +1876,7 @@ class TestSkaggsInformationEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import skaggs_information
+        from neurospatial.encoding.place import skaggs_information
 
         firing_rate = np.full(env.n_bins, np.nan)
         occupancy = np.ones(env.n_bins)
@@ -1894,7 +1894,7 @@ class TestSparsityEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         firing_rate = np.zeros(env.n_bins)
         occupancy = np.ones(env.n_bins)
@@ -1908,7 +1908,7 @@ class TestSparsityEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import sparsity
+        from neurospatial.encoding.place import sparsity
 
         firing_rate = np.full(env.n_bins, np.nan)
         occupancy = np.ones(env.n_bins)
@@ -1922,7 +1922,7 @@ class TestFieldStabilityEdgeCases:
 
     def test_field_stability_insufficient_valid_points(self):
         """Test field_stability when fewer than 2 valid points."""
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         rate_map_1 = np.array([1.0, np.nan, np.nan, np.nan])
         rate_map_2 = np.array([2.0, np.nan, np.nan, np.nan])
@@ -1932,7 +1932,7 @@ class TestFieldStabilityEdgeCases:
 
     def test_field_stability_all_nan(self):
         """Test field_stability when all values are NaN."""
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         rate_map_1 = np.array([np.nan, np.nan, np.nan])
         rate_map_2 = np.array([np.nan, np.nan, np.nan])
@@ -1942,7 +1942,7 @@ class TestFieldStabilityEdgeCases:
 
     def test_field_stability_invalid_method(self):
         """Test field_stability raises ValueError for invalid method."""
-        from neurospatial.metrics.place_fields import field_stability
+        from neurospatial.encoding.place import field_stability
 
         rate_map_1 = np.array([1.0, 2.0, 3.0])
         rate_map_2 = np.array([1.5, 2.5, 3.5])
@@ -1962,7 +1962,7 @@ class TestRateMapCoherenceEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         # Wrong shape
         firing_rate = rng.random(env.n_bins + 10)
@@ -1976,7 +1976,7 @@ class TestRateMapCoherenceEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         firing_rate = np.full(env.n_bins, np.nan)
 
@@ -1989,7 +1989,7 @@ class TestRateMapCoherenceEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         # Only one valid bin
         firing_rate = np.full(env.n_bins, np.nan)
@@ -2008,7 +2008,7 @@ class TestRateMapCoherenceEdgeCases:
 
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         # Constant firing rate (zero variance)
         firing_rate = np.ones(env.n_bins) * 5.0
@@ -2023,7 +2023,7 @@ class TestRateMapCoherenceEdgeCases:
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.metrics.place_fields import rate_map_coherence
+        from neurospatial.encoding.place import rate_map_coherence
 
         firing_rate = rng.random(env.n_bins) * 5.0
 
@@ -2038,7 +2038,7 @@ class TestSelectivityEdgeCases:
 
     def test_selectivity_zero_mean_positive_peak_returns_inf(self):
         """Test selectivity returns inf when mean_rate is 0 but peak_rate > 0."""
-        from neurospatial.metrics.place_fields import selectivity
+        from neurospatial.encoding.place import selectivity
 
         # Create firing rate with one positive value, rest zeros
         firing_rate = np.zeros(100)
@@ -2059,7 +2059,7 @@ class TestInOutFieldRatioEdgeCases:
 
     def test_in_out_field_ratio_entire_environment(self):
         """Test in_out_field_ratio returns NaN when field covers entire environment."""
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         rng = np.random.default_rng(42)
         firing_rate = rng.random(100) * 5.0
@@ -2070,7 +2070,7 @@ class TestInOutFieldRatioEdgeCases:
 
     def test_in_out_field_ratio_no_valid_bins(self):
         """Test in_out_field_ratio returns NaN when no valid in/out bins."""
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         # All NaN firing rates
         firing_rate = np.full(100, np.nan)
@@ -2081,7 +2081,7 @@ class TestInOutFieldRatioEdgeCases:
 
     def test_in_out_field_ratio_zero_out_field_positive_in_field(self):
         """Test in_out_field_ratio returns inf when out_field_rate is 0 but in_field_rate > 0."""
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         # Only field bins have non-zero rates
         firing_rate = np.zeros(100)
@@ -2093,7 +2093,7 @@ class TestInOutFieldRatioEdgeCases:
 
     def test_in_out_field_ratio_zero_both(self):
         """Test in_out_field_ratio returns NaN when both in_field and out_field are 0."""
-        from neurospatial.metrics.place_fields import in_out_field_ratio
+        from neurospatial.encoding.place import in_out_field_ratio
 
         # All zeros
         firing_rate = np.zeros(100)
@@ -2108,7 +2108,7 @@ class TestInformationPerSecondEdgeCases:
 
     def test_information_per_second_no_valid_pairs(self):
         """Test information_per_second returns NaN when no valid firing_rate/occupancy pairs."""
-        from neurospatial.metrics.place_fields import information_per_second
+        from neurospatial.encoding.place import information_per_second
 
         # All NaN
         firing_rate = np.full(100, np.nan)
@@ -2123,7 +2123,7 @@ class TestSpatialCoverageSingleCellEdgeCases:
 
     def test_spatial_coverage_all_nan_returns_nan(self):
         """Test spatial_coverage_single_cell returns NaN when all firing rates are NaN."""
-        from neurospatial.metrics.place_fields import spatial_coverage_single_cell
+        from neurospatial.encoding.place import spatial_coverage_single_cell
 
         firing_rate = np.full(100, np.nan)
 
@@ -2136,7 +2136,7 @@ class TestFieldShapeMetricsEdgeCases:
 
     def test_field_shape_metrics_empty_field(self):
         """Test field_shape_metrics returns empty dict for empty field_bins."""
-        from neurospatial.metrics.place_fields import field_shape_metrics
+        from neurospatial.encoding.place import field_shape_metrics
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10
@@ -2153,7 +2153,7 @@ class TestFieldShapeMetricsEdgeCases:
 
     def test_field_shape_metrics_all_nan_rates(self):
         """Test field_shape_metrics returns NaN values when all rates are NaN."""
-        from neurospatial.metrics.place_fields import field_shape_metrics
+        from neurospatial.encoding.place import field_shape_metrics
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10
@@ -2174,7 +2174,7 @@ class TestFieldShiftDistanceEdgeCases:
 
     def test_field_shift_distance_nan_centroid(self):
         """Test field_shift_distance returns NaN when centroids are NaN."""
-        from neurospatial.metrics.place_fields import field_shift_distance
+        from neurospatial.encoding.place import field_shift_distance
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10
@@ -2193,7 +2193,7 @@ class TestFieldShiftDistanceEdgeCases:
 
     def test_field_shift_distance_incompatible_environments_geodesic(self):
         """Test field_shift_distance with incompatible environments (geodesic mode)."""
-        from neurospatial.metrics.place_fields import field_shift_distance
+        from neurospatial.encoding.place import field_shift_distance
 
         # Use deterministic positions to ensure centroids are in bounds
         positions1 = np.array([[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]])
@@ -2235,7 +2235,7 @@ class TestComputeFieldEMDEdgeCases:
 
     def test_compute_field_emd_both_zero(self):
         """Test compute_field_emd returns 0 when both distributions are all zeros (unnormalized)."""
-        from neurospatial.metrics.place_fields import compute_field_emd
+        from neurospatial.encoding.place import compute_field_emd
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10

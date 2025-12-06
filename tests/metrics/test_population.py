@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.metrics.population import (
+from neurospatial.encoding.population import (
     PopulationCoverageResult,
     count_place_cells,
     field_density_map,

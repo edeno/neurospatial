@@ -19,20 +19,20 @@ class TestModuleSetup:
 
     def test_module_imports(self) -> None:
         """Test that head_direction module can be imported."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         assert head_direction is not None
 
     def test_module_has_docstring(self) -> None:
         """Test that module has a docstring."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         assert head_direction.__doc__ is not None
         assert len(head_direction.__doc__) > 100  # Should be substantial
 
     def test_module_docstring_contains_usage_guide(self) -> None:
         """Test that module docstring contains usage information."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         docstring = head_direction.__doc__
         assert docstring is not None
@@ -44,14 +44,14 @@ class TestModuleSetup:
 
     def test_module_has_all_attribute(self) -> None:
         """Test that module has __all__ defined."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         assert hasattr(head_direction, "__all__")
         assert isinstance(head_direction.__all__, list)
 
     def test_module_all_is_not_empty(self) -> None:
         """Test that __all__ is not empty (will have exports in future)."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         # For now, __all__ can be empty - we just want it to exist
         # This test will be updated as we add functions
@@ -59,7 +59,7 @@ class TestModuleSetup:
 
     def test_module_imports_rayleigh_test_internally(self) -> None:
         """Test that module has access to rayleigh_test from circular module."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         # The module should import rayleigh_test internally
         # We verify this by checking the function is accessible
@@ -67,7 +67,7 @@ class TestModuleSetup:
 
     def test_module_docstring_mentions_head_direction(self) -> None:
         """Test that docstring mentions head direction analysis."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         docstring = head_direction.__doc__
         assert docstring is not None
@@ -75,7 +75,7 @@ class TestModuleSetup:
 
     def test_module_docstring_has_references(self) -> None:
         """Test that module docstring includes scientific references."""
-        from neurospatial.metrics import head_direction
+        from neurospatial.encoding import head_direction
 
         docstring = head_direction.__doc__
         assert docstring is not None
@@ -88,13 +88,13 @@ class TestHeadDirectionTuningCurve:
 
     def test_function_exists(self) -> None:
         """Test that head_direction_tuning_curve can be imported."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         assert callable(head_direction_tuning_curve)
 
     def test_returns_bin_centers_and_firing_rates(self) -> None:
         """Test that function returns bin_centers and firing_rates arrays."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Create simple test data: 10 seconds at 30 Hz
         rng = np.random.default_rng(42)
@@ -119,7 +119,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_bin_centers_correct(self) -> None:
         """Test that bin centers are correctly computed."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Create simple test data
         rng = np.random.default_rng(42)
@@ -144,7 +144,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_firing_rate_units_hz(self) -> None:
         """Test that firing rates are returned in Hz."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Create data where we know the expected firing rate
         # Animal faces 0 degrees (bin 0) for 5 seconds, 30 spikes -> 6 Hz
@@ -170,7 +170,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_handles_non_uniform_sampling(self) -> None:
         """Test that occupancy uses actual time deltas (handles dropped frames)."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Non-uniform sampling: some frames are longer than others
         position_times = np.array(
@@ -197,7 +197,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_gaussian_smoothing_applied(self) -> None:
         """Test that Gaussian smoothing is applied correctly."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Create spiky tuning curve (all spikes in one direction)
         n_samples = 600
@@ -233,7 +233,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_circular_boundary_smoothing(self) -> None:
         """Test that smoothing wraps correctly at circular boundary."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Create data with activity at 350-360 degrees
         n_samples = 600
@@ -262,7 +262,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_radians_input(self) -> None:
         """Test that function works with radian input."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         rng = np.random.default_rng(42)
         n_samples = 300
@@ -285,7 +285,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_minimum_samples_validation(self) -> None:
         """Test that function validates minimum samples."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Too few samples
         position_times = np.array([0.0, 0.1])
@@ -303,7 +303,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_length_mismatch_validation(self) -> None:
         """Test that function validates head_directions and position_times match."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         position_times = np.linspace(0, 10, 100)
         head_directions = np.zeros(50)  # Wrong length
@@ -320,7 +320,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_non_monotonic_timestamps_validation(self) -> None:
         """Test that function validates timestamps are monotonic."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         position_times = np.array([0.0, 0.1, 0.05, 0.2, 0.3])  # Non-monotonic
         head_directions = np.zeros(5)
@@ -337,7 +337,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_duplicate_timestamps_rejected(self) -> None:
         """Test that duplicate timestamps are rejected."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         position_times = np.array([0.0, 0.1, 0.1, 0.2, 0.3])  # Duplicate at 0.1
         head_directions = np.zeros(5)
@@ -354,7 +354,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_no_spikes_returns_zero_rates(self) -> None:
         """Test that function handles case with no spikes."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         n_samples = 300
         position_times = np.linspace(0, 10, n_samples)
@@ -373,7 +373,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_spikes_outside_time_range_handled(self) -> None:
         """Test that spikes outside position_times range are handled."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         n_samples = 300
         position_times = np.linspace(0, 10, n_samples)
@@ -395,7 +395,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_known_tuning_curve(self) -> None:
         """Test with known preferential direction - all time at one angle."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Animal always facing 90 degrees, spikes uniformly
         n_samples = 1000
@@ -424,7 +424,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_division_by_zero_handling(self) -> None:
         """Test that bins with zero occupancy don't cause division by zero."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Animal only faces 0-90 degrees, never other directions
         n_samples = 500
@@ -447,13 +447,13 @@ class TestHeadDirectionTuningCurve:
 
     def test_exported_from_metrics(self) -> None:
         """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import head_direction_tuning_curve
+        from neurospatial.encoding import head_direction_tuning_curve
 
         assert callable(head_direction_tuning_curve)
 
     def test_spike_assignment_at_circular_boundary(self) -> None:
         """Test spikes are correctly assigned when HD crosses 0/360 boundary."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Animal faces 350° then 10° (20° clockwise turn)
         # With linear interpolation, t=0.25 would interpolate to 180° (wrong!)
@@ -482,7 +482,7 @@ class TestHeadDirectionTuningCurve:
 
     def test_firing_rate_accounts_for_occupancy(self) -> None:
         """Test that bins with more occupancy contribute correctly."""
-        from neurospatial.metrics.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import head_direction_tuning_curve
 
         # Spend 9s at 0° and 1s at 90°, same spike rate (1 spike/sec)
         # Use endpoint=False to avoid duplicate at t=9
@@ -528,13 +528,13 @@ class TestHeadDirectionMetricsDataclass:
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that HeadDirectionMetrics can be imported."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         assert HeadDirectionMetrics is not None
 
     def test_dataclass_has_all_fields(self) -> None:
         """Test that HeadDirectionMetrics has all required fields."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         # Create an instance with all fields
         metrics = HeadDirectionMetrics(
@@ -559,7 +559,7 @@ class TestHeadDirectionMetricsDataclass:
 
     def test_interpretation_hd_cell(self) -> None:
         """Test interpretation() method for HD cell."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         metrics = HeadDirectionMetrics(
             preferred_direction=np.pi / 2,
@@ -581,7 +581,7 @@ class TestHeadDirectionMetricsDataclass:
 
     def test_interpretation_not_hd_cell_low_mvl(self) -> None:
         """Test interpretation() method when MVL is too low."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         metrics = HeadDirectionMetrics(
             preferred_direction=0.0,
@@ -600,7 +600,7 @@ class TestHeadDirectionMetricsDataclass:
 
     def test_interpretation_not_hd_cell_high_pval(self) -> None:
         """Test interpretation() method when Rayleigh p-value is too high."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         metrics = HeadDirectionMetrics(
             preferred_direction=np.pi,
@@ -619,7 +619,7 @@ class TestHeadDirectionMetricsDataclass:
 
     def test_str_method_returns_interpretation(self) -> None:
         """Test that __str__() returns interpretation()."""
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         metrics = HeadDirectionMetrics(
             preferred_direction=np.pi / 4,
@@ -639,7 +639,7 @@ class TestHeadDirectionMetricsDataclass:
         import io
         import sys
 
-        from neurospatial.metrics.head_direction import HeadDirectionMetrics
+        from neurospatial.encoding.head_direction import HeadDirectionMetrics
 
         metrics = HeadDirectionMetrics(
             preferred_direction=np.pi,
@@ -674,13 +674,13 @@ class TestHeadDirectionMetricsFunction:
 
     def test_function_exists(self) -> None:
         """Test that head_direction_metrics can be imported."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         assert callable(head_direction_metrics)
 
     def test_returns_head_direction_metrics_dataclass(self) -> None:
         """Test that function returns HeadDirectionMetrics instance."""
-        from neurospatial.metrics.head_direction import (
+        from neurospatial.encoding.head_direction import (
             HeadDirectionMetrics,
             head_direction_metrics,
         )
@@ -696,7 +696,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_preferred_direction_computation(self) -> None:
         """Test that preferred direction is computed correctly."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Create Gaussian-like tuning curve centered at 90 degrees
         n_bins = 60
@@ -715,7 +715,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_mean_vector_length_computation(self) -> None:
         """Test that mean vector length is computed correctly."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Sharp tuning = high MVL
         n_bins = 60
@@ -737,7 +737,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_peak_firing_rate_computation(self) -> None:
         """Test that peak firing rate is computed correctly."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -750,7 +750,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_tuning_width_computation(self) -> None:
         """Test that tuning width (HWHM) is approximately computed."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Create tuning curves with different widths
         n_bins = 60
@@ -772,7 +772,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_rayleigh_pval_computation(self) -> None:
         """Test that Rayleigh p-value is computed."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Strong directional tuning -> small p-value
         n_bins = 60
@@ -784,7 +784,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_is_hd_cell_classification_true(self) -> None:
         """Test that HD cell classification works for true HD cells."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Classic HD cell: sharp tuning, high MVL
         n_bins = 60
@@ -798,7 +798,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_is_hd_cell_classification_false_uniform(self) -> None:
         """Test that uniform firing is not classified as HD cell."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Uniform firing -> not HD cell
         n_bins = 60
@@ -813,7 +813,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_custom_min_vector_length_threshold(self) -> None:
         """Test that min_vector_length parameter works."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         # Moderate tuning (MVL around 0.5)
         n_bins = 60
@@ -837,7 +837,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_validation_length_mismatch(self) -> None:
         """Test that function validates bin_centers and firing_rates match."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         bin_centers = np.linspace(0, 2 * np.pi, 12)
         firing_rates = np.ones(10)  # Wrong length
@@ -847,7 +847,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_validation_all_zero_rates(self) -> None:
         """Test that function validates non-zero firing rates."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         bin_centers = np.linspace(0, 2 * np.pi, 12)
         firing_rates = np.zeros(12)
@@ -857,7 +857,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_validation_constant_rates(self) -> None:
         """Test that function validates non-constant firing rates."""
-        from neurospatial.metrics.head_direction import head_direction_metrics
+        from neurospatial.encoding.head_direction import head_direction_metrics
 
         bin_centers = np.linspace(0, 2 * np.pi, 12)
         firing_rates = np.full(12, 5.0)  # Constant (non-zero)
@@ -867,7 +867,7 @@ class TestHeadDirectionMetricsFunction:
 
     def test_exported_from_metrics(self) -> None:
         """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import head_direction_metrics
+        from neurospatial.encoding import head_direction_metrics
 
         assert callable(head_direction_metrics)
 
@@ -877,13 +877,13 @@ class TestIsHeadDirectionCell:
 
     def test_function_exists(self) -> None:
         """Test that is_head_direction_cell can be imported."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         assert callable(is_head_direction_cell)
 
     def test_returns_bool(self) -> None:
         """Test that function returns boolean."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Create data for clear HD cell
         n_samples = 1000
@@ -899,7 +899,7 @@ class TestIsHeadDirectionCell:
 
     def test_detects_hd_cell(self) -> None:
         """Test that function correctly identifies HD cells."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Create data simulating HD cell: fires when facing north (0/360 deg)
         rng = np.random.default_rng(42)
@@ -929,7 +929,7 @@ class TestIsHeadDirectionCell:
 
     def test_rejects_non_hd_cell(self) -> None:
         """Test that function correctly rejects non-HD cells."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Create data with uniform firing (not HD cell)
         rng = np.random.default_rng(42)
@@ -945,7 +945,7 @@ class TestIsHeadDirectionCell:
 
     def test_returns_false_on_error(self) -> None:
         """Test that function returns False when an error occurs."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Invalid data that would cause ValueError
         position_times = np.array([0.0, 0.1])  # Too few samples
@@ -960,7 +960,7 @@ class TestIsHeadDirectionCell:
 
     def test_passes_kwargs_to_tuning_curve(self) -> None:
         """Test that kwargs are passed to head_direction_tuning_curve."""
-        from neurospatial.metrics.head_direction import is_head_direction_cell
+        from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Create simple data
         n_samples = 500
@@ -990,7 +990,7 @@ class TestPlotHeadDirectionTuning:
 
     def test_function_exists(self) -> None:
         """Test that plot_head_direction_tuning can be imported."""
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         assert callable(plot_head_direction_tuning)
 
@@ -999,7 +999,7 @@ class TestPlotHeadDirectionTuning:
         import matplotlib.pyplot as plt
         from matplotlib.axes import Axes
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         # Create simple tuning curve
         n_bins = 12
@@ -1016,7 +1016,7 @@ class TestPlotHeadDirectionTuning:
         import matplotlib.pyplot as plt
         from matplotlib.projections.polar import PolarAxes
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1032,7 +1032,7 @@ class TestPlotHeadDirectionTuning:
         import matplotlib.pyplot as plt
         from matplotlib.projections.polar import PolarAxes
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1048,7 +1048,7 @@ class TestPlotHeadDirectionTuning:
         """Test that function uses provided axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1066,7 +1066,7 @@ class TestPlotHeadDirectionTuning:
         """Test that polar plot has 0° at top (North) and clockwise direction."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1087,7 +1087,7 @@ class TestPlotHeadDirectionTuning:
         """Test that polar curve is closed (first point appended at end)."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1110,7 +1110,7 @@ class TestPlotHeadDirectionTuning:
         """Test that preferred direction is marked when metrics provided."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import (
+        from neurospatial.encoding.head_direction import (
             HeadDirectionMetrics,
             plot_head_direction_tuning,
         )
@@ -1145,7 +1145,7 @@ class TestPlotHeadDirectionTuning:
         """Test that metrics text box is shown when metrics provided and show_metrics=True."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import (
+        from neurospatial.encoding.head_direction import (
             HeadDirectionMetrics,
             plot_head_direction_tuning,
         )
@@ -1183,7 +1183,7 @@ class TestPlotHeadDirectionTuning:
         """Test that metrics text box is hidden when show_metrics=False."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import (
+        from neurospatial.encoding.head_direction import (
             HeadDirectionMetrics,
             plot_head_direction_tuning,
         )
@@ -1219,7 +1219,7 @@ class TestPlotHeadDirectionTuning:
         """Test that angle_unit='deg' shows degrees on axis."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1241,7 +1241,7 @@ class TestPlotHeadDirectionTuning:
         """Test that angle_unit='rad' shows radians on axis."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1261,7 +1261,7 @@ class TestPlotHeadDirectionTuning:
         """Test that custom color is applied."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1280,7 +1280,7 @@ class TestPlotHeadDirectionTuning:
         """Test that fill_alpha controls fill transparency."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1299,7 +1299,7 @@ class TestPlotHeadDirectionTuning:
         """Test that line_kwargs are passed to plot."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1320,7 +1320,7 @@ class TestPlotHeadDirectionTuning:
         """Test that fill_kwargs are passed to fill."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1342,7 +1342,7 @@ class TestPlotHeadDirectionTuning:
         """Test that function validates bin_centers and firing_rates match."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         bin_centers = np.linspace(0, 2 * np.pi, 12)
         firing_rates = np.ones(10)  # Wrong length
@@ -1356,7 +1356,7 @@ class TestPlotHeadDirectionTuning:
         """Test that linear projection shows degrees on x-axis by default."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
@@ -1376,7 +1376,7 @@ class TestPlotHeadDirectionTuning:
         """Test that no preferred direction marker without metrics."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.head_direction import plot_head_direction_tuning
+        from neurospatial.encoding.head_direction import plot_head_direction_tuning
 
         n_bins = 12
         bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
