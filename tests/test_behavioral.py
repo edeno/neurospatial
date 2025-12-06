@@ -7,8 +7,8 @@ import pytest
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.behavior.segmentation import Trial
 from neurospatial.behavioral import trials_to_region_arrays
-from neurospatial.segmentation.trials import Trial
 
 # =============================================================================
 # Test Fixtures
@@ -648,8 +648,8 @@ def test_distance_to_region_large_environment():
 
 def test_time_to_goal_successful_trials():
     """Test time to goal for successful trials."""
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavioral import time_to_goal
-    from neurospatial.segmentation.trials import Trial
 
     # Create timestamps
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
@@ -699,8 +699,8 @@ def test_time_to_goal_successful_trials():
 
 def test_time_to_goal_failed_trials():
     """Test time to goal for failed trials (should be NaN)."""
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavioral import time_to_goal
-    from neurospatial.segmentation.trials import Trial
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 
@@ -726,8 +726,8 @@ def test_time_to_goal_failed_trials():
 
 def test_time_to_goal_outside_trials():
     """Test time to goal outside trials (should be NaN)."""
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavioral import time_to_goal
-    from neurospatial.segmentation.trials import Trial
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
@@ -758,8 +758,8 @@ def test_time_to_goal_outside_trials():
 
 def test_time_to_goal_countdown():
     """Test time to goal countdown is correct."""
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavioral import time_to_goal
-    from neurospatial.segmentation.trials import Trial
 
     # High-resolution timestamps
     times = np.linspace(0.0, 10.0, 101)  # 0.1s resolution
@@ -791,8 +791,8 @@ def test_time_to_goal_countdown():
 
 def test_time_to_goal_after_goal_reached():
     """Test time to goal after goal reached (should be 0.0)."""
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavioral import time_to_goal
-    from neurospatial.segmentation.trials import Trial
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 

@@ -14,13 +14,7 @@ import numpy as np
 from shapely.geometry import Point
 
 from neurospatial import Environment
-from neurospatial.behavior.trajectory import (
-    compute_home_range,
-    compute_step_lengths,
-    compute_turn_angles,
-    mean_square_displacement,
-)
-from neurospatial.segmentation import (
+from neurospatial.behavior.segmentation import (
     Lap,
     Trial,
     detect_goal_directed_runs,
@@ -28,6 +22,12 @@ from neurospatial.segmentation import (
     detect_region_crossings,
     segment_trials,
     trajectory_similarity,
+)
+from neurospatial.behavior.trajectory import (
+    compute_home_range,
+    compute_step_lengths,
+    compute_turn_angles,
+    mean_square_displacement,
 )
 
 

@@ -53,8 +53,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
+    from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
-    from neurospatial.segmentation.trials import Trial
 
 from neurospatial.stats.circular import wrap_angle
 

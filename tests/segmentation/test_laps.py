@@ -29,7 +29,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 100, n_samples)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
             trajectory_bins,
@@ -65,7 +65,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 60, n_samples)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         # Since we're going counter-clockwise (theta increases → CCW)
         # Request only clockwise should give fewer/no laps
@@ -96,7 +96,7 @@ class TestDetectLaps:
         # First 1/3 of trajectory is roughly one lap
         reference_bins = trajectory_bins[: n_samples // 3]
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
             trajectory_bins,
@@ -131,7 +131,7 @@ class TestDetectLaps:
         start_y = 50
         env.regions.add("start", polygon=Point(start_x, start_y).buffer(5.0))
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(
             trajectory_bins,
@@ -160,7 +160,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 40, n_samples)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         # Low threshold should accept more laps
         laps_low = detect_laps(
@@ -183,7 +183,7 @@ class TestDetectLaps:
         trajectory_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(trajectory_bins, times, env, method="auto")
 
@@ -197,7 +197,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 20, 100)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         laps = detect_laps(trajectory_bins, times, env, method="auto", min_overlap=0.8)
 
@@ -212,7 +212,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         # Should accept positional args in this order
         laps = detect_laps(trajectory_bins, times, env)
@@ -226,7 +226,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         with pytest.raises(ValueError, match="method must be one of"):
             detect_laps(trajectory_bins, times, env, method="invalid")
@@ -239,7 +239,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         with pytest.raises(
             ValueError, match=r"reference_lap.*required when method='reference'"
@@ -254,7 +254,7 @@ class TestDetectLaps:
         trajectory_bins = env.bin_at(positions)
         times = np.linspace(0, 10, 50)
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         with pytest.raises(
             ValueError, match=r"start_region.*required when method='region'"
@@ -278,7 +278,7 @@ class TestDetectLaps:
         # Add start region
         env.regions.add("start", polygon=Point(50 + radius, 50).buffer(5.0))
 
-        from neurospatial.segmentation.laps import detect_laps
+        from neurospatial.behavior.segmentation import detect_laps
 
         # Test all three methods
         laps_auto = detect_laps(trajectory_bins, times, env, method="auto")

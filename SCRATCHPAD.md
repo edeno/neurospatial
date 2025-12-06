@@ -1,11 +1,75 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 5 IN PROGRESS - Task 5.1 complete
+**Current Status**: Milestone 5 IN PROGRESS - Tasks 5.1, 5.2 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 18)
+
+**Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.2: Create behavior/segmentation.py)
+
+**Completed**: Move all segmentation/ functions to behavior/segmentation.py (NO backward compat)
+
+**Work Done**:
+1. Created test file `tests/behavior/test_behavior_segmentation.py` following TDD (RED phase)
+   - 40 tests for all segmentation functions and dataclasses
+   - Tests for imports from both `behavior.segmentation` and `behavior/__init__.py`
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `behavior/segmentation.py` by combining all 4 segmentation submodules:
+   - Dataclasses: `Crossing`, `Lap`, `Run`, `Trial`
+   - Functions: `detect_region_crossings`, `detect_runs_between_regions`, `segment_by_velocity`,
+     `detect_laps`, `segment_trials`, `trajectory_similarity`, `detect_goal_directed_runs`
+4. Updated `behavior/__init__.py` to export all 11 segmentation symbols
+5. NO backward-compatibility shim created per user request
+6. Updated internal imports in 3 src/ files:
+   - `src/neurospatial/__init__.py` (import from behavior.segmentation)
+   - `src/neurospatial/behavioral.py` (Trial import)
+   - `src/neurospatial/metrics/vte.py` (Trial import)
+   - `src/neurospatial/io/nwb/_events.py` (docstring example)
+7. Updated test imports in 10 test files:
+   - `tests/test_direction_labels.py`
+   - `tests/test_behavioral.py` (6 occurrences)
+   - `tests/segmentation/test_similarity.py`
+   - `tests/segmentation/test_integration.py`
+   - `tests/segmentation/test_laps.py` (13 occurrences)
+   - `tests/segmentation/test_regions.py` (16 occurrences)
+   - `tests/segmentation/test_trials.py` (9 occurrences)
+   - `tests/metrics/test_behavioral_integration.py`
+   - `tests/metrics/test_vte.py` (3 occurrences)
+   - `tests/nwb/test_trials.py` (13 occurrences)
+8. Deleted old `src/neurospatial/segmentation/` directory entirely
+9. All tests pass:
+   - `tests/behavior/test_behavior_segmentation.py`: 40 passed
+   - `tests/segmentation/`: 57 passed
+   - Quick import verification passed
+10. Ran ruff check/format and mypy - no issues
+
+**Files Created**:
+- `src/neurospatial/behavior/segmentation.py` (new - combined all segmentation modules)
+- `tests/behavior/test_behavior_segmentation.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/behavior/__init__.py` (added 11 segmentation exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/behavioral.py` (updated Trial import)
+- `src/neurospatial/metrics/vte.py` (updated Trial import)
+- `src/neurospatial/io/nwb/_events.py` (updated docstring example)
+- 10 test files (updated imports)
+
+**Files Deleted**:
+- `src/neurospatial/segmentation/` (entire directory - no backward compat)
+
+**Milestone 5 Status**: Tasks 5.1, 5.2 COMPLETE
+Task 5.1 (Create behavior/trajectory.py) is complete.
+Task 5.2 (Create behavior/segmentation.py) is complete.
+Remaining: Tasks 5.3-5.6
+
+**Next Task**: Milestone 5, Task 5.3 - Create behavior/navigation.py
+
+---
 
 ### 2025-12-06 (Session 17)
 

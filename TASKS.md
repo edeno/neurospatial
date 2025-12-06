@@ -176,7 +176,7 @@ uv run pytest tests/ -x -v
 
 #### 5.2: Create behavior/segmentation.py
 
-- [ ] Move all from `segmentation/` → `behavior/segmentation.py` (flatten the directory)
+- [x] Move all from `segmentation/` → `behavior/segmentation.py` (flatten the directory)
 
 #### 5.3: Create behavior/navigation.py
 
@@ -196,7 +196,7 @@ uv run pytest tests/ -x -v
 #### 5.6: Update Internal Imports
 
 - [x] Update imports for `metrics.trajectory` → `behavior.trajectory`
-- [ ] Update imports for `segmentation` → `behavior.segmentation`
+- [x] Update imports for `segmentation` → `behavior.segmentation`
 - [ ] Update imports for `behavioral` → `behavior.navigation`
 - [ ] Update imports for `metrics.path_efficiency` → `behavior.navigation`
 - [ ] Update imports for `metrics.goal_directed` → `behavior.navigation`

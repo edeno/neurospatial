@@ -98,7 +98,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.segmentation import Trial
+    from neurospatial.behavior.segmentation import Trial
 
 
 def trials_to_region_arrays(

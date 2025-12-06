@@ -605,7 +605,7 @@ def write_trials(
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> from neurospatial.segmentation import segment_trials  # doctest: +SKIP
+    >>> from neurospatial.behavior.segmentation import segment_trials  # doctest: +SKIP
     >>> trials = segment_trials(bins, times, env, ...)  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()

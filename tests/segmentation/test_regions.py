@@ -36,7 +36,7 @@ class TestDetectRegionCrossings:
         trajectory_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
-        from neurospatial.segmentation.regions import detect_region_crossings
+        from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
             trajectory_bins, times, "target", env, direction="both"
@@ -65,7 +65,7 @@ class TestDetectRegionCrossings:
         trajectory_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
-        from neurospatial.segmentation.regions import detect_region_crossings
+        from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
             trajectory_bins, times, "target", env, direction="entry"
@@ -90,7 +90,7 @@ class TestDetectRegionCrossings:
         trajectory_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
-        from neurospatial.segmentation.regions import detect_region_crossings
+        from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
             trajectory_bins, times, "target", env, direction="exit"
@@ -115,7 +115,7 @@ class TestDetectRegionCrossings:
         trajectory_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
-        from neurospatial.segmentation.regions import detect_region_crossings
+        from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
             trajectory_bins, times, "target", env, direction="both"
@@ -136,7 +136,7 @@ class TestDetectRegionCrossings:
         trajectory_bins = np.arange(10)
         times = np.arange(10, dtype=float)
 
-        from neurospatial.segmentation.regions import detect_region_crossings
+        from neurospatial.behavior.segmentation import detect_region_crossings
 
         # This should work without error
         crossings = detect_region_crossings(
@@ -167,7 +167,7 @@ class TestDetectRunsBetweenRegions:
         trajectory = np.column_stack([x_traj, y_traj])
         times = np.linspace(0, 5.0, 50)
 
-        from neurospatial.segmentation.regions import detect_runs_between_regions
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
 
         runs = detect_runs_between_regions(
             trajectory,
@@ -207,7 +207,7 @@ class TestDetectRunsBetweenRegions:
         trajectory = np.column_stack([x_traj, y_traj])
         times = np.linspace(0, 20.0, 100)  # 20 seconds, longer than max_duration
 
-        from neurospatial.segmentation.regions import detect_runs_between_regions
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
 
         runs = detect_runs_between_regions(
             trajectory,
@@ -243,7 +243,7 @@ class TestDetectRunsBetweenRegions:
         trajectory = np.column_stack([x_traj, y_traj])
         times = np.linspace(0, 0.1, 10)
 
-        from neurospatial.segmentation.regions import detect_runs_between_regions
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
 
         runs = detect_runs_between_regions(
             trajectory,
@@ -271,7 +271,7 @@ class TestDetectRunsBetweenRegions:
         trajectory = positions[:20]
         times = np.arange(20, dtype=float)
 
-        from neurospatial.segmentation.regions import detect_runs_between_regions
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
 
         # This should work without error
         runs = detect_runs_between_regions(
@@ -301,7 +301,7 @@ class TestSegmentByVelocity:
         trajectory = np.vstack([rest1, movement, rest2])
         times = np.linspace(0, 20, len(trajectory))
 
-        from neurospatial.segmentation.regions import segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
@@ -319,7 +319,7 @@ class TestSegmentByVelocity:
         trajectory = np.cumsum(rng.standard_normal(n) * 0.5)[:, None]
         times = np.linspace(0, 10, n)
 
-        from neurospatial.segmentation.regions import segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         # With hysteresis, should have fewer segments than without
         segments_with_hysteresis = segment_by_velocity(
@@ -347,7 +347,7 @@ class TestSegmentByVelocity:
         trajectory = np.vstack([rest[:50], brief_movement, rest[50:]])
         times = np.linspace(0, 10, len(trajectory))
 
-        from neurospatial.segmentation.regions import segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         segments = segment_by_velocity(
             trajectory,
@@ -366,7 +366,7 @@ class TestSegmentByVelocity:
         trajectory = np.linspace(0, 100, 100)[:, None]
         times = np.linspace(0, 10, 100)
 
-        from neurospatial.segmentation.regions import segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         segments = segment_by_velocity(trajectory, times, threshold=2.0)
 
@@ -386,7 +386,7 @@ class TestSegmentByVelocity:
         trajectory = np.linspace(0, 100, 50)[:, None]
         times = np.arange(50, dtype=float)
 
-        from neurospatial.segmentation.regions import segment_by_velocity
+        from neurospatial.behavior.segmentation import segment_by_velocity
 
         # This should work without error
         segments = segment_by_velocity(
@@ -423,7 +423,7 @@ class TestRegionSegmentationIntegration:
         trajectory = np.column_stack([x_traj, y_traj])
         times = np.linspace(0, 20, len(trajectory))
 
-        from neurospatial.segmentation.regions import (
+        from neurospatial.behavior.segmentation import (
             detect_region_crossings,
             detect_runs_between_regions,
             segment_by_velocity,

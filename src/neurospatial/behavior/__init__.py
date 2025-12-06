@@ -14,6 +14,19 @@ decisions : VTE, decision analysis, choice points
 reward : Reward field computations
 """
 
+from neurospatial.behavior.segmentation import (
+    Crossing,
+    Lap,
+    Run,
+    Trial,
+    detect_goal_directed_runs,
+    detect_laps,
+    detect_region_crossings,
+    detect_runs_between_regions,
+    segment_by_velocity,
+    segment_trials,
+    trajectory_similarity,
+)
 from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_step_lengths,
@@ -22,7 +35,19 @@ from neurospatial.behavior.trajectory import (
     mean_square_displacement,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022
+    # segmentation module
+    "Crossing",
+    "Lap",
+    "Run",
+    "Trial",
+    "detect_goal_directed_runs",
+    "detect_laps",
+    "detect_region_crossings",
+    "detect_runs_between_regions",
+    "segment_by_velocity",
+    "segment_trials",
+    "trajectory_similarity",
     # trajectory module
     "compute_home_range",
     "compute_step_lengths",

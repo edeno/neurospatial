@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.segmentation.similarity import (
+from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     trajectory_similarity,
 )

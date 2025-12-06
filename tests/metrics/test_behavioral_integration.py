@@ -56,9 +56,9 @@ class TestVTEDecisionAnalysisIntegration:
 
     def test_vte_session_uses_decision_region_entry_correctly(self) -> None:
         """Verify compute_vte_session finds correct entry times."""
+        from neurospatial.behavior.segmentation import Trial
         from neurospatial.metrics.decision_analysis import decision_region_entry_time
         from neurospatial.metrics.vte import compute_vte_session
-        from neurospatial.segmentation import Trial
 
         # Create dense environment covering full trajectory range
         np.random.seed(42)
@@ -131,8 +131,8 @@ class TestVTERoundTrip:
 
     def test_high_head_sweep_low_speed_classified_as_vte(self) -> None:
         """Simulated VTE behavior should be classified as VTE."""
+        from neurospatial.behavior.segmentation import Trial
         from neurospatial.metrics.vte import compute_vte_session
-        from neurospatial.segmentation import Trial
 
         # Create environment
         np.random.seed(42)

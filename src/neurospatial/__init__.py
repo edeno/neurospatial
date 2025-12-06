@@ -208,6 +208,14 @@ from neurospatial.annotation import (
     regions_from_cvat,
     regions_from_labelme,
 )
+from neurospatial.behavior.segmentation import (
+    detect_goal_directed_runs,
+    detect_laps,
+    detect_region_crossings,
+    detect_runs_between_regions,
+    segment_by_velocity,
+    segment_trials,
+)
 from neurospatial.behavioral import (
     compute_trajectory_curvature,
     cost_to_goal,
@@ -336,14 +344,6 @@ from neurospatial.ops.visibility import (
 )
 from neurospatial.regions import Region, Regions
 from neurospatial.reward import goal_reward_field, region_reward_field
-from neurospatial.segmentation import (
-    detect_goal_directed_runs,
-    detect_laps,
-    detect_region_crossings,
-    detect_runs_between_regions,
-    segment_by_velocity,
-    segment_trials,
-)
 
 # Spatial view cell simulation model
 from neurospatial.simulation import SpatialViewCellModel

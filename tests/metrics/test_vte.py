@@ -806,8 +806,8 @@ class TestComputeVTESession:
 
     def test_high_head_sweep_low_speed_is_vte(self, t_maze_environment):
         """Test that high head sweep + low speed is classified as VTE."""
+        from neurospatial.behavior.segmentation import Trial
         from neurospatial.metrics.vte import compute_vte_session
-        from neurospatial.segmentation.trials import Trial
 
         env = t_maze_environment
 
@@ -879,8 +879,8 @@ class TestComputeVTESession:
 
     def test_no_valid_trials_returns_empty_result(self, t_maze_environment):
         """Test that no valid trials returns empty session result."""
+        from neurospatial.behavior.segmentation import Trial
         from neurospatial.metrics.vte import compute_vte_session
-        from neurospatial.segmentation.trials import Trial
 
         env = t_maze_environment
 
@@ -920,8 +920,8 @@ class TestComputeVTESession:
 
     def test_vte_classification_consistency(self, t_maze_environment):
         """Test that VTE classification is consistent with metrics."""
+        from neurospatial.behavior.segmentation import Trial
         from neurospatial.metrics.vte import compute_vte_session
-        from neurospatial.segmentation.trials import Trial
 
         env = t_maze_environment
 
