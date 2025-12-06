@@ -1,11 +1,69 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - differential.py → ops/calculus.py DONE
+**Current Status**: Milestone 2 in progress - transforms.py → ops/transforms.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 8)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `transforms.py` → `ops/transforms.py` (merged `calibration.py`)
+
+**Work Done**:
+1. Created new test file `tests/ops/test_ops_transforms.py` following TDD (RED phase)
+2. Verified tests FAIL before moving (import error expected)
+3. Moved `transforms.py` → `ops/transforms.py` using `git mv` to preserve history
+4. Merged `simple_scale()` function from `calibration.py` into `ops/transforms.py`
+5. Updated module docstring in transforms.py to document new import paths
+6. Added `__all__` export list to transforms.py with 27 exports organized by category
+7. Updated `ops/__init__.py` to export all transform functions (27 new exports)
+8. Updated internal imports in 17+ source files:
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/animation/__init__.py`
+   - `src/neurospatial/animation/calibration.py`
+   - `src/neurospatial/animation/overlays.py`
+   - `src/neurospatial/annotation/*.py` (6 files)
+   - `src/neurospatial/calibration.py`
+   - `src/neurospatial/environment/transforms.py`
+   - `src/neurospatial/regions/*.py` (3 files)
+9. Created backward-compatibility shim at `src/neurospatial/transforms.py`:
+   - Re-exports all symbols from `ops/transforms.py`
+   - Allows old `from neurospatial.transforms import ...` to continue working
+10. Updated test file imports (40+ test files):
+    - Used `find ... -exec sed` to batch update
+11. Added noqa directives for intentional style choices:
+    - `RUF022` for organized `__all__` with category comments
+    - `N806` for mathematical variable names (A, R, X for matrices)
+12. All tests pass:
+    - `tests/ops/test_ops_transforms.py`: 23 passed
+    - `tests/test_transforms.py`: 19 passed
+    - `tests/test_transforms_3d.py`: 23 passed
+    - `tests/test_calibration.py`: 20 passed
+    - `tests/environment/test_transforms.py`: 66 passed
+    - Total transform-related: 201 passed
+13. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/transforms.py` (moved from transforms.py)
+- `src/neurospatial/ops/__init__.py` (added 27 transform exports)
+- `src/neurospatial/transforms.py` (new backward-compat shim)
+- `src/neurospatial/calibration.py` (updated import)
+- `src/neurospatial/__init__.py` (updated import)
+- `src/neurospatial/animation/__init__.py` (updated import)
+- `src/neurospatial/animation/calibration.py` (updated import)
+- `src/neurospatial/animation/overlays.py` (updated import)
+- `src/neurospatial/annotation/*.py` (6 files updated)
+- `src/neurospatial/environment/transforms.py` (updated imports)
+- `src/neurospatial/regions/*.py` (3 files updated)
+- `tests/ops/test_ops_transforms.py` (new file)
+- `tests/test_transforms.py`, `tests/test_transforms_3d.py`, `tests/test_calibration.py` (updated imports)
+- 40+ other test files (updated imports)
+
+**Next Task**: Move `alignment.py` → `ops/alignment.py`
 
 ### 2025-12-05 (Session 7)
 
