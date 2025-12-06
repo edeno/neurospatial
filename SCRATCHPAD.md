@@ -1,11 +1,43 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7 complete
+**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 29)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.8: Create encoding/population.py)
+
+**Completed**: Create encoding/population.py with re-exports from metrics/population.py
+
+**Work Done**:
+1. Created test file `tests/encoding/test_encoding_population.py` following TDD (RED phase)
+   - 33 tests total: 7 import tests from encoding.population, 7 import tests from encoding, 3 module structure tests, 7 re-export identity tests, 9 functionality tests
+   - Tests for imports of all 7 symbols: `PopulationCoverageResult`, `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells`, `field_overlap`, `population_vector_correlation`
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `encoding/population.py` as a re-export module:
+   - From metrics/population.py: `PopulationCoverageResult`, `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells`, `field_overlap`, `population_vector_correlation`
+4. Updated `encoding/__init__.py` to export all 7 population symbols
+5. All tests pass: 33 passed (new) + 54 passed (existing metrics/test_population.py)
+6. Ran ruff check/format and mypy - no issues
+7. Code review APPROVED
+
+**Files Created**:
+- `src/neurospatial/encoding/population.py` (new - re-exports from metrics.population)
+- `tests/encoding/test_encoding_population.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/encoding/__init__.py` (added 7 population exports)
+
+**Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8 COMPLETE
+Remaining: Task 6.9
+
+**Next Task**: Milestone 6, Task 6.9 - Update Internal Imports
+
+---
 
 ### 2025-12-06 (Session 28)
 

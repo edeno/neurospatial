@@ -88,6 +88,17 @@ from neurospatial.encoding.place import (
     spikes_to_field,
 )
 
+# Population-level metrics
+from neurospatial.encoding.population import (
+    PopulationCoverageResult,
+    count_place_cells,
+    field_density_map,
+    field_overlap,
+    plot_population_coverage,
+    population_coverage,
+    population_vector_correlation,
+)
+
 # Spatial view cell analysis
 from neurospatial.encoding.spatial_view import (
     FieldOfView,
@@ -165,4 +176,12 @@ __all__ = [  # noqa: RUF022 - organized by category
     "sparsity",
     "spatial_coverage_single_cell",
     "spikes_to_field",
+    # Population-level metrics
+    "PopulationCoverageResult",
+    "population_coverage",
+    "plot_population_coverage",
+    "field_density_map",
+    "count_place_cells",
+    "field_overlap",
+    "population_vector_correlation",
 ]
