@@ -90,6 +90,23 @@ AssemblyDetectionResult : Results from assembly detection
 ExplainedVarianceResult : Results from explained variance analysis
     Contains EV, reversed EV, partial correlation, and n_pairs.
 
+Shuffle Controls (Re-exported from neurospatial.stats)
+------------------------------------------------------
+shuffle_time_bins : Shuffle temporal order of time bins
+    Test that sequential structure is significant.
+
+shuffle_cell_identity : Shuffle cell identity labels
+    Test that spatial code coherence is significant.
+
+compute_shuffle_pvalue : Compute p-value from null distribution
+    Statistical significance from shuffle controls.
+
+ShuffleTestResult : Container for shuffle test results
+    Stores observed score, null distribution, and p-value.
+
+generate_poisson_surrogates : Generate rate-matched Poisson surrogates
+    Test that observed structure exceeds rate-based expectations.
+
 Examples
 --------
 Basic decoding workflow::
@@ -169,11 +186,24 @@ from neurospatial.decoding.trajectory import (
     fit_linear_trajectory,
 )
 
+# Re-export shuffle controls from stats for discoverability in decoding workflows.
+# Canonical location: neurospatial.stats.shuffle
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    shuffle_cell_identity,
+    shuffle_time_bins,
+)
+
+# Re-export surrogate generation from stats for discoverability in decoding workflows.
+# Canonical location: neurospatial.stats.surrogates
+from neurospatial.stats.surrogates import generate_poisson_surrogates
+
 # =============================================================================
 # Public API exports
 # =============================================================================
 
-__all__ = [
+__all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Result containers
     "AssemblyDetectionResult",
     "AssemblyPattern",
@@ -182,11 +212,14 @@ __all__ = [
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    "ShuffleTestResult",
     # Cell assembly detection
     "assembly_activation",
     # Metrics
     "confusion_matrix",
     "credible_region",
+    # Shuffle controls (re-exported from stats)
+    "compute_shuffle_pvalue",
     # Core decoding
     "decode_position",
     "decoding_correlation",
@@ -198,6 +231,8 @@ __all__ = [
     "explained_variance_reactivation",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
+    # Surrogates (re-exported from stats)
+    "generate_poisson_surrogates",
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
@@ -210,4 +245,7 @@ __all__ = [
     "pairwise_correlations",
     "poisson_likelihood",
     "reactivation_strength",
+    # Shuffle controls (re-exported from stats)
+    "shuffle_cell_identity",
+    "shuffle_time_bins",
 ]

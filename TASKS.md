@@ -287,9 +287,9 @@ uv run pytest tests/ -x -v
 
 ### Tasks
 
-- [ ] Remove `decoding/shuffle.py` (contents moved to `stats/shuffle.py` and `stats/surrogates.py`)
-- [ ] Update `decoding/__init__.py` to re-export from `stats.shuffle` and `stats.surrogates`
-- [ ] Verify decoding/ structure matches PLAN.md specification
+- [x] Remove `decoding/shuffle.py` (contents moved to `stats/shuffle.py` and `stats/surrogates.py`)
+- [x] Update `decoding/__init__.py` to re-export from `stats.shuffle` and `stats.surrogates`
+- [x] Verify decoding/ structure matches PLAN.md specification
 
 **Verification**:
 
@@ -612,8 +612,8 @@ If circular imports occur:
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
 | M4: stats/ Module | Complete | All tasks complete: circular.py, shuffle.py, surrogates.py |
 | M5: behavior/ Module | Complete | All tasks complete: trajectory.py, segmentation.py, navigation.py, decisions.py, reward.py |
-| M6: encoding/ Module | Complete | All tasks 6.1-6.9 complete; imports updated in __init__.py |
-| M7: decoding/ Cleanup | Not Started | |
+| M6: encoding/ Module | Complete | All tasks 6.1-6.9 complete; imports updated in **init**.py |
+| M7: decoding/ Cleanup | Complete | Re-exports added from stats.shuffle and stats.surrogates |
 | M8: animation/ Consolidation | Not Started | |
 | M9: Top-Level **init**.py | Not Started | |
 | M10: Delete Old Files | Not Started | |

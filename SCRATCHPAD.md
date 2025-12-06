@@ -1,11 +1,59 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 COMPLETE - All tasks 6.1-6.9 done
+**Current Status**: Milestone 7 COMPLETE - Re-exports added to decoding/
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 31)
+
+**Starting Point**: Milestone 7 - Reorganize decoding/ Module
+
+**Completed**: Add re-exports from stats.shuffle and stats.surrogates to decoding/
+
+**Work Done**:
+
+1. Verified `decoding/shuffle.py` was already removed in M4 (Session 15)
+2. Created test file `tests/decoding/test_decoding_stats_reexports.py` following TDD (RED phase)
+   - 17 tests total: 5 import tests, 5 identity tests, 5 **all** tests, 2 module structure tests
+   - Tests for re-exports: `shuffle_time_bins`, `shuffle_cell_identity`, `compute_shuffle_pvalue`, `ShuffleTestResult`, `generate_poisson_surrogates`
+3. Verified tests FAIL before implementation (import error expected)
+4. Updated `decoding/__init__.py`:
+   - Added docstring section "Shuffle Controls (Re-exported from neurospatial.stats)"
+   - Added imports from `stats.shuffle`: `ShuffleTestResult`, `compute_shuffle_pvalue`, `shuffle_cell_identity`, `shuffle_time_bins`
+   - Added import from `stats.surrogates`: `generate_poisson_surrogates`
+   - Updated `__all__` to include all 5 re-exported symbols
+   - Added `# noqa: RUF022` comment to preserve category organization in `__all__`
+5. Updated `tests/decoding/test_imports.py` expected exports list
+6. All tests pass:
+   - `tests/decoding/test_decoding_stats_reexports.py`: 17 passed
+   - `tests/decoding/`: 522 passed
+   - `tests/stats/`: 84 passed
+   - Total decoding+stats: 606 passed
+7. Ran ruff check/format and mypy - no issues
+8. Code review APPROVED
+
+**Files Created**:
+
+- `tests/decoding/test_decoding_stats_reexports.py` (new)
+
+**Files Modified**:
+
+- `src/neurospatial/decoding/__init__.py` (added re-exports + docstring)
+- `tests/decoding/test_imports.py` (updated expected exports)
+
+**Milestone 7 Status**: COMPLETE
+All tasks done:
+
+- decoding/shuffle.py removed (done in M4)
+- Re-exports added from stats.shuffle and stats.surrogates
+- Structure verified against PLAN.md
+
+**Next Task**: Milestone 8 - Consolidate animation/ Module
+
+---
 
 ### 2025-12-06 (Session 30)
 
@@ -14,6 +62,7 @@
 **Completed**: Update internal imports to use encoding modules
 
 **Work Done**:
+
 1. Updated `src/neurospatial/__init__.py` to import from encoding modules:
    - `neurospatial.encoding` for metrics (detect_place_fields, skaggs_information, border_score, etc.)
    - `neurospatial.encoding.object_vector` for ObjectVectorFieldResult, compute_object_vector_field
@@ -25,12 +74,14 @@
 
 **Architecture Note**:
 The import flow is now:
+
 - Source modules (`spike_field.py`, `metrics/place_fields.py`, etc.) contain implementations
 - `encoding/` modules re-export from source modules
 - `metrics/__init__.py` imports from source modules (to avoid circular imports)
 - `neurospatial/__init__.py` imports from encoding modules (new canonical paths)
 
 **Files Modified**:
+
 - `src/neurospatial/__init__.py` (updated imports to use encoding modules)
 
 **Milestone 6 Status**: COMPLETE
@@ -47,6 +98,7 @@ All tasks 6.1-6.9 are done.
 **Completed**: Create encoding/population.py with re-exports from metrics/population.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_population.py` following TDD (RED phase)
    - 33 tests total: 7 import tests from encoding.population, 7 import tests from encoding, 3 module structure tests, 7 re-export identity tests, 9 functionality tests
    - Tests for imports of all 7 symbols: `PopulationCoverageResult`, `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells`, `field_overlap`, `population_vector_correlation`
@@ -59,10 +111,12 @@ All tasks 6.1-6.9 are done.
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/population.py` (new - re-exports from metrics.population)
 - `tests/encoding/test_encoding_population.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 7 population exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8 COMPLETE
@@ -79,6 +133,7 @@ Remaining: Task 6.9
 **Completed**: Create encoding/phase_precession.py with re-exports from metrics/phase_precession.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_phase_precession.py` following TDD (RED phase)
    - 22 tests total: 4 import tests from encoding.phase_precession, 4 import tests from encoding, 3 module structure tests (using importlib to avoid function shadowing), 4 re-export identity tests, 7 functionality tests
    - Tests for imports of all 4 symbols: `PhasePrecessionResult`, `phase_precession`, `has_phase_precession`, `plot_phase_precession`
@@ -91,10 +146,12 @@ Remaining: Task 6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/phase_precession.py` (new - re-exports from metrics.phase_precession)
 - `tests/encoding/test_encoding_phase_precession.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 4 phase_precession exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7 COMPLETE
@@ -111,6 +168,7 @@ Remaining: Tasks 6.8-6.9
 **Completed**: Create encoding/spatial_view.py with re-exports from spatial_view_field.py, metrics/spatial_view_cells.py, and ops/visibility.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_spatial_view.py` following TDD (RED phase)
    - 37 tests total: 9 import tests from encoding.spatial_view, 9 import tests from encoding, 3 module structure tests, 9 re-export identity tests, 7 functionality tests
    - Tests for imports of all 9 symbols: `SpatialViewFieldResult`, `compute_spatial_view_field`, `SpatialViewMetrics`, `spatial_view_cell_metrics`, `is_spatial_view_cell`, `compute_viewed_location`, `compute_viewshed`, `visibility_occupancy`, `FieldOfView`
@@ -125,10 +183,12 @@ Remaining: Tasks 6.8-6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/spatial_view.py` (new - re-exports from spatial_view_field.py, metrics.spatial_view_cells, and ops.visibility)
 - `tests/encoding/test_encoding_spatial_view.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 9 spatial_view exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6 COMPLETE
@@ -145,6 +205,7 @@ Remaining: Tasks 6.7-6.9
 **Completed**: Create encoding/object_vector.py with re-exports from object_vector_field.py and metrics/object_vector_cells.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_object_vector.py` following TDD (RED phase)
    - 32 tests total: 7 import tests from encoding.object_vector, 7 import tests from encoding, 3 module structure tests, 7 re-export tests, 8 functionality tests
    - Tests for imports of all 7 symbols: `ObjectVectorFieldResult`, `compute_object_vector_field`, `ObjectVectorMetrics`, `compute_object_vector_tuning`, `object_vector_score`, `is_object_vector_cell`, `plot_object_vector_tuning`
@@ -158,10 +219,12 @@ Remaining: Tasks 6.7-6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/object_vector.py` (new - re-exports from object_vector_field.py and metrics.object_vector_cells)
 - `tests/encoding/test_encoding_object_vector.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 7 object_vector exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4, 6.5 COMPLETE
@@ -178,6 +241,7 @@ Remaining: Tasks 6.6-6.9
 **Completed**: Create encoding/border.py with re-exports from metrics/boundary_cells.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_border.py` following TDD (RED phase)
    - 15 tests total: 2 import tests from encoding.border, 2 import tests from encoding, 3 module structure tests, 2 re-export tests, 6 functionality tests
    - Tests for imports of all 2 symbols: `border_score`, `compute_region_coverage`
@@ -190,10 +254,12 @@ Remaining: Tasks 6.6-6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/border.py` (new - re-exports from metrics.boundary_cells)
 - `tests/encoding/test_encoding_border.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 2 border exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4 COMPLETE
@@ -210,6 +276,7 @@ Remaining: Tasks 6.5-6.9
 **Completed**: Create encoding/head_direction.py with re-exports from metrics/head_direction.py and stats/circular.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_head_direction.py` following TDD (RED phase)
    - 24 tests total: 5 import tests from encoding.head_direction, 3 re-export tests from stats.circular, 8 import tests from encoding, 2 module structure tests, 6 functionality tests
    - Tests for imports of all 8 symbols: HeadDirectionMetrics, head_direction_metrics, head_direction_tuning_curve, is_head_direction_cell, plot_head_direction_tuning, rayleigh_test, mean_resultant_length, circular_mean
@@ -223,10 +290,12 @@ Remaining: Tasks 6.5-6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/head_direction.py` (new - re-exports from metrics.head_direction and stats.circular)
 - `tests/encoding/test_encoding_head_direction.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 8 head_direction exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2, 6.3 COMPLETE
@@ -243,6 +312,7 @@ Remaining: Tasks 6.4-6.9
 **Completed**: Create encoding/grid.py with re-exports from metrics/grid_cells.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/test_encoding_grid.py` following TDD (RED phase)
    - 19 tests total: 7 import tests from encoding.grid, 4 import tests from encoding, 8 functionality tests
    - Tests for imports of all 7 symbols: GridProperties, grid_score, spatial_autocorrelation, grid_scale, grid_orientation, grid_properties, periodicity_score
@@ -255,10 +325,12 @@ Remaining: Tasks 6.4-6.9
 7. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/grid.py` (new - re-exports from metrics.grid_cells)
 - `tests/encoding/test_encoding_grid.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 7 grid exports)
 
 **Milestone 6 Status**: Tasks 6.1, 6.2 COMPLETE
@@ -275,6 +347,7 @@ Remaining: Tasks 6.3-6.9
 **Completed**: Create encoding/place.py with re-exports from spike_field.py and metrics/place_fields.py
 
 **Work Done**:
+
 1. Created test file `tests/encoding/__init__.py` (test package init)
 2. Created test file `tests/encoding/test_encoding_place.py` following TDD (RED phase)
    - 34 tests total: import tests for 19 functions + 1 class, functionality tests for 12 functions
@@ -289,11 +362,13 @@ Remaining: Tasks 6.3-6.9
 8. Code review APPROVED
 
 **Files Created**:
+
 - `src/neurospatial/encoding/place.py` (new - re-exports from spike_field and metrics.place_fields)
 - `tests/encoding/__init__.py` (new)
 - `tests/encoding/test_encoding_place.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/encoding/__init__.py` (added 20 exports from place.py)
 
 **Milestone 6 Status**: Task 6.1 COMPLETE
@@ -310,6 +385,7 @@ Remaining: Tasks 6.2-6.9
 **Completed**: Move reward.py → behavior/reward.py
 
 **Work Done**:
+
 1. Created test file `tests/behavior/test_behavior_reward.py` following TDD (RED phase)
    - 14 tests for reward functions: import tests and functionality tests
 2. Verified tests FAIL before implementation (import error expected)
@@ -328,6 +404,7 @@ Remaining: Tasks 6.2-6.9
 10. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/behavior/reward.py` (moved from reward.py)
 - `src/neurospatial/behavior/__init__.py` (added 2 reward exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -336,6 +413,7 @@ Remaining: Tasks 6.2-6.9
 
 **Milestone 5 Status**: COMPLETE
 All tasks (5.1-5.5) are done:
+
 - 5.1: behavior/trajectory.py
 - 5.2: behavior/segmentation.py
 - 5.3: behavior/navigation.py
@@ -353,6 +431,7 @@ All tasks (5.1-5.5) are done:
 **Completed**: Create behavior/decisions.py by combining decision_analysis.py and vte.py
 
 **Work Done**:
+
 1. Created test file `tests/behavior/test_behavior_decisions.py` following TDD (RED phase)
    - 42 tests for all decision analysis and VTE functions, dataclasses, and re-exports
 2. Verified tests FAIL before implementation (import error expected)
@@ -376,10 +455,12 @@ All tasks (5.1-5.5) are done:
 7. Ran ruff check/format and mypy - no issues
 
 **Files Created**:
+
 - `src/neurospatial/behavior/decisions.py` (new - combined decision_analysis.py and vte.py)
 - `tests/behavior/test_behavior_decisions.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/behavior/__init__.py` (added 23 decision/VTE exports)
 - `src/neurospatial/metrics/decision_analysis.py` (now re-export wrapper)
 - `src/neurospatial/metrics/vte.py` (now re-export wrapper)
@@ -398,6 +479,7 @@ Remaining: Tasks 5.5-5.6
 **Completed**: Move navigation functions from behavioral.py, path_efficiency.py, goal_directed.py → behavior/navigation.py
 
 **Work Done**:
+
 1. Created test file `tests/behavior/test_behavior_navigation.py` following TDD (RED phase)
    - 48 tests for all navigation functions, dataclasses, and re-exports
 2. Verified tests FAIL before implementation (import error expected)
@@ -424,10 +506,12 @@ Remaining: Tasks 5.5-5.6
 8. Ran ruff check/format and mypy - no issues
 
 **Files Created**:
+
 - `src/neurospatial/behavior/navigation.py` (new - combined all navigation modules)
 - `tests/behavior/test_behavior_navigation.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/behavior/__init__.py` (added 24 navigation exports)
 - `src/neurospatial/__init__.py` (updated import paths)
 - `src/neurospatial/metrics/__init__.py` (re-export from behavior.navigation)
@@ -449,6 +533,7 @@ Remaining: Tasks 5.4-5.6
 **Completed**: Move all segmentation/ functions to behavior/segmentation.py (NO backward compat)
 
 **Work Done**:
+
 1. Created test file `tests/behavior/test_behavior_segmentation.py` following TDD (RED phase)
    - 40 tests for all segmentation functions and dataclasses
    - Tests for imports from both `behavior.segmentation` and `behavior/__init__.py`
@@ -483,10 +568,12 @@ Remaining: Tasks 5.4-5.6
 10. Ran ruff check/format and mypy - no issues
 
 **Files Created**:
+
 - `src/neurospatial/behavior/segmentation.py` (new - combined all segmentation modules)
 - `tests/behavior/test_behavior_segmentation.py` (new)
 
 **Files Modified**:
+
 - `src/neurospatial/behavior/__init__.py` (added 11 segmentation exports)
 - `src/neurospatial/__init__.py` (updated import path)
 - `src/neurospatial/behavioral.py` (updated Trial import)
@@ -495,6 +582,7 @@ Remaining: Tasks 5.4-5.6
 - 10 test files (updated imports)
 
 **Files Deleted**:
+
 - `src/neurospatial/segmentation/` (entire directory - no backward compat)
 
 **Milestone 5 Status**: Tasks 5.1, 5.2 COMPLETE
@@ -513,6 +601,7 @@ Remaining: Tasks 5.3-5.6
 **Completed**: Move trajectory functions to behavior/trajectory.py
 
 **Work Done**:
+
 1. Created test file `tests/behavior/test_behavior_trajectory.py` following TDD (RED phase)
    - 18 tests for all trajectory functions importable from new location
    - Tests for imports from both `behavior.trajectory` and `behavior/__init__.py`
@@ -544,6 +633,7 @@ Remaining: Tasks 5.3-5.6
 11. Code review APPROVED
 
 **Files Modified**:
+
 - `src/neurospatial/behavior/trajectory.py` (moved from metrics/trajectory.py, added curvature function)
 - `src/neurospatial/behavior/__init__.py` (added 5 trajectory exports)
 - `src/neurospatial/metrics/__init__.py` (re-export from new location for backward compat)
@@ -571,6 +661,7 @@ Remaining: Task 5.2-5.6
 **Completed**: Create stats/surrogates.py with extracted surrogate functions + NEW generate_jittered_spikes()
 
 **Work Done**:
+
 1. Created test file `tests/stats/test_stats_surrogates.py` following TDD (RED phase)
    - 21 tests for all surrogate functions importable from new location
    - Tests for new function: `generate_jittered_spikes()`
@@ -593,6 +684,7 @@ Remaining: Task 5.2-5.6
 8. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/stats/surrogates.py` (NEW file - extracted from shuffle.py + new jitter function)
 - `src/neurospatial/stats/__init__.py` (added 3 surrogate exports)
 - `src/neurospatial/stats/shuffle.py` (removed duplicate functions, added re-export)
@@ -614,6 +706,7 @@ Task 4.3 (Create stats/surrogates.py) is complete.
 **Completed**: Move shuffle functions to stats/shuffle.py (NO backward compatibility per user request)
 
 **Work Done**:
+
 1. Created test file `tests/stats/test_stats_shuffle.py` following TDD (RED phase)
    - Tests for all existing shuffle functions importable from new location
    - Tests for new functions: `shuffle_trials()`, `shuffle_spikes_isi()`
@@ -646,6 +739,7 @@ Task 4.3 (Create stats/surrogates.py) is complete.
 12. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/stats/shuffle.py` (moved from decoding/shuffle.py, added 2 new functions)
 - `src/neurospatial/stats/__init__.py` (added 14 shuffle exports)
 - `src/neurospatial/decoding/__init__.py` (removed shuffle exports and documentation)
@@ -670,6 +764,7 @@ Remaining: Task 4.3 (surrogates.py)
 **Completed**: Move circular statistics to stats/circular.py
 
 **Work Done**:
+
 1. Created test file `tests/stats/test_stats_circular.py` following TDD (RED phase)
    - 31 tests covering imports and basic functionality
 2. Verified tests FAIL before implementation (import error expected)
@@ -706,6 +801,7 @@ Remaining: Task 4.3 (surrogates.py)
 12. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/stats/circular.py` (moved from metrics/circular.py, extended with public functions and circular_basis content)
 - `src/neurospatial/stats/__init__.py` (added 15 exports)
 - `src/neurospatial/metrics/__init__.py` (import from stats.circular for backward compatibility)
@@ -733,6 +829,7 @@ Remaining: Task 4.2 (shuffle.py), Task 4.3 (surrogates.py)
 **Completed**: Move `nwb/` → `io/nwb/`
 
 **Work Done**:
+
 1. Created test file `tests/test_io_nwb_imports.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `nwb/` → `io/nwb/` using `git mv` to preserve history
@@ -755,6 +852,7 @@ Remaining: Task 4.2 (shuffle.py), Task 4.3 (surrogates.py)
 11. Ran ruff check/format (3 fixes) and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/io/nwb/__init__.py` (moved, updated paths)
 - `src/neurospatial/io/nwb/_*.py` (7 files - updated imports)
 - `src/neurospatial/environment/serialization.py` (updated import + docstring)
@@ -765,6 +863,7 @@ Remaining: Task 4.2 (shuffle.py), Task 4.3 (surrogates.py)
 
 **Milestone 3 Status**: COMPLETE
 Both io/ components have been moved:
+
 - `io.py` → `io/files.py` (done in M1)
 - `nwb/` → `io/nwb/`
 
@@ -777,6 +876,7 @@ Both io/ components have been moved:
 **Completed**: Move `basis.py` → `ops/basis.py` (FINAL ops/ module)
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_basis.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `basis.py` → `ops/basis.py` using `git mv` to preserve history
@@ -795,6 +895,7 @@ Both io/ components have been moved:
 9. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/basis.py` (moved from basis.py)
 - `src/neurospatial/ops/__init__.py` (added 6 basis exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -803,6 +904,7 @@ Both io/ components have been moved:
 
 **Milestone 2 Status**: COMPLETE
 All 12 ops/ modules have been moved and are working:
+
 - binning.py, distance.py, normalize.py, smoothing.py, graph.py, calculus.py
 - transforms.py (merged calibration.py), alignment.py, egocentric.py
 - visibility.py, basis.py
@@ -816,6 +918,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `visibility.py` → `ops/visibility.py`
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_visibility.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `visibility.py` → `ops/visibility.py` using `git mv` to preserve history
@@ -859,6 +962,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `reference_frames.py` → `ops/egocentric.py`
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_egocentric.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `reference_frames.py` → `ops/egocentric.py` using `git mv` to preserve history
@@ -887,6 +991,7 @@ All 12 ops/ modules have been moved and are working:
 11. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/egocentric.py` (moved from reference_frames.py)
 - `src/neurospatial/ops/__init__.py` (added 7 egocentric exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -910,6 +1015,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `alignment.py` → `ops/alignment.py`
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_alignment.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `alignment.py` → `ops/alignment.py` using `git mv` to preserve history
@@ -930,6 +1036,7 @@ All 12 ops/ modules have been moved and are working:
 11. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/alignment.py` (moved from alignment.py)
 - `src/neurospatial/ops/__init__.py` (added 4 alignment exports)
 - `src/neurospatial/alignment.py` (new backward-compat shim)
@@ -947,6 +1054,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `transforms.py` → `ops/transforms.py` (merged `calibration.py`)
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_transforms.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `transforms.py` → `ops/transforms.py` using `git mv` to preserve history
@@ -981,6 +1089,7 @@ All 12 ops/ modules have been moved and are working:
 13. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/transforms.py` (moved from transforms.py)
 - `src/neurospatial/ops/__init__.py` (added 27 transform exports)
 - `src/neurospatial/transforms.py` (new backward-compat shim)
@@ -1005,6 +1114,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `differential.py` → `ops/calculus.py`
 
 **Work Done**:
+
 1. Created new test file `tests/ops/test_ops_calculus.py` following TDD (RED phase)
 2. Verified tests FAIL before moving (import error expected)
 3. Moved `differential.py` → `ops/calculus.py` using `git mv` to preserve history
@@ -1025,6 +1135,7 @@ All 12 ops/ modules have been moved and are working:
 11. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/calculus.py` (moved from differential.py)
 - `src/neurospatial/ops/__init__.py` (added calculus exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -1041,6 +1152,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `primitives.py` → `ops/graph.py`
 
 **Work Done**:
+
 1. Moved `primitives.py` → `ops/graph.py` using `git mv` to preserve history
 2. Added module docstring in graph.py to document new import paths
 3. Added `__all__` export list to graph.py:
@@ -1059,6 +1171,7 @@ All 12 ops/ modules have been moved and are working:
 9. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/graph.py` (moved from primitives.py)
 - `src/neurospatial/ops/__init__.py` (added graph exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -1075,6 +1188,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `kernels.py` → `ops/smoothing.py`
 
 **Work Done**:
+
 1. Moved `kernels.py` → `ops/smoothing.py` using `git mv` to preserve history
 2. Added module docstring in smoothing.py to document new import paths
 3. Added `__all__` export list to smoothing.py:
@@ -1096,6 +1210,7 @@ All 12 ops/ modules have been moved and are working:
 8. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/smoothing.py` (moved from kernels.py)
 - `src/neurospatial/ops/__init__.py` (added smoothing exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -1115,6 +1230,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `field_ops.py` → `ops/normalize.py`
 
 **Work Done**:
+
 1. Moved `field_ops.py` → `ops/normalize.py` using `git mv` to preserve history
 2. Updated module docstring in normalize.py to reflect new import paths
 3. Updated `ops/__init__.py` to export public API:
@@ -1130,6 +1246,7 @@ All 12 ops/ modules have been moved and are working:
 7. Ran ruff check/format and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/normalize.py` (moved from field_ops.py)
 - `src/neurospatial/ops/__init__.py` (added normalize exports)
 - `src/neurospatial/__init__.py` (updated import path)
@@ -1145,6 +1262,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `distance.py` → `ops/distance.py`
 
 **Work Done**:
+
 1. Moved `distance.py` → `ops/distance.py` using `git mv` to preserve history
 2. Updated docstrings in distance.py to reflect new import paths
 3. Updated all internal imports (18 files across src/ and tests/)
@@ -1162,6 +1280,7 @@ All 12 ops/ modules have been moved and are working:
 7. Ran ruff check and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/distance.py` (moved from distance.py)
 - `src/neurospatial/ops/__init__.py` (added distance exports)
 - `src/neurospatial/__init__.py` (updated import)
@@ -1195,6 +1314,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Move `spatial.py` → `ops/binning.py`
 
 **Work Done**:
+
 1. Moved `spatial.py` → `ops/binning.py` using `git mv` to preserve history
 2. Updated docstrings in binning.py to reflect new import paths
 3. Updated all internal imports (17 files across src/ and tests/)
@@ -1210,6 +1330,7 @@ All 12 ops/ modules have been moved and are working:
 7. Ran ruff check and mypy - no issues
 
 **Files Modified**:
+
 - `src/neurospatial/ops/binning.py` (moved from spatial.py)
 - `src/neurospatial/ops/__init__.py` (added exports)
 - `src/neurospatial/__init__.py` (updated import)
@@ -1238,6 +1359,7 @@ All 12 ops/ modules have been moved and are working:
 **Completed**: Milestone 1 - Create Directory Structure
 
 **Work Done**:
+
 1. Created 5 new directories with `__init__.py` files:
    - `src/neurospatial/encoding/`
    - `src/neurospatial/behavior/`
@@ -1250,6 +1372,7 @@ All 12 ops/ modules have been moved and are working:
 3. All core tests pass (io tests: 26 passed, environment tests: 869 passed)
 
 **Pre-existing Test Failures Noted** (not related to my changes):
+
 - `test_repeated_mazes.py` - RepeatedTDims missing `n_t_junctions` attribute
 - Some flaky tests in boundary_cells and properties
 - These were confirmed pre-existing by checking git stash behavior
@@ -1277,6 +1400,7 @@ All 12 ops/ modules have been moved and are working:
 ## Pre-existing Issues
 
 The following tests fail but are NOT related to the reorganization:
+
 - `tests/simulation/mazes/test_repeated_mazes.py` - API mismatch (`n_t_junctions`)
 - `tests/metrics/test_boundary_cells.py::TestBorderScore::test_border_score_all_nan` - flaky
 - `tests/test_properties.py::TestSparsityProperties::test_single_peak_low_sparsity`
