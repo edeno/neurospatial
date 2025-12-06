@@ -56,7 +56,11 @@ from neurospatial.behavior.trajectory import (
     compute_turn_angles,
     mean_square_displacement,
 )
+
+# Boundary cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
+
+# Decision analysis - direct from source (to avoid circular imports)
 from neurospatial.metrics.decision_analysis import (
     DecisionAnalysisResult,
     DecisionBoundaryMetrics,
@@ -71,6 +75,8 @@ from neurospatial.metrics.decision_analysis import (
     pre_decision_heading_stats,
     pre_decision_speed_stats,
 )
+
+# Grid cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.grid_cells import (
     GridProperties,
     grid_orientation,
@@ -80,6 +86,8 @@ from neurospatial.metrics.grid_cells import (
     periodicity_score,
     spatial_autocorrelation,
 )
+
+# Head direction metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.head_direction import (
     HeadDirectionMetrics,
     head_direction_metrics,
@@ -87,6 +95,8 @@ from neurospatial.metrics.head_direction import (
     is_head_direction_cell,
     plot_head_direction_tuning,
 )
+
+# Object-vector cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.object_vector_cells import (
     ObjectVectorMetrics,
     compute_object_vector_tuning,
@@ -94,12 +104,16 @@ from neurospatial.metrics.object_vector_cells import (
     object_vector_score,
     plot_object_vector_tuning,
 )
+
+# Phase precession metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.phase_precession import (
     PhasePrecessionResult,
     has_phase_precession,
     phase_precession,
     plot_phase_precession,
 )
+
+# Place field metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.place_fields import (
     compute_field_emd,
     detect_place_fields,
@@ -117,6 +131,8 @@ from neurospatial.metrics.place_fields import (
     sparsity,
     spatial_coverage_single_cell,
 )
+
+# Population metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.population import (
     PopulationCoverageResult,
     count_place_cells,
@@ -126,11 +142,15 @@ from neurospatial.metrics.population import (
     population_coverage,
     population_vector_correlation,
 )
+
+# Spatial view cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.spatial_view_cells import (
     SpatialViewMetrics,
     is_spatial_view_cell,
     spatial_view_cell_metrics,
 )
+
+# VTE metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.vte import (
     VTESessionResult,
     VTETrialResult,

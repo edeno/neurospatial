@@ -1,11 +1,44 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8 complete
+**Current Status**: Milestone 6 COMPLETE - All tasks 6.1-6.9 done
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 30)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.9: Update Internal Imports)
+
+**Completed**: Update internal imports to use encoding modules
+
+**Work Done**:
+1. Updated `src/neurospatial/__init__.py` to import from encoding modules:
+   - `neurospatial.encoding` for metrics (detect_place_fields, skaggs_information, border_score, etc.)
+   - `neurospatial.encoding.object_vector` for ObjectVectorFieldResult, compute_object_vector_field
+   - `neurospatial.encoding.spatial_view` for SpatialViewFieldResult, compute_spatial_view_field
+   - `neurospatial.encoding.place` for DirectionalPlaceFields, compute_place_field, etc.
+2. Avoided circular imports by keeping `metrics/__init__.py` importing from source modules (not encoding)
+3. Ran ruff check (2 auto-fixes for import sorting) and mypy - no issues
+4. All encoding tests pass (216 passed)
+
+**Architecture Note**:
+The import flow is now:
+- Source modules (`spike_field.py`, `metrics/place_fields.py`, etc.) contain implementations
+- `encoding/` modules re-export from source modules
+- `metrics/__init__.py` imports from source modules (to avoid circular imports)
+- `neurospatial/__init__.py` imports from encoding modules (new canonical paths)
+
+**Files Modified**:
+- `src/neurospatial/__init__.py` (updated imports to use encoding modules)
+
+**Milestone 6 Status**: COMPLETE
+All tasks 6.1-6.9 are done.
+
+**Next Task**: Milestone 7 - Reorganize decoding/ Module
+
+---
 
 ### 2025-12-06 (Session 29)
 

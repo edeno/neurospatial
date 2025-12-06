@@ -237,6 +237,40 @@ from neurospatial.decoding import (
     decoding_error,
     median_decoding_error,
 )
+
+# Neuroscience metrics - now from encoding module
+from neurospatial.encoding import (
+    SpatialViewMetrics,
+    border_score,
+    detect_place_fields,
+    grid_score,
+    is_spatial_view_cell,
+    population_vector_correlation,
+    selectivity,
+    skaggs_information,
+    sparsity,
+    spatial_view_cell_metrics,
+)
+
+# Object-vector field analysis - now from encoding module
+from neurospatial.encoding.object_vector import (
+    ObjectVectorFieldResult,
+    compute_object_vector_field,
+)
+
+# Place cell analysis - now from encoding module
+from neurospatial.encoding.place import (
+    DirectionalPlaceFields,
+    compute_directional_place_fields,
+    compute_place_field,
+    spikes_to_field,
+)
+
+# Spatial view field analysis - now from encoding module
+from neurospatial.encoding.spatial_view import (
+    SpatialViewFieldResult,
+    compute_spatial_view_field,
+)
 from neurospatial.environment import Environment, EnvironmentNotFittedError
 
 # Events and peri-event analysis
@@ -265,26 +299,6 @@ from neurospatial.layout.factories import (
     list_available_layouts,
 )
 from neurospatial.layout.validation import validate_environment
-
-# Neuroscience metrics and behavioral analysis
-from neurospatial.metrics import (
-    SpatialViewMetrics,
-    border_score,
-    detect_place_fields,
-    grid_score,
-    is_spatial_view_cell,
-    population_vector_correlation,
-    selectivity,
-    skaggs_information,
-    sparsity,
-    spatial_view_cell_metrics,
-)
-
-# Object-vector field analysis
-from neurospatial.object_vector_field import (
-    ObjectVectorFieldResult,
-    compute_object_vector_field,
-)
 from neurospatial.ops.alignment import (
     get_2d_rotation_matrix,
     map_probabilities,
@@ -349,18 +363,6 @@ from neurospatial.regions import Region, Regions
 
 # Spatial view cell simulation model
 from neurospatial.simulation import SpatialViewCellModel
-
-# Spatial view field analysis
-from neurospatial.spatial_view_field import (
-    SpatialViewFieldResult,
-    compute_spatial_view_field,
-)
-from neurospatial.spike_field import (
-    DirectionalPlaceFields,
-    compute_directional_place_fields,
-    compute_place_field,
-    spikes_to_field,
-)
 from neurospatial.visualization.scale_bar import ScaleBarConfig
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging

@@ -259,17 +259,17 @@ uv run pytest tests/ -x -v
 
 #### 6.9: Update Internal Imports
 
-- [ ] Update imports for `spike_field` → `encoding.place`
-- [ ] Update imports for `metrics.place_fields` → `encoding.place`
-- [ ] Update imports for `metrics.grid_cells` → `encoding.grid`
-- [ ] Update imports for `metrics.head_direction` → `encoding.head_direction`
-- [ ] Update imports for `metrics.boundary_cells` → `encoding.border`
-- [ ] Update imports for `object_vector_field` → `encoding.object_vector`
-- [ ] Update imports for `metrics.object_vector_cells` → `encoding.object_vector`
-- [ ] Update imports for `spatial_view_field` → `encoding.spatial_view`
-- [ ] Update imports for `metrics.spatial_view_cells` → `encoding.spatial_view`
-- [ ] Update imports for `metrics.phase_precession` → `encoding.phase_precession`
-- [ ] Update imports for `metrics.population` → `encoding.population`
+- [x] Update imports for `spike_field` → `encoding.place`
+- [x] Update imports for `metrics.place_fields` → `encoding.place`
+- [x] Update imports for `metrics.grid_cells` → `encoding.grid`
+- [x] Update imports for `metrics.head_direction` → `encoding.head_direction`
+- [x] Update imports for `metrics.boundary_cells` → `encoding.border`
+- [x] Update imports for `object_vector_field` → `encoding.object_vector`
+- [x] Update imports for `metrics.object_vector_cells` → `encoding.object_vector`
+- [x] Update imports for `spatial_view_field` → `encoding.spatial_view`
+- [x] Update imports for `metrics.spatial_view_cells` → `encoding.spatial_view`
+- [x] Update imports for `metrics.phase_precession` → `encoding.phase_precession`
+- [x] Update imports for `metrics.population` → `encoding.population`
 
 **Verification**:
 
@@ -612,7 +612,7 @@ If circular imports occur:
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
 | M4: stats/ Module | Complete | All tasks complete: circular.py, shuffle.py, surrogates.py |
 | M5: behavior/ Module | Complete | All tasks complete: trajectory.py, segmentation.py, navigation.py, decisions.py, reward.py |
-| M6: encoding/ Module | In Progress | Tasks 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8 complete |
+| M6: encoding/ Module | Complete | All tasks 6.1-6.9 complete; imports updated in __init__.py |
 | M7: decoding/ Cleanup | Not Started | |
 | M8: animation/ Consolidation | Not Started | |
 | M9: Top-Level **init**.py | Not Started | |
