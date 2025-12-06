@@ -227,7 +227,7 @@ uv run pytest tests/ -x -v
 
 #### 6.2: Create encoding/grid.py
 
-- [ ] Move functions from `metrics/grid_cells.py` → `encoding/grid.py`
+- [x] Move functions from `metrics/grid_cells.py` → `encoding/grid.py`
 
 #### 6.3: Create encoding/head_direction.py
 

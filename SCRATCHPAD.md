@@ -1,11 +1,43 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 IN PROGRESS - Task 6.1 complete
+**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 23)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.2: Create encoding/grid.py)
+
+**Completed**: Create encoding/grid.py with re-exports from metrics/grid_cells.py
+
+**Work Done**:
+1. Created test file `tests/encoding/test_encoding_grid.py` following TDD (RED phase)
+   - 19 tests total: 7 import tests from encoding.grid, 4 import tests from encoding, 8 functionality tests
+   - Tests for imports of all 7 symbols: GridProperties, grid_score, spatial_autocorrelation, grid_scale, grid_orientation, grid_properties, periodicity_score
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `encoding/grid.py` as a re-export module:
+   - From metrics/grid_cells.py: `GridProperties`, `grid_score`, `spatial_autocorrelation`, `grid_scale`, `grid_orientation`, `grid_properties`, `periodicity_score`
+4. Updated `encoding/__init__.py` to export all 7 grid symbols
+5. All tests pass: 19 passed (new) + 47 passed (existing metrics/test_grid_cells.py)
+6. Ran ruff check/format and mypy - no issues
+7. Code review APPROVED
+
+**Files Created**:
+- `src/neurospatial/encoding/grid.py` (new - re-exports from metrics.grid_cells)
+- `tests/encoding/test_encoding_grid.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/encoding/__init__.py` (added 7 grid exports)
+
+**Milestone 6 Status**: Tasks 6.1, 6.2 COMPLETE
+Remaining: Tasks 6.3-6.9
+
+**Next Task**: Milestone 6, Task 6.3 - Create encoding/head_direction.py
+
+---
 
 ### 2025-12-06 (Session 22)
 

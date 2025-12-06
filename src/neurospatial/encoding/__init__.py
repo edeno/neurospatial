@@ -17,6 +17,17 @@ phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
+# Grid cell analysis
+from neurospatial.encoding.grid import (
+    GridProperties,
+    grid_orientation,
+    grid_properties,
+    grid_scale,
+    grid_score,
+    periodicity_score,
+    spatial_autocorrelation,
+)
+
 # Place cell analysis
 from neurospatial.encoding.place import (
     DirectionalPlaceFields,
@@ -40,7 +51,15 @@ from neurospatial.encoding.place import (
     spikes_to_field,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - organized by category
+    # Grid cell analysis
+    "GridProperties",
+    "grid_orientation",
+    "grid_properties",
+    "grid_scale",
+    "grid_score",
+    "periodicity_score",
+    "spatial_autocorrelation",
     # Place cell analysis
     "DirectionalPlaceFields",
     "compute_directional_place_fields",
