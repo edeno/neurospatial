@@ -1,11 +1,54 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 4 IN PROGRESS - Task 4.2 (stats/shuffle.py) COMPLETE
+**Current Status**: Milestone 4 COMPLETE - All tasks done
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 16)
+
+**Starting Point**: Milestone 4 - Move stats/ Module (Task 4.3: Create stats/surrogates.py)
+
+**Completed**: Create stats/surrogates.py with extracted surrogate functions + NEW generate_jittered_spikes()
+
+**Work Done**:
+1. Created test file `tests/stats/test_stats_surrogates.py` following TDD (RED phase)
+   - 21 tests for all surrogate functions importable from new location
+   - Tests for new function: `generate_jittered_spikes()`
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `stats/surrogates.py` with extracted functions from `stats/shuffle.py`:
+   - `generate_poisson_surrogates()` - homogeneous Poisson surrogate spike trains
+   - `generate_inhomogeneous_poisson_surrogates()` - time-varying rate surrogates
+4. Added new function per PLAN.md:
+   - `generate_jittered_spikes()` - temporal jitter surrogates for testing spike timing
+5. Updated `stats/__init__.py` to export all 3 surrogate symbols from surrogates.py
+6. Updated `stats/shuffle.py`:
+   - Removed duplicate function implementations
+   - Added re-export from `stats.surrogates` with `# noqa: F401` for backward compatibility
+   - Updated module docstring to note surrogates are in separate module
+7. All tests pass:
+   - `tests/stats/test_stats_surrogates.py`: 21 passed
+   - `tests/stats/`: 84 passed (1 skipped)
+   - `tests/decoding/test_shuffle.py`: 163 passed
+   - Total stats/shuffle related: 248 passed
+8. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/stats/surrogates.py` (NEW file - extracted from shuffle.py + new jitter function)
+- `src/neurospatial/stats/__init__.py` (added 3 surrogate exports)
+- `src/neurospatial/stats/shuffle.py` (removed duplicate functions, added re-export)
+- `tests/stats/test_stats_surrogates.py` (NEW file)
+
+**Milestone 4 Status**: COMPLETE
+Task 4.1 (Create stats/circular.py) is complete.
+Task 4.2 (Create stats/shuffle.py) is complete.
+Task 4.3 (Create stats/surrogates.py) is complete.
+
+**Next Task**: Milestone 5 - Move behavior/ Module
+
+---
 
 ### 2025-12-06 (Session 15)
 

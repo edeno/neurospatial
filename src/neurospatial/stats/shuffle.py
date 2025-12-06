@@ -21,9 +21,12 @@ Shuffle Categories
 | **Temporal** | Sequential structure is not significant |
 | **Cell Identity** | Spatial code coherence is not significant |
 | **Posterior** | Trajectory detection is not biased |
-| **Surrogate** | Structure exceeds rate-based expectations |
 | **Trial** | Trial identity is not significant |
 | **ISI** | Inter-spike interval ordering is not significant |
+
+Note: Surrogate generation functions (Poisson, inhomogeneous Poisson, jitter)
+have been moved to ``neurospatial.stats.surrogates`` but are re-exported here
+for backward compatibility.
 
 Imports
 -------
@@ -57,6 +60,13 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+# Re-export surrogate functions from canonical location for backward compatibility.
+# These functions are now defined in neurospatial.stats.surrogates.
+from neurospatial.stats.surrogates import (  # noqa: F401
+    generate_inhomogeneous_poisson_surrogates,
+    generate_poisson_surrogates,
+)
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -742,208 +752,7 @@ def shuffle_posterior_weighted_circular(
 
 
 # =============================================================================
-# IV. Surrogate Generation - Generate spike trains with controlled properties
-# =============================================================================
-
-
-def generate_poisson_surrogates(
-    spike_counts: NDArray[np.int64],
-    dt: float,
-    *,
-    n_surrogates: int = 1000,
-    rng: np.random.Generator | int | None = None,
-) -> Generator[NDArray[np.int64], None, None]:
-    """Generate homogeneous Poisson surrogate spike trains.
-
-    Creates surrogate spike counts by sampling from Poisson distributions
-    with rates equal to the mean firing rate of each neuron across all time
-    bins. This destroys all temporal structure while preserving average rates.
-
-    **Tests that observed structure exceeds rate-based expectations.** If
-    sequential decoding patterns are significant, they should score higher
-    than patterns from rate-matched surrogates.
-
-    Parameters
-    ----------
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Original spike counts per neuron per time bin.
-    dt : float
-        Time bin width in seconds. **Note:** This parameter is accepted for
-        API consistency with other decoding functions but is NOT used in the
-        computation. Surrogates are generated using mean spike counts directly
-        as Poisson rate parameters.
-    n_surrogates : int, default=1000
-        Number of surrogate spike trains to generate.
-    rng : np.random.Generator | int | None, default=None
-        Random number generator for reproducibility.
-
-        - If Generator: Use directly
-        - If int: Seed for ``np.random.default_rng()``
-        - If None: Use default RNG (not reproducible)
-
-    Yields
-    ------
-    surrogate : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Surrogate spike counts sampled from Poisson distributions.
-
-    Notes
-    -----
-    - Computes mean spike count per neuron across all time bins
-    - Each time bin independently samples from Poisson(mean_count_per_neuron)
-    - Destroys all temporal correlations and patterns
-    - Preserves mean firing rates per neuron (statistically)
-    - More conservative than shuffle methods (generates truly independent counts)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.stats.shuffle import generate_poisson_surrogates
-
-    >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
-    >>> for i, surrogate in enumerate(
-    ...     generate_poisson_surrogates(spike_counts, dt=0.025, n_surrogates=3, rng=42)
-    ... ):
-    ...     print(f"Surrogate {i}: shape={surrogate.shape}, total={surrogate.sum()}")
-    Surrogate 0: shape=(3, 2), total=3
-    Surrogate 1: shape=(3, 2), total=5
-    Surrogate 2: shape=(3, 2), total=6
-
-    See Also
-    --------
-    generate_inhomogeneous_poisson_surrogates : Time-varying rate surrogates
-    shuffle_time_bins : Shuffle temporal order (preserves exact counts)
-    """
-    generator = _ensure_rng(rng)
-    n_time_bins, n_neurons = spike_counts.shape
-
-    # Handle empty spike counts
-    if n_time_bins == 0:
-        for _ in range(n_surrogates):
-            yield np.zeros((0, n_neurons), dtype=np.int64)
-        return
-
-    # Compute mean spike count per neuron (averaged across time bins)
-    # This is the lambda parameter for our Poisson distribution
-    mean_counts = spike_counts.mean(axis=0)  # Shape: (n_neurons,)
-
-    for _ in range(n_surrogates):
-        # Generate surrogate by sampling from Poisson with mean rate
-        # Each (time_bin, neuron) pair is sampled independently
-        surrogate = generator.poisson(lam=mean_counts, size=(n_time_bins, n_neurons))
-        yield surrogate.astype(np.int64)
-
-
-def generate_inhomogeneous_poisson_surrogates(
-    spike_counts: NDArray[np.int64],
-    dt: float,
-    *,
-    smoothing_window: int = 3,
-    n_surrogates: int = 1000,
-    rng: np.random.Generator | int | None = None,
-) -> Generator[NDArray[np.int64], None, None]:
-    """Generate inhomogeneous Poisson surrogate spike trains with smoothed rates.
-
-    Creates surrogate spike counts by sampling from Poisson distributions
-    with time-varying rates estimated from smoothed spike counts. This
-    preserves slow rate fluctuations while destroying fine temporal structure.
-
-    **Tests that structure exceeds time-varying rate expectations.** More
-    conservative than homogeneous surrogates - controls for rate modulation
-    while testing for sequence-specific coding.
-
-    Parameters
-    ----------
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Original spike counts per neuron per time bin.
-    dt : float
-        Time bin width in seconds. **Note:** This parameter is accepted for
-        API consistency with other decoding functions but is NOT used in the
-        computation. Surrogates are generated using smoothed spike counts
-        directly as time-varying Poisson rate parameters.
-    smoothing_window : int, default=3
-        Size of the uniform smoothing window (in time bins) applied to
-        estimate time-varying rates. Larger values preserve less temporal
-        detail (closer to homogeneous). Must be at least 1.
-    n_surrogates : int, default=1000
-        Number of surrogate spike trains to generate.
-    rng : np.random.Generator | int | None, default=None
-        Random number generator for reproducibility.
-
-        - If Generator: Use directly
-        - If int: Seed for ``np.random.default_rng()``
-        - If None: Use default RNG (not reproducible)
-
-    Yields
-    ------
-    surrogate : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Surrogate spike counts sampled from time-varying Poisson distributions.
-
-    Notes
-    -----
-    - Uses uniform 1D filter to smooth spike counts in time
-    - Smoothed counts are used as time-varying Poisson rate parameters
-    - Preserves slow rate fluctuations (e.g., event onsets)
-    - Destroys fine temporal correlations and millisecond-scale patterns
-    - More appropriate than homogeneous surrogates when rate modulation
-      is a confound (e.g., ramping activity during replay events)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.stats.shuffle import (
-    ...     generate_inhomogeneous_poisson_surrogates,
-    ... )
-
-    >>> spike_counts = np.array(
-    ...     [[0, 1], [2, 2], [3, 3], [2, 2], [1, 1]], dtype=np.int64
-    ... )
-    >>> for i, surrogate in enumerate(
-    ...     generate_inhomogeneous_poisson_surrogates(
-    ...         spike_counts, dt=0.025, smoothing_window=3, n_surrogates=3, rng=42
-    ...     )
-    ... ):
-    ...     print(f"Surrogate {i}: shape={surrogate.shape}")
-    Surrogate 0: shape=(5, 2)
-    Surrogate 1: shape=(5, 2)
-    Surrogate 2: shape=(5, 2)
-
-    See Also
-    --------
-    generate_poisson_surrogates : Homogeneous Poisson surrogates
-    shuffle_time_bins : Shuffle temporal order (preserves exact counts)
-    """
-    from scipy.ndimage import uniform_filter1d
-
-    generator = _ensure_rng(rng)
-    n_time_bins, n_neurons = spike_counts.shape
-
-    # Handle empty spike counts
-    if n_time_bins == 0:
-        for _ in range(n_surrogates):
-            yield np.zeros((0, n_neurons), dtype=np.int64)
-        return
-
-    # Compute smoothed rates (time-varying lambda for Poisson)
-    # Use uniform filter along time axis with 'nearest' mode for edge handling
-    smoothed_counts = uniform_filter1d(
-        spike_counts.astype(np.float64),
-        size=smoothing_window,
-        axis=0,
-        mode="nearest",
-    )
-
-    # Ensure non-negative rates (should already be, but be safe)
-    smoothed_counts = np.maximum(smoothed_counts, 0.0)
-
-    for _ in range(n_surrogates):
-        # Generate surrogate by sampling from Poisson with time-varying rates
-        # Each (time_bin, neuron) pair uses its corresponding smoothed rate
-        surrogate = generator.poisson(lam=smoothed_counts)
-        yield surrogate.astype(np.int64)
-
-
-# =============================================================================
-# V. Significance Testing Functions
+# IV. Significance Testing Functions
 # =============================================================================
 
 

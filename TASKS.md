@@ -144,8 +144,8 @@ uv run pytest tests/nwb/ -v  # If NWB tests exist
 
 #### 4.3: Create stats/surrogates.py
 
-- [ ] Extract surrogate functions from `decoding/shuffle.py` → `stats/surrogates.py`
-- [ ] Add: `generate_jittered_spikes()` (per PLAN.md)
+- [x] Extract surrogate functions from `decoding/shuffle.py` → `stats/surrogates.py`
+- [x] Add: `generate_jittered_spikes()` (per PLAN.md)
 
 #### 4.4: Update Internal Imports
 
@@ -610,7 +610,7 @@ If circular imports occur:
 | M1: Directory Structure | Complete | Also moved io.py → io/files.py early |
 | M2: ops/ Modules | Complete | All 12 modules moved: binning, distance, normalize, smoothing, graph, calculus, transforms, alignment, egocentric, visibility, basis |
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
-| M4: stats/ Module | In Progress | Task 4.1 (circular.py), 4.2 (shuffle.py) complete; 4.3 pending |
+| M4: stats/ Module | Complete | All tasks complete: circular.py, shuffle.py, surrogates.py |
 | M5: behavior/ Module | Not Started | |
 | M6: encoding/ Module | Not Started | |
 | M7: decoding/ Cleanup | Not Started | |

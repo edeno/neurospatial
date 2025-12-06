@@ -14,8 +14,10 @@ Imports
 -------
 >>> from neurospatial.stats import rayleigh_test, circular_mean
 >>> from neurospatial.stats import shuffle_time_bins, compute_shuffle_pvalue
+>>> from neurospatial.stats import generate_poisson_surrogates, generate_jittered_spikes
 >>> from neurospatial.stats.circular import circular_basis
 >>> from neurospatial.stats.shuffle import ShuffleTestResult
+>>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 """
 
 from neurospatial.stats.circular import (
@@ -37,8 +39,6 @@ from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,
     compute_shuffle_zscore,
-    generate_inhomogeneous_poisson_surrogates,
-    generate_poisson_surrogates,
     shuffle_cell_identity,
     shuffle_place_fields_circular,
     shuffle_place_fields_circular_2d,
@@ -48,6 +48,11 @@ from neurospatial.stats.shuffle import (
     shuffle_time_bins,
     shuffle_time_bins_coherent,
     shuffle_trials,
+)
+from neurospatial.stats.surrogates import (
+    generate_inhomogeneous_poisson_surrogates,
+    generate_jittered_spikes,
+    generate_poisson_surrogates,
 )
 
 __all__ = [  # noqa: RUF022
@@ -72,8 +77,6 @@ __all__ = [  # noqa: RUF022
     "ShuffleTestResult",
     "compute_shuffle_pvalue",
     "compute_shuffle_zscore",
-    "generate_inhomogeneous_poisson_surrogates",
-    "generate_poisson_surrogates",
     "shuffle_cell_identity",
     "shuffle_place_fields_circular",
     "shuffle_place_fields_circular_2d",
@@ -83,4 +86,8 @@ __all__ = [  # noqa: RUF022
     "shuffle_time_bins",
     "shuffle_time_bins_coherent",
     "shuffle_trials",
+    # Surrogate generation
+    "generate_poisson_surrogates",
+    "generate_inhomogeneous_poisson_surrogates",
+    "generate_jittered_spikes",
 ]
