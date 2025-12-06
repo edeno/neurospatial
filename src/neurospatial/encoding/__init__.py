@@ -28,6 +28,18 @@ from neurospatial.encoding.grid import (
     spatial_autocorrelation,
 )
 
+# Head direction cell analysis
+from neurospatial.encoding.head_direction import (
+    HeadDirectionMetrics,
+    circular_mean,
+    head_direction_metrics,
+    head_direction_tuning_curve,
+    is_head_direction_cell,
+    mean_resultant_length,
+    plot_head_direction_tuning,
+    rayleigh_test,
+)
+
 # Place cell analysis
 from neurospatial.encoding.place import (
     DirectionalPlaceFields,
@@ -60,6 +72,15 @@ __all__ = [  # noqa: RUF022 - organized by category
     "grid_score",
     "periodicity_score",
     "spatial_autocorrelation",
+    # Head direction cell analysis
+    "HeadDirectionMetrics",
+    "circular_mean",
+    "head_direction_metrics",
+    "head_direction_tuning_curve",
+    "is_head_direction_cell",
+    "mean_resultant_length",
+    "plot_head_direction_tuning",
+    "rayleigh_test",
     # Place cell analysis
     "DirectionalPlaceFields",
     "compute_directional_place_fields",

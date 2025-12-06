@@ -231,8 +231,8 @@ uv run pytest tests/ -x -v
 
 #### 6.3: Create encoding/head_direction.py
 
-- [ ] Move functions from `metrics/head_direction.py` → `encoding/head_direction.py`
-- [ ] Add re-exports from `stats.circular`: `rayleigh_test`, `mean_resultant_length`, `circular_mean`
+- [x] Move functions from `metrics/head_direction.py` → `encoding/head_direction.py`
+- [x] Add re-exports from `stats.circular`: `rayleigh_test`, `mean_resultant_length`, `circular_mean`
 
 #### 6.4: Create encoding/border.py
 
@@ -612,7 +612,7 @@ If circular imports occur:
 | M3: io/ Module | Complete | io.py → io/files.py done in M1; nwb/ → io/nwb/ done |
 | M4: stats/ Module | Complete | All tasks complete: circular.py, shuffle.py, surrogates.py |
 | M5: behavior/ Module | Complete | All tasks complete: trajectory.py, segmentation.py, navigation.py, decisions.py, reward.py |
-| M6: encoding/ Module | In Progress | Task 6.1 (place.py) complete |
+| M6: encoding/ Module | In Progress | Tasks 6.1, 6.2, 6.3 complete |
 | M7: decoding/ Cleanup | Not Started | |
 | M8: animation/ Consolidation | Not Started | |
 | M9: Top-Level **init**.py | Not Started | |
