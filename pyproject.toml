@@ -161,6 +161,9 @@ line-length = 88
 target-version = "py310"
 fix = true
 show-fixes = true
+exclude = [
+    "docs/examples",  # Auto-generated from notebooks, not source code
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -266,6 +269,9 @@ exclude_lines = [
 [tool.mypy]
 # General mypy configuration for scientific Python package
 python_version = "3.10"
+exclude = [
+    "docs/examples",  # Auto-generated from notebooks, not source code
+]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # Allow untyped defs in science code (too strict otherwise)
