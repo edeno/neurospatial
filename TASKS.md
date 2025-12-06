@@ -469,8 +469,8 @@ for nb in examples/*.ipynb; do
 done
 ```
 
-- [ ] All notebooks execute without import errors
-- [ ] Clear and re-execute notebooks for clean state
+- [x] All notebooks execute without import errors
+- [x] Clear and re-execute notebooks for clean state
 
 **Verification**:
 
@@ -625,6 +625,6 @@ If circular imports occur:
 | M9: Top-Level **init**.py | Complete | Sparse exports (5 core classes), circular import fixes, test updates |
 | M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
 | M11: Update Documentation | Complete | All .claude/ docs, docstring import examples updated |
-| M12: Update Notebooks | In Progress | Import paths updated, execution verification pending |
+| M12: Update Notebooks | Complete | All 21 notebooks import paths updated and execute without errors |
 | M13: Import Tests | Not Started | |
 | M14: Final Verification | Not Started | |
