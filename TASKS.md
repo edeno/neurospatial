@@ -489,13 +489,13 @@ uv run jupyter nbconvert --to notebook --execute examples/08_spike_field_basics.
 
 ### Tasks
 
-- [ ] Create `tests/test_imports.py` with tests for:
+- [x] Create `tests/test_imports.py` with tests for:
   - All new import paths work
   - Core exports from top-level work
   - No circular imports
   - Re-exports work (stats functions from encoding modules)
-- [ ] Add test for each domain module's `__all__` exports
-- [ ] Verify doctests still pass
+- [x] Add test for each domain module's `__all__` exports
+- [x] Verify doctests still pass (import paths fixed; remaining failures are pre-existing API/NumPy issues)
 
 **Verification**:
 
@@ -626,5 +626,5 @@ If circular imports occur:
 | M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
 | M11: Update Documentation | Complete | All .claude/ docs, docstring import examples updated |
 | M12: Update Notebooks | Complete | All 21 notebooks import paths updated and execute without errors |
-| M13: Import Tests | Not Started | |
+| M13: Import Tests | Complete | Created tests/test_imports.py (57 tests: 55 passed, 2 skipped) |
 | M14: Final Verification | Not Started | |
