@@ -566,7 +566,7 @@ class EnvironmentQueries:
 
         else:  # metric == "geodesic"
             # Geodesic distance: graph-based shortest path
-            from neurospatial.distance import distance_field
+            from neurospatial.ops.distance import distance_field
 
             distances_result = np.asarray(
                 distance_field(self.connectivity, sources=target_array.tolist()),

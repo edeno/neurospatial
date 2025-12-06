@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy.stats import vonmises
 
 from neurospatial import Environment
-from neurospatial.distance import distance_field
+from neurospatial.ops.distance import distance_field
 
 
 class BoundaryCellModel:

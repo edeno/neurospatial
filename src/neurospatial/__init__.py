@@ -241,7 +241,6 @@ from neurospatial.decoding import (
     median_decoding_error,
 )
 from neurospatial.differential import divergence, gradient
-from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
 from neurospatial.environment import Environment, EnvironmentNotFittedError
 
 # Events and peri-event analysis
@@ -301,6 +300,11 @@ from neurospatial.ops.binning import (
     map_points_to_bins,
     regions_to_mask,
     resample_field,
+)
+from neurospatial.ops.distance import (
+    distance_field,
+    neighbors_within,
+    pairwise_distances,
 )
 from neurospatial.primitives import convolve, neighbor_reduce
 

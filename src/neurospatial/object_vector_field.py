@@ -313,7 +313,7 @@ def compute_object_vector_field(
         )
     else:
         # Geodesic distance using allocentric environment
-        from neurospatial.distance import distance_field as compute_distance_field
+        from neurospatial.ops.distance import distance_field as compute_distance_field
 
         assert allocentric_env is not None
         distances = np.zeros((n_time, len(object_positions)), dtype=np.float64)

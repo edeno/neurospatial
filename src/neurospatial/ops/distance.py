@@ -247,7 +247,7 @@ def distance_field(
     --------
     >>> import networkx as nx
     >>> import numpy as np
-    >>> from neurospatial.distance import distance_field
+    >>> from neurospatial.ops.distance import distance_field
     >>> # Create a simple graph
     >>> G = nx.Graph()
     >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
@@ -393,7 +393,7 @@ def pairwise_distances(
     Examples
     --------
     >>> import networkx as nx
-    >>> from neurospatial.distance import pairwise_distances
+    >>> from neurospatial.ops.distance import pairwise_distances
     >>> G = nx.cycle_graph(10)
     >>> for u, v in G.edges:
     ...     G.edges[u, v]["distance"] = 1.0
@@ -497,7 +497,7 @@ def neighbors_within(
     Examples
     --------
     >>> import networkx as nx
-    >>> from neurospatial.distance import neighbors_within
+    >>> from neurospatial.ops.distance import neighbors_within
     >>> # Create line graph
     >>> G = nx.Graph()
     >>> G.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])

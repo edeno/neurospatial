@@ -4,7 +4,11 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial.distance import distance_field, neighbors_within, pairwise_distances
+from neurospatial.ops.distance import (
+    distance_field,
+    neighbors_within,
+    pairwise_distances,
+)
 
 
 class TestDistanceField:

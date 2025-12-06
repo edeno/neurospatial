@@ -28,11 +28,26 @@ from neurospatial.ops.binning import (
     resample_field,
 )
 
+# Distance operations
+from neurospatial.ops.distance import (
+    distance_field,
+    euclidean_distance_matrix,
+    geodesic_distance_between_points,
+    geodesic_distance_matrix,
+    neighbors_within,
+    pairwise_distances,
+)
+
 __all__ = [
-    # binning
     "TieBreakStrategy",
     "clear_kdtree_cache",
+    "distance_field",
+    "euclidean_distance_matrix",
+    "geodesic_distance_between_points",
+    "geodesic_distance_matrix",
     "map_points_to_bins",
+    "neighbors_within",
+    "pairwise_distances",
     "regions_to_mask",
     "resample_field",
 ]

@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.distance import distance_field
+from neurospatial.ops.distance import distance_field
 
 
 class TestDistanceFieldEuclideanMetric:

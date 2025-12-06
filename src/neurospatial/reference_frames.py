@@ -540,7 +540,7 @@ def compute_egocentric_distance(
         distances = np.sqrt(np.sum(diff**2, axis=-1))
 
     else:  # geodesic
-        from neurospatial.distance import distance_field as compute_distance_field
+        from neurospatial.ops.distance import distance_field as compute_distance_field
 
         # env is guaranteed non-None here (validated above)
         assert env is not None

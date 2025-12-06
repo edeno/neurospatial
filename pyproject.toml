@@ -1,6 +1,6 @@
 [project]
 name = "neurospatial"
-version = "0.2.0"
+version = "0.3.0"
 description = "Discretize continuous N-dimensional spatial environments into bins/nodes with connectivity graphs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -213,7 +213,7 @@ ignore = [
 ]
 
 # Source files with intentional mathematical notation
-"src/neurospatial/distance.py" = [
+"src/neurospatial/ops/distance.py" = [
     "N803",  # Allow G (graph) as argument name - standard NetworkX convention
     "N806",  # Allow G (graph), L (Laplacian) as variables - standard math notation
 ]

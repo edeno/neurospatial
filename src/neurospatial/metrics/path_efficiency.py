@@ -271,7 +271,7 @@ def shortest_path_length(
         return float(np.linalg.norm(goal - start))
 
     # Geodesic distance using distance_field
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     # Map positions to bins
     start_bin = env.bin_at(start.reshape(1, -1))[0]

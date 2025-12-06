@@ -81,7 +81,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.distance import distance_field
+from neurospatial.ops.distance import distance_field
 from neurospatial.reference_frames import compute_egocentric_bearing
 
 if TYPE_CHECKING:

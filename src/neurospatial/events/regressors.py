@@ -612,7 +612,7 @@ def distance_to_reward(
     time_to_nearest_event : Temporal distance to events
     distance_to_boundary : Distance to environment boundaries
     """
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     # Input validation
     positions = np.asarray(positions, dtype=np.float64)
@@ -864,7 +864,7 @@ def distance_to_boundary(
     distance_to_reward : Distance to reward locations
     time_to_nearest_event : Temporal distance to events
     """
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     # Input validation
     positions = np.asarray(positions, dtype=np.float64)

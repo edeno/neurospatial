@@ -308,7 +308,7 @@ def convolve(
     if callable(kernel):
         # Callable kernel: compute distance-based weights for each bin
         # Use geodesic_distance_matrix for efficient all-pairs shortest paths
-        from neurospatial.distance import geodesic_distance_matrix
+        from neurospatial.ops.distance import geodesic_distance_matrix
 
         # Compute all pairwise geodesic distances at once: O(n_bins * E log V)
         # This is much faster than O(n_bins^2 * E log V) from individual Dijkstra calls

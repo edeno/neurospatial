@@ -277,7 +277,7 @@ def path_progress(
         )
 
     # Import distance functions
-    from neurospatial.distance import (
+    from neurospatial.ops.distance import (
         euclidean_distance_matrix,
         geodesic_distance_matrix,
     )
@@ -301,7 +301,7 @@ def path_progress(
     else:
         # Large environment - compute per-unique-pair distance fields
         # This is more memory-efficient for large grids
-        from neurospatial import distance_field
+        from neurospatial.ops.distance import distance_field
 
         # Initialize arrays
         distances_from_start = np.full(n_samples, np.nan)
@@ -458,7 +458,7 @@ def distance_to_region(
 
         if env.n_bins < 5000:
             # Small environment - precompute full matrix
-            from neurospatial.distance import (
+            from neurospatial.ops.distance import (
                 euclidean_distance_matrix,
                 geodesic_distance_matrix,
             )
@@ -561,7 +561,7 @@ def cost_to_goal(
     distance_to_region : Simple geometric distance
     """
     # Import required modules
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     # Case 1: No cost modifications - use standard geodesic distance
     if cost_map is None and terrain_difficulty is None:

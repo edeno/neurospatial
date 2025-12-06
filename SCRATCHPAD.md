@@ -1,11 +1,61 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - spatial.py → ops/binning.py DONE
+**Current Status**: Milestone 2 in progress - distance.py → ops/distance.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 3)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `distance.py` → `ops/distance.py`
+
+**Work Done**:
+1. Moved `distance.py` → `ops/distance.py` using `git mv` to preserve history
+2. Updated docstrings in distance.py to reflect new import paths
+3. Updated all internal imports (18 files across src/ and tests/)
+4. Updated `ops/__init__.py` to export public API:
+   - `distance_field`, `euclidean_distance_matrix`, `geodesic_distance_matrix`,
+   - `geodesic_distance_between_points`, `neighbors_within`, `pairwise_distances`
+5. Created new test file `tests/ops/test_ops_distance.py` following TDD
+6. All tests pass:
+   - `tests/ops/test_ops_distance.py`: 13 passed
+   - `tests/test_distance.py`: 30 passed
+   - `tests/test_distance_new.py`: 40 passed
+   - `tests/test_distance_field_extended.py`: 30 passed
+   - `tests/test_neighbors_within.py`: 27 passed
+   - Total distance-related: 158 passed
+7. Ran ruff check and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/distance.py` (moved from distance.py)
+- `src/neurospatial/ops/__init__.py` (added distance exports)
+- `src/neurospatial/__init__.py` (updated import)
+- `src/neurospatial/reward.py` (updated import)
+- `src/neurospatial/object_vector_field.py` (updated import)
+- `src/neurospatial/reference_frames.py` (updated import)
+- `src/neurospatial/behavioral.py` (updated 4 imports)
+- `src/neurospatial/primitives.py` (updated import)
+- `src/neurospatial/events/regressors.py` (updated 2 imports)
+- `src/neurospatial/environment/queries.py` (updated import)
+- `src/neurospatial/metrics/decision_analysis.py` (updated 2 imports)
+- `src/neurospatial/metrics/path_efficiency.py` (updated import)
+- `src/neurospatial/metrics/trajectory.py` (updated 2 imports)
+- `src/neurospatial/simulation/models/boundary_cells.py` (updated import)
+- `src/neurospatial/simulation/models/place_cells.py` (updated import)
+- `src/neurospatial/simulation/models/object_vector_cells.py` (updated import)
+- `tests/ops/test_ops_distance.py` (new file)
+- `tests/test_distance.py` (updated import)
+- `tests/test_distance_new.py` (updated import)
+- `tests/test_distance_field_extended.py` (updated import)
+- `tests/test_distance_utilities.py` (updated import)
+- `tests/test_neighbors_within.py` (updated import)
+- `tests/test_reward.py` (updated 4 imports)
+
+**Next Task**: Move `field_ops.py` → `ops/normalize.py`
 
 ### 2025-12-05 (Session 2)
 

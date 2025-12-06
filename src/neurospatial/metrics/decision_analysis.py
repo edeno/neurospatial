@@ -586,7 +586,7 @@ def geodesic_voronoi_labels(
     >>> # labels[i] == 0 means bin i is closer to left goal
     >>> # labels[i] == 1 means bin i is closer to right goal
     """
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = np.asarray(goal_bins)
     n_goals = len(goal_bins_arr)
@@ -649,7 +649,7 @@ def distance_to_decision_boundary(
     >>> distances = distance_to_decision_boundary(env, trajectory_bins, goal_bins)
     >>> commitment_mask = distances > 20.0  # Committed to a goal
     """
-    from neurospatial.distance import distance_field
+    from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = np.asarray(goal_bins)
     n_goals = len(goal_bins_arr)

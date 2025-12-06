@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import Environment
-from neurospatial.distance import distance_field
+from neurospatial.ops.distance import distance_field
 
 
 class PlaceCellModel:

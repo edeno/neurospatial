@@ -295,7 +295,7 @@ def compute_step_lengths(
 
         # Optimization: Precompute geodesic distance matrix
         # This is O(V*E*log(V)) once vs O(n_steps * V*log(V)) per-step Dijkstra
-        from neurospatial.distance import geodesic_distance_matrix
+        from neurospatial.ops.distance import geodesic_distance_matrix
 
         # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
         dist_matrix = geodesic_distance_matrix(
@@ -610,7 +610,7 @@ def mean_square_displacement(
 
         # Optimization: Precompute geodesic distance matrix ONCE
         # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
-        from neurospatial.distance import geodesic_distance_matrix
+        from neurospatial.ops.distance import geodesic_distance_matrix
 
         dist_matrix = geodesic_distance_matrix(
             env.connectivity, env.n_bins, weight="distance"

@@ -494,7 +494,7 @@ class TestDistanceUtilitiesIntegration:
     def test_distance_field_wrapper(self, sample_2d_grid):
         """distance_to() is consistent with existing distance_field()."""
         env = sample_2d_grid
-        from neurospatial import distance_field
+        from neurospatial.ops.distance import distance_field
 
         targets = [0, 10, 20]
 

@@ -4,7 +4,7 @@ import networkx as nx
 import numpy as np
 from numpy.testing import assert_allclose
 
-from neurospatial.distance import (
+from neurospatial.ops.distance import (
     euclidean_distance_matrix,
     geodesic_distance_between_points,
     geodesic_distance_matrix,

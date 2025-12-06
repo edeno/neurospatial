@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-from neurospatial.distance import neighbors_within
+from neurospatial.ops.distance import neighbors_within
 
 
 class TestNeighborsWithinGeodesic:
