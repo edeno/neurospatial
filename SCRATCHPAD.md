@@ -1,11 +1,43 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3 complete
+**Current Status**: Milestone 6 IN PROGRESS - Tasks 6.1, 6.2, 6.3, 6.4 complete
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 25)
+
+**Starting Point**: Milestone 6 - Move encoding/ Module (Task 6.4: Create encoding/border.py)
+
+**Completed**: Create encoding/border.py with re-exports from metrics/boundary_cells.py
+
+**Work Done**:
+1. Created test file `tests/encoding/test_encoding_border.py` following TDD (RED phase)
+   - 15 tests total: 2 import tests from encoding.border, 2 import tests from encoding, 3 module structure tests, 2 re-export tests, 6 functionality tests
+   - Tests for imports of all 2 symbols: `border_score`, `compute_region_coverage`
+2. Verified tests FAIL before implementation (import error expected)
+3. Created `encoding/border.py` as a re-export module:
+   - From metrics/boundary_cells.py: `border_score`, `compute_region_coverage`
+4. Updated `encoding/__init__.py` to export all 2 border symbols
+5. All tests pass: 15 passed (new) + 28 passed (existing metrics/test_boundary_cells.py)
+6. Ran ruff check/format and mypy - no issues
+7. Code review APPROVED
+
+**Files Created**:
+- `src/neurospatial/encoding/border.py` (new - re-exports from metrics.boundary_cells)
+- `tests/encoding/test_encoding_border.py` (new)
+
+**Files Modified**:
+- `src/neurospatial/encoding/__init__.py` (added 2 border exports)
+
+**Milestone 6 Status**: Tasks 6.1, 6.2, 6.3, 6.4 COMPLETE
+Remaining: Tasks 6.5-6.9
+
+**Next Task**: Milestone 6, Task 6.5 - Create encoding/object_vector.py
+
+---
 
 ### 2025-12-06 (Session 24)
 

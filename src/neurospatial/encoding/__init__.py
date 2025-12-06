@@ -17,6 +17,12 @@ phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
+# Border/boundary cell analysis
+from neurospatial.encoding.border import (
+    border_score,
+    compute_region_coverage,
+)
+
 # Grid cell analysis
 from neurospatial.encoding.grid import (
     GridProperties,
@@ -64,6 +70,9 @@ from neurospatial.encoding.place import (
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
+    # Border/boundary cell analysis
+    "border_score",
+    "compute_region_coverage",
     # Grid cell analysis
     "GridProperties",
     "grid_orientation",
