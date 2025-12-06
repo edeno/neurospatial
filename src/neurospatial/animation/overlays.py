@@ -39,7 +39,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.animation._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
-    from neurospatial.transforms import Affine2D, VideoCalibration
+    from neurospatial.ops.transforms import Affine2D, VideoCalibration
 
 
 # =============================================================================

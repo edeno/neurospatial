@@ -16,7 +16,7 @@ Your workflow MUST be:
       b. Run the test and verify it FAILS
       c. Only then create the implementation
       d. Run test until it PASSES
-      e. Apply review agents (code-reviewer, other relevant agents)
+      e. Apply review agents (code-reviewer)
       f. Refactor for clarity and efficiency based on feedback
       g. Add/Update docstrings and types.
       h. Run ruff and mypy and fix any issues
@@ -29,9 +29,8 @@ Your workflow MUST be:
 
 ## Remember
 
-- **Read before you code** - Use Read tool to understand context
+- **Read before you code** - Use Read tool to understand context (funcion signatures, existing tests, etc)
 - **Test before you implement** - TDD is mandatory
-- **Verify before you claim completion** - Use verification-before-completion skill
 - **Ask when uncertain** - Better to ask than assume
 - **Document as you go** - Update SCRATCHPAD.md with decisions/blockers
 - **Test thoroughly** - Ensure all tests pass before marking tasks complete. There are no exceptions (no flaky tests or pre-existing failures). You MUST use systematic-debugging skill for failures.

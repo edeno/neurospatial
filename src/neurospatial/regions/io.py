@@ -24,7 +24,7 @@ from shapely.geometry import Polygon
 from .core import Region, Regions
 
 if TYPE_CHECKING:
-    from ..transforms import SpatialTransform
+    from ..ops.transforms import SpatialTransform
 
 # --------------------------------------------------------------------------
 # 1.  Generic JSON <--> Regions round-trip

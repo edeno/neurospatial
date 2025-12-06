@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
-    from neurospatial.transforms import VideoCalibration
 
 
 def regions_from_labelme(

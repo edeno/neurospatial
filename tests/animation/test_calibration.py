@@ -13,7 +13,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
-from neurospatial.transforms import VideoCalibration
+from neurospatial.ops.transforms import VideoCalibration
 
 # We'll import calibrate_video from the animation module when implemented
 # For TDD, tests are written first before implementation exists

@@ -23,7 +23,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.transforms import VideoCalibration
+    from neurospatial.ops.transforms import VideoCalibration
 
 from neurospatial.annotation._track_state import TrackBuilderState
 

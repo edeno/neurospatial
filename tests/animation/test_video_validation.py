@@ -29,7 +29,7 @@ from neurospatial import Environment
 from neurospatial.animation.overlays import VideoOverlay, _validate_video_env
 
 if TYPE_CHECKING:
-    from neurospatial.transforms import VideoCalibration
+    from neurospatial.ops.transforms import VideoCalibration
 
 # Check for optional dependencies
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
@@ -90,7 +90,7 @@ class TestNonGridEnvironmentSupport:
         frame_times = np.linspace(0, 1.0, n_frames)
 
         # Create calibration for 100x80 env
-        from neurospatial.transforms import (
+        from neurospatial.ops.transforms import (
             VideoCalibration,
             calibrate_from_scale_bar,
         )

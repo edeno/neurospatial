@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from neurospatial import Environment
+    from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
-    from neurospatial.transforms import VideoCalibration
 
 
 def shapes_to_regions(

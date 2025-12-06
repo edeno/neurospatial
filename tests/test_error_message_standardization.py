@@ -10,7 +10,6 @@ caused the error, not just what was expected.
 import numpy as np
 import pytest
 
-from neurospatial.calibration import simple_scale
 from neurospatial.layout.helpers.graph import _get_graph_bins
 from neurospatial.layout.helpers.hexagonal import _create_hex_grid
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
@@ -18,6 +17,7 @@ from neurospatial.layout.helpers.utils import (
     _infer_active_elements_from_samples,
     get_n_bins,
 )
+from neurospatial.ops.transforms import simple_scale
 
 
 class TestUtilsErrorMessages:

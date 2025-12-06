@@ -307,6 +307,10 @@ from neurospatial.ops.normalize import (
     normalize_field,
 )
 from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
+from neurospatial.ops.transforms import (
+    apply_transform_to_environment,
+    estimate_transform,
+)
 
 # Reference frame transformations (egocentric/allocentric)
 from neurospatial.reference_frames import (
@@ -342,10 +346,6 @@ from neurospatial.spike_field import (
     compute_directional_place_fields,
     compute_place_field,
     spikes_to_field,
-)
-from neurospatial.transforms import (
-    apply_transform_to_environment,
-    estimate_transform,
 )
 
 # Visibility and gaze analysis

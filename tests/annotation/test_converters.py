@@ -10,8 +10,8 @@ from neurospatial.annotation.converters import (
     env_from_boundary_region,
     shapes_to_regions,
 )
+from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions import Region
-from neurospatial.transforms import Affine2D, VideoCalibration
 
 
 class TestShapesToRegions:

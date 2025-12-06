@@ -94,8 +94,10 @@ positions = np.clip(positions, 10, 90)  # Stay in bounds
 headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
 
 print(f"Trajectory: {n_time} samples, {times[-1]:.1f}s duration")
-print(f"Position range: x=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], "
-      f"y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}]")
+print(
+    f"Position range: x=[{positions[:, 0].min():.1f}, {positions[:, 0].max():.1f}], "
+    f"y=[{positions[:, 1].min():.1f}, {positions[:, 1].max():.1f}]"
+)
 
 # %% [markdown]
 # ## Part 2: Compute Viewed Locations
@@ -118,7 +120,14 @@ fig, ax = plt.subplots(figsize=(10, 10))
 # Sample every 100th point for visualization
 sample_idx = np.arange(0, n_time, 100)
 
-ax.plot(positions[:, 0], positions[:, 1], "gray", alpha=0.3, linewidth=0.5, label="Trajectory")
+ax.plot(
+    positions[:, 0],
+    positions[:, 1],
+    "gray",
+    alpha=0.3,
+    linewidth=0.5,
+    label="Trajectory",
+)
 
 # Plot view directions as arrows
 for i in sample_idx:
@@ -132,7 +141,9 @@ for i in sample_idx:
 
 ax.set_xlabel("x (cm)")
 ax.set_ylabel("y (cm)")
-ax.set_title("Animal Trajectory with View Directions\n(arrows show where animal is looking)")
+ax.set_title(
+    "Animal Trajectory with View Directions\n(arrows show where animal is looking)"
+)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_aspect("equal")
@@ -264,24 +275,34 @@ fig, axes = plt.subplots(2, 2, figsize=(12, 12))
 
 # Row 1: Spatial view cell
 ax = axes[0, 0]
-env.plot_field(
-    svc_view_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)"
-)
+env.plot_field(svc_view_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)")
 ax.scatter(
-    [preferred_view[0]], [preferred_view[1]], c="cyan", s=200, marker="*",
-    zorder=5, edgecolors="white", linewidths=2
+    [preferred_view[0]],
+    [preferred_view[1]],
+    c="cyan",
+    s=200,
+    marker="*",
+    zorder=5,
+    edgecolors="white",
+    linewidths=2,
 )
-ax.set_title("Spatial View Cell: VIEW Field\n(binned by viewed location)", fontweight="bold")
+ax.set_title(
+    "Spatial View Cell: VIEW Field\n(binned by viewed location)", fontweight="bold"
+)
 ax.set_xlabel("x (cm)")
 ax.set_ylabel("y (cm)")
 
 ax = axes[0, 1]
-env.plot_field(
-    svc_place_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)"
-)
+env.plot_field(svc_place_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)")
 ax.scatter(
-    [preferred_view[0]], [preferred_view[1]], c="cyan", s=200, marker="*",
-    zorder=5, edgecolors="white", linewidths=2
+    [preferred_view[0]],
+    [preferred_view[1]],
+    c="cyan",
+    s=200,
+    marker="*",
+    zorder=5,
+    edgecolors="white",
+    linewidths=2,
 )
 ax.set_title("Spatial View Cell: PLACE Field\n(binned by position)", fontweight="bold")
 ax.set_xlabel("x (cm)")
@@ -289,21 +310,19 @@ ax.set_ylabel("y (cm)")
 
 # Row 2: Place cell
 ax = axes[1, 0]
-env.plot_field(
-    pc_view_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)"
+env.plot_field(pc_view_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)")
+ax.scatter(
+    [70], [50], c="cyan", s=200, marker="*", zorder=5, edgecolors="white", linewidths=2
 )
-ax.scatter([70], [50], c="cyan", s=200, marker="*", zorder=5,
-           edgecolors="white", linewidths=2)
 ax.set_title("Place Cell: VIEW Field\n(binned by viewed location)", fontweight="bold")
 ax.set_xlabel("x (cm)")
 ax.set_ylabel("y (cm)")
 
 ax = axes[1, 1]
-env.plot_field(
-    pc_place_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)"
+env.plot_field(pc_place_field, ax=ax, cmap="hot", colorbar_label="Firing rate (Hz)")
+ax.scatter(
+    [70], [50], c="cyan", s=200, marker="*", zorder=5, edgecolors="white", linewidths=2
 )
-ax.scatter([70], [50], c="cyan", s=200, marker="*", zorder=5,
-           edgecolors="white", linewidths=2)
 ax.set_title("Place Cell: PLACE Field\n(binned by position)", fontweight="bold")
 ax.set_xlabel("x (cm)")
 ax.set_ylabel("y (cm)")
@@ -311,7 +330,8 @@ ax.set_ylabel("y (cm)")
 fig.suptitle(
     "Spatial View Cell vs Place Cell Comparison\n"
     "Cyan star marks the preferred location (70, 50)",
-    fontsize=14, fontweight="bold"
+    fontsize=14,
+    fontweight="bold",
 )
 plt.tight_layout()
 plt.show()
@@ -320,7 +340,9 @@ print("\nObservations:")
 print("- Spatial view cell: VIEW field shows clear peak at preferred location")
 print("- Spatial view cell: PLACE field is diffuse (fires from many positions)")
 print("- Place cell: PLACE field shows clear peak at preferred location")
-print("- Place cell: VIEW field is diffuse (views many locations from preferred position)")
+print(
+    "- Place cell: VIEW field is diffuse (views many locations from preferred position)"
+)
 
 # %% [markdown]
 # ## Part 7: Classify Cells Using Metrics
@@ -359,12 +381,24 @@ print(f"Place cell classified as SVC: {pc_metrics.is_spatial_view_cell}")
 print("\nKey metrics comparison:")
 print(f"  {'Metric':<30} {'SVC':<15} {'Place Cell':<15}")
 print(f"  {'-' * 60}")
-print(f"  {'View field info (bits/spike)':<30} {svc_metrics.view_field_skaggs_info:.3f}{'':<10} {pc_metrics.view_field_skaggs_info:.3f}")
-print(f"  {'Place field info (bits/spike)':<30} {svc_metrics.place_field_skaggs_info:.3f}{'':<10} {pc_metrics.place_field_skaggs_info:.3f}")
+print(
+    f"  {'View field info (bits/spike)':<30} {svc_metrics.view_field_skaggs_info:.3f}{'':<10} {pc_metrics.view_field_skaggs_info:.3f}"
+)
+print(
+    f"  {'Place field info (bits/spike)':<30} {svc_metrics.place_field_skaggs_info:.3f}{'':<10} {pc_metrics.place_field_skaggs_info:.3f}"
+)
 
 # Compute view/place ratio
-svc_ratio = svc_metrics.view_field_skaggs_info / svc_metrics.place_field_skaggs_info if svc_metrics.place_field_skaggs_info > 0 else float('inf')
-pc_ratio = pc_metrics.view_field_skaggs_info / pc_metrics.place_field_skaggs_info if pc_metrics.place_field_skaggs_info > 0 else float('inf')
+svc_ratio = (
+    svc_metrics.view_field_skaggs_info / svc_metrics.place_field_skaggs_info
+    if svc_metrics.place_field_skaggs_info > 0
+    else float("inf")
+)
+pc_ratio = (
+    pc_metrics.view_field_skaggs_info / pc_metrics.place_field_skaggs_info
+    if pc_metrics.place_field_skaggs_info > 0
+    else float("inf")
+)
 print(f"  {'View/Place info ratio':<30} {svc_ratio:.3f}{'':<10} {pc_ratio:.3f}")
 
 # %% [markdown]
@@ -400,7 +434,9 @@ print(f"  {'-' * 40}")
 for bearing, label in zip(test_bearings, labels, strict=True):
     rat_visible = fov_rat.contains_angle(bearing)
     primate_visible = fov_primate.contains_angle(bearing)
-    print(f"  {label:<20} {'yes' if rat_visible else 'no':<10} {'yes' if primate_visible else 'no':<10}")
+    print(
+        f"  {label:<20} {'yes' if rat_visible else 'no':<10} {'yes' if primate_visible else 'no':<10}"
+    )
 
 # %% [markdown]
 # ## Summary

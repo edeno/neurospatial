@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
     from neurospatial.annotation._boundary_inference import BoundaryConfig
+    from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
-    from neurospatial.transforms import VideoCalibration
 
 
 class AnnotationResult(NamedTuple):

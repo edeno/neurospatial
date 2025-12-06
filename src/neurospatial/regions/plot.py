@@ -21,7 +21,7 @@ from matplotlib.patches import PathPatch
 from matplotlib.path import Path as MplPath
 from numpy.typing import NDArray
 
-from ..transforms import SpatialTransform
+from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment, apply_transform_to_environment, estimate_transform
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     Affine2D,
     translate,
 )

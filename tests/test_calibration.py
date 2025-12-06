@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.calibration import simple_scale
-from neurospatial.transforms import Affine2D
+from neurospatial.ops.transforms import Affine2D, simple_scale
 
 
 class TestSimpleScale:
@@ -181,7 +180,7 @@ class TestSimpleScale:
 
     def test_composition_with_other_transforms(self):
         """Test that calibration transform can compose with other transforms."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         px_per_cm = 10.0
         calibration = simple_scale(px_per_cm)

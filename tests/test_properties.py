@@ -25,7 +25,7 @@ from neurospatial.metrics import (
     skaggs_information,
     sparsity,
 )
-from neurospatial.transforms import AffineND, from_rotation_matrix
+from neurospatial.ops.transforms import AffineND, from_rotation_matrix
 
 
 def rotate_2d(angle_radians: float) -> AffineND:

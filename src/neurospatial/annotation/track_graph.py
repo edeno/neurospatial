@@ -45,7 +45,7 @@ from neurospatial.annotation._track_widget import (
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from neurospatial.transforms import VideoCalibration
+    from neurospatial.ops.transforms import VideoCalibration
 
 __all__ = [
     "TrackGraphResult",

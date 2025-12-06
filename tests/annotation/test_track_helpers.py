@@ -31,7 +31,7 @@ class TestTransformNodesToOutput:
     def test_with_calibration_transforms_to_cm(self) -> None:
         """With calibration, should apply pixel-to-cm transform."""
         from neurospatial.annotation._track_helpers import transform_nodes_to_output
-        from neurospatial.transforms import (
+        from neurospatial.ops.transforms import (
             VideoCalibration,
             calibrate_from_scale_bar,
         )
@@ -370,7 +370,7 @@ class TestBuildTrackGraphResult:
         """With calibration, node_positions should be in cm."""
         from neurospatial.annotation._track_helpers import build_track_graph_result
         from neurospatial.annotation._track_state import TrackBuilderState
-        from neurospatial.transforms import (
+        from neurospatial.ops.transforms import (
             VideoCalibration,
             calibrate_from_scale_bar,
         )

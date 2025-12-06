@@ -5,7 +5,7 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from neurospatial import Environment, apply_transform_to_environment, estimate_transform
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     Affine3D,
     AffineND,
     from_rotation_matrix,

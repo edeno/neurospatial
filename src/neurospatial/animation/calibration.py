@@ -14,12 +14,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     VideoCalibration,
     calibrate_from_landmarks,
     scale_2d,
 )
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     flip_y as flip_y_transform,
 )
 

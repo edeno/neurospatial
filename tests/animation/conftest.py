@@ -108,7 +108,7 @@ def sample_calibration():
     The calibration includes Y-axis flip (video origin top-left to
     environment origin bottom-left), which is standard for video overlays.
     """
-    from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+    from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 
     # Create 1:1 mapping (1 cm per pixel) with Y-flip
     # 16 pixels = 16 cm

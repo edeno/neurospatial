@@ -17,9 +17,9 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
+from neurospatial.ops.transforms import scale_2d, translate
 from neurospatial.regions import Region, Regions
 from neurospatial.regions.plot import plot_regions
-from neurospatial.transforms import scale_2d, translate
 
 
 class TestPlotRegionsBasic:

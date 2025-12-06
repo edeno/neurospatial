@@ -665,7 +665,7 @@ class TestApplyTransform:
 
     def test_apply_transform_identity_2d(self, medium_2d_env: Environment) -> None:
         """Test applying identity transform leaves environment unchanged."""
-        from neurospatial.transforms import Affine2D
+        from neurospatial.ops.transforms import Affine2D
 
         # Identity transform (no change)
         transform = Affine2D(np.eye(3))
@@ -679,7 +679,7 @@ class TestApplyTransform:
 
     def test_apply_transform_translation_2d(self, medium_2d_env: Environment) -> None:
         """Test applying 2D translation transform."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         # Translate by (10, 20)
         transform = translate(10, 20)
@@ -692,7 +692,7 @@ class TestApplyTransform:
 
     def test_apply_transform_rotation_2d(self, medium_2d_env: Environment) -> None:
         """Test applying 2D rotation transform."""
-        from neurospatial.transforms import Affine2D
+        from neurospatial.ops.transforms import Affine2D
 
         # 45-degree rotation
         angle = np.pi / 4
@@ -727,7 +727,7 @@ class TestApplyTransform:
 
     def test_apply_transform_scaling_2d(self, small_2d_env: Environment) -> None:
         """Test applying 2D scaling transform."""
-        from neurospatial.transforms import scale_2d
+        from neurospatial.ops.transforms import scale_2d
 
         # Scale by factor of 2
         transform = scale_2d(2.0)
@@ -740,7 +740,7 @@ class TestApplyTransform:
 
     def test_apply_transform_composition_2d(self, small_2d_env: Environment) -> None:
         """Test applying composed transforms (rotation @ translation)."""
-        from neurospatial.transforms import Affine2D, translate
+        from neurospatial.ops.transforms import Affine2D, translate
 
         # Compose: translate then rotate
         rotation_angle = np.pi / 6
@@ -763,7 +763,7 @@ class TestApplyTransform:
 
     def test_apply_transform_affine_nd_2d(self, medium_2d_env: Environment) -> None:
         """Test applying AffineND transform to 2D environment."""
-        from neurospatial.transforms import translate_3d
+        from neurospatial.ops.transforms import translate_3d
 
         # Can't use 3D transform on 2D environment
         transform_3d = translate_3d(10, 20, 30)
@@ -773,7 +773,7 @@ class TestApplyTransform:
 
     def test_apply_transform_affine_nd_3d(self, simple_3d_env: Environment) -> None:
         """Test applying AffineND transform to 3D environment."""
-        from neurospatial.transforms import translate_3d
+        from neurospatial.ops.transforms import translate_3d
 
         # 3D translation
         transform = translate_3d(10, 20, 30)
@@ -789,7 +789,7 @@ class TestApplyTransform:
         self, medium_2d_env: Environment
     ) -> None:
         """Test that transformation preserves connectivity structure."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(5, 5)
         transformed = medium_2d_env.apply_transform(transform)
@@ -810,7 +810,7 @@ class TestApplyTransform:
         self, small_2d_env: Environment
     ) -> None:
         """Test that node 'pos' attributes are updated."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(10, 20)
         transformed = small_2d_env.apply_transform(transform)
@@ -827,7 +827,7 @@ class TestApplyTransform:
         self, small_2d_env: Environment
     ) -> None:
         """Test that edge attributes (distance, vector, angle_2d) are updated."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(5, 5)
         transformed = small_2d_env.apply_transform(transform)
@@ -852,7 +852,7 @@ class TestApplyTransform:
         self, medium_2d_env: Environment
     ) -> None:
         """Test that apply_transform returns new environment (functional)."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(10, 20)
 
@@ -873,7 +873,7 @@ class TestApplyTransform:
 
     def test_apply_transform_with_custom_name(self, small_2d_env: Environment) -> None:
         """Test applying transform with custom name."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(5, 5)
 
@@ -883,7 +883,7 @@ class TestApplyTransform:
 
     def test_apply_transform_default_name(self, medium_2d_env: Environment) -> None:
         """Test that default name appends '_transformed'."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         # Set original name
         medium_2d_env.name = "OriginalEnv"
@@ -901,7 +901,7 @@ class TestApplyTransform:
         env_copy = copy.copy(medium_2d_env)
         env_copy.units = "cm"
 
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(5, 5)
         transformed = env_copy.apply_transform(transform)
@@ -916,7 +916,7 @@ class TestApplyTransform:
         env_copy = copy.copy(medium_2d_env)
         env_copy.frame = "session1"
 
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         transform = translate(5, 5)
         transformed = env_copy.apply_transform(transform)
@@ -934,7 +934,7 @@ class TestApplyTransform:
         # Add a point region
         env_copy.regions.add("goal", point=np.array([10.0, 20.0]))
 
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         # Translate by (5, 10)
         transform = translate(5, 10)
@@ -964,7 +964,7 @@ class TestApplyTransform:
         poly = box(0, 0, 10, 10)
         env_copy.regions.add("area", polygon=poly)
 
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         # Translate by (5, 5)
         transform = translate(5, 5)
@@ -996,7 +996,7 @@ class TestApplyTransform:
         self, medium_2d_env: Environment
     ) -> None:
         """Test that dimension mismatch raises ValueError."""
-        from neurospatial.transforms import translate_3d
+        from neurospatial.ops.transforms import translate_3d
 
         # Try to apply 3D transform to 2D environment
         transform_3d = translate_3d(10, 20, 30)
@@ -1008,7 +1008,7 @@ class TestApplyTransform:
         self, small_2d_env: Environment
     ) -> None:
         """Test that applying transform to unfitted environment raises error."""
-        from neurospatial.transforms import translate
+        from neurospatial.ops.transforms import translate
 
         # Create a fitted environment and then mark it as unfitted
         # (simulates an environment that hasn't been properly initialized)

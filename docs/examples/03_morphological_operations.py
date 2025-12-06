@@ -185,7 +185,7 @@ print("- Spatial analysis will be limited to edges only")
 # Let's verify that the environment is indeed disconnected:
 
 # %%
-import networkx as nx  # noqa: E402
+import networkx as nx
 
 # Check if environment is connected
 is_connected = nx.is_connected(env_default.connectivity)

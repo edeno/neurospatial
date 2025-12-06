@@ -12,8 +12,8 @@ from neurospatial.annotation.core import (
     _resolve_config_params,
     annotate_video,
 )
+from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions import Region, Regions
-from neurospatial.transforms import Affine2D, VideoCalibration
 
 
 class TestAnnotationConfig:
@@ -641,7 +641,7 @@ class TestAddPositionsLayer:
         """Calibration transforms positions from cm to pixels."""
         napari = pytest.importorskip("napari")
         from neurospatial.annotation.core import _add_positions_layer
-        from neurospatial.transforms import Affine2D, VideoCalibration
+        from neurospatial.ops.transforms import Affine2D, VideoCalibration
 
         viewer = napari.Viewer(show=False)
 

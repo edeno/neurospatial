@@ -27,7 +27,7 @@ from neurospatial.animation.overlays import (
     _validate_temporal_alignment,
 )
 from neurospatial.animation.skeleton import Skeleton
-from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 
 
 class TestPositionOverlay:
@@ -512,7 +512,7 @@ class TestVideoData:
     ):
         """Test VideoData with Affine2D transform."""
         from neurospatial.animation.overlays import VideoData
-        from neurospatial.transforms import identity
+        from neurospatial.ops.transforms import identity
 
         transform = identity()
         video_data = VideoData(

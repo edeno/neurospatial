@@ -64,26 +64,85 @@ from neurospatial.ops.smoothing import (
     compute_diffusion_kernels,
 )
 
+# Transform operations
+from neurospatial.ops.transforms import (
+    Affine2D,
+    Affine3D,
+    AffineND,
+    SpatialTransform,
+    VideoCalibration,
+    apply_transform_to_environment,
+    calibrate_from_landmarks,
+    calibrate_from_scale_bar,
+    convert_to_cm,
+    convert_to_pixels,
+    estimate_transform,
+    flip_y,
+    flip_y_data,
+    from_rotation_matrix,
+    identity,
+    identity_nd,
+    scale_2d,
+    scale_3d,
+    simple_scale,
+    translate,
+    translate_3d,
+)
+
+# ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
+    # Binning
     "TieBreakStrategy",
-    "apply_kernel",
-    "clamp",
     "clear_kdtree_cache",
-    "combine_fields",
+    "map_points_to_bins",
+    "regions_to_mask",
+    "resample_field",
+    # Calculus
     "compute_differential_operator",
-    "compute_diffusion_kernels",
-    "convolve",
-    "distance_field",
     "divergence",
+    "gradient",
+    # Distance
+    "distance_field",
     "euclidean_distance_matrix",
     "geodesic_distance_between_points",
     "geodesic_distance_matrix",
-    "gradient",
-    "map_points_to_bins",
-    "neighbor_reduce",
     "neighbors_within",
-    "normalize_field",
     "pairwise_distances",
-    "regions_to_mask",
-    "resample_field",
+    # Graph
+    "convolve",
+    "neighbor_reduce",
+    # Normalize
+    "clamp",
+    "combine_fields",
+    "normalize_field",
+    # Smoothing
+    "apply_kernel",
+    "compute_diffusion_kernels",
+    # Transforms - Core classes
+    "Affine2D",
+    "Affine3D",
+    "AffineND",
+    "SpatialTransform",
+    "VideoCalibration",
+    # Transforms - 2D factories
+    "flip_y",
+    "identity",
+    "scale_2d",
+    "translate",
+    # Transforms - 3D factories
+    "from_rotation_matrix",
+    "identity_nd",
+    "scale_3d",
+    "translate_3d",
+    # Transforms - Calibration
+    "calibrate_from_landmarks",
+    "calibrate_from_scale_bar",
+    "simple_scale",
+    # Transforms - Helpers
+    "convert_to_cm",
+    "convert_to_pixels",
+    "flip_y_data",
+    # Transforms - Estimation
+    "apply_transform_to_environment",
+    "estimate_transform",
 ]

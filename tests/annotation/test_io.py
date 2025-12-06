@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial.annotation.io import regions_from_cvat, regions_from_labelme
-from neurospatial.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import Affine2D, VideoCalibration
 
 
 class TestRegionsFromLabelme:

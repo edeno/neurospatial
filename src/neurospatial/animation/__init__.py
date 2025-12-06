@@ -77,7 +77,7 @@ from neurospatial.animation.skeleton import (
     SIMPLE_SKELETON,
     Skeleton,
 )
-from neurospatial.transforms import VideoCalibration
+from neurospatial.ops.transforms import VideoCalibration
 
 __all__: list[str] = [
     "MOUSE_SKELETON",

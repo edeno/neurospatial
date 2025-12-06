@@ -215,7 +215,7 @@ print(f"Fields: {fields.shape}")
 # - `duration`: Video length in seconds
 
 # %%
-from neurospatial.animation._video_io import VideoReader  # noqa: E402
+from neurospatial.animation._video_io import VideoReader
 
 print("Example 1: Inspecting Video Metadata")
 print("=" * 50)
@@ -635,7 +635,7 @@ except ImportError:
 # 3. **Clear Cache**: Always call `env.clear_cache()` before parallel rendering
 
 # %%
-from neurospatial.animation import subsample_frames  # noqa: E402
+from neurospatial.animation import subsample_frames
 
 print("Example 7: Performance Optimization")
 print("=" * 50)

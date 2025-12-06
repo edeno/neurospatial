@@ -458,7 +458,7 @@ class TestAddInitialBoundaryToShapes:
         from neurospatial.annotation._napari_widget import (
             add_initial_boundary_to_shapes,
         )
-        from neurospatial.transforms import VideoCalibration, scale_2d
+        from neurospatial.ops.transforms import VideoCalibration, scale_2d
 
         viewer = napari.Viewer(show=False)
         shapes = viewer.add_shapes(

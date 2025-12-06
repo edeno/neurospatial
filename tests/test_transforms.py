@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.transforms import (
+from neurospatial.ops.transforms import (
     Affine2D,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
@@ -283,7 +283,7 @@ class TestVideoCalibration:
 
     def test_basic_creation(self):
         """VideoCalibration can be created with transform and frame size."""
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
@@ -302,7 +302,7 @@ class TestVideoCalibration:
 
     def test_cm_per_px_property(self):
         """cm_per_px returns approximate scale factor."""
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         # 100 pixels = 50 cm -> cm_per_px = 0.5
         transform = calibrate_from_scale_bar(
@@ -321,7 +321,7 @@ class TestVideoCalibration:
 
     def test_transform_cm_to_px_inverse(self):
         """transform_cm_to_px is the inverse of transform_px_to_cm."""
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
@@ -344,7 +344,7 @@ class TestVideoCalibration:
 
     def test_to_dict_from_dict_roundtrip(self):
         """Serialization roundtrip preserves calibration."""
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
@@ -372,7 +372,7 @@ class TestVideoCalibration:
 
     def test_to_dict_contains_expected_keys(self):
         """to_dict produces expected structure."""
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
@@ -518,7 +518,7 @@ class TestBoundsMismatchWarning:
 
         from neurospatial import Environment
         from neurospatial.animation.calibration import _validate_calibration_coverage
-        from neurospatial.transforms import VideoCalibration
+        from neurospatial.ops.transforms import VideoCalibration
 
         # Create a small environment
         positions = np.array(

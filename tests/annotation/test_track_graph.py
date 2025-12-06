@@ -577,7 +577,7 @@ class TestAnnotateTrackGraphCalibration:
         )
 
         from neurospatial.annotation.track_graph import annotate_track_graph
-        from neurospatial.transforms import VideoCalibration, scale_2d
+        from neurospatial.ops.transforms import VideoCalibration, scale_2d
 
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -627,7 +627,7 @@ class TestAnnotateTrackGraphCalibration:
         )
 
         from neurospatial.annotation.track_graph import annotate_track_graph
-        from neurospatial.transforms import VideoCalibration, scale_2d
+        from neurospatial.ops.transforms import VideoCalibration, scale_2d
 
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 

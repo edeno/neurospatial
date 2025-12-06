@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     import shapely
 
     from neurospatial.environment.core import Environment
-    from neurospatial.transforms import Affine2D, AffineND
+    from neurospatial.ops.transforms import Affine2D, AffineND
 
 from neurospatial.regions import Regions
 
@@ -854,7 +854,7 @@ class EnvironmentTransforms:
         # (transforms.py imports Environment, which imports this mixin)
         # Delegate to free function
         # Cast self to Environment for type checking
-        from neurospatial.transforms import (
+        from neurospatial.ops.transforms import (
             apply_transform_to_environment as _apply_transform_impl,
         )
 

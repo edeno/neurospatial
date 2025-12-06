@@ -22,7 +22,7 @@ from neurospatial import Environment
 from neurospatial.animation.overlays import VideoOverlay
 
 if TYPE_CHECKING:
-    from neurospatial.transforms import VideoCalibration
+    from neurospatial.ops.transforms import VideoCalibration
 
 # Check for optional dependencies
 try:

@@ -30,7 +30,7 @@ Example usage (conceptual):
     from pathlib import Path
     import numpy as np
     from neurospatial.regions.io import load_labelme_json
-    from neurospatial.transforms import SpatialTransform
+    from neurospatial.ops.transforms import SpatialTransform
     from neurospatial.regions.ops import points_in_any_region, regions_containing_points
 
     transform = SpatialTransform(...)  # pixel→world transform
@@ -59,7 +59,7 @@ from shapely import points
 from shapely.geometry import Polygon
 
 from .._constants import POINT_TOLERANCE
-from ..transforms import SpatialTransform
+from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
 
 
