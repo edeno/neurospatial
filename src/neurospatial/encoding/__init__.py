@@ -57,6 +57,14 @@ from neurospatial.encoding.object_vector import (
     plot_object_vector_tuning,
 )
 
+# Phase precession analysis
+from neurospatial.encoding.phase_precession import (
+    PhasePrecessionResult,
+    has_phase_precession,
+    phase_precession,
+    plot_phase_precession,
+)
+
 # Place cell analysis
 from neurospatial.encoding.place import (
     DirectionalPlaceFields,
@@ -97,6 +105,11 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    # Phase precession analysis
+    "PhasePrecessionResult",
+    "has_phase_precession",
+    "phase_precession",
+    "plot_phase_precession",
     # Object-vector cell analysis
     "ObjectVectorFieldResult",
     "ObjectVectorMetrics",
