@@ -46,6 +46,17 @@ from neurospatial.encoding.head_direction import (
     rayleigh_test,
 )
 
+# Object-vector cell analysis
+from neurospatial.encoding.object_vector import (
+    ObjectVectorFieldResult,
+    ObjectVectorMetrics,
+    compute_object_vector_field,
+    compute_object_vector_tuning,
+    is_object_vector_cell,
+    object_vector_score,
+    plot_object_vector_tuning,
+)
+
 # Place cell analysis
 from neurospatial.encoding.place import (
     DirectionalPlaceFields,
@@ -73,6 +84,14 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    # Object-vector cell analysis
+    "ObjectVectorFieldResult",
+    "ObjectVectorMetrics",
+    "compute_object_vector_field",
+    "compute_object_vector_tuning",
+    "is_object_vector_cell",
+    "object_vector_score",
+    "plot_object_vector_tuning",
     # Grid cell analysis
     "GridProperties",
     "grid_orientation",
