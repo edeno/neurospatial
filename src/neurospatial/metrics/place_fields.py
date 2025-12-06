@@ -1020,7 +1020,7 @@ def rate_map_coherence(
 
     # Compute mean of neighbors for each bin using neighbor_reduce
     # Use nanmean to handle NaN values in neighbors
-    from neurospatial.primitives import neighbor_reduce
+    from neurospatial.ops.graph import neighbor_reduce
 
     neighbor_means = neighbor_reduce(
         env,

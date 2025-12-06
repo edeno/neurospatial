@@ -3,6 +3,7 @@
 **Goal**: Reorganize neurospatial into a clean, domain-centric structure following the [PLAN.md](PLAN.md) specification.
 
 **Success Criteria**:
+
 - All tests pass (`uv run pytest`)
 - Type checking passes (`uv run mypy src/neurospatial/`)
 - Linting passes (`uv run ruff check . && uv run ruff format .`)
@@ -26,6 +27,7 @@
 - [x] Create `src/neurospatial/stats/` directory with `__init__.py`
 
 **Verification**:
+
 ```bash
 ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 ```
@@ -49,8 +51,8 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [x] Move `spatial.py` → `ops/binning.py`
 - [x] Move `distance.py` → `ops/distance.py`
 - [x] Move `field_ops.py` → `ops/normalize.py`
-- [ ] Move `kernels.py` → `ops/smoothing.py`
-- [ ] Move `primitives.py` → `ops/graph.py`
+- [x] Move `kernels.py` → `ops/smoothing.py`
+- [x] Move `primitives.py` → `ops/graph.py`
 - [ ] Move `differential.py` → `ops/calculus.py`
 - [ ] Move `transforms.py` → `ops/transforms.py` (then merge calibration.py into it)
 - [ ] Merge `calibration.py` into `ops/transforms.py`
@@ -59,7 +61,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 - [ ] Move `visibility.py` → `ops/visibility.py`
 - [ ] Move `basis.py` → `ops/basis.py`
 
-#### 2.2: Update ops/__init__.py
+#### 2.2: Update ops/**init**.py
 
 - [ ] Export public API from `ops/__init__.py`
 - [ ] Ensure all moved functions are importable from new paths
@@ -67,6 +69,7 @@ ls -la src/neurospatial/{encoding,behavior,io,ops,stats}/__init__.py
 #### 2.3: Update Internal Imports
 
 For each moved file:
+
 ```bash
 # Find old imports
 grep -r "from neurospatial.spatial import" src/ tests/
@@ -88,6 +91,7 @@ grep -r "from neurospatial.field_ops import" src/ tests/
 - [ ] Update imports for `basis` → `ops.basis`
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 uv run mypy src/neurospatial/
@@ -110,6 +114,7 @@ uv run mypy src/neurospatial/
 - [ ] Update internal imports for `nwb` → `io.nwb`
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 uv run pytest tests/nwb/ -v  # If NWB tests exist
@@ -145,10 +150,11 @@ uv run pytest tests/nwb/ -v  # If NWB tests exist
 #### 4.4: Update Internal Imports
 
 - [ ] Update imports for `metrics.circular` → `stats.circular`
-- [ ] Update imports for `metrics.circular_basis` → `stats.circular`
+- [ ] Update imports for `metrics.circular_basis` → `stats.circular_basis`
 - [ ] Update imports for `decoding.shuffle` → `stats.shuffle`
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 ```
@@ -199,6 +205,7 @@ uv run pytest tests/ -x -v
 - [ ] Update imports for `reward` → `behavior.reward`
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 ```
@@ -265,6 +272,7 @@ uv run pytest tests/ -x -v
 - [ ] Update imports for `metrics.population` → `encoding.population`
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 ```
@@ -284,6 +292,7 @@ uv run pytest tests/ -x -v
 - [ ] Verify decoding/ structure matches PLAN.md specification
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 ```
@@ -304,13 +313,14 @@ uv run pytest tests/ -x -v
 - [ ] Verify animation/ structure matches PLAN.md specification
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 ```
 
 ---
 
-## Milestone 9: Update Top-Level __init__.py
+## Milestone 9: Update Top-Level **init**.py
 
 **Goal**: Reduce top-level exports to sparse set (5 core exports).
 
@@ -328,6 +338,7 @@ uv run pytest tests/ -x -v
 - [ ] Update module docstring with new import patterns
 
 **Verification**:
+
 ```bash
 uv run python -c "from neurospatial import Environment, Region, Regions, CompositeEnvironment, EnvironmentNotFittedError; print('Core imports OK')"
 uv run pytest tests/ -x -v
@@ -344,6 +355,7 @@ uv run pytest tests/ -x -v
 ### Tasks
 
 Delete files (in order):
+
 - [ ] Delete `src/neurospatial/behavioral.py`
 - [ ] Delete `src/neurospatial/spatial.py`
 - [ ] Delete `src/neurospatial/distance.py` (if moved, not if original)
@@ -364,11 +376,13 @@ Delete files (in order):
 - [ ] Delete `src/neurospatial/io.py` (original, not io/files.py)
 
 Delete directories:
+
 - [ ] Delete `src/neurospatial/visualization/` directory
 - [ ] Delete `src/neurospatial/segmentation/` directory (after flattening to behavior/)
 - [ ] Delete `src/neurospatial/metrics/` directory (after distributing contents)
 
 **Verification**:
+
 ```bash
 uv run pytest tests/ -x -v
 uv run mypy src/neurospatial/
@@ -410,6 +424,7 @@ uv run mypy src/neurospatial/
 - [ ] Run doctests to verify: `uv run pytest --doctest-modules src/neurospatial/`
 
 **Verification**:
+
 ```bash
 uv run pytest --doctest-modules src/neurospatial/
 ```
@@ -451,6 +466,7 @@ done
 - [ ] Clear and re-execute notebooks for clean state
 
 **Verification**:
+
 ```bash
 # Run each notebook to verify
 uv run jupyter nbconvert --to notebook --execute examples/08_spike_field_basics.ipynb --output /dev/null
@@ -475,6 +491,7 @@ uv run jupyter nbconvert --to notebook --execute examples/08_spike_field_basics.
 - [ ] Verify doctests still pass
 
 **Verification**:
+
 ```bash
 uv run pytest tests/test_imports.py -v
 uv run pytest --doctest-modules src/neurospatial/
@@ -522,6 +539,7 @@ from neurospatial.ops import distance, normalize
 ```
 
 **Success Criteria**:
+
 - [ ] All tests pass
 - [ ] All type checks pass
 - [ ] All linting passes
@@ -536,11 +554,13 @@ from neurospatial.ops import distance, normalize
 ### Git Strategy
 
 Consider creating a feature branch for this reorganization:
+
 ```bash
 git checkout -b refactor/package-reorganization
 ```
 
 Commit after each milestone completion:
+
 ```bash
 git commit -m "refactor(M2): move ops/ modules
 
@@ -554,6 +574,7 @@ Move low-level utilities to ops/ package:
 ### Testing Between Tasks
 
 Run tests frequently during implementation:
+
 ```bash
 # Quick smoke test
 uv run pytest tests/test_environment.py -x -v
@@ -565,6 +586,7 @@ uv run pytest -x -v
 ### Import Update Strategy
 
 Use ripgrep to find all imports needing update:
+
 ```bash
 # Example: find all imports of old module
 rg "from neurospatial.spatial import" src/ tests/
@@ -574,6 +596,7 @@ rg "from neurospatial import.*map_points_to_bins" src/ tests/
 ### Handling Circular Imports
 
 If circular imports occur:
+
 1. Check dependency tier in PLAN.md
 2. Ensure lower-tier modules don't import from higher tiers
 3. Use re-exports at the `__init__.py` level, not direct imports
@@ -592,7 +615,7 @@ If circular imports occur:
 | M6: encoding/ Module | Not Started | |
 | M7: decoding/ Cleanup | Not Started | |
 | M8: animation/ Consolidation | Not Started | |
-| M9: Top-Level __init__.py | Not Started | |
+| M9: Top-Level **init**.py | Not Started | |
 | M10: Delete Old Files | Not Started | |
 | M11: Update Documentation | Not Started | |
 | M12: Update Notebooks | Not Started | |

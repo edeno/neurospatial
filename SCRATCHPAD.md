@@ -1,11 +1,85 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 2 in progress - field_ops.py → ops/normalize.py DONE
+**Current Status**: Milestone 2 in progress - primitives.py → ops/graph.py DONE
 
 ---
 
 ## Session Log
+
+### 2025-12-05 (Session 6)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `primitives.py` → `ops/graph.py`
+
+**Work Done**:
+1. Moved `primitives.py` → `ops/graph.py` using `git mv` to preserve history
+2. Added module docstring in graph.py to document new import paths
+3. Added `__all__` export list to graph.py:
+   - `neighbor_reduce`, `convolve`
+4. Updated `ops/__init__.py` to export public API
+5. Created new test file `tests/ops/test_ops_graph.py` following TDD
+6. Updated internal imports (3 files):
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/metrics/place_fields.py`
+   - `tests/test_primitives.py`
+7. Updated docstring examples in graph.py (2 locations)
+8. All tests pass:
+   - `tests/ops/test_ops_graph.py`: 12 passed
+   - `tests/test_primitives.py`: 15 passed
+   - Total graph-related: 27 passed
+9. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/graph.py` (moved from primitives.py)
+- `src/neurospatial/ops/__init__.py` (added graph exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/metrics/place_fields.py` (updated import)
+- `tests/ops/test_ops_graph.py` (new file)
+- `tests/test_primitives.py` (updated imports)
+
+**Next Task**: Move `differential.py` → `ops/calculus.py`
+
+### 2025-12-05 (Session 5)
+
+**Starting Point**: Continue Milestone 2 - Move ops/ Modules
+
+**Completed**: Move `kernels.py` → `ops/smoothing.py`
+
+**Work Done**:
+1. Moved `kernels.py` → `ops/smoothing.py` using `git mv` to preserve history
+2. Added module docstring in smoothing.py to document new import paths
+3. Added `__all__` export list to smoothing.py:
+   - `compute_diffusion_kernels`, `apply_kernel`
+4. Updated `ops/__init__.py` to export public API
+5. Created new test file `tests/ops/test_ops_smoothing.py` following TDD
+6. Updated internal imports (6 files):
+   - `src/neurospatial/__init__.py`
+   - `src/neurospatial/environment/fields.py`
+   - `src/neurospatial/ops/binning.py`
+   - `tests/test_kernels.py`
+   - `tests/environment/test_apply_kernel.py`
+   - `tests/benchmarks/test_performance.py`
+7. All tests pass:
+   - `tests/ops/test_ops_smoothing.py`: 15 passed
+   - `tests/test_kernels.py`: 37 passed
+   - `tests/environment/test_apply_kernel.py`: 16 passed
+   - Total smoothing-related: 103 passed
+8. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/ops/smoothing.py` (moved from kernels.py)
+- `src/neurospatial/ops/__init__.py` (added smoothing exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `src/neurospatial/environment/fields.py` (updated import)
+- `src/neurospatial/ops/binning.py` (updated import)
+- `tests/ops/test_ops_smoothing.py` (new file)
+- `tests/test_kernels.py` (updated imports)
+- `tests/environment/test_apply_kernel.py` (updated import)
+- `tests/benchmarks/test_performance.py` (updated import)
+
+**Next Task**: Move `primitives.py` → `ops/graph.py`
 
 ### 2025-12-05 (Session 4)
 

@@ -1,6 +1,31 @@
-"""Spatial signal processing primitives for graph-based operations."""
+"""Spatial signal processing primitives for graph-based operations.
+
+This module provides graph-based operations for spatial signal processing
+including neighborhood aggregation and convolution on irregular graphs.
+
+Functions
+---------
+neighbor_reduce
+    Aggregate field values over spatial neighborhoods.
+convolve
+    Convolve a spatial field with a custom kernel on the graph.
+
+Examples
+--------
+>>> from neurospatial.ops.graph import neighbor_reduce, convolve
+
+Import via ops package:
+
+>>> from neurospatial.ops import neighbor_reduce, convolve
+
+Notes
+-----
+Moved from neurospatial.primitives in package reorganization.
+"""
 
 from __future__ import annotations
+
+__all__ = ["convolve", "neighbor_reduce"]
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
@@ -80,7 +105,7 @@ def neighbor_reduce(
     >>> import numpy as np
     >>> from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
-    >>> from neurospatial.primitives import neighbor_reduce
+    >>> from neurospatial.ops.graph import neighbor_reduce
     >>> # Create 3x3 grid
     >>> positions = np.array(
     ...     [
@@ -263,7 +288,7 @@ def convolve(
     >>> import numpy as np
     >>> from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
-    >>> from neurospatial.primitives import convolve
+    >>> from neurospatial.ops.graph import convolve
     >>> # Create 3x3 grid
     >>> positions = np.array([[i, j] for i in range(3) for j in range(3)])
     >>> env = Environment.from_samples(positions, bin_size=1.0)

@@ -300,13 +300,13 @@ from neurospatial.ops.distance import (
     neighbors_within,
     pairwise_distances,
 )
+from neurospatial.ops.graph import convolve, neighbor_reduce
 from neurospatial.ops.normalize import (
     clamp,
     combine_fields,
     normalize_field,
 )
 from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
-from neurospatial.primitives import convolve, neighbor_reduce
 
 # Reference frame transformations (egocentric/allocentric)
 from neurospatial.reference_frames import (

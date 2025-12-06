@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.primitives import convolve, neighbor_reduce
+from neurospatial.ops.graph import convolve, neighbor_reduce
 
 
 class TestNeighborReduce:

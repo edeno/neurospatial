@@ -38,6 +38,12 @@ from neurospatial.ops.distance import (
     pairwise_distances,
 )
 
+# Graph operations
+from neurospatial.ops.graph import (
+    convolve,
+    neighbor_reduce,
+)
+
 # Normalize operations
 from neurospatial.ops.normalize import (
     clamp,
@@ -58,11 +64,13 @@ __all__ = [
     "clear_kdtree_cache",
     "combine_fields",
     "compute_diffusion_kernels",
+    "convolve",
     "distance_field",
     "euclidean_distance_matrix",
     "geodesic_distance_between_points",
     "geodesic_distance_matrix",
     "map_points_to_bins",
+    "neighbor_reduce",
     "neighbors_within",
     "normalize_field",
     "pairwise_distances",
