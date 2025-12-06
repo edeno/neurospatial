@@ -7,6 +7,69 @@
 
 ## Session Log
 
+### 2025-12-06 (Session 14)
+
+**Starting Point**: Milestone 4 - Move stats/ Module (Task 4.1: Create stats/circular.py)
+
+**Completed**: Move circular statistics to stats/circular.py
+
+**Work Done**:
+1. Created test file `tests/stats/test_stats_circular.py` following TDD (RED phase)
+   - 31 tests covering imports and basic functionality
+2. Verified tests FAIL before implementation (import error expected)
+3. Moved `metrics/circular.py` → `stats/circular.py` using `git mv` to preserve history
+4. Updated module docstring with new import paths (Imports section at top)
+5. Made private functions public:
+   - `_circular_mean` → `circular_mean` (with full docstring and angle_unit support)
+   - `_circular_variance` → `circular_variance` (with full docstring and angle_unit support)
+   - `_mean_resultant_length` → `mean_resultant_length` (with full docstring and angle_unit support)
+6. Added `wrap_angle()` function (moved from metrics/vte.py)
+7. Added GLM circular basis functions (from metrics/circular_basis.py):
+   - `CircularBasisResult` dataclass
+   - `circular_basis()`, `circular_basis_metrics()`, `is_modulated()`
+   - `plot_circular_basis_tuning()`
+   - `_wald_test_magnitude()` (internal helper)
+8. Updated `stats/__init__.py` to export all 15 symbols:
+   - Core: rayleigh_test, circular_linear_correlation, circular_circular_correlation, phase_position_correlation
+   - Public stats: circular_mean, circular_variance, mean_resultant_length
+   - Utilities: wrap_angle
+   - GLM basis: CircularBasisResult, circular_basis, circular_basis_metrics, is_modulated, plot_circular_basis_tuning
+9. Created backward-compatibility wrapper `metrics/circular_basis.py`:
+   - Re-exports all symbols from stats.circular
+10. Updated internal imports (7 files):
+    - `src/neurospatial/metrics/__init__.py` (consolidated circular imports from stats.circular)
+    - `src/neurospatial/metrics/vte.py` (import wrap_angle from stats.circular)
+    - `src/neurospatial/metrics/phase_precession.py` (import from stats.circular)
+    - `src/neurospatial/metrics/head_direction.py` (import from stats.circular)
+    - `src/neurospatial/metrics/object_vector_cells.py` (import from stats.circular)
+    - `tests/metrics/test_circular.py` (batch sed update for 45+ imports)
+11. All tests pass:
+    - `tests/stats/test_stats_circular.py`: 31 passed
+    - `tests/metrics/test_circular.py`: 133 passed
+    - Total circular-related: 164 passed
+12. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/stats/circular.py` (moved from metrics/circular.py, extended with public functions and circular_basis content)
+- `src/neurospatial/stats/__init__.py` (added 15 exports)
+- `src/neurospatial/metrics/__init__.py` (import from stats.circular for backward compatibility)
+- `src/neurospatial/metrics/circular_basis.py` (new backward-compat wrapper)
+- `src/neurospatial/metrics/vte.py` (updated wrap_angle import)
+- `src/neurospatial/metrics/phase_precession.py` (updated imports)
+- `src/neurospatial/metrics/head_direction.py` (updated imports)
+- `src/neurospatial/metrics/object_vector_cells.py` (updated import)
+- `tests/stats/__init__.py` (new file)
+- `tests/stats/test_stats_circular.py` (new file)
+- `tests/metrics/test_circular.py` (updated imports)
+
+**Milestone 4 Status**: Task 4.1 COMPLETE
+Task 4.1 (Create stats/circular.py) is complete.
+Remaining: Task 4.2 (shuffle.py), Task 4.3 (surrogates.py)
+
+**Next Task**: Milestone 4, Task 4.2 - Create stats/shuffle.py
+
+---
+
 ### 2025-12-06 (Session 13)
 
 **Starting Point**: Continue Milestone 3 - Move nwb/ to io/nwb/

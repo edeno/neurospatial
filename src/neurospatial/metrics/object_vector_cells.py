@@ -70,8 +70,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.metrics.circular import _mean_resultant_length
 from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.stats.circular import _mean_resultant_length
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

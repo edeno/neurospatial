@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.metrics.circular import (
+from neurospatial.stats.circular import (
     _mean_resultant_length,
     _to_radians,
     _validate_paired_input,

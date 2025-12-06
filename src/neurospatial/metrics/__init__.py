@@ -30,19 +30,6 @@ vte
 from __future__ import annotations
 
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
-from neurospatial.metrics.circular import (
-    circular_circular_correlation,
-    circular_linear_correlation,
-    phase_position_correlation,
-    rayleigh_test,
-)
-from neurospatial.metrics.circular_basis import (
-    CircularBasisResult,
-    circular_basis,
-    circular_basis_metrics,
-    is_modulated,
-    plot_circular_basis_tuning,
-)
 from neurospatial.metrics.decision_analysis import (
     DecisionAnalysisResult,
     DecisionBoundaryMetrics,
@@ -154,11 +141,12 @@ from neurospatial.metrics.vte import (
     head_sweep_magnitude,
     integrated_absolute_rotation,
     normalize_vte_scores,
-    wrap_angle,
 )
 
+# NOTE: Circular statistics have been moved to neurospatial.stats.circular
+# Import from there: from neurospatial.stats.circular import rayleigh_test, ...
+
 __all__ = [
-    "CircularBasisResult",
     "DecisionAnalysisResult",
     "DecisionBoundaryMetrics",
     "GoalDirectedMetrics",
@@ -176,10 +164,6 @@ __all__ = [
     "angular_efficiency",
     "approach_rate",
     "border_score",
-    "circular_basis",
-    "circular_basis_metrics",
-    "circular_circular_correlation",
-    "circular_linear_correlation",
     "classify_vte",
     "compute_decision_analysis",
     "compute_field_emd",
@@ -225,7 +209,6 @@ __all__ = [
     "instantaneous_goal_alignment",
     "integrated_absolute_rotation",
     "is_head_direction_cell",
-    "is_modulated",
     "is_object_vector_cell",
     "is_spatial_view_cell",
     "mean_square_displacement",
@@ -234,9 +217,7 @@ __all__ = [
     "object_vector_score",
     "path_efficiency",
     "periodicity_score",
-    "phase_position_correlation",
     "phase_precession",
-    "plot_circular_basis_tuning",
     "plot_head_direction_tuning",
     "plot_object_vector_tuning",
     "plot_phase_precession",
@@ -246,7 +227,6 @@ __all__ = [
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
     "rate_map_coherence",
-    "rayleigh_test",
     "selectivity",
     "shortest_path_length",
     "skaggs_information",
@@ -257,5 +237,4 @@ __all__ = [
     "subgoal_efficiency",
     "time_efficiency",
     "traveled_path_length",
-    "wrap_angle",
 ]

@@ -71,7 +71,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
-from neurospatial.metrics.circular import (
+from neurospatial.stats.circular import (
     _mean_resultant_length,
     _to_radians,
     _validate_tuning_data,

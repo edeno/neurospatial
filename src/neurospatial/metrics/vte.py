@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.segmentation.trials import Trial
 
+from neurospatial.stats.circular import wrap_angle
+
 __all__ = [
     "VTESessionResult",
     "VTETrialResult",
@@ -67,36 +69,8 @@ __all__ = [
     "head_sweep_magnitude",
     "integrated_absolute_rotation",
     "normalize_vte_scores",
-    "wrap_angle",
+    "wrap_angle",  # Re-exported from stats.circular for backward compatibility
 ]
-
-
-# =============================================================================
-# Utility Functions
-# =============================================================================
-
-
-def wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Wrap angle to (-pi, pi].
-
-    Parameters
-    ----------
-    angle : NDArray[np.float64]
-        Angles in radians.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Angles wrapped to (-pi, pi].
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.metrics.vte import wrap_angle
-    >>> wrap_angle(np.array([3 * np.pi / 2]))
-    array([-1.57079633])
-    """
-    return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
 # =============================================================================

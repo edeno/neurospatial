@@ -22,7 +22,7 @@ class TestToRadians:
 
     def test_radians_passthrough(self) -> None:
         """Radians input should pass through unchanged."""
-        from neurospatial.metrics.circular import _to_radians
+        from neurospatial.stats.circular import _to_radians
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
         result = _to_radians(angles, "rad")
@@ -30,7 +30,7 @@ class TestToRadians:
 
     def test_degrees_conversion(self) -> None:
         """Degrees should be converted to radians."""
-        from neurospatial.metrics.circular import _to_radians
+        from neurospatial.stats.circular import _to_radians
 
         angles_deg = np.array([0, 90, 180, 270])
         expected = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
@@ -43,14 +43,14 @@ class TestMeanResultantLength:
 
     def test_empty_array_returns_nan(self) -> None:
         """Empty input should return NaN."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         result = _mean_resultant_length(np.array([]))
         assert np.isnan(result)
 
     def test_all_same_angle_returns_one(self) -> None:
         """All angles the same should give R = 1.0."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         angles = np.ones(10) * np.pi / 4  # All 45 degrees
         result = _mean_resultant_length(angles)
@@ -58,7 +58,7 @@ class TestMeanResultantLength:
 
     def test_uniform_distribution_returns_near_zero(self) -> None:
         """Uniform distribution should give R near 0."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         # Perfectly uniform angles
         angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
@@ -67,7 +67,7 @@ class TestMeanResultantLength:
 
     def test_result_in_valid_range(self) -> None:
         """Result should always be in [0, 1]."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -77,7 +77,7 @@ class TestMeanResultantLength:
 
     def test_weighted_mean_resultant_length(self) -> None:
         """Weighted computation should work correctly."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         # All weight on one angle
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
@@ -87,7 +87,7 @@ class TestMeanResultantLength:
 
     def test_zero_weights_returns_nan(self) -> None:
         """All-zero weights should return NaN."""
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         angles = np.array([0, np.pi / 2, np.pi])
         weights = np.zeros(3)
@@ -100,7 +100,7 @@ class TestValidateCircularInput:
 
     def test_all_nan_raises_error(self) -> None:
         """All NaN values should raise ValueError with diagnostic message."""
-        from neurospatial.metrics.circular import _validate_circular_input
+        from neurospatial.stats.circular import _validate_circular_input
 
         angles = np.array([np.nan, np.nan, np.nan])
         with pytest.raises(ValueError, match=r"All.*values are NaN"):
@@ -108,7 +108,7 @@ class TestValidateCircularInput:
 
     def test_partial_nan_warns_and_removes(self) -> None:
         """Partial NaN should warn and remove NaN values."""
-        from neurospatial.metrics.circular import _validate_circular_input
+        from neurospatial.stats.circular import _validate_circular_input
 
         angles = np.array([0.0, np.nan, np.pi, np.nan, 2 * np.pi])
         with pytest.warns(UserWarning, match="Removed.*NaN"):
@@ -118,7 +118,7 @@ class TestValidateCircularInput:
 
     def test_inf_values_raise_error(self) -> None:
         """Infinite values should raise ValueError."""
-        from neurospatial.metrics.circular import _validate_circular_input
+        from neurospatial.stats.circular import _validate_circular_input
 
         angles = np.array([0.0, np.inf, np.pi])
         with pytest.raises(ValueError, match="infinite values"):
@@ -126,7 +126,7 @@ class TestValidateCircularInput:
 
     def test_insufficient_samples_raises_error(self) -> None:
         """Too few samples should raise ValueError."""
-        from neurospatial.metrics.circular import _validate_circular_input
+        from neurospatial.stats.circular import _validate_circular_input
 
         angles = np.array([0.0, 0.5])
         with pytest.raises(ValueError, match="at least 3 samples"):
@@ -134,7 +134,7 @@ class TestValidateCircularInput:
 
     def test_angles_outside_range_warns_and_wraps(self) -> None:
         """Angles outside [0, 2pi] should warn and wrap."""
-        from neurospatial.metrics.circular import _validate_circular_input
+        from neurospatial.stats.circular import _validate_circular_input
 
         angles = np.array([-np.pi, 3 * np.pi, 5 * np.pi])
         with pytest.warns(UserWarning, match="outside \\[0, 2pi\\]"):
@@ -149,7 +149,7 @@ class TestValidatePairedInput:
 
     def test_mismatched_lengths_raises_error(self) -> None:
         """Mismatched array lengths should raise ValueError."""
-        from neurospatial.metrics.circular import _validate_paired_input
+        from neurospatial.stats.circular import _validate_paired_input
 
         arr1 = np.array([1.0, 2.0, 3.0])
         arr2 = np.array([1.0, 2.0])
@@ -158,7 +158,7 @@ class TestValidatePairedInput:
 
     def test_nan_pairs_removed_with_warning(self) -> None:
         """NaN in either array should remove that pair with warning."""
-        from neurospatial.metrics.circular import _validate_paired_input
+        from neurospatial.stats.circular import _validate_paired_input
 
         arr1 = np.array([1.0, np.nan, 3.0, 4.0, 5.0])
         arr2 = np.array([1.0, 2.0, np.nan, 4.0, 5.0])
@@ -169,7 +169,7 @@ class TestValidatePairedInput:
 
     def test_insufficient_pairs_after_nan_removal_raises_error(self) -> None:
         """Too few pairs after NaN removal should raise ValueError."""
-        from neurospatial.metrics.circular import _validate_paired_input
+        from neurospatial.stats.circular import _validate_paired_input
 
         arr1 = np.array([1.0, np.nan, np.nan])
         arr2 = np.array([np.nan, 2.0, 3.0])
@@ -182,7 +182,7 @@ class TestRayleighTest:
 
     def test_uniform_distribution_high_pvalue(self) -> None:
         """Uniform distribution should have high p-value (> 0.5)."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Perfectly uniform angles
         angles = np.linspace(0, 2 * np.pi, 100, endpoint=False)
@@ -191,7 +191,7 @@ class TestRayleighTest:
 
     def test_concentrated_distribution_low_pvalue(self) -> None:
         """Von Mises with kappa=2 should have low p-value (< 0.001)."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Concentrated around 0 (von Mises with high concentration)
         rng = np.random.default_rng(42)
@@ -204,7 +204,7 @@ class TestRayleighTest:
 
     def test_all_same_angle_max_z(self) -> None:
         """All same angle should give R = 1.0, z = n."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         n = 50
         angles = np.ones(n) * np.pi / 4
@@ -215,7 +215,7 @@ class TestRayleighTest:
 
     def test_degrees_input(self) -> None:
         """Should handle degree input correctly."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Same test as concentrated, but in degrees
         rng = np.random.default_rng(42)
@@ -232,7 +232,7 @@ class TestRayleighTest:
 
     def test_weighted_rayleigh(self) -> None:
         """Weighted Rayleigh should use effective sample size."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Very concentrated angles with strong weights
         angles = np.array([0.0, 0.05, 0.1, 0.15, np.pi, np.pi + 0.1])
@@ -245,7 +245,7 @@ class TestRayleighTest:
 
     def test_z_statistic_range(self) -> None:
         """Z statistic should be in [0, n]."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -256,7 +256,7 @@ class TestRayleighTest:
 
     def test_pvalue_range(self) -> None:
         """P-value should be in [0, 1]."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -266,7 +266,7 @@ class TestRayleighTest:
 
     def test_small_sample_correction(self) -> None:
         """Small samples should use finite-sample correction."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # With very few samples, correction matters more
         rng = np.random.default_rng(42)
@@ -281,14 +281,14 @@ class TestRayleighTest:
 
     def test_empty_array_raises(self) -> None:
         """Empty array should raise ValueError."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         with pytest.raises(ValueError):
             rayleigh_test(np.array([]))
 
     def test_insufficient_samples_raises(self) -> None:
         """Too few samples should raise ValueError."""
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         with pytest.raises(ValueError, match="at least 3"):
             rayleigh_test(np.array([0.0, 0.5]))
@@ -304,7 +304,7 @@ class TestCircularLinearCorrelation:
         less than 1.0 for a single-cycle linear relationship due to the sine/cosine
         transformation. For phases spanning [0, 2pi], the max r is ~0.755.
         """
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         # Phases increase linearly with position
         positions = np.linspace(0, 100, 50)
@@ -317,7 +317,7 @@ class TestCircularLinearCorrelation:
 
     def test_random_data_low_correlation(self) -> None:
         """Random uncorrelated data should give r near 0."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         rng = np.random.default_rng(42)
         phases = rng.uniform(0, 2 * np.pi, 100)
@@ -328,7 +328,7 @@ class TestCircularLinearCorrelation:
 
     def test_correlation_always_nonnegative(self) -> None:
         """Circular-linear correlation r should always be non-negative."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -339,7 +339,7 @@ class TestCircularLinearCorrelation:
 
     def test_correlation_at_most_one(self) -> None:
         """Circular-linear correlation r should be at most 1."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -350,7 +350,7 @@ class TestCircularLinearCorrelation:
 
     def test_pvalue_in_valid_range(self) -> None:
         """P-value should be in [0, 1]."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -361,7 +361,7 @@ class TestCircularLinearCorrelation:
 
     def test_degrees_input(self) -> None:
         """Should handle degree input correctly."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         positions = np.linspace(0, 100, 50)
         phases_rad = np.linspace(0, 2 * np.pi, 50)
@@ -379,7 +379,7 @@ class TestCircularLinearCorrelation:
 
     def test_mismatched_lengths_raises(self) -> None:
         """Mismatched array lengths should raise ValueError."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         phases = np.array([0.0, 0.5, 1.0])
         positions = np.array([0.0, 50.0])
@@ -389,7 +389,7 @@ class TestCircularLinearCorrelation:
 
     def test_insufficient_samples_raises(self) -> None:
         """Too few samples should raise ValueError."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         phases = np.array([0.0, 0.5])
         positions = np.array([0.0, 50.0])
@@ -399,7 +399,7 @@ class TestCircularLinearCorrelation:
 
     def test_degenerate_case_constant_linear_variable(self) -> None:
         """Constant linear variable (no variation) should return r=0 with warning."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         phases = np.linspace(0, 2 * np.pi, 50)
         positions = np.ones(50) * 50.0  # Constant position
@@ -415,7 +415,7 @@ class TestCircularLinearCorrelation:
         it measures the strength of the relationship, not the direction.
         For a perfect linear relationship spanning one cycle, r ~ 0.755.
         """
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         # Phase decreases as position increases (phase precession)
         positions = np.linspace(0, 100, 50)
@@ -428,7 +428,7 @@ class TestCircularLinearCorrelation:
 
     def test_nan_handling(self) -> None:
         """NaN values in either array should be removed with warning."""
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         positions = np.array([0.0, 10.0, np.nan, 30.0, 40.0, 50.0, 60.0])
         phases = np.array([0.0, 0.5, 1.0, np.nan, 2.0, 2.5, 3.0])
@@ -445,7 +445,7 @@ class TestPhasePositionCorrelation:
 
     def test_same_as_circular_linear_correlation(self) -> None:
         """Should return same result as circular_linear_correlation."""
-        from neurospatial.metrics import (
+        from neurospatial.stats.circular import (
             circular_linear_correlation,
             phase_position_correlation,
         )
@@ -462,7 +462,7 @@ class TestPhasePositionCorrelation:
 
     def test_accepts_angle_unit(self) -> None:
         """Should accept angle_unit parameter."""
-        from neurospatial.metrics import phase_position_correlation
+        from neurospatial.stats.circular import phase_position_correlation
 
         rng = np.random.default_rng(42)
         phases_deg = rng.uniform(0, 360, 50)
@@ -479,7 +479,7 @@ class TestCircularCircularCorrelation:
 
     def test_perfect_correlation_identical_angles(self) -> None:
         """Identical angles should give r close to 1.0."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles = rng.uniform(0, 2 * np.pi, 100)
@@ -490,7 +490,7 @@ class TestCircularCircularCorrelation:
 
     def test_perfect_correlation_with_small_noise(self) -> None:
         """Nearly identical angles (with small noise) should give high r."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = rng.uniform(0, 2 * np.pi, 100)
@@ -504,7 +504,7 @@ class TestCircularCircularCorrelation:
 
     def test_random_data_low_correlation(self) -> None:
         """Random uncorrelated angles should give r near 0."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = rng.uniform(0, 2 * np.pi, 100)
@@ -516,7 +516,7 @@ class TestCircularCircularCorrelation:
 
     def test_anticorrelation(self) -> None:
         """Opposite angles should give negative r."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = rng.uniform(0, 2 * np.pi, 100)
@@ -529,7 +529,7 @@ class TestCircularCircularCorrelation:
 
     def test_symmetry(self) -> None:
         """Correlation should be symmetric: r(a1, a2) == r(a2, a1)."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = rng.uniform(0, 2 * np.pi, 50)
@@ -543,7 +543,7 @@ class TestCircularCircularCorrelation:
 
     def test_correlation_in_valid_range(self) -> None:
         """Correlation r should be in [-1, 1]."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -554,7 +554,7 @@ class TestCircularCircularCorrelation:
 
     def test_pvalue_in_valid_range(self) -> None:
         """P-value should be in [0, 1]."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         for _ in range(10):
@@ -565,7 +565,7 @@ class TestCircularCircularCorrelation:
 
     def test_degrees_input(self) -> None:
         """Should handle degree input correctly."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1_rad = rng.uniform(0, 2 * np.pi, 50)
@@ -585,7 +585,7 @@ class TestCircularCircularCorrelation:
 
     def test_mismatched_lengths_raises(self) -> None:
         """Mismatched array lengths should raise ValueError."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         angles1 = np.array([0.0, 0.5, 1.0])
         angles2 = np.array([0.0, 0.5])
@@ -595,7 +595,7 @@ class TestCircularCircularCorrelation:
 
     def test_insufficient_samples_raises(self) -> None:
         """Too few samples should raise ValueError."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         angles1 = np.array([0.0, 0.5])
         angles2 = np.array([0.0, 0.5])
@@ -605,7 +605,7 @@ class TestCircularCircularCorrelation:
 
     def test_degenerate_case_no_variation(self) -> None:
         """No variation in angles should return r=0 with warning."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         # All angles the same
         angles1 = np.ones(50) * np.pi
@@ -618,7 +618,7 @@ class TestCircularCircularCorrelation:
 
     def test_nan_handling(self) -> None:
         """NaN values should be removed with warning."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = np.concatenate([rng.uniform(0, 2 * np.pi, 48), [np.nan, np.nan]])
@@ -632,7 +632,7 @@ class TestCircularCircularCorrelation:
 
     def test_constant_offset(self) -> None:
         """Constant phase offset should still show high correlation."""
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         rng = np.random.default_rng(42)
         angles1 = rng.uniform(0, 2 * np.pi, 100)
@@ -659,7 +659,7 @@ class TestPropertyBasedRayleighTest:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics.circular import _mean_resultant_length
+        from neurospatial.stats.circular import _mean_resultant_length
 
         @given(
             st.lists(
@@ -682,7 +682,7 @@ class TestPropertyBasedRayleighTest:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         @given(
             st.lists(
@@ -704,7 +704,7 @@ class TestPropertyBasedRayleighTest:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         @given(
             st.lists(
@@ -730,7 +730,7 @@ class TestPropertyBasedCircularCircularCorrelation:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         @given(
             st.lists(
@@ -768,7 +768,7 @@ class TestPropertyBasedCircularCircularCorrelation:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import circular_circular_correlation
+        from neurospatial.stats.circular import circular_circular_correlation
 
         @given(
             st.lists(
@@ -800,7 +800,7 @@ class TestPropertyBasedCircularLinearCorrelation:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         @given(
             st.lists(
@@ -842,7 +842,7 @@ class TestPropertyBasedCircularLinearCorrelation:
         from hypothesis import given, settings
         from hypothesis import strategies as st
 
-        from neurospatial.metrics import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         @given(
             st.lists(
@@ -890,13 +890,13 @@ class TestCircularBasisResult:
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that CircularBasisResult can be imported."""
-        from neurospatial.metrics.circular_basis import CircularBasisResult
+        from neurospatial.stats.circular import CircularBasisResult
 
         assert CircularBasisResult is not None
 
     def test_dataclass_has_all_fields(self) -> None:
         """Test that CircularBasisResult has all required fields."""
-        from neurospatial.metrics.circular_basis import CircularBasisResult
+        from neurospatial.stats.circular import CircularBasisResult
 
         # Create instance with required fields
         result = CircularBasisResult(
@@ -911,7 +911,7 @@ class TestCircularBasisResult:
 
     def test_design_matrix_property(self) -> None:
         """Test that design_matrix property returns (n_samples, 2) array."""
-        from neurospatial.metrics.circular_basis import CircularBasisResult
+        from neurospatial.stats.circular import CircularBasisResult
 
         n = 100
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
@@ -935,13 +935,13 @@ class TestCircularBasis:
 
     def test_function_exists(self) -> None:
         """Test that circular_basis can be imported."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         assert callable(circular_basis)
 
     def test_returns_circular_basis_result(self) -> None:
         """Test that circular_basis returns CircularBasisResult."""
-        from neurospatial.metrics.circular_basis import (
+        from neurospatial.stats.circular import (
             CircularBasisResult,
             circular_basis,
         )
@@ -952,7 +952,7 @@ class TestCircularBasis:
 
     def test_sin_cos_components_correct(self) -> None:
         """Test that sin/cos components are computed correctly."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
         result = circular_basis(angles)
@@ -965,7 +965,7 @@ class TestCircularBasis:
 
     def test_angles_stored_in_result(self) -> None:
         """Test that input angles are stored in result."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         angles = np.linspace(0, 2 * np.pi, 50, endpoint=False)
         result = circular_basis(angles)
@@ -974,7 +974,7 @@ class TestCircularBasis:
 
     def test_degrees_input(self) -> None:
         """Test that degree input is handled correctly."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         angles_deg = np.array([0, 90, 180, 270])
         angles_rad = np.radians(angles_deg)
@@ -988,7 +988,7 @@ class TestCircularBasis:
 
     def test_design_matrix_shape(self) -> None:
         """Test design_matrix has shape (n_samples, 2)."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         n = 100
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
@@ -996,9 +996,9 @@ class TestCircularBasis:
 
         assert result.design_matrix.shape == (n, 2)
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import circular_basis
+    def test_exported_from_stats(self) -> None:
+        """Test that function is exported from neurospatial.stats."""
+        from neurospatial.stats import circular_basis
 
         assert callable(circular_basis)
 
@@ -1008,13 +1008,13 @@ class TestCircularBasisMetrics:
 
     def test_function_exists(self) -> None:
         """Test that circular_basis_metrics can be imported."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         assert callable(circular_basis_metrics)
 
     def test_returns_tuple_of_three(self) -> None:
         """Test that circular_basis_metrics returns (amplitude, phase, pvalue)."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         # GLM coefficients (beta_sin, beta_cos)
         beta_sin = 0.5
@@ -1030,7 +1030,7 @@ class TestCircularBasisMetrics:
 
     def test_amplitude_correct(self) -> None:
         """Test that amplitude is sqrt(beta_sin^2 + beta_cos^2)."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         beta_sin = 3.0
         beta_cos = 4.0
@@ -1041,7 +1041,7 @@ class TestCircularBasisMetrics:
 
     def test_phase_correct(self) -> None:
         """Test that phase is atan2(beta_sin, beta_cos)."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         # Pure sin component (phase = pi/2)
         _amplitude, phase, _ = circular_basis_metrics(1.0, 0.0)
@@ -1057,7 +1057,7 @@ class TestCircularBasisMetrics:
 
     def test_phase_in_valid_range(self) -> None:
         """Test that phase is in [-pi, pi]."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         for _ in range(20):
             beta_sin = np.random.default_rng(42).uniform(-10, 10)
@@ -1067,14 +1067,14 @@ class TestCircularBasisMetrics:
 
     def test_pvalue_without_cov(self) -> None:
         """Test that pvalue is None when covariance matrix not provided."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         _, _, pvalue = circular_basis_metrics(0.5, 0.5)
         assert pvalue is None
 
     def test_pvalue_with_cov(self) -> None:
         """Test that pvalue is computed when covariance matrix provided."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         beta_sin = 0.5
         beta_cos = 0.5
@@ -1087,7 +1087,7 @@ class TestCircularBasisMetrics:
 
     def test_significant_modulation_low_pvalue(self) -> None:
         """Test that strong modulation with small variance gives low p-value."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         # Strong coefficients with small variance -> significant
         beta_sin = 2.0
@@ -1100,7 +1100,7 @@ class TestCircularBasisMetrics:
 
     def test_weak_modulation_high_pvalue(self) -> None:
         """Test that weak modulation with large variance gives high p-value."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         # Weak coefficients with large variance -> not significant
         beta_sin = 0.1
@@ -1111,9 +1111,9 @@ class TestCircularBasisMetrics:
         assert pvalue is not None
         assert pvalue > 0.1  # Not significant
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import circular_basis_metrics
+    def test_exported_from_stats(self) -> None:
+        """Test that function is exported from neurospatial.stats."""
+        from neurospatial.stats import circular_basis_metrics
 
         assert callable(circular_basis_metrics)
 
@@ -1123,13 +1123,13 @@ class TestIsModulated:
 
     def test_function_exists(self) -> None:
         """Test that is_modulated can be imported."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         assert callable(is_modulated)
 
     def test_returns_bool(self) -> None:
         """Test that is_modulated returns a boolean."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Strong modulation with low variance
         beta_sin = 0.5
@@ -1141,7 +1141,7 @@ class TestIsModulated:
 
     def test_significant_strong_modulation_returns_true(self) -> None:
         """Test that significant strong modulation returns True."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Strong modulation (amplitude = sqrt(2^2 + 2^2) = 2.83) with low variance
         beta_sin = 2.0
@@ -1153,7 +1153,7 @@ class TestIsModulated:
 
     def test_not_significant_returns_false(self) -> None:
         """Test that non-significant modulation returns False."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Weak modulation with large variance -> p > 0.05
         beta_sin = 0.1
@@ -1165,7 +1165,7 @@ class TestIsModulated:
 
     def test_weak_modulation_below_threshold_returns_false(self) -> None:
         """Test that magnitude below threshold returns False even if significant."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Small but statistically significant (low variance)
         # amplitude = sqrt(0.1^2 + 0.1^2) = 0.141 < 0.2 (default min_magnitude)
@@ -1178,7 +1178,7 @@ class TestIsModulated:
 
     def test_custom_alpha(self) -> None:
         """Test that custom alpha threshold works."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Moderate modulation with moderate variance
         # This might be significant at alpha=0.1 but not at alpha=0.01
@@ -1197,7 +1197,7 @@ class TestIsModulated:
 
     def test_custom_min_magnitude(self) -> None:
         """Test that custom min_magnitude threshold works."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Amplitude = sqrt(0.3^2 + 0.3^2) = 0.424
         beta_sin = 0.3
@@ -1214,7 +1214,7 @@ class TestIsModulated:
 
     def test_zero_coefficients_returns_false(self) -> None:
         """Test that zero coefficients return False (no modulation)."""
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # No modulation: amplitude = 0
         beta_sin = 0.0
@@ -1228,7 +1228,7 @@ class TestIsModulated:
         """Test that singular covariance matrix returns False."""
         import warnings
 
-        from neurospatial.metrics.circular_basis import is_modulated
+        from neurospatial.stats.circular import is_modulated
 
         # Singular covariance matrix (determinant = 0)
         beta_sin = 2.0
@@ -1242,9 +1242,9 @@ class TestIsModulated:
 
         assert result is False
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import is_modulated
+    def test_exported_from_stats(self) -> None:
+        """Test that function is exported from neurospatial.stats."""
+        from neurospatial.stats import is_modulated
 
         assert callable(is_modulated)
 
@@ -1259,7 +1259,7 @@ class TestPlotCircularBasisTuning:
 
     def test_function_exists(self) -> None:
         """Test that plot_circular_basis_tuning can be imported."""
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         assert callable(plot_circular_basis_tuning)
 
@@ -1267,7 +1267,7 @@ class TestPlotCircularBasisTuning:
         """Test that polar projection creates a figure with polar axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         # GLM coefficients for cos/sin (beta_cos=1, beta_sin=0 => peak at 0)
         beta_cos = 1.0
@@ -1283,7 +1283,7 @@ class TestPlotCircularBasisTuning:
         """Test that linear projection creates a figure with linear axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1296,7 +1296,7 @@ class TestPlotCircularBasisTuning:
 
     def test_show_data_requires_angles_rates(self) -> None:
         """Test that show_data=True requires both angles and rates."""
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1321,7 +1321,7 @@ class TestPlotCircularBasisTuning:
         """Test that show_data=False works without angles/rates."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1335,7 +1335,7 @@ class TestPlotCircularBasisTuning:
         """Test that data overlay works when angles and rates provided."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1353,7 +1353,7 @@ class TestPlotCircularBasisTuning:
         import matplotlib.pyplot as plt
         from matplotlib.axes import Axes
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1366,7 +1366,7 @@ class TestPlotCircularBasisTuning:
         """Test that function can plot on provided axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1385,7 +1385,7 @@ class TestPlotCircularBasisTuning:
         """Test that n_points controls curve smoothness."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1402,7 +1402,7 @@ class TestPlotCircularBasisTuning:
         """Test that color parameter is accepted."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1418,7 +1418,7 @@ class TestPlotCircularBasisTuning:
         """Test that intercept parameter affects the curve baseline."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1430,15 +1430,15 @@ class TestPlotCircularBasisTuning:
         assert ax is not None
         plt.close("all")
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import plot_circular_basis_tuning
+    def test_exported_from_stats(self) -> None:
+        """Test that function is exported from neurospatial.stats."""
+        from neurospatial.stats import plot_circular_basis_tuning
 
         assert callable(plot_circular_basis_tuning)
 
     def test_confidence_bands_require_cov_matrix(self) -> None:
         """Test that show_ci=True requires cov_matrix."""
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1451,7 +1451,7 @@ class TestPlotCircularBasisTuning:
         """Test that confidence bands work when cov_matrix provided."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1468,7 +1468,7 @@ class TestPlotCircularBasisTuning:
         """Test that custom CI level (e.g., 99%) works."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1485,7 +1485,7 @@ class TestPlotCircularBasisTuning:
         """Test that confidence bands work with linear projection."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1499,7 +1499,7 @@ class TestPlotCircularBasisTuning:
 
     def test_cov_matrix_wrong_shape_raises(self) -> None:
         """Test that wrong-shaped cov_matrix raises ValueError."""
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1513,7 +1513,7 @@ class TestPlotCircularBasisTuning:
         """Test that ci_color parameter is accepted."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_cos = 1.0
         beta_sin = 0.5
@@ -1533,7 +1533,7 @@ class TestPlotCircularBasisTuning:
         """Test that fitted curve matches expected exp(intercept + β·cos(θ) + β·sin(θ))."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_sin = 0.5
         beta_cos = 1.0
@@ -1563,7 +1563,7 @@ class TestPlotCircularBasisTuning:
         import matplotlib.pyplot as plt
         from scipy import stats
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_sin = 0.5
         beta_cos = 1.0
@@ -1631,7 +1631,7 @@ class TestPlotCircularBasisTuning:
         import matplotlib.pyplot as plt
         from scipy import stats
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         beta_sin = 0.0
         beta_cos = 1.0
@@ -1673,7 +1673,7 @@ class TestPlotCircularBasisTuning:
         import matplotlib.pyplot as plt
         from scipy import stats
 
-        from neurospatial.metrics.circular_basis import plot_circular_basis_tuning
+        from neurospatial.stats.circular import plot_circular_basis_tuning
 
         # Use correlated covariance matrix to test full formula
         beta_sin = 1.0
@@ -1731,7 +1731,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_with_very_small_angles(self) -> None:
         """Rayleigh test handles very small angle differences near machine epsilon."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         eps = np.finfo(float).eps
         # Angles clustered within machine epsilon
@@ -1744,7 +1744,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_with_large_angles(self) -> None:
         """Rayleigh test handles angles much larger than 2π (many rotations)."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Angles representing many full rotations
         angles = np.array([0.0, 100 * np.pi, 200 * np.pi, 300 * np.pi])
@@ -1756,7 +1756,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_with_negative_large_angles(self) -> None:
         """Rayleigh test handles large negative angles."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         angles = np.array([-1000 * np.pi, -500 * np.pi, -250 * np.pi, 0.0])
 
@@ -1766,7 +1766,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_correlation_with_extreme_positions(self) -> None:
         """Circular-linear correlation handles extreme position values."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         # Extreme position values
         max_float = np.finfo(float).max / 1e10  # Large but not overflow-prone
@@ -1780,7 +1780,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_correlation_with_tiny_positions(self) -> None:
         """Circular-linear correlation handles denormalized position values."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         # Tiny position differences near machine epsilon
         eps = np.finfo(float).eps
@@ -1797,7 +1797,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_rejects_inf_angles(self) -> None:
         """Rayleigh test should reject infinite angles."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         angles = np.array([0.0, np.inf, np.pi])
 
@@ -1806,7 +1806,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_rejects_nan_angles(self) -> None:
         """Rayleigh test should reject NaN angles."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         angles = np.array([0.0, np.nan, np.pi])
 
@@ -1815,7 +1815,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_rejects_inf_values(self) -> None:
         """Circular-linear correlation rejects or handles infinite values."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         angles = np.array([0.0, np.pi / 2, np.pi])
         positions_inf = np.array([0.0, np.inf, 1.0])
@@ -1830,7 +1830,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_rejects_nan_values(self) -> None:
         """Circular-linear correlation rejects NaN values."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         angles = np.array([0.0, np.pi / 2, np.pi])
         positions_nan = np.array([0.0, np.nan, 1.0])
@@ -1844,7 +1844,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_with_identical_angles(self) -> None:
         """Rayleigh test with all identical angles (perfect concentration)."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         angles = np.full(100, np.pi / 4)
 
@@ -1856,7 +1856,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_with_opposite_angles(self) -> None:
         """Rayleigh test with exactly opposite angles (zero concentration)."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Perfect balance - half at 0, half at π
         angles = np.array([0.0, 0.0, np.pi, np.pi])
@@ -1868,7 +1868,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_with_constant_positions(self) -> None:
         """Circular-linear correlation with constant positions (no variation)."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         angles = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
         positions = np.full(4, 5.0)  # All same position
@@ -1879,7 +1879,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_with_constant_angles(self) -> None:
         """Circular-linear correlation with constant angles (no circular variation)."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         angles = np.full(10, np.pi / 2)  # All same angle
         positions = np.linspace(0, 100, 10)
@@ -1894,7 +1894,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_near_boundary_pvalue(self) -> None:
         """Rayleigh test produces valid p-values near 0 and 1 boundaries."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         rng = np.random.default_rng(42)
 
@@ -1911,7 +1911,7 @@ class TestFuzzEdgeCases:
 
     def test_z_statistic_range(self) -> None:
         """Rayleigh z-statistic stays in valid range [0, n] for all inputs."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         rng = np.random.default_rng(42)
 
@@ -1924,7 +1924,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_basis_with_extreme_angles(self) -> None:
         """Circular basis handles extreme angle values."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         # Very large angles (many rotations)
         large_angles = np.array([0.0, 1000 * np.pi, 2000 * np.pi, 3000 * np.pi])
@@ -1941,7 +1941,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_basis_metrics_with_extreme_coefficients(self) -> None:
         """circular_basis_metrics handles extreme coefficient values."""
-        from neurospatial.metrics.circular_basis import circular_basis_metrics
+        from neurospatial.stats.circular import circular_basis_metrics
 
         # Very small coefficients
         amp_small, phase_small, _ = circular_basis_metrics(1e-15, 1e-15)
@@ -1964,7 +1964,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_minimum_sample_size(self) -> None:
         """Rayleigh test handles minimum valid sample sizes (requires >= 3)."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Two samples - should raise (requires >= 3)
         angles_2 = np.array([0.0, np.pi / 2])
@@ -1979,7 +1979,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_large_sample_size(self) -> None:
         """Rayleigh test handles large sample sizes efficiently."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         rng = np.random.default_rng(42)
 
@@ -1991,7 +1991,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_basis_minimum_samples(self) -> None:
         """Circular basis handles minimum number of samples."""
-        from neurospatial.metrics.circular_basis import circular_basis
+        from neurospatial.stats.circular import circular_basis
 
         # Single sample
         angles_1 = np.array([np.pi / 4])
@@ -2011,7 +2011,7 @@ class TestFuzzEdgeCases:
 
     def test_rayleigh_at_boundary_angles(self) -> None:
         """Rayleigh test handles angles exactly at 0 and 2π boundaries."""
-        from neurospatial.metrics.circular import rayleigh_test
+        from neurospatial.stats.circular import rayleigh_test
 
         # Mix of 0 and 2π (should be equivalent)
         angles = np.array([0.0, 2 * np.pi, 0.0, 2 * np.pi])
@@ -2021,7 +2021,7 @@ class TestFuzzEdgeCases:
 
     def test_circular_linear_at_quadrant_boundaries(self) -> None:
         """Circular-linear correlation at exact quadrant boundaries."""
-        from neurospatial.metrics.circular import circular_linear_correlation
+        from neurospatial.stats.circular import circular_linear_correlation
 
         # Exact quadrant boundaries
         angles = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
