@@ -65,6 +65,10 @@ from neurospatial.behavior.navigation import (
     traveled_path_length,
     trials_to_region_arrays,
 )
+from neurospatial.behavior.reward import (
+    goal_reward_field,
+    region_reward_field,
+)
 from neurospatial.behavior.segmentation import (
     Crossing,
     Lap,
@@ -148,6 +152,9 @@ __all__ = [  # noqa: RUF022
     "segment_by_velocity",
     "segment_trials",
     "trajectory_similarity",
+    # reward module
+    "goal_reward_field",
+    "region_reward_field",
     # trajectory module
     "compute_home_range",
     "compute_step_lengths",

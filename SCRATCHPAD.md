@@ -1,11 +1,54 @@
 # SCRATCHPAD - Package Reorganization
 
 **Started**: 2025-12-05
-**Current Status**: Milestone 5 IN PROGRESS - Tasks 5.1, 5.2, 5.3 complete
+**Current Status**: Milestone 5 COMPLETE - All tasks done
 
 ---
 
 ## Session Log
+
+### 2025-12-06 (Session 21)
+
+**Starting Point**: Milestone 5 - Move behavior/ Module (Task 5.5: Create behavior/reward.py)
+
+**Completed**: Move reward.py → behavior/reward.py
+
+**Work Done**:
+1. Created test file `tests/behavior/test_behavior_reward.py` following TDD (RED phase)
+   - 14 tests for reward functions: import tests and functionality tests
+2. Verified tests FAIL before implementation (import error expected)
+3. Moved `reward.py` → `behavior/reward.py` using `git mv` to preserve history
+4. Updated module docstring with new import paths (Imports section at top)
+5. Updated docstring examples (2 locations) from old import path to new
+6. Added `__all__` export list with 2 exports: `goal_reward_field`, `region_reward_field`
+7. Updated `behavior/__init__.py` to export 2 reward symbols
+8. Updated internal imports (2 files):
+   - `src/neurospatial/__init__.py` (updated import path)
+   - `tests/test_reward.py` (updated import path)
+9. All tests pass:
+   - `tests/behavior/test_behavior_reward.py`: 14 passed
+   - `tests/test_reward.py`: 15 passed
+   - Total behavior tests: 162 passed
+10. Ran ruff check/format and mypy - no issues
+
+**Files Modified**:
+- `src/neurospatial/behavior/reward.py` (moved from reward.py)
+- `src/neurospatial/behavior/__init__.py` (added 2 reward exports)
+- `src/neurospatial/__init__.py` (updated import path)
+- `tests/behavior/test_behavior_reward.py` (new file)
+- `tests/test_reward.py` (updated imports)
+
+**Milestone 5 Status**: COMPLETE
+All tasks (5.1-5.5) are done:
+- 5.1: behavior/trajectory.py
+- 5.2: behavior/segmentation.py
+- 5.3: behavior/navigation.py
+- 5.4: behavior/decisions.py
+- 5.5: behavior/reward.py
+
+**Next Task**: Milestone 6 - Move encoding/ Module
+
+---
 
 ### 2025-12-06 (Session 20)
 

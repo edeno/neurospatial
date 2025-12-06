@@ -3,6 +3,14 @@
 This module provides functions for creating reward fields from spatial regions
 and goal locations. These are essential primitives for reinforcement learning
 (RL) and reward shaping in spatial navigation tasks.
+
+Imports
+-------
+>>> from neurospatial.behavior.reward import goal_reward_field, region_reward_field
+
+Or via behavior package:
+
+>>> from neurospatial.behavior import goal_reward_field, region_reward_field
 """
 
 from __future__ import annotations
@@ -18,6 +26,11 @@ if TYPE_CHECKING:
 
 from neurospatial.ops.binning import regions_to_mask
 from neurospatial.ops.distance import distance_field
+
+__all__ = [
+    "goal_reward_field",
+    "region_reward_field",
+]
 
 
 def region_reward_field(
@@ -87,7 +100,7 @@ def region_reward_field(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.reward import region_reward_field
+    >>> from neurospatial.behavior.reward import region_reward_field
     >>> # Create environment
     >>> positions = np.random.randn(1000, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)
@@ -269,7 +282,7 @@ def goal_reward_field(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.reward import goal_reward_field
+    >>> from neurospatial.behavior.reward import goal_reward_field
     >>> # Create environment
     >>> positions = np.random.randn(1000, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)

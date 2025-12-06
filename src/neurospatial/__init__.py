@@ -218,6 +218,7 @@ from neurospatial.behavior.navigation import (
     time_to_goal,
     trials_to_region_arrays,
 )
+from neurospatial.behavior.reward import goal_reward_field, region_reward_field
 from neurospatial.behavior.segmentation import (
     detect_goal_directed_runs,
     detect_laps,
@@ -345,7 +346,6 @@ from neurospatial.ops.visibility import (
     visible_cues,
 )
 from neurospatial.regions import Region, Regions
-from neurospatial.reward import goal_reward_field, region_reward_field
 
 # Spatial view cell simulation model
 from neurospatial.simulation import SpatialViewCellModel
