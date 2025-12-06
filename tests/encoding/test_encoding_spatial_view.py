@@ -194,7 +194,7 @@ class TestReexportIdentity:
     def test_SpatialViewFieldResult_same_as_original(self):
         """SpatialViewFieldResult is same class as original."""
         from neurospatial.encoding.spatial_view import SpatialViewFieldResult
-        from neurospatial.spatial_view_field import (
+        from neurospatial.encoding.spatial_view import (
             SpatialViewFieldResult as Original,
         )
 
@@ -203,7 +203,7 @@ class TestReexportIdentity:
     def test_compute_spatial_view_field_same_as_original(self):
         """compute_spatial_view_field is same function as original."""
         from neurospatial.encoding.spatial_view import compute_spatial_view_field
-        from neurospatial.spatial_view_field import (
+        from neurospatial.encoding.spatial_view import (
             compute_spatial_view_field as original,
         )
 

@@ -73,13 +73,11 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
-from neurospatial.encoding.place import compute_place_field
 from neurospatial.metrics.place_fields import (
     rate_map_coherence,
     skaggs_information,
     sparsity,
 )
-from neurospatial.spatial_view_field import compute_spatial_view_field
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -311,6 +309,9 @@ def spatial_view_cell_metrics(
         )
 
     # Compute place field (binned by animal position)
+    # Import here to avoid circular import (encoding.place imports from metrics)
+    from neurospatial.encoding.place import compute_place_field
+
     place_field = compute_place_field(
         env,
         spike_times,
@@ -322,6 +323,9 @@ def spatial_view_cell_metrics(
     )
 
     # Compute view field (binned by viewed location)
+    # Import here to avoid circular import (encoding.spatial_view imports from this module)
+    from neurospatial.encoding.spatial_view import compute_spatial_view_field
+
     view_result = compute_spatial_view_field(
         env,
         spike_times,

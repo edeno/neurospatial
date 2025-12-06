@@ -15,7 +15,7 @@ class TestTraveledPathLength:
 
     def test_straight_line_euclidean(self):
         """Test that straight line path gives expected total length."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         # Create straight line trajectory from 0 to 100 in x
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
@@ -27,7 +27,7 @@ class TestTraveledPathLength:
 
     def test_single_position_returns_zero(self):
         """Test that single position returns 0 path length."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.array([[50.0, 50.0]])
 
@@ -37,7 +37,7 @@ class TestTraveledPathLength:
 
     def test_two_positions(self):
         """Test path length with exactly 2 positions."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.array([[0.0, 0.0], [30.0, 40.0]])  # 3-4-5 triangle
 
@@ -47,7 +47,7 @@ class TestTraveledPathLength:
 
     def test_geodesic_requires_env(self):
         """Test that geodesic metric raises without env."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
@@ -56,7 +56,7 @@ class TestTraveledPathLength:
 
     def test_geodesic_with_env(self):
         """Test geodesic path length with environment."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         # Create grid environment
         x = np.linspace(0, 40, 100)
@@ -81,7 +81,7 @@ class TestShortestPathLength:
 
     def test_euclidean_straight_line(self):
         """Test Euclidean shortest path is straight line distance."""
-        from neurospatial.metrics.path_efficiency import shortest_path_length
+        from neurospatial.behavior.navigation import shortest_path_length
 
         # Create simple grid environment
         positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
@@ -97,7 +97,7 @@ class TestShortestPathLength:
 
     def test_geodesic_on_grid(self):
         """Test geodesic shortest path on grid environment."""
-        from neurospatial.metrics.path_efficiency import shortest_path_length
+        from neurospatial.behavior.navigation import shortest_path_length
 
         # Create 2D grid environment
         x = np.linspace(0, 40, 100)
@@ -117,7 +117,7 @@ class TestShortestPathLength:
 
     def test_same_start_and_goal(self):
         """Test that same start and goal gives zero distance."""
-        from neurospatial.metrics.path_efficiency import shortest_path_length
+        from neurospatial.behavior.navigation import shortest_path_length
 
         positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         env = Environment.from_samples(positions, bin_size=5.0)
@@ -135,7 +135,7 @@ class TestPathEfficiency:
 
     def test_straight_path_efficiency_is_one(self):
         """Test that straight path from start to goal has efficiency 1.0."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         # Create grid environment
         x = np.linspace(0, 100, 100)
@@ -155,7 +155,7 @@ class TestPathEfficiency:
 
     def test_u_turn_path_efficiency(self):
         """Test that U-turn path has efficiency ~0.5."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         # Create grid environment
         x = np.linspace(0, 100, 100)
@@ -185,7 +185,7 @@ class TestPathEfficiency:
 
     def test_less_than_two_positions_returns_nan(self):
         """Test that < 2 positions returns NaN efficiency."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         positions = np.array([[50.0, 50.0]])
         env = Environment.from_samples(
@@ -199,7 +199,7 @@ class TestPathEfficiency:
 
     def test_zero_traveled_returns_nan(self):
         """Test that zero traveled distance returns NaN efficiency."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         # All positions identical
         positions = np.tile([50.0, 50.0], (5, 1))
@@ -218,7 +218,7 @@ class TestAngularEfficiency:
 
     def test_straight_to_goal_is_one(self):
         """Test that heading directly to goal gives efficiency ~1.0."""
-        from neurospatial.metrics.path_efficiency import angular_efficiency
+        from neurospatial.behavior.navigation import angular_efficiency
 
         # Straight line toward goal at (100, 0)
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
@@ -231,7 +231,7 @@ class TestAngularEfficiency:
 
     def test_less_than_3_positions_returns_one(self):
         """Test that < 3 positions returns 1.0 (no turns possible)."""
-        from neurospatial.metrics.path_efficiency import angular_efficiency
+        from neurospatial.behavior.navigation import angular_efficiency
 
         positions = np.array([[0.0, 0.0], [10.0, 0.0]])
         goal = np.array([50.0, 0.0])
@@ -242,7 +242,7 @@ class TestAngularEfficiency:
 
     def test_identical_positions_returns_nan(self):
         """Test that all identical positions returns NaN."""
-        from neurospatial.metrics.path_efficiency import angular_efficiency
+        from neurospatial.behavior.navigation import angular_efficiency
 
         positions = np.tile([50.0, 50.0], (10, 1))
         goal = np.array([100.0, 0.0])
@@ -253,7 +253,7 @@ class TestAngularEfficiency:
 
     def test_returns_value_in_zero_one(self):
         """Test that angular efficiency is in [0, 1] range."""
-        from neurospatial.metrics.path_efficiency import angular_efficiency
+        from neurospatial.behavior.navigation import angular_efficiency
 
         # Meandering trajectory
         t = np.linspace(0, 4 * np.pi, 100)
@@ -272,7 +272,7 @@ class TestTimeEfficiency:
 
     def test_with_reference_speed(self):
         """Test time efficiency computation with reference speed."""
-        from neurospatial.metrics.path_efficiency import time_efficiency
+        from neurospatial.behavior.navigation import time_efficiency
 
         # Trajectory: 100 units in 10 seconds = 10 units/s actual speed
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
@@ -293,7 +293,7 @@ class TestSubgoalEfficiency:
 
     def test_two_segment_path(self):
         """Test efficiency with two segments via a subgoal."""
-        from neurospatial.metrics.path_efficiency import subgoal_efficiency
+        from neurospatial.behavior.navigation import subgoal_efficiency
 
         # Create grid environment
         x = np.linspace(0, 100, 100)
@@ -318,7 +318,7 @@ class TestPathEfficiencyResult:
 
     def test_is_efficient_method(self):
         """Test is_efficient() helper method."""
-        from neurospatial.metrics.path_efficiency import PathEfficiencyResult
+        from neurospatial.behavior.navigation import PathEfficiencyResult
 
         result = PathEfficiencyResult(
             traveled_length=100.0,
@@ -336,7 +336,7 @@ class TestPathEfficiencyResult:
 
     def test_is_efficient_with_nan(self):
         """Test that is_efficient() returns False for NaN efficiency."""
-        from neurospatial.metrics.path_efficiency import PathEfficiencyResult
+        from neurospatial.behavior.navigation import PathEfficiencyResult
 
         result = PathEfficiencyResult(
             traveled_length=0.0,
@@ -353,7 +353,7 @@ class TestPathEfficiencyResult:
 
     def test_summary_method(self):
         """Test summary() returns formatted string."""
-        from neurospatial.metrics.path_efficiency import PathEfficiencyResult
+        from neurospatial.behavior.navigation import PathEfficiencyResult
 
         result = PathEfficiencyResult(
             traveled_length=45.2,
@@ -378,7 +378,7 @@ class TestComputePathEfficiency:
 
     def test_returns_result_dataclass(self):
         """Test that compute_path_efficiency returns PathEfficiencyResult."""
-        from neurospatial.metrics.path_efficiency import (
+        from neurospatial.behavior.navigation import (
             PathEfficiencyResult,
             compute_path_efficiency,
         )
@@ -412,7 +412,7 @@ class TestErrorHandling:
 
     def test_mismatched_array_lengths_error(self):
         """Test helpful error for mismatched positions/times."""
-        from neurospatial.metrics.path_efficiency import compute_path_efficiency
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         env = Environment.from_samples(
             np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
@@ -428,7 +428,7 @@ class TestErrorHandling:
 
     def test_empty_trajectory_error(self):
         """Test helpful error for empty trajectory."""
-        from neurospatial.metrics.path_efficiency import traveled_path_length
+        from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.array([]).reshape(0, 2)
 

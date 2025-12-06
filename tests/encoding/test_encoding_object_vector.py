@@ -168,7 +168,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             ObjectVectorFieldResult as EncodingResult,
         )
-        from neurospatial.object_vector_field import (
+        from neurospatial.encoding.object_vector import (
             ObjectVectorFieldResult as OriginalResult,
         )
 
@@ -180,7 +180,7 @@ class TestObjectVectorReExports:
         from neurospatial.encoding.object_vector import (
             compute_object_vector_field as encoding_func,
         )
-        from neurospatial.object_vector_field import (
+        from neurospatial.encoding.object_vector import (
             compute_object_vector_field as original_func,
         )
 

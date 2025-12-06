@@ -16,46 +16,46 @@ import pytest
 
 
 class TestModuleSetup:
-    """Tests for object_vector_field module setup."""
+    """Tests for encoding.object_vector module setup."""
 
     def test_module_imports(self) -> None:
-        """Test that object_vector_field module can be imported."""
-        from neurospatial import object_vector_field
+        """Test that encoding.object_vector module can be imported."""
+        from neurospatial.encoding import object_vector
 
-        assert object_vector_field is not None
+        assert object_vector is not None
 
     def test_module_has_docstring(self) -> None:
         """Test that module has a docstring."""
-        from neurospatial import object_vector_field
+        from neurospatial.encoding import object_vector
 
-        assert object_vector_field.__doc__ is not None
-        assert len(object_vector_field.__doc__) > 100  # Should be substantial
+        assert object_vector.__doc__ is not None
+        assert len(object_vector.__doc__) > 100  # Should be substantial
 
     def test_module_docstring_mentions_object_vector(self) -> None:
         """Test that module docstring mentions object-vector field."""
-        from neurospatial import object_vector_field
+        from neurospatial.encoding import object_vector
 
-        docstring = object_vector_field.__doc__
+        docstring = object_vector.__doc__
         assert docstring is not None
         assert "object" in docstring.lower() or "vector" in docstring.lower()
 
     def test_module_has_all_attribute(self) -> None:
         """Test that module has __all__ defined."""
-        from neurospatial import object_vector_field
+        from neurospatial.encoding import object_vector
 
-        assert hasattr(object_vector_field, "__all__")
-        assert isinstance(object_vector_field.__all__, list)
+        assert hasattr(object_vector, "__all__")
+        assert isinstance(object_vector.__all__, list)
 
     def test_module_all_contains_expected_exports(self) -> None:
         """Test that __all__ contains expected exports."""
-        from neurospatial import object_vector_field
+        from neurospatial.encoding import object_vector
 
         expected = [
             "ObjectVectorFieldResult",
             "compute_object_vector_field",
         ]
         for export in expected:
-            assert export in object_vector_field.__all__
+            assert export in object_vector.__all__
 
 
 class TestObjectVectorFieldResultDataclass:

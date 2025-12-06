@@ -15,7 +15,7 @@ class TestGoalVector:
 
     def test_basic_goal_vector(self):
         """Test computing vector from positions to goal."""
-        from neurospatial.metrics.goal_directed import goal_vector
+        from neurospatial.behavior.navigation import goal_vector
 
         positions = np.array([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]])
         goal = np.array([50.0, 0.0])
@@ -30,7 +30,7 @@ class TestGoalVector:
 
     def test_2d_goal_vector(self):
         """Test goal vector in 2D."""
-        from neurospatial.metrics.goal_directed import goal_vector
+        from neurospatial.behavior.navigation import goal_vector
 
         positions = np.array([[0.0, 0.0], [30.0, 40.0]])
         goal = np.array([100.0, 100.0])
@@ -42,7 +42,7 @@ class TestGoalVector:
 
     def test_dimension_mismatch_error(self):
         """Test error when goal dimensions don't match positions."""
-        from neurospatial.metrics.goal_directed import goal_vector
+        from neurospatial.behavior.navigation import goal_vector
 
         positions = np.array([[0.0, 0.0], [10.0, 0.0]])  # 2D
         goal = np.array([50.0, 0.0, 0.0])  # 3D
@@ -56,7 +56,7 @@ class TestGoalDirection:
 
     def test_basic_goal_direction(self):
         """Test computing direction (angle) to goal."""
-        from neurospatial.metrics.goal_directed import goal_direction
+        from neurospatial.behavior.navigation import goal_direction
 
         positions = np.array([[0.0, 0.0]])
         goal = np.array([1.0, 0.0])  # East
@@ -68,7 +68,7 @@ class TestGoalDirection:
 
     def test_goal_direction_various_angles(self):
         """Test goal direction for various angles."""
-        from neurospatial.metrics.goal_directed import goal_direction
+        from neurospatial.behavior.navigation import goal_direction
 
         # Position at origin, goals in different directions
         positions = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
@@ -94,7 +94,7 @@ class TestInstantaneousGoalAlignment:
 
     def test_direct_approach_to_goal(self):
         """Test alignment is ~1.0 when moving directly toward goal."""
-        from neurospatial.metrics.goal_directed import instantaneous_goal_alignment
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
 
         # Moving directly East toward goal at (100, 0)
         n_samples = 21
@@ -113,7 +113,7 @@ class TestInstantaneousGoalAlignment:
 
     def test_moving_away_from_goal(self):
         """Test alignment is negative when moving away from goal."""
-        from neurospatial.metrics.goal_directed import instantaneous_goal_alignment
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
 
         # Moving West, away from goal at (100, 0)
         n_samples = 21
@@ -141,7 +141,7 @@ class TestInstantaneousGoalAlignment:
         changes. For truly orthogonal movement, we need circular motion around
         the goal where velocity is always tangent to the circle.
         """
-        from neurospatial.metrics.goal_directed import instantaneous_goal_alignment
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
 
         # Circular path around goal at (50, 50), always tangent to goal direction
         n_samples = 100
@@ -164,7 +164,7 @@ class TestInstantaneousGoalAlignment:
 
     def test_stationary_periods_are_nan(self):
         """Test that stationary periods (below min_speed) are NaN."""
-        from neurospatial.metrics.goal_directed import instantaneous_goal_alignment
+        from neurospatial.behavior.navigation import instantaneous_goal_alignment
 
         # Position that doesn't change
         n_samples = 10
@@ -183,7 +183,7 @@ class TestGoalBias:
 
     def test_strong_goal_directed(self):
         """Test goal_bias > 0.8 for direct approach."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         # Moving directly toward goal
         n_samples = 21
@@ -199,7 +199,7 @@ class TestGoalBias:
 
     def test_negative_goal_bias_moving_away(self):
         """Test goal_bias < -0.5 when moving away from goal."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         # Moving away from goal
         n_samples = 21
@@ -218,7 +218,7 @@ class TestGoalBias:
 
     def test_circular_path_around_goal(self):
         """Test goal_bias ~0 for circular path around goal."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         # Circular path around goal at (50, 50)
         n_samples = 100
@@ -238,7 +238,7 @@ class TestGoalBias:
 
     def test_stationary_returns_nan(self):
         """Test that all-stationary trajectory returns NaN."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         n_samples = 10
         positions = np.tile([50.0, 50.0], (n_samples, 1))
@@ -255,7 +255,7 @@ class TestApproachRate:
 
     def test_approaching_goal_negative_rate(self):
         """Test that approaching goal gives negative approach rate."""
-        from neurospatial.metrics.goal_directed import approach_rate
+        from neurospatial.behavior.navigation import approach_rate
 
         # Moving toward goal
         n_samples = 11
@@ -272,7 +272,7 @@ class TestApproachRate:
 
     def test_retreating_from_goal_positive_rate(self):
         """Test that moving away gives positive approach rate."""
-        from neurospatial.metrics.goal_directed import approach_rate
+        from neurospatial.behavior.navigation import approach_rate
 
         # Moving away from goal
         n_samples = 11
@@ -292,7 +292,7 @@ class TestApproachRate:
 
     def test_approach_rate_magnitude(self):
         """Test that approach rate magnitude matches speed for direct approach."""
-        from neurospatial.metrics.goal_directed import approach_rate
+        from neurospatial.behavior.navigation import approach_rate
 
         # Moving 10 units/s directly toward goal
         n_samples = 11
@@ -314,7 +314,7 @@ class TestGoalDirectedMetrics:
 
     def test_is_goal_directed_method(self):
         """Test is_goal_directed() helper method."""
-        from neurospatial.metrics.goal_directed import GoalDirectedMetrics
+        from neurospatial.behavior.navigation import GoalDirectedMetrics
 
         result = GoalDirectedMetrics(
             goal_bias=0.6,
@@ -332,7 +332,7 @@ class TestGoalDirectedMetrics:
 
     def test_summary_method(self):
         """Test summary() returns formatted string."""
-        from neurospatial.metrics.goal_directed import GoalDirectedMetrics
+        from neurospatial.behavior.navigation import GoalDirectedMetrics
 
         result = GoalDirectedMetrics(
             goal_bias=0.65,
@@ -357,7 +357,7 @@ class TestComputeGoalDirectedMetrics:
 
     def test_returns_dataclass(self):
         """Test that compute_goal_directed_metrics returns GoalDirectedMetrics."""
-        from neurospatial.metrics.goal_directed import (
+        from neurospatial.behavior.navigation import (
             GoalDirectedMetrics,
             compute_goal_directed_metrics,
         )
@@ -389,7 +389,7 @@ class TestComputeGoalDirectedMetrics:
 
     def test_direct_approach_metrics(self):
         """Test metrics for direct approach to goal."""
-        from neurospatial.metrics.goal_directed import compute_goal_directed_metrics
+        from neurospatial.behavior.navigation import compute_goal_directed_metrics
 
         # Create environment
         x = np.linspace(0, 100, 50)
@@ -421,7 +421,7 @@ class TestErrorHandling:
 
     def test_mismatched_array_lengths(self):
         """Test helpful error for mismatched positions/times."""
-        from neurospatial.metrics.goal_directed import compute_goal_directed_metrics
+        from neurospatial.behavior.navigation import compute_goal_directed_metrics
 
         env = Environment.from_samples(
             np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
@@ -437,7 +437,7 @@ class TestErrorHandling:
 
     def test_single_position(self):
         """Test edge case with single position."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         positions = np.array([[50.0, 50.0]])
         times = np.array([0.0])

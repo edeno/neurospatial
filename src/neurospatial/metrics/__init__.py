@@ -29,6 +29,32 @@ vte
 
 from __future__ import annotations
 
+# Decision analysis from behavior.decisions
+# VTE metrics from behavior.decisions
+from neurospatial.behavior.decisions import (
+    DecisionAnalysisResult,
+    DecisionBoundaryMetrics,
+    PreDecisionMetrics,
+    VTESessionResult,
+    VTETrialResult,
+    classify_vte,
+    compute_decision_analysis,
+    compute_pre_decision_metrics,
+    compute_vte_index,
+    compute_vte_session,
+    compute_vte_trial,
+    decision_region_entry_time,
+    detect_boundary_crossings,
+    distance_to_decision_boundary,
+    extract_pre_decision_window,
+    geodesic_voronoi_labels,
+    head_sweep_from_positions,
+    head_sweep_magnitude,
+    integrated_absolute_rotation,
+    normalize_vte_scores,
+    pre_decision_heading_stats,
+    pre_decision_speed_stats,
+)
 from neurospatial.behavior.navigation import (
     GoalDirectedMetrics,
     PathEfficiencyResult,
@@ -59,22 +85,6 @@ from neurospatial.behavior.trajectory import (
 
 # Boundary cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.boundary_cells import border_score, compute_region_coverage
-
-# Decision analysis - direct from source (to avoid circular imports)
-from neurospatial.metrics.decision_analysis import (
-    DecisionAnalysisResult,
-    DecisionBoundaryMetrics,
-    PreDecisionMetrics,
-    compute_decision_analysis,
-    compute_pre_decision_metrics,
-    decision_region_entry_time,
-    detect_boundary_crossings,
-    distance_to_decision_boundary,
-    extract_pre_decision_window,
-    geodesic_voronoi_labels,
-    pre_decision_heading_stats,
-    pre_decision_speed_stats,
-)
 
 # Grid cell metrics - direct from source (to avoid circular imports)
 from neurospatial.metrics.grid_cells import (
@@ -148,20 +158,6 @@ from neurospatial.metrics.spatial_view_cells import (
     SpatialViewMetrics,
     is_spatial_view_cell,
     spatial_view_cell_metrics,
-)
-
-# VTE metrics - direct from source (to avoid circular imports)
-from neurospatial.metrics.vte import (
-    VTESessionResult,
-    VTETrialResult,
-    classify_vte,
-    compute_vte_index,
-    compute_vte_session,
-    compute_vte_trial,
-    head_sweep_from_positions,
-    head_sweep_magnitude,
-    integrated_absolute_rotation,
-    normalize_vte_scores,
 )
 
 # NOTE: Circular statistics have been moved to neurospatial.stats.circular

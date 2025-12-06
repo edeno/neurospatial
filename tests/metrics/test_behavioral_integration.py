@@ -21,8 +21,10 @@ class TestVTEDecisionAnalysisIntegration:
 
     def test_vte_uses_extract_pre_decision_window_correctly(self) -> None:
         """Verify VTE head_sweep_from_positions matches manual extraction."""
-        from neurospatial.metrics.decision_analysis import extract_pre_decision_window
-        from neurospatial.metrics.vte import head_sweep_from_positions
+        from neurospatial.behavior.decisions import (
+            extract_pre_decision_window,
+            head_sweep_from_positions,
+        )
 
         # Create trajectory with known head sweeps
         times = np.linspace(0, 10, 101)
@@ -56,9 +58,11 @@ class TestVTEDecisionAnalysisIntegration:
 
     def test_vte_session_uses_decision_region_entry_correctly(self) -> None:
         """Verify compute_vte_session finds correct entry times."""
+        from neurospatial.behavior.decisions import (
+            compute_vte_session,
+            decision_region_entry_time,
+        )
         from neurospatial.behavior.segmentation import Trial
-        from neurospatial.metrics.decision_analysis import decision_region_entry_time
-        from neurospatial.metrics.vte import compute_vte_session
 
         # Create dense environment covering full trajectory range
         np.random.seed(42)
@@ -131,8 +135,8 @@ class TestVTERoundTrip:
 
     def test_high_head_sweep_low_speed_classified_as_vte(self) -> None:
         """Simulated VTE behavior should be classified as VTE."""
+        from neurospatial.behavior.decisions import compute_vte_session
         from neurospatial.behavior.segmentation import Trial
-        from neurospatial.metrics.vte import compute_vte_session
 
         # Create environment
         np.random.seed(42)
@@ -207,7 +211,7 @@ class TestVTERoundTrip:
 
     def test_single_trial_returns_none_for_zscores(self) -> None:
         """Single trial should have None for z-scores."""
-        from neurospatial.metrics.vte import compute_vte_trial
+        from neurospatial.behavior.decisions import compute_vte_trial
 
         # Create simple trajectory
         times = np.linspace(0, 2, 101)
@@ -243,7 +247,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_straight_path_efficiency_equals_one(self) -> None:
         """Straight path should have efficiency = 1.0."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         # Create environment
         np.random.seed(42)
@@ -309,7 +313,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_efficiency_and_progress_both_handle_detours(self) -> None:
         """Both metrics should handle detours reasonably."""
-        from neurospatial.metrics.path_efficiency import path_efficiency
+        from neurospatial.behavior.navigation import path_efficiency
 
         # Create dense environment to ensure trajectory bins exist
         np.random.seed(42)
@@ -351,7 +355,7 @@ class TestGoalDirectedConsistency:
 
     def test_goal_bias_matches_approach_rate_sign(self) -> None:
         """Positive goal_bias should correspond to negative approach_rate."""
-        from neurospatial.metrics.goal_directed import (
+        from neurospatial.behavior.navigation import (
             approach_rate,
             goal_bias,
         )
@@ -375,7 +379,7 @@ class TestGoalDirectedConsistency:
 
     def test_goal_bias_orthogonal_near_zero(self) -> None:
         """Circular path around goal should have near-zero bias."""
-        from neurospatial.metrics.goal_directed import goal_bias
+        from neurospatial.behavior.navigation import goal_bias
 
         # Circular path around goal
         n_points = 200
@@ -407,7 +411,7 @@ class TestDecisionAnalysisConsistency:
 
     def test_voronoi_labels_cover_all_bins(self) -> None:
         """All reachable bins should have a valid Voronoi label."""
-        from neurospatial.metrics.decision_analysis import geodesic_voronoi_labels
+        from neurospatial.behavior.decisions import geodesic_voronoi_labels
 
         # Create connected environment
         np.random.seed(42)
@@ -429,7 +433,7 @@ class TestDecisionAnalysisConsistency:
 
     def test_pre_decision_metrics_capture_hesitation(self) -> None:
         """High hesitation should have high heading variance."""
-        from neurospatial.metrics.decision_analysis import compute_pre_decision_metrics
+        from neurospatial.behavior.decisions import compute_pre_decision_metrics
 
         # Hesitating trajectory: oscillating (high heading variance)
         times = np.linspace(0, 2, 101)

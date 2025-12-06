@@ -17,46 +17,46 @@ import pytest
 
 
 class TestModuleSetup:
-    """Tests for spatial_view_field module setup."""
+    """Tests for encoding.spatial_view module setup."""
 
     def test_module_imports(self) -> None:
-        """Test that spatial_view_field module can be imported."""
-        from neurospatial import spatial_view_field
+        """Test that encoding.spatial_view module can be imported."""
+        from neurospatial.encoding import spatial_view
 
-        assert spatial_view_field is not None
+        assert spatial_view is not None
 
     def test_module_has_docstring(self) -> None:
         """Test that module has a docstring."""
-        from neurospatial import spatial_view_field
+        from neurospatial.encoding import spatial_view
 
-        assert spatial_view_field.__doc__ is not None
-        assert len(spatial_view_field.__doc__) > 100  # Should be substantial
+        assert spatial_view.__doc__ is not None
+        assert len(spatial_view.__doc__) > 100  # Should be substantial
 
     def test_module_docstring_mentions_spatial_view(self) -> None:
         """Test that module docstring mentions spatial view field."""
-        from neurospatial import spatial_view_field
+        from neurospatial.encoding import spatial_view
 
-        docstring = spatial_view_field.__doc__
+        docstring = spatial_view.__doc__
         assert docstring is not None
         assert "spatial" in docstring.lower() or "view" in docstring.lower()
 
     def test_module_has_all_attribute(self) -> None:
         """Test that module has __all__ defined."""
-        from neurospatial import spatial_view_field
+        from neurospatial.encoding import spatial_view
 
-        assert hasattr(spatial_view_field, "__all__")
-        assert isinstance(spatial_view_field.__all__, list)
+        assert hasattr(spatial_view, "__all__")
+        assert isinstance(spatial_view.__all__, list)
 
     def test_module_all_contains_expected_exports(self) -> None:
         """Test that __all__ contains expected exports."""
-        from neurospatial import spatial_view_field
+        from neurospatial.encoding import spatial_view
 
         expected = [
             "SpatialViewFieldResult",
             "compute_spatial_view_field",
         ]
         for export in expected:
-            assert export in spatial_view_field.__all__
+            assert export in spatial_view.__all__
 
 
 class TestSpatialViewFieldResultDataclass:
