@@ -319,7 +319,7 @@ print(f"  (n_time_bins, n_bins) = ({result.n_time_bins}, {env.n_bins})")
 # Access result properties
 print("DecodingResult Properties:")
 print(f"  posterior shape: {result.posterior.shape}")
-print(f"  map_estimate shape: {result.map_estimate.shape} (bin indices)")
+print(f"  posterior_mode shape: {result.posterior_mode.shape} (bin indices)")
 print(f"  map_position shape: {result.map_position.shape} (coordinates)")
 print(f"  mean_position shape: {result.mean_position.shape} (coordinates)")
 print(f"  uncertainty shape: {result.uncertainty.shape} (entropy in bits)")

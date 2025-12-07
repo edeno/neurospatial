@@ -29,7 +29,10 @@ Common Use Cases
 
 Use for detailed analysis and publication::
 
-    from neurospatial.metrics import phase_precession, plot_phase_precession
+    from neurospatial.encoding.phase_precession import (
+        phase_precession,
+        plot_phase_precession,
+    )
 
     result = phase_precession(positions, phases)
     print(result)  # Automatic interpretation with slope, correlation, fit
@@ -234,7 +237,7 @@ def phase_precession(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import phase_precession
+    >>> from neurospatial.encoding.phase_precession import phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
     >>> result = phase_precession(positions, phases)
@@ -362,7 +365,7 @@ def has_phase_precession(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import has_phase_precession
+    >>> from neurospatial.encoding.phase_precession import has_phase_precession
     >>> # Random data - no precession expected
     >>> positions = np.random.default_rng(42).uniform(0, 100, 50)
     >>> phases = np.random.default_rng(42).uniform(0, 2 * np.pi, 50)
@@ -448,7 +451,10 @@ def plot_phase_precession(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import phase_precession, plot_phase_precession
+    >>> from neurospatial.encoding.phase_precession import (
+    ...     phase_precession,
+    ...     plot_phase_precession,
+    ... )
     >>> positions = np.linspace(0, 50, 100)
     >>> phases = (2 * np.pi - positions * 0.1) % (2 * np.pi)
     >>> result = phase_precession(positions, phases)

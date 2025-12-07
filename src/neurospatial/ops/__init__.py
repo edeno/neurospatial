@@ -82,7 +82,7 @@ from neurospatial.ops.egocentric import (
 
 # Graph operations
 from neurospatial.ops.graph import (
-    convolve,
+    graph_convolve,
     neighbor_reduce,
 )
 
@@ -177,7 +177,7 @@ __all__ = [
     "heading_from_body_orientation",
     "heading_from_velocity",
     # Graph
-    "convolve",
+    "graph_convolve",
     "neighbor_reduce",
     # Normalize
     "clamp",

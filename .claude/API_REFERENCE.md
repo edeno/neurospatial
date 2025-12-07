@@ -52,7 +52,7 @@ from neurospatial.ops import (
     combine_fields,                 # Weighted combination
 
     # Graph operations
-    convolve,                       # Graph convolution
+    graph_convolve,                 # Graph convolution
     neighbor_reduce,                # Neighborhood reduce
 
     # Calculus
@@ -73,7 +73,7 @@ from neurospatial.encoding.place import (
     # Field computation
     compute_place_field,                    # Place field estimation
     compute_directional_place_fields,       # Directional tuning
-    spikes_to_field,                        # Convert spikes to firing rate
+    spikes_to_rate_map,                     # Convert spikes to firing rate
     DirectionalPlaceFields,                 # Container for directional fields
 
     # Place field metrics
@@ -81,7 +81,7 @@ from neurospatial.encoding.place import (
     skaggs_information,                     # Spatial info (bits/spike)
     sparsity,                               # Spatial sparsity
     selectivity,                            # Place field selectivity
-    field_centroid,                         # Field centroid
+    rate_map_centroid,                      # Field centroid
     field_size,                             # Field size
     field_stability,                        # Temporal stability
     field_shape_metrics,                    # Shape metrics
@@ -218,10 +218,10 @@ from neurospatial.decoding import (
     normalize_to_posterior,
 
     # Point estimates
-    map_estimate,
+    posterior_mode,
     map_position,
     mean_position,
-    entropy,
+    posterior_entropy,
     credible_region,
 
     # Trajectory analysis
@@ -500,7 +500,13 @@ from neurospatial.behavior.decisions import (
     distance_to_decision_boundary,  # Distance to Voronoi edge
     detect_boundary_crossings,      # Find boundary crossing events
     compute_decision_analysis,      # Full decision analysis
+)
+```
 
+### VTE (Vicarious Trial and Error)
+
+```python
+from neurospatial.behavior.vte import (
     # VTE dataclasses
     VTETrialResult,                 # Single trial VTE metrics
     VTESessionResult,               # Session-level VTE analysis

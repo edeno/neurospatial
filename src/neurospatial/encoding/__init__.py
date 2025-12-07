@@ -72,7 +72,6 @@ from neurospatial.encoding.place import (
     compute_field_emd,
     compute_place_field,
     detect_place_fields,
-    field_centroid,
     field_shape_metrics,
     field_shift_distance,
     field_size,
@@ -80,12 +79,13 @@ from neurospatial.encoding.place import (
     in_out_field_ratio,
     information_per_second,
     mutual_information,
+    rate_map_centroid,
     rate_map_coherence,
     selectivity,
     skaggs_information,
     sparsity,
     spatial_coverage_single_cell,
-    spikes_to_field,
+    spikes_to_rate_map,
 )
 
 # Population-level metrics
@@ -162,7 +162,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_field_emd",
     "compute_place_field",
     "detect_place_fields",
-    "field_centroid",
+    "rate_map_centroid",
     "field_shape_metrics",
     "field_shift_distance",
     "field_size",
@@ -175,7 +175,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "skaggs_information",
     "sparsity",
     "spatial_coverage_single_cell",
-    "spikes_to_field",
+    "spikes_to_rate_map",
     # Population-level metrics
     "PopulationCoverageResult",
     "population_coverage",

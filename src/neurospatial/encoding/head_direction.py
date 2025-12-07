@@ -287,7 +287,7 @@ def head_direction_tuning_curve(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import head_direction_tuning_curve
+    >>> from neurospatial.encoding.head_direction import head_direction_tuning_curve
     >>> # Create sample data: 10 seconds at 30 Hz
     >>> position_times = np.linspace(0, 10, 300)
     >>> head_directions = np.random.default_rng(42).uniform(0, 360, 300)
@@ -470,7 +470,7 @@ def head_direction_metrics(
 
     Examples
     --------
-    >>> from neurospatial.metrics import (
+    >>> from neurospatial.encoding.head_direction import (
     ...     head_direction_tuning_curve,
     ...     head_direction_metrics,
     ... )
@@ -576,7 +576,7 @@ def is_head_direction_cell(
 
     Examples
     --------
-    >>> from neurospatial.metrics import is_head_direction_cell
+    >>> from neurospatial.encoding.head_direction import is_head_direction_cell
     >>> # Screen many neurons
     >>> for i, (hd, spikes, times) in enumerate(all_neurons):  # doctest: +SKIP
     ...     if is_head_direction_cell(hd, spikes, times):
@@ -667,7 +667,7 @@ def plot_head_direction_tuning(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import (
+    >>> from neurospatial.encoding.head_direction import (
     ...     head_direction_tuning_curve,
     ...     head_direction_metrics,
     ...     plot_head_direction_tuning,

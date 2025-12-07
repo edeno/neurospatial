@@ -3,11 +3,11 @@
 This module provides tools for analyzing place cell representations,
 including place field computation, detection, and spatial metrics.
 
-Spike → Field Conversion
-------------------------
+Spike → Rate Map Conversion
+---------------------------
 compute_place_field : Compute place field from spike train.
 compute_directional_place_fields : Compute direction-conditioned place fields.
-spikes_to_field : Convert spike train to spatial firing rate field.
+spikes_to_rate_map : Convert spike train to spatial firing rate map.
 DirectionalPlaceFields : Container for directional place field results.
 
 Field Detection
@@ -26,9 +26,9 @@ sparsity : Compute sparsity of spatial firing.
 selectivity : Compute spatial selectivity (peak/mean rate).
 spatial_coverage_single_cell : Compute fraction of environment covered by cell.
 
-Field Geometry Metrics
-----------------------
-field_centroid : Compute firing-rate-weighted centroid.
+Rate Map Geometry Metrics
+-------------------------
+rate_map_centroid : Compute firing-rate-weighted centroid.
 field_size : Compute field size (area) in physical units.
 field_shape_metrics : Compute geometric shape metrics for a place field.
 
@@ -372,7 +372,7 @@ def compute_directional_place_fields(
     return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
 
 
-def spikes_to_field(
+def spikes_to_rate_map(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -452,7 +452,7 @@ def spikes_to_field(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.place import spikes_to_field
+    >>> from neurospatial.encoding.place import spikes_to_rate_map
     >>>
     >>> # Create trajectory
     >>> positions = np.column_stack(
@@ -470,7 +470,7 @@ def spikes_to_field(
     >>> spike_times = np.linspace(0, 10, 50)
     >>>
     >>> # Compute firing rate field
-    >>> field = spikes_to_field(env, spike_times, times, positions)
+    >>> field = spikes_to_rate_map(env, spike_times, times, positions)
     >>> field.shape == (env.n_bins,)
     True
     >>> np.nanmean(field)  # Should be close to 5 Hz  # doctest: +ELLIPSIS
@@ -860,8 +860,8 @@ def _binned(
     2. Normalize: firing_rate = spike_counts / occupancy
     3. Smooth with diffusion kernel
     """
-    # Use existing spikes_to_field function
-    field = spikes_to_field(
+    # Use existing spikes_to_rate_map function
+    field = spikes_to_rate_map(
         env,
         spike_times,
         times,
@@ -1003,7 +1003,7 @@ def compute_place_field(
 
     See Also
     --------
-    spikes_to_field : Lower-level binning function (used by method="binned").
+    spikes_to_rate_map : Lower-level binning function (used by method="binned").
     Environment.compute_kernel : Compute diffusion kernel.
     Environment.smooth : Smooth spatial fields.
 
@@ -1241,7 +1241,7 @@ def detect_place_fields(
     See Also
     --------
     field_size : Compute area of place field
-    field_centroid : Compute weighted center of mass
+    rate_map_centroid : Compute weighted center of mass
     skaggs_information : Spatial information content
 
     References
@@ -1650,7 +1650,7 @@ def field_size(
     return float(total_size)
 
 
-def field_centroid(
+def rate_map_centroid(
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
     env: Environment,
@@ -1710,18 +1710,18 @@ def field_centroid(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.place import field_centroid
+    >>> from neurospatial.encoding.place import rate_map_centroid
     >>> positions = np.random.randn(1000, 2) * 10
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> firing_rate = np.random.rand(env.n_bins) * 5
     >>> field_bins = np.array([0, 1, 2, 3, 4])
-    >>> centroid = field_centroid(firing_rate, field_bins, env)
+    >>> centroid = rate_map_centroid(firing_rate, field_bins, env)
     >>> centroid.shape
     (2,)
 
     Use graph-based centroid for maze environments:
 
-    >>> centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+    >>> centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
 
     """
     import networkx as nx
@@ -2770,7 +2770,7 @@ def field_shape_metrics(
 
     See Also
     --------
-    field_centroid : Compute field center of mass
+    rate_map_centroid : Compute field center of mass
     field_size : Compute field area
 
     References
@@ -2989,7 +2989,7 @@ def field_shift_distance(
 
     See Also
     --------
-    field_centroid : Compute field center of mass
+    rate_map_centroid : Compute field center of mass
     field_stability : Correlation-based stability measure
     Environment.distance_between : Geodesic distance between bins
 
@@ -3001,8 +3001,8 @@ def field_shift_distance(
            Trends Neurosci 31(9).
     """
     # Compute centroids for both fields
-    centroid_1 = field_centroid(firing_rate_1, field_bins_1, env_1)
-    centroid_2 = field_centroid(firing_rate_2, field_bins_2, env_2)
+    centroid_1 = rate_map_centroid(firing_rate_1, field_bins_1, env_1)
+    centroid_2 = rate_map_centroid(firing_rate_2, field_bins_2, env_2)
 
     # Check for NaN centroids
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
@@ -3385,10 +3385,10 @@ def compute_field_emd(
 __all__ = [
     # Classes
     "DirectionalPlaceFields",
-    # Spike → field conversion
+    # Spike → rate map conversion
     "compute_directional_place_fields",
     "compute_place_field",
-    "spikes_to_field",
+    "spikes_to_rate_map",
     # Field detection
     "detect_place_fields",
     # Information-theoretic metrics
@@ -3399,8 +3399,8 @@ __all__ = [
     "sparsity",
     "selectivity",
     "spatial_coverage_single_cell",
-    # Field geometry metrics
-    "field_centroid",
+    # Rate map geometry metrics
+    "rate_map_centroid",
     "field_size",
     "field_shape_metrics",
     # Field comparison metrics

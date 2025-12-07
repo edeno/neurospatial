@@ -14,20 +14,20 @@ class TestMapEstimate:
 
     def test_map_estimate_shape(self, small_2d_env):
         """map_estimate should return (n_time_bins,) array of bin indices."""
-        from neurospatial.decoding.estimates import map_estimate
+        from neurospatial.decoding.estimates import posterior_mode
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = map_estimate(posterior)
+        result = posterior_mode(posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype in (np.int64, np.intp)
 
     def test_map_estimate_delta_posterior(self, small_2d_env):
         """map_estimate should return correct bin for delta posterior."""
-        from neurospatial.decoding.estimates import map_estimate
+        from neurospatial.decoding.estimates import posterior_mode
 
         n_time_bins = 5
         n_bins = small_2d_env.n_bins
@@ -37,18 +37,18 @@ class TestMapEstimate:
         for t, bin_idx in enumerate(expected_bins):
             posterior[t, bin_idx] = 1.0
 
-        result = map_estimate(posterior)
+        result = posterior_mode(posterior)
 
         np.testing.assert_array_equal(result, expected_bins)
 
     def test_map_estimate_identity_posterior(self, small_2d_env):
         """map_estimate on identity posterior should return diagonal indices."""
-        from neurospatial.decoding.estimates import map_estimate
+        from neurospatial.decoding.estimates import posterior_mode
 
         n_time_bins = min(10, small_2d_env.n_bins)
         posterior = np.eye(n_time_bins, small_2d_env.n_bins)
 
-        result = map_estimate(posterior)
+        result = posterior_mode(posterior)
 
         expected = np.arange(n_time_bins)
         np.testing.assert_array_equal(result, expected)
@@ -56,7 +56,7 @@ class TestMapEstimate:
     def test_map_estimate_consistency_with_decoding_result(self, small_2d_env):
         """map_estimate should match DecodingResult.map_estimate."""
         from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import map_estimate
+        from neurospatial.decoding.estimates import posterior_mode
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
@@ -65,7 +65,7 @@ class TestMapEstimate:
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
         # Standalone function
-        standalone_result = map_estimate(posterior)
+        standalone_result = posterior_mode(posterior)
 
         # DecodingResult property
         dr = DecodingResult(posterior=posterior, env=small_2d_env)
@@ -222,20 +222,20 @@ class TestEntropy:
 
     def test_entropy_shape(self, small_2d_env):
         """entropy should return (n_time_bins,) array."""
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = entropy(posterior)
+        result = posterior_entropy(posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype == np.float64
 
     def test_entropy_delta_is_zero(self, small_2d_env):
         """Delta (one-hot) posterior should have zero entropy."""
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 5
         n_bins = small_2d_env.n_bins
@@ -243,26 +243,26 @@ class TestEntropy:
         for t in range(n_time_bins):
             posterior[t, t % n_bins] = 1.0
 
-        result = entropy(posterior)
+        result = posterior_entropy(posterior)
 
         np.testing.assert_array_almost_equal(result, np.zeros(n_time_bins))
 
     def test_entropy_uniform_is_maximum(self, small_2d_env):
         """Uniform posterior should have maximum entropy = log2(n_bins)."""
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 3
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = entropy(posterior)
+        result = posterior_entropy(posterior)
 
         max_entropy = np.log2(n_bins)
         np.testing.assert_array_almost_equal(result, np.full(n_time_bins, max_entropy))
 
     def test_entropy_bounds(self, small_2d_env):
         """Entropy should be bounded: 0 <= entropy <= log2(n_bins)."""
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
@@ -272,14 +272,14 @@ class TestEntropy:
         posterior = rng.random((n_time_bins, n_bins))
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
-        result = entropy(posterior)
+        result = posterior_entropy(posterior)
 
         assert np.all(result >= 0)
         assert np.all(result <= np.log2(n_bins) + 1e-10)
 
     def test_entropy_handles_exact_zeros(self, small_2d_env):
         """Entropy should handle exact zeros without NaN (mask-based)."""
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 3
         n_bins = small_2d_env.n_bins
@@ -288,7 +288,7 @@ class TestEntropy:
         posterior[:, 0] = 0.5
         posterior[:, 1] = 0.5
 
-        result = entropy(posterior)
+        result = posterior_entropy(posterior)
 
         # Should not be NaN
         assert np.all(np.isfinite(result))
@@ -298,7 +298,7 @@ class TestEntropy:
     def test_entropy_consistency_with_decoding_result(self, small_2d_env):
         """entropy should match DecodingResult.uncertainty."""
         from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import entropy
+        from neurospatial.decoding.estimates import posterior_entropy
 
         n_time_bins = 10
         n_bins = small_2d_env.n_bins
@@ -307,7 +307,7 @@ class TestEntropy:
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
         # Standalone function
-        standalone_result = entropy(posterior)
+        standalone_result = posterior_entropy(posterior)
 
         # DecodingResult property (named 'uncertainty')
         dr = DecodingResult(posterior=posterior, env=small_2d_env)
@@ -437,9 +437,9 @@ class TestSuccessCriteria:
     def test_success_criteria_shapes(self, small_2d_env):
         """Verify success criteria from TASKS.md."""
         from neurospatial.decoding.estimates import (
-            entropy,
-            map_estimate,
             map_position,
+            posterior_entropy,
+            posterior_mode,
         )
 
         n_time_bins = 10
@@ -449,9 +449,9 @@ class TestSuccessCriteria:
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
         # Success criteria from TASKS.md
-        bins = map_estimate(posterior)
+        bins = posterior_mode(posterior)
         pos = map_position(small_2d_env, posterior)
-        ent = entropy(posterior)
+        ent = posterior_entropy(posterior)
 
         assert bins.shape == (n_time_bins,)
         assert pos.shape == (n_time_bins, small_2d_env.n_dims)
@@ -467,19 +467,19 @@ class TestEdgeCases:
         """Functions should work with a single time bin."""
         from neurospatial.decoding.estimates import (
             credible_region,
-            entropy,
-            map_estimate,
             map_position,
             mean_position,
+            posterior_entropy,
+            posterior_mode,
         )
 
         n_bins = small_2d_env.n_bins
         posterior = np.ones((1, n_bins)) / n_bins
 
-        assert map_estimate(posterior).shape == (1,)
+        assert posterior_mode(posterior).shape == (1,)
         assert map_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert mean_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
-        assert entropy(posterior).shape == (1,)
+        assert posterior_entropy(posterior).shape == (1,)
         assert len(credible_region(small_2d_env, posterior)) == 1
 
     def test_single_bin_environment(self):
@@ -487,10 +487,10 @@ class TestEdgeCases:
         from neurospatial import Environment
         from neurospatial.decoding.estimates import (
             credible_region,
-            entropy,
-            map_estimate,
             map_position,
             mean_position,
+            posterior_entropy,
+            posterior_mode,
         )
 
         # Create a minimal single-bin environment
@@ -504,13 +504,13 @@ class TestEdgeCases:
             posterior = np.ones((n_time_bins, 1))  # Only one bin, always prob=1
 
             np.testing.assert_array_equal(
-                map_estimate(posterior), np.zeros(n_time_bins)
+                posterior_mode(posterior), np.zeros(n_time_bins)
             )
             assert map_position(env, posterior).shape == (n_time_bins, env.n_dims)
             assert mean_position(env, posterior).shape == (n_time_bins, env.n_dims)
             # Entropy of single bin is 0 (log2(1) = 0)
             np.testing.assert_array_almost_equal(
-                entropy(posterior), np.zeros(n_time_bins)
+                posterior_entropy(posterior), np.zeros(n_time_bins)
             )
             # Credible region with single bin
             regions = credible_region(env, posterior, level=0.5)

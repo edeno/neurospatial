@@ -112,7 +112,7 @@ def border_score(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.metrics import border_score, compute_region_coverage
+    >>> from neurospatial.encoding.border import border_score, compute_region_coverage
     >>> from shapely.geometry import box
     >>>
     >>> # Create rectangular environment
@@ -155,7 +155,7 @@ def border_score(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.metrics import border_score
+    >>> from neurospatial.encoding.border import border_score
     >>>
     >>> # Create environment
     >>> positions = np.random.randn(5000, 2) * 20
@@ -330,7 +330,7 @@ def compute_region_coverage(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.metrics import compute_region_coverage
+    >>> from neurospatial.encoding.border import compute_region_coverage
     >>> from shapely.geometry import box
     >>>
     >>> # Create environment with wall regions

@@ -113,15 +113,15 @@ class TestPublicAPICompleteness:
         """Test that estimate functions are exported from decoding subpackage."""
         from neurospatial.decoding import (
             credible_region,
-            entropy,
-            map_estimate,
             map_position,
             mean_position,
+            posterior_entropy,
+            posterior_mode,
         )
 
         assert callable(credible_region)
-        assert callable(entropy)
-        assert callable(map_estimate)
+        assert callable(posterior_entropy)
+        assert callable(posterior_mode)
         assert callable(map_position)
         assert callable(mean_position)
 
@@ -184,8 +184,8 @@ class TestPublicAPICompleteness:
             "normalize_to_posterior",
             # Estimates
             "credible_region",
-            "entropy",
-            "map_estimate",
+            "posterior_entropy",
+            "posterior_mode",
             "map_position",
             "mean_position",
             # Trajectory

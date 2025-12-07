@@ -51,8 +51,8 @@ from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
 from neurospatial.encoding.place import (
     compute_place_field,
     detect_place_fields,
-    field_centroid,
     field_size,
+    rate_map_centroid,
     skaggs_information,
     sparsity,
 )
@@ -616,7 +616,7 @@ for unit_idx in example_units:
         )
 
         # Mark centroid using graph-based method (respects maze geometry)
-        centroid = field_centroid(field, field_bins, env_2d, method="graph")
+        centroid = rate_map_centroid(field, field_bins, env_2d, method="graph")
         ax.scatter(
             centroid[0],
             centroid[1],
@@ -907,7 +907,7 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 # - `skaggs_information()` - Measure spatial information (bits/spike)
 # - `sparsity()` - Measure firing field compactness
 # - `detect_place_fields()` - Automatic place field detection
-# - `field_size()`, `field_centroid()` - Place field properties
+# - `field_size()`, `rate_map_centroid()` - Place field properties
 #
 # ### Next Steps
 #

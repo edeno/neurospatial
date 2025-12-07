@@ -46,10 +46,10 @@ from neurospatial import Environment
 from neurospatial.encoding.place import (
     compute_place_field,
     detect_place_fields,
-    field_centroid,
     field_shift_distance,
     field_size,
     field_stability,
+    rate_map_centroid,
     skaggs_information,
     sparsity,
 )
@@ -307,7 +307,7 @@ for i, field_bins in enumerate(place_fields):
     area = field_size(field_bins, env)
 
     # Field centroid (center of mass)
-    centroid = field_centroid(firing_rate, field_bins, env)
+    centroid = rate_map_centroid(firing_rate, field_bins, env)
 
     # Distance from true center
     distance_from_true = np.linalg.norm(centroid - field_center)
@@ -477,7 +477,7 @@ def analyze_place_cell(env, spike_times, times, positions):
         field_properties.append(
             {
                 "area": field_size(field_bins, env),
-                "centroid": field_centroid(firing_rate, field_bins, env),
+                "centroid": rate_map_centroid(firing_rate, field_bins, env),
                 "peak_rate": np.max(firing_rate[field_bins]),
                 "mean_rate": np.mean(firing_rate[field_bins]),
             }
@@ -999,8 +999,8 @@ print(f"  Session 2: {len(fields_session2)} field(s)")
 
 # Compute centroids
 if len(fields_session1) > 0 and len(fields_session2) > 0:
-    centroid_s1 = field_centroid(rate_session1, fields_session1[0], track_env)
-    centroid_s2 = field_centroid(rate_session2, fields_session2[0], track_env)
+    centroid_s1 = rate_map_centroid(rate_session1, fields_session1[0], track_env)
+    centroid_s2 = rate_map_centroid(rate_session2, fields_session2[0], track_env)
 
     print("\nDetected centroids:")
     print(f"  Session 1: ({centroid_s1[0]:.1f}, {centroid_s1[1]:.1f}) cm")
@@ -1358,7 +1358,7 @@ print("\nAlways use geodesic distance for complex environments!")
 #
 # **Key Functions**:
 # - `field_shift_distance()` - Measures centroid displacement between sessions
-# - `field_centroid()` - Computes rate-weighted center of mass
+# - `rate_map_centroid()` - Computes rate-weighted center of mass
 # - `detect_place_fields()` - Finds place field bins
 
 # %% [markdown]
@@ -1381,7 +1381,7 @@ print("\nAlways use geodesic distance for complex environments!")
 # - `compute_place_field()` - Spike train → firing rate map
 # - `detect_place_fields()` - Automatic field detection
 # - `field_size()` - Field area in physical units
-# - `field_centroid()` - Center of mass
+# - `rate_map_centroid()` - Center of mass
 # - `skaggs_information()` - Spatial information (bits/spike)
 # - `sparsity()` - Firing sparsity [0, 1]
 # - `field_stability()` - Temporal stability (correlation)

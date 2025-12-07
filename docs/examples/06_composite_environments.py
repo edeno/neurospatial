@@ -747,7 +747,7 @@ print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
 
 # %%
 # Import pairwise for edge iteration (more efficient than zip)
-from itertools import pairwise  # noqa: E402
+from itertools import pairwise
 
 # Find path from start to right arm (crosses bridges through junction)
 source_bin = 0  # First bin in start box
@@ -797,7 +797,7 @@ if path:
 # ### Pathfinding Example: No Path Between Disconnected Components
 
 # %%
-import warnings  # noqa: E402
+import warnings
 
 # Create a composite without bridges to demonstrate warning
 disconnected_composite = CompositeEnvironment(
@@ -820,8 +820,8 @@ print(f"Path result: {path} (empty list indicates no path exists)")
 # ### Saving and Loading Composite Environments
 
 # %%
-import tempfile  # noqa: E402
-from pathlib import Path  # noqa: E402
+import tempfile
+from pathlib import Path
 
 # Save composite environment to file
 with tempfile.TemporaryDirectory() as tmpdir:

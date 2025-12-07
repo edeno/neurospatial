@@ -17,7 +17,7 @@
 # %% [markdown]
 # # Signal Processing Primitives
 #
-# This notebook demonstrates the spatial signal processing primitives `neighbor_reduce()` and `convolve()` for custom filtering and local aggregation on graph-based environments.
+# This notebook demonstrates the spatial signal processing primitives `neighbor_reduce()` and `graph_convolve()` for custom filtering and local aggregation on graph-based environments.
 #
 # **Estimated time**: 15-20 minutes
 #
@@ -27,7 +27,7 @@
 #
 # - Use `neighbor_reduce()` to perform local aggregation on spatial graphs
 # - Analyze spatial coherence using neighborhood statistics
-# - Apply custom convolution filters with `convolve()` for spatial analysis
+# - Apply custom convolution filters with `graph_convolve()` for spatial analysis
 # - Implement box filters for occupancy-based thresholding
 # - Create Mexican hat filters for edge detection in spatial fields
 # - Assess local field variability for quality control
@@ -35,7 +35,7 @@
 # **Topics covered**:
 # - Local aggregation with `neighbor_reduce()`
 # - Spatial coherence analysis
-# - Custom convolution with `convolve()`
+# - Custom convolution with `graph_convolve()`
 # - Box filter for occupancy thresholding
 # - Mexican hat edge detection
 # - Local field variability
@@ -46,7 +46,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.encoding.place import compute_place_field
-from neurospatial.ops.graph import convolve, neighbor_reduce
+from neurospatial.ops.graph import graph_convolve, neighbor_reduce
 
 # Random seed for reproducibility
 rng = np.random.default_rng(42)
@@ -266,7 +266,7 @@ plt.show()
 # - **Low CV (blue)**: Consistent firing rates (place field center or background)
 
 # %% [markdown]
-# ## Part 3: Box Filter with `convolve()`
+# ## Part 3: Box Filter with `graph_convolve()`
 #
 # Use a box kernel (uniform weights within radius) to smooth binary occupancy. This reduces noise from single-visit bins.
 
@@ -284,7 +284,7 @@ def box_kernel(distances):
 
 
 # Apply box filter
-smoothed_occupancy = convolve(env, binary_occupancy, box_kernel, normalize=True)
+smoothed_occupancy = graph_convolve(env, binary_occupancy, box_kernel, normalize=True)
 
 # Threshold: keep bins with >50% neighbors visited
 reliable_visited = smoothed_occupancy > 0.5
@@ -335,7 +335,7 @@ plt.show()
 # **Interpretation**: The box filter smooths isolated visited bins, retaining only reliably visited regions. This is useful for excluding sparsely sampled areas from analysis.
 
 # %% [markdown]
-# ## Part 4: Mexican Hat Edge Detection with `convolve()`
+# ## Part 4: Mexican Hat Edge Detection with `graph_convolve()`
 #
 # The Mexican hat kernel (difference of Gaussians) detects edges by emphasizing local maxima and suppressing surroundings.
 
@@ -364,7 +364,7 @@ def mexican_hat(distances):
 
 
 # Apply Mexican hat (DON'T normalize - breaks edge detection)
-edges = convolve(env, firing_rate_smooth, mexican_hat, normalize=False)
+edges = graph_convolve(env, firing_rate_smooth, mexican_hat, normalize=False)
 
 # Detect place field centers (strong positive responses)
 threshold_high = np.nanpercentile(edges, 95)
@@ -420,7 +420,7 @@ plt.show()
 # The Mexican hat kernel enhances edges and suppresses flat regions, making it ideal for detecting place field boundaries.
 
 # %% [markdown]
-# ## Part 5: Comparison - `convolve()` vs `env.smooth()`
+# ## Part 5: Comparison - `graph_convolve()` vs `env.smooth()`
 #
 # Compare custom Gaussian convolution with the built-in `env.smooth()` method.
 
@@ -436,7 +436,7 @@ def gaussian_kernel(distances):
     return np.exp(-(distances**2) / (2 * bandwidth**2))
 
 
-result_convolve = convolve(env, random_field, gaussian_kernel, normalize=True)
+result_convolve = graph_convolve(env, random_field, gaussian_kernel, normalize=True)
 
 # Method 2: Built-in smoothing
 result_smooth = env.smooth(random_field, bandwidth, mode="density")
@@ -467,7 +467,7 @@ env.plot_field(
     ax=axes[1],
     cmap="viridis",
 )
-axes[1].set_title("convolve() Result", fontsize=14, weight="bold")
+axes[1].set_title("graph_convolve() Result", fontsize=14, weight="bold")
 
 # Built-in smoothing
 env.plot_field(
@@ -480,7 +480,7 @@ axes[2].set_title("env.smooth() Result", fontsize=14, weight="bold")
 plt.show()
 
 # %% [markdown]
-# **Conclusion**: For standard Gaussian smoothing, use `env.smooth()` (faster, optimized). For custom kernels (box, Mexican hat, directional), use `convolve()`.
+# **Conclusion**: For standard Gaussian smoothing, use `env.smooth()` (faster, optimized). For custom kernels (box, Mexican hat, directional), use `graph_convolve()`.
 
 # %% [markdown]
 # ## Summary
@@ -493,7 +493,7 @@ plt.show()
 # - Local field variability measurement
 # - Simple, fast operations on graph neighborhoods
 #
-# **`convolve()`**:
+# **`graph_convolve()`**:
 # - Custom kernel convolution (box, Mexican hat, etc.)
 # - Edge detection with difference of Gaussians
 # - Occupancy thresholding with box filter
@@ -502,7 +502,7 @@ plt.show()
 # **When to use which**:
 # - `env.smooth()` → Standard Gaussian smoothing (fast, optimized)
 # - `neighbor_reduce()` → Simple aggregation and local statistics
-# - `convolve()` → Custom kernels and advanced filtering
+# - `graph_convolve()` → Custom kernels and advanced filtering
 #
 # **Key applications**:
 # - Quality metrics (spatial coherence, local variability)

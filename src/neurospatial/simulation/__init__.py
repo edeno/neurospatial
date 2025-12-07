@@ -5,6 +5,7 @@ This subpackage provides tools for:
 - Neural model implementations (place cells, boundary cells, grid cells)
 - Spike train generation (Poisson process with refractory periods)
 - High-level session simulation with validation helpers
+- Pre-built maze environments (via mazes submodule)
 
 Examples
 --------
@@ -43,11 +44,10 @@ functions and classes are importable directly from `neurospatial.simulation`
 for maximum discoverability and IDE support.
 """
 
-# Milestone 1 imports (core trajectory + place cells)
-# Neural models
-# Milestone 2 imports (boundary cells + extended features)
-# Milestone 3 imports (grid cells)
-# Pre-configured example simulations (Milestone 3)
+# Expose mazes submodule for maze environment creation
+from neurospatial.simulation import mazes
+
+# Pre-configured example simulations
 from neurospatial.simulation.examples import (
     boundary_cell_session,
     grid_cell_session,
@@ -91,7 +91,10 @@ from neurospatial.simulation.validation import (
 #     grid_cell_session,
 # )
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - organized by category
+    # Submodule
+    "mazes",
+    # Models
     "BoundaryCellModel",
     "GridCellModel",
     "NeuralModel",
@@ -99,18 +102,22 @@ __all__ = [
     "PlaceCellModel",
     "SimulationSession",
     "SpatialViewCellModel",
+    # Spike generation
     "add_modulation",
-    "boundary_cell_session",
     "generate_poisson_spikes",
     "generate_population_spikes",
+    # Example sessions
+    "boundary_cell_session",
     "grid_cell_session",
     "linear_track_session",
     "open_field_session",
+    "tmaze_alternation_session",
+    # Session API
     "plot_session_summary",
     "simulate_session",
+    "validate_simulation",
+    # Trajectory
     "simulate_trajectory_laps",
     "simulate_trajectory_ou",
     "simulate_trajectory_sinusoidal",
-    "tmaze_alternation_session",
-    "validate_simulation",
 ]

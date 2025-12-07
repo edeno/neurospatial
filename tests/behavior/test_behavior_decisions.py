@@ -21,150 +21,100 @@ Functions being moved:
 """
 
 import numpy as np
+import pytest
+
+# =============================================================================
+# Constants for parametrized import tests
+# =============================================================================
+
+# Decision analysis classes (non-callable)
+DECISION_CLASSES = [
+    "PreDecisionMetrics",
+    "DecisionBoundaryMetrics",
+    "DecisionAnalysisResult",
+]
+
+# Decision analysis functions (callable)
+DECISION_FUNCTIONS = [
+    "compute_decision_analysis",
+    "compute_pre_decision_metrics",
+    "decision_region_entry_time",
+    "detect_boundary_crossings",
+    "distance_to_decision_boundary",
+    "extract_pre_decision_window",
+    "geodesic_voronoi_labels",
+    "pre_decision_heading_stats",
+    "pre_decision_speed_stats",
+]
+
+# VTE classes (non-callable)
+VTE_CLASSES = [
+    "VTETrialResult",
+    "VTESessionResult",
+]
+
+# VTE functions (callable)
+VTE_FUNCTIONS = [
+    "compute_vte_index",
+    "compute_vte_trial",
+    "compute_vte_session",
+    "classify_vte",
+    "head_sweep_from_positions",
+    "head_sweep_magnitude",
+    "integrated_absolute_rotation",
+    "normalize_vte_scores",
+]
+
+
+# =============================================================================
+# Parametrized import tests
+# =============================================================================
 
 
 class TestDecisionAnalysisImports:
     """Test that decision analysis functions are importable from behavior.decisions."""
 
-    def test_import_pre_decision_metrics(self):
-        """Test PreDecisionMetrics is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import PreDecisionMetrics
+    @pytest.mark.parametrize("class_name", DECISION_CLASSES)
+    def test_class_importable_from_decisions(self, class_name: str) -> None:
+        """Verify {class_name} is importable from behavior.decisions."""
+        from neurospatial.behavior import decisions
 
-        assert PreDecisionMetrics is not None
+        cls = getattr(decisions, class_name, None)
+        assert cls is not None, f"{class_name} not found in behavior.decisions"
 
-    def test_import_decision_boundary_metrics(self):
-        """Test DecisionBoundaryMetrics is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+    @pytest.mark.parametrize("func_name", DECISION_FUNCTIONS)
+    def test_function_importable_from_decisions(self, func_name: str) -> None:
+        """Verify {func_name} is importable from behavior.decisions."""
+        from neurospatial.behavior import decisions
 
-        assert DecisionBoundaryMetrics is not None
-
-    def test_import_decision_analysis_result(self):
-        """Test DecisionAnalysisResult is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import DecisionAnalysisResult
-
-        assert DecisionAnalysisResult is not None
-
-    def test_import_compute_decision_analysis(self):
-        """Test compute_decision_analysis is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import compute_decision_analysis
-
-        assert callable(compute_decision_analysis)
-
-    def test_import_compute_pre_decision_metrics(self):
-        """Test compute_pre_decision_metrics is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import compute_pre_decision_metrics
-
-        assert callable(compute_pre_decision_metrics)
-
-    def test_import_decision_region_entry_time(self):
-        """Test decision_region_entry_time is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import decision_region_entry_time
-
-        assert callable(decision_region_entry_time)
-
-    def test_import_detect_boundary_crossings(self):
-        """Test detect_boundary_crossings is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import detect_boundary_crossings
-
-        assert callable(detect_boundary_crossings)
-
-    def test_import_distance_to_decision_boundary(self):
-        """Test distance_to_decision_boundary is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import distance_to_decision_boundary
-
-        assert callable(distance_to_decision_boundary)
-
-    def test_import_extract_pre_decision_window(self):
-        """Test extract_pre_decision_window is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import extract_pre_decision_window
-
-        assert callable(extract_pre_decision_window)
-
-    def test_import_geodesic_voronoi_labels(self):
-        """Test geodesic_voronoi_labels is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import geodesic_voronoi_labels
-
-        assert callable(geodesic_voronoi_labels)
-
-    def test_import_pre_decision_heading_stats(self):
-        """Test pre_decision_heading_stats is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import pre_decision_heading_stats
-
-        assert callable(pre_decision_heading_stats)
-
-    def test_import_pre_decision_speed_stats(self):
-        """Test pre_decision_speed_stats is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import pre_decision_speed_stats
-
-        assert callable(pre_decision_speed_stats)
+        func = getattr(decisions, func_name, None)
+        assert func is not None, f"{func_name} not found in behavior.decisions"
+        assert callable(func), f"{func_name} should be callable"
 
 
 class TestVTEImports:
-    """Test that VTE functions are importable from behavior.decisions."""
+    """Test that VTE functions are importable from behavior.vte."""
 
-    def test_import_vte_trial_result(self):
-        """Test VTETrialResult is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import VTETrialResult
+    @pytest.mark.parametrize("class_name", VTE_CLASSES)
+    def test_class_importable_from_vte(self, class_name: str) -> None:
+        """Verify {class_name} is importable from behavior.vte."""
+        from neurospatial.behavior import vte
 
-        assert VTETrialResult is not None
+        cls = getattr(vte, class_name, None)
+        assert cls is not None, f"{class_name} not found in behavior.vte"
 
-    def test_import_vte_session_result(self):
-        """Test VTESessionResult is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import VTESessionResult
+    @pytest.mark.parametrize("func_name", VTE_FUNCTIONS)
+    def test_function_importable_from_vte(self, func_name: str) -> None:
+        """Verify {func_name} is importable from behavior.vte."""
+        from neurospatial.behavior import vte
 
-        assert VTESessionResult is not None
+        func = getattr(vte, func_name, None)
+        assert func is not None, f"{func_name} not found in behavior.vte"
+        assert callable(func), f"{func_name} should be callable"
 
-    def test_import_compute_vte_index(self):
-        """Test compute_vte_index is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import compute_vte_index
-
-        assert callable(compute_vte_index)
-
-    def test_import_compute_vte_trial(self):
-        """Test compute_vte_trial is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import compute_vte_trial
-
-        assert callable(compute_vte_trial)
-
-    def test_import_compute_vte_session(self):
-        """Test compute_vte_session is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import compute_vte_session
-
-        assert callable(compute_vte_session)
-
-    def test_import_classify_vte(self):
-        """Test classify_vte is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import classify_vte
-
-        assert callable(classify_vte)
-
-    def test_import_head_sweep_from_positions(self):
-        """Test head_sweep_from_positions is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import head_sweep_from_positions
-
-        assert callable(head_sweep_from_positions)
-
-    def test_import_head_sweep_magnitude(self):
-        """Test head_sweep_magnitude is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
-
-        assert callable(head_sweep_magnitude)
-
-    def test_import_integrated_absolute_rotation(self):
-        """Test integrated_absolute_rotation is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import integrated_absolute_rotation
-
-        assert callable(integrated_absolute_rotation)
-
-    def test_import_normalize_vte_scores(self):
-        """Test normalize_vte_scores is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
-
-        assert callable(normalize_vte_scores)
-
-    def test_import_wrap_angle(self):
-        """Test wrap_angle is importable from behavior.decisions."""
-        from neurospatial.behavior.decisions import wrap_angle
+    def test_wrap_angle_importable_from_stats_circular(self) -> None:
+        """Test wrap_angle is importable from stats.circular."""
+        from neurospatial.stats.circular import wrap_angle
 
         assert callable(wrap_angle)
 
@@ -172,65 +122,21 @@ class TestVTEImports:
 class TestBehaviorModuleExports:
     """Test that all functions are exported from behavior/__init__.py."""
 
-    def test_decision_analysis_exports_from_behavior(self):
-        """Test decision analysis exports from behavior module."""
-        from neurospatial.behavior import (
-            DecisionAnalysisResult,
-            DecisionBoundaryMetrics,
-            PreDecisionMetrics,
-            compute_decision_analysis,
-            compute_pre_decision_metrics,
-            decision_region_entry_time,
-            detect_boundary_crossings,
-            distance_to_decision_boundary,
-            extract_pre_decision_window,
-            geodesic_voronoi_labels,
-            pre_decision_heading_stats,
-            pre_decision_speed_stats,
-        )
+    @pytest.mark.parametrize("name", DECISION_CLASSES + DECISION_FUNCTIONS)
+    def test_decision_analysis_exports_from_behavior(self, name: str) -> None:
+        """Verify {name} is exported from behavior module."""
+        from neurospatial import behavior
 
-        # Just verify they're importable
-        assert PreDecisionMetrics is not None
-        assert DecisionBoundaryMetrics is not None
-        assert DecisionAnalysisResult is not None
-        assert callable(compute_decision_analysis)
-        assert callable(compute_pre_decision_metrics)
-        assert callable(decision_region_entry_time)
-        assert callable(detect_boundary_crossings)
-        assert callable(distance_to_decision_boundary)
-        assert callable(extract_pre_decision_window)
-        assert callable(geodesic_voronoi_labels)
-        assert callable(pre_decision_heading_stats)
-        assert callable(pre_decision_speed_stats)
+        obj = getattr(behavior, name, None)
+        assert obj is not None, f"{name} not exported from behavior module"
 
-    def test_vte_exports_from_behavior(self):
-        """Test VTE exports from behavior module."""
-        from neurospatial.behavior import (
-            VTESessionResult,
-            VTETrialResult,
-            classify_vte,
-            compute_vte_index,
-            compute_vte_session,
-            compute_vte_trial,
-            head_sweep_from_positions,
-            head_sweep_magnitude,
-            integrated_absolute_rotation,
-            normalize_vte_scores,
-            wrap_angle,
-        )
+    @pytest.mark.parametrize("name", VTE_CLASSES + VTE_FUNCTIONS)
+    def test_vte_exports_from_behavior(self, name: str) -> None:
+        """Verify {name} is exported from behavior module."""
+        from neurospatial import behavior
 
-        # Just verify they're importable
-        assert VTETrialResult is not None
-        assert VTESessionResult is not None
-        assert callable(compute_vte_index)
-        assert callable(compute_vte_trial)
-        assert callable(compute_vte_session)
-        assert callable(classify_vte)
-        assert callable(head_sweep_from_positions)
-        assert callable(head_sweep_magnitude)
-        assert callable(integrated_absolute_rotation)
-        assert callable(normalize_vte_scores)
-        assert callable(wrap_angle)
+        obj = getattr(behavior, name, None)
+        assert obj is not None, f"{name} not exported from behavior module"
 
 
 class TestDecisionAnalysisFunctionality:
@@ -360,7 +266,7 @@ class TestVTEFunctionality:
 
     def test_vte_trial_result_dataclass(self):
         """Test VTETrialResult can be instantiated."""
-        from neurospatial.behavior.decisions import VTETrialResult
+        from neurospatial.behavior.vte import VTETrialResult
 
         result = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -381,7 +287,7 @@ class TestVTEFunctionality:
 
     def test_vte_session_result_dataclass(self):
         """Test VTESessionResult can be instantiated."""
-        from neurospatial.behavior.decisions import VTESessionResult
+        from neurospatial.behavior.vte import VTESessionResult
 
         session = VTESessionResult(
             trial_results=[],
@@ -399,7 +305,7 @@ class TestVTEFunctionality:
 
     def test_head_sweep_magnitude_basic(self):
         """Test head_sweep_magnitude function."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Constant heading
         headings = np.zeros(20)
@@ -414,7 +320,7 @@ class TestVTEFunctionality:
 
     def test_integrated_absolute_rotation_alias(self):
         """Test integrated_absolute_rotation is alias for head_sweep_magnitude."""
-        from neurospatial.behavior.decisions import (
+        from neurospatial.behavior.vte import (
             head_sweep_magnitude,
             integrated_absolute_rotation,
         )
@@ -423,7 +329,7 @@ class TestVTEFunctionality:
 
     def test_compute_vte_index(self):
         """Test compute_vte_index function."""
-        from neurospatial.behavior.decisions import compute_vte_index
+        from neurospatial.behavior.vte import compute_vte_index
 
         # Equal weighting
         result = compute_vte_index(1.0, 1.0, alpha=0.5)
@@ -435,14 +341,14 @@ class TestVTEFunctionality:
 
     def test_classify_vte(self):
         """Test classify_vte function."""
-        from neurospatial.behavior.decisions import classify_vte
+        from neurospatial.behavior.vte import classify_vte
 
         assert classify_vte(1.0, threshold=0.5) is True
         assert classify_vte(0.3, threshold=0.5) is False
 
     def test_normalize_vte_scores(self):
         """Test normalize_vte_scores function."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         head_sweeps = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         speeds = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
@@ -455,7 +361,7 @@ class TestVTEFunctionality:
 
     def test_wrap_angle(self):
         """Test wrap_angle function (re-exported from stats.circular)."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         # Already in range
         np.testing.assert_allclose(wrap_angle(np.array([0.0])), [0.0])
@@ -466,7 +372,7 @@ class TestVTEFunctionality:
 
     def test_head_sweep_from_positions(self):
         """Test head_sweep_from_positions function."""
-        from neurospatial.behavior.decisions import head_sweep_from_positions
+        from neurospatial.behavior.vte import head_sweep_from_positions
 
         # Straight line
         n_samples = 20
@@ -480,7 +386,7 @@ class TestVTEFunctionality:
 
     def test_compute_vte_trial(self):
         """Test compute_vte_trial function."""
-        from neurospatial.behavior.decisions import VTETrialResult, compute_vte_trial
+        from neurospatial.behavior.vte import VTETrialResult, compute_vte_trial
 
         n_samples = 30
         times = np.linspace(0, 3, n_samples)
@@ -505,37 +411,16 @@ class TestVTEFunctionality:
 class TestAllSymbolsExported:
     """Test that __all__ contains all expected symbols."""
 
-    def test_decisions_module_all(self):
-        """Test that behavior.decisions exports all expected symbols."""
+    @pytest.mark.parametrize("name", DECISION_CLASSES + DECISION_FUNCTIONS)
+    def test_decisions_module_exports(self, name: str) -> None:
+        """Verify {name} is in decisions module __all__."""
         from neurospatial.behavior import decisions
 
-        expected_exports = [
-            # Decision analysis
-            "PreDecisionMetrics",
-            "DecisionBoundaryMetrics",
-            "DecisionAnalysisResult",
-            "compute_decision_analysis",
-            "compute_pre_decision_metrics",
-            "decision_region_entry_time",
-            "detect_boundary_crossings",
-            "distance_to_decision_boundary",
-            "extract_pre_decision_window",
-            "geodesic_voronoi_labels",
-            "pre_decision_heading_stats",
-            "pre_decision_speed_stats",
-            # VTE
-            "VTETrialResult",
-            "VTESessionResult",
-            "compute_vte_index",
-            "compute_vte_trial",
-            "compute_vte_session",
-            "classify_vte",
-            "head_sweep_from_positions",
-            "head_sweep_magnitude",
-            "integrated_absolute_rotation",
-            "normalize_vte_scores",
-            "wrap_angle",
-        ]
+        assert hasattr(decisions, name), f"Missing export: {name}"
 
-        for name in expected_exports:
-            assert hasattr(decisions, name), f"Missing export: {name}"
+    @pytest.mark.parametrize("name", VTE_CLASSES + VTE_FUNCTIONS)
+    def test_vte_module_exports(self, name: str) -> None:
+        """Verify {name} is in vte module __all__."""
+        from neurospatial.behavior import vte
+
+        assert hasattr(vte, name), f"Missing export: {name}"

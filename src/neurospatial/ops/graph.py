@@ -7,16 +7,16 @@ Functions
 ---------
 neighbor_reduce
     Aggregate field values over spatial neighborhoods.
-convolve
+graph_convolve
     Convolve a spatial field with a custom kernel on the graph.
 
 Examples
 --------
->>> from neurospatial.ops.graph import neighbor_reduce, convolve
+>>> from neurospatial.ops.graph import neighbor_reduce, graph_convolve
 
 Import via ops package:
 
->>> from neurospatial.ops import neighbor_reduce, convolve
+>>> from neurospatial.ops import neighbor_reduce, graph_convolve
 
 Notes
 -----
@@ -25,7 +25,7 @@ Moved from neurospatial.primitives in package reorganization.
 
 from __future__ import annotations
 
-__all__ = ["convolve", "neighbor_reduce"]
+__all__ = ["graph_convolve", "neighbor_reduce"]
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
@@ -214,7 +214,7 @@ def neighbor_reduce(
     return result
 
 
-def convolve(
+def graph_convolve(
     env: Environment,
     field: NDArray[np.float64],
     kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],

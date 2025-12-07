@@ -7,10 +7,10 @@ without creating a DecodingResult container.
 
 Functions
 ---------
-map_estimate : Maximum a posteriori bin index
+posterior_mode : Maximum a posteriori bin index
 map_position : MAP position in environment coordinates
 mean_position : Posterior mean position (expected value)
-entropy : Posterior entropy in bits (uncertainty measure)
+posterior_entropy : Posterior entropy in bits (uncertainty measure)
 credible_region : Highest posterior density region
 
 Notes
@@ -21,13 +21,13 @@ interchangeably.
 
 Examples
 --------
->>> from neurospatial.decoding.estimates import map_estimate, entropy
+>>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
 >>> import numpy as np
 >>>
 >>> # Uniform posterior (maximum uncertainty)
 >>> posterior = np.ones((10, 100)) / 100
->>> bins = map_estimate(posterior)
->>> ent = entropy(posterior)
+>>> bins = posterior_mode(posterior)
+>>> ent = posterior_entropy(posterior)
 >>> print(f"Entropy: {ent[0]:.2f} bits")  # log2(100) = 6.64 bits
 Entropy: 6.64 bits
 """
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-def map_estimate(
+def posterior_mode(
     posterior: NDArray[np.float64],
 ) -> NDArray[np.int64]:
     """Maximum a posteriori bin index for each time bin.
@@ -77,12 +77,12 @@ def map_estimate(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.estimates import map_estimate
+    >>> from neurospatial.decoding.estimates import posterior_mode
     >>>
     >>> # Delta posterior at bin 5
     >>> posterior = np.zeros((1, 10))
     >>> posterior[0, 5] = 1.0
-    >>> bins = map_estimate(posterior)
+    >>> bins = posterior_mode(posterior)
     >>> print(bool(bins[0] == 5))
     True
     """
@@ -114,13 +114,13 @@ def map_position(
 
     Notes
     -----
-    Computed as: ``env.bin_centers[map_estimate(posterior)]``
+    Computed as: ``env.bin_centers[posterior_mode(posterior)]``
 
     This function mirrors ``DecodingResult.map_position``.
 
     See Also
     --------
-    map_estimate : MAP bin index
+    posterior_mode : MAP bin index
     mean_position : Posterior mean position
     DecodingResult.map_position : Property version on result container
 
@@ -140,7 +140,7 @@ def map_position(
     >>> pos.shape
     (1, 2)
     """
-    indices = map_estimate(posterior)
+    indices = posterior_mode(posterior)
     return env.bin_centers[indices]
 
 
@@ -197,7 +197,7 @@ def mean_position(
     return posterior @ env.bin_centers
 
 
-def entropy(
+def posterior_entropy(
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Posterior entropy in bits (uncertainty measure).
@@ -240,18 +240,18 @@ def entropy(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.decoding.estimates import entropy
+    >>> from neurospatial.decoding.estimates import posterior_entropy
     >>>
     >>> # Uniform posterior (maximum entropy)
     >>> posterior = np.ones((1, 8)) / 8
-    >>> ent = entropy(posterior)
+    >>> ent = posterior_entropy(posterior)
     >>> print(f"{ent[0]:.2f}")  # log2(8) = 3.0
     3.00
     >>>
     >>> # Delta posterior (minimum entropy)
     >>> posterior = np.zeros((1, 8))
     >>> posterior[0, 0] = 1.0
-    >>> ent = entropy(posterior)
+    >>> ent = posterior_entropy(posterior)
     >>> bool(abs(ent[0]) < 0.01)  # Should be 0 bits (within numerical precision)
     True
     """
@@ -312,8 +312,8 @@ def credible_region(
 
     See Also
     --------
-    entropy : Scalar uncertainty measure
-    map_estimate : Point estimate (mode)
+    posterior_entropy : Scalar uncertainty measure
+    posterior_mode : Point estimate (mode)
 
     Examples
     --------
