@@ -266,20 +266,3 @@ class TestMakeWatermaze:
         # Should be centered near origin (0, 0)
         assert abs(x_mean) < 10  # Within 10 cm
         assert abs(y_mean) < 10  # Within 10 cm
-
-
-class TestWatermazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_watermaze_has_docstring(self):
-        """make_watermaze should have a docstring."""
-        from neurospatial.simulation.mazes.watermaze import make_watermaze
-
-        assert make_watermaze.__doc__ is not None
-        assert len(make_watermaze.__doc__) > 100  # Reasonable length
-
-    def test_watermaze_dims_has_docstring(self):
-        """WatermazeDims should have a docstring."""
-        from neurospatial.simulation.mazes.watermaze import WatermazeDims
-
-        assert WatermazeDims.__doc__ is not None

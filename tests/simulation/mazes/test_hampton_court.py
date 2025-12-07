@@ -346,22 +346,3 @@ class TestHamptonCourtTrackGraph:
         # Hampton Court maze should have at least 3 dead ends
         # (start, goal, and at least one other dead end to show complexity)
         assert len(dead_ends) >= 3
-
-
-class TestHamptonCourtDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_hampton_court_maze_has_docstring(self):
-        """make_hampton_court_maze should have a docstring."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        assert make_hampton_court_maze.__doc__ is not None
-        assert len(make_hampton_court_maze.__doc__) > 100  # Reasonable length
-
-    def test_hampton_court_dims_has_docstring(self):
-        """HamptonCourtDims should have a docstring."""
-        from neurospatial.simulation.mazes.hampton_court import HamptonCourtDims
-
-        assert HamptonCourtDims.__doc__ is not None

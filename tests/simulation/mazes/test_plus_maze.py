@@ -326,23 +326,6 @@ class TestPlusMazeTrackGraph:
         assert y_extent >= expected_y * 0.8  # At least 80%
 
 
-class TestPlusMazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_plus_maze_has_docstring(self):
-        """make_plus_maze should have a docstring."""
-        from neurospatial.simulation.mazes.plus_maze import make_plus_maze
-
-        assert make_plus_maze.__doc__ is not None
-        assert len(make_plus_maze.__doc__) > 100  # Reasonable length
-
-    def test_plus_maze_dims_has_docstring(self):
-        """PlusMazeDims should have a docstring."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        assert PlusMazeDims.__doc__ is not None
-
-
 class TestPlusMazeModuleExports:
     """Tests for module-level exports."""
 

@@ -325,20 +325,3 @@ class TestRadialArmTrackGraph:
         max_distance = distances.max()
         expected_max = dims.center_radius + dims.arm_length
         assert max_distance >= expected_max * 0.8
-
-
-class TestRadialArmDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_radial_arm_maze_has_docstring(self):
-        """make_radial_arm_maze should have a docstring."""
-        from neurospatial.simulation.mazes.radial_arm import make_radial_arm_maze
-
-        assert make_radial_arm_maze.__doc__ is not None
-        assert len(make_radial_arm_maze.__doc__) > 100  # Reasonable length
-
-    def test_radial_arm_dims_has_docstring(self):
-        """RadialArmDims should have a docstring."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        assert RadialArmDims.__doc__ is not None

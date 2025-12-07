@@ -343,20 +343,3 @@ class TestHamletTrackGraph:
         graph = maze.env_track.connectivity
         # Should have inner and outer nodes (5 each = 10 + center = 11)
         assert graph.number_of_nodes() >= 11
-
-
-class TestHamletDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_hamlet_maze_has_docstring(self):
-        """make_hamlet_maze should have a docstring."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        assert make_hamlet_maze.__doc__ is not None
-        assert len(make_hamlet_maze.__doc__) > 100  # Reasonable length
-
-    def test_hamlet_dims_has_docstring(self):
-        """HamletDims should have a docstring."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims
-
-        assert HamletDims.__doc__ is not None

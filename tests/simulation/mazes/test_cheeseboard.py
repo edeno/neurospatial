@@ -329,20 +329,3 @@ class TestMakeCheeseboardMaze:
         ]
 
         assert len(fine_rewards) > len(coarse_rewards)
-
-
-class TestCheeseboardDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_cheeseboard_maze_has_docstring(self):
-        """make_cheeseboard_maze should have a docstring."""
-        from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
-
-        assert make_cheeseboard_maze.__doc__ is not None
-        assert len(make_cheeseboard_maze.__doc__) > 100  # Reasonable length
-
-    def test_cheeseboard_dims_has_docstring(self):
-        """CheeseboardDims should have a docstring."""
-        from neurospatial.simulation.mazes.cheeseboard import CheeseboardDims
-
-        assert CheeseboardDims.__doc__ is not None

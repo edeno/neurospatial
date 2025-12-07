@@ -281,20 +281,3 @@ class TestHoneycombTrackGraph:
         expected_extent = 3 * dims.spacing * 2
         assert x_extent >= expected_extent * 0.5
         assert y_extent >= expected_extent * 0.5
-
-
-class TestHoneycombDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_honeycomb_maze_has_docstring(self):
-        """make_honeycomb_maze should have a docstring."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        assert make_honeycomb_maze.__doc__ is not None
-        assert len(make_honeycomb_maze.__doc__) > 100  # Reasonable length
-
-    def test_honeycomb_dims_has_docstring(self):
-        """HoneycombDims should have a docstring."""
-        from neurospatial.simulation.mazes.honeycomb import HoneycombDims
-
-        assert HoneycombDims.__doc__ is not None

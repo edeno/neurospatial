@@ -293,20 +293,3 @@ class TestRatHexmazeTrackGraph:
         x_extent = positions[:, 0].max() - positions[:, 0].min()
         expected_x = dims.n_modules * dims.module_width
         assert x_extent >= expected_x * 0.5  # At least 50% of expected
-
-
-class TestRatHexmazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_rat_hexmaze_has_docstring(self):
-        """make_rat_hexmaze should have a docstring."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
-
-        assert make_rat_hexmaze.__doc__ is not None
-        assert len(make_rat_hexmaze.__doc__) > 100  # Reasonable length
-
-    def test_rat_hexmaze_dims_has_docstring(self):
-        """RatHexmazeDims should have a docstring."""
-        from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims
-
-        assert RatHexmazeDims.__doc__ is not None

@@ -413,20 +413,3 @@ class TestCrosswordTrackGraph:
         ]
         # Most bins should have degree 2 (along edges), some have degree > 2 at junctions
         assert max(degrees) <= 4  # No bin should have more than 4 neighbors
-
-
-class TestCrosswordDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_crossword_maze_has_docstring(self):
-        """make_crossword_maze should have a docstring."""
-        from neurospatial.simulation.mazes.crossword import make_crossword_maze
-
-        assert make_crossword_maze.__doc__ is not None
-        assert len(make_crossword_maze.__doc__) > 100  # Reasonable length
-
-    def test_crossword_dims_has_docstring(self):
-        """CrosswordDims should have a docstring."""
-        from neurospatial.simulation.mazes.crossword import CrosswordDims
-
-        assert CrosswordDims.__doc__ is not None

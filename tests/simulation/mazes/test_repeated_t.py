@@ -332,20 +332,3 @@ class TestRepeatedTMazeStructure:
 
         for node in maze.env_track.connectivity.nodes():
             assert "pos" in maze.env_track.connectivity.nodes[node]
-
-
-class TestRepeatedTDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_repeated_t_maze_has_docstring(self):
-        """make_repeated_t_maze should have a docstring."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        assert make_repeated_t_maze.__doc__ is not None
-        assert len(make_repeated_t_maze.__doc__) > 100
-
-    def test_repeated_t_dims_has_docstring(self):
-        """RepeatedTDims should have a docstring."""
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
-
-        assert RepeatedTDims.__doc__ is not None

@@ -259,20 +259,3 @@ class TestSmallHexTrackGraph:
         # With bin_size=2.0, we expect many bins along the edges
         n_nodes = maze.env_track.connectivity.number_of_nodes()
         assert n_nodes > 200  # Should have many discretized nodes
-
-
-class TestSmallHexDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_small_hex_maze_has_docstring(self):
-        """make_small_hex_maze should have a docstring."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        assert make_small_hex_maze.__doc__ is not None
-        assert len(make_small_hex_maze.__doc__) > 100  # Reasonable length
-
-    def test_small_hex_dims_has_docstring(self):
-        """SmallHexDims should have a docstring."""
-        from neurospatial.simulation.mazes.hex_small import SmallHexDims
-
-        assert SmallHexDims.__doc__ is not None

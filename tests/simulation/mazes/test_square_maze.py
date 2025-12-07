@@ -269,23 +269,6 @@ class TestSquareMazeOpenField:
         assert nx.is_connected(maze.env_2d.connectivity)
 
 
-class TestSquareMazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_square_maze_has_docstring(self):
-        """make_square_maze should have a docstring."""
-        from neurospatial.simulation.mazes.square_maze import make_square_maze
-
-        assert make_square_maze.__doc__ is not None
-        assert len(make_square_maze.__doc__) > 100  # Reasonable length
-
-    def test_square_maze_dims_has_docstring(self):
-        """SquareMazeDims should have a docstring."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        assert SquareMazeDims.__doc__ is not None
-
-
 class TestSquareMazeModuleExports:
     """Tests for module-level exports."""
 

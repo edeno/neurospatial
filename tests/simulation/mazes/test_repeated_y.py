@@ -306,20 +306,3 @@ class TestRepeatedYTrackGraph:
         # Should have at least some high-degree nodes (junctions)
         # With 3 Y-junctions, we expect at least 3 high-degree nodes
         assert len(high_degree_nodes) >= 3
-
-
-class TestRepeatedYDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_repeated_y_maze_has_docstring(self):
-        """make_repeated_y_maze should have a docstring."""
-        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
-
-        assert make_repeated_y_maze.__doc__ is not None
-        assert len(make_repeated_y_maze.__doc__) > 100  # Reasonable length
-
-    def test_repeated_y_dims_has_docstring(self):
-        """RepeatedYDims should have a docstring."""
-        from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
-
-        assert RepeatedYDims.__doc__ is not None

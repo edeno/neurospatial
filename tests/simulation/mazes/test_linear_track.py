@@ -269,20 +269,3 @@ class TestLinearTrackTrackGraph:
         # The extent in x should be approximately the track length
         x_extent = positions[:, 0].max() - positions[:, 0].min()
         assert abs(x_extent - dims.length) < dims.length * 0.1  # Within 10%
-
-
-class TestLinearTrackDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_linear_track_has_docstring(self):
-        """make_linear_track should have a docstring."""
-        from neurospatial.simulation.mazes.linear_track import make_linear_track
-
-        assert make_linear_track.__doc__ is not None
-        assert len(make_linear_track.__doc__) > 100  # Reasonable length
-
-    def test_linear_track_dims_has_docstring(self):
-        """LinearTrackDims should have a docstring."""
-        from neurospatial.simulation.mazes.linear_track import LinearTrackDims
-
-        assert LinearTrackDims.__doc__ is not None

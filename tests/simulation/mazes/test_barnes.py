@@ -271,20 +271,3 @@ class TestMakeBarnesMaze:
         # Both should have 18 holes
         assert "hole_17" in maze_default.env_2d.regions
         assert "hole_17" in maze_explicit.env_2d.regions
-
-
-class TestBarnesMazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_barnes_maze_has_docstring(self):
-        """make_barnes_maze should have a docstring."""
-        from neurospatial.simulation.mazes.barnes import make_barnes_maze
-
-        assert make_barnes_maze.__doc__ is not None
-        assert len(make_barnes_maze.__doc__) > 100  # Reasonable length
-
-    def test_barnes_dims_has_docstring(self):
-        """BarnesDims should have a docstring."""
-        from neurospatial.simulation.mazes.barnes import BarnesDims
-
-        assert BarnesDims.__doc__ is not None

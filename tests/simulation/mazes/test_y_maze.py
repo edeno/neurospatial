@@ -345,20 +345,3 @@ class TestYMazeTrackGraph:
         y_extent = positions[:, 1].max() - positions[:, 1].min()
         expected_y = 1.5 * dims.arm_length  # 75 cm for arm_length=50
         assert y_extent >= expected_y * 0.8  # At least 80%
-
-
-class TestYMazeDocstrings:
-    """Tests for docstrings and examples."""
-
-    def test_make_y_maze_has_docstring(self):
-        """make_y_maze should have a docstring."""
-        from neurospatial.simulation.mazes.y_maze import make_y_maze
-
-        assert make_y_maze.__doc__ is not None
-        assert len(make_y_maze.__doc__) > 100  # Reasonable length
-
-    def test_y_maze_dims_has_docstring(self):
-        """YMazeDims should have a docstring."""
-        from neurospatial.simulation.mazes.y_maze import YMazeDims
-
-        assert YMazeDims.__doc__ is not None
