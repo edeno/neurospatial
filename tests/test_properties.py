@@ -48,6 +48,7 @@ def rotate_2d(angle_radians: float) -> AffineND:
     return from_rotation_matrix(rot_matrix)
 
 
+@pytest.mark.slow
 class TestEnvironmentProperties:
     """Property-based tests for Environment mathematical invariants."""
 
@@ -885,6 +886,7 @@ class TestCrossMetricProperties:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestSmoothingProperties:
     """Property-based tests for spatial field smoothing operations."""
 
@@ -1066,6 +1068,7 @@ class TestFieldNormalizationProperties:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestPlaceFieldDetectionProperties:
     """Property-based tests for place field detection invariants."""
 
