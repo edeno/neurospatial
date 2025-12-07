@@ -17,18 +17,6 @@ import pytest
 class TestModuleStructure:
     """Tests for module structure and imports."""
 
-    def test_imports_from_metrics(self):
-        """Can import from neurospatial.metrics."""
-        from neurospatial.metrics import (
-            SpatialViewMetrics,
-            is_spatial_view_cell,
-            spatial_view_cell_metrics,
-        )
-
-        assert SpatialViewMetrics is not None
-        assert spatial_view_cell_metrics is not None
-        assert is_spatial_view_cell is not None
-
     def test_imports_from_spatial_view_cells_module(self):
         """Can import directly from module."""
         from neurospatial.encoding.spatial_view import (

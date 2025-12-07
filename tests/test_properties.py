@@ -18,7 +18,7 @@ from hypothesis.extra import numpy as hnp
 from numpy.typing import NDArray
 
 from neurospatial import Environment
-from neurospatial.metrics import (
+from neurospatial.encoding.place import (
     rate_map_coherence,
     selectivity,
     skaggs_information,

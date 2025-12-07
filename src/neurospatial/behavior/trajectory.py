@@ -85,7 +85,7 @@ def compute_turn_angles(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import compute_turn_angles
+    >>> from neurospatial.behavior.trajectory import compute_turn_angles
     >>>
     >>> # Straight line trajectory
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
@@ -236,7 +236,7 @@ def compute_step_lengths(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import compute_step_lengths
+    >>> from neurospatial.behavior.trajectory import compute_step_lengths
     >>>
     >>> # Straight line trajectory with Euclidean distance
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
@@ -499,7 +499,7 @@ def mean_square_displacement(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.metrics import mean_square_displacement
+    >>> from neurospatial.behavior.trajectory import mean_square_displacement
     >>>
     >>> # Random walk trajectory (diffusive motion, α ≈ 1)
     >>> np.random.seed(42)

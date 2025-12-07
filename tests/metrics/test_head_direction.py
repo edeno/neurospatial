@@ -445,12 +445,6 @@ class TestHeadDirectionTuningCurve:
         # Bins outside 0-60 degrees should have zero rate (no occupancy)
         assert np.all(np.isfinite(firing_rates))
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.encoding import head_direction_tuning_curve
-
-        assert callable(head_direction_tuning_curve)
-
     def test_spike_assignment_at_circular_boundary(self) -> None:
         """Test spikes are correctly assigned when HD crosses 0/360 boundary."""
         from neurospatial.encoding.head_direction import head_direction_tuning_curve
@@ -662,12 +656,6 @@ class TestHeadDirectionMetricsDataclass:
         assert len(output) > 50  # Should be substantial
         assert "180.0" in output  # Preferred direction
 
-    def test_exported_from_metrics_init(self) -> None:
-        """Test that HeadDirectionMetrics is exported from neurospatial.metrics."""
-        from neurospatial.metrics import HeadDirectionMetrics
-
-        assert HeadDirectionMetrics is not None
-
 
 class TestHeadDirectionMetricsFunction:
     """Tests for head_direction_metrics() function (Milestone 3.4)."""
@@ -865,12 +853,6 @@ class TestHeadDirectionMetricsFunction:
         with pytest.raises(ValueError, match=r"[Cc]onstant"):
             head_direction_metrics(bin_centers, firing_rates)
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.encoding import head_direction_metrics
-
-        assert callable(head_direction_metrics)
-
 
 class TestIsHeadDirectionCell:
     """Tests for is_head_direction_cell() convenience function (Milestone 3.4)."""
@@ -977,12 +959,6 @@ class TestIsHeadDirectionCell:
             angle_unit="deg",
         )
         assert isinstance(result, bool)
-
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import is_head_direction_cell
-
-        assert callable(is_head_direction_cell)
 
 
 class TestPlotHeadDirectionTuning:
@@ -1389,9 +1365,3 @@ class TestPlotHeadDirectionTuning:
         assert len(lines) == 1
 
         plt.close("all")
-
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import plot_head_direction_tuning
-
-        assert callable(plot_head_direction_tuning)

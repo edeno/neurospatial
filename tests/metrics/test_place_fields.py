@@ -40,9 +40,9 @@ def test_place_field_workflow_integration():
     # Import all functions
     from neurospatial.encoding.place import (
         detect_place_fields,
-        field_centroid,
         field_size,
         field_stability,
+        rate_map_centroid,
         selectivity,
         skaggs_information,
         sparsity,
@@ -55,7 +55,7 @@ def test_place_field_workflow_integration():
     # Measure first field
     field = fields[0]
     size = field_size(field, env)
-    centroid = field_centroid(firing_rate, field, env)
+    centroid = rate_map_centroid(firing_rate, field, env)
 
     assert size > 0
     assert centroid.shape == (2,)
@@ -261,7 +261,7 @@ class TestFieldMetrics:
         assert size > 0
         assert size < 10.0  # Less than 10 cm² for 2cm bins
 
-    def test_field_centroid(self):
+    def test_rate_map_centroid(self):
         """Test weighted center of mass calculation."""
         # Create simple environment
         positions = []
@@ -284,15 +284,15 @@ class TestFieldMetrics:
         threshold = 0.5
         field_bins = np.where(firing_rate > threshold)[0]
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
-        centroid = field_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(firing_rate, field_bins, env)
 
         # Centroid should be near (10, 10)
         assert centroid.shape == (2,)
         assert_allclose(centroid, [10.0, 10.0], atol=1.0)
 
-    def test_field_centroid_asymmetric(self):
+    def test_rate_map_centroid_asymmetric(self):
         """Test centroid with asymmetric field (weighted toward high rates)."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 20
@@ -308,14 +308,14 @@ class TestFieldMetrics:
 
         field_bins = np.where(firing_rate > 1.0)[0]
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
-        centroid = field_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(firing_rate, field_bins, env)
 
         # Centroid should be near peak
         assert_allclose(centroid, peak_pos, atol=2.0)
 
-    def test_field_centroid_graph_method(self):
+    def test_rate_map_centroid_graph_method(self):
         """Test graph-based centroid stays on-track and respects geometry.
 
         The graph method finds the bin within the field that minimizes
@@ -331,10 +331,10 @@ class TestFieldMetrics:
         field_bins = np.array([0, 1, 2, 3, 4])
         firing_rate[field_bins] = 5.0
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
         # Graph centroid should be one of the field bins
-        centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
 
         # Verify it's exactly at a bin center (on-track guarantee)
         distances_to_bins = np.linalg.norm(
@@ -342,7 +342,7 @@ class TestFieldMetrics:
         )
         assert np.min(distances_to_bins) < 1e-10, "Graph centroid should be at a bin"
 
-    def test_field_centroid_graph_vs_euclidean(self):
+    def test_rate_map_centroid_graph_vs_euclidean(self):
         """Test that graph and euclidean methods give different results.
 
         For irregular geometries, the weighted Euclidean mean can fall
@@ -371,12 +371,12 @@ class TestFieldMetrics:
         if len(field_bins) < 3:
             pytest.skip("Not enough field bins for L-shape test")
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
-        centroid_euclidean = field_centroid(
+        centroid_euclidean = rate_map_centroid(
             firing_rate, field_bins, env, method="euclidean"
         )
-        centroid_graph = field_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
 
         # Both should be 2D
         assert centroid_euclidean.shape == (2,)
@@ -388,7 +388,7 @@ class TestFieldMetrics:
         )
         assert np.min(distances_to_bins) < 1e-10
 
-    def test_field_centroid_single_bin(self):
+    def test_rate_map_centroid_single_bin(self):
         """Test graph centroid with single bin field."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 20
@@ -398,9 +398,9 @@ class TestFieldMetrics:
         field_bins = np.array([5])
         firing_rate[5] = 10.0
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
-        centroid = field_centroid(firing_rate, field_bins, env, method="graph")
+        centroid = rate_map_centroid(firing_rate, field_bins, env, method="graph")
         assert_allclose(centroid, env.bin_centers[5])
 
 
@@ -1833,21 +1833,21 @@ class TestDetectPlaceFieldsValidation:
 
 
 class TestFieldCentroidEdgeCases:
-    """Test edge cases in field_centroid function."""
+    """Test edge cases in rate_map_centroid function."""
 
-    def test_field_centroid_zero_firing_rate(self):
-        """Test field_centroid when all firing rates are zero (unweighted centroid)."""
+    def test_rate_map_centroid_zero_firing_rate(self):
+        """Test rate_map_centroid when all firing rates are zero (unweighted centroid)."""
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        from neurospatial.encoding.place import field_centroid
+        from neurospatial.encoding.place import rate_map_centroid
 
         field_bins = np.array([0, 1, 2, 3, 4])
         firing_rate = np.zeros(env.n_bins)
         firing_rate[field_bins] = 0.0
 
-        centroid = field_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(firing_rate, field_bins, env)
 
         expected_centroid = env.bin_centers[field_bins].mean(axis=0)
         assert_allclose(centroid, expected_centroid, rtol=1e-10)

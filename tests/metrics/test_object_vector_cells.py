@@ -210,12 +210,6 @@ class TestObjectVectorMetricsDataclass:
 
         assert str(metrics) == metrics.interpretation()
 
-    def test_exported_from_metrics_init(self) -> None:
-        """Test that ObjectVectorMetrics is exported from neurospatial.metrics."""
-        from neurospatial.metrics import ObjectVectorMetrics
-
-        assert ObjectVectorMetrics is not None
-
 
 class TestComputeObjectVectorTuning:
     """Tests for compute_object_vector_tuning() function."""
@@ -502,12 +496,6 @@ class TestComputeObjectVectorTuning:
                 env=env,
             )
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import compute_object_vector_tuning
-
-        assert callable(compute_object_vector_tuning)
-
 
 class TestObjectVectorScore:
     """Tests for object_vector_score() function."""
@@ -616,12 +604,6 @@ class TestObjectVectorScore:
         score = object_vector_score(tuning_curve)
         assert np.isfinite(score) or np.isnan(score)
 
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import object_vector_score
-
-        assert callable(object_vector_score)
-
 
 class TestIsObjectVectorCell:
     """Tests for is_object_vector_cell() classifier function."""
@@ -699,12 +681,6 @@ class TestIsObjectVectorCell:
 
         # Strict should be harder to pass
         assert not result_strict  # Should fail strict thresholds
-
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import is_object_vector_cell
-
-        assert callable(is_object_vector_cell)
 
 
 class TestPlotObjectVectorTuning:
@@ -864,12 +840,6 @@ class TestPlotObjectVectorTuning:
             )
 
         plt.close("all")
-
-    def test_exported_from_metrics(self) -> None:
-        """Test that function is exported from neurospatial.metrics."""
-        from neurospatial.metrics import plot_object_vector_tuning
-
-        assert callable(plot_object_vector_tuning)
 
 
 class TestRecoverGroundTruthFromSimulation:

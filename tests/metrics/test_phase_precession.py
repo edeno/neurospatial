@@ -11,7 +11,7 @@ class TestPhasePrecessionResult:
 
     def test_is_significant_below_alpha(self) -> None:
         """Should return True when p-value is below alpha."""
-        from neurospatial.metrics import PhasePrecessionResult
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=-0.1,
@@ -25,7 +25,7 @@ class TestPhasePrecessionResult:
 
     def test_is_significant_above_alpha(self) -> None:
         """Should return False when p-value is above alpha."""
-        from neurospatial.metrics import PhasePrecessionResult
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=-0.1,
@@ -39,7 +39,7 @@ class TestPhasePrecessionResult:
 
     def test_interpretation_significant_precession(self) -> None:
         """Interpretation should indicate significant precession."""
-        from neurospatial.metrics import PhasePrecessionResult
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=-0.1,
@@ -55,7 +55,7 @@ class TestPhasePrecessionResult:
 
     def test_interpretation_recession(self) -> None:
         """Interpretation should indicate recession for positive slope."""
-        from neurospatial.metrics import PhasePrecessionResult
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=0.1,
@@ -70,7 +70,7 @@ class TestPhasePrecessionResult:
 
     def test_str_returns_interpretation(self) -> None:
         """str() should return interpretation."""
-        from neurospatial.metrics import PhasePrecessionResult
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=-0.1,
@@ -88,7 +88,7 @@ class TestPhasePrecession:
 
     def test_negative_slope_for_precession(self) -> None:
         """Should return negative slope for phase precession data."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -105,7 +105,7 @@ class TestPhasePrecession:
 
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -117,7 +117,7 @@ class TestPhasePrecession:
 
     def test_pvalue_in_valid_range(self) -> None:
         """P-value should be in [0, 1]."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -129,7 +129,7 @@ class TestPhasePrecession:
 
     def test_offset_in_valid_range(self) -> None:
         """Offset should be in [0, 2pi]."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -142,7 +142,7 @@ class TestPhasePrecession:
 
     def test_mean_resultant_length_in_valid_range(self) -> None:
         """Mean resultant length should be in [0, 1]."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -154,7 +154,7 @@ class TestPhasePrecession:
 
     def test_insufficient_spikes_raises(self) -> None:
         """Should raise ValueError for insufficient spikes."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         positions = np.array([1.0, 2.0])  # Only 2 spikes
         phases = np.array([0.5, 1.5])
@@ -164,7 +164,7 @@ class TestPhasePrecession:
 
     def test_mismatched_lengths_raises(self) -> None:
         """Should raise ValueError for mismatched array lengths."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         positions = np.array([1.0, 2.0, 3.0])
         phases = np.array([0.5, 1.5])
@@ -174,7 +174,7 @@ class TestPhasePrecession:
 
     def test_degree_input(self) -> None:
         """Should handle phases in degrees."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -186,7 +186,7 @@ class TestPhasePrecession:
 
     def test_position_range_normalization(self) -> None:
         """position_range should normalize positions and change slope units."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -199,7 +199,7 @@ class TestPhasePrecession:
 
     def test_invalid_position_range_raises(self) -> None:
         """Invalid position_range should raise ValueError."""
-        from neurospatial.metrics import phase_precession
+        from neurospatial.encoding.phase_precession import phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -214,7 +214,7 @@ class TestHasPhasePrecession:
 
     def test_returns_bool(self) -> None:
         """Should return a boolean value."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 100, 50)
@@ -226,7 +226,7 @@ class TestHasPhasePrecession:
 
     def test_detects_precession(self) -> None:
         """Should detect strong phase precession."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 200)
@@ -244,7 +244,7 @@ class TestHasPhasePrecession:
 
     def test_random_data_usually_false(self) -> None:
         """Random data should usually not show phase precession."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         rng = np.random.default_rng(42)
         positions = rng.uniform(0, 100, 50)
@@ -258,7 +258,7 @@ class TestHasPhasePrecession:
 
     def test_positive_slope_returns_false(self) -> None:
         """Should return False for positive slope (recession, not precession)."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 200)
@@ -275,7 +275,7 @@ class TestHasPhasePrecession:
 
     def test_handles_insufficient_data(self) -> None:
         """Should return False for insufficient data (not raise)."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         positions = np.array([1.0, 2.0])
         phases = np.array([0.5, 1.5])
@@ -287,7 +287,7 @@ class TestHasPhasePrecession:
 
     def test_custom_thresholds(self) -> None:
         """Custom thresholds should affect result."""
-        from neurospatial.metrics import has_phase_precession
+        from neurospatial.encoding.phase_precession import has_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -317,7 +317,7 @@ class TestPlotPhasePrecession:
         """Should return matplotlib Axes object."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -335,7 +335,7 @@ class TestPlotPhasePrecession:
         """Should plot on provided axes."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -353,7 +353,7 @@ class TestPlotPhasePrecession:
         """Should plot phases doubled (0-4pi) per O'Keefe & Recce convention."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         n_points = 50
@@ -386,7 +386,7 @@ class TestPlotPhasePrecession:
         """Y-axis should have pi-based labels (0, π, 2π, 3π, 4π)."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -409,7 +409,10 @@ class TestPlotPhasePrecession:
         """Should show fitted line when result is provided and show_fit=True."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import phase_precession, plot_phase_precession
+        from neurospatial.encoding.phase_precession import (
+            phase_precession,
+            plot_phase_precession,
+        )
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -434,7 +437,10 @@ class TestPlotPhasePrecession:
         """Should not show fitted line when show_fit=False."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import phase_precession, plot_phase_precession
+        from neurospatial.encoding.phase_precession import (
+            phase_precession,
+            plot_phase_precession,
+        )
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -454,7 +460,7 @@ class TestPlotPhasePrecession:
         """Should not show fitted line when result is None."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -473,7 +479,7 @@ class TestPlotPhasePrecession:
         """Should use custom position label on x-axis."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -491,7 +497,7 @@ class TestPlotPhasePrecession:
         """Should respect marker_size parameter."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -515,7 +521,7 @@ class TestPlotPhasePrecession:
         """Should respect marker_alpha parameter."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -541,7 +547,7 @@ class TestPlotPhasePrecession:
         """scatter_kwargs should be passed to scatter plot."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -566,7 +572,10 @@ class TestPlotPhasePrecession:
         """line_kwargs should be passed to fitted line."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import phase_precession, plot_phase_precession
+        from neurospatial.encoding.phase_precession import (
+            phase_precession,
+            plot_phase_precession,
+        )
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -598,7 +607,7 @@ class TestPlotPhasePrecession:
         """Should show annotation explaining doubled phase axis when show_doubled_note=True."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -623,7 +632,7 @@ class TestPlotPhasePrecession:
         """Should not show doubled note when show_doubled_note=False."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -646,7 +655,10 @@ class TestPlotPhasePrecession:
         """Fitted line should appear in both the lower and upper phase regions."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import phase_precession, plot_phase_precession
+        from neurospatial.encoding.phase_precession import (
+            phase_precession,
+            plot_phase_precession,
+        )
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 100)
@@ -682,7 +694,7 @@ class TestPlotPhasePrecession:
         """Should correctly handle phases in radians."""
         import matplotlib.pyplot as plt
 
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 50)
@@ -704,7 +716,7 @@ class TestPlotPhasePrecession:
 
     def test_mismatched_lengths_raises(self) -> None:
         """Mismatched array lengths should raise ValueError with clear message."""
-        from neurospatial.metrics import plot_phase_precession
+        from neurospatial.encoding.phase_precession import plot_phase_precession
 
         positions = np.linspace(0, 50, 10)
         phases = np.linspace(0, 2 * np.pi, 5)
