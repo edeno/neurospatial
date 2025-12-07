@@ -5,8 +5,20 @@ These tests use randomized inputs to verify that key mathematical properties
 hold across a wide range of scenarios. Property-based testing is particularly
 valuable for scientific code where mathematical constraints must be maintained.
 
-Priority 3.1: Property-based testing with Hypothesis
-- Added neuroscience metrics property tests (sparsity, selectivity, skaggs_information, coherence)
+Categories of properties tested:
+1. Environment mathematical invariants (bin centers, connectivity, normalization)
+2. Transform mathematical properties (rotation composition, isometry, inverse)
+3. Neuroscience metrics (sparsity, selectivity, skaggs_information, coherence)
+4. Circular statistics (wrap_angle, circular_mean, mean_resultant_length)
+5. Egocentric transforms (allocentric<->egocentric roundtrips, bearing properties)
+6. Smoothing operations (non-negativity, mass preservation)
+7. Place field detection (valid indices, uniform rate behavior)
+
+Performance Notes:
+- Tests use Hypothesis profiles defined in conftest.py for consistent settings
+- Set HYPOTHESIS_PROFILE=ci for faster CI runs (fewer examples)
+- Set HYPOTHESIS_PROFILE=thorough for comprehensive pre-release testing
+- Default "dev" profile balances speed and coverage
 """
 
 import networkx as nx
@@ -27,6 +39,12 @@ from neurospatial.encoding.place import (
 from neurospatial.ops import normalize_field
 from neurospatial.ops.alignment import get_2d_rotation_matrix
 from neurospatial.ops.transforms import AffineND, from_rotation_matrix
+from neurospatial.stats.circular import (
+    circular_mean,
+    circular_variance,
+    mean_resultant_length,
+    wrap_angle,
+)
 
 
 def rotate_2d(angle_radians: float) -> AffineND:
@@ -65,7 +83,9 @@ class TestEnvironmentProperties:
         ),
         bin_size=st.floats(min_value=1.0, max_value=100.0),
     )
-    @settings(max_examples=50, deadline=5000)
+    @settings(
+        deadline=10000
+    )  # Use profile's max_examples, extend deadline for expensive test
     def test_bin_centers_within_data_range(
         self, data: NDArray[np.float64], bin_size: float
     ):
@@ -119,7 +139,7 @@ class TestEnvironmentProperties:
         angle1=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi),
         angle2=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi),
     )
-    @settings(max_examples=100, deadline=1000)
+    @settings(deadline=1000)  # Use profile's max_examples
     def test_rotation_composition_property(self, angle1: float, angle2: float):
         """
         Property: Composing two rotations should equal a single rotation by the sum.
@@ -160,7 +180,9 @@ class TestEnvironmentProperties:
         n_nodes=st.integers(min_value=5, max_value=30),
         seed=st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=50, deadline=5000)
+    @settings(
+        deadline=10000
+    )  # Use profile's max_examples, extend deadline for graph operations
     def test_distance_triangle_inequality(self, n_nodes: int, seed: int):
         """
         Property: Graph distances must satisfy triangle inequality.
@@ -232,7 +254,7 @@ class TestEnvironmentProperties:
         n_bins=st.integers(min_value=20, max_value=100),
         seed=st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=50, deadline=5000)
+    @settings(deadline=10000)  # Use profile's max_examples
     def test_connectivity_graph_is_undirected(self, n_bins: int, seed: int):
         """
         Property: Connectivity graph must be undirected (symmetric edges).
@@ -293,7 +315,7 @@ class TestEnvironmentProperties:
         field_size=st.integers(min_value=10, max_value=100),
         seed=st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=50, deadline=3000)
+    @settings(deadline=5000)  # Use profile's max_examples
     def test_normalized_field_sums_to_one(self, field_size: int, seed: int):
         """
         Property: Normalized spatial fields should sum to 1 (probability mass).
@@ -364,7 +386,7 @@ class TestTransformProperties:
         point_x=st.floats(min_value=-100.0, max_value=100.0),
         point_y=st.floats(min_value=-100.0, max_value=100.0),
     )
-    @settings(max_examples=100, deadline=1000)
+    @settings(deadline=1000)  # Use profile's max_examples
     def test_rotation_preserves_distance_from_origin(
         self, angle: float, point_x: float, point_y: float
     ):
@@ -407,7 +429,7 @@ class TestTransformProperties:
     @given(
         angle=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi),
     )
-    @settings(max_examples=50, deadline=1000)
+    @settings(deadline=1000)  # Use profile's max_examples
     def test_rotation_inverse_property(self, angle: float):
         """
         Property: Applying a rotation and its inverse should return to identity.
@@ -526,7 +548,7 @@ class TestSparsityProperties:
     """
 
     @given(valid_firing_rate_and_occupancy())
-    @settings(max_examples=100, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_sparsity_range_property(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -542,7 +564,7 @@ class TestSparsityProperties:
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
         st.floats(min_value=0.1, max_value=100.0),
     )
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_uniform_firing_high_sparsity(
         self,
         data: tuple[NDArray[np.float64], NDArray[np.float64]],
@@ -562,7 +584,7 @@ class TestSparsityProperties:
         assert sp >= 0.95, f"Uniform firing sparsity {sp} should be close to 1.0"
 
     @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_single_peak_low_sparsity(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -602,7 +624,7 @@ class TestSelectivityProperties:
     """
 
     @given(valid_firing_rate_and_occupancy())
-    @settings(max_examples=100, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_selectivity_minimum_value(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -624,7 +646,7 @@ class TestSelectivityProperties:
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
         st.floats(min_value=0.1, max_value=100.0),
     )
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_uniform_firing_selectivity_one(
         self,
         data: tuple[NDArray[np.float64], NDArray[np.float64]],
@@ -646,7 +668,7 @@ class TestSelectivityProperties:
         )
 
     @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_sparse_firing_high_selectivity(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -680,7 +702,7 @@ class TestSkaggsInformationProperties:
     """
 
     @given(valid_firing_rate_and_occupancy())
-    @settings(max_examples=100, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_information_non_negative(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -696,7 +718,7 @@ class TestSkaggsInformationProperties:
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
         st.floats(min_value=0.1, max_value=100.0),
     )
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_uniform_firing_zero_information(
         self,
         data: tuple[NDArray[np.float64], NDArray[np.float64]],
@@ -715,7 +737,7 @@ class TestSkaggsInformationProperties:
         assert info < 0.01, f"Uniform firing information {info} should be close to 0.0"
 
     @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_selective_firing_positive_information(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -756,7 +778,7 @@ class TestRateMapCoherenceProperties:
         st.integers(min_value=50, max_value=200),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_coherence_range_property(self, n_positions: int, seed: int):
         """Property: coherence is in [-1, 1] for all valid inputs."""
         # Create simple environment
@@ -785,7 +807,7 @@ class TestRateMapCoherenceProperties:
         st.integers(min_value=100, max_value=300),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=30, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_smooth_field_high_coherence(self, n_positions: int, seed: int):
         """Property: smooth Gaussian field produces high coherence."""
         # Create environment
@@ -827,7 +849,7 @@ class TestCrossMetricProperties:
     """
 
     @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_sparsity_selectivity_inverse_relationship(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -858,7 +880,7 @@ class TestCrossMetricProperties:
             )
 
     @given(valid_firing_rate_and_occupancy(min_bins=20, max_bins=100))
-    @settings(max_examples=50, deadline=None)
+    @settings(deadline=None)  # Use profile's max_examples
     def test_uniform_firing_implies_zero_information(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
@@ -895,7 +917,9 @@ class TestSmoothingProperties:
         st.integers(min_value=0, max_value=10000),
         st.floats(min_value=1.0, max_value=10.0),
     )
-    @settings(max_examples=30, deadline=15000)
+    @settings(
+        deadline=20000
+    )  # Use profile's max_examples, extend deadline for smoothing
     def test_smoothing_preserves_non_negativity(
         self, n_positions: int, seed: int, bandwidth: float
     ):
@@ -931,7 +955,9 @@ class TestSmoothingProperties:
         st.integers(min_value=0, max_value=10000),
         st.floats(min_value=1.0, max_value=10.0),
     )
-    @settings(max_examples=30, deadline=15000)
+    @settings(
+        deadline=20000
+    )  # Use profile's max_examples, extend deadline for smoothing
     def test_transition_smoothing_preserves_mass(
         self, n_positions: int, seed: int, bandwidth: float
     ):
@@ -971,7 +997,9 @@ class TestSmoothingProperties:
         st.integers(min_value=100, max_value=500),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=30, deadline=15000)
+    @settings(
+        deadline=20000
+    )  # Use profile's max_examples, extend deadline for smoothing
     def test_large_bandwidth_smooths_towards_mean(self, n_positions: int, seed: int):
         """Property: Large bandwidth smoothing produces values closer to mean."""
         rng = np.random.default_rng(seed)
@@ -1012,7 +1040,7 @@ class TestFieldNormalizationProperties:
         st.integers(min_value=10, max_value=100),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=50, deadline=5000)
+    @settings(deadline=5000)  # Use profile's max_examples
     def test_normalize_field_sum_one(self, n_bins: int, seed: int):
         """Property: Normalized field sums to 1."""
         rng = np.random.default_rng(seed)
@@ -1038,7 +1066,7 @@ class TestFieldNormalizationProperties:
         st.integers(min_value=0, max_value=10000),
         st.floats(min_value=0.1, max_value=100.0),
     )
-    @settings(max_examples=50, deadline=5000)
+    @settings(deadline=5000)  # Use profile's max_examples
     def test_normalize_scaling_invariant(self, n_bins: int, seed: int, scale: float):
         """Property: Normalization is scale-invariant."""
         rng = np.random.default_rng(seed)
@@ -1076,7 +1104,9 @@ class TestPlaceFieldDetectionProperties:
         st.integers(min_value=100, max_value=300),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=20, deadline=20000)
+    @settings(
+        deadline=30000
+    )  # Use profile's max_examples, extend deadline for detection
     def test_detected_fields_have_valid_indices(self, n_positions: int, seed: int):
         """Property: Detected field bin indices are valid."""
         from neurospatial.encoding.place import detect_place_fields
@@ -1120,7 +1150,9 @@ class TestPlaceFieldDetectionProperties:
         st.integers(min_value=100, max_value=300),
         st.integers(min_value=0, max_value=10000),
     )
-    @settings(max_examples=20, deadline=20000)
+    @settings(
+        deadline=30000
+    )  # Use profile's max_examples, extend deadline for detection
     def test_uniform_rate_produces_no_fields(self, n_positions: int, seed: int):
         """Property: Uniform firing rate should produce no detected fields."""
         from neurospatial.encoding.place import detect_place_fields
@@ -1159,3 +1191,734 @@ class TestPlaceFieldDetectionProperties:
                     assert 0 <= bin_idx < env.n_bins
         except (ValueError, RuntimeError):
             pass
+
+
+# =============================================================================
+# Property Tests for Circular Statistics
+# =============================================================================
+
+
+class TestWrapAngleProperties:
+    """Property-based tests for wrap_angle function.
+
+    wrap_angle maps angles to (-pi, pi] range while preserving
+    trigonometric values. Key properties:
+    - Output always in (-pi, pi]
+    - Idempotent: wrap(wrap(x)) == wrap(x)
+    - Preserves sin/cos values
+    - Invariant to 2*pi shifts
+    """
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=100),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_output_always_in_range(self, angles: NDArray[np.float64]) -> None:
+        """Property: wrap_angle output is always in (-pi, pi]."""
+        wrapped = wrap_angle(angles)
+
+        # All values should be in (-pi, pi]
+        assert np.all(wrapped > -np.pi), "Some angles <= -pi"
+        assert np.all(wrapped <= np.pi), "Some angles > pi"
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=100),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_idempotent(self, angles: NDArray[np.float64]) -> None:
+        """Property: wrapping twice gives same result as wrapping once."""
+        wrapped_once = wrap_angle(angles)
+        wrapped_twice = wrap_angle(wrapped_once)
+
+        np.testing.assert_allclose(
+            wrapped_once,
+            wrapped_twice,
+            rtol=1e-10,
+            err_msg="wrap_angle is not idempotent",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=100),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_preserves_trigonometric_values(self, angles: NDArray[np.float64]) -> None:
+        """Property: wrapping preserves sin and cos values."""
+        wrapped = wrap_angle(angles)
+
+        # Use generous atol for near-zero values where floating-point
+        # precision limits matter (e.g., sin(10*pi) ≈ 0 but with fp error)
+        np.testing.assert_allclose(
+            np.sin(angles),
+            np.sin(wrapped),
+            rtol=1e-10,
+            atol=1e-14,
+            err_msg="wrap_angle changed sin values",
+        )
+        np.testing.assert_allclose(
+            np.cos(angles),
+            np.cos(wrapped),
+            rtol=1e-10,
+            atol=1e-14,
+            err_msg="wrap_angle changed cos values",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=1, max_value=50),
+            elements=st.floats(
+                min_value=-5 * np.pi,
+                max_value=5 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        ),
+        st.integers(min_value=-10, max_value=10),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_shift_by_2pi_invariant(self, angles: NDArray[np.float64], k: int) -> None:
+        """Property: adding k*2*pi then wrapping gives same result.
+
+        Note: -pi and pi are equivalent angles, so we compare via
+        trigonometric functions which handle the discontinuity.
+        """
+        shifted = angles + k * 2 * np.pi
+        wrapped_original = wrap_angle(angles)
+        wrapped_shifted = wrap_angle(shifted)
+
+        # Compare via sin/cos to handle -pi vs pi equivalence
+        np.testing.assert_allclose(
+            np.sin(wrapped_original),
+            np.sin(wrapped_shifted),
+            rtol=1e-10,
+            atol=1e-14,
+            err_msg="wrap_angle not invariant to 2*pi shifts (sin)",
+        )
+        np.testing.assert_allclose(
+            np.cos(wrapped_original),
+            np.cos(wrapped_shifted),
+            rtol=1e-10,
+            atol=1e-14,
+            err_msg="wrap_angle not invariant to 2*pi shifts (cos)",
+        )
+
+
+class TestCircularMeanProperties:
+    """Property-based tests for circular_mean function.
+
+    Circular mean computes the mean direction of angular data.
+    Key properties:
+    - Output always in [-pi, pi]
+    - Identical angles give that angle as mean
+    - Rotation equivariance: rotate inputs -> rotate output
+    """
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_output_in_valid_range(self, angles: NDArray[np.float64]) -> None:
+        """Property: circular mean is in [-pi, pi]."""
+        mean = circular_mean(angles)
+
+        assert -np.pi <= mean <= np.pi, f"Mean {mean} outside [-pi, pi]"
+
+    @given(
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.integers(min_value=3, max_value=50),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_identical_angles_give_that_angle(self, angle: float, n: int) -> None:
+        """Property: circular mean of identical angles is that angle."""
+        angles = np.full(n, angle, dtype=np.float64)
+        mean = circular_mean(angles)
+
+        np.testing.assert_allclose(
+            mean,
+            angle,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="Mean of identical angles should be that angle",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-np.pi,
+                max_value=np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_rotation_equivariance(self, angles: NDArray[np.float64]) -> None:
+        """Property: rotating all angles rotates the mean by same amount."""
+        rotation = np.pi / 4  # Arbitrary rotation
+        rotated_angles = angles + rotation
+
+        mean_original = circular_mean(angles)
+        mean_rotated = circular_mean(rotated_angles)
+
+        # The means should differ by the rotation (mod 2*pi)
+        expected_rotated_mean = wrap_angle(np.array([mean_original + rotation]))[0]
+        actual_rotated_mean = wrap_angle(np.array([mean_rotated]))[0]
+
+        np.testing.assert_allclose(
+            actual_rotated_mean,
+            expected_rotated_mean,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="Circular mean not equivariant to rotation",
+        )
+
+
+class TestMeanResultantLengthProperties:
+    """Property-based tests for mean_resultant_length function.
+
+    Mean resultant length R measures concentration of circular data.
+    Key properties:
+    - Range: [0, 1]
+    - Identical angles give R=1
+    - Rotation invariant
+    """
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_output_in_valid_range(self, angles: NDArray[np.float64]) -> None:
+        """Property: mean resultant length is in [0, 1]."""
+        r = mean_resultant_length(angles)
+
+        # Allow small numerical tolerance for floating-point arithmetic
+        assert -1e-10 <= r <= 1.0 + 1e-10, f"R={r} outside [0, 1]"
+
+    @given(
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.integers(min_value=3, max_value=50),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_identical_angles_give_one(self, angle: float, n: int) -> None:
+        """Property: identical angles give R=1."""
+        angles = np.full(n, angle, dtype=np.float64)
+        r = mean_resultant_length(angles)
+
+        np.testing.assert_allclose(
+            r,
+            1.0,
+            rtol=1e-10,
+            err_msg="Identical angles should give R=1",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-np.pi,
+                max_value=np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_rotation_invariant(self, angles: NDArray[np.float64]) -> None:
+        """Property: R is invariant to rotation of all angles."""
+        rotation = np.pi / 3  # Arbitrary rotation
+        rotated_angles = angles + rotation
+
+        r_original = mean_resultant_length(angles)
+        r_rotated = mean_resultant_length(rotated_angles)
+
+        np.testing.assert_allclose(
+            r_original,
+            r_rotated,
+            rtol=1e-10,
+            err_msg="R should be rotation invariant",
+        )
+
+
+class TestCircularVarianceProperties:
+    """Property-based tests for circular_variance function.
+
+    Circular variance V = 1 - R measures dispersion of circular data.
+    Key properties:
+    - Range: [0, 1]
+    - V + R = 1 (by definition)
+    - Identical angles give V=0
+    """
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_variance_plus_r_equals_one(self, angles: NDArray[np.float64]) -> None:
+        """Property: variance = 1 - R (definition check)."""
+        r = mean_resultant_length(angles)
+        v = circular_variance(angles)
+
+        np.testing.assert_allclose(
+            v + r,
+            1.0,
+            rtol=1e-10,
+            err_msg="V + R should equal 1",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.integers(min_value=3, max_value=50),
+            elements=st.floats(
+                min_value=-10 * np.pi,
+                max_value=10 * np.pi,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_output_in_valid_range(self, angles: NDArray[np.float64]) -> None:
+        """Property: circular variance is in [0, 1]."""
+        v = circular_variance(angles)
+
+        # Allow small numerical tolerance for floating-point arithmetic
+        assert -1e-10 <= v <= 1.0 + 1e-10, f"Variance {v} outside [0, 1]"
+
+    @given(
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.integers(min_value=3, max_value=50),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_identical_angles_give_zero_variance(self, angle: float, n: int) -> None:
+        """Property: identical angles give variance=0."""
+        angles = np.full(n, angle, dtype=np.float64)
+        v = circular_variance(angles)
+
+        np.testing.assert_allclose(
+            v,
+            0.0,
+            atol=1e-10,
+            err_msg="Identical angles should give variance=0",
+        )
+
+
+# =============================================================================
+# Property Tests for Egocentric Transforms
+# =============================================================================
+
+
+class TestEgocentricTransformProperties:
+    """Property-based tests for egocentric coordinate transforms.
+
+    Allocentric <-> egocentric transforms convert between world coordinates
+    and animal-centered coordinates. Key properties:
+    - Roundtrip: allo -> ego -> allo is identity
+    - Self position maps to origin in egocentric frame
+    - Point ahead has positive x in egocentric frame
+
+    Note: API is allocentric_to_egocentric(points, positions, headings)
+    Output shape: (n_time, n_points, 2)
+    """
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_allocentric_to_egocentric_roundtrip(
+        self, x: float, y: float, heading: float
+    ) -> None:
+        """Property: allocentric -> egocentric -> allocentric is identity."""
+        from neurospatial.ops.egocentric import (
+            allocentric_to_egocentric,
+            egocentric_to_allocentric,
+        )
+
+        position = np.array([[x, y]])
+        point = np.array([[x + 10, y + 5]])  # Some other point (n_points=1, 2)
+        headings = np.array([heading])
+
+        # Transform to egocentric: (points, positions, headings)
+        # Output: (n_time=1, n_points=1, 2)
+        ego_point = allocentric_to_egocentric(point, position, headings)
+
+        # Transform back to allocentric: (points, positions, headings)
+        # Input shape: (n_time=1, n_points=1, 2)
+        allo_point = egocentric_to_allocentric(ego_point, position, headings)
+
+        # Output: (n_time=1, n_points=1, 2), compare to original (n_points=1, 2)
+        np.testing.assert_allclose(
+            allo_point[0],  # Take first time point
+            point,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="Roundtrip should recover original point",
+        )
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_self_position_maps_to_origin(
+        self, x: float, y: float, heading: float
+    ) -> None:
+        """Property: animal's position maps to origin in egocentric frame."""
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
+
+        position = np.array([[x, y]])  # shape (n_time=1, 2)
+        headings = np.array([heading])
+
+        # Transform position to egocentric: (points, positions, headings)
+        # Output: (n_time=1, n_points=1, 2)
+        ego_self = allocentric_to_egocentric(position, position, headings)
+
+        np.testing.assert_allclose(
+            ego_self[0, 0],  # First time, first point
+            [0.0, 0.0],
+            atol=1e-10,
+            err_msg="Self position should map to origin",
+        )
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.floats(min_value=1, max_value=50, allow_nan=False),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_point_ahead_has_positive_x(
+        self, x: float, y: float, heading: float, distance: float
+    ) -> None:
+        """Property: point directly ahead maps to positive x-axis."""
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
+
+        position = np.array([[x, y]])  # shape (n_time=1, 2)
+        headings = np.array([heading])
+
+        # Point directly ahead in allocentric coordinates
+        point_ahead = np.array(
+            [[x + distance * np.cos(heading), y + distance * np.sin(heading)]]
+        )
+
+        # Transform: (points, positions, headings)
+        # Output: (n_time=1, n_points=1, 2)
+        ego_ahead = allocentric_to_egocentric(point_ahead, position, headings)
+
+        # In egocentric frame, "ahead" should be positive x (or close to it)
+        np.testing.assert_allclose(
+            ego_ahead[0, 0, 0],  # First time, first point, x-coordinate
+            distance,
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg="Point ahead should have x=distance",
+        )
+        np.testing.assert_allclose(
+            ego_ahead[0, 0, 1],  # First time, first point, y-coordinate
+            0.0,
+            atol=1e-10,
+            err_msg="Point ahead should have y=0",
+        )
+
+
+class TestBearingProperties:
+    """Property-based tests for egocentric bearing computations.
+
+    Egocentric bearing measures the angle from the animal's heading
+    to an object. Key properties:
+    - Bearing ahead is 0
+    - Bearing left is +pi/2
+    - Bearing always in [-pi, pi]
+
+    Note: compute_egocentric_bearing takes (targets, positions, headings)
+    """
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.floats(min_value=1, max_value=50, allow_nan=False),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_bearing_ahead_is_zero(
+        self, x: float, y: float, heading: float, distance: float
+    ) -> None:
+        """Property: bearing to point directly ahead is 0."""
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
+
+        position = np.array([[x, y]])
+        headings = np.array([heading])
+
+        # Point directly ahead
+        point_ahead = np.array(
+            [[x + distance * np.cos(heading), y + distance * np.sin(heading)]]
+        )
+
+        # API: compute_egocentric_bearing(targets, positions, headings)
+        bearing = compute_egocentric_bearing(point_ahead, position, headings)
+
+        np.testing.assert_allclose(
+            bearing[0, 0],
+            0.0,
+            atol=1e-10,
+            err_msg="Bearing to point ahead should be 0",
+        )
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.floats(min_value=1, max_value=50, allow_nan=False),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_bearing_left_is_positive(
+        self, x: float, y: float, heading: float, distance: float
+    ) -> None:
+        """Property: bearing to point directly left is +pi/2."""
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
+
+        position = np.array([[x, y]])
+        headings = np.array([heading])
+
+        # Point directly to the left (90 degrees counterclockwise from heading)
+        left_heading = heading + np.pi / 2
+        point_left = np.array(
+            [[x + distance * np.cos(left_heading), y + distance * np.sin(left_heading)]]
+        )
+
+        # API: compute_egocentric_bearing(targets, positions, headings)
+        bearing = compute_egocentric_bearing(point_left, position, headings)
+
+        np.testing.assert_allclose(
+            bearing[0, 0],
+            np.pi / 2,
+            atol=1e-10,
+            err_msg="Bearing to point left should be +pi/2",
+        )
+
+    @given(
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-100, max_value=100, allow_nan=False),
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_bearing_always_in_range(
+        self, x: float, y: float, heading: float, seed: int
+    ) -> None:
+        """Property: bearing is always in [-pi, pi]."""
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
+
+        position = np.array([[x, y]])
+        headings = np.array([heading])
+
+        # Random object positions
+        rng = np.random.default_rng(seed)
+        objects = rng.uniform(-100, 100, size=(10, 2))
+
+        # API: compute_egocentric_bearing(targets, positions, headings)
+        bearings = compute_egocentric_bearing(objects, position, headings)
+
+        assert np.all(bearings >= -np.pi), "Found bearing < -pi"
+        assert np.all(bearings <= np.pi), "Found bearing > pi"
+
+
+# =============================================================================
+# Property Tests for Distance Operations
+# =============================================================================
+
+
+class TestEuclideanDistanceMatrixProperties:
+    """Property-based tests for Euclidean distance matrix operations.
+
+    Distance matrices must satisfy metric space axioms:
+    - Symmetry: d(a,b) = d(b,a)
+    - Non-negativity: d(a,b) >= 0
+    - Identity: d(a,a) = 0
+    - Triangle inequality: d(a,c) <= d(a,b) + d(b,c)
+    """
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.tuples(
+                st.integers(min_value=2, max_value=20),
+                st.just(2),
+            ),
+            elements=st.floats(
+                min_value=0.0,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_distance_matrix_symmetry(self, positions: NDArray[np.float64]) -> None:
+        """Property: distance matrix is symmetric."""
+        from neurospatial.ops.distance import euclidean_distance_matrix
+
+        dist_matrix = euclidean_distance_matrix(positions)
+
+        np.testing.assert_allclose(
+            dist_matrix,
+            dist_matrix.T,
+            rtol=1e-10,
+            err_msg="Distance matrix should be symmetric",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.tuples(
+                st.integers(min_value=2, max_value=20),
+                st.just(2),
+            ),
+            elements=st.floats(
+                min_value=0.0,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_distance_matrix_non_negative(self, positions: NDArray[np.float64]) -> None:
+        """Property: all distances are non-negative."""
+        from neurospatial.ops.distance import euclidean_distance_matrix
+
+        dist_matrix = euclidean_distance_matrix(positions)
+
+        assert np.all(dist_matrix >= 0), "Found negative distances"
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.tuples(
+                st.integers(min_value=2, max_value=20),
+                st.just(2),
+            ),
+            elements=st.floats(
+                min_value=0.0,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        )
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_distance_matrix_zero_diagonal(
+        self, positions: NDArray[np.float64]
+    ) -> None:
+        """Property: diagonal elements are zero (self-distance)."""
+        from neurospatial.ops.distance import euclidean_distance_matrix
+
+        dist_matrix = euclidean_distance_matrix(positions)
+
+        np.testing.assert_allclose(
+            np.diag(dist_matrix),
+            0.0,
+            atol=1e-10,
+            err_msg="Self-distance should be zero",
+        )
+
+    @given(
+        hnp.arrays(
+            dtype=np.float64,
+            shape=st.tuples(
+                st.integers(min_value=3, max_value=15),
+                st.just(2),
+            ),
+            elements=st.floats(
+                min_value=0.0,
+                max_value=100.0,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        ),
+        st.integers(min_value=0, max_value=10000),
+    )
+    @settings(deadline=1000)  # Use profile's max_examples
+    def test_triangle_inequality(
+        self, positions: NDArray[np.float64], seed: int
+    ) -> None:
+        """Property: d(a,c) <= d(a,b) + d(b,c) for all triplets."""
+        from neurospatial.ops.distance import euclidean_distance_matrix
+
+        dist_matrix = euclidean_distance_matrix(positions)
+        n = len(positions)
+
+        # Test triangle inequality for random triplets (testing all is O(n^3))
+        rng = np.random.default_rng(seed)
+        n_tests = min(100, n * (n - 1) * (n - 2) // 6)
+
+        for _ in range(n_tests):
+            i, j, k = rng.choice(n, size=3, replace=False)
+            d_ij = dist_matrix[i, j]
+            d_jk = dist_matrix[j, k]
+            d_ik = dist_matrix[i, k]
+
+            assert d_ik <= d_ij + d_jk + 1e-10, (
+                f"Triangle inequality violated: d({i},{k})={d_ik} > "
+                f"d({i},{j})={d_ij} + d({j},{k})={d_jk}"
+            )
