@@ -40,6 +40,16 @@ class NeuralModel(Protocol):
         - ``'max_rate'``: float - peak firing rate in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz
 
+    **HeadDirectionCell**
+
+        - ``'preferred_direction'``: float - preferred direction in radians
+        - ``'preferred_direction_deg'``: float - preferred direction in degrees
+        - ``'concentration'``: float - von Mises concentration (κ)
+        - ``'tuning_width'``: float - approximate HWHM in radians
+        - ``'tuning_width_deg'``: float - approximate HWHM in degrees
+        - ``'max_rate'``: float - peak firing rate in Hz
+        - ``'baseline_rate'``: float - baseline firing rate in Hz
+
     Examples
     --------
     Creating a custom neural model:

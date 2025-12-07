@@ -58,6 +58,7 @@ from neurospatial.simulation.examples import (
 from neurospatial.simulation.models import (
     BoundaryCellModel,
     GridCellModel,
+    HeadDirectionCellModel,
     NeuralModel,  # Protocol
     ObjectVectorCellModel,
     PlaceCellModel,
@@ -97,6 +98,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Models
     "BoundaryCellModel",
     "GridCellModel",
+    "HeadDirectionCellModel",
     "NeuralModel",
     "ObjectVectorCellModel",
     "PlaceCellModel",
