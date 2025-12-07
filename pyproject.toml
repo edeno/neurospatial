@@ -127,7 +127,22 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --strict-markers"
+# Enable parallel testing with pytest-xdist for significant speedup
+# -n auto: use all available CPU cores
+# --dist=loadscope: keep tests in same module/class together for fixture efficiency
+addopts = "-v --strict-markers -n auto --dist=loadscope"
+# Register custom markers to enable --strict-markers
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: integration tests with external dependencies",
+    "napari: napari GUI tests (require single-threaded execution)",
+    "benchmark: performance benchmark tests",
+    "hypothesis: property-based tests using Hypothesis",
+    "thread_unsafe: tests that cannot be parallelized safely",
+    "xdist_group(name): group tests to run together in same worker",
+]
+# Timeout for individual tests (in seconds) - prevents runaway tests
+timeout = 300
 
 [tool.ruff]
 line-length = 88
