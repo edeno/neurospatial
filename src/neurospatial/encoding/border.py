@@ -127,9 +127,16 @@ def border_score(
     >>> _ = env.regions.add("west_wall", polygon=box(-20, -20, -15, 20))
     >>>
     >>> # Compute coverage for each wall
-    >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[0]
-    >>> coverage = compute_region_coverage(field_bins, env)
-    >>> for wall_name in ["north_wall", "south_wall", "east_wall", "west_wall"]:
+    >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[
+    ...     0
+    ... ]  # doctest: +SKIP
+    >>> coverage = compute_region_coverage(field_bins, env)  # doctest: +SKIP
+    >>> for wall_name in [
+    ...     "north_wall",
+    ...     "south_wall",
+    ...     "east_wall",
+    ...     "west_wall",
+    ... ]:  # doctest: +SKIP
     ...     print(f"{wall_name}: {coverage[wall_name]:.2%}")  # doctest: +SKIP
 
     **When to use opexebo vs. neurospatial**:

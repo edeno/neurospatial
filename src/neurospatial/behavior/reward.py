@@ -101,11 +101,13 @@ def region_reward_field(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior.reward import region_reward_field
+    >>> from shapely.geometry import Point
     >>> # Create environment
     >>> positions = np.random.randn(1000, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> # Add goal region
-    >>> _ = env.regions.add("goal", point=np.array([0.0, 0.0]))
+    >>> # Add goal region (use polygon, not point)
+    >>> goal_polygon = Point([0.0, 0.0]).buffer(5.0)
+    >>> _ = env.regions.add("goal", polygon=goal_polygon)
     >>> # Binary reward (sparse RL)
     >>> reward_binary = region_reward_field(env, "goal", decay="constant")
     >>> # Smooth Gaussian reward shaping
@@ -283,11 +285,12 @@ def goal_reward_field(
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> from neurospatial.behavior.reward import goal_reward_field
-    >>> # Create environment
-    >>> positions = np.random.randn(1000, 2) * 50
+    >>> # Create environment with fixed seed for reproducibility
+    >>> rng = np.random.default_rng(42)
+    >>> positions = rng.standard_normal((1000, 2)) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> # Select goal bin at origin
-    >>> goal_bin = env.bin_at(np.array([[0.0, 0.0]]))[0]
+    >>> # Select goal bin at center of environment
+    >>> goal_bin = len(env.bin_centers) // 2
     >>> # Exponential decay (most common)
     >>> reward = goal_reward_field(
     ...     env, goal_bins=goal_bin, decay="exponential", scale=10.0

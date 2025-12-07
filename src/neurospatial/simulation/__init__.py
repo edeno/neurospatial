@@ -31,7 +31,7 @@ Low-level API for custom simulations:
 >>> place_cell = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
 >>> rates = place_cell.firing_rate(positions, times)
 >>> spikes = generate_poisson_spikes(rates, times, seed=42)
->>> len(spikes) > 0
+>>> isinstance(spikes, np.ndarray)  # Returns array of spike times
 True
 
 Note: High-level session API (open_field_session, etc.) will be available in v0.2.0

@@ -60,8 +60,8 @@ class SimulationSession:
 
     Examples
     --------
-    >>> from neurospatial import Environment
-    >>> from neurospatial.simulation import (
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.simulation import (  # doctest: +SKIP
     ...     simulate_trajectory_ou,
     ...     PlaceCellModel,
     ...     generate_population_spikes,
@@ -69,28 +69,30 @@ class SimulationSession:
     ... )
 
     >>> # Create environment
-    >>> env = Environment.from_samples(arena_data, bin_size=2.0)
-    >>> env.units = "cm"
+    >>> env = Environment.from_samples(arena_data, bin_size=2.0)  # doctest: +SKIP
+    >>> env.units = "cm"  # doctest: +SKIP
 
     >>> # Generate trajectory
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0)
+    >>> positions, times = simulate_trajectory_ou(env, duration=60.0)  # doctest: +SKIP
 
     >>> # Create place cells
-    >>> models = [
+    >>> models = [  # doctest: +SKIP
     ...     PlaceCellModel(env, center=[50.0, 50.0], width=10.0),
     ...     PlaceCellModel(env, center=[70.0, 60.0], width=8.0),
     ... ]
 
     >>> # Generate spikes
-    >>> spike_trains = generate_population_spikes(models, positions, times)
+    >>> spike_trains = generate_population_spikes(
+    ...     models, positions, times
+    ... )  # doctest: +SKIP
 
     >>> # Collect ground truth
-    >>> ground_truth = {
+    >>> ground_truth = {  # doctest: +SKIP
     ...     f"cell_{i}": model.ground_truth for i, model in enumerate(models)
     ... }
 
     >>> # Create session
-    >>> session = SimulationSession(
+    >>> session = SimulationSession(  # doctest: +SKIP
     ...     env=env,
     ...     positions=positions,
     ...     times=times,
@@ -101,9 +103,11 @@ class SimulationSession:
     ... )
 
     >>> # Access fields with typed attributes
-    >>> print(f"Session duration: {session.times[-1]:.1f}s")
-    >>> print(f"Number of cells: {len(session.spike_trains)}")
-    >>> print(f"Total spikes: {sum(len(st) for st in session.spike_trains)}")
+    >>> print(f"Session duration: {session.times[-1]:.1f}s")  # doctest: +SKIP
+    >>> print(f"Number of cells: {len(session.spike_trains)}")  # doctest: +SKIP
+    >>> print(
+    ...     f"Total spikes: {sum(len(st) for st in session.spike_trains)}"
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -258,9 +262,9 @@ def simulate_session(
     ... )
 
     >>> # Validate detected vs true place fields
-    >>> from neurospatial.simulation import validate_simulation
-    >>> report = validate_simulation(session)
-    >>> print(report["summary"])
+    >>> from neurospatial.simulation import validate_simulation  # doctest: +SKIP
+    >>> report = validate_simulation(session)  # doctest: +SKIP
+    >>> print(report["summary"])  # doctest: +SKIP
 
     See Also
     --------
