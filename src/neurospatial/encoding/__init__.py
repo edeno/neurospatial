@@ -85,7 +85,6 @@ from neurospatial.encoding.place import (
     skaggs_information,
     sparsity,
     spatial_coverage_single_cell,
-    spikes_to_rate_map,
 )
 
 # Population-level metrics
@@ -175,7 +174,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "skaggs_information",
     "sparsity",
     "spatial_coverage_single_cell",
-    "spikes_to_rate_map",
     # Population-level metrics
     "PopulationCoverageResult",
     "population_coverage",

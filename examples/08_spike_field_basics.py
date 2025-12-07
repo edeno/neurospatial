@@ -21,7 +21,7 @@
 # By the end of this notebook, you will be able to:
 #
 # - Convert spike trains to occupancy-normalized firing rate fields
-# - Use `spikes_to_rate_map()` and `compute_place_field()` functions
+# - Use `compute_place_field()` with different smoothing methods
 # - Understand min occupancy thresholds and their impact
 # - Generate reward fields for reinforcement learning
 # - Compare different reward decay profiles
@@ -41,7 +41,7 @@ from shapely.geometry import Point
 
 from neurospatial import Environment
 from neurospatial.behavior.reward import goal_reward_field, region_reward_field
-from neurospatial.encoding.place import compute_place_field, spikes_to_rate_map
+from neurospatial.encoding.place import compute_place_field
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -352,25 +352,29 @@ print(
 #
 # The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_place_field()` handles everything automatically.
 #
-# ### Manual Approach with `spikes_to_rate_map()`
+# ### Binned Approach (Legacy Method)
 #
-# For fine-grained control, you can manually compute firing rates using `spikes_to_rate_map()`:
+# For understanding or backwards compatibility, use `smoothing_method="binned"`:
 
 # %%
-# Manual approach: compute firing rate field without smoothing
-firing_rate_raw = spikes_to_rate_map(
+# Binned approach: compute firing rate field with minimal smoothing
+firing_rate_raw = compute_place_field(
     env,
     spike_times,
     times,
     positions,
+    smoothing_method="binned",
+    bandwidth=0.1,  # Minimal smoothing to see raw binned structure
     min_occupancy_seconds=0.0,  # Include all bins
 )
 
-firing_rate_filtered = spikes_to_rate_map(
+firing_rate_filtered = compute_place_field(
     env,
     spike_times,
     times,
     positions,
+    smoothing_method="binned",
+    bandwidth=0.1,
     min_occupancy_seconds=0.5,  # Standard threshold
 )
 
@@ -823,7 +827,7 @@ plt.show()
 # In this notebook, you learned:
 #
 # ### Spike Field Conversion
-# - ✅ Convert spike trains to firing rate fields using `spikes_to_rate_map()`
+# - ✅ Convert spike trains to firing rate fields using `compute_place_field()`
 # - ✅ Apply occupancy thresholds (`min_occupancy_seconds=0.5` is standard)
 # - ✅ Use `compute_place_field()` for one-liner workflows with smoothing
 # - ✅ Visualize occupancy, raw, and filtered firing rates

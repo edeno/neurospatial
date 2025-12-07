@@ -12,147 +12,69 @@ from numpy.testing import assert_allclose
 from shapely.geometry import Point
 
 
-class TestImportsFromNewLocation:
-    """Verify all classes and functions are importable from behavior.segmentation."""
+class TestSegmentationImports:
+    """Verify segmentation classes and functions are importable from both locations."""
 
-    # Dataclasses
-    def test_import_crossing(self):
-        """Test Crossing is importable from new location."""
-        from neurospatial.behavior.segmentation import Crossing
+    def test_imports_from_segmentation_module(self):
+        """Test all exports are importable from behavior.segmentation."""
+        from neurospatial.behavior.segmentation import (
+            Crossing,
+            Lap,
+            Run,
+            Trial,
+            detect_goal_directed_runs,
+            detect_laps,
+            detect_region_crossings,
+            detect_runs_between_regions,
+            segment_by_velocity,
+            segment_trials,
+            trajectory_similarity,
+        )
 
+        # Dataclasses
         assert Crossing is not None
-
-    def test_import_lap(self):
-        """Test Lap is importable from new location."""
-        from neurospatial.behavior.segmentation import Lap
-
         assert Lap is not None
-
-    def test_import_run(self):
-        """Test Run is importable from new location."""
-        from neurospatial.behavior.segmentation import Run
-
         assert Run is not None
-
-    def test_import_trial(self):
-        """Test Trial is importable from new location."""
-        from neurospatial.behavior.segmentation import Trial
-
         assert Trial is not None
 
-    # Functions
-    def test_import_detect_region_crossings(self):
-        """Test detect_region_crossings is importable from new location."""
-        from neurospatial.behavior.segmentation import detect_region_crossings
-
+        # Functions
         assert callable(detect_region_crossings)
-
-    def test_import_detect_runs_between_regions(self):
-        """Test detect_runs_between_regions is importable from new location."""
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
         assert callable(detect_runs_between_regions)
-
-    def test_import_segment_by_velocity(self):
-        """Test segment_by_velocity is importable from new location."""
-        from neurospatial.behavior.segmentation import segment_by_velocity
-
         assert callable(segment_by_velocity)
-
-    def test_import_detect_laps(self):
-        """Test detect_laps is importable from new location."""
-        from neurospatial.behavior.segmentation import detect_laps
-
         assert callable(detect_laps)
-
-    def test_import_segment_trials(self):
-        """Test segment_trials is importable from new location."""
-        from neurospatial.behavior.segmentation import segment_trials
-
         assert callable(segment_trials)
-
-    def test_import_trajectory_similarity(self):
-        """Test trajectory_similarity is importable from new location."""
-        from neurospatial.behavior.segmentation import trajectory_similarity
-
         assert callable(trajectory_similarity)
-
-    def test_import_detect_goal_directed_runs(self):
-        """Test detect_goal_directed_runs is importable from new location."""
-        from neurospatial.behavior.segmentation import detect_goal_directed_runs
-
         assert callable(detect_goal_directed_runs)
 
+    def test_imports_from_behavior_package(self):
+        """Test all exports are re-exported from behavior package."""
+        from neurospatial.behavior import (
+            Crossing,
+            Lap,
+            Run,
+            Trial,
+            detect_goal_directed_runs,
+            detect_laps,
+            detect_region_crossings,
+            detect_runs_between_regions,
+            segment_by_velocity,
+            segment_trials,
+            trajectory_similarity,
+        )
 
-class TestImportsFromBehaviorInit:
-    """Verify all classes and functions are re-exported from behavior/__init__.py."""
-
-    # Dataclasses
-    def test_import_crossing_from_behavior(self):
-        """Test Crossing is importable from behavior package."""
-        from neurospatial.behavior import Crossing
-
+        # Dataclasses
         assert Crossing is not None
-
-    def test_import_lap_from_behavior(self):
-        """Test Lap is importable from behavior package."""
-        from neurospatial.behavior import Lap
-
         assert Lap is not None
-
-    def test_import_run_from_behavior(self):
-        """Test Run is importable from behavior package."""
-        from neurospatial.behavior import Run
-
         assert Run is not None
-
-    def test_import_trial_from_behavior(self):
-        """Test Trial is importable from behavior package."""
-        from neurospatial.behavior import Trial
-
         assert Trial is not None
 
-    # Functions
-    def test_import_detect_region_crossings_from_behavior(self):
-        """Test detect_region_crossings is importable from behavior package."""
-        from neurospatial.behavior import detect_region_crossings
-
+        # Functions
         assert callable(detect_region_crossings)
-
-    def test_import_detect_runs_between_regions_from_behavior(self):
-        """Test detect_runs_between_regions is importable from behavior package."""
-        from neurospatial.behavior import detect_runs_between_regions
-
         assert callable(detect_runs_between_regions)
-
-    def test_import_segment_by_velocity_from_behavior(self):
-        """Test segment_by_velocity is importable from behavior package."""
-        from neurospatial.behavior import segment_by_velocity
-
         assert callable(segment_by_velocity)
-
-    def test_import_detect_laps_from_behavior(self):
-        """Test detect_laps is importable from behavior package."""
-        from neurospatial.behavior import detect_laps
-
         assert callable(detect_laps)
-
-    def test_import_segment_trials_from_behavior(self):
-        """Test segment_trials is importable from behavior package."""
-        from neurospatial.behavior import segment_trials
-
         assert callable(segment_trials)
-
-    def test_import_trajectory_similarity_from_behavior(self):
-        """Test trajectory_similarity is importable from behavior package."""
-        from neurospatial.behavior import trajectory_similarity
-
         assert callable(trajectory_similarity)
-
-    def test_import_detect_goal_directed_runs_from_behavior(self):
-        """Test detect_goal_directed_runs is importable from behavior package."""
-        from neurospatial.behavior import detect_goal_directed_runs
-
         assert callable(detect_goal_directed_runs)
 
 

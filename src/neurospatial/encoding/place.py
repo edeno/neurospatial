@@ -7,7 +7,6 @@ Spike → Rate Map Conversion
 ---------------------------
 compute_place_field : Compute place field from spike train.
 compute_directional_place_fields : Compute direction-conditioned place fields.
-spikes_to_rate_map : Convert spike train to spatial firing rate map.
 DirectionalPlaceFields : Container for directional place field results.
 
 Field Detection
@@ -372,7 +371,7 @@ def compute_directional_place_fields(
     return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
 
 
-def spikes_to_rate_map(
+def _binned_rate_map(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -424,12 +423,6 @@ def spikes_to_rate_map(
         If spikes fall outside the time range of the trajectory.
         If interpolated spike positions fall outside the environment bounds.
 
-    See Also
-    --------
-    compute_place_field : Convenience function combining spike conversion and smoothing.
-    Environment.occupancy : Compute time spent in each bin.
-    Environment.smooth : Smooth spatial fields.
-
     Notes
     -----
     The firing rate field is computed as:
@@ -441,40 +434,8 @@ def spikes_to_rate_map(
     the occupancy time (seconds) in that bin.
 
     Bins with occupancy less than `min_occupancy_seconds` are set to NaN.
-    Setting `min_occupancy_seconds > 0` (e.g., 0.5 seconds) is standard
-    practice in place field analysis to avoid spurious high rates from
-    brief visits. The default (0.0) includes all bins regardless of occupancy.
-
-    Empty spike trains (no spikes) produce a field of zeros (or NaN where
-    occupancy is less than `min_occupancy_seconds`).
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.place import spikes_to_rate_map
-    >>>
-    >>> # Create trajectory
-    >>> positions = np.column_stack(
-    ...     [
-    ...         np.linspace(0, 100, 1000),
-    ...         np.linspace(0, 100, 1000),
-    ...     ]
-    ... )
-    >>> times = np.linspace(0, 10, 1000)  # 10 seconds
-    >>>
-    >>> # Create environment
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-    >>>
-    >>> # Create spike train (50 spikes over 10 seconds = 5 Hz mean rate)
-    >>> spike_times = np.linspace(0, 10, 50)
-    >>>
-    >>> # Compute firing rate field
-    >>> field = spikes_to_rate_map(env, spike_times, times, positions)
-    >>> field.shape == (env.n_bins,)
-    True
-    >>> np.nanmean(field)  # Should be close to 5 Hz  # doctest: +ELLIPSIS
-    np.float64(5.0...)
+    Empty spike trains produce a field of zeros (or NaN where occupancy
+    is below threshold).
     """
     # Step 0: Validate inputs
     if len(times) != len(positions):
@@ -860,8 +821,8 @@ def _binned(
     2. Normalize: firing_rate = spike_counts / occupancy
     3. Smooth with diffusion kernel
     """
-    # Use existing spikes_to_rate_map function
-    field = spikes_to_rate_map(
+    # Use existing _binned_rate_map function
+    field = _binned_rate_map(
         env,
         spike_times,
         times,
@@ -1003,7 +964,7 @@ def compute_place_field(
 
     See Also
     --------
-    spikes_to_rate_map : Lower-level binning function (used by method="binned").
+    _binned_rate_map : Lower-level binning function (used by method="binned").
     Environment.compute_kernel : Compute diffusion kernel.
     Environment.smooth : Smooth spatial fields.
 
@@ -3388,7 +3349,6 @@ __all__ = [
     # Spike → rate map conversion
     "compute_directional_place_fields",
     "compute_place_field",
-    "spikes_to_rate_map",
     # Field detection
     "detect_place_fields",
     # Information-theoretic metrics

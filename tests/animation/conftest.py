@@ -5,15 +5,25 @@ including video overlays, video calibration, and environment fixtures
 for video overlay validation.
 
 Fixtures defined here:
-- sample_video: Test video file (16x16 pixels, 10 frames)
-- sample_video_array: Test video as numpy array
-- sample_calibration: VideoCalibration for testing
+- sample_video: Test video file (16x16 pixels, 10 frames) - session-scoped
+- sample_video_array: Test video as numpy array - session-scoped
+- sample_calibration: VideoCalibration for testing - session-scoped
 - linearized_env: 1D environment for video overlay rejection tests
 - polygon_env: 2D polygon environment for fallback tests
 - masked_env: 2D masked grid for full video overlay support tests
+
+Performance Notes:
+- Video fixtures are session-scoped to avoid recreating files per test
+- Video data is immutable and read-only in tests, safe to share
 """
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from neurospatial.ops.transforms import VideoCalibration
 
 import networkx as nx
 import numpy as np
@@ -22,12 +32,12 @@ import pytest
 from neurospatial import Environment
 
 # =============================================================================
-# Video Overlay Fixtures
+# Video Overlay Fixtures (Session-Scoped for Performance)
 # =============================================================================
 
 
-@pytest.fixture
-def sample_video(tmp_path: Path) -> Path:
+@pytest.fixture(scope="session")
+def sample_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a sample test video (16x16 pixels, 10 frames, 10 fps).
 
     Each frame has a distinct pattern for verification:
@@ -35,8 +45,8 @@ def sample_video(tmp_path: Path) -> Path:
 
     Parameters
     ----------
-    tmp_path : Path
-        pytest's temporary directory fixture.
+    tmp_path_factory : pytest.TempPathFactory
+        pytest's session-scoped temporary directory factory.
 
     Returns
     -------
@@ -45,12 +55,13 @@ def sample_video(tmp_path: Path) -> Path:
 
     Notes
     -----
-    Uses OpenCV for video creation. The video is created fresh for each test
-    to ensure isolation. Use `sample_video_array` for tests that don't need
-    a file on disk.
+    Uses OpenCV for video creation. Session-scoped for performance since
+    video files are read-only in tests. Use `sample_video_array` for tests
+    that accept array input directly.
     """
     import cv2
 
+    tmp_path = tmp_path_factory.mktemp("video")
     video_path = tmp_path / "sample_video.mp4"
 
     # Create video writer
@@ -69,7 +80,7 @@ def sample_video(tmp_path: Path) -> Path:
     return video_path
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def sample_video_array() -> np.ndarray:
     """Create a sample video as a numpy array (16x16 pixels, 10 frames).
 
@@ -81,8 +92,8 @@ def sample_video_array() -> np.ndarray:
 
     Notes
     -----
-    This fixture is faster than `sample_video` since it doesn't create a file.
-    Use for tests that accept array input directly.
+    Session-scoped for performance. This fixture is faster than `sample_video`
+    since it doesn't create a file. Use for tests that accept array input directly.
     """
     frames = []
     for i in range(10):
@@ -91,8 +102,8 @@ def sample_video_array() -> np.ndarray:
     return np.array(frames, dtype=np.uint8)
 
 
-@pytest.fixture
-def sample_calibration():
+@pytest.fixture(scope="session")
+def sample_calibration() -> VideoCalibration:
     """Create a sample VideoCalibration for testing.
 
     Returns a calibration that maps a 16x16 pixel video to a 16x16 cm
@@ -105,6 +116,7 @@ def sample_calibration():
 
     Notes
     -----
+    Session-scoped for performance since calibration is immutable.
     The calibration includes Y-axis flip (video origin top-left to
     environment origin bottom-left), which is standard for video overlays.
     """

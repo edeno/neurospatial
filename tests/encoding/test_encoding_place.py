@@ -19,7 +19,6 @@ from neurospatial import Environment
 ENCODING_PLACE_FUNCTIONS = [
     "compute_place_field",
     "compute_directional_place_fields",
-    "spikes_to_rate_map",
     "detect_place_fields",
     "skaggs_information",
     "sparsity",
@@ -145,12 +144,12 @@ class TestEncodingPlaceFunctionality:
         assert result.shape == (env.n_bins,)
         assert np.any(np.isfinite(result))
 
-    def test_spikes_to_rate_map_runs(self, env_and_data) -> None:
-        """spikes_to_rate_map should run and return correct shape."""
-        from neurospatial.encoding.place import spikes_to_rate_map
+    def test_binned_rate_map_runs(self, env_and_data) -> None:
+        """_binned_rate_map should run and return correct shape."""
+        from neurospatial.encoding.place import _binned_rate_map
 
         env, positions, times, spike_times, _rng = env_and_data
-        result = spikes_to_rate_map(env, spike_times, times, positions)
+        result = _binned_rate_map(env, spike_times, times, positions)
         assert result.shape == (env.n_bins,)
 
     def test_detect_place_fields_runs(self, env_and_data) -> None:

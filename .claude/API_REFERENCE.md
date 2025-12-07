@@ -73,7 +73,6 @@ from neurospatial.encoding.place import (
     # Field computation
     compute_place_field,                    # Place field estimation
     compute_directional_place_fields,       # Directional tuning
-    spikes_to_rate_map,                     # Convert spikes to firing rate
     DirectionalPlaceFields,                 # Container for directional fields
 
     # Place field metrics
