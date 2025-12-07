@@ -29,13 +29,52 @@ Size Guidelines (approximate bin counts):
     - large: 1000+ bins (stress tests, mark as @pytest.mark.slow)
 """
 
+import os
+
 import networkx as nx
 import numpy as np
 import pytest
+from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 
 from neurospatial import Environment
 from neurospatial.layout.engines.graph import GraphLayout
+
+# =============================================================================
+# Hypothesis Configuration for Performance
+# =============================================================================
+# Register Hypothesis profiles for different testing scenarios:
+# - "ci": Fast profile for CI pipelines (fewer examples, no deadline)
+# - "dev": Standard development profile (moderate examples)
+# - "thorough": Full property testing (many examples, for pre-release)
+
+settings.register_profile(
+    "ci",
+    max_examples=10,
+    deadline=None,  # Disable deadline in CI (variable performance)
+    suppress_health_check=[],
+    phases=[Phase.explicit, Phase.reuse, Phase.generate],
+    verbosity=Verbosity.quiet,
+)
+
+settings.register_profile(
+    "dev",
+    max_examples=25,
+    deadline=5000,  # 5 second deadline
+    verbosity=Verbosity.normal,
+)
+
+settings.register_profile(
+    "thorough",
+    max_examples=100,
+    deadline=None,
+    verbosity=Verbosity.verbose,
+)
+
+# Load profile based on environment variable (default to "dev")
+# Set HYPOTHESIS_PROFILE=ci in CI environments for faster tests
+_profile = os.environ.get("HYPOTHESIS_PROFILE", "dev")
+settings.load_profile(_profile)
 
 # =============================================================================
 # Test Configuration Constants
@@ -187,9 +226,13 @@ def grid_env_from_samples(
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_graph_for_layout() -> nx.Graph:
-    """Minimal graph with pos and distance attributes for GraphLayout."""
+    """Minimal graph with pos and distance attributes for GraphLayout.
+
+    Session-scoped for performance: Graph is read-only in tests,
+    safe to share across all tests.
+    """
     G = nx.Graph()
     G.add_node(0, pos=(0.0, 0.0))
     G.add_node(1, pos=(1.0, 0.0))
@@ -197,9 +240,13 @@ def simple_graph_for_layout() -> nx.Graph:
     return G
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_hex_env(plus_maze_positions) -> Environment:
-    """Basic hexagonal environment for mask testing."""
+    """Basic hexagonal environment for mask testing.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
     return Environment.from_samples(
         positions=plus_maze_positions,  # Use existing samples
         layout="Hexagonal",
@@ -210,9 +257,13 @@ def simple_hex_env(plus_maze_positions) -> Environment:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_graph_env(simple_graph_for_layout) -> Environment:
-    """Basic graph environment for mask testing."""
+    """Basic graph environment for mask testing.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
     edge_order = [(0, 1)]
     # For serialization to pass correctly, ensure layout_params_used are captured
     layout_build_params = {
@@ -231,9 +282,13 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def grid_env_for_indexing(plus_maze_positions) -> Environment:
-    """A 2D RegularGrid environment suitable for index testing."""
+    """A 2D RegularGrid environment suitable for index testing.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
     return Environment.from_samples(
         positions=plus_maze_positions,  # Creates a reasonable grid
         bin_size=1.0,
@@ -243,9 +298,13 @@ def grid_env_for_indexing(plus_maze_positions) -> Environment:
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def env_all_active_2x2() -> Environment:
-    """A 2x2 grid where all 4 cells are active."""
+    """A 2x2 grid where all 4 cells are active.
+
+    Session-scoped for performance: Environment is read-only in tests,
+    safe to share across all tests.
+    """
     active_mask = np.array([[True, True], [True, True]], dtype=bool)
     grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
     return Environment.from_mask(
