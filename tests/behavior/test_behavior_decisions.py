@@ -156,12 +156,12 @@ class TestDecisionAnalysisFunctionality:
             n_samples=30,
         )
 
-        assert result.mean_speed == 15.0
-        assert result.min_speed == 2.0
-        assert result.heading_mean_direction == 0.5
-        assert result.heading_circular_variance == 0.3
-        assert result.heading_mean_resultant_length == 0.7
-        assert result.window_duration == 1.0
+        assert result.mean_speed == pytest.approx(15.0)
+        assert result.min_speed == pytest.approx(2.0)
+        assert result.heading_mean_direction == pytest.approx(0.5)
+        assert result.heading_circular_variance == pytest.approx(0.3)
+        assert result.heading_mean_resultant_length == pytest.approx(0.7)
+        assert result.window_duration == pytest.approx(1.0)
         assert result.n_samples == 30
 
     def test_pre_decision_metrics_suggests_deliberation(self):
@@ -226,7 +226,7 @@ class TestDecisionAnalysisFunctionality:
             chosen_goal=1,
         )
 
-        assert result.entry_time == 5.0
+        assert result.entry_time == pytest.approx(5.0)
         assert result.pre_decision is pre
         assert result.chosen_goal == 1
 
