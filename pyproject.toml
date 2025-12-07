@@ -6,12 +6,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
+    "alphashape>=1.3.0",
     "matplotlib>=3.7.0",
     "networkx>=3.0",
-    "scipy>=1.10.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scikit-image>=0.19.0",
     "scikit-learn>=1.2.0",
+    "scipy>=1.10.0",
     "shapely>=2.0.0",
     "track-linearization>=2.4.0",
     "tqdm>=4.67.1",
@@ -81,14 +83,13 @@ notebooks = [
     "ipykernel>=6.0.0",
     "jupytext>=1.16.0",
 ]
-opencv = [
-    "opencv-python>=4.11.0.86",
-]
+# Video support
 video = [
-    "opencv-python>=4.11.0.86",  # Fast video reading (preferred backend)
-    "imageio>=2.35.0",           # Fallback video reading
+    "imageio>=2.35.0",           # Video reading (fallback backend)
     "imageio-ffmpeg>=0.5.1",     # For ffprobe timestamp extraction
+    "opencv-python>=4.11.0.86",  # Fast video reading (preferred backend)
 ]
+# Interactive visualization
 animation = [
     "napari[all]>=0.4.18,<0.6",  # GPU-accelerated interactive viewer
     "ipywidgets>=8.0,<9.0",      # Jupyter notebook widget backend
@@ -99,41 +100,13 @@ animation = [
     #   - Ubuntu: apt-get install ffmpeg
     #   - Windows: Download from https://ffmpeg.org/download.html
 ]
-# NWB (Neurodata Without Borders) integration
+# NWB (Neurodata Without Borders) integration - includes all extensions
 nwb = [
     "pynwb>=2.5.0",
     "hdmf>=3.0.0",
+    "ndx-pose>=0.2.0",           # Pose estimation data
+    "ndx-events>=0.4.0",         # Event/trial data
 ]
-nwb-pose = [
-    "pynwb>=2.5.0",
-    "ndx-pose>=0.2.0",
-]
-nwb-events = [
-    "pynwb>=2.5.0",
-    "ndx-events>=0.4.0",
-]
-nwb-full = [
-    "pynwb>=2.5.0",
-    "hdmf>=3.0.0",
-    "ndx-pose>=0.2.0",
-    "ndx-events>=0.4.0",
-]
-# Trajectory analysis extras (for Radon transform detection)
-trajectory = [
-    "scikit-image>=0.19.0",  # Radon transform for trajectory detection
-]
-# Annotation boundary inference extras
-annotation-kde = [
-    "scikit-image>=0.19.0",  # KDE boundary method
-]
-annotation-alpha = [
-    "alphashape>=1.3.0",     # Alpha shape boundary method
-]
-annotation = [
-    "scikit-image>=0.19.0",  # KDE boundary method
-    "alphashape>=1.3.0",     # Alpha shape boundary method
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
