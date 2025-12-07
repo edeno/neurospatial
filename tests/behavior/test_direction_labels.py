@@ -50,6 +50,12 @@ def basic_trials() -> list[Trial]:
 
 
 @pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(42)
+
+
+@pytest.fixture
 def failed_trial() -> Trial:
     """A trial that timed out (no end region reached)."""
     return Trial(
@@ -322,13 +328,12 @@ class TestHeadingDirectionLabels:
         # The label should contain "90" since heading is 90° (positive y)
         assert "90" in moving_labels[0]
 
-    def test_stationary_labeled_correctly(self) -> None:
+    def test_stationary_labeled_correctly(self, rng) -> None:
         """Low speed periods are labeled 'stationary'."""
         n_samples = 100
         times = np.linspace(0.0, 10.0, n_samples)
         # Stationary: small random jitter around origin (well below min_speed=5.0)
-        np.random.seed(42)
-        positions = np.random.uniform(-0.1, 0.1, (n_samples, 2))
+        positions = rng.uniform(-0.1, 0.1, (n_samples, 2))
 
         labels = heading_direction_labels(
             positions=positions, times=times, min_speed=5.0
@@ -414,22 +419,22 @@ class TestHeadingDirectionLabels:
         with pytest.raises(ValueError, match="Must provide either"):
             heading_direction_labels()
 
-    def test_error_incomplete_positions(self) -> None:
+    def test_error_incomplete_positions(self, rng) -> None:
         """Raises ValueError if positions provided without times."""
-        positions = np.random.rand(100, 2)
+        positions = rng.random((100, 2))
         with pytest.raises(ValueError, match="positions and times"):
             heading_direction_labels(positions=positions)
 
-    def test_error_incomplete_precomputed(self) -> None:
+    def test_error_incomplete_precomputed(self, rng) -> None:
         """Raises ValueError if speed provided without heading."""
-        speed = np.random.rand(100)
+        speed = rng.random(100)
         with pytest.raises(ValueError, match="speed and heading"):
             heading_direction_labels(speed=speed)
 
-    def test_error_mismatched_lengths(self) -> None:
+    def test_error_mismatched_lengths(self, rng) -> None:
         """Raises ValueError if speed and heading have different lengths."""
-        speed = np.random.rand(100)
-        heading = np.random.rand(50)  # Different length
+        speed = rng.random(100)
+        heading = rng.random(50)  # Different length
         with pytest.raises(ValueError, match="same length"):
             heading_direction_labels(speed=speed, heading=heading)
 
@@ -513,11 +518,11 @@ class TestHeadingDirectionLabels:
         # The bin should indicate negative angle or wrapped positive
         assert "-90" in label or "270" in label
 
-    def test_output_shape_matches_input(self) -> None:
+    def test_output_shape_matches_input(self, rng) -> None:
         """Output array length matches input array length."""
         n_samples = 123  # Non-round number
         times = np.linspace(0.0, 12.3, n_samples)
-        positions = np.random.rand(n_samples, 2) * 100.0
+        positions = rng.random((n_samples, 2)) * 100.0
 
         labels = heading_direction_labels(positions=positions, times=times)
 

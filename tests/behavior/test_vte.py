@@ -85,7 +85,7 @@ class TestWrapAngle:
 
     def test_wrap_angle_basic(self):
         """Test basic angle wrapping to (-pi, pi]."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         # Already in range
         assert_allclose(wrap_angle(np.array([0.0])), [0.0])
@@ -94,7 +94,7 @@ class TestWrapAngle:
 
     def test_wrap_angle_positive_overflow(self):
         """Test wrapping angles > pi."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         # 3pi/2 should wrap to -pi/2
         result = wrap_angle(np.array([3 * np.pi / 2]))
@@ -106,7 +106,7 @@ class TestWrapAngle:
 
     def test_wrap_angle_negative_overflow(self):
         """Test wrapping angles < -pi."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         # -3pi/2 should wrap to pi/2
         result = wrap_angle(np.array([-3 * np.pi / 2]))
@@ -114,7 +114,7 @@ class TestWrapAngle:
 
     def test_wrap_angle_pi_boundary(self):
         """Test that pi stays at pi (boundary case)."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         result = wrap_angle(np.array([np.pi]))
         # pi should wrap to -pi (or stay at pi depending on convention)
@@ -123,7 +123,7 @@ class TestWrapAngle:
 
     def test_wrap_angle_array(self):
         """Test wrapping an array of angles."""
-        from neurospatial.behavior.decisions import wrap_angle
+        from neurospatial.stats.circular import wrap_angle
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2, 2 * np.pi])
         result = wrap_angle(angles)
@@ -141,7 +141,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_straight_line(self):
         """Test that straight-line trajectory has low head sweep."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Constant heading (0 radians = East)
         headings = np.zeros(20)
@@ -152,7 +152,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_scanning(self):
         """Test that scanning trajectory has high head sweep."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Alternating headings: 0, pi/4, 0, pi/4, 0, pi/4 (looking back and forth)
         headings = np.array([0, np.pi / 4, 0, np.pi / 4, 0, np.pi / 4])
@@ -164,7 +164,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_full_rotation(self):
         """Test head sweep for full rotation."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Gradual rotation from 0 to 2pi (full circle)
         headings = np.linspace(0, 2 * np.pi, 9)  # 8 steps
@@ -176,7 +176,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_handles_nan(self):
         """Test that NaN values are filtered out."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Headings with NaN (stationary periods)
         headings = np.array([0, np.nan, np.pi / 4, np.nan, 0])
@@ -188,7 +188,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_fewer_than_2_samples(self):
         """Test that fewer than 2 valid samples returns 0."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Single sample
         result = head_sweep_magnitude(np.array([0.0]))
@@ -204,7 +204,7 @@ class TestHeadSweepMagnitude:
 
     def test_head_sweep_wraps_angles(self):
         """Test that heading differences are properly wrapped."""
-        from neurospatial.behavior.decisions import head_sweep_magnitude
+        from neurospatial.behavior.vte import head_sweep_magnitude
 
         # Jump from near pi to near -pi (should be small change, not 2pi)
         headings = np.array([0.9 * np.pi, -0.9 * np.pi])
@@ -225,7 +225,7 @@ class TestIntegratedAbsoluteRotationAlias:
 
     def test_alias_exists(self):
         """Test that the alias is exported."""
-        from neurospatial.behavior.decisions import (
+        from neurospatial.behavior.vte import (
             head_sweep_magnitude,
             integrated_absolute_rotation,
         )
@@ -243,7 +243,7 @@ class TestHeadSweepFromPositions:
 
     def test_straight_line_trajectory(self):
         """Test that straight trajectory has low head sweep."""
-        from neurospatial.behavior.decisions import head_sweep_from_positions
+        from neurospatial.behavior.vte import head_sweep_from_positions
 
         # Straight line moving East (x increases, y constant)
         n_samples = 20
@@ -262,7 +262,7 @@ class TestHeadSweepFromPositions:
 
     def test_zigzag_trajectory(self):
         """Test that zigzag trajectory has high head sweep."""
-        from neurospatial.behavior.decisions import head_sweep_from_positions
+        from neurospatial.behavior.vte import head_sweep_from_positions
 
         # Zigzag: alternating East and Northeast
         n_samples = 21
@@ -285,7 +285,7 @@ class TestHeadSweepFromPositions:
 
     def test_stationary_trajectory(self):
         """Test that stationary trajectory returns 0 head sweep."""
-        from neurospatial.behavior.decisions import head_sweep_from_positions
+        from neurospatial.behavior.vte import head_sweep_from_positions
 
         # Stationary: all positions identical
         n_samples = 20
@@ -313,7 +313,7 @@ class TestVTETrialResult:
 
     def test_dataclass_fields(self):
         """Test that dataclass has required fields."""
-        from neurospatial.behavior.decisions import VTETrialResult
+        from neurospatial.behavior.vte import VTETrialResult
 
         result = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -339,7 +339,7 @@ class TestVTETrialResult:
 
     def test_idphi_alias(self):
         """Test that idphi property is alias for head_sweep_magnitude."""
-        from neurospatial.behavior.decisions import VTETrialResult
+        from neurospatial.behavior.vte import VTETrialResult
 
         result = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -357,7 +357,7 @@ class TestVTETrialResult:
 
     def test_z_idphi_alias(self):
         """Test that z_idphi property is alias for z_head_sweep."""
-        from neurospatial.behavior.decisions import VTETrialResult
+        from neurospatial.behavior.vte import VTETrialResult
 
         result = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -375,7 +375,7 @@ class TestVTETrialResult:
 
     def test_summary_method(self):
         """Test summary() returns human-readable string."""
-        from neurospatial.behavior.decisions import VTETrialResult
+        from neurospatial.behavior.vte import VTETrialResult
 
         result = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -405,7 +405,7 @@ class TestVTESessionResult:
 
     def test_dataclass_fields(self):
         """Test that dataclass has required fields."""
-        from neurospatial.behavior.decisions import VTESessionResult, VTETrialResult
+        from neurospatial.behavior.vte import VTESessionResult, VTETrialResult
 
         trial1 = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -450,7 +450,7 @@ class TestVTESessionResult:
 
     def test_mean_idphi_alias(self):
         """Test that mean_idphi property is alias for mean_head_sweep."""
-        from neurospatial.behavior.decisions import VTESessionResult
+        from neurospatial.behavior.vte import VTESessionResult
 
         session = VTESessionResult(
             trial_results=[],
@@ -466,7 +466,7 @@ class TestVTESessionResult:
 
     def test_std_idphi_alias(self):
         """Test that std_idphi property is alias for std_head_sweep."""
-        from neurospatial.behavior.decisions import VTESessionResult
+        from neurospatial.behavior.vte import VTESessionResult
 
         session = VTESessionResult(
             trial_results=[],
@@ -482,7 +482,7 @@ class TestVTESessionResult:
 
     def test_get_vte_trials(self):
         """Test get_vte_trials() returns only VTE trials."""
-        from neurospatial.behavior.decisions import VTESessionResult, VTETrialResult
+        from neurospatial.behavior.vte import VTESessionResult, VTETrialResult
 
         trial1 = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -534,7 +534,7 @@ class TestVTESessionResult:
 
     def test_summary_method(self):
         """Test summary() returns human-readable string."""
-        from neurospatial.behavior.decisions import VTESessionResult, VTETrialResult
+        from neurospatial.behavior.vte import VTESessionResult, VTETrialResult
 
         trial1 = VTETrialResult(
             head_sweep_magnitude=2.5,
@@ -573,7 +573,7 @@ class TestNormalizeVTEScores:
 
     def test_basic_z_scoring(self):
         """Test that z-scoring works correctly."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         head_sweeps = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         speeds = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
@@ -590,7 +590,7 @@ class TestNormalizeVTEScores:
 
     def test_speed_inverse_direction(self):
         """Test that slower speeds give higher z_speed_inverse."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         head_sweeps = np.array([1.0, 1.0, 1.0])
         speeds = np.array([10.0, 20.0, 30.0])
@@ -602,7 +602,7 @@ class TestNormalizeVTEScores:
 
     def test_length_mismatch_raises(self):
         """Test that mismatched array lengths raise ValueError."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         head_sweeps = np.array([1.0, 2.0, 3.0])
         speeds = np.array([10.0, 20.0])
@@ -612,7 +612,7 @@ class TestNormalizeVTEScores:
 
     def test_zero_std_head_sweep_warns(self):
         """Test that zero std in head sweep triggers warning."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         # All identical head sweeps
         head_sweeps = np.array([2.0, 2.0, 2.0])
@@ -631,7 +631,7 @@ class TestNormalizeVTEScores:
 
     def test_zero_std_speed_warns(self):
         """Test that zero std in speed triggers warning."""
-        from neurospatial.behavior.decisions import normalize_vte_scores
+        from neurospatial.behavior.vte import normalize_vte_scores
 
         # All identical speeds
         head_sweeps = np.array([1.0, 2.0, 3.0])
@@ -659,7 +659,7 @@ class TestComputeVTEIndex:
 
     def test_equal_weighting(self):
         """Test VTE index with equal weighting (alpha=0.5)."""
-        from neurospatial.behavior.decisions import compute_vte_index
+        from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 1.0
         z_speed_inv = 1.0
@@ -671,7 +671,7 @@ class TestComputeVTEIndex:
 
     def test_head_sweep_only(self):
         """Test VTE index with alpha=1.0 (head sweep only)."""
-        from neurospatial.behavior.decisions import compute_vte_index
+        from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
@@ -683,7 +683,7 @@ class TestComputeVTEIndex:
 
     def test_speed_only(self):
         """Test VTE index with alpha=0.0 (speed only)."""
-        from neurospatial.behavior.decisions import compute_vte_index
+        from neurospatial.behavior.vte import compute_vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
@@ -704,21 +704,21 @@ class TestClassifyVTE:
 
     def test_above_threshold(self):
         """Test that index above threshold returns True."""
-        from neurospatial.behavior.decisions import classify_vte
+        from neurospatial.behavior.vte import classify_vte
 
         assert classify_vte(1.0, threshold=0.5) is True
         assert classify_vte(0.6, threshold=0.5) is True
 
     def test_below_threshold(self):
         """Test that index below threshold returns False."""
-        from neurospatial.behavior.decisions import classify_vte
+        from neurospatial.behavior.vte import classify_vte
 
         assert classify_vte(0.3, threshold=0.5) is False
         assert classify_vte(-0.5, threshold=0.5) is False
 
     def test_at_threshold(self):
         """Test that index at threshold returns False (> not >=)."""
-        from neurospatial.behavior.decisions import classify_vte
+        from neurospatial.behavior.vte import classify_vte
 
         assert classify_vte(0.5, threshold=0.5) is False
 
@@ -733,7 +733,7 @@ class TestComputeVTETrial:
 
     def test_single_trial_no_z_scores(self):
         """Test that single trial analysis has None for z-scores."""
-        from neurospatial.behavior.decisions import compute_vte_trial
+        from neurospatial.behavior.vte import compute_vte_trial
 
         # Create a simple trajectory
         n_samples = 30
@@ -767,7 +767,7 @@ class TestComputeVTETrial:
 
     def test_basic_metrics_computed(self):
         """Test that basic metrics are computed correctly."""
-        from neurospatial.behavior.decisions import compute_vte_trial
+        from neurospatial.behavior.vte import compute_vte_trial
 
         # Create a trajectory with known properties
         n_samples = 50
@@ -806,8 +806,8 @@ class TestComputeVTESession:
 
     def test_high_head_sweep_low_speed_is_vte(self, t_maze_environment):
         """Test that high head sweep + low speed is classified as VTE."""
-        from neurospatial.behavior.decisions import compute_vte_session
         from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
 
         env = t_maze_environment
 
@@ -879,8 +879,8 @@ class TestComputeVTESession:
 
     def test_no_valid_trials_returns_empty_result(self, t_maze_environment):
         """Test that no valid trials returns empty session result."""
-        from neurospatial.behavior.decisions import compute_vte_session
         from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
 
         env = t_maze_environment
 
@@ -920,8 +920,8 @@ class TestComputeVTESession:
 
     def test_vte_classification_consistency(self, t_maze_environment):
         """Test that VTE classification is consistent with metrics."""
-        from neurospatial.behavior.decisions import compute_vte_session
         from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
 
         env = t_maze_environment
 

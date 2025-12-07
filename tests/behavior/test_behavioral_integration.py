@@ -21,10 +21,8 @@ class TestVTEDecisionAnalysisIntegration:
 
     def test_vte_uses_extract_pre_decision_window_correctly(self) -> None:
         """Verify VTE head_sweep_from_positions matches manual extraction."""
-        from neurospatial.behavior.decisions import (
-            extract_pre_decision_window,
-            head_sweep_from_positions,
-        )
+        from neurospatial.behavior.decisions import extract_pre_decision_window
+        from neurospatial.behavior.vte import head_sweep_from_positions
 
         # Create trajectory with known head sweeps
         times = np.linspace(0, 10, 101)
@@ -58,14 +56,12 @@ class TestVTEDecisionAnalysisIntegration:
 
     def test_vte_session_uses_decision_region_entry_correctly(self) -> None:
         """Verify compute_vte_session finds correct entry times."""
-        from neurospatial.behavior.decisions import (
-            compute_vte_session,
-            decision_region_entry_time,
-        )
+        from neurospatial.behavior.decisions import decision_region_entry_time
         from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
 
         # Create dense environment covering full trajectory range
-        np.random.seed(42)
+        # Note: rng not used here since we use linspace grid, but kept for consistency
         x = np.linspace(0, 60, 30)
         y = np.linspace(0, 60, 30)
         xx, yy = np.meshgrid(x, y)
@@ -135,12 +131,12 @@ class TestVTERoundTrip:
 
     def test_high_head_sweep_low_speed_classified_as_vte(self) -> None:
         """Simulated VTE behavior should be classified as VTE."""
-        from neurospatial.behavior.decisions import compute_vte_session
         from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
 
         # Create environment
-        np.random.seed(42)
-        positions = np.random.rand(200, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((200, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Create decision region
@@ -211,7 +207,7 @@ class TestVTERoundTrip:
 
     def test_single_trial_returns_none_for_zscores(self) -> None:
         """Single trial should have None for z-scores."""
-        from neurospatial.behavior.decisions import compute_vte_trial
+        from neurospatial.behavior.vte import compute_vte_trial
 
         # Create simple trajectory
         times = np.linspace(0, 2, 101)
@@ -250,8 +246,8 @@ class TestPathEfficiencyPathProgressConsistency:
         from neurospatial.behavior.navigation import path_efficiency
 
         # Create environment
-        np.random.seed(42)
-        positions = np.random.rand(200, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((200, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Straight trajectory
@@ -273,7 +269,7 @@ class TestPathEfficiencyPathProgressConsistency:
         from neurospatial.behavior.navigation import path_progress
 
         # Create dense environment to ensure trajectory bins exist
-        np.random.seed(42)
+        # Note: rng not used here since we use linspace grid, but kept for consistency
         # Create grid positions to ensure full coverage
         x = np.linspace(0, 100, 50)
         y = np.linspace(0, 100, 50)
@@ -316,7 +312,7 @@ class TestPathEfficiencyPathProgressConsistency:
         from neurospatial.behavior.navigation import path_efficiency
 
         # Create dense environment to ensure trajectory bins exist
-        np.random.seed(42)
+        # Note: rng not used here since we use linspace grid, but kept for consistency
         x = np.linspace(0, 100, 50)
         y = np.linspace(0, 100, 50)
         xx, yy = np.meshgrid(x, y)
@@ -414,8 +410,8 @@ class TestDecisionAnalysisConsistency:
         from neurospatial.behavior.decisions import geodesic_voronoi_labels
 
         # Create connected environment
-        np.random.seed(42)
-        positions = np.random.rand(500, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((500, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
         # Use first and last bins as goals
