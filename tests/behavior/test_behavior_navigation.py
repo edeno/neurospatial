@@ -217,8 +217,8 @@ class TestNavigationFunctionality:
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        np.random.seed(42)
-        positions = np.random.rand(100, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 100
         return Environment.from_samples(positions, bin_size=10.0)
 
     def test_goal_vector_basic(self):
@@ -371,8 +371,8 @@ class TestPathEfficiencyFunctions:
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        np.random.seed(42)
-        positions = np.random.rand(100, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 100
         return Environment.from_samples(positions, bin_size=10.0)
 
     def test_shortest_path_length_euclidean(self, simple_env):
@@ -469,8 +469,8 @@ class TestBehavioralFunctions:
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        np.random.seed(42)
-        positions = np.random.rand(100, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
 
         # Add test regions using the correct API

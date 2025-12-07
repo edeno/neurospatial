@@ -51,6 +51,11 @@ class TestWindowedOverlayManager:
     """Tests for WindowedOverlayManager class."""
 
     @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
     def mock_viewer(self):
         """Create mock napari viewer."""
         viewer = MagicMock()
@@ -70,14 +75,14 @@ class TestWindowedOverlayManager:
         return layer
 
     @pytest.fixture
-    def sample_points_data(self):
+    def sample_points_data(self, rng):
         """Create sample points data (time, y, x)."""
         n_frames = 10000
         return np.column_stack(
             [
                 np.arange(n_frames),  # time
-                np.random.rand(n_frames) * 100,  # y
-                np.random.rand(n_frames) * 100,  # x
+                rng.random(n_frames) * 100,  # y
+                rng.random(n_frames) * 100,  # x
             ]
         )
 
@@ -293,6 +298,11 @@ class TestWindowedTracksManager:
     """Tests for WindowedTracksManager class."""
 
     @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
     def mock_viewer(self):
         """Create mock napari viewer."""
         viewer = MagicMock()
@@ -312,15 +322,15 @@ class TestWindowedTracksManager:
         return layer
 
     @pytest.fixture
-    def sample_tracks_data(self):
+    def sample_tracks_data(self, rng):
         """Create sample tracks data (track_id, time, y, x)."""
         n_frames = 10000
         return np.column_stack(
             [
                 np.zeros(n_frames),  # track_id
                 np.arange(n_frames),  # time
-                np.random.rand(n_frames) * 100,  # y
-                np.random.rand(n_frames) * 100,  # x
+                rng.random(n_frames) * 100,  # y
+                rng.random(n_frames) * 100,  # x
             ]
         )
 
@@ -425,11 +435,16 @@ class TestWindowedLoadingIntegration:
     """Integration tests for windowed loading with actual napari viewer."""
 
     @pytest.fixture
-    def simple_env(self):
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
+    def simple_env(self, rng):
         """Create simple 2D environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=2.0)
 
     def test_large_dataset_uses_windowed_loading(self, simple_env):

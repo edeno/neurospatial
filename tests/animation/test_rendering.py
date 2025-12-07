@@ -397,12 +397,17 @@ class TestFieldToRgbForNapariZeroRange:
 class TestColormapRangeStreaming:
     """Test streaming/chunked colormap range computation for large datasets."""
 
-    def test_small_array_uses_exact_computation(self):
+    @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    def test_small_array_uses_exact_computation(self, rng):
         """Test that small arrays use exact computation (no streaming)."""
         from neurospatial.animation.rendering import compute_global_colormap_range
 
         # Small array below threshold
-        fields = np.random.rand(1000, 100)
+        fields = rng.random((1000, 100))
 
         # Should work and return exact values
         vmin, vmax = compute_global_colormap_range(fields, max_frames_for_exact=50_000)
@@ -466,12 +471,12 @@ class TestColormapRangeStreaming:
         assert vmin == pytest.approx(expected_min)
         assert vmax == pytest.approx(expected_max)
 
-    def test_streaming_with_manual_vmin_vmax(self):
+    def test_streaming_with_manual_vmin_vmax(self, rng):
         """Test that manual vmin/vmax skips computation (even for large arrays)."""
         from neurospatial.animation.rendering import compute_global_colormap_range
 
         # Large array that would normally trigger streaming
-        fields = np.random.rand(100_000, 100)
+        fields = rng.random((100_000, 100))
 
         # Manual limits should skip computation entirely
         vmin, vmax = compute_global_colormap_range(
@@ -481,13 +486,13 @@ class TestColormapRangeStreaming:
         assert vmin == -5.0
         assert vmax == 10.0
 
-    def test_default_threshold_is_50000(self):
+    def test_default_threshold_is_50000(self, rng):
         """Test that default max_frames_for_exact is 50_000."""
         from neurospatial.animation.rendering import compute_global_colormap_range
 
         # This test verifies the parameter has a sensible default
         # by checking that arrays just below threshold work
-        fields = np.random.rand(49_999, 10)
+        fields = rng.random((49_999, 10))
 
         # Should work with default threshold
         vmin, vmax = compute_global_colormap_range(fields)

@@ -124,14 +124,20 @@ class TestLinearFitResult:
         assert result.slope == -3.0
 
 
+@pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(42)
+
+
 class TestRadonDetectionResult:
     """Test RadonDetectionResult dataclass."""
 
-    def test_radon_detection_result_creation(self):
+    def test_radon_detection_result_creation(self, rng):
         """RadonDetectionResult should be creatable with required fields."""
         from neurospatial.decoding.trajectory import RadonDetectionResult
 
-        sinogram = np.random.rand(180, 100)
+        sinogram = rng.random((180, 100))
 
         result = RadonDetectionResult(
             angle_degrees=45.0,

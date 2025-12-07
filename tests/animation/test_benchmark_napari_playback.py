@@ -193,6 +193,11 @@ class TestOverlayCreation:
     """Tests for overlay creation based on flags."""
 
     @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
         import importlib.util
@@ -213,7 +218,7 @@ class TestOverlayCreation:
             "Module should have create_selected_overlays function"
         )
 
-    def test_position_overlay_creation(self, benchmark_module):
+    def test_position_overlay_creation(self, benchmark_module, rng):
         """Should create PositionOverlay when position=True."""
         if not hasattr(benchmark_module, "create_selected_overlays"):
             pytest.skip("create_selected_overlays not found")
@@ -222,7 +227,7 @@ class TestOverlayCreation:
         from neurospatial.animation.overlays import PositionOverlay
 
         # Create a simple environment
-        positions = np.random.rand(100, 2) * 20
+        positions = rng.random((100, 2)) * 20
         env = Environment.from_samples(positions, bin_size=1.0)
 
         overlays = benchmark_module.create_selected_overlays(
@@ -239,7 +244,7 @@ class TestOverlayCreation:
         position_overlays = [o for o in overlays if isinstance(o, PositionOverlay)]
         assert len(position_overlays) == 1
 
-    def test_event_overlay_creation(self, benchmark_module):
+    def test_event_overlay_creation(self, benchmark_module, rng):
         """Should create EventOverlay when events=True."""
         if not hasattr(benchmark_module, "create_selected_overlays"):
             pytest.skip("create_selected_overlays not found")
@@ -248,7 +253,7 @@ class TestOverlayCreation:
         from neurospatial.animation.overlays import EventOverlay
 
         # Create a simple environment
-        positions = np.random.rand(100, 2) * 20
+        positions = rng.random((100, 2)) * 20
         env = Environment.from_samples(positions, bin_size=1.0)
 
         overlays = benchmark_module.create_selected_overlays(
@@ -265,7 +270,7 @@ class TestOverlayCreation:
         event_overlays = [o for o in overlays if isinstance(o, EventOverlay)]
         assert len(event_overlays) == 1
 
-    def test_timeseries_overlay_creation(self, benchmark_module):
+    def test_timeseries_overlay_creation(self, benchmark_module, rng):
         """Should create TimeSeriesOverlay when timeseries=True."""
         if not hasattr(benchmark_module, "create_selected_overlays"):
             pytest.skip("create_selected_overlays not found")
@@ -274,7 +279,7 @@ class TestOverlayCreation:
         from neurospatial.animation.overlays import TimeSeriesOverlay
 
         # Create a simple environment
-        positions = np.random.rand(100, 2) * 20
+        positions = rng.random((100, 2)) * 20
         env = Environment.from_samples(positions, bin_size=1.0)
 
         overlays = benchmark_module.create_selected_overlays(
@@ -291,7 +296,7 @@ class TestOverlayCreation:
         ts_overlays = [o for o in overlays if isinstance(o, TimeSeriesOverlay)]
         assert len(ts_overlays) == 1
 
-    def test_video_overlay_creation(self, benchmark_module):
+    def test_video_overlay_creation(self, benchmark_module, rng):
         """Should create VideoOverlay when video=True."""
         if not hasattr(benchmark_module, "create_selected_overlays"):
             pytest.skip("create_selected_overlays not found")
@@ -300,7 +305,7 @@ class TestOverlayCreation:
         from neurospatial.animation.overlays import VideoOverlay
 
         # Create a simple environment
-        positions = np.random.rand(100, 2) * 20
+        positions = rng.random((100, 2)) * 20
         env = Environment.from_samples(positions, bin_size=1.0)
 
         overlays = benchmark_module.create_selected_overlays(
@@ -399,6 +404,11 @@ class TestEdgeCases:
     """Tests for edge cases and default behavior."""
 
     @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
         import importlib.util
@@ -413,11 +423,11 @@ class TestEdgeCases:
         spec.loader.exec_module(module)
         return module
 
-    def test_default_overlay_behavior(self, benchmark_module):
+    def test_default_overlay_behavior(self, benchmark_module, rng):
         """When no overlays specified, should return empty list."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 20
+        positions = rng.random((100, 2)) * 20
         env = Environment.from_samples(positions, bin_size=1.0)
 
         # Call with all flags False (simulates no CLI args)

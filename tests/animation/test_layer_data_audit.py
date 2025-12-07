@@ -37,6 +37,12 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(42)
+
+
+@pytest.fixture
 def mock_viewer() -> MagicMock:
     """Create a mock napari viewer."""
     viewer = MagicMock()
@@ -56,9 +62,9 @@ def mock_viewer() -> MagicMock:
 
 
 @pytest.fixture
-def in_memory_video_array() -> NDArray[np.uint8]:
+def in_memory_video_array(rng) -> NDArray[np.uint8]:
     """Create a small in-memory video array (10 frames, 8x8, RGB)."""
-    return np.random.randint(0, 255, (10, 8, 8, 3), dtype=np.uint8)
+    return rng.integers(0, 255, (10, 8, 8, 3), dtype=np.uint8)
 
 
 @pytest.fixture
@@ -244,7 +250,7 @@ class TestVideoLayerDataAssignment:
         assert uses_native_time is False
 
     def test_file_video_callback_updates_layer_data(
-        self, mock_viewer: MagicMock, mock_file_video_reader: MagicMock
+        self, mock_viewer: MagicMock, mock_file_video_reader: MagicMock, rng
     ) -> None:
         """File-based video callback should update layer.data for streaming."""
         from neurospatial.animation.backends.napari_backend import (
@@ -252,7 +258,7 @@ class TestVideoLayerDataAssignment:
         )
 
         # Create VideoData that returns frames on get_frame()
-        test_frame = np.random.randint(0, 255, (8, 8, 3), dtype=np.uint8)
+        test_frame = rng.integers(0, 255, (8, 8, 3), dtype=np.uint8)
         video_data = MagicMock()
         video_data.get_frame = MagicMock(return_value=test_frame)
 
@@ -374,11 +380,11 @@ class TestEventOverlayUpdatePattern:
 class TestNativeTimeDimensionOverlays:
     """Tests verifying overlays that use native time dimension (no callbacks)."""
 
-    def test_position_overlay_uses_tracks_layer(self) -> None:
+    def test_position_overlay_uses_tracks_layer(self, rng) -> None:
         """PositionOverlay should create Tracks layer with time dimension."""
         from neurospatial.animation.overlays import PositionOverlay
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         times = np.linspace(0, 10, 100)
         overlay = PositionOverlay(data=positions, times=times, color="red", size=10)
 
@@ -396,15 +402,15 @@ class TestNativeTimeDimensionOverlays:
         # Verify data shape includes time dimension
         assert data.data.shape[0] == 100  # n_frames
 
-    def test_bodypart_overlay_uses_points_layer(self) -> None:
+    def test_bodypart_overlay_uses_points_layer(self, rng) -> None:
         """BodypartOverlay should create Points layer with time dimension."""
         from neurospatial.animation.overlays import BodypartOverlay
 
         # Create dict with 3 bodyparts, each with 100 samples of 2D coordinates
         bodyparts = {
-            "nose": np.random.rand(100, 2) * 100,
-            "left_ear": np.random.rand(100, 2) * 100,
-            "right_ear": np.random.rand(100, 2) * 100,
+            "nose": rng.random((100, 2)) * 100,
+            "left_ear": rng.random((100, 2)) * 100,
+            "right_ear": rng.random((100, 2)) * 100,
         }
         times = np.linspace(0, 10, 100)
         overlay = BodypartOverlay(
@@ -428,12 +434,12 @@ class TestNativeTimeDimensionOverlays:
         for _name, pos_array in data.bodyparts.items():
             assert pos_array.shape[0] == 100  # n_frames
 
-    def test_head_direction_overlay_uses_tracks_layer(self) -> None:
+    def test_head_direction_overlay_uses_tracks_layer(self, rng) -> None:
         """HeadDirectionOverlay should create Tracks layer with time dimension."""
         from neurospatial.animation.overlays import HeadDirectionOverlay
 
         # HeadDirectionOverlay uses `data` for angles (shape n_samples)
-        angles = np.random.rand(100) * 2 * np.pi
+        angles = rng.random(100) * 2 * np.pi
         times = np.linspace(0, 10, 100)
 
         overlay = HeadDirectionOverlay(

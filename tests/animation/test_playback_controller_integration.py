@@ -23,22 +23,28 @@ if TYPE_CHECKING:
 pytest.importorskip("napari")
 
 
+@pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(42)
+
+
 class TestPlaybackControllerCreation:
     """Tests for PlaybackController creation in render_napari()."""
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def fields(self, env):
+    def fields(self, env, rng):
         """Create minimal field data for testing."""
         n_frames = 20
-        return [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        return [rng.random(env.n_bins) for _ in range(n_frames)]
 
     def test_playback_controller_created_in_render_napari(self, env, fields):
         """render_napari() should create a PlaybackController instance."""
@@ -94,18 +100,18 @@ class TestPlaybackControllerWithFrameTimes:
     """Tests for PlaybackController with frame_times from overlay_data."""
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def fields(self, env):
+    def fields(self, env, rng):
         """Create minimal field data for testing."""
         n_frames = 20
-        return [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        return [rng.random(env.n_bins) for _ in range(n_frames)]
 
     @pytest.fixture
     def overlay_data_with_frame_times(self, env, fields):
@@ -139,18 +145,18 @@ class TestPlaybackControllerWithArrayFields:
     """Tests for PlaybackController with 2D array fields (memmap path)."""
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def array_fields(self, env):
+    def array_fields(self, env, rng):
         """Create 2D array field data for testing."""
         n_frames = 20
-        return np.random.rand(n_frames, env.n_bins)
+        return rng.random((n_frames, env.n_bins))
 
     def test_playback_controller_created_with_array_fields(self, env, array_fields):
         """PlaybackController should be created for 2D array fields."""
@@ -177,18 +183,18 @@ class TestPlaybackControllerWidgetWiring:
     """
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def fields(self, env):
+    def fields(self, env, rng):
         """Create minimal field data for testing."""
         n_frames = 20
-        return [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        return [rng.random(env.n_bins) for _ in range(n_frames)]
 
     def test_controller_play_updates_is_playing(self, env, fields):
         """Calling controller.play() should set is_playing to True."""
@@ -236,19 +242,19 @@ class TestPlaybackControllerMultiField:
     """Tests for PlaybackController with multi-field animations."""
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def multi_field_sequences(self, env):
+    def multi_field_sequences(self, env, rng):
         """Create multiple field sequences for testing."""
         n_frames = 15
-        seq1 = [np.random.rand(env.n_bins) for _ in range(n_frames)]
-        seq2 = [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        seq1 = [rng.random(env.n_bins) for _ in range(n_frames)]
+        seq2 = [rng.random(env.n_bins) for _ in range(n_frames)]
         return [seq1, seq2]
 
     def test_playback_controller_created_for_multi_field(
@@ -283,18 +289,18 @@ class TestPlaybackControllerInitialState:
     """Tests for PlaybackController initial state in render_napari()."""
 
     @pytest.fixture
-    def env(self):
+    def env(self, rng):
         """Create a minimal Environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(100, 2) * 50
+        positions = rng.random((100, 2)) * 50
         return Environment.from_samples(positions, bin_size=5.0)
 
     @pytest.fixture
-    def fields(self, env):
+    def fields(self, env, rng):
         """Create minimal field data for testing."""
         n_frames = 20
-        return [np.random.rand(env.n_bins) for _ in range(n_frames)]
+        return [rng.random(env.n_bins) for _ in range(n_frames)]
 
     def test_controller_starts_at_frame_zero(self, env, fields):
         """PlaybackController should start at frame 0."""

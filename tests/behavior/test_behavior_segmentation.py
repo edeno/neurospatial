@@ -324,12 +324,17 @@ class TestSegmentByVelocityBasic:
 class TestDetectLapsBasic:
     """Basic functionality tests for detect_laps from new location."""
 
-    def test_empty_trajectory_returns_empty(self):
+    @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    def test_empty_trajectory_returns_empty(self, rng):
         """Test that empty trajectory returns empty list."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import detect_laps
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
         trajectory_bins = np.array([], dtype=np.int64)
@@ -339,12 +344,12 @@ class TestDetectLapsBasic:
 
         assert laps == []
 
-    def test_invalid_method_raises_error(self):
+    def test_invalid_method_raises_error(self, rng):
         """Test that invalid method raises ValueError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import detect_laps
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
         trajectory_bins = np.array([0, 1, 2, 3], dtype=np.int64)
@@ -357,12 +362,17 @@ class TestDetectLapsBasic:
 class TestSegmentTrialsBasic:
     """Basic functionality tests for segment_trials from new location."""
 
-    def test_missing_start_region_raises_error(self):
+    @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    def test_missing_start_region_raises_error(self, rng):
         """Test that missing start_region raises ValueError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import segment_trials
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
         trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
@@ -377,12 +387,12 @@ class TestSegmentTrialsBasic:
                 end_regions=["goal"],
             )
 
-    def test_missing_end_regions_raises_error(self):
+    def test_missing_end_regions_raises_error(self, rng):
         """Test that missing end_regions raises ValueError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import segment_trials
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
         env.regions.add("start", polygon=Point(50.0, 50.0).buffer(10.0))
 
@@ -402,12 +412,17 @@ class TestSegmentTrialsBasic:
 class TestTrajectorySimilarityBasic:
     """Basic functionality tests for trajectory_similarity from new location."""
 
-    def test_identical_trajectories_jaccard(self):
+    @pytest.fixture
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    def test_identical_trajectories_jaccard(self, rng):
         """Test that identical trajectories have similarity 1.0."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import trajectory_similarity
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
         traj = np.array([0, 1, 2, 3, 4], dtype=np.int64)
@@ -416,12 +431,12 @@ class TestTrajectorySimilarityBasic:
 
         assert_allclose(similarity, 1.0)
 
-    def test_empty_trajectory_raises_error(self):
+    def test_empty_trajectory_raises_error(self, rng):
         """Test that empty trajectory raises ValueError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import trajectory_similarity
 
-        positions = np.random.rand(100, 2) * 100
+        positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
         traj1 = np.array([], dtype=np.int64)

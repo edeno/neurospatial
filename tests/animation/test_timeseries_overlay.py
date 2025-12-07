@@ -1108,20 +1108,25 @@ class TestTimeSeriesNapariDockWidget:
     """Test napari dock widget integration for time series overlays."""
 
     @pytest.fixture
-    def simple_env(self):
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
+    def simple_env(self, rng):
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(50, 2) * 100
+        positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
         return env
 
     @pytest.fixture
-    def sample_fields(self, simple_env):
+    def sample_fields(self, simple_env, rng):
         """Create sample field data for testing."""
         n_frames = 10
         n_bins = simple_env.n_bins
-        return [np.random.rand(n_bins) for _ in range(n_frames)]
+        return [rng.random(n_bins) for _ in range(n_frames)]
 
     @pytest.fixture
     def sample_timeseries_overlay(self):
@@ -1174,7 +1179,7 @@ class TestTimeSeriesNapariDockWidget:
         assert "Time Series" in widget_names
 
     def test_timeseries_dock_updates_on_frame_change(
-        self, simple_env, sample_fields, sample_timeseries_overlay, _napari_viewer
+        self, simple_env, sample_fields, sample_timeseries_overlay, _napari_viewer, rng
     ):
         """Test that time series plot updates when frame changes."""
         from neurospatial.animation.overlays import _convert_overlays_to_data
@@ -1200,7 +1205,7 @@ class TestTimeSeriesNapariDockWidget:
         )
 
         # Simulate adding an image layer so dims has time dimension
-        viewer.add_image(np.random.rand(len(sample_fields), 50, 50))
+        viewer.add_image(rng.random((len(sample_fields), 50, 50)))
 
         # Change frame and verify no errors
         viewer.dims.current_step = (0,)
@@ -1293,20 +1298,25 @@ class TestTimeSeriesVideoBackendLayout:
     """Test video backend layout with time series column."""
 
     @pytest.fixture
-    def simple_env(self):
+    def rng(self):
+        """Create a seeded random number generator for reproducible tests."""
+        return np.random.default_rng(42)
+
+    @pytest.fixture
+    def simple_env(self, rng):
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        positions = np.random.rand(50, 2) * 100
+        positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
         return env
 
     @pytest.fixture
-    def sample_fields(self, simple_env):
+    def sample_fields(self, simple_env, rng):
         """Create sample field data for testing."""
         n_frames = 5
         n_bins = simple_env.n_bins
-        return [np.random.rand(n_bins) for _ in range(n_frames)]
+        return [rng.random(n_bins) for _ in range(n_frames)]
 
     @pytest.fixture
     def sample_timeseries_data(self):
@@ -1540,8 +1550,8 @@ class TestTimeSeriesVideoRender:
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        np.random.seed(42)
-        positions = np.random.rand(50, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
         env.clear_cache()  # Ensure pickle-able
         return env
@@ -1549,10 +1559,10 @@ class TestTimeSeriesVideoRender:
     @pytest.fixture
     def sample_fields(self, simple_env):
         """Create sample field data for testing."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n_frames = 5
         n_bins = simple_env.n_bins
-        return [np.random.rand(n_bins) for _ in range(n_frames)]
+        return [rng.random(n_bins) for _ in range(n_frames)]
 
     @pytest.fixture
     def sample_timeseries_overlay(self):
@@ -1736,18 +1746,18 @@ class TestTimeSeriesWidgetBackend:
         """Create a simple environment for testing."""
         from neurospatial import Environment
 
-        np.random.seed(42)
-        positions = np.random.rand(50, 2) * 100
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
         return env
 
     @pytest.fixture
     def sample_fields(self, simple_env):
         """Create sample field data for testing."""
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         n_frames = 5
         n_bins = simple_env.n_bins
-        return [np.random.rand(n_bins) for _ in range(n_frames)]
+        return [rng.random(n_bins) for _ in range(n_frames)]
 
     @pytest.fixture
     def sample_timeseries_data(self):
@@ -2369,9 +2379,11 @@ class TestTimeSeriesPerformance:
 
         from neurospatial.animation.overlays import TimeSeriesData
 
+        rng = np.random.default_rng(42)
+
         def measure_extraction_time(n_samples: int, n_iterations: int = 1000) -> float:
             """Measure average time to extract windows."""
-            data = np.random.rand(n_samples)
+            data = rng.random(n_samples)
             times = np.linspace(0, n_samples, n_samples)
 
             # Precomputed indices for 100 frames

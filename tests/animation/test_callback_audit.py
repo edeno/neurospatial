@@ -43,6 +43,12 @@ def _qtpy_available() -> bool:
 
 
 @pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(42)
+
+
+@pytest.fixture
 def mock_viewer() -> MagicMock:
     """Create a mock napari viewer with dims events."""
     viewer = MagicMock()
@@ -62,9 +68,9 @@ def mock_viewer() -> MagicMock:
 
 
 @pytest.fixture
-def video_frames_array() -> NDArray[np.uint8]:
+def video_frames_array(rng) -> NDArray[np.uint8]:
     """Create a small in-memory video array (10 frames, 8x8, RGB)."""
-    return np.random.randint(0, 255, (10, 8, 8, 3), dtype=np.uint8)
+    return rng.integers(0, 255, (10, 8, 8, 3), dtype=np.uint8)
 
 
 @pytest.fixture
@@ -216,12 +222,12 @@ class TestTimeseriesUpdateModeAudit:
     - update_mode="manual": Never auto-updates
     """
 
-    def test_on_pause_mode_preserves_through_conversion(self) -> None:
+    def test_on_pause_mode_preserves_through_conversion(self, rng) -> None:
         """on_pause mode should be preserved through overlay conversion."""
         from neurospatial.animation.overlays import TimeSeriesOverlay
 
         overlay = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="Test",
             update_mode="on_pause",
@@ -230,12 +236,12 @@ class TestTimeseriesUpdateModeAudit:
         # Verify update_mode is preserved
         assert overlay.update_mode == "on_pause"
 
-    def test_manual_mode_preserves_through_conversion(self) -> None:
+    def test_manual_mode_preserves_through_conversion(self, rng) -> None:
         """manual mode should be preserved through overlay configuration."""
         from neurospatial.animation.overlays import TimeSeriesOverlay
 
         overlay = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="Test",
             update_mode="manual",
@@ -243,19 +249,19 @@ class TestTimeseriesUpdateModeAudit:
 
         assert overlay.update_mode == "manual"
 
-    def test_live_mode_is_default(self) -> None:
+    def test_live_mode_is_default(self, rng) -> None:
         """live mode should be the default update mode."""
         from neurospatial.animation.overlays import TimeSeriesOverlay
 
         overlay = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="Test",
         )
 
         assert overlay.update_mode == "live"
 
-    def test_mode_priority_uses_most_restrictive(self) -> None:
+    def test_mode_priority_uses_most_restrictive(self, rng) -> None:
         """When multiple overlays have different modes, use most restrictive.
 
         Priority: manual > on_pause > live
@@ -264,14 +270,14 @@ class TestTimeseriesUpdateModeAudit:
 
         # Create overlays with different modes
         ts_live = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="Live",
             update_mode="live",
         )
 
         ts_on_pause = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="OnPause",
             color="green",
@@ -296,12 +302,12 @@ class TestTimeseriesUpdateModeAudit:
         # on_pause should win over live
         assert effective_mode == "on_pause"
 
-    def test_throttle_parameters_configurable(self) -> None:
+    def test_throttle_parameters_configurable(self, rng) -> None:
         """Throttle parameters should be configurable on TimeSeriesOverlay."""
         from neurospatial.animation.overlays import TimeSeriesOverlay
 
         overlay = TimeSeriesOverlay(
-            data=np.random.randn(100),
+            data=rng.standard_normal(100),
             times=np.linspace(0, 10, 100),
             label="Test",
             playback_throttle_hz=5.0,

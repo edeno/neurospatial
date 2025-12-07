@@ -14,6 +14,15 @@ from neurospatial.animation.config import (
     format_scale_label,
 )
 
+# Default seed for reproducible tests
+DEFAULT_SEED = 42
+
+
+@pytest.fixture
+def rng():
+    """Create a seeded random number generator for reproducible tests."""
+    return np.random.default_rng(DEFAULT_SEED)
+
 
 class TestScaleBarConfig:
     """Test ScaleBarConfig dataclass."""
@@ -240,37 +249,37 @@ class TestPlotFieldWithScaleBar:
     - small_1d_env: 10 cm linear track (5 bins)
     """
 
-    def test_scale_bar_bool(self, small_2d_env):
+    def test_scale_bar_bool(self, small_2d_env, rng):
         """Test scale_bar=True adds scale bar."""
-        field = np.random.rand(small_2d_env.n_bins)
+        field = rng.random(small_2d_env.n_bins)
         ax = small_2d_env.plot_field(field, scale_bar=True)
         # Check that at least one artist was added (scale bar)
         assert len(ax.artists) > 0
         plt.close()
 
-    def test_scale_bar_config(self, small_2d_env):
+    def test_scale_bar_config(self, small_2d_env, rng):
         """Test scale_bar=ScaleBarConfig works."""
         config = ScaleBarConfig(length=5.0, color="white", position="upper left")
-        field = np.random.rand(small_2d_env.n_bins)
+        field = rng.random(small_2d_env.n_bins)
         ax = small_2d_env.plot_field(field, scale_bar=config)
         assert len(ax.artists) > 0
         plt.close()
 
-    def test_scale_bar_with_colorbar(self, small_2d_env):
+    def test_scale_bar_with_colorbar(self, small_2d_env, rng):
         """Test scale bar works alongside colorbar."""
-        field = np.random.rand(small_2d_env.n_bins)
+        field = rng.random(small_2d_env.n_bins)
         ax = small_2d_env.plot_field(field, scale_bar=True, colorbar=True)
         assert len(ax.artists) > 0
         plt.close()
 
-    def test_scale_bar_1d_env(self, small_1d_env):
+    def test_scale_bar_1d_env(self, small_1d_env, rng):
         """Test scale bar with 1D environments.
 
         Note: 1D environments that have grid_shape with 1 dimension will raise
         NotImplementedError from plot_field() because pcolormesh requires 2D grids.
         This is a pre-existing limitation, not related to scale bar functionality.
         """
-        field = np.random.rand(small_1d_env.n_bins)
+        field = rng.random(small_1d_env.n_bins)
         # 1D graph layouts go through the 1D plotting path, not grid path
         # Check if it's a 1D layout that can be plotted
         if small_1d_env.layout.is_1d:
@@ -283,18 +292,18 @@ class TestPlotFieldWithScaleBar:
                 small_1d_env.plot_field(field, scale_bar=True)
             plt.close("all")
 
-    def test_no_scale_bar_default(self, small_2d_env):
+    def test_no_scale_bar_default(self, small_2d_env, rng):
         """Test scale_bar=False (default) adds no scale bar."""
-        field = np.random.rand(small_2d_env.n_bins)
+        field = rng.random(small_2d_env.n_bins)
         ax = small_2d_env.plot_field(field, scale_bar=False)
         # No additional artists (beyond the field itself)
         assert len(ax.artists) == 0
         plt.close()
 
-    def test_scale_bar_with_units(self, small_2d_env):
+    def test_scale_bar_with_units(self, small_2d_env, rng):
         """Test scale bar respects env.units."""
         small_2d_env.units = "cm"
-        field = np.random.rand(small_2d_env.n_bins)
+        field = rng.random(small_2d_env.n_bins)
         ax = small_2d_env.plot_field(field, scale_bar=True)
         assert len(ax.artists) > 0
         plt.close()
@@ -324,9 +333,9 @@ class TestAnimateFieldsWithScaleBar:
     - small_2d_env: 10x10 cm grid (25 bins)
     """
 
-    def test_animate_fields_accepts_scale_bar_bool(self, small_2d_env):
+    def test_animate_fields_accepts_scale_bar_bool(self, small_2d_env, rng):
         """Test animate_fields() accepts scale_bar=True parameter."""
-        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         # Should not raise - parameter is accepted
@@ -342,11 +351,11 @@ class TestAnimateFieldsWithScaleBar:
                 scale_bar=True,
             )
 
-    def test_animate_fields_accepts_scale_bar_config(self, small_2d_env):
+    def test_animate_fields_accepts_scale_bar_config(self, small_2d_env, rng):
         """Test animate_fields() accepts ScaleBarConfig parameter."""
         from neurospatial.animation.config import ScaleBarConfig
 
-        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
         config = ScaleBarConfig(length=5.0, position="upper left", color="white")
 
@@ -362,7 +371,7 @@ class TestAnimateFieldsWithScaleBar:
                 scale_bar=config,
             )
 
-    def test_video_backend_with_scale_bar(self, small_2d_env):
+    def test_video_backend_with_scale_bar(self, small_2d_env, rng):
         """Test video backend renders scale bar in frames."""
         pytest.importorskip("subprocess")
 
@@ -372,7 +381,7 @@ class TestAnimateFieldsWithScaleBar:
         if not check_ffmpeg_available():
             pytest.skip("ffmpeg not available")
 
-        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         import tempfile
@@ -394,9 +403,9 @@ class TestAnimateFieldsWithScaleBar:
         not pytest.importorskip("napari", reason="napari not installed"),
         reason="napari not installed",
     )
-    def test_napari_backend_with_scale_bar(self, small_2d_env):
+    def test_napari_backend_with_scale_bar(self, small_2d_env, rng):
         """Test napari backend configures native scale bar."""
-        fields = [np.random.rand(small_2d_env.n_bins) for _ in range(3)]
+        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 
         # This should configure napari's native scale bar
