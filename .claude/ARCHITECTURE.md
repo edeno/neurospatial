@@ -21,7 +21,7 @@ Tier 3 (Primitives):  ops/
                            ↓
 Tier 4 (Domains):     encoding/, decoding/, behavior/, events/
                            ↓
-Tier 5 (Leaf Nodes):  animation/, simulation/, io/
+Tier 5 (Leaf Nodes):  animation/, simulation/, annotation/, io/
 ```
 
 **Key principle**: Lower tiers never import from higher tiers.
@@ -138,10 +138,11 @@ Read out from population activity:
 
 | Module | Purpose |
 |--------|---------|
-| `trajectory.py` | Step lengths, turn angles, curvature |
-| `segmentation.py` | Trial, lap, crossing detection |
-| `navigation.py` | Path efficiency, goal-directed metrics |
-| `decisions.py` | Decision analysis, VTE detection |
+| `trajectory.py` | Step lengths, turn angles, MSD, home range, curvature |
+| `segmentation.py` | Laps, trials, region crossings, runs |
+| `navigation.py` | Path efficiency, goal-directed metrics, path progress |
+| `decisions.py` | Decision analysis, choice points, Voronoi boundaries |
+| `vte.py` | VTE (Vicarious Trial and Error) detection, head sweeping |
 | `reward.py` | Reward field computation |
 
 ### events/ - Peri-Event Analysis
@@ -160,9 +161,22 @@ Read out from population activity:
 
 ### simulation/ - Neural and Trajectory Simulation
 
-- Cell models (ObjectVectorCellModel, SpatialViewCellModel)
-- Poisson spike generation
-- Trajectory simulation
+| Module | Purpose |
+|--------|---------|
+| `models/` | Cell models (PlaceCell, GridCell, BoundaryCell, ObjectVector, SpatialView) |
+| `spikes.py` | Poisson spike generation, population spikes, modulation |
+| `trajectory.py` | Trajectory simulation (OU, laps, sinusoidal) |
+| `session.py` | High-level session API |
+| `examples.py` | Pre-configured example sessions |
+| `validation.py` | Simulation validation and plotting |
+| `mazes/` | Pre-built maze environments |
+
+### annotation/ - Video Annotation
+
+- `core.py` - Interactive video annotation (`annotate_video`)
+- `track_graph.py` - 1D track graph annotation
+- `io.py` - Import from LabelMe, CVAT formats
+- `_boundary_inference.py` - Auto-infer boundaries from positions
 
 ### io/ - File I/O
 
@@ -256,20 +270,24 @@ else:
 
 ## Testing Structure
 
-Tests mirror the new source structure:
+Tests mirror the source structure:
 
 | Test Directory | What It Tests |
 |----------------|---------------|
-| `tests/test_environment.py` | Core `Environment` tests |
-| `tests/test_composite.py` | `CompositeEnvironment` tests |
-| `tests/test_sparse_init_exports.py` | Sparse top-level exports |
+| `tests/environment/` | Core `Environment` tests |
 | `tests/layout/` | Layout engine-specific tests |
 | `tests/regions/` | Region functionality tests |
 | `tests/ops/` | Operations module tests |
 | `tests/encoding/` | Neural encoding module tests |
+| `tests/decoding/` | Neural decoding tests |
 | `tests/behavior/` | Behavioral analysis tests |
+| `tests/events/` | Peri-event analysis tests |
 | `tests/stats/` | Statistical methods tests |
+| `tests/simulation/` | Simulation module tests |
+| `tests/animation/` | Animation and overlay tests |
+| `tests/annotation/` | Video annotation tests |
 | `tests/nwb/` | NWB integration tests (requires nwb-full extra) |
+| `tests/io_tests/` | File I/O tests |
 | `tests/conftest.py` | Shared fixtures |
 
 **NWB fixtures** use `pytest.importorskip()` for graceful skipping when dependencies not installed.
@@ -288,6 +306,7 @@ Tests mirror the new source structure:
 - `EventOverlay` - Spikes, licks, rewards
 - `TimeSeriesOverlay` - Continuous variables
 - `VideoOverlay` - Recorded video behind/above fields
+- `ObjectVectorOverlay` - Vectors from animal to objects (for OVC visualization)
 
 **Conversion funnel:**
 
@@ -298,12 +317,12 @@ Tests mirror the new source structure:
 
 **Backend support:**
 
-| Backend | Position | Bodypart | Head Dir | Event | TimeSeries | Video | Regions |
-|---------|----------|----------|----------|-------|------------|-------|---------|
-| Napari  | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ |
-| Video   | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ |
-| Widget  | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ |
-| HTML    | ✓ | ⚠️ | ⚠️ | ✓ (instant) | ✗ | ✗ | ✓ |
+| Backend | Position | Bodypart | Head Dir | Event | TimeSeries | Video | ObjVector | Regions |
+|---------|----------|----------|----------|-------|------------|-------|-----------|---------|
+| Napari  | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ | ✓ |
+| Video   | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ | ✓ |
+| Widget  | ✓ | ✓ | ✓ | ✓ (decay) | ✓ | ✓ | ✓ | ✓ |
+| HTML    | ✓ | ⚠️ | ⚠️ | ✓ (instant) | ✗ | ✗ | ⚠️ | ✓ |
 
 (⚠️ = Skipped with warning, ✗ = Not supported)
 

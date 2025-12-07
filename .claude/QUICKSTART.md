@@ -210,7 +210,7 @@ bias = goal_bias(positions, times, goal_position, min_speed=5.0)
 **VTE (Vicarious Trial and Error) detection:**
 
 ```python
-from neurospatial.behavior.decisions import compute_vte_session, compute_vte_trial
+from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 # Analyze VTE behavior at decision points across a session
 result = compute_vte_session(

@@ -25,6 +25,7 @@ from neurospatial.ops import (
     regions_to_mask,                # Convert regions to binary mask
     resample_field,                 # Resample field to different grid
     TieBreakStrategy,               # Enum for tie-breaking
+    clear_kdtree_cache,             # Clear KDTree cache
 
     # Distance
     distance_field,                 # Multi-source geodesic distances
@@ -34,13 +35,42 @@ from neurospatial.ops import (
     geodesic_distance_between_points,  # Point-to-point geodesic
     neighbors_within,               # Neighbors within range
 
-    # Transforms
-    estimate_transform,             # Estimate transform from point pairs
-    apply_transform_to_environment, # Transform entire environment
+    # Transforms - Core classes
     Affine2D,                       # 2D affine transform
+    Affine3D,                       # 3D affine transform
     AffineND,                       # ND affine transform
+    SpatialTransform,               # Protocol for composable transforms
+    VideoCalibration,               # Video calibration transform
+
+    # Transforms - 2D factories
     translate,                      # Translation transform
     scale_2d,                       # 2D scale transform
+    flip_y,                         # Flip Y axis
+    identity,                       # Identity transform
+
+    # Transforms - 3D factories
+    translate_3d,                   # 3D translation
+    scale_3d,                       # 3D scale transform
+    from_rotation_matrix,           # From rotation matrix
+    identity_nd,                    # ND identity transform
+
+    # Transforms - Calibration
+    estimate_transform,             # Estimate transform from point pairs
+    apply_transform_to_environment, # Transform entire environment
+    calibrate_from_landmarks,       # Calibrate from point pairs
+    calibrate_from_scale_bar,       # Calibrate from scale bar
+    simple_scale,                   # Simple scale factor
+
+    # Transforms - Helpers
+    convert_to_cm,                  # Convert to cm units
+    convert_to_pixels,              # Convert to pixel units
+    flip_y_data,                    # Flip Y in data array
+
+    # Alignment
+    get_2d_rotation_matrix,         # 2D rotation matrix
+    map_probabilities,              # Map probabilities between envs
+    apply_similarity_transform,     # Apply similarity transform
+    ProbabilityMappingParams,       # Alignment parameters dataclass
 
     # Smoothing
     compute_diffusion_kernels,      # Diffusion kernels
@@ -389,13 +419,45 @@ from neurospatial.ops.visibility import (
 
 ---
 
-## Simulation
+## Simulation (simulation/)
 
 ```python
 from neurospatial.simulation import (
+    # Submodule
+    mazes,                          # Pre-built maze environments
+
     # Cell models
-    ObjectVectorCellModel,         # OVC model with Gaussian/von Mises tuning
-    SpatialViewCellModel,          # Gaze-based firing model
+    NeuralModel,                    # Protocol for neural models
+    PlaceCellModel,                 # Place cell model
+    BoundaryCellModel,              # Boundary/border cell model
+    GridCellModel,                  # Grid cell model
+    ObjectVectorCellModel,          # OVC model with Gaussian/von Mises tuning
+    SpatialViewCellModel,           # Gaze-based firing model
+
+    # Spike generation
+    generate_poisson_spikes,        # Generate Poisson spike train
+    generate_population_spikes,     # Generate population spike trains
+    add_modulation,                 # Add temporal modulation to rates
+
+    # Trajectory simulation
+    simulate_trajectory_ou,         # Ornstein-Uhlenbeck random walk
+    simulate_trajectory_laps,       # Lap-based trajectory
+    simulate_trajectory_sinusoidal, # Sinusoidal motion
+
+    # Session API
+    SimulationSession,              # Session container class
+    simulate_session,               # High-level session generation
+
+    # Pre-configured example sessions
+    open_field_session,             # Open field with place cells
+    linear_track_session,           # Linear track session
+    tmaze_alternation_session,      # T-maze alternation task
+    boundary_cell_session,          # Boundary cell session
+    grid_cell_session,              # Grid cell session
+
+    # Validation and visualization
+    validate_simulation,            # Validate simulation output
+    plot_session_summary,           # Plot session summary
 )
 
 # Animation overlays for simulation
@@ -599,10 +661,7 @@ from neurospatial.animation import (
     subsample_frames,                       # Subsample frame arrays
 )
 
-from neurospatial.ops.transforms import (
-    VideoCalibration,                       # Video calibration transform
-    calibrate_from_landmarks,               # Calibrate from point pairs
-)
+# VideoCalibration and calibrate_from_landmarks also available from neurospatial.ops
 ```
 
 ---
@@ -674,8 +733,8 @@ from neurospatial.io.nwb import (
 from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
-from neurospatial.ops.alignment import get_2d_rotation_matrix, map_probabilities
-from neurospatial.ops.transforms import Affine2D, translate, scale_2d
+# Alignment and transforms also available from neurospatial.ops:
+# get_2d_rotation_matrix, map_probabilities, Affine2D, translate, scale_2d
 ```
 
 ---
