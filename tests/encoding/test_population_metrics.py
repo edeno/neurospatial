@@ -292,33 +292,37 @@ class TestPopulationCoverage:
         """Test error when environment is not fitted."""
         from unittest.mock import MagicMock
 
+        rng = np.random.default_rng(42)
         env = MagicMock(spec=Environment)
         env._is_fitted = False
-        firing_rates = np.random.rand(5, 10)
+        firing_rates = rng.random((5, 10))
         with pytest.raises(RuntimeError, match="Environment must be fitted"):
             population_coverage(firing_rates, env)
 
     def test_shape_mismatch_error(self, simple_env: Environment) -> None:
         """Test error when firing_rates shape doesn't match n_bins."""
+        rng = np.random.default_rng(42)
         wrong_n_bins = simple_env.n_bins + 10
-        firing_rates = np.random.rand(5, wrong_n_bins)
+        firing_rates = rng.random((5, wrong_n_bins))
         with pytest.raises(ValueError, match="firing_rates shape mismatch"):
             population_coverage(firing_rates, simple_env)
 
     def test_non_2d_input_error(self, simple_env: Environment) -> None:
         """Test error for non-2D firing_rates."""
-        firing_rates_1d = np.random.rand(simple_env.n_bins)
+        rng = np.random.default_rng(42)
+        firing_rates_1d = rng.random(simple_env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             population_coverage(firing_rates_1d, simple_env)  # type: ignore[arg-type]
 
-        firing_rates_3d = np.random.rand(5, simple_env.n_bins, 3)
+        firing_rates_3d = rng.random((5, simple_env.n_bins, 3))
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
             population_coverage(firing_rates_3d, simple_env)  # type: ignore[arg-type]
 
     def test_threshold_out_of_range_error(self, simple_env: Environment) -> None:
         """Test error for threshold outside (0, 1)."""
+        rng = np.random.default_rng(42)
         n_bins = simple_env.n_bins
-        firing_rates = np.random.rand(5, n_bins)
+        firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="threshold must be in range"):
             population_coverage(firing_rates, simple_env, threshold=0.0)
@@ -334,8 +338,9 @@ class TestPopulationCoverage:
 
     def test_max_mean_rate_non_positive_error(self, simple_env: Environment) -> None:
         """Test error for non-positive max_mean_rate."""
+        rng = np.random.default_rng(42)
         n_bins = simple_env.n_bins
-        firing_rates = np.random.rand(5, n_bins)
+        firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
             population_coverage(firing_rates, simple_env, max_mean_rate=0.0)

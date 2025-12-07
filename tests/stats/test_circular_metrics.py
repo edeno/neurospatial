@@ -1300,6 +1300,7 @@ class TestPlotCircularBasisTuning:
 
         beta_cos = 1.0
         beta_sin = 0.5
+        rng = np.random.default_rng(42)
 
         # Missing both
         with pytest.raises(ValueError, match="show_data=True requires"):
@@ -1314,7 +1315,7 @@ class TestPlotCircularBasisTuning:
         # Missing angles
         with pytest.raises(ValueError, match="show_data=True requires"):
             plot_circular_basis_tuning(
-                beta_sin, beta_cos, rates=np.random.rand(10), show_data=True
+                beta_sin, beta_cos, rates=rng.random(10), show_data=True
             )
 
     def test_show_fit_only_works(self) -> None:
@@ -1339,8 +1340,9 @@ class TestPlotCircularBasisTuning:
 
         beta_cos = 1.0
         beta_sin = 0.5
+        rng = np.random.default_rng(42)
         angles = np.linspace(0, 2 * np.pi, 36, endpoint=False)
-        rates = np.random.rand(36) * 10
+        rates = rng.random(36) * 10
 
         ax = plot_circular_basis_tuning(
             beta_sin, beta_cos, angles=angles, rates=rates, show_data=True

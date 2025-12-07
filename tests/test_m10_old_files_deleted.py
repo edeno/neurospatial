@@ -33,49 +33,24 @@ class TestOldFilesDeleted:
         with pytest.raises(ModuleNotFoundError, match="behavioral"):
             importlib.import_module("neurospatial.behavioral")
 
-    def test_metrics_decision_analysis_deleted(self) -> None:
-        """Verify metrics/decision_analysis.py re-export wrapper is deleted.
+    def test_metrics_package_deleted(self) -> None:
+        """Verify entire metrics package has been deleted.
 
-        Users should now import from neurospatial.behavior.decisions.
+        The metrics package was a re-export layer that duplicated the API.
+        Users should now import from canonical locations:
+        - neurospatial.encoding.place (place field metrics)
+        - neurospatial.encoding.head_direction (HD cell metrics)
+        - neurospatial.encoding.object_vector (OVC metrics)
+        - neurospatial.behavior.navigation (navigation metrics)
+        - neurospatial.behavior.vte (VTE metrics)
         """
-        if "neurospatial.metrics.decision_analysis" in sys.modules:
-            del sys.modules["neurospatial.metrics.decision_analysis"]
+        # Clear any cached imports
+        for module_name in list(sys.modules.keys()):
+            if module_name.startswith("neurospatial.metrics"):
+                del sys.modules[module_name]
 
-        with pytest.raises(ModuleNotFoundError, match="decision_analysis"):
-            importlib.import_module("neurospatial.metrics.decision_analysis")
-
-    def test_metrics_goal_directed_deleted(self) -> None:
-        """Verify metrics/goal_directed.py re-export wrapper is deleted.
-
-        Users should now import from neurospatial.behavior.navigation.
-        """
-        if "neurospatial.metrics.goal_directed" in sys.modules:
-            del sys.modules["neurospatial.metrics.goal_directed"]
-
-        with pytest.raises(ModuleNotFoundError, match="goal_directed"):
-            importlib.import_module("neurospatial.metrics.goal_directed")
-
-    def test_metrics_path_efficiency_deleted(self) -> None:
-        """Verify metrics/path_efficiency.py re-export wrapper is deleted.
-
-        Users should now import from neurospatial.behavior.navigation.
-        """
-        if "neurospatial.metrics.path_efficiency" in sys.modules:
-            del sys.modules["neurospatial.metrics.path_efficiency"]
-
-        with pytest.raises(ModuleNotFoundError, match="path_efficiency"):
-            importlib.import_module("neurospatial.metrics.path_efficiency")
-
-    def test_metrics_vte_deleted(self) -> None:
-        """Verify metrics/vte.py re-export wrapper is deleted.
-
-        Users should now import from neurospatial.behavior.decisions.
-        """
-        if "neurospatial.metrics.vte" in sys.modules:
-            del sys.modules["neurospatial.metrics.vte"]
-
-        with pytest.raises(ModuleNotFoundError, match="vte"):
-            importlib.import_module("neurospatial.metrics.vte")
+        with pytest.raises(ModuleNotFoundError, match="metrics"):
+            importlib.import_module("neurospatial.metrics")
 
 
 class TestNewImportPathsWork:
@@ -106,10 +81,12 @@ class TestNewImportPathsWork:
 
     def test_behavior_decisions_imports(self) -> None:
         """Verify behavior.decisions module has all expected exports."""
-        from neurospatial.behavior.decisions import (
-            compute_decision_analysis,
-            compute_vte_index,
-        )
+        from neurospatial.behavior.decisions import compute_decision_analysis
+
+        assert callable(compute_decision_analysis)
+
+    def test_behavior_vte_imports(self) -> None:
+        """Verify behavior.vte module has all expected exports."""
+        from neurospatial.behavior.vte import compute_vte_index
 
         assert callable(compute_vte_index)
-        assert callable(compute_decision_analysis)

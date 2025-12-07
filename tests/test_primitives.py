@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.ops.graph import convolve, neighbor_reduce
+from neurospatial.ops.graph import graph_convolve, neighbor_reduce
 
 
 class TestNeighborReduce:
@@ -317,7 +317,7 @@ class TestConvolve:
             return np.where(distances <= 1.5, 1.0, 0.0)
 
         # Convolve with normalization
-        result = convolve(env, field, box_kernel, normalize=True)
+        result = graph_convolve(env, field, box_kernel, normalize=True)
 
         # Center bin (4) should have non-zero value
         # Bins within radius 1.5 should also have non-zero values
@@ -352,7 +352,7 @@ class TestConvolve:
             return g1 - g2
 
         # Convolve (without normalization to preserve Mexican hat properties)
-        result = convolve(env, field, mexican_hat, normalize=False)
+        result = graph_convolve(env, field, mexican_hat, normalize=False)
 
         # Mexican hat kernel is 0 at distance 0, so center gets 0
         assert result[center_idx] == 0.0
@@ -393,7 +393,7 @@ class TestConvolve:
         kernel_matrix = np.eye(env.n_bins, dtype=np.float64)
 
         # Convolve with identity kernel (should return original field)
-        result = convolve(env, field, kernel_matrix, normalize=False)
+        result = graph_convolve(env, field, kernel_matrix, normalize=False)
 
         assert np.allclose(result, field)
 
@@ -424,7 +424,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / 2.0)
 
         # Convolve with normalization
-        result_normalized = convolve(env, field, gaussian_kernel, normalize=True)
+        result_normalized = graph_convolve(env, field, gaussian_kernel, normalize=True)
 
         # For constant field, normalized convolution should preserve constant
         assert np.allclose(result_normalized, 5.0), (
@@ -433,7 +433,9 @@ class TestConvolve:
         )
 
         # Without normalization, values will be larger
-        result_unnormalized = convolve(env, field, gaussian_kernel, normalize=False)
+        result_unnormalized = graph_convolve(
+            env, field, gaussian_kernel, normalize=False
+        )
         assert np.all(result_unnormalized > result_normalized)
 
     def test_convolve_nan_handling(self) -> None:
@@ -464,7 +466,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / 2.0)
 
         # Convolve (should handle NaN by skipping)
-        result = convolve(env, field, gaussian_kernel, normalize=True)
+        result = graph_convolve(env, field, gaussian_kernel, normalize=True)
 
         # Bins neighboring center should not be NaN (NaN doesn't propagate)
         neighbors = list(env.connectivity.neighbors(4))
@@ -496,7 +498,7 @@ class TestConvolve:
             return np.exp(-(distances**2) / (2 * bandwidth**2))
 
         # Convolve with normalization
-        result_convolve = convolve(env, field, gaussian_kernel, normalize=True)
+        result_convolve = graph_convolve(env, field, gaussian_kernel, normalize=True)
 
         # Use env.smooth() with same bandwidth (mode='density' is default Gaussian)
         result_smooth = env.smooth(field, bandwidth, mode="density")
@@ -525,18 +527,18 @@ class TestConvolve:
             return np.ones_like(distances)
 
         # This should work
-        result = convolve(env, field, valid_kernel)
+        result = graph_convolve(env, field, valid_kernel)
         assert result.shape == (env.n_bins,)
 
         # Wrong field shape
         wrong_field = np.ones(env.n_bins + 1, dtype=np.float64)
         with pytest.raises(ValueError, match=r"field\.shape"):
-            convolve(env, wrong_field, valid_kernel)
+            graph_convolve(env, wrong_field, valid_kernel)
 
         # Wrong kernel matrix shape
         wrong_kernel = np.ones((env.n_bins + 1, env.n_bins), dtype=np.float64)
         with pytest.raises(ValueError, match=r"kernel.*shape"):
-            convolve(env, field, wrong_kernel)
+            graph_convolve(env, field, wrong_kernel)
 
     def test_convolve_parameter_order(self) -> None:
         """Test that parameter order is (field, kernel, env, ...)."""
@@ -548,9 +550,9 @@ class TestConvolve:
             return np.ones_like(distances)
 
         # This should work (correct order)
-        result = convolve(env, field, kernel_fn)
+        result = graph_convolve(env, field, kernel_fn)
         assert result.shape == (env.n_bins,)
 
         # Verify keyword arguments work
-        result = convolve(env, field, kernel_fn, normalize=True)
+        result = graph_convolve(env, field, kernel_fn, normalize=True)
         assert result.shape == (env.n_bins,)

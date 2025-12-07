@@ -7,14 +7,14 @@ import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.encoding.place import compute_place_field, spikes_to_field
+from neurospatial.encoding.place import compute_place_field, spikes_to_rate_map
 
 
 class TestSpikesToField:
-    """Test suite for spikes_to_field function."""
+    """Test suite for spikes_to_rate_map function."""
 
-    def test_spikes_to_field_synthetic(self):
-        """Test spikes_to_field with known spike rate produces expected field."""
+    def test_spikes_to_rate_map_synthetic(self):
+        """Test spikes_to_rate_map with known spike rate produces expected field."""
         # Use local RNG for test isolation
         rng = np.random.default_rng(42)
 
@@ -33,7 +33,7 @@ class TestSpikesToField:
         spike_times = np.sort(rng.uniform(times[0], times[-1], n_spikes))
 
         # Compute firing rate field
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Should have shape (n_bins,)
         assert field.shape == (env.n_bins,)
@@ -43,7 +43,7 @@ class TestSpikesToField:
         mean_rate = np.nanmean(field)
         assert mean_rate == pytest.approx(spike_rate, rel=0.05)
 
-    def test_spikes_to_field_min_occupancy(self):
+    def test_spikes_to_rate_map_min_occupancy(self):
         """Test that low occupancy bins are set to NaN."""
         # Create environment and trajectory that visits only some bins
         positions = np.column_stack(
@@ -60,7 +60,7 @@ class TestSpikesToField:
         spike_times = np.array([1.0, 2.0, 3.0])
 
         # Use high min_occupancy threshold to trigger NaN assignment
-        field = spikes_to_field(
+        field = spikes_to_rate_map(
             env, spike_times, times, positions, min_occupancy_seconds=5.0
         )
 
@@ -71,7 +71,7 @@ class TestSpikesToField:
         valid_bins = ~np.isnan(field)
         assert np.all(field[valid_bins] >= 0)
 
-    def test_spikes_to_field_empty_spikes(
+    def test_spikes_to_rate_map_empty_spikes(
         self, spike_field_env_100: Environment, spike_field_trajectory
     ):
         """Test that empty spike train produces all zeros."""
@@ -81,13 +81,13 @@ class TestSpikesToField:
         # Empty spike array
         spike_times = np.array([])
 
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Should have all zeros (where occupancy > threshold) or NaN
         valid_bins = ~np.isnan(field)
         assert np.allclose(field[valid_bins], 0.0)
 
-    def test_spikes_to_field_out_of_bounds_time(
+    def test_spikes_to_rate_map_out_of_bounds_time(
         self, spike_field_env_100: Environment, spike_field_trajectory
     ):
         """Test that spikes outside time range produce warning and are filtered."""
@@ -99,13 +99,13 @@ class TestSpikesToField:
 
         # Should produce warning about filtering
         with pytest.warns(UserWarning, match="out of time range"):
-            field = spikes_to_field(env, spike_times, times, positions)
+            field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Should still produce valid field (only middle spike used)
         assert field.shape == (env.n_bins,)
         assert not np.all(np.isnan(field))
 
-    def test_spikes_to_field_out_of_bounds_space(
+    def test_spikes_to_rate_map_out_of_bounds_space(
         self, spike_field_env_100: Environment, spike_field_trajectory
     ):
         """Test that spikes outside environment bounds produce warning and are filtered."""
@@ -120,12 +120,12 @@ class TestSpikesToField:
         # outside the environment
         # This is a bit contrived, but tests the safety check
         # In practice, we'll just verify the function handles it gracefully
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Should produce valid field shape
         assert field.shape == (env.n_bins,)
 
-    def test_spikes_to_field_1d_trajectory(self):
+    def test_spikes_to_rate_map_1d_trajectory(self):
         """Test that 1D positions (column vector) are handled correctly."""
         # 1D trajectory as column vector
         positions = np.linspace(0, 100, 1000).reshape(-1, 1)
@@ -136,13 +136,13 @@ class TestSpikesToField:
         # Spikes
         spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Should work without errors
         assert field.shape == (env.n_bins,)
         assert not np.all(np.isnan(field))
 
-    def test_spikes_to_field_1d_no_column_dimension(self):
+    def test_spikes_to_rate_map_1d_no_column_dimension(self):
         """Test that 1D positions without column dimension (n,) are handled."""
         # 1D trajectory as bare array (not reshaped to column)
         positions = np.linspace(0, 100, 1000)  # Shape (1000,)
@@ -153,13 +153,13 @@ class TestSpikesToField:
         env = Environment.from_samples(positions.reshape(-1, 1), bin_size=10.0)
 
         # Function should accept bare 1D array
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         assert field.shape == (env.n_bins,)
         assert not np.all(np.isnan(field))
         assert np.sum(np.isfinite(field)) > 0
 
-    def test_spikes_to_field_nan_occupancy(
+    def test_spikes_to_rate_map_nan_occupancy(
         self, spike_field_env_100: Environment, spike_field_trajectory
     ):
         """Test behavior when occupancy is zero everywhere (edge case)."""
@@ -169,14 +169,14 @@ class TestSpikesToField:
         # Create spikes, but use very high min_occupancy to force all NaN
         spike_times = np.array([1.0, 2.0, 3.0])
 
-        field = spikes_to_field(
+        field = spikes_to_rate_map(
             env, spike_times, times, positions, min_occupancy_seconds=1000.0
         )
 
         # All bins should be NaN (insufficient occupancy)
         assert np.all(np.isnan(field))
 
-    def test_spikes_to_field_known_firing_rate(self):
+    def test_spikes_to_rate_map_known_firing_rate(self):
         """Test against analytically computed firing rate with stationary position.
 
         This test uses ground truth: animal stationary at one location,
@@ -195,7 +195,7 @@ class TestSpikesToField:
         spike_times = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         # Compute field
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
 
         # Find bin containing (50, 50)
         bin_at_50_50 = env.bin_at(np.array([[50.0, 50.0]]))[0]
@@ -208,7 +208,7 @@ class TestSpikesToField:
         # Other bins should be 0 (default behavior with zero occupancy)
         assert np.allclose(field[other_bins], 0.0)
 
-    def test_spikes_to_field_parameter_order(self):
+    def test_spikes_to_rate_map_parameter_order(self):
         """Test that parameter order is env first (matches existing API)."""
         positions = np.column_stack(
             [
@@ -221,12 +221,12 @@ class TestSpikesToField:
         spike_times = np.array([1.0, 2.0])
 
         # Correct order: env first
-        field = spikes_to_field(env, spike_times, times, positions)
+        field = spikes_to_rate_map(env, spike_times, times, positions)
         assert field.shape == (env.n_bins,)
 
         # This verifies the signature is correct
 
-    def test_spikes_to_field_validation(self):
+    def test_spikes_to_rate_map_validation(self):
         """Test input validation."""
         positions = np.column_stack(
             [
@@ -244,11 +244,11 @@ class TestSpikesToField:
         with pytest.raises(
             ValueError, match="times and positions must have same length"
         ):
-            spikes_to_field(env, spike_times, bad_times, positions)
+            spikes_to_rate_map(env, spike_times, bad_times, positions)
 
         # Negative min_occupancy
         with pytest.raises(ValueError, match="must be non-negative"):
-            spikes_to_field(
+            spikes_to_rate_map(
                 env, spike_times, times, positions, min_occupancy_seconds=-1.0
             )
 
@@ -636,7 +636,7 @@ class TestComputePlaceField:
         )
 
         # Old-style manual workflow
-        field_old = spikes_to_field(
+        field_old = spikes_to_rate_map(
             env, spike_times, times, positions, min_occupancy_seconds=0.5
         )
         # Apply smoothing with NaN handling (same as _binned backend)

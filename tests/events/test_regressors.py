@@ -618,8 +618,9 @@ class TestEventCountInWindow:
         """Test that counts are always non-negative."""
         from neurospatial.events.regressors import event_count_in_window
 
+        rng = np.random.default_rng(42)
         sample_times = np.linspace(0, 100, 1000)
-        event_times = np.random.rand(50) * 100
+        event_times = rng.random(50) * 100
         window = (-2.0, 2.0)
 
         result = event_count_in_window(sample_times, event_times, window)

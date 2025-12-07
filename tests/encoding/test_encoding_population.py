@@ -297,8 +297,8 @@ class TestFunctionality:
         """Test population_vector_correlation returns correct shape."""
         from neurospatial.encoding.population import population_vector_correlation
 
-        np.random.seed(42)
-        population_matrix = np.random.rand(5, 50)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((5, 50))
         corr_matrix = population_vector_correlation(population_matrix)
 
         assert corr_matrix.shape == (5, 5)
@@ -307,8 +307,8 @@ class TestFunctionality:
         """Test population_vector_correlation has 1.0 on diagonal."""
         from neurospatial.encoding.population import population_vector_correlation
 
-        np.random.seed(42)
-        population_matrix = np.random.rand(3, 50)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((3, 50))
         corr_matrix = population_vector_correlation(population_matrix)
 
         np.testing.assert_array_almost_equal(np.diag(corr_matrix), [1.0, 1.0, 1.0])
@@ -317,8 +317,8 @@ class TestFunctionality:
         """Test population_vector_correlation returns symmetric matrix."""
         from neurospatial.encoding.population import population_vector_correlation
 
-        np.random.seed(42)
-        population_matrix = np.random.rand(4, 100)
+        rng = np.random.default_rng(42)
+        population_matrix = rng.random((4, 100))
         corr_matrix = population_vector_correlation(population_matrix)
 
         np.testing.assert_array_almost_equal(corr_matrix, corr_matrix.T)

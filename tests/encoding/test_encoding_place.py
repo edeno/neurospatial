@@ -11,157 +11,103 @@ import pytest
 
 from neurospatial import Environment
 
-
 # ==============================================================================
 # Test imports from encoding.place
 # ==============================================================================
+
+# Functions that should be importable from encoding.place
+ENCODING_PLACE_FUNCTIONS = [
+    "compute_place_field",
+    "compute_directional_place_fields",
+    "spikes_to_rate_map",
+    "detect_place_fields",
+    "skaggs_information",
+    "sparsity",
+    "selectivity",
+    "rate_map_centroid",
+    "field_size",
+    "field_stability",
+    "field_shape_metrics",
+    "field_shift_distance",
+    "in_out_field_ratio",
+    "information_per_second",
+    "mutual_information",
+    "rate_map_coherence",
+    "spatial_coverage_single_cell",
+    "compute_field_emd",
+]
+
+# Classes that should be importable from encoding.place
+ENCODING_PLACE_CLASSES = [
+    "DirectionalPlaceFields",
+]
+
+# Items that should be importable from encoding __init__
+ENCODING_INIT_FUNCTIONS = [
+    "compute_place_field",
+    "skaggs_information",
+    "detect_place_fields",
+]
+
+ENCODING_INIT_CLASSES = [
+    "DirectionalPlaceFields",
+]
+
+
 class TestEncodingPlaceImports:
     """Test all imports from neurospatial.encoding.place."""
 
-    # --- Classes ---
+    @pytest.mark.parametrize("func_name", ENCODING_PLACE_FUNCTIONS)
+    def test_function_importable_from_encoding_place(self, func_name: str) -> None:
+        """Verify {func_name} is importable from encoding.place."""
+        from neurospatial.encoding import place
 
-    def test_import_directional_place_fields(self) -> None:
-        """DirectionalPlaceFields should be importable from encoding.place."""
-        from neurospatial.encoding.place import DirectionalPlaceFields
+        func = getattr(place, func_name, None)
+        assert func is not None, f"{func_name} not found in encoding.place"
+        assert callable(func), f"{func_name} should be callable"
 
-        assert DirectionalPlaceFields is not None
+    @pytest.mark.parametrize("class_name", ENCODING_PLACE_CLASSES)
+    def test_class_importable_from_encoding_place(self, class_name: str) -> None:
+        """Verify {class_name} is importable from encoding.place."""
+        from neurospatial.encoding import place
 
-    # --- Spike field functions (from spike_field.py) ---
-
-    def test_import_compute_place_field(self) -> None:
-        """compute_place_field should be importable from encoding.place."""
-        from neurospatial.encoding.place import compute_place_field
-
-        assert callable(compute_place_field)
-
-    def test_import_compute_directional_place_fields(self) -> None:
-        """compute_directional_place_fields should be importable from encoding.place."""
-        from neurospatial.encoding.place import compute_directional_place_fields
-
-        assert callable(compute_directional_place_fields)
-
-    def test_import_spikes_to_field(self) -> None:
-        """spikes_to_field should be importable from encoding.place."""
-        from neurospatial.encoding.place import spikes_to_field
-
-        assert callable(spikes_to_field)
-
-    # --- Place field metrics (from metrics/place_fields.py) ---
-
-    def test_import_detect_place_fields(self) -> None:
-        """detect_place_fields should be importable from encoding.place."""
-        from neurospatial.encoding.place import detect_place_fields
-
-        assert callable(detect_place_fields)
-
-    def test_import_skaggs_information(self) -> None:
-        """skaggs_information should be importable from encoding.place."""
-        from neurospatial.encoding.place import skaggs_information
-
-        assert callable(skaggs_information)
-
-    def test_import_sparsity(self) -> None:
-        """sparsity should be importable from encoding.place."""
-        from neurospatial.encoding.place import sparsity
-
-        assert callable(sparsity)
-
-    def test_import_selectivity(self) -> None:
-        """selectivity should be importable from encoding.place."""
-        from neurospatial.encoding.place import selectivity
-
-        assert callable(selectivity)
-
-    def test_import_field_centroid(self) -> None:
-        """field_centroid should be importable from encoding.place."""
-        from neurospatial.encoding.place import field_centroid
-
-        assert callable(field_centroid)
-
-    def test_import_field_size(self) -> None:
-        """field_size should be importable from encoding.place."""
-        from neurospatial.encoding.place import field_size
-
-        assert callable(field_size)
-
-    def test_import_field_stability(self) -> None:
-        """field_stability should be importable from encoding.place."""
-        from neurospatial.encoding.place import field_stability
-
-        assert callable(field_stability)
-
-    def test_import_field_shape_metrics(self) -> None:
-        """field_shape_metrics should be importable from encoding.place."""
-        from neurospatial.encoding.place import field_shape_metrics
-
-        assert callable(field_shape_metrics)
-
-    def test_import_field_shift_distance(self) -> None:
-        """field_shift_distance should be importable from encoding.place."""
-        from neurospatial.encoding.place import field_shift_distance
-
-        assert callable(field_shift_distance)
-
-    def test_import_in_out_field_ratio(self) -> None:
-        """in_out_field_ratio should be importable from encoding.place."""
-        from neurospatial.encoding.place import in_out_field_ratio
-
-        assert callable(in_out_field_ratio)
-
-    def test_import_information_per_second(self) -> None:
-        """information_per_second should be importable from encoding.place."""
-        from neurospatial.encoding.place import information_per_second
-
-        assert callable(information_per_second)
-
-    def test_import_mutual_information(self) -> None:
-        """mutual_information should be importable from encoding.place."""
-        from neurospatial.encoding.place import mutual_information
-
-        assert callable(mutual_information)
-
-    def test_import_rate_map_coherence(self) -> None:
-        """rate_map_coherence should be importable from encoding.place."""
-        from neurospatial.encoding.place import rate_map_coherence
-
-        assert callable(rate_map_coherence)
-
-    def test_import_spatial_coverage_single_cell(self) -> None:
-        """spatial_coverage_single_cell should be importable from encoding.place."""
-        from neurospatial.encoding.place import spatial_coverage_single_cell
-
-        assert callable(spatial_coverage_single_cell)
-
-    def test_import_compute_field_emd(self) -> None:
-        """compute_field_emd should be importable from encoding.place."""
-        from neurospatial.encoding.place import compute_field_emd
-
-        assert callable(compute_field_emd)
+        cls = getattr(place, class_name, None)
+        assert cls is not None, f"{class_name} not found in encoding.place"
 
 
 class TestEncodingPlaceFromEncodingInit:
     """Test all imports from neurospatial.encoding (via __init__.py)."""
 
-    def test_import_compute_place_field_from_encoding(self) -> None:
-        """compute_place_field should be importable from encoding __init__."""
-        from neurospatial.encoding import compute_place_field
+    @pytest.mark.parametrize("func_name", ENCODING_INIT_FUNCTIONS)
+    def test_function_importable_from_encoding_init(self, func_name: str) -> None:
+        """Verify {func_name} is importable from encoding __init__."""
+        from neurospatial import encoding
+
+        func = getattr(encoding, func_name, None)
+        assert func is not None, f"{func_name} not found in encoding __init__"
+        assert callable(func), f"{func_name} should be callable"
+
+    @pytest.mark.parametrize("class_name", ENCODING_INIT_CLASSES)
+    def test_class_importable_from_encoding_init(self, class_name: str) -> None:
+        """Verify {class_name} is importable from encoding __init__."""
+        from neurospatial import encoding
+
+        cls = getattr(encoding, class_name, None)
+        assert cls is not None, f"{class_name} not found in encoding __init__"
+
+
+# Keep original specific import tests for coverage verification
+class TestEncodingPlaceSpecificImports:
+    """Verify specific import statements work (for IDE/static analysis)."""
+
+    def test_direct_import_compute_place_field(self) -> None:
+        """Direct import statement works."""
+        from neurospatial.encoding.place import compute_place_field
 
         assert callable(compute_place_field)
 
-    def test_import_directional_place_fields_from_encoding(self) -> None:
-        """DirectionalPlaceFields should be importable from encoding __init__."""
-        from neurospatial.encoding import DirectionalPlaceFields
-
-        assert DirectionalPlaceFields is not None
-
-    def test_import_skaggs_information_from_encoding(self) -> None:
-        """skaggs_information should be importable from encoding __init__."""
-        from neurospatial.encoding import skaggs_information
-
-        assert callable(skaggs_information)
-
-    def test_import_detect_place_fields_from_encoding(self) -> None:
-        """detect_place_fields should be importable from encoding __init__."""
+    def test_direct_import_detect_place_fields(self) -> None:
+        """Direct import statement works."""
         from neurospatial.encoding import detect_place_fields
 
         assert callable(detect_place_fields)
@@ -175,36 +121,43 @@ class TestEncodingPlaceFunctionality:
 
     @pytest.fixture
     def env_and_data(self):
-        """Create test environment and trajectory data."""
-        np.random.seed(42)
-        positions = np.random.uniform(0, 100, (500, 2))
+        """Create test environment and trajectory data with RNG.
+
+        Returns
+        -------
+        tuple
+            (env, positions, times, spike_times, rng) where rng is the
+            seeded random number generator for reproducible tests.
+        """
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (500, 2))
         times = np.linspace(0, 50, 500)
         env = Environment.from_samples(positions, bin_size=10.0)
-        spike_times = np.random.uniform(0, 50, 25)
-        return env, positions, times, spike_times
+        spike_times = rng.uniform(0, 50, 25)
+        return env, positions, times, spike_times, rng
 
     def test_compute_place_field_runs(self, env_and_data) -> None:
         """compute_place_field should run and return correct shape."""
         from neurospatial.encoding.place import compute_place_field
 
-        env, positions, times, spike_times = env_and_data
+        env, positions, times, spike_times, _rng = env_and_data
         result = compute_place_field(env, spike_times, times, positions, bandwidth=10.0)
         assert result.shape == (env.n_bins,)
         assert np.any(np.isfinite(result))
 
-    def test_spikes_to_field_runs(self, env_and_data) -> None:
-        """spikes_to_field should run and return correct shape."""
-        from neurospatial.encoding.place import spikes_to_field
+    def test_spikes_to_rate_map_runs(self, env_and_data) -> None:
+        """spikes_to_rate_map should run and return correct shape."""
+        from neurospatial.encoding.place import spikes_to_rate_map
 
-        env, positions, times, spike_times = env_and_data
-        result = spikes_to_field(env, spike_times, times, positions)
+        env, positions, times, spike_times, _rng = env_and_data
+        result = spikes_to_rate_map(env, spike_times, times, positions)
         assert result.shape == (env.n_bins,)
 
     def test_detect_place_fields_runs(self, env_and_data) -> None:
         """detect_place_fields should run and return list."""
         from neurospatial.encoding.place import detect_place_fields
 
-        env, _positions, _times, _spike_times = env_and_data
+        env, _positions, _times, _spike_times, _rng = env_and_data
         # Create a simple Gaussian firing field
         firing_rate = np.zeros(env.n_bins)
         for i in range(env.n_bins):
@@ -218,8 +171,8 @@ class TestEncodingPlaceFunctionality:
         """skaggs_information should run and return float."""
         from neurospatial.encoding.place import skaggs_information
 
-        env, _positions, _times, _spike_times = env_and_data
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        env, _positions, _times, _spike_times, rng = env_and_data
+        firing_rate = rng.random(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
         info = skaggs_information(firing_rate, occupancy)
         assert isinstance(info, float)
@@ -228,8 +181,8 @@ class TestEncodingPlaceFunctionality:
         """sparsity should run and return float."""
         from neurospatial.encoding.place import sparsity
 
-        env, _positions, _times, _spike_times = env_and_data
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        env, _positions, _times, _spike_times, rng = env_and_data
+        firing_rate = rng.random(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
         spars = sparsity(firing_rate, occupancy)
         assert isinstance(spars, float)
@@ -239,8 +192,8 @@ class TestEncodingPlaceFunctionality:
         """selectivity should run and return float."""
         from neurospatial.encoding.place import selectivity
 
-        env, _positions, _times, _spike_times = env_and_data
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        env, _positions, _times, _spike_times, rng = env_and_data
+        firing_rate = rng.random(env.n_bins) * 5.0
         occupancy = np.ones(env.n_bins) / env.n_bins
         select = selectivity(firing_rate, occupancy)
         assert isinstance(select, float)
@@ -250,28 +203,29 @@ class TestEncodingPlaceFunctionality:
         """field_size should run and return float."""
         from neurospatial.encoding.place import field_size
 
-        env, _positions, _times, _spike_times = env_and_data
+        env, _positions, _times, _spike_times, _rng = env_and_data
         field_bins = np.array([0, 1, 2, 3, 4])
         size = field_size(field_bins, env)
         assert isinstance(size, float)
         assert size > 0
 
-    def test_field_centroid_runs(self, env_and_data) -> None:
-        """field_centroid should run and return array."""
-        from neurospatial.encoding.place import field_centroid
+    def test_rate_map_centroid_runs(self, env_and_data) -> None:
+        """rate_map_centroid should run and return array."""
+        from neurospatial.encoding.place import rate_map_centroid
 
-        env, _positions, _times, _spike_times = env_and_data
-        firing_rate = np.random.rand(env.n_bins) * 5.0
+        env, _positions, _times, _spike_times, rng = env_and_data
+        firing_rate = rng.random(env.n_bins) * 5.0
         field_bins = np.array([0, 1, 2, 3, 4])
-        centroid = field_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(firing_rate, field_bins, env)
         assert centroid.shape == (2,)
 
     def test_field_stability_runs(self) -> None:
         """field_stability should run and return float."""
         from neurospatial.encoding.place import field_stability
 
-        rate_map_1 = np.random.rand(100) * 5.0
-        rate_map_2 = rate_map_1 + np.random.randn(100) * 0.1
+        rng = np.random.default_rng(42)
+        rate_map_1 = rng.random(100) * 5.0
+        rate_map_2 = rate_map_1 + rng.standard_normal(100) * 0.1
         stability = field_stability(rate_map_1, rate_map_2)
         assert isinstance(stability, float)
 
@@ -279,7 +233,7 @@ class TestEncodingPlaceFunctionality:
         """rate_map_coherence should run and return float."""
         from neurospatial.encoding.place import rate_map_coherence
 
-        env, _positions, _times, _spike_times = env_and_data
+        env, _positions, _times, _spike_times, _rng = env_and_data
         # Create smooth field for coherence
         firing_rate = np.zeros(env.n_bins)
         for i in range(env.n_bins):
@@ -295,7 +249,7 @@ class TestEncodingPlaceFunctionality:
             compute_directional_place_fields,
         )
 
-        env, positions, times, spike_times = env_and_data
+        env, positions, times, spike_times, _rng = env_and_data
         direction_labels = np.array(
             ["forward"] * 250 + ["backward"] * 250, dtype=object
         )

@@ -60,36 +60,67 @@ uv run pytest tests/benchmarks/ --benchmark-histogram
 
 ## Test Organization
 
-The test suite is organized by functionality:
+The test suite mirrors the source code package structure for easy navigation:
 
 ```
 tests/
 ├── README.md                    # This file
 ├── conftest.py                  # Shared fixtures and test constants
-├── test_*.py                    # Core functionality tests
-├── benchmarks/                  # Performance regression tests
-│   └── test_performance.py      # pytest-benchmark tests
-├── layout/                      # Layout engine tests
-│   ├── test_graph_building.py
-│   ├── test_regular_grid_layout.py
-│   ├── test_hex_grid_utils.py
-│   └── ...
-├── metrics/                     # Neuroscience metric tests
-│   ├── test_place_fields.py     # Place field detection and metrics
-│   ├── test_boundary_cells.py   # Border score and boundary cells
-│   ├── test_grid_cells.py       # Grid score
-│   └── test_population.py       # Population-level metrics
-├── regions/                     # Region functionality tests
+├── test_*.py                    # Cross-cutting tests (API, properties, imports)
+│
+├── behavior/                    # Behavior module tests
+│   ├── test_behavior_decisions.py
+│   ├── test_behavior_navigation.py
+│   ├── test_direction_labels.py
+│   ├── test_reward.py
+│   └── test_segmentation.py
+│
+├── encoding/                    # Encoding module tests
+│   ├── test_encoding_place.py
+│   ├── test_encoding_border.py
+│   ├── test_encoding_population.py
+│   ├── test_directional_place_fields.py
+│   ├── test_object_vector_field.py
+│   └── test_spatial_view_field.py
+│
+├── environment/                 # Environment tests
 │   ├── test_core.py
-│   ├── test_ops.py
-│   └── test_serialization.py
-├── segmentation/                # Behavioral segmentation tests
-│   ├── test_laps.py
-│   ├── test_regions.py
-│   └── test_trials.py
-├── simulation/                  # Simulation validation tests
-│   └── test_integration.py
-└── test_properties.py           # Hypothesis property-based tests
+│   ├── test_composite.py
+│   ├── test_connectivity.py
+│   └── ...
+│
+├── events/                      # Events module tests
+│   ├── test_core.py
+│   ├── test_alignment.py
+│   ├── test_detection.py
+│   ├── test_intervals.py
+│   ├── test_nwb.py
+│   └── test_regressors.py
+│
+├── ops/                         # Operations module tests
+│   ├── test_ops_egocentric.py
+│   ├── test_distance.py
+│   ├── test_transforms.py
+│   ├── test_visibility.py
+│   └── ...
+│
+├── layout/                      # Layout engine tests
+│   └── ...
+│
+├── metrics/                     # Neuroscience metric tests
+│   └── ...
+│
+├── simulation/                  # Simulation tests
+│   └── ...
+│
+├── animation/                   # Animation/visualization tests
+│   └── ...
+│
+├── io_tests/                    # I/O and serialization tests
+│   └── ...
+│
+└── benchmarks/                  # Performance regression tests
+    └── ...
 ```
 
 ## Test Types
@@ -401,8 +432,15 @@ When adding new tests:
 
 3. **Follow naming conventions:**
    - Test files: `test_*.py`
-   - Test functions: `test_<feature>_<condition>`
-   - Test classes: `Test<Feature>`
+   - Test functions: `test_{what}_{expected_behavior}` or `test_{what}_when_{condition}`
+   - Test classes: `Test{Feature}` or `Test{Feature}{Context}`
+
+   **Examples of good test names:**
+   - `test_sparsity_returns_value_between_zero_and_one`
+   - `test_from_samples_creates_valid_environment`
+   - `test_bin_at_returns_minus_one_for_outside_points`
+   - `test_occupancy_when_trajectory_has_gaps`
+   - `test_smooth_when_bandwidth_is_zero`
 
 4. **Write clear docstrings:**
    - Explain what is being tested
@@ -440,5 +478,5 @@ If you have questions about testing:
 
 ---
 
-**Last Updated**: 2025-11-16
+**Last Updated**: 2025-12-06
 **Maintainer**: Development Team
