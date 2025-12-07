@@ -565,7 +565,11 @@ class TestSparsityProperties:
     def test_single_peak_low_sparsity(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
-        """Property: firing in single bin produces low sparsity."""
+        """Property: firing in single bin produces sparsity equal to occupancy fraction.
+
+        For single-bin firing, sparsity = p_k where p_k is the occupancy probability
+        in the firing bin. Sparsity is "low" only when occupancy in that bin is low.
+        """
         _, occupancy = data
         n_bins = len(occupancy)
 
@@ -576,9 +580,12 @@ class TestSparsityProperties:
 
         sp = sparsity(firing_rate, occupancy)
 
-        # Property: single-bin firing → sparsity <= 0.5 (sparse)
-        # Note: sparsity can equal exactly 0.5 in edge cases with specific occupancy
-        assert sp <= 0.5, f"Single-peak sparsity {sp} should be low (<= 0.5)"
+        # Property: single-bin firing → sparsity ≈ occupancy fraction in that bin
+        # (not always "low" - depends on occupancy distribution)
+        expected_sparsity = occupancy[peak_idx] / occupancy.sum()
+        assert np.isclose(sp, expected_sparsity, rtol=0.01), (
+            f"Single-peak sparsity {sp} should equal occupancy fraction {expected_sparsity}"
+        )
 
 
 class TestSelectivityProperties:

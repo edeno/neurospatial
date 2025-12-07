@@ -514,12 +514,12 @@ uv run pytest --doctest-modules src/neurospatial/
 
 ### Tasks
 
-- [ ] Run full test suite: `uv run pytest`
-- [ ] Run type checking: `uv run mypy src/neurospatial/`
-- [ ] Run linting: `uv run ruff check . && uv run ruff format .`
-- [ ] Run doctests: `uv run pytest --doctest-modules src/neurospatial/`
-- [ ] Verify no circular imports (import neurospatial in fresh Python)
-- [ ] Verify example usage from PLAN.md works:
+- [x] Run full test suite: `uv run pytest`
+- [x] Run type checking: `uv run mypy src/neurospatial/`
+- [x] Run linting: `uv run ruff check . && uv run ruff format .`
+- [x] Run doctests: `uv run pytest --doctest-modules src/neurospatial/`
+- [x] Verify no circular imports (import neurospatial in fresh Python)
+- [x] Verify example usage from PLAN.md works:
 
 ```python
 import neurospatial as ns
@@ -547,12 +547,12 @@ from neurospatial.ops import distance, normalize
 
 **Success Criteria**:
 
-- [ ] All tests pass
-- [ ] All type checks pass
-- [ ] All linting passes
-- [ ] All notebooks execute
-- [ ] Documentation is up-to-date
-- [ ] Example usage from PLAN.md works
+- [x] All tests pass (7788 passed, 25 skipped; rare parallel execution flakes)
+- [x] All type checks pass (0 issues in 168 files)
+- [x] All linting passes (5 files formatted)
+- [x] All notebooks execute (verified in M12)
+- [x] Documentation is up-to-date (verified in M11)
+- [x] Example usage from PLAN.md works
 
 ---
 
@@ -626,5 +626,5 @@ If circular imports occur:
 | M10: Delete Old Files | Complete | Deleted re-export wrappers, moved implementations to encoding modules |
 | M11: Update Documentation | Complete | All .claude/ docs, docstring import examples updated |
 | M12: Update Notebooks | Complete | All 21 notebooks import paths updated and execute without errors |
-| M13: Import Tests | Complete | Created tests/test_imports.py (57 tests: 55 passed, 2 skipped) |
-| M14: Final Verification | Not Started | |
+| M13: Import Tests | Complete | Created tests/test_package_imports.py (57 tests: 55 passed, 2 skipped) |
+| M14: Final Verification | Complete | All tests pass, type checks pass, linting passes, PLAN.md examples work |

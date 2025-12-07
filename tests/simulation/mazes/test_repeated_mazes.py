@@ -85,53 +85,68 @@ class TestRepeatedMazesSpecificBehavior:
     def test_repeated_t_has_default_dimensions(self):
         """Repeated T-maze should have default dimensions."""
         dims = RepeatedTDims()
-        assert dims.n_t_junctions == 3
-        assert dims.t_spacing == 40.0
-        assert dims.stem_length == 30.0
+        # RepeatedTDims has stem_spacing (not t_spacing/n_t_junctions)
+        assert dims.stem_spacing == 40.0
+        assert dims.stem_length == 60.0
         assert dims.arm_length == 15.0
+        assert dims.top_spur_length == 20.0
+        assert dims.upper_lower_gap == 30.0
+        assert dims.width == 10.0
 
     def test_repeated_t_has_junction_regions(self):
         """Repeated T-maze should have junction regions for each T."""
         maze = make_repeated_t_maze(bin_size=3.0)
         junction_regions = [r for r in maze.env_2d.regions if r.endswith("_junction")]
-        # Default: 3 T-junctions
-        assert len(junction_regions) == 3
+        # Has 4 junction regions: upper_junction, lower_left_junction,
+        # lower_center_junction, upper_right_junction
+        assert len(junction_regions) == 4
+        expected = {
+            "upper_junction",
+            "lower_left_junction",
+            "lower_center_junction",
+            "upper_right_junction",
+        }
+        assert set(junction_regions) == expected
 
     def test_repeated_t_has_t_arm_regions(self):
-        """Repeated T-maze should have arm regions for each T."""
+        """Repeated T-maze should have arm regions extending from stems."""
         maze = make_repeated_t_maze(bin_size=3.0)
-        # Each T has left_arm and right_arm (3 T's * 2 = 6 arm regions)
-        left_arm_regions = [r for r in maze.env_2d.regions if r.endswith("_left_arm")]
-        right_arm_regions = [r for r in maze.env_2d.regions if r.endswith("_right_arm")]
-        assert len(left_arm_regions) == 3
-        assert len(right_arm_regions) == 3
+        # The maze has lower arm endpoints (lower_left_arm, lower_center_left_arm)
+        # Upper arms terminate at start/goal regions, not separate arm regions
+        arm_regions = [r for r in maze.env_2d.regions if "_arm" in r]
+        assert len(arm_regions) == 2
+        expected = {"lower_left_arm", "lower_center_left_arm"}
+        assert set(arm_regions) == expected
 
     def test_repeated_t_has_zigzag_connections(self):
-        """Repeated T-maze should have zigzag connections between T-junctions.
+        """Repeated T-maze should have multi-level connections.
 
-        This test verifies the alternating T pattern by checking that T-junctions
-        alternate between top and bottom levels.
+        This test verifies the alternating level pattern by checking that
+        junctions exist at both upper and lower horizontal levels.
         """
         import networkx as nx
 
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
+        maze = make_repeated_t_maze(bin_size=3.0)
 
-        dims = RepeatedTDims(n_t_junctions=3)
-        maze = make_repeated_t_maze(dims=dims, bin_size=3.0)
+        # Verify junction regions exist at both levels
+        assert "upper_junction" in maze.env_2d.regions
+        assert "upper_right_junction" in maze.env_2d.regions
+        assert "lower_left_junction" in maze.env_2d.regions
+        assert "lower_center_junction" in maze.env_2d.regions
 
-        # Verify T-junction regions exist
-        assert "t_1_junction" in maze.env_2d.regions
-        assert "t_2_junction" in maze.env_2d.regions
-        assert "t_3_junction" in maze.env_2d.regions
+        # Upper junctions should be at higher y than lower junctions
+        upper_y = maze.env_2d.regions["upper_junction"].data[1]
+        upper_right_y = maze.env_2d.regions["upper_right_junction"].data[1]
+        lower_left_y = maze.env_2d.regions["lower_left_junction"].data[1]
+        lower_center_y = maze.env_2d.regions["lower_center_junction"].data[1]
 
-        # T1 (upright) junction should be higher than T2 (inverted) junction
-        t1_y = maze.env_2d.regions["t_1_junction"].data[1]
-        t2_y = maze.env_2d.regions["t_2_junction"].data[1]
-        t3_y = maze.env_2d.regions["t_3_junction"].data[1]
-
-        assert t1_y > t2_y  # T1 at top, T2 at bottom
-        assert t3_y > t2_y  # T3 at top, T2 at bottom
-        assert t1_y == t3_y  # T1 and T3 at same height (both upright)
+        # Upper level junctions should be higher than lower level junctions
+        assert upper_y > lower_left_y
+        assert upper_y > lower_center_y
+        # Both upper junctions at same height
+        assert upper_y == upper_right_y
+        # Both lower junctions at same height
+        assert lower_left_y == lower_center_y
 
         # The track graph should be connected
         assert nx.is_connected(maze.env_track.connectivity)

@@ -576,13 +576,18 @@ class TestPlotSessionSummary:
 
         from neurospatial.simulation.validation import plot_session_summary
 
-        # Should emit UserWarning
+        # Should emit UserWarning about truncation
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             fig, _ = plot_session_summary(session, cell_ids=list(range(10)))
 
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-            assert "Only first 6 will be plotted" in str(w[0].message)
+            # Filter for just the truncation warning (other warnings may be emitted)
+            truncation_warnings = [
+                warning
+                for warning in w
+                if issubclass(warning.category, UserWarning)
+                and "Only first 6 will be plotted" in str(warning.message)
+            ]
+            assert len(truncation_warnings) == 1
 
         plt.close(fig)
