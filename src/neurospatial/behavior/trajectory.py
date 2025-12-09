@@ -500,9 +500,9 @@ def mean_square_displacement(
     >>> from neurospatial.behavior.trajectory import mean_square_displacement
     >>>
     >>> # Random walk trajectory (diffusive motion, α ≈ 1)
-    >>> np.random.seed(42)
+    >>> rng = np.random.default_rng(42)
     >>> n_steps = 100
-    >>> steps = np.random.randn(n_steps, 2) * 5
+    >>> steps = rng.standard_normal((n_steps, 2)) * 5
     >>> positions = np.cumsum(steps, axis=0)
     >>> times = np.arange(n_steps) * 0.1
     >>>

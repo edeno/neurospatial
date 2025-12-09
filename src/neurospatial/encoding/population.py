@@ -698,8 +698,8 @@ def population_vector_correlation(
     >>> import numpy as np
     >>> from neurospatial.encoding.population import population_vector_correlation
     >>> # Three cells with different firing patterns
-    >>> np.random.seed(42)
-    >>> population_matrix = np.random.rand(3, 50)
+    >>> rng = np.random.default_rng(42)
+    >>> population_matrix = rng.random((3, 50))
     >>> corr_matrix = population_vector_correlation(population_matrix)
     >>> print(corr_matrix.shape)
     (3, 3)

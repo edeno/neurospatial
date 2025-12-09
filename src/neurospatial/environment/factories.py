@@ -211,8 +211,8 @@ class EnvironmentFactories:
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> # Simulate animal position data in a 100x100 cm arena
-        >>> np.random.seed(42)  # For reproducible examples
-        >>> positions = np.random.rand(1000, 2) * 100  # cm
+        >>> rng = np.random.default_rng(42)  # For reproducible examples
+        >>> positions = rng.random((1000, 2)) * 100  # cm
         >>> # Create environment with 5cm x 5cm bins
         >>> env = Environment.from_samples(
         ...     positions=positions,
