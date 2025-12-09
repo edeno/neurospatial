@@ -109,7 +109,8 @@ class ObjectVectorCellModel:
     preferred_direction : float | None, optional
         Preferred egocentric direction in radians (default: None).
         If None, responds to objects at preferred distance in any direction.
-        If specified, uses von Mises directional tuning.
+        If specified, uses von Mises directional tuning and **requires headings**
+        in ``firing_rate()`` method.
         Convention: 0=ahead, π/2=left, -π/2=right, ±π=behind.
     direction_kappa : float, optional
         Direction tuning concentration parameter (default: 4.0).
@@ -361,7 +362,8 @@ class ObjectVectorCellModel:
         times : NDArray[np.float64], shape (n_time,), optional
             Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,), optional
-            Animal heading in radians. Required for directional tuning.
+            Animal heading in radians (allocentric convention: 0=East).
+            **Required when ``preferred_direction`` is set during initialization.**
             If None and ``preferred_direction`` is set, will raise ValueError.
 
         Returns

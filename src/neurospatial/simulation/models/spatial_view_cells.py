@@ -294,7 +294,8 @@ class SpatialViewCellModel:
         times : NDArray[np.float64], shape (n_time,), optional
             Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,)
-            Animal heading in radians (0=East). Required.
+            Animal heading in radians (allocentric convention: 0=East).
+            **Required for all SpatialViewCellModel computations.**
 
         Returns
         -------

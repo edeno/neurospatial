@@ -61,6 +61,9 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+# Import internal utilities from canonical location
+from neurospatial.stats._utils import _ensure_rng
+
 # Re-export surrogate functions from canonical location for backward compatibility.
 # These functions are now defined in neurospatial.stats.surrogates.
 from neurospatial.stats.surrogates import (  # noqa: F401
@@ -72,28 +75,6 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial.environment.core import Environment
-
-
-def _ensure_rng(
-    rng: np.random.Generator | int | None,
-) -> np.random.Generator:
-    """Convert rng parameter to a Generator instance.
-
-    Parameters
-    ----------
-    rng : np.random.Generator | int | None
-        Random number generator, seed, or None.
-
-    Returns
-    -------
-    np.random.Generator
-        A random number generator instance.
-    """
-    if rng is None:
-        return np.random.default_rng()
-    if isinstance(rng, np.random.Generator):
-        return rng
-    return np.random.default_rng(rng)
 
 
 # =============================================================================

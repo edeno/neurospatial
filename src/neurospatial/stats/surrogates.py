@@ -51,27 +51,8 @@ from collections.abc import Generator
 import numpy as np
 from numpy.typing import NDArray
 
-
-def _ensure_rng(
-    rng: np.random.Generator | int | None,
-) -> np.random.Generator:
-    """Convert rng parameter to a Generator instance.
-
-    Parameters
-    ----------
-    rng : np.random.Generator | int | None
-        Random number generator, seed, or None.
-
-    Returns
-    -------
-    np.random.Generator
-        A random number generator instance.
-    """
-    if rng is None:
-        return np.random.default_rng()
-    if isinstance(rng, np.random.Generator):
-        return rng
-    return np.random.default_rng(rng)
+# Import internal utilities from canonical location
+from neurospatial.stats._utils import _ensure_rng
 
 
 def generate_poisson_surrogates(

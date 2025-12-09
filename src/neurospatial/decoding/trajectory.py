@@ -487,7 +487,7 @@ def fit_linear_trajectory(
 
     # method == "sample"
     # Set up RNG using shared helper for consistency
-    from neurospatial.stats.shuffle import _ensure_rng
+    from neurospatial.stats._utils import _ensure_rng
 
     rng_gen = _ensure_rng(rng)
 

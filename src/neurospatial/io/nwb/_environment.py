@@ -68,9 +68,26 @@ class GridData(TypedDict, total=False):
 
 
 # =============================================================================
-# Column name constants for DynamicTable
+# Constants for NWB environment serialization
 # =============================================================================
 
+# Schema version for environment metadata format
+ENVIRONMENT_SCHEMA_VERSION: str = "1.0"
+
+# Default names and locations
+DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
+DEFAULT_PROCESSING_MODULE: str = "behavior"
+DEFAULT_ANALYSIS_MODULE: str = "analysis"
+
+# Default values for missing metadata
+DEFAULT_UNITS: str = "unknown"
+DEFAULT_FALLBACK_BIN_SIZE: float = 1.0
+DEFAULT_STATIC_TIMESTAMP: float = 0.0
+
+# KDTree parameters for reconstructed layouts
+KDTREE_NEIGHBORS: int = 2  # k=2 for nearest neighbor (self + 1 neighbor)
+
+# Column name constants for DynamicTable
 # These constants reduce magic strings and centralize column naming
 COL_BIN_CENTERS = "bin_centers"
 COL_EDGES = "edges"
@@ -85,7 +102,7 @@ COL_ACTIVE_MASK = "active_mask"
 def write_environment(
     nwbfile: NWBFile,
     env: Environment,
-    name: str = "spatial_environment",
+    name: str = DEFAULT_ENVIRONMENT_NAME,
     *,
     overwrite: bool = False,
 ) -> None:
@@ -195,8 +212,8 @@ def write_environment(
         edge_weights = np.empty((0,), dtype=np.float64)
 
     # Collect metadata for description
-    units = env.units if env.units else "unknown"
-    frame = env.frame if env.frame else "unknown"
+    units = env.units if env.units else DEFAULT_UNITS
+    frame = env.frame if env.frame else DEFAULT_UNITS
     n_dims = env.bin_centers.shape[1]
     layout_type = env.layout._layout_type_tag if env.layout else "unknown"
 
@@ -215,7 +232,7 @@ def write_environment(
     # schema_version enables future migrations if format changes
     metadata = json.dumps(
         {
-            "schema_version": "1.0",  # For future format migrations
+            "schema_version": ENVIRONMENT_SCHEMA_VERSION,
             "name": env.name,
             "units": units,
             "frame": frame,
@@ -439,7 +456,7 @@ def _regions_to_json(regions) -> str:
 
 def read_environment(
     nwbfile: NWBFile,
-    name: str = "spatial_environment",
+    name: str = DEFAULT_ENVIRONMENT_NAME,
 ) -> Environment:
     """
     Read Environment from NWB scratch space.
@@ -499,13 +516,14 @@ def read_environment(
     metadata = cast("EnvironmentMetadata", json.loads(metadata_json))
 
     # Check schema version for forward compatibility
-    schema_version = metadata.get("schema_version", "1.0")
-    if schema_version != "1.0":
+    schema_version = metadata.get("schema_version", ENVIRONMENT_SCHEMA_VERSION)
+    if schema_version != ENVIRONMENT_SCHEMA_VERSION:
         logger.warning(
-            "Environment '%s' has schema_version '%s', expected '1.0'. "
+            "Environment '%s' has schema_version '%s', expected '%s'. "
             "Attempting to read with current schema.",
             name,
             schema_version,
+            ENVIRONMENT_SCHEMA_VERSION,
         )
 
     n_bins = metadata["n_bins"]
@@ -559,9 +577,9 @@ def read_environment(
     )
 
     # Set metadata
-    if units and units != "unknown":
+    if units and units != DEFAULT_UNITS:
         env.units = units
-    if frame and frame != "unknown":
+    if frame and frame != DEFAULT_UNITS:
         env.frame = frame
 
     # Store layout type info
@@ -783,7 +801,7 @@ class _ReconstructedLayout:
             return np.ones(len(self.bin_centers))
 
         # Estimate from median nearest neighbor distance
-        _, distances = self._kdtree.query(self.bin_centers, k=2)
+        _, distances = self._kdtree.query(self.bin_centers, k=KDTREE_NEIGHBORS)
         median_spacing = float(np.median(distances[:, 1]))
         return np.full(
             len(self.bin_centers), median_spacing ** self.bin_centers.shape[1]
@@ -963,14 +981,14 @@ def _estimate_bin_size(bin_centers: NDArray[np.float64], n_dims: int) -> float:
         Estimated bin size.
     """
     if len(bin_centers) < 2:
-        return 1.0
+        return DEFAULT_FALLBACK_BIN_SIZE
 
     # Use KDTree to find nearest neighbors
     from scipy.spatial import KDTree
 
     tree = KDTree(bin_centers)
-    # Query for 2 nearest neighbors (including self)
-    distances, _ = tree.query(bin_centers, k=2)
+    # Query for k nearest neighbors (including self)
+    distances, _ = tree.query(bin_centers, k=KDTREE_NEIGHBORS)
     # Take the second column (distance to nearest non-self neighbor)
     nearest_distances = distances[:, 1]
     # Use median as robust estimate

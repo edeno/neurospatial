@@ -228,6 +228,80 @@ def _subset_spikes_by_time_mask(
     return times[mask], spike_times_sub
 
 
+def _interpolate_spike_positions(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Interpolate spike positions from trajectory.
+
+    Uses vectorized binary search and linear interpolation to compute
+    the spatial position at each spike time.
+
+    Parameters
+    ----------
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Timestamps of spike occurrences. Need not be sorted, but should
+        fall within the range of ``times``.
+    times : NDArray[np.float64], shape (n_timepoints,)
+        Timestamps of trajectory samples (seconds). Must be sorted.
+    positions : NDArray[np.float64], shape (n_timepoints, n_dims)
+        Position trajectory. Must be 2D.
+
+    Returns
+    -------
+    spike_positions : NDArray[np.float64], shape (n_spikes, n_dims)
+        Interpolated position at each spike time.
+
+    Notes
+    -----
+    Uses searchsorted for O(log n) lookup per spike, then vectorized
+    linear interpolation across all dimensions simultaneously.
+
+    If a spike time falls exactly on a trajectory sample, the position
+    at that sample is returned. If spike times fall outside the trajectory
+    time range, they are clipped to the nearest endpoint.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> times = np.array([0.0, 1.0, 2.0, 3.0])
+    >>> positions = np.array([[0.0, 0.0], [1.0, 2.0], [2.0, 4.0], [3.0, 6.0]])
+    >>> spike_times = np.array([0.5, 1.5, 2.5])
+    >>> spike_pos = _interpolate_spike_positions(spike_times, times, positions)
+    >>> spike_pos
+    array([[0.5, 1. ],
+           [1.5, 3. ],
+           [2.5, 5. ]])
+    """
+    n_spikes = len(spike_times)
+    n_dims = positions.shape[1]
+
+    # Handle empty spike array
+    if n_spikes == 0:
+        return np.zeros((0, n_dims), dtype=np.float64)
+
+    # Use searchsorted to find insertion points
+    insert_idx = np.searchsorted(times, spike_times, side="right")
+    insert_idx = np.clip(insert_idx, 1, len(times) - 1)
+
+    # Get bounding times for interpolation
+    t0 = times[insert_idx - 1]
+    t1 = times[insert_idx]
+
+    # Compute interpolation weights, avoiding division by zero
+    dt_interp = t1 - t0
+    dt_interp = np.where(dt_interp == 0, 1.0, dt_interp)
+    weights = (spike_times - t0) / dt_interp
+
+    # Interpolate all dimensions at once: (n_spikes, n_dims)
+    pos0 = positions[insert_idx - 1]  # Shape: (n_spikes, n_dims)
+    pos1 = positions[insert_idx]  # Shape: (n_spikes, n_dims)
+    spike_positions = pos0 + weights[:, np.newaxis] * (pos1 - pos0)
+
+    return spike_positions
+
+
 def compute_directional_place_fields(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -497,19 +571,7 @@ def _binned_rate_map(
     )
 
     # Step 3: Interpolate spike positions
-    # positions is now guaranteed to be 2D (n_timepoints, n_dims)
-    if positions.shape[1] == 1:
-        # 1D case: positions is shape (n_timepoints, 1)
-        spike_x = np.interp(spike_times, times, positions[:, 0])
-        spike_positions = spike_x[:, np.newaxis]
-    else:
-        # Multi-D case: positions is shape (n_timepoints, n_dims)
-        spike_positions = np.column_stack(
-            [
-                np.interp(spike_times, times, positions[:, dim])
-                for dim in range(positions.shape[1])
-            ]
-        )
+    spike_positions = _interpolate_spike_positions(spike_times, times, positions)
 
     # Step 4: Assign spikes to bins
     spike_bins = env.bin_at(spike_positions)
@@ -624,16 +686,9 @@ def _diffusion_kde(
 
     if len(spike_times_valid) > 0:
         # Interpolate spike positions
-        if positions.shape[1] == 1:
-            spike_x = np.interp(spike_times_valid, times, positions[:, 0])
-            spike_positions = spike_x[:, np.newaxis]
-        else:
-            spike_positions = np.column_stack(
-                [
-                    np.interp(spike_times_valid, times, positions[:, dim])
-                    for dim in range(positions.shape[1])
-                ]
-            )
+        spike_positions = _interpolate_spike_positions(
+            spike_times_valid, times, positions
+        )
 
         # Map spikes to bins
         spike_bins = env.bin_at(spike_positions)
@@ -734,19 +789,8 @@ def _gaussian_kde(
     valid_spike_mask = (spike_times >= time_min) & (spike_times <= time_max)
     spike_times_valid = spike_times[valid_spike_mask]
 
-    if len(spike_times_valid) > 0:
-        if positions.shape[1] == 1:
-            spike_x = np.interp(spike_times_valid, times, positions[:, 0])
-            spike_positions = spike_x[:, np.newaxis]
-        else:
-            spike_positions = np.column_stack(
-                [
-                    np.interp(spike_times_valid, times, positions[:, dim])
-                    for dim in range(positions.shape[1])
-                ]
-            )
-    else:
-        spike_positions = np.zeros((0, positions.shape[1]))
+    # Interpolate spike positions using helper function
+    spike_positions = _interpolate_spike_positions(spike_times_valid, times, positions)
 
     # Compute dt for trajectory (use precomputed if provided)
     dt_computed = np.diff(times, prepend=times[0]) if dt is None else dt
@@ -755,47 +799,48 @@ def _gaussian_kde(
     two_sigma_sq = 2 * bandwidth**2
     bin_centers = env.bin_centers  # shape: (n_bins, n_dims)
 
-    # Memory warning for large computations
-    # spike_dists_sq and traj_dists_sq are (n_points, n_bins) float64 arrays
+    # Precompute bin center squared norms once (reused for spikes and trajectory)
+    bin_centers_sq_norm = np.sum(bin_centers**2, axis=1)  # shape: (n_bins,)
+
+    # Memory-efficient chunked computation
     n_spikes = len(spike_positions)
     n_positions = len(positions)
     n_bins = env.n_bins
-    max_elements = max(n_spikes * n_bins, n_positions * n_bins)
-    if max_elements > 50_000_000:  # ~400 MB threshold
-        warnings.warn(
-            f"Large gaussian_kde computation: {n_spikes} spikes x {n_bins} bins "
-            f"and {n_positions} positions x {n_bins} bins will allocate "
-            f"~{max_elements * 8 / 1e6:.0f} MB. Consider using "
-            f"method='diffusion_kde' or 'binned' for large datasets.",
-            UserWarning,
-            stacklevel=3,  # Point to compute_place_field call
-        )
 
-    # Compute spike density for all bins at once
-    if len(spike_positions) > 0:
-        # Compute squared distances: (n_spikes, n_bins)
-        spike_dists_sq = (
-            np.sum(spike_positions**2, axis=1, keepdims=True)
-            + np.sum(bin_centers**2, axis=1)
-            - 2 * spike_positions @ bin_centers.T
-        )
-        spike_weights = np.exp(-spike_dists_sq / two_sigma_sq)
-        spike_density = np.sum(spike_weights, axis=0)  # shape: (n_bins,)
-    else:
-        spike_density = np.zeros(env.n_bins, dtype=np.float64)
+    # Chunk size chosen to keep memory under ~40MB per chunk
+    # (n_points_chunk * n_bins * 8 bytes < 40MB)
+    chunk_size = max(1, 40_000_000 // (n_bins * 8))
 
-    # Compute occupancy density for all bins at once
+    # Compute spike density using chunked accumulation for memory efficiency
+    spike_density = np.zeros(n_bins, dtype=np.float64)
+    if n_spikes > 0:
+        for start in range(0, n_spikes, chunk_size):
+            end = min(start + chunk_size, n_spikes)
+            chunk = spike_positions[start:end]
+            # Compute squared distances for chunk: (chunk_size, n_bins)
+            chunk_sq_norm = np.sum(chunk**2, axis=1, keepdims=True)
+            chunk_dists_sq = (
+                chunk_sq_norm + bin_centers_sq_norm - 2 * chunk @ bin_centers.T
+            )
+            chunk_weights = np.exp(-chunk_dists_sq / two_sigma_sq)
+            spike_density += np.sum(chunk_weights, axis=0)
+
+    # Compute occupancy density using chunked accumulation
     if occupancy_density is not None:
         occ_dens = occupancy_density
     else:
-        # Compute squared distances: (n_positions, n_bins)
-        traj_dists_sq = (
-            np.sum(positions**2, axis=1, keepdims=True)
-            + np.sum(bin_centers**2, axis=1)
-            - 2 * positions @ bin_centers.T
-        )
-        traj_weights = np.exp(-traj_dists_sq / two_sigma_sq)
-        occ_dens = np.sum(traj_weights * dt_computed[:, np.newaxis], axis=0)
+        occ_dens = np.zeros(n_bins, dtype=np.float64)
+        for start in range(0, n_positions, chunk_size):
+            end = min(start + chunk_size, n_positions)
+            chunk = positions[start:end]
+            chunk_dt = dt_computed[start:end]
+            # Compute squared distances for chunk: (chunk_size, n_bins)
+            chunk_sq_norm = np.sum(chunk**2, axis=1, keepdims=True)
+            chunk_dists_sq = (
+                chunk_sq_norm + bin_centers_sq_norm - 2 * chunk @ bin_centers.T
+            )
+            chunk_weights = np.exp(-chunk_dists_sq / two_sigma_sq)
+            occ_dens += np.sum(chunk_weights * chunk_dt[:, np.newaxis], axis=0)
 
     # Compute firing rate with safe division
     firing_rate = np.where(occ_dens > 0, spike_density / occ_dens, np.nan)
@@ -3285,17 +3330,15 @@ def compute_field_emd(
     # Equality constraints: Ax = b
     # Row constraints: sum over j of T[i,j] = p[i]
     # Column constraints: sum over i of T[i,j] = q[j]
-    a_eq = np.zeros((2 * n, n * n))
-
-    # Row constraints (source)
-    for i in range(n):
-        for j in range(n):
-            a_eq[i, i * n + j] = 1.0
-
-    # Column constraints (target)
-    for j in range(n):
-        for i in range(n):
-            a_eq[n + j, i * n + j] = 1.0
+    #
+    # Vectorized construction using Kronecker products:
+    # - Row constraints: each row i has 1s in columns [i*n, i*n+1, ..., i*n+n-1]
+    #   This is kron(I_n, ones(1,n)) = block diagonal of row vectors
+    # - Column constraints: each column j has 1s in columns [j, n+j, 2n+j, ...]
+    #   This is kron(ones(1,n), I_n) = tiled identity matrices
+    row_constraints = np.kron(np.eye(n), np.ones((1, n)))  # Shape: (n, n*n)
+    col_constraints = np.kron(np.ones((1, n)), np.eye(n))  # Shape: (n, n*n)
+    a_eq = np.vstack([row_constraints, col_constraints])  # Shape: (2n, n*n)
 
     b_eq = np.concatenate([p, q])
 

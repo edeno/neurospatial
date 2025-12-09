@@ -338,15 +338,16 @@ def distance_field(
 
         # Choose strategy based on number of sources
         if len(valid_sources) < max(32, int(np.sqrt(n_nodes))):
-            # KD-tree for few sources
+            # KD-tree for few sources (O(N log M) where M = num sources)
             tree = cKDTree(src_centers)
             distances, _ = tree.query(bin_centers, k=1)
         else:
-            # Broadcasted pairwise for many sources
-            # Shape: (n_nodes, n_sources, n_dims)
-            diff = bin_centers[:, np.newaxis, :] - src_centers[np.newaxis, :, :]
-            # Shape: (n_nodes, n_sources)
-            dists_to_all = np.sqrt(np.sum(diff**2, axis=2))
+            # Use scipy.spatial.distance.cdist for memory-efficient pairwise distances
+            # More efficient than broadcasting: avoids creating (N, M, D) intermediate
+            from scipy.spatial.distance import cdist
+
+            # Shape: (n_nodes, n_sources) - computes without large intermediate
+            dists_to_all = cdist(bin_centers, src_centers, metric="euclidean")
             # Shape: (n_nodes,)
             distances = np.min(dists_to_all, axis=1)
 
